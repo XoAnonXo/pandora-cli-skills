@@ -1,4 +1,4 @@
-# Pandora Market Setup — Shareable Package
+# Pandora CLI & Skills — Shareable Package
 
 This is a sanitized, shareable copy of the Pandora market setup skill.
 

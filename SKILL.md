@@ -1,4 +1,4 @@
-# pandora-market-setup
+# Pandora CLI & Skills
 
 Create and publish Pandora prediction markets from deployed contracts.
 

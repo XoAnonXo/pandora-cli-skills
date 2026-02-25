@@ -120,7 +120,7 @@ function main() {
     ensureExitCode(run('npm', ['init', '-y'], { cwd: appDir }), 0, 'npm init');
     ensureExitCode(run('npm', ['install', '--silent', tarballPath], { cwd: appDir }), 0, 'npm install tarball');
 
-    const installedCli = path.join(appDir, 'node_modules', 'pandora-market-setup', 'cli', 'pandora.cjs');
+    const installedCli = path.join(appDir, 'node_modules', 'pandora-cli-skills', 'cli', 'pandora.cjs');
     if (!fs.existsSync(installedCli)) {
       throw new Error(`Installed CLI not found at ${installedCli}`);
     }

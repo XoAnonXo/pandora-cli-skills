@@ -1,7 +1,7 @@
 {
-  "name": "pandora-market-setup",
+  "name": "pandora-cli-skills",
   "version": "1.0.0",
-  "description": "Shareable Pandora market creation and bet automation scripts",
+  "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
     "pandora": "cli/pandora.cjs"

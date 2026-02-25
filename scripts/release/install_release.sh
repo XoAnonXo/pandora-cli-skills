@@ -8,8 +8,8 @@ Usage:
   scripts/release/install_release.sh --repo <owner/repo> --tag <tag> [--asset <file.tgz>] [--expected-sha256 <hex>] [--skip-signature-verify] [--certificate-identity <identity>] [--certificate-oidc-issuer <issuer>] [--no-install] [--install-local]
 
 Examples:
-  scripts/release/install_release.sh --repo acme/pandora-market-setup --tag v1.0.0 --no-install
-  scripts/release/install_release.sh --repo acme/pandora-market-setup --tag v1.0.0
+  scripts/release/install_release.sh --repo acme/pandora-cli-skills --tag v1.0.0 --no-install
+  scripts/release/install_release.sh --repo acme/pandora-cli-skills --tag v1.0.0
 
 Notes:
   - Downloads release assets from GitHub Releases.
