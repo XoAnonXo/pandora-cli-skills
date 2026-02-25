@@ -31,6 +31,8 @@ State:
       - `tests/smoke/pack-install-smoke.cjs` now uses `npm.cmd` on Windows.
     - Fixed Windows `spawnSync` incompatibility:
       - smoke runner now applies `killSignal: SIGKILL` only on non-Windows platforms.
+    - Fixed Windows npm process launch in smoke runner:
+      - always invoke `npm` command and enable `shell: true` on Windows.
     - Post-fix validation passed:
       - `npm test`
       - `npm run build`

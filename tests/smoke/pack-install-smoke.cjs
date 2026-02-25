@@ -7,7 +7,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC', 'DEPLOYER_PRIVATE_KEY'];
-const NPM_CMD = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const NPM_CMD = 'npm';
 
 function run(command, args, options = {}) {
   const spawnOptions = {
@@ -15,10 +15,13 @@ function run(command, args, options = {}) {
     env: options.env || process.env,
     encoding: 'utf8',
     timeout: options.timeoutMs || 60_000,
+    shell: process.platform === 'win32',
   };
 
   if (process.platform !== 'win32') {
     spawnOptions.killSignal = 'SIGKILL';
+  } else {
+    spawnOptions.windowsHide = true;
   }
 
   const result = spawnSync(command, args, spawnOptions);
