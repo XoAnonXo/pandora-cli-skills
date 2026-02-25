@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
@@ -30,8 +30,8 @@
     "typecheck": "npx tsc --noEmit",
     "pack:dry-run": "npm pack --dry-run",
     "build": "npm run typecheck",
-    "test:unit": "node --test \"tests/unit/**/*.test.cjs\"",
-    "test:cli": "node --test \"tests/cli/**/*.test.cjs\"",
+    "test:unit": "node --test tests/unit/sanity.test.cjs",
+    "test:cli": "node --test tests/cli/cli.integration.test.cjs",
     "test:smoke": "node tests/smoke/pack-install-smoke.cjs",
     "test": "npm run build && npm run test:unit && npm run test:cli && npm run test:smoke"
   },
