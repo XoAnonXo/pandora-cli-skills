@@ -43,6 +43,8 @@ State:
       - switched functional smoke checks to run installed CLI via `node <installedCli>` instead of `npm exec`.
     - Fixed Windows cross-volume tarball move:
       - added `moveFileSafe()` with `EXDEV` fallback (`copyFileSync` + `unlinkSync`).
+    - Increased smoke npm operation timeouts for CI stability:
+      - `npm init` timeout to 120s, `npm install` timeout to 240s.
     - Post-fix validation passed:
       - `npm test`
       - `npm run build`

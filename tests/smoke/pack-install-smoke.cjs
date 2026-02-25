@@ -174,8 +174,8 @@ function main() {
       throw new Error(`Tarball not found at ${tarballPath}`);
     }
 
-    ensureExitCode(runNpm(['init', '-y'], { cwd: appDir }), 0, 'npm init');
-    ensureExitCode(runNpm(['install', '--silent', tarballPath], { cwd: appDir }), 0, 'npm install tarball');
+    ensureExitCode(runNpm(['init', '-y'], { cwd: appDir, timeoutMs: 120_000 }), 0, 'npm init');
+    ensureExitCode(runNpm(['install', '--silent', tarballPath], { cwd: appDir, timeoutMs: 240_000 }), 0, 'npm install tarball');
 
     const installedCli = path.join(appDir, 'node_modules', 'pandora-cli-skills', 'cli', 'pandora.cjs');
     if (!fs.existsSync(installedCli)) {
