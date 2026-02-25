@@ -38,6 +38,9 @@ State:
     - Fixed Windows smoke argument quoting regression:
       - switched back to `npm.cmd` without shell and added Windows-specific `npm pack --silent` fallback.
       - non-Windows still uses `--pack-destination` path with fallback behavior.
+    - Refactored smoke execution model for Windows portability:
+      - added `runNpm()` (Windows shell only for npm commands).
+      - switched functional smoke checks to run installed CLI via `node <installedCli>` instead of `npm exec`.
     - Post-fix validation passed:
       - `npm test`
       - `npm run build`
