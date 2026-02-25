@@ -7,6 +7,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC', 'DEPLOYER_PRIVATE_KEY'];
+const NPM_CMD = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -59,7 +60,7 @@ function cleanEnv(overrides = {}) {
 }
 
 function getPackResult(packDir) {
-  const withDestination = run('npm', ['pack', '--silent', '--pack-destination', packDir]);
+  const withDestination = run(NPM_CMD, ['pack', '--silent', '--pack-destination', packDir]);
   if (withDestination.status === 0) {
     return withDestination;
   }
@@ -68,7 +69,7 @@ function getPackResult(packDir) {
     return withDestination;
   }
 
-  const fallback = run('npm', ['pack', '--silent']);
+  const fallback = run(NPM_CMD, ['pack', '--silent']);
   if (fallback.status !== 0) {
     return fallback;
   }
@@ -117,15 +118,15 @@ function main() {
       throw new Error(`Tarball not found at ${tarballPath}`);
     }
 
-    ensureExitCode(run('npm', ['init', '-y'], { cwd: appDir }), 0, 'npm init');
-    ensureExitCode(run('npm', ['install', '--silent', tarballPath], { cwd: appDir }), 0, 'npm install tarball');
+    ensureExitCode(run(NPM_CMD, ['init', '-y'], { cwd: appDir }), 0, 'npm init');
+    ensureExitCode(run(NPM_CMD, ['install', '--silent', tarballPath], { cwd: appDir }), 0, 'npm install tarball');
 
     const installedCli = path.join(appDir, 'node_modules', 'pandora-cli-skills', 'cli', 'pandora.cjs');
     if (!fs.existsSync(installedCli)) {
       throw new Error(`Installed CLI not found at ${installedCli}`);
     }
 
-    const help = run('npm', ['exec', '--', 'pandora', 'help'], { cwd: appDir, env: cleanEnv() });
+    const help = run(NPM_CMD, ['exec', '--', 'pandora', 'help'], { cwd: appDir, env: cleanEnv() });
     ensureExitCode(help, 0, 'pandora help');
     ensureOutputContains(help, /Prediction market CLI/, 'pandora help');
 
@@ -143,14 +144,14 @@ function main() {
     );
 
     const initEnvPath = path.join(appDir, '.env');
-    const initEnv = run('npm', ['exec', '--', 'pandora', 'init-env', '--example', exampleEnvPath, '--dotenv-path', initEnvPath], {
+    const initEnv = run(NPM_CMD, ['exec', '--', 'pandora', 'init-env', '--example', exampleEnvPath, '--dotenv-path', initEnvPath], {
       cwd: appDir,
       env: cleanEnv(),
     });
     ensureExitCode(initEnv, 0, 'pandora init-env');
     ensureOutputContains(initEnv, /Wrote env file:/, 'pandora init-env');
 
-    const doctor = run('npm', ['exec', '--', 'pandora', 'doctor', '--dotenv-path', initEnvPath], {
+    const doctor = run(NPM_CMD, ['exec', '--', 'pandora', 'doctor', '--dotenv-path', initEnvPath], {
       cwd: appDir,
       env: cleanEnv(),
     });
@@ -177,7 +178,7 @@ function main() {
       '--dry-run',
     ];
 
-    const dryRunPreflight = run('npm', launchArgs, {
+    const dryRunPreflight = run(NPM_CMD, launchArgs, {
       cwd: appDir,
       env: cleanEnv({ CHAIN_ID: '999', PRIVATE_KEY: `0x${'1'.repeat(64)}` }),
     });
@@ -209,7 +210,7 @@ function main() {
       '--dry-run',
     ];
 
-    const cloneDryRun = run('npm', cloneArgs, {
+    const cloneDryRun = run(NPM_CMD, cloneArgs, {
       cwd: appDir,
       env: cleanEnv({ CHAIN_ID: '999', PRIVATE_KEY: `0x${'1'.repeat(64)}` }),
     });

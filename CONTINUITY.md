@@ -1,102 +1,55 @@
 Goal (incl. success criteria):
-- Create a new git repository for this project and push the full codebase.
+- Ship and publish `Pandora CLI & Skills` with production-ready install/release quality.
 - Success criteria:
-  - Ensure local git repo is initialized/clean with all intended files committed.
-  - Create remote repository (GitHub) and set origin.
-  - Push default branch and verify remote linkage.
+  - `main` CI passes across Linux/macOS/Windows.
+  - npm package `pandora-cli-skills` is published.
+  - Signed release tag exists and is verified.
 
 Constraints/Assumptions:
 - Follow AGENTS.md continuity process every turn.
-- Keep existing `launch`/`clone-bet` behavior intact.
-- Prefer deterministic tests using local mocks (no live-network dependency in tests).
-- Ignore unrelated edits from parallel agents.
+- Keep existing `launch`/`clone-bet` behavior unchanged unless fixing defects.
+- Prefer deterministic local tests; do not rely on live network for CI.
+- npm publish requires authenticated npm session and (if enabled) 2FA.
 
 Key decisions:
-- Use GraphQL (`POST /`) for indexer commands; REST endpoints are currently 404.
-- Keep dual output modes (`table` default, `json` for machine-readable workflows).
-- Address review findings from spawned audit agents (phase 1 and phase 2) as part of this pass.
+- Repository/package branding renamed to `Pandora CLI & Skills` / `pandora-cli-skills`.
+- Use signed git tags for releases (`v1.0.0`, `v1.0.1` already created).
+- Address cross-platform smoke test gap (`spawnSync npm ENOENT` on Windows) before final publish confidence.
 
 State:
   - Done:
-    - Spawned agents for phase audits + implementation:
-      - Phase 1 audit: `019c9641-78a2-77b0-9927-6a4c5a72c366`
-      - Phase 2 audit: `019c9641-7be9-77b3-803e-b0902dbd504a`
-      - Phase 3/4 implementation: `019c9641-7ebc-7f42-a652-18e9b681d4dc`
-    - Core Phase 3/4 CLI implementation landed in `cli/pandora.cjs`.
-    - Integration test suite was expanded with mock RPC/indexer coverage.
-    - Phase 1/2 audit findings captured (test discovery gaps, smoke scope, workflow/action hardening, installer safety gaps).
-    - Resolved integration timeout deadlock by adding async CLI runner for mock-server tests.
-    - Updated CLI GraphQL list handling to page-shape (`items` + `pageInfo`) and verified against live indexer.
-    - Hardened workflows and release installer:
-      - pinned GitHub Actions to immutable SHAs
-      - release trigger narrowed to `v*`
-      - added test gate in release workflow
-      - installer now validates asset basename, handles ambiguity, adds curl retry/timeouts, and supports `--expected-sha256`.
-    - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) for new commands and output modes.
-    - Full validation passed:
+    - Repo renamed to `XoAnonXo/pandora-cli-skills` and remote updated.
+    - Package renamed to `pandora-cli-skills`; docs and tests updated.
+    - Signed tags created/pushed: `v1.0.0`, `v1.0.1`.
+    - Local validation succeeded after rename:
       - `npm test`
       - `npm run build`
       - `npm run pack:dry-run`
-    - Live indexer smoke passed for new read-only commands:
-      - `markets list`
-      - `polls list`
-      - `events list/get`
-      - `positions list`
-    - P3 fixed:
-      - CI matrix now includes `windows-latest`.
-      - CI switched to cross-platform `npm test` step instead of shell-specific smoke snippet.
-    - P2 fixed:
-      - Release workflow now installs cosign, keylessly signs tarball, verifies signature in workflow, and publishes `.sig` + `.pem`.
-      - Release workflow permissions include `id-token: write` for OIDC signing.
-      - Installer now verifies cosign signature by default and supports identity/issuer overrides.
-      - Installer keeps explicit `--skip-signature-verify` escape hatch for legacy unsigned releases.
-    - Validation after P2/P3 fixes passed:
+    - Release workflow for `v1.0.1` succeeded.
+    - `npm publish --access public` attempted and failed with `ENEEDAUTH` (not logged in).
+    - Fixed cross-platform smoke test command resolution:
+      - `tests/smoke/pack-install-smoke.cjs` now uses `npm.cmd` on Windows.
+    - Post-fix validation passed:
       - `npm test`
       - `npm run build`
       - `npm run pack:dry-run`
-      - `bash -n scripts/release/install_release.sh`
-      - installer argument-path checks for cosign requirement and path traversal rejection.
-    - Completed full audit + P2/P3 remediations and retained green validation.
-    - Checked npm publish prerequisites:
-      - package name `pandora-market-setup` currently returns npm 404 (appears available).
-      - local npm session is not authenticated (`npm whoami` => not-logged-in).
-    - Initialized local git history and created first commit:
-      - `b1c8490` ("Initial commit: pandora market setup CLI").
-    - Created and pushed remote repository:
-      - `https://github.com/XoAnonXo/pandora-cli-skills` (renamed from initial repo slug).
-      - `origin` configured and `main` tracks `origin/main`.
-    - Renamed package/branding to "Pandora CLI & Skills":
-      - npm package name changed to `pandora-cli-skills`.
-      - docs/tests/release helper examples updated accordingly.
-      - validation passed after rename (`npm test`, `npm run build`, `npm run pack:dry-run`).
-    - Created and pushed signed release tag:
-      - Installed `gnupg`, generated signing key for `XoAnonXo@users.noreply.github.com`.
-      - Signed tag `v1.0.0` and pushed to origin.
-      - `git tag -v v1.0.0` reports `Good signature`.
   - Now:
-    - Awaiting npm auth to complete `npm publish`.
+    - Commit and push Windows smoke test fix, then verify CI status.
   - Next:
-    - Once authenticated, run `npm publish --access public`.
+    - Confirm green CI on `main` after fix.
+    - Publish to npm once auth is available.
+    - If publish happens after additional fixes, consider bumping from `1.0.1` to `1.0.2`.
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: npm account auth/2FA completion needed in this environment to finish publish.
+- UNCONFIRMED: npm auth + 2FA availability in this environment for final `npm publish`.
+- UNCONFIRMED: publish target version after CI fix (`1.0.1` vs bump to `1.0.2`).
 
 Working set (files/ids/commands):
-- Files in active scope:
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/pandora.cjs`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/helpers/cli_runner.cjs`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/cli/cli.integration.test.cjs`
+- Active files:
   - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/smoke/pack-install-smoke.cjs`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/unit/sanity.test.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/CONTINUITY.md`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/package.json`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/.github/workflows/ci.yml`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/.github/workflows/release.yml`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/scripts/release/install_release.sh`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/README_FOR_SHARING.md`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/SKILL.md`
-- Recent command outcomes:
-  - `gh repo rename pandora-cli-skills --yes` succeeded.
-  - `gh repo edit --description "Pandora CLI & Skills"` succeeded.
-  - `git push origin main` succeeded after rename commit (`df1a21a`).
-  - `npm publish --access public` failed with `ENEEDAUTH` (not logged in).
-  - `git tag -s v1.0.0 -m "Release v1.0.0"` and `git push origin v1.0.0` succeeded.
+- Recent refs:
+  - HEAD: `30879a4` (`v1.0.1`, `origin/main`)
+  - Prior: `df1a21a` (`v1.0.0`)
