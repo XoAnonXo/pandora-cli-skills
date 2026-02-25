@@ -29,12 +29,14 @@ State:
     - `npm publish --access public` attempted and failed with `ENEEDAUTH` (not logged in).
     - Fixed cross-platform smoke test command resolution:
       - `tests/smoke/pack-install-smoke.cjs` now uses `npm.cmd` on Windows.
+    - Fixed Windows `spawnSync` incompatibility:
+      - smoke runner now applies `killSignal: SIGKILL` only on non-Windows platforms.
     - Post-fix validation passed:
       - `npm test`
       - `npm run build`
       - `npm run pack:dry-run`
   - Now:
-    - Commit and push Windows smoke test fix, then verify CI status.
+    - Commit and push final Windows CI fix, then verify CI status.
   - Next:
     - Confirm green CI on `main` after fix.
     - Publish to npm once auth is available.

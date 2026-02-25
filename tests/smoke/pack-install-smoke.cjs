@@ -10,13 +10,18 @@ const REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACT
 const NPM_CMD = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const spawnOptions = {
     cwd: options.cwd || ROOT,
     env: options.env || process.env,
     encoding: 'utf8',
     timeout: options.timeoutMs || 60_000,
-    killSignal: 'SIGKILL',
-  });
+  };
+
+  if (process.platform !== 'win32') {
+    spawnOptions.killSignal = 'SIGKILL';
+  }
+
+  const result = spawnSync(command, args, spawnOptions);
 
   const output = `${result.stdout || ''}${result.stderr || ''}`;
   if (result.error) {
