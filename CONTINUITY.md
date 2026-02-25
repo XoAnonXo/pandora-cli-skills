@@ -35,6 +35,9 @@ State:
       - always invoke `npm` command and enable `shell: true` on Windows.
     - Fixed transient Windows cleanup failure in smoke runner:
       - ignore `EBUSY`/`EPERM`/`ENOTEMPTY` during final temp directory removal.
+    - Fixed Windows smoke argument quoting regression:
+      - switched back to `npm.cmd` without shell and added Windows-specific `npm pack --silent` fallback.
+      - non-Windows still uses `--pack-destination` path with fallback behavior.
     - Post-fix validation passed:
       - `npm test`
       - `npm run build`

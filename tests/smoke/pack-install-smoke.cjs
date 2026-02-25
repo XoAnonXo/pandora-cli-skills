@@ -7,7 +7,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC', 'DEPLOYER_PRIVATE_KEY'];
-const NPM_CMD = 'npm';
+const NPM_CMD = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function run(command, args, options = {}) {
   const spawnOptions = {
@@ -15,13 +15,10 @@ function run(command, args, options = {}) {
     env: options.env || process.env,
     encoding: 'utf8',
     timeout: options.timeoutMs || 60_000,
-    shell: process.platform === 'win32',
   };
 
   if (process.platform !== 'win32') {
     spawnOptions.killSignal = 'SIGKILL';
-  } else {
-    spawnOptions.windowsHide = true;
   }
 
   const result = spawnSync(command, args, spawnOptions);
@@ -68,6 +65,29 @@ function cleanEnv(overrides = {}) {
 }
 
 function getPackResult(packDir) {
+  if (process.platform === 'win32') {
+    const fallback = run(NPM_CMD, ['pack', '--silent']);
+    if (fallback.status !== 0) {
+      return fallback;
+    }
+
+    const tarball = fallback.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .at(-1);
+
+    if (!tarball) {
+      throw new Error('Could not determine tarball name from npm pack output.');
+    }
+
+    const from = path.join(ROOT, tarball);
+    const to = path.join(packDir, tarball);
+    fs.renameSync(from, to);
+    fallback.stdout = `${tarball}\n`;
+    return fallback;
+  }
+
   const withDestination = run(NPM_CMD, ['pack', '--silent', '--pack-destination', packDir]);
   if (withDestination.status === 0) {
     return withDestination;
