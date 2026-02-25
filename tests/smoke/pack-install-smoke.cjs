@@ -228,7 +228,16 @@ function main() {
     console.log('Pack/install smoke test passed.');
     console.log(`Tarball: ${tarballPath}`);
   } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    try {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    } catch (error) {
+      // Windows runners can keep handles open briefly after npm exits.
+      // Cleanup failures should not fail functional smoke validation.
+      const transientWindowsCleanupError = process.platform === 'win32' && ['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error?.code);
+      if (!transientWindowsCleanupError) {
+        throw error;
+      }
+    }
   }
 }
 

@@ -33,6 +33,8 @@ State:
       - smoke runner now applies `killSignal: SIGKILL` only on non-Windows platforms.
     - Fixed Windows npm process launch in smoke runner:
       - always invoke `npm` command and enable `shell: true` on Windows.
+    - Fixed transient Windows cleanup failure in smoke runner:
+      - ignore `EBUSY`/`EPERM`/`ENOTEMPTY` during final temp directory removal.
     - Post-fix validation passed:
       - `npm test`
       - `npm run build`
