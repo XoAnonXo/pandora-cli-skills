@@ -41,6 +41,8 @@ State:
     - Refactored smoke execution model for Windows portability:
       - added `runNpm()` (Windows shell only for npm commands).
       - switched functional smoke checks to run installed CLI via `node <installedCli>` instead of `npm exec`.
+    - Fixed Windows cross-volume tarball move:
+      - added `moveFileSafe()` with `EXDEV` fallback (`copyFileSync` + `unlinkSync`).
     - Post-fix validation passed:
       - `npm test`
       - `npm run build`

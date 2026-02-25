@@ -69,6 +69,18 @@ function cleanEnv(overrides = {}) {
   return env;
 }
 
+function moveFileSafe(from, to) {
+  try {
+    fs.renameSync(from, to);
+  } catch (error) {
+    if (error?.code !== 'EXDEV') {
+      throw error;
+    }
+    fs.copyFileSync(from, to);
+    fs.unlinkSync(from);
+  }
+}
+
 function runNpm(args, options = {}) {
   return run(NPM_CMD, args, {
     ...options,
@@ -99,7 +111,7 @@ function getPackResult(packDir) {
 
     const from = path.join(ROOT, tarball);
     const to = path.join(packDir, tarball);
-    fs.renameSync(from, to);
+    moveFileSafe(from, to);
     fallback.stdout = `${tarball}\n`;
     return fallback;
   }
@@ -130,7 +142,7 @@ function getPackResult(packDir) {
 
   const from = path.join(ROOT, tarball);
   const to = path.join(packDir, tarball);
-  fs.renameSync(from, to);
+  moveFileSafe(from, to);
   fallback.stdout = `${tarball}\n`;
   return fallback;
 }
