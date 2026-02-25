@@ -63,15 +63,23 @@ State:
     - Initialized local git history and created first commit:
       - `b1c8490` ("Initial commit: pandora market setup CLI").
     - Created and pushed remote repository:
-      - `https://github.com/XoAnonXo/pandora-market-setup-shareable`
+      - `https://github.com/XoAnonXo/pandora-cli-skills` (renamed from initial repo slug).
       - `origin` configured and `main` tracks `origin/main`.
+    - Renamed package/branding to "Pandora CLI & Skills":
+      - npm package name changed to `pandora-cli-skills`.
+      - docs/tests/release helper examples updated accordingly.
+      - validation passed after rename (`npm test`, `npm run build`, `npm run pack:dry-run`).
+    - Created and pushed signed release tag:
+      - Installed `gnupg`, generated signing key for `XoAnonXo@users.noreply.github.com`.
+      - Signed tag `v1.0.0` and pushed to origin.
+      - `git tag -v v1.0.0` reports `Good signature`.
   - Now:
-    - Repository creation/push task is complete.
+    - Awaiting npm auth to complete `npm publish`.
   - Next:
-    - Optional: publish npm package and cut signed `v*` release tag.
+    - Once authenticated, run `npm publish --access public`.
 
 Open questions (UNCONFIRMED if needed):
-- None.
+- UNCONFIRMED: npm account auth/2FA completion needed in this environment to finish publish.
 
 Working set (files/ids/commands):
 - Files in active scope:
@@ -87,12 +95,8 @@ Working set (files/ids/commands):
   - `/Users/mac/Desktop/pandora-market-setup-shareable/README_FOR_SHARING.md`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/SKILL.md`
 - Recent command outcomes:
-  - `npm test` passed.
-  - `npm run build` passed.
-  - `npm run pack:dry-run` passed.
-  - `bash -n scripts/release/install_release.sh` passed.
-  - `scripts/release/install_release.sh --repo owner/repo --tag v1 --no-install` now fails fast with `Missing required command: cosign` (expected secure default).
-  - `scripts/release/install_release.sh ... --asset '../evil.tgz'` rejected with `Invalid asset name...` (path traversal prevention).
-  - External comparison data collected from cloned `Polymarket/polymarket-cli` snapshot.
-  - `gh repo create pandora-market-setup-shareable --public --source=. --remote=origin --push` succeeded.
-  - `git status -sb` => `main...origin/main` (clean tracking state).
+  - `gh repo rename pandora-cli-skills --yes` succeeded.
+  - `gh repo edit --description "Pandora CLI & Skills"` succeeded.
+  - `git push origin main` succeeded after rename commit (`df1a21a`).
+  - `npm publish --access public` failed with `ENEEDAUTH` (not logged in).
+  - `git tag -s v1.0.0 -m "Release v1.0.0"` and `git push origin v1.0.0` succeeded.
