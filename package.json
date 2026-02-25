@@ -1,0 +1,53 @@
+{
+  "name": "pandora-market-setup",
+  "version": "1.0.0",
+  "description": "Shareable Pandora market creation and bet automation scripts",
+  "main": "cli/pandora.cjs",
+  "bin": {
+    "pandora": "cli/pandora.cjs"
+  },
+  "files": [
+    "cli/pandora.cjs",
+    "scripts/create_market_launcher.ts",
+    "scripts/create_polymarket_clone_and_bet.ts",
+    "scripts/.env.example",
+    "references/checklist.md",
+    "references/contracts.md",
+    "references/creation-script.md",
+    "SKILL.md",
+    "README_FOR_SHARING.md",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "cli": "node cli/pandora.cjs",
+    "init-env": "node cli/pandora.cjs init-env",
+    "doctor": "node cli/pandora.cjs doctor",
+    "setup": "node cli/pandora.cjs setup",
+    "dry-run": "node cli/pandora.cjs launch --dry-run",
+    "execute": "node cli/pandora.cjs launch --execute",
+    "dry-run:clone": "node cli/pandora.cjs clone-bet --dry-run",
+    "lint": "npm run typecheck",
+    "typecheck": "npx tsc --noEmit",
+    "pack:dry-run": "npm pack --dry-run",
+    "build": "npm run typecheck",
+    "test:unit": "node --test \"tests/unit/**/*.test.cjs\"",
+    "test:cli": "node --test \"tests/cli/**/*.test.cjs\"",
+    "test:smoke": "node tests/smoke/pack-install-smoke.cjs",
+    "test": "npm run build && npm run test:unit && npm run test:cli && npm run test:smoke"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "tsx": "^4.21.0",
+    "viem": "^2.46.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.9.3"
+  }
+}

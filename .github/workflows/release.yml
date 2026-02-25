@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Package and Publish Artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build npm package and checksums
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TARBALL="$(npm pack | tail -n 1)"
+          test -f "$TARBALL"
+
+          sha256sum "$TARBALL" > "$TARBALL.sha256"
+          cp "$TARBALL.sha256" checksums.sha256
+
+          {
+            echo "tarball=$TARBALL"
+            echo "checksum_file=$TARBALL.sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      - name: Sign tarball and verify signature (keyless)
+        id: sign
+        shell: bash
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+          CERT_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          SIG_FILE="$TARBALL.sig"
+          CERT_FILE="$TARBALL.pem"
+
+          cosign sign-blob --yes \
+            --output-signature "$SIG_FILE" \
+            --output-certificate "$CERT_FILE" \
+            "$TARBALL"
+
+          cosign verify-blob \
+            --signature "$SIG_FILE" \
+            --certificate "$CERT_FILE" \
+            --certificate-identity "$CERT_IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$TARBALL" >/dev/null
+
+          {
+            echo "signature_file=$SIG_FILE"
+            echo "certificate_file=$CERT_FILE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-package-${{ github.ref_name }}
+          path: |
+            ${{ steps.pack.outputs.tarball }}
+            ${{ steps.pack.outputs.checksum_file }}
+            checksums.sha256
+            ${{ steps.sign.outputs.signature_file }}
+            ${{ steps.sign.outputs.certificate_file }}
+          if-no-files-found: error
+
+      - name: Upload GitHub release assets
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          files: |
+            ${{ steps.pack.outputs.tarball }}
+            ${{ steps.pack.outputs.checksum_file }}
+            checksums.sha256
+            ${{ steps.sign.outputs.signature_file }}
+            ${{ steps.sign.outputs.certificate_file }}
+          generate_release_notes: true
