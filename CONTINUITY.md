@@ -60,13 +60,18 @@ State:
     - Checked npm publish prerequisites:
       - package name `pandora-market-setup` currently returns npm 404 (appears available).
       - local npm session is not authenticated (`npm whoami` => not-logged-in).
+    - Initialized local git history and created first commit:
+      - `b1c8490` ("Initial commit: pandora market setup CLI").
+    - Created and pushed remote repository:
+      - `https://github.com/XoAnonXo/pandora-market-setup-shareable`
+      - `origin` configured and `main` tracks `origin/main`.
   - Now:
-    - Preparing to create a new remote repo and push this codebase.
+    - Repository creation/push task is complete.
   - Next:
-    - Verify push success and share clone/install links.
+    - Optional: publish npm package and cut signed `v*` release tag.
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: Desired repository name/owner if different from defaults.
+- None.
 
 Working set (files/ids/commands):
 - Files in active scope:
@@ -89,3 +94,5 @@ Working set (files/ids/commands):
   - `scripts/release/install_release.sh --repo owner/repo --tag v1 --no-install` now fails fast with `Missing required command: cosign` (expected secure default).
   - `scripts/release/install_release.sh ... --asset '../evil.tgz'` rejected with `Invalid asset name...` (path traversal prevention).
   - External comparison data collected from cloned `Polymarket/polymarket-cli` snapshot.
+  - `gh repo create pandora-market-setup-shareable --public --source=. --remote=origin --push` succeeded.
+  - `git status -sb` => `main...origin/main` (clean tracking state).
