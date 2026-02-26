@@ -82,9 +82,9 @@ State:
       - added CLI integration coverage for mirror sync help env requirements and rebalance sizing assertions.
       - validated with full gate: `npm run test` (build + unit + cli + smoke) passed.
   - Now:
-    - Preparing commit/push for mirror follow-up fixes.
+    - Mirror follow-up fixes are committed and pushed to `origin/main`.
   - Next:
-    - Push review-fix patch to `origin/main`; optionally publish npm patch.
+    - Optional: bump patch version and publish npm for these follow-up fixes.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -116,4 +116,4 @@ Working set (files/ids/commands):
   - `npm publish --access public` (published `1.1.5`)
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.5`)
  - Current task:
-  - Finalize and push review-fix patch.
+  - Completed: review-fix patch pushed (`f5ef5b7`).
