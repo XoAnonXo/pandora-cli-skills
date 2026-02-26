@@ -124,10 +124,15 @@ State:
       - committed resilience patch (`7c48221`) and pushed `main` to `origin/main`.
       - published `pandora-cli-skills@1.1.7`.
       - verified npm registry: `dist-tag latest=1.1.7` and version list includes `1.1.7`.
+    - Release on 2026-02-26:
+      - bumped version `1.1.7 -> 1.1.8` (package metadata only).
+      - validation passed: `npm run test` (build + unit + cli + smoke), CLI tests at 81 pass.
+      - published `pandora-cli-skills@1.1.8`.
+      - verified npm registry: `dist-tag latest=1.1.8`.
   - Now:
-    - Blocker fixes are complete locally and validated.
+    - NPM release `1.1.8` is published.
   - Next:
-    - Commit/push blocker fixes and publish patch if requested.
+    - Commit version bump + continuity update to `main`.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -169,4 +174,4 @@ Working set (files/ids/commands):
   - `npm view pandora-cli-skills dist-tags.latest` (`1.1.7`)
   - `npm view pandora-cli-skills versions --json` (includes `1.1.7`)
  - Current task:
-  - Fix Polymarket pagination discovery and ensure mirror deploy copies exact question/rules.
+  - Publish updated package to npm.
