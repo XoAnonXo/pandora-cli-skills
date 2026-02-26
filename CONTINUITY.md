@@ -86,9 +86,9 @@ State:
       - validation passed: `npm run test` (build + unit + cli + smoke).
       - published `pandora-cli-skills@1.1.6` and verified `dist-tag latest=1.1.6`.
   - Now:
-    - NPM patch release `1.1.6` completed; preparing release metadata commit/push.
+    - NPM patch release `1.1.6` completed and pushed to `origin/main`.
   - Next:
-    - Push release metadata to `origin/main`.
+    - Optional: create signed git tag/release notes for `v1.1.6`.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -124,4 +124,4 @@ Working set (files/ids/commands):
   - `npm publish --access public` (published `1.1.6`)
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.6`)
  - Current task:
-  - Finalize release metadata commit/push for npm `1.1.6`.
+  - Completed: npm `1.1.6` release + git sync.
