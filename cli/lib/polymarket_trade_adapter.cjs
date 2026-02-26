@@ -23,6 +23,11 @@ function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function toStringOrNull(value) {
+  const normalized = String(value || '').trim();
+  return normalized || null;
+}
+
 function toTimestampSeconds(value) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Date.parse(String(value));
@@ -185,8 +190,51 @@ function normalizeTokens(tokens) {
   };
 }
 
+function collectRuleSections(row) {
+  const sections = [];
+  const seen = new Set();
+
+  const pushSection = (value, label = null) => {
+    const text = toStringOrNull(value);
+    if (!text) return;
+    const normalized = normalizeText(text);
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    sections.push(label ? `${label}: ${text}` : text);
+  };
+
+  pushSection(row && row.rules);
+  pushSection(row && row.description);
+  pushSection(row && row.resolution_source, 'Resolution Source');
+  pushSection(row && row.resolutionSource, 'Resolution Source');
+  pushSection(row && row.resolution_criteria, 'Resolution Criteria');
+  pushSection(row && row.resolutionCriteria, 'Resolution Criteria');
+
+  if (Array.isArray(row && row.events)) {
+    for (const event of row.events) {
+      pushSection(event && event.description, 'Event');
+      pushSection(event && event.rules, 'Event Rules');
+      pushSection(event && event.resolution_source, 'Event Resolution Source');
+      pushSection(event && event.resolutionSource, 'Event Resolution Source');
+    }
+  }
+
+  return sections;
+}
+
+function extractQuestionText(row) {
+  return (
+    toStringOrNull(row && row.question) ||
+    toStringOrNull(row && row.title) ||
+    toStringOrNull(row && row.name) ||
+    toStringOrNull(row && row.market_question) ||
+    toStringOrNull(row && row.marketQuestion)
+  );
+}
+
 function normalizeMarketRow(row) {
   const tokens = normalizeTokens(row && row.tokens);
+  const rulesSections = collectRuleSections(row);
   const resolved = Boolean(row && (row.resolved === true || row.closed === true || row.archived === true));
   let active = true;
   if (row && typeof row.active === 'boolean') {
@@ -201,8 +249,8 @@ function normalizeMarketRow(row) {
       (row && (row.condition_id || row.question_id || row.id || row.market_id || row.slug || row.market_slug)) || '',
     ).trim() || null,
     slug: String((row && (row.market_slug || row.slug)) || '').trim() || null,
-    question: String((row && (row.question || row.title || row.name || row.description)) || '').trim() || null,
-    description: String((row && (row.description || row.rules || row.resolution_source || '')) || '').trim() || null,
+    question: extractQuestionText(row),
+    description: rulesSections.length ? rulesSections.join('\n\n') : null,
     closeTimestamp: toTimestampSeconds(row && (row.end_date_iso || row.game_start_time || row.endDate || row.closeTime)),
     yesPct: tokens.yes,
     noPct: tokens.no,
@@ -260,8 +308,10 @@ async function resolvePolymarketMarket(options = {}) {
   const hosts = normalizeHostList(options.host || options.hosts || process.env.POLYMARKET_HOSTS || DEFAULT_POLYMARKET_HOST);
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 500;
+  const maxPages = Number.isInteger(options.maxPages) && options.maxPages > 0 ? options.maxPages : 200;
   const cacheFile = options.cacheFile || defaultCacheFile(options);
   const allowStaleCache = options.allowStaleCache !== false;
+  const selectorMode = Boolean(options.marketId || options.slug);
   const diagnostics = [];
 
   let rows = [];
@@ -291,16 +341,32 @@ async function resolvePolymarketMarket(options = {}) {
     const hostErrors = [];
     for (const candidateHost of hosts) {
       try {
-        const client = new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+        const client = typeof options.clientFactory === 'function'
+          ? options.clientFactory(candidateHost, DEFAULT_POLYMARKET_CHAIN)
+          : new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
         let cursor;
         let loops = 0;
         const candidateRows = [];
+        let matchedRow = null;
 
-        while (candidateRows.length < limit && loops < 12) {
+        while (loops < maxPages) {
           loops += 1;
           const page = cursor ? await client.getMarkets(cursor) : await client.getMarkets();
           const chunk = Array.isArray(page && page.data) ? page.data : [];
-          candidateRows.push(...chunk);
+
+          if (selectorMode) {
+            matchedRow = chunk.find((row) => marketMatches(row, options)) || null;
+            if (matchedRow) {
+              candidateRows.push(matchedRow);
+              break;
+            }
+          } else {
+            candidateRows.push(...chunk);
+          }
+
+          if (!selectorMode && candidateRows.length >= limit) {
+            break;
+          }
 
           if (!page || !page.next_cursor || page.next_cursor === cursor) {
             break;
@@ -308,9 +374,15 @@ async function resolvePolymarketMarket(options = {}) {
           cursor = page.next_cursor;
         }
 
+        if (selectorMode && loops >= maxPages && !candidateRows.length) {
+          diagnostics.push(`Polymarket scan reached max pages (${maxPages}) without selector match on host ${candidateHost}.`);
+        }
+
         rows = candidateRows;
         hostUsed = candidateHost;
-        break;
+        if (rows.length) {
+          break;
+        }
       } catch (err) {
         hostErrors.push(`[${candidateHost}] ${formatNetworkError(err)}`);
       }

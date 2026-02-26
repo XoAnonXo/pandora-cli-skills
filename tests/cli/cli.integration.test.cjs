@@ -2709,6 +2709,53 @@ test('mirror deploy dry-run materializes deployment args without chain writes', 
   }
 });
 
+test('mirror deploy copies exact Polymarket question and full rules text', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    markets: [
+      {
+        ...buildMirrorPolymarketOverrides().markets[0],
+        question: 'Will Team A win (OT included)?',
+        rules: 'Primary rule block from Polymarket.',
+        description: 'Supplemental market description details.',
+        resolution_source: 'https://docs.polymarket.com/rules',
+        events: [{ description: 'Event-level resolution context.' }],
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--dry-run',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.deploy');
+    assert.equal(payload.data.deploymentArgs.question, 'Will Team A win (OT included)?');
+    assert.match(payload.data.deploymentArgs.rules, /Primary rule block from Polymarket\./);
+    assert.match(payload.data.deploymentArgs.rules, /Supplemental market description details\./);
+    assert.match(payload.data.deploymentArgs.rules, /Resolution Source: https:\/\/docs\.polymarket\.com\/rules/);
+    assert.match(payload.data.deploymentArgs.rules, /Event: Event-level resolution context\./);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
 test('mirror sync once paper mode performs deterministic simulated action and persists state', async () => {
   const tempDir = createTempDir('pandora-mirror-sync-');
   const stateFile = path.join(tempDir, 'mirror-state.json');

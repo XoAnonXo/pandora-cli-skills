@@ -23,6 +23,22 @@ Key decisions:
 
 State:
   - Done:
+    - Live-test blocker fixes (2026-02-26):
+      - fixed Polymarket selector pagination in `resolvePolymarketMarket`:
+        - selector mode now scans pages until a match or cursor exhaustion (instead of stopping at 500-row working set).
+        - added configurable safety cap `maxPages` (default `200`) and diagnostics when cap is reached.
+        - supports injectable `clientFactory` for deterministic pagination unit tests.
+      - improved Polymarket normalization to preserve mirror fidelity:
+        - question extraction now prioritizes explicit question/title/name fields (no fallback to description text).
+        - rules text now composes all available rule-like sections (`rules`, `description`, resolution fields, and event-level descriptions/rules) with deduplication.
+      - added deterministic tests:
+        - unit: deep pagination selector resolution.
+        - unit: rich rules composition extraction.
+        - CLI integration: `mirror deploy --dry-run` copies exact Polymarket question and full composed rules into deployment args.
+      - validation passed:
+        - `npm run test:unit`
+        - `npm run test:cli`
+        - `npm run test` (build + unit + cli + smoke), CLI tests now 81.
     - External v1.1.6 review accepted:
       - all three prior findings verified fixed (hedge ternary cleanup, Polymarket env docs/help, pool-aware rebalance sizing).
       - no regressions observed across quote/portfolio/history/leaderboard/suggest paths.
@@ -109,9 +125,9 @@ State:
       - published `pandora-cli-skills@1.1.7`.
       - verified npm registry: `dist-tag latest=1.1.7` and version list includes `1.1.7`.
   - Now:
-    - Polymarket resilience patch is shipped and published.
+    - Blocker fixes are complete locally and validated.
   - Next:
-    - Monitor live user feedback from Polymarket outage windows; patch further only if fresh failures appear.
+    - Commit/push blocker fixes and publish patch if requested.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -153,4 +169,4 @@ Working set (files/ids/commands):
   - `npm view pandora-cli-skills dist-tags.latest` (`1.1.7`)
   - `npm view pandora-cli-skills versions --json` (includes `1.1.7`)
  - Current task:
-  - Completed: Polymarket resilience patch published as `1.1.7`.
+  - Fix Polymarket pagination discovery and ensure mirror deploy copies exact question/rules.

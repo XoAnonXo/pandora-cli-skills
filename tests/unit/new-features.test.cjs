@@ -20,7 +20,7 @@ const {
   saveState: saveMirrorState,
   loadState: loadMirrorState,
 } = require('../../cli/lib/mirror_state_store.cjs');
-const { calculateExecutableDepthUsd } = require('../../cli/lib/polymarket_trade_adapter.cjs');
+const { calculateExecutableDepthUsd, resolvePolymarketMarket } = require('../../cli/lib/polymarket_trade_adapter.cjs');
 
 test('normalizeQuestion strips punctuation and stopwords', () => {
   const value = normalizeQuestion('Will, the Arsenal win the PL?!');
@@ -238,4 +238,108 @@ test('orderbook depth calculation honors slippage window', () => {
   assert.ok(depth.depthUsd > 0);
   assert.ok(depth.midPrice !== null);
   assert.ok(depth.worstPrice !== null);
+});
+
+test('resolvePolymarketMarket scans deep pagination for selector matches', async () => {
+  const pages = [
+    {
+      data: Array.from({ length: 250 }, (_, index) => ({
+        condition_id: `early-${index}`,
+        market_slug: `early-${index}`,
+        question: `Early market ${index}`,
+        active: true,
+        closed: false,
+        tokens: [
+          { outcome: 'Yes', price: '0.51', token_id: `yes-early-${index}` },
+          { outcome: 'No', price: '0.49', token_id: `no-early-${index}` },
+        ],
+      })),
+      next_cursor: 'cursor-2',
+    },
+    {
+      data: Array.from({ length: 250 }, (_, index) => ({
+        condition_id: `middle-${index}`,
+        market_slug: `middle-${index}`,
+        question: `Middle market ${index}`,
+        active: true,
+        closed: false,
+        tokens: [
+          { outcome: 'Yes', price: '0.52', token_id: `yes-middle-${index}` },
+          { outcome: 'No', price: '0.48', token_id: `no-middle-${index}` },
+        ],
+      })),
+      next_cursor: 'cursor-3',
+    },
+    {
+      data: [
+        {
+          condition_id: 'target-cond-id',
+          market_slug: 'target-market',
+          question: 'Target market deep in pagination',
+          rules: 'Exact target rules text',
+          active: true,
+          closed: false,
+          tokens: [
+            { outcome: 'Yes', price: '0.61', token_id: 'yes-target' },
+            { outcome: 'No', price: '0.39', token_id: 'no-target' },
+          ],
+        },
+      ],
+      next_cursor: null,
+    },
+  ];
+  let pageIndex = 0;
+  let callCount = 0;
+
+  const payload = await resolvePolymarketMarket({
+    marketId: 'target-cond-id',
+    allowStaleCache: false,
+    clientFactory: () => ({
+      getMarkets: async () => {
+        callCount += 1;
+        const current = pages[Math.min(pageIndex, pages.length - 1)];
+        pageIndex += 1;
+        return current;
+      },
+    }),
+  });
+
+  assert.equal(payload.marketId, 'target-cond-id');
+  assert.equal(payload.question, 'Target market deep in pagination');
+  assert.equal(callCount >= 3, true);
+});
+
+test('resolvePolymarketMarket composes rich rules text for mirror copy', async () => {
+  const inline = await resolvePolymarketMarket({
+    marketId: 'rules-cond-id',
+    allowStaleCache: false,
+    persistCache: false,
+    clientFactory: () => ({
+      getMarkets: async () => ({
+        data: [
+          {
+            condition_id: 'rules-cond-id',
+            question: 'Exact question text?',
+            rules: 'Primary rules block.',
+            description: 'Extended market description.',
+            resolution_source: 'Official source URL list.',
+            events: [{ description: 'Event-level description' }],
+            active: true,
+            closed: false,
+            tokens: [
+              { outcome: 'Yes', price: '0.52', token_id: 'yes-rules' },
+              { outcome: 'No', price: '0.48', token_id: 'no-rules' },
+            ],
+          },
+        ],
+        next_cursor: null,
+      }),
+    }),
+  });
+
+  assert.equal(inline.question, 'Exact question text?');
+  assert.match(inline.description, /Primary rules block\./);
+  assert.match(inline.description, /Extended market description\./);
+  assert.match(inline.description, /Resolution Source: Official source URL list\./);
+  assert.match(inline.description, /Event: Event-level description/);
 });
