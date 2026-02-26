@@ -206,6 +206,9 @@ async function startIndexerMockServer() {
         marketCloseTimestamp: '1710000000',
         totalVolume: '12345',
         currentTvl: '4567',
+        yesChance: '0.625',
+        reserveYes: '625',
+        reserveNo: '375',
         createdAt: '1700000000',
       },
     ],
@@ -285,6 +288,73 @@ async function startIndexerMockServer() {
         lastTradeAt: 1700000500,
       },
     ],
+    trades: [
+      {
+        id: 'trade-1',
+        chainId: 1,
+        marketAddress: 'market-1',
+        pollAddress: 'poll-1',
+        trader: ADDRESSES.wallet1,
+        side: 'yes',
+        tradeType: 'buy',
+        collateralAmount: '5000000',
+        tokenAmount: '10000000',
+        tokenAmountOut: '10000000',
+        feeAmount: '50000',
+        timestamp: 1700000600,
+        txHash: '0xtrade1',
+      },
+      {
+        id: 'trade-2',
+        chainId: 1,
+        marketAddress: 'market-1',
+        pollAddress: 'poll-1',
+        trader: ADDRESSES.wallet1,
+        side: 'no',
+        tradeType: 'buy',
+        collateralAmount: '2000000',
+        tokenAmount: '3000000',
+        tokenAmountOut: '3000000',
+        feeAmount: '20000',
+        timestamp: 1700000700,
+        txHash: '0xtrade2',
+      },
+    ],
+    winnings: [
+      {
+        id: 'win-1',
+        user: ADDRESSES.wallet1,
+        marketAddress: 'market-1',
+        collateralAmount: '9000000',
+        feeAmount: '0',
+        timestamp: 1700000800,
+        txHash: '0xwin1',
+      },
+    ],
+    users: [
+      {
+        id: 'user-1',
+        address: ADDRESSES.wallet1,
+        chainId: 1,
+        realizedPnL: '123.45',
+        totalVolume: '999.5',
+        totalTrades: '7',
+        totalWins: '5',
+        totalLosses: '2',
+        totalWinnings: '500',
+      },
+      {
+        id: 'user-2',
+        address: ADDRESSES.wallet2,
+        chainId: 1,
+        realizedPnL: '23.45',
+        totalVolume: '1999.5',
+        totalTrades: '10',
+        totalWins: '4',
+        totalLosses: '6',
+        totalWinnings: '250',
+      },
+    ],
   };
 
   return startJsonHttpServer(({ bodyJson }) => {
@@ -307,7 +377,9 @@ async function startIndexerMockServer() {
     }
 
     if (query.includes('polls(id:')) {
-      const item = fixtures.polls.find((entry) => entry.id === variables.id) || null;
+      const item =
+        fixtures.polls.find((entry) => entry.id === variables.id) ||
+        (variables.id === fixtures.markets[0].pollAddress ? fixtures.polls[0] : null);
       return { body: { data: { polls: item } } };
     }
 
@@ -344,6 +416,21 @@ async function startIndexerMockServer() {
     if (query.includes('marketUserss(')) {
       const items = applyListControls(applyWhereFilter(fixtures.positions, variables.where), variables);
       return { body: { data: { marketUserss: asPage(items) } } };
+    }
+
+    if (query.includes('tradess(')) {
+      const items = applyListControls(applyWhereFilter(fixtures.trades, variables.where), variables);
+      return { body: { data: { tradess: asPage(items) } } };
+    }
+
+    if (query.includes('winningss(')) {
+      const items = applyListControls(applyWhereFilter(fixtures.winnings, variables.where), variables);
+      return { body: { data: { winningss: asPage(items) } } };
+    }
+
+    if (query.includes('userss(')) {
+      const items = applyListControls(applyWhereFilter(fixtures.users, variables.where), variables);
+      return { body: { data: { userss: asPage(items) } } };
     }
 
     return {
@@ -560,6 +647,113 @@ async function startLifecycleIndexerMockServer() {
       },
     };
   });
+}
+
+async function startAnalyzeIndexerMockServer() {
+  const marketAddress = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const pollAddress = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const fixtures = {
+    market: {
+      id: marketAddress,
+      chainId: 1,
+      chainName: 'ethereum',
+      pollAddress,
+      creator: ADDRESSES.wallet1,
+      marketType: 'amm',
+      marketCloseTimestamp: '1710000000',
+      totalVolume: '12345',
+      currentTvl: '4567',
+      createdAt: '1700000000',
+    },
+    poll: {
+      id: pollAddress,
+      chainId: 1,
+      chainName: 'ethereum',
+      creator: ADDRESSES.wallet1,
+      question: 'Will deterministic analysis work?',
+      status: 0,
+      category: 3,
+      deadlineEpoch: 1710000000,
+      createdAt: 1700000000,
+      createdTxHash: '0xhashpollanalyze',
+    },
+    liquidityEvents: [
+      {
+        id: 'analyze-liq-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        provider: ADDRESSES.wallet1,
+        marketAddress,
+        pollAddress,
+        eventType: 'addLiquidity',
+        collateralAmount: '1000',
+        lpTokens: '500',
+        yesTokenAmount: '610',
+        noTokenAmount: '390',
+        yesTokensReturned: '0',
+        noTokensReturned: '0',
+        txHash: '0xanalyze-liq-1',
+        timestamp: 1700000100,
+      },
+    ],
+  };
+
+  return startJsonHttpServer(({ bodyJson }) => {
+    const query = String((bodyJson && bodyJson.query) || '');
+    const variables = (bodyJson && bodyJson.variables) || {};
+
+    if (query.includes('markets(id:')) {
+      return {
+        body: {
+          data: {
+            markets: variables.id === fixtures.market.id ? fixtures.market : null,
+          },
+        },
+      };
+    }
+
+    if (query.includes('polls(id:')) {
+      return {
+        body: {
+          data: {
+            polls: variables.id === fixtures.poll.id ? fixtures.poll : null,
+          },
+        },
+      };
+    }
+
+    if (query.includes('liquidityEventss(')) {
+      const items = applyListControls(applyWhereFilter(fixtures.liquidityEvents, variables.where), variables);
+      return { body: { data: { liquidityEventss: asPage(items) } } };
+    }
+
+    return {
+      status: 400,
+      body: {
+        errors: [{ message: 'Unsupported query in analyze mock indexer' }],
+      },
+    };
+  });
+}
+
+async function startPolymarketMockServer() {
+  return startJsonHttpServer(() => ({
+    body: {
+      markets: [
+        {
+          question: 'Will deterministic tests pass?',
+          condition_id: 'poly-cond-1',
+          question_id: 'poly-q-1',
+          market_slug: 'deterministic-tests-pass',
+          end_date_iso: '2024-03-09T16:00:00Z',
+          tokens: [
+            { outcome: 'Yes', price: '0.74' },
+            { outcome: 'No', price: '0.26' },
+          ],
+        },
+      ],
+    },
+  }));
 }
 
 test('help prints usage with zero exit code', () => {
@@ -1852,6 +2046,345 @@ test('events list validates address filters client-side', () => {
   const payload = parseJsonOutput(result);
   assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
   assert.match(payload.error.message, /--wallet must be a valid 20-byte hex address/);
+});
+
+test('history returns deterministic analytics payload', async () => {
+  const indexer = await startIndexerMockServer();
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'history',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--limit',
+      '10',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'history');
+    assert.equal(payload.data.schemaVersion, '1.0.0');
+    assert.equal(payload.data.wallet, ADDRESSES.wallet1.toLowerCase());
+    assert.equal(Array.isArray(payload.data.items), true);
+    assert.equal(payload.data.items.length, 2);
+    assert.equal(typeof payload.data.summary.tradeCount, 'number');
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('export can materialize CSV to --out path', async () => {
+  const indexer = await startIndexerMockServer();
+  const tempDir = createTempDir('pandora-export-');
+  const outPath = path.join(tempDir, 'history.csv');
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'export',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--format',
+      'csv',
+      '--out',
+      outPath,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'export');
+    assert.equal(payload.data.schemaVersion, '1.0.0');
+    assert.equal(payload.data.format, 'csv');
+    assert.equal(payload.data.outPath, outPath);
+    assert.equal(fs.existsSync(outPath), true);
+    const csv = fs.readFileSync(outPath, 'utf8');
+    assert.match(csv, /timestamp,chain_id,wallet/);
+  } finally {
+    await indexer.close();
+    removeDir(tempDir);
+  }
+});
+
+test('arbitrage combines pandora + polymarket fixtures', async () => {
+  const indexer = await startIndexerMockServer();
+  const polymarket = await startPolymarketMockServer();
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'arbitrage',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--venues',
+      'pandora,polymarket',
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--limit',
+      '10',
+      '--min-spread-pct',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'arbitrage');
+    assert.equal(payload.data.schemaVersion, '1.0.0');
+    assert.equal(payload.data.count >= 1, true);
+    assert.equal(Array.isArray(payload.data.opportunities), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('autopilot once paper mode persists state and emits action', async () => {
+  const tempDir = createTempDir('pandora-autopilot-');
+  const stateFile = path.join(tempDir, 'state.json');
+  const killFile = path.join(tempDir, 'STOP');
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'autopilot',
+      'once',
+      '--skip-dotenv',
+      '--market-address',
+      '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      '--side',
+      'no',
+      '--amount-usdc',
+      '10',
+      '--trigger-yes-above',
+      '50',
+      '--yes-pct',
+      '60',
+      '--paper',
+      '--state-file',
+      stateFile,
+      '--kill-switch-file',
+      killFile,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'autopilot');
+    assert.equal(payload.data.mode, 'once');
+    assert.equal(payload.data.executeLive, false);
+    assert.equal(payload.data.actionCount, 1);
+    assert.equal(fs.existsSync(stateFile), true);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('autopilot --execute-live enforces required risk caps', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'autopilot',
+    'once',
+    '--skip-dotenv',
+    '--market-address',
+    '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    '--side',
+    'yes',
+    '--amount-usdc',
+    '10',
+    '--trigger-yes-below',
+    '20',
+    '--execute-live',
+  ]);
+
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.error.code, 'MISSING_REQUIRED_FLAG');
+  assert.match(payload.error.message, /max-amount-usdc/);
+});
+
+test('webhook test sends generic and discord payloads', async () => {
+  const generic = await startJsonHttpServer(() => ({ body: { ok: true } }));
+  const discord = await startJsonHttpServer(() => ({ body: { ok: true } }));
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'webhook',
+      'test',
+      '--webhook-url',
+      generic.url,
+      '--discord-webhook-url',
+      discord.url,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'webhook.test');
+    assert.equal(payload.data.count, 2);
+    assert.equal(payload.data.failureCount, 0);
+    assert.equal(generic.requests.length, 1);
+    assert.equal(discord.requests.length, 1);
+  } finally {
+    await generic.close();
+    await discord.close();
+  }
+});
+
+test('leaderboard ranks by requested metric', async () => {
+  const indexer = await startIndexerMockServer();
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'leaderboard',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--metric',
+      'volume',
+      '--limit',
+      '2',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'leaderboard');
+    assert.equal(payload.data.items.length, 2);
+    assert.equal(payload.data.items[0].address.toLowerCase(), ADDRESSES.wallet2.toLowerCase());
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('analyze fails gracefully when provider is missing', async () => {
+  const indexer = await startAnalyzeIndexerMockServer();
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'analyze',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--market-address',
+      '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.error.code, 'ANALYZE_PROVIDER_NOT_CONFIGURED');
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('analyze supports mock provider output', async () => {
+  const indexer = await startAnalyzeIndexerMockServer();
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'analyze',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--market-address',
+      '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      '--provider',
+      'mock',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'analyze');
+    assert.equal(payload.data.provider, 'mock');
+    assert.equal(typeof payload.data.result.fairYesPct, 'number');
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('suggest returns deterministic envelope', async () => {
+  const indexer = await startIndexerMockServer();
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'suggest',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--risk',
+      'medium',
+      '--budget',
+      '50',
+      '--include-venues',
+      'pandora',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'suggest');
+    assert.equal(payload.data.wallet, ADDRESSES.wallet1.toLowerCase());
+    assert.equal(payload.data.risk, 'medium');
+    assert.equal(Array.isArray(payload.data.items), true);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('resolve and lp are ABI-gated', () => {
+  const resolveResult = runCli([
+    '--output',
+    'json',
+    'resolve',
+    '--poll-address',
+    '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    '--answer',
+    'yes',
+    '--reason',
+    'fixture',
+    '--dry-run',
+  ]);
+  assert.equal(resolveResult.status, 1);
+  const resolvePayload = parseJsonOutput(resolveResult);
+  assert.equal(resolvePayload.error.code, 'ABI_READY_REQUIRED');
+
+  const lpResult = runCli([
+    '--output',
+    'json',
+    'lp',
+    'positions',
+    '--wallet',
+    ADDRESSES.wallet1,
+  ]);
+  assert.equal(lpResult.status, 1);
+  const lpPayload = parseJsonOutput(lpResult);
+  assert.equal(lpPayload.error.code, 'ABI_READY_REQUIRED');
 });
 
 test('launch enforces mode flag and dry-run reaches deterministic preflight', () => {

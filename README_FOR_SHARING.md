@@ -78,6 +78,16 @@ Prerequisite: Node.js `>=18`.
   - `pandora portfolio --wallet <0x...> [--chain-id <id>] [--limit <n>] [--include-events|--no-events]`
   - `pandora watch --wallet <0x...> --iterations 10 --interval-ms 5000`
   - `pandora watch --market-address <0x...> --side yes --amount-usdc 10 --iterations 5 --alert-yes-above 65 --fail-on-alert`
+- Phase 4 intelligence and automation:
+  - `pandora history --wallet <0x...> --limit 50`
+  - `pandora export --wallet <0x...> --format csv --year 2026 --out ./trades-2026.csv`
+  - `pandora arbitrage --venues pandora,polymarket --min-spread-pct 3`
+  - `pandora autopilot run|once ...`
+  - `pandora webhook test ...`
+  - `pandora leaderboard --metric profit|volume|win-rate`
+  - `pandora analyze --market-address <0x...> --provider <name>`
+  - `pandora suggest --wallet <0x...> --risk low|medium|high --budget <amount>`
+  - ABI-gated placeholders: `pandora resolve`, `pandora lp`
 
 ## Read-only examples
 - `pandora markets list --limit 20 --order-by createdAt --order-direction desc`
@@ -91,6 +101,14 @@ Prerequisite: Node.js `>=18`.
 - `pandora trade --dry-run --market-address <0x...> --side no --amount-usdc 25 --max-amount-usdc 30 --min-probability-pct 20`
 - `pandora portfolio --wallet <0x...> --chain-id 1`
 - `pandora watch --wallet <0x...> --iterations 3 --interval-ms 1000 --alert-net-liquidity-below -100`
+- `pandora history --wallet <0x...> --limit 50`
+- `pandora export --wallet <0x...> --format csv --out ./trades.csv`
+- `pandora arbitrage --venues pandora,polymarket --min-spread-pct 2`
+- `pandora autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper`
+- `pandora webhook test --webhook-url https://example.com/hook`
+- `pandora leaderboard --metric volume --limit 20`
+- `pandora analyze --market-address <0x...> --provider mock`
+- `pandora suggest --wallet <0x...> --risk medium --budget 50 --include-venues pandora`
 - `pandora polls list --status 1 --category 3`
 - `pandora events list --type all --wallet <0x...> --limit 25`
 - `pandora positions list --wallet <0x...> --limit 50`
@@ -139,6 +157,31 @@ Prerequisite: Node.js `>=18`.
 - `watch` polls on an interval and is intended for terminal monitoring, not background daemonization.
 - `--fail-on-alert` exits non-zero when any configured threshold is hit.
 
+## Phase 4 JSON contracts
+- `history`:
+  - envelope is `ok=true`, `command="history"`, with `data.schemaVersion`, `data.summary`, and per-trade `data.items[]`.
+  - P&L fields are analytics-grade approximations with row diagnostics where precision is limited.
+- `export`:
+  - envelope is `ok=true`, `command="export"`, with `data.format`, `data.columns`, `data.count`, optional `data.outPath`, and materialized `data.content`.
+- `arbitrage`:
+  - envelope is `ok=true`, `command="arbitrage"`, with `data.parameters`, `data.sources`, and `data.opportunities[]`.
+  - source failures are emitted in diagnostics instead of hard crashes.
+- `autopilot`:
+  - envelope is `ok=true`, `command="autopilot"`, with `data.strategyHash`, `data.stateFile`, `data.snapshots[]`, and `data.actions[]`.
+  - paper mode is default; live mode requires explicit caps (`--max-amount-usdc`, `--max-open-exposure-usdc`, `--max-trades-per-day`).
+- `webhook test`:
+  - envelope is `ok=true`, `command="webhook.test"`, with per-target delivery and retry metadata.
+- `leaderboard`:
+  - envelope is `ok=true`, `command="leaderboard"`, with ranked rows for selected metric.
+- `analyze`:
+  - envelope is `ok=true`, `command="analyze"`, with provider/model metadata, market context, and `{ fairYesPct, confidence, rationale }`.
+  - provider-agnostic interface; missing provider returns `ANALYZE_PROVIDER_NOT_CONFIGURED`.
+- `suggest`:
+  - envelope is `ok=true`, `command="suggest"`, with ranked suggestions, sizing, and risk notes.
+
+## ABI-gated commands
+- `resolve` and `lp` are intentionally gated and return `ABI_READY_REQUIRED` until verified ABI signatures/events and integration tests are committed.
+
 ## Release and verified install
 - CI workflow: `.github/workflows/ci.yml` runs on Linux/macOS/Windows and covers install, lint/typecheck, full tests, and `npm pack --dry-run`.
 - Release workflow: `.github/workflows/release.yml` runs on pushed `v*` tags, runs tests, builds `npm pack`, generates `checksums.sha256`, and uploads both workflow artifacts + GitHub Release assets.
@@ -161,6 +204,16 @@ Prerequisite: Node.js `>=18`.
   - `pandora trade`
   - `pandora portfolio`
   - `pandora watch`
+  - `pandora history`
+  - `pandora export`
+  - `pandora arbitrage`
+  - `pandora autopilot`
+  - `pandora webhook test`
+  - `pandora leaderboard`
+  - `pandora analyze`
+  - `pandora suggest`
+  - `pandora resolve` (ABI-gated)
+  - `pandora lp` (ABI-gated)
   - `pandora polls list|get`
   - `pandora events list|get`
   - `pandora positions list`

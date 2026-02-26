@@ -9,6 +9,7 @@ test('package exposes pandora bin entrypoint', () => {
   assert.equal(pkg.bin.pandora, 'cli/pandora.cjs');
   assert.ok(pkg.scripts['test:smoke']);
   assert.ok(pkg.files.includes('cli/pandora.cjs'));
+  assert.ok(pkg.files.includes('cli/lib/**'));
   assert.ok(pkg.files.includes('scripts/create_market_launcher.ts'));
   assert.ok(pkg.files.includes('scripts/create_polymarket_clone_and_bet.ts'));
 });

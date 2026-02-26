@@ -1,11 +1,14 @@
 Goal (incl. success criteria):
 - Ship and publish `Pandora CLI & Skills` with production-ready install/release quality.
 - Execute post-release optimization roadmap to materially improve CLI usability for humans and agents.
+- Define and prioritize next growth roadmap features (Arbitrage, Autopilot, History, Leaderboard, Resolve, LP, Export, Analyze, Suggest, Webhook) with delivery sequencing.
+- Implement the decision-complete roadmap across Phases A-E with deterministic tests and additive compatibility.
 - Success criteria:
   - `main` CI passes across Linux/macOS/Windows.
   - npm package `pandora-cli-skills` is published.
   - Signed release tag exists and is verified.
   - Phase 1, Phase 2, and Phase 3 features are implemented and tested.
+  - Tiered roadmap with dependencies, MVP cuts, and measurable acceptance criteria is agreed.
 
 Constraints/Assumptions:
 - Follow AGENTS.md continuity process every turn.
@@ -19,6 +22,15 @@ Key decisions:
 - Harden smoke tests for Windows parity before publish confidence.
 - Phase 2 supports quote/trade with PariMutuel-compatible execute path.
 - Phase 3 now includes both portfolio analytics and watch polling.
+- New roadmap planning will prioritize highest user-impact + feasible features first, starting with arbitrage/history/autopilot foundation.
+- Proposed implementation order for next wave: `history` (trade journal + P&L) -> `arbitrage` (duplicate market mispricing detection) -> `autopilot` (rule-triggered execution with strict guardrails).
+- Locked execution decisions:
+  - Phase A starts with `history` + `export` + `arbitrage`.
+  - `arbitrage` scope is Pandora + Polymarket CLOB.
+  - `autopilot` is paper-first, foreground loop, local JSON state.
+  - `webhook` includes generic + Telegram + Discord in v1.
+  - `resolve`/`lp` are ABI-gated (`ABI_READY_REQUIRED` until ABI package is available).
+  - `analyze` is provider-agnostic first.
 
 State:
   - Done:
@@ -52,16 +64,38 @@ State:
       - `npm run test`
       - `npm run build`
       - `npm run pack:dry-run`
+    - Release `1.0.3` completed:
+      - Published `pandora-cli-skills@1.0.3` to npm (`latest` tag now `1.0.3`).
+      - Version bump commit pushed to `main` (`3359876`).
+      - GitHub Actions run `22438850776` completed with overall `success` across Ubuntu/macOS/Windows.
+      - Public npm smoke check passed: `npx -y pandora-cli-skills@1.0.3 --help`.
+      - Usage note validated: package is invoked directly (`pandora-cli-skills`), not `pandora-cli-skills pandora`.
+    - Phase A/B/C/E command surfaces implemented in CLI:
+      - Added `history`, `export`, `arbitrage`, `autopilot`, `webhook test`, `leaderboard`, `analyze`, `suggest`.
+      - Added ABI-gated placeholders with deterministic `ABI_READY_REQUIRED` behavior for `resolve` and `lp`.
+      - Added webhook delivery integration to `watch` and `autopilot`.
+      - Added new internal service modules under `cli/lib/` and wired command dispatch/renderers in `cli/pandora.cjs`.
+    - Deterministic test coverage expanded:
+      - Extended CLI integration fixtures (`tradess`, `winningss`, `userss`) and added integration tests for all new commands.
+      - Added unit tests for arbitrage normalization/similarity, suggestions, analyze provider errors, and autopilot state helpers.
+    - Packaging/docs updated for new features:
+      - Added `cli/lib/**` to npm published files.
+      - Updated `README_FOR_SHARING.md` and `SKILL.md` with new command usage/contracts and ABI-gated notes.
+    - Post-implementation validations passing:
+      - `npm run test:cli`
+      - `npm run test:unit`
+      - `npm run test`
+      - `npm run build`
+      - `npm run test:smoke`
+      - `npm run pack:dry-run`
   - Now:
-    - Token-based publish completed successfully.
-    - npm registry now shows `pandora-cli-skills@1.0.3` as `latest`.
-    - Working tree contains version bump files pending commit (`package.json`, `package-lock.json`) plus ledger update.
+    - Preparing final review summary and update recommendation for commit/release.
   - Next:
-    - Commit/push version bump so repository state matches published npm artifact.
-    - If requested: create signed release tag for the publish commit.
+    - User confirmation to commit/push/tag/publish next package version for roadmap features.
 
 Open questions (UNCONFIRMED if needed):
-- Release target for bundled post-Phase-3 patch (`1.0.3` now vs later). UNCONFIRMED.
+- Should `v1.0.3` be signed and released on GitHub now? UNCONFIRMED.
+- Poll status semantic mapping remains `UNCONFIRMED` (`0=open`, `1=yes-resolved`, `2=no-resolved` treated as current assumption).
 
 Working set (files/ids/commands):
 - Active files:

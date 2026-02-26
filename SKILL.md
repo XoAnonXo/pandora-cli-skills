@@ -40,6 +40,16 @@ npm link
 - Phase 3 analytics command: `pandora portfolio`
 - Phase 3 monitoring command: `pandora watch`
 - Phase 3 watch alerts: `--alert-yes-*`, `--alert-net-liquidity-*`, `--fail-on-alert`
+- Phase 4 commands:
+  - `pandora history`
+  - `pandora export`
+  - `pandora arbitrage`
+  - `pandora autopilot run|once`
+  - `pandora webhook test`
+  - `pandora leaderboard`
+  - `pandora analyze`
+  - `pandora suggest`
+  - ABI-gated placeholders: `pandora resolve`, `pandora lp`
 - Doctor checks:
   - env presence + format validation
   - RPC reachability and chain id match
@@ -83,6 +93,14 @@ pandora --output json quote --market-address <0x...> --side yes --amount-usdc 10
 pandora --output json trade --dry-run --market-address <0x...> --side no --amount-usdc 10 --max-amount-usdc 20
 pandora --output json portfolio --wallet <0x...> --chain-id 1
 pandora --output json watch --wallet <0x...> --iterations 3 --interval-ms 1000 --alert-net-liquidity-above 1000 --fail-on-alert
+pandora --output json history --wallet <0x...> --limit 50
+pandora --output json export --wallet <0x...> --format csv --out ./trades.csv
+pandora --output json arbitrage --venues pandora,polymarket --min-spread-pct 3
+pandora --output json autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper
+pandora --output json webhook test --webhook-url https://example.com/hook
+pandora --output json leaderboard --metric profit --limit 20
+pandora --output json analyze --market-address <0x...> --provider mock
+pandora --output json suggest --wallet <0x...> --risk medium --budget 50 --include-venues pandora
 ```
 
 ## Phase 1 JSON contracts
@@ -128,6 +146,17 @@ pandora --output json watch --wallet <0x...> --iterations 3 --interval-ms 1000 -
 - Use `--no-events` when you only need position snapshots.
 - `watch` is polling-based and terminal-oriented, not a long-running background service manager.
 - `--fail-on-alert` exits non-zero when any configured threshold triggers.
+
+## Phase 4 contracts
+- `history`: analytics-grade trade journal with per-trade approximate P&L and diagnostics.
+- `export`: deterministic CSV/JSON materialization from history rows.
+- `arbitrage`: duplicate/correlated market spread detection across Pandora + Polymarket.
+- `autopilot`: paper-first trigger loop with persisted local state and idempotency.
+- `webhook test`: channel validation for generic, Telegram, and Discord payload delivery.
+- `leaderboard`: ranked user aggregates by profit/volume/win-rate.
+- `analyze`: provider-agnostic market analysis interface (fails with structured error when provider is not configured).
+- `suggest`: risk/budget-ranked opportunities seeded from arbitrage output and wallet history.
+- `resolve` and `lp`: intentionally return `ABI_READY_REQUIRED` until ABI readiness sign-off.
 
 ## Release verification
 - CI coverage includes Linux, macOS, and Windows.

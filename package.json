@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
@@ -8,6 +8,7 @@
   },
   "files": [
     "cli/pandora.cjs",
+    "cli/lib/**",
     "scripts/create_market_launcher.ts",
     "scripts/create_polymarket_clone_and_bet.ts",
     "scripts/.env.example",
@@ -30,7 +31,7 @@
     "typecheck": "npx tsc --noEmit",
     "pack:dry-run": "npm pack --dry-run",
     "build": "npm run typecheck",
-    "test:unit": "node --test tests/unit/sanity.test.cjs",
+    "test:unit": "node --test tests/unit/*.test.cjs",
     "test:cli": "node --test tests/cli/cli.integration.test.cjs",
     "test:smoke": "node tests/smoke/pack-install-smoke.cjs",
     "test": "npm run build && npm run test:unit && npm run test:cli && npm run test:smoke"
@@ -43,6 +44,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@polymarket/clob-client": "^5.2.4",
     "tsx": "^4.21.0",
     "viem": "^2.46.2"
   },
