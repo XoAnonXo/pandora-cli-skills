@@ -75,7 +75,7 @@ State:
       - validation: unit + cli passed during `npm run test`; smoke had one transient timeout then passed on immediate rerun.
       - published `pandora-cli-skills@1.1.5` and verified `dist-tag latest=1.1.5`.
   - Now:
-    - NPM patch release is complete; finalizing release metadata commit/push.
+    - NPM patch release `1.1.5` is complete, committed, and pushed to `origin/main`.
   - Next:
     - Optional: create signed git tag/release notes for `v1.1.5`.
 
@@ -109,4 +109,4 @@ Working set (files/ids/commands):
   - `npm publish --access public` (published `1.1.5`)
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.5`)
  - Current task:
-  - Release metadata sync for npm `1.1.5`.
+  - Completed: npm `1.1.5` release + git sync.
