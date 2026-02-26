@@ -38,11 +38,13 @@ State:
       - `npm run test`
       - `npm run build`
       - `npm run pack:dry-run`
+    - Pushed hardening commit to `main`:
+      - commit: `7baa17a`
+      - message: `cli: harden leaderboard metrics and autopilot state writes`
   - Now:
-    - Final critical review of patched files before commit/push.
+    - Repository is clean with hardening patches merged on `origin/main`.
   - Next:
-    - Commit and push hardening/docs update.
-    - Optionally publish next npm patch version if requested.
+    - Optionally cut and publish a new npm patch release (current npm latest remains `1.1.2`).
 
 Open questions (UNCONFIRMED if needed):
 - Should this hardening set be released as a new npm version immediately? UNCONFIRMED.
