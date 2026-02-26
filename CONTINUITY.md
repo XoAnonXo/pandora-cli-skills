@@ -53,11 +53,12 @@ State:
       - `npm run build`
       - `npm run pack:dry-run`
   - Now:
-    - Preparing commit/push for CI-fix patch.
-    - npm publish check complete: registry latest is `1.0.2`; this environment is currently not npm-authenticated (`npm whoami` 401).
+    - Token-based publish completed successfully.
+    - npm registry now shows `pandora-cli-skills@1.0.3` as `latest`.
+    - Working tree contains version bump files pending commit (`package.json`, `package-lock.json`) plus ledger update.
   - Next:
-    - Push CI-fix patch and verify GitHub Actions turns green.
-    - After user logs in to npm (`npm login`), bump/publish next patch release (likely `1.0.3`).
+    - Commit/push version bump so repository state matches published npm artifact.
+    - If requested: create signed release tag for the publish commit.
 
 Open questions (UNCONFIRMED if needed):
 - Release target for bundled post-Phase-3 patch (`1.0.3` now vs later). UNCONFIRMED.
