@@ -88,6 +88,17 @@ function evaluateStrictGates(context) {
     failedChecks: verifyGate ? verifyGate.failedChecks : ['UNKNOWN'],
   });
 
+  const sourceType = String((verify && verify.sourceMarket && verify.sourceMarket.source) || '').toLowerCase();
+  const sourceIsCached = sourceType === 'polymarket:cache';
+  add(
+    'POLYMARKET_SOURCE_FRESH',
+    context.executeLive ? !sourceIsCached : true,
+    'Live mode requires fresh Polymarket source data (cached source is blocked).',
+    {
+      sourceType: sourceType || null,
+    },
+  );
+
   const closeDeltaCheck =
     verifyGate && Array.isArray(verifyGate.checks)
       ? verifyGate.checks.find((item) => item.code === 'CLOSE_TIME_DELTA')
@@ -241,6 +252,7 @@ async function runMirrorSync(options, deps = {}) {
 
       const gate = evaluateStrictGates({
         verifyPayload,
+        executeLive: options.executeLive,
         state,
         plannedHedgeUsdc,
         plannedSpendUsdc,

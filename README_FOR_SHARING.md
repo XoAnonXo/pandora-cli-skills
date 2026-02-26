@@ -196,6 +196,7 @@ Prerequisite: Node.js `>=18`.
   - envelope is `ok=true`, `command="mirror.sync"`, with `data.strategyHash`, `data.stateFile`, `data.parameters`, `data.snapshots[]`, and `data.actions[]`.
   - hedge controls: `--hedge-trigger-usdc`, `--max-hedge-usdc`, `--hedge-ratio <n>` (default `1`), and `--no-hedge` to disable hedge execution while keeping drift rebalancing active.
   - rebalance sizing is pool-aware: drift notional scales with `reserveYes + reserveNo`, then bounded by `--max-rebalance-usdc`.
+  - Polymarket resilience: when Polymarket endpoints are unreachable, cached snapshots under `~/.pandora/polymarket` are reused for read paths; live sync blocks execution if source data is cached/stale.
 - `mirror status`:
   - envelope is `ok=true`, `command="mirror.status"`, with `data.stateFile`, `data.strategyHash`, and persisted `data.state`.
 - `webhook test`:

@@ -167,6 +167,7 @@ pandora --output json suggest --wallet <0x...> --risk medium --budget 50 --inclu
 - `mirror sync`: paper-first delta-neutral loop with strict gates, state persistence, and optional live hedging (`--hedge-ratio <n>`, `--no-hedge`).
   - live hedge env: `POLYMARKET_PRIVATE_KEY`, `POLYMARKET_FUNDER`, `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, `POLYMARKET_API_PASSPHRASE`, `POLYMARKET_HOST`.
   - rebalance sizing is pool-aware and bounded by `--max-rebalance-usdc`.
+  - endpoint resilience: Polymarket snapshots are cached under `~/.pandora/polymarket`; paper/read flows can reuse cache during outages, while live sync blocks cached sources.
 - `mirror status`: local mirror state inspection (no network side effects).
 - `webhook test`: channel validation for generic, Telegram, and Discord payload delivery.
 - `leaderboard`: ranked user aggregates by profit/volume/win-rate.

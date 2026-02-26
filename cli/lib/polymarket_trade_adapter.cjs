@@ -1,7 +1,11 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { ClobClient, Chain, Side, OrderType } = require('@polymarket/clob-client');
 
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
 const DEFAULT_POLYMARKET_CHAIN = Chain.POLYGON;
+const POLYMARKET_CACHE_SCHEMA_VERSION = '1.0.0';
 
 function toNumber(value) {
   const numeric = Number(value);
@@ -27,6 +31,106 @@ function toTimestampSeconds(value) {
   }
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.floor(numeric) : null;
+}
+
+function normalizeHostList(hostInput) {
+  const rawValues = Array.isArray(hostInput) ? hostInput : String(hostInput || '').split(',');
+  const hosts = rawValues
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+
+  if (!hosts.length) {
+    return [DEFAULT_POLYMARKET_HOST];
+  }
+
+  return Array.from(new Set(hosts));
+}
+
+function buildSelectorKey(options = {}) {
+  const raw = String(options.marketId || options.slug || options.cacheKey || 'markets').toLowerCase().trim();
+  const sanitized = raw.replace(/[^a-z0-9_-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return sanitized.slice(0, 128) || 'markets';
+}
+
+function defaultCacheFile(options = {}) {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
+  const key = buildSelectorKey(options);
+  return path.join(homeDir, '.pandora', 'polymarket', `${key}.json`);
+}
+
+function formatNetworkError(err) {
+  const message = err && err.message ? String(err.message) : String(err);
+  if (/connection reset by peer|ECONNRESET|socket hang up|tls|handshake/i.test(message)) {
+    return `${message} (possible TLS/Cloudflare edge reset).`;
+  }
+  return message;
+}
+
+function readCacheFile(cacheFile) {
+  try {
+    if (!cacheFile || !fs.existsSync(cacheFile)) return null;
+    const raw = fs.readFileSync(cacheFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCacheFile(cacheFile, payload) {
+  if (!cacheFile) return;
+
+  const dir = path.dirname(cacheFile);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmpPath = `${cacheFile}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2));
+  fs.renameSync(tmpPath, cacheFile);
+}
+
+function buildCachePayload(options, host, marketRow, orderbooks = null, sourceType = 'polymarket:clob') {
+  return {
+    schemaVersion: POLYMARKET_CACHE_SCHEMA_VERSION,
+    savedAt: new Date().toISOString(),
+    host,
+    sourceType,
+    selector: {
+      marketId: options.marketId || null,
+      slug: options.slug || null,
+    },
+    marketRow,
+    orderbooks: orderbooks && typeof orderbooks === 'object' ? orderbooks : null,
+  };
+}
+
+function loadCachedMarket(options, diagnostics = []) {
+  const cacheFile = options.cacheFile || defaultCacheFile(options);
+  const cached = readCacheFile(cacheFile);
+  if (!cached || !cached.marketRow) {
+    return null;
+  }
+
+  const normalized = normalizeMarketRow(cached.marketRow);
+  normalized.source = 'polymarket:cache';
+  normalized.host = cached.host || null;
+  normalized.cacheFile = cacheFile;
+  normalized.cachedAt = cached.savedAt || null;
+
+  if (cached.orderbooks && typeof cached.orderbooks === 'object') {
+    normalized.mockOrderbooks = cached.orderbooks;
+  }
+
+  let message = 'Using cached Polymarket market snapshot.';
+  if (cached.savedAt) {
+    const ageMs = Date.now() - Date.parse(cached.savedAt);
+    if (Number.isFinite(ageMs)) {
+      message = `Using cached Polymarket market snapshot (${Math.max(0, Math.floor(ageMs / 1000))}s old).`;
+    }
+  }
+  diagnostics.push(message);
+  normalized.diagnostics.push(message);
+
+  return normalized;
 }
 
 function normalizeTokens(tokens) {
@@ -153,52 +257,103 @@ function marketMatches(row, options) {
 }
 
 async function resolvePolymarketMarket(options = {}) {
-  const host = options.host || DEFAULT_POLYMARKET_HOST;
+  const hosts = normalizeHostList(options.host || options.hosts || process.env.POLYMARKET_HOSTS || DEFAULT_POLYMARKET_HOST);
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 500;
+  const cacheFile = options.cacheFile || defaultCacheFile(options);
+  const allowStaleCache = options.allowStaleCache !== false;
+  const diagnostics = [];
 
   let rows = [];
   let payload = null;
+  let hostUsed = hosts[0] || DEFAULT_POLYMARKET_HOST;
+  let sourceType = options.mockUrl ? 'polymarket:mock' : 'polymarket:clob';
 
   if (options.mockUrl) {
-    payload = await fetchMockPayload(options.mockUrl, timeoutMs);
-    if (Array.isArray(payload)) {
-      rows = payload;
-    } else if (payload && Array.isArray(payload.markets)) {
-      rows = payload.markets;
-    } else {
-      throw new Error('Polymarket mock payload must be an array or { markets: [] }.');
+    try {
+      payload = await fetchMockPayload(options.mockUrl, timeoutMs);
+      if (Array.isArray(payload)) {
+        rows = payload;
+      } else if (payload && Array.isArray(payload.markets)) {
+        rows = payload.markets;
+      } else {
+        throw new Error('Polymarket mock payload must be an array or { markets: [] }.');
+      }
+    } catch (err) {
+      diagnostics.push(`Polymarket mock fetch failed: ${formatNetworkError(err)}`);
+      if (allowStaleCache) {
+        const cachedMarket = loadCachedMarket({ ...options, cacheFile }, diagnostics);
+        if (cachedMarket) return cachedMarket;
+      }
+      throw err;
     }
   } else {
-    const client = new ClobClient(host, DEFAULT_POLYMARKET_CHAIN);
-    let cursor;
-    let loops = 0;
+    const hostErrors = [];
+    for (const candidateHost of hosts) {
+      try {
+        const client = new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+        let cursor;
+        let loops = 0;
+        const candidateRows = [];
 
-    while (rows.length < limit && loops < 12) {
-      loops += 1;
-      const page = cursor ? await client.getMarkets(cursor) : await client.getMarkets();
-      const chunk = Array.isArray(page && page.data) ? page.data : [];
-      rows.push(...chunk);
+        while (candidateRows.length < limit && loops < 12) {
+          loops += 1;
+          const page = cursor ? await client.getMarkets(cursor) : await client.getMarkets();
+          const chunk = Array.isArray(page && page.data) ? page.data : [];
+          candidateRows.push(...chunk);
 
-      if (!page || !page.next_cursor || page.next_cursor === cursor) {
+          if (!page || !page.next_cursor || page.next_cursor === cursor) {
+            break;
+          }
+          cursor = page.next_cursor;
+        }
+
+        rows = candidateRows;
+        hostUsed = candidateHost;
         break;
+      } catch (err) {
+        hostErrors.push(`[${candidateHost}] ${formatNetworkError(err)}`);
       }
-      cursor = page.next_cursor;
+    }
+
+    if (!rows.length && hostErrors.length) {
+      diagnostics.push(`Polymarket host attempts failed: ${hostErrors.join(' | ')}`);
+      if (allowStaleCache) {
+        const cachedMarket = loadCachedMarket({ ...options, cacheFile }, diagnostics);
+        if (cachedMarket) return cachedMarket;
+      }
+      throw new Error(
+        `Polymarket market fetch failed across all hosts. ${hostErrors.join(' | ')} Hint: use --polymarket-mock-url or retry later.`,
+      );
     }
   }
 
   const matchedRow = rows.find((row) => marketMatches(row, options));
   if (!matchedRow) {
+    if (allowStaleCache) {
+      const cachedMarket = loadCachedMarket({ ...options, cacheFile }, diagnostics);
+      if (cachedMarket) return cachedMarket;
+    }
     const target = options.marketId || options.slug || 'unknown';
     throw new Error(`Polymarket market not found for selector: ${target}`);
   }
 
   const normalized = normalizeMarketRow(matchedRow);
-  normalized.source = options.mockUrl ? 'polymarket:mock' : 'polymarket:clob';
-  normalized.host = host;
+  normalized.source = sourceType;
+  normalized.host = hostUsed;
 
   if (payload && payload.orderbooks && typeof payload.orderbooks === 'object') {
     normalized.mockOrderbooks = payload.orderbooks;
+  }
+
+  for (const item of diagnostics) {
+    normalized.diagnostics.push(item);
+  }
+
+  if (options.persistCache !== false) {
+    const cachePayload = buildCachePayload(options, hostUsed, matchedRow, normalized.mockOrderbooks || null, sourceType);
+    writeCacheFile(cacheFile, cachePayload);
+    normalized.cacheFile = cacheFile;
   }
 
   return normalized;
@@ -279,19 +434,70 @@ async function getOrderbook(clientOrOptions, tokenId, fallbackOrderbooks = null)
     return fallbackOrderbooks[tokenId];
   }
 
+  if (!clientOrOptions || typeof clientOrOptions.getOrderBook !== 'function') {
+    return null;
+  }
+
   return clientOrOptions.getOrderBook(tokenId);
 }
 
 async function fetchDepthForMarket(market, options = {}) {
   const slippageBps = Number.isFinite(Number(options.slippageBps)) ? Number(options.slippageBps) : 100;
+  const diagnostics = [];
+  const hosts = normalizeHostList(options.host || options.hosts || process.env.POLYMARKET_HOSTS || DEFAULT_POLYMARKET_HOST);
+  const cacheFile =
+    options.cacheFile ||
+    defaultCacheFile({
+      marketId: market && market.marketId,
+      slug: market && market.slug,
+      cacheKey: market && market.question ? normalizeText(market.question).slice(0, 48) : null,
+    });
 
-  let client = null;
+  let yesBook = null;
+  let noBook = null;
+  let hostUsed = null;
+
   if (!options.mockUrl) {
-    client = new ClobClient(options.host || DEFAULT_POLYMARKET_HOST, DEFAULT_POLYMARKET_CHAIN);
+    const hostErrors = [];
+    for (const candidateHost of hosts) {
+      try {
+        const client = new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+        const yesFromHost = await getOrderbook(client, market.yesTokenId, null);
+        const noFromHost = await getOrderbook(client, market.noTokenId, null);
+        yesBook = yesFromHost || yesBook;
+        noBook = noFromHost || noBook;
+        if (yesFromHost || noFromHost) {
+          hostUsed = candidateHost;
+        }
+        if (yesBook && noBook) {
+          break;
+        }
+      } catch (err) {
+        hostErrors.push(`[${candidateHost}] ${formatNetworkError(err)}`);
+      }
+    }
+
+    if (hostErrors.length) {
+      diagnostics.push(`Polymarket orderbook host attempts failed: ${hostErrors.join(' | ')}`);
+    }
   }
 
-  const yesBook = await getOrderbook(client, market.yesTokenId, market.mockOrderbooks);
-  const noBook = await getOrderbook(client, market.noTokenId, market.mockOrderbooks);
+  if (!yesBook || !noBook) {
+    const fallbackOrderbooks =
+      (market && market.mockOrderbooks && typeof market.mockOrderbooks === 'object' ? market.mockOrderbooks : null) ||
+      (() => {
+        const cached = readCacheFile(cacheFile);
+        return cached && cached.orderbooks && typeof cached.orderbooks === 'object' ? cached.orderbooks : null;
+      })();
+
+    if (fallbackOrderbooks) {
+      const fallbackYes = await getOrderbook(null, market.yesTokenId, fallbackOrderbooks);
+      const fallbackNo = await getOrderbook(null, market.noTokenId, fallbackOrderbooks);
+      yesBook = yesBook || fallbackYes;
+      noBook = noBook || fallbackNo;
+      diagnostics.push('Used cached/mock Polymarket orderbooks for depth estimation.');
+    }
+  }
 
   const yesDepth = yesBook ? calculateExecutableDepthUsd(yesBook, 'buy', slippageBps) : null;
   const noDepth = noBook ? calculateExecutableDepthUsd(noBook, 'buy', slippageBps) : null;
@@ -299,15 +505,41 @@ async function fetchDepthForMarket(market, options = {}) {
   const candidates = [yesDepth && yesDepth.depthUsd, noDepth && noDepth.depthUsd].filter((value) => Number.isFinite(value));
   const depthWithinSlippageUsd = candidates.length ? Math.min(...candidates) : 0;
 
-  const diagnostics = [];
   if (!yesDepth) diagnostics.push('YES token orderbook unavailable.');
   if (!noDepth) diagnostics.push('NO token orderbook unavailable.');
 
+  if ((yesBook || noBook) && options.persistCache !== false) {
+    const cached = readCacheFile(cacheFile) || buildCachePayload(
+      {
+        marketId: market && market.marketId,
+        slug: market && market.slug,
+      },
+      hostUsed || options.host || DEFAULT_POLYMARKET_HOST,
+      market && market.raw ? market.raw : null,
+      null,
+      'polymarket:depth-cache',
+    );
+
+    const existingOrderbooks = cached.orderbooks && typeof cached.orderbooks === 'object' ? cached.orderbooks : {};
+    if (market.yesTokenId && yesBook) {
+      existingOrderbooks[market.yesTokenId] = yesBook;
+    }
+    if (market.noTokenId && noBook) {
+      existingOrderbooks[market.noTokenId] = noBook;
+    }
+
+    cached.orderbooks = existingOrderbooks;
+    cached.savedAt = new Date().toISOString();
+    writeCacheFile(cacheFile, cached);
+  }
+
   return {
     slippageBps,
+    host: hostUsed || null,
     depthWithinSlippageUsd: round(depthWithinSlippageUsd, 6) || 0,
     yesDepth,
     noDepth,
+    cacheFile,
     diagnostics,
   };
 }

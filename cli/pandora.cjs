@@ -6497,6 +6497,16 @@ async function runMirrorCommand(args, context) {
   }
 
   if (action === 'status') {
+    if (includesHelpFlag(actionArgs)) {
+      const usage = 'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>';
+      if (context.outputMode === 'json') {
+        emitSuccess(context.outputMode, 'mirror.status.help', commandHelpPayload(usage));
+      } else {
+        console.log(`Usage: ${usage}`);
+      }
+      return;
+    }
+
     const options = parseMirrorStatusFlags(actionArgs);
     const strategyHashValue = options.strategyHash || null;
     const stateFile =
@@ -6641,6 +6651,8 @@ async function runMirrorCommand(args, context) {
               'POLYMARKET_API_PASSPHRASE',
               'POLYMARKET_HOST',
             ],
+            staleCacheFallback:
+              'When Polymarket is unreachable, mirror commands reuse cached snapshots from ~/.pandora/polymarket. Live mode blocks cached sources.',
           },
         );
       } else {
@@ -6649,6 +6661,9 @@ async function runMirrorCommand(args, context) {
         );
         console.log(
           'Live hedge env: POLYMARKET_PRIVATE_KEY, POLYMARKET_FUNDER, POLYMARKET_API_KEY, POLYMARKET_API_SECRET, POLYMARKET_API_PASSPHRASE, POLYMARKET_HOST.',
+        );
+        console.log(
+          'Polymarket outage fallback: cached snapshots under ~/.pandora/polymarket are reused; live mode blocks cached sources.',
         );
       }
       return;

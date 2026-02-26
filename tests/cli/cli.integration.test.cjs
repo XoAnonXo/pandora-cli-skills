@@ -2612,6 +2612,67 @@ test('mirror verify blocks strict rule gate when one side lacks rule text', asyn
   }
 });
 
+test('mirror verify falls back to cached Polymarket snapshot when endpoint is unreachable', async () => {
+  const tempDir = createTempDir('pandora-mirror-cache-');
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const warmResult = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'verify',
+        '--skip-dotenv',
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+      ],
+      { env: { HOME: tempDir } },
+    );
+    assert.equal(warmResult.status, 0);
+
+    const cachedResult = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'verify',
+        '--skip-dotenv',
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        'http://127.0.0.1:9/unreachable',
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(cachedResult.status, 0);
+    const payload = parseJsonOutput(cachedResult);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.verify');
+    assert.equal(payload.data.sourceMarket.source, 'polymarket:cache');
+    assert.equal(
+      payload.data.sourceMarket.diagnostics.some((line) => String(line).toLowerCase().includes('cached polymarket')),
+      true,
+    );
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
 test('mirror deploy dry-run materializes deployment args without chain writes', async () => {
   const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
   const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
@@ -2859,6 +2920,16 @@ test('mirror status can load state via strategy hash path', async () => {
   assert.equal(payload.data.state.tradesToday, 2);
 
   removeDir(tempDir);
+});
+
+test('mirror status --help returns usage payload', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'status', '--help']);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.status.help');
+  assert.match(payload.data.usage, /mirror status/);
 });
 
 test('webhook test sends generic and discord payloads', async () => {

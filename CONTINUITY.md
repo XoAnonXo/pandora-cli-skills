@@ -23,6 +23,10 @@ Key decisions:
 
 State:
   - Done:
+    - External v1.1.6 review accepted:
+      - all three prior findings verified fixed (hedge ternary cleanup, Polymarket env docs/help, pool-aware rebalance sizing).
+      - no regressions observed across quote/portfolio/history/leaderboard/suggest paths.
+      - quality assessment reported as `Grade: A`.
     - Added mirror services:
       - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_service.cjs`
       - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_sizing_service.cjs`
@@ -85,10 +89,25 @@ State:
       - bumped version `1.1.5 -> 1.1.6`.
       - validation passed: `npm run test` (build + unit + cli + smoke).
       - published `pandora-cli-skills@1.1.6` and verified `dist-tag latest=1.1.6`.
+    - Polymarket outage resilience patch (2026-02-26):
+      - added automatic cached snapshot fallback for Polymarket market reads (`~/.pandora/polymarket`) when live endpoints are unreachable.
+      - strengthened connectivity diagnostics with host-attempt error details and Cloudflare/TLS reset hints.
+      - updated depth fetch to avoid hard crashes on orderbook fetch failure; returns diagnostic-only depth when unavailable and reuses cached/mock orderbooks when possible.
+      - hardened depth host failover to continue probing hosts until both YES and NO books are collected (no early stop on one-sided data).
+      - added live safety gate: `POLYMARKET_SOURCE_FRESH` blocks `mirror sync --execute-live` when source data is cached/stale.
+      - fixed pre-existing `mirror status --help` bug (now returns usage/help payload).
+      - updated docs/help (`README_FOR_SHARING.md`, `SKILL.md`, mirror sync help text) for outage fallback behavior.
+      - added CLI integration coverage:
+        - mirror verify cache fallback on unreachable endpoint.
+        - mirror status help payload.
+      - validation passed: `npm run test` (build + unit + cli + smoke), total CLI tests now 80.
+    - Release prep on 2026-02-26:
+      - bumped version `1.1.6 -> 1.1.7`.
+      - full validation re-run passed: `npm run test` (build + unit + cli + smoke).
   - Now:
-    - NPM patch release `1.1.6` completed and pushed to `origin/main`.
+    - Preparing commit/push/publish for `1.1.7`.
   - Next:
-    - Optional: create signed git tag/release notes for `v1.1.6`.
+    - Commit/push the resilience patch and publish `pandora-cli-skills@1.1.7`.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -119,9 +138,11 @@ Working set (files/ids/commands):
   - `npm run test` (unit + cli passed; smoke timeout once then passed on retry)
   - `npm publish --access public` (published `1.1.5`)
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.5`)
-  - `npm version patch --no-git-tag-version` (`v1.1.6`)
+ - `npm version patch --no-git-tag-version` (`v1.1.6`)
   - `npm run test` (passed on `1.1.6`)
   - `npm publish --access public` (published `1.1.6`)
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.6`)
+  - `npm version patch --no-git-tag-version` (`v1.1.7`)
+  - `npm run test` (passed on `1.1.7`)
  - Current task:
-  - Completed: npm `1.1.6` release + git sync.
+  - Publish Polymarket resilience patch as `1.1.7`.
