@@ -24,10 +24,14 @@ const parseArgs = (argv: string[]): { args: ParsedArgs; flags: Set<string> } => 
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
+    if (token === '-h') {
+      flags.add('help');
+      continue;
+    }
     if (!token.startsWith('--')) continue;
 
     const key = token.replace(/^--/, '');
-    if (key === 'dry-run' || key === 'execute') {
+    if (key === 'dry-run' || key === 'execute' || key === 'help') {
       flags.add(key);
       continue;
     }
@@ -168,6 +172,27 @@ const listArg = (name: string): string[] => {
   return Array.isArray(value) ? value : [];
 };
 const hasFlag = (name: string) => flags.has(name);
+
+if (hasFlag('help')) {
+  console.log(`
+Usage:
+  pandora launch --dry-run|--execute [options]
+
+Required:
+  --question "<text>"
+  --rules "<resolution rules>"
+  --sources "<url1>" "<url2>" [more]
+  --target-timestamp <unix-seconds>
+
+Common options:
+  --market-type amm|parimutuel
+  --liquidity <usdc>
+  --fee-tier <bps>
+  --distribution-yes <parts-per-billion>
+  --distribution-no <parts-per-billion>
+`);
+  process.exit(0);
+}
 
 const marketTypeArg = arg('market-type', 'amm').toLowerCase();
 const marketType = marketTypeArg === 'parimutuel' || marketTypeArg === 'pari' || marketTypeArg === 'pm' ? 'parimutuel' : 'amm';

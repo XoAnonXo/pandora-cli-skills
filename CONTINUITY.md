@@ -1,9 +1,11 @@
 Goal (incl. success criteria):
 - Ship and publish `Pandora CLI & Skills` with production-ready install/release quality.
+- Execute post-release optimization roadmap to materially improve CLI usability for humans and agents.
 - Success criteria:
   - `main` CI passes across Linux/macOS/Windows.
   - npm package `pandora-cli-skills` is published.
   - Signed release tag exists and is verified.
+  - Phase 1, Phase 2, and Phase 3 features are implemented and tested.
 
 Constraints/Assumptions:
 - Follow AGENTS.md continuity process every turn.
@@ -13,59 +15,60 @@ Constraints/Assumptions:
 
 Key decisions:
 - Repository/package branding renamed to `Pandora CLI & Skills` / `pandora-cli-skills`.
-- Use signed git tags for releases (`v1.0.0`, `v1.0.1` already created).
-- Address cross-platform smoke test gap (`spawnSync npm ENOENT` on Windows) before final publish confidence.
+- Use signed git tags for releases (`v1.0.0`, `v1.0.1`, `v1.0.2`).
+- Harden smoke tests for Windows parity before publish confidence.
+- Phase 2 supports quote/trade with PariMutuel-compatible execute path.
+- Phase 3 now includes both portfolio analytics and watch polling.
 
 State:
   - Done:
-    - Repo renamed to `XoAnonXo/pandora-cli-skills` and remote updated.
-    - Package renamed to `pandora-cli-skills`; docs and tests updated.
-    - Signed tags created/pushed: `v1.0.0`, `v1.0.1`.
-    - Local validation succeeded after rename:
-      - `npm test`
-      - `npm run build`
-      - `npm run pack:dry-run`
-    - Release workflow for `v1.0.1` succeeded.
-    - `npm publish --access public` attempted and failed with `ENEEDAUTH` (not logged in).
-    - Fixed cross-platform smoke test command resolution:
-      - `tests/smoke/pack-install-smoke.cjs` now uses `npm.cmd` on Windows.
-    - Fixed Windows `spawnSync` incompatibility:
-      - smoke runner now applies `killSignal: SIGKILL` only on non-Windows platforms.
-    - Fixed Windows npm process launch in smoke runner:
-      - always invoke `npm` command and enable `shell: true` on Windows.
-    - Fixed transient Windows cleanup failure in smoke runner:
-      - ignore `EBUSY`/`EPERM`/`ENOTEMPTY` during final temp directory removal.
-    - Fixed Windows smoke argument quoting regression:
-      - switched back to `npm.cmd` without shell and added Windows-specific `npm pack --silent` fallback.
-      - non-Windows still uses `--pack-destination` path with fallback behavior.
-    - Refactored smoke execution model for Windows portability:
-      - added `runNpm()` (Windows shell only for npm commands).
-      - switched functional smoke checks to run installed CLI via `node <installedCli>` instead of `npm exec`.
-    - Fixed Windows cross-volume tarball move:
-      - added `moveFileSafe()` with `EXDEV` fallback (`copyFileSync` + `unlinkSync`).
-    - Increased smoke npm operation timeouts for CI stability:
-      - `npm init` timeout to 120s, `npm install` timeout to 240s.
-    - Post-fix validation passed:
-      - `npm test`
+    - Repo rename, package rename, signed tags, npm publish, CI hardening complete.
+    - 5-bug audit fixes complete with regression tests.
+    - Phase 1 complete (`scan`, `--expand`, `--with-odds`) with docs + tests and full validation.
+    - Phase 2 complete (`quote`, `trade`, help handlers, dry-run plan, execute flow, tests, docs).
+    - Phase 3 advanced slice complete:
+      - Added `pandora portfolio` metrics: `cashflowNet`, `pnlProxy` and standardized table-mode error prefixing.
+      - Added `pandora watch` command for polling market and/or wallet snapshots.
+      - Added deterministic tests for watch targets/iterations and enhanced portfolio assertions.
+      - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) for watch + enriched Phase 3 contracts.
+    - Post-Phase-3 UX/query slice complete:
+      - Added nested subcommand help for `markets`, `polls`, `events`, `positions` (`--help` works at subcommand level).
+      - Added market lifecycle convenience filters: `--active`, `--resolved`, `--expiring-soon`, `--expiring-hours`.
+      - Added batch `markets get` support via repeated `--id` and `--stdin`, including partial-hit reporting (`missingIds`).
+      - Added integration coverage for scoped help, lifecycle filters, lifecycle validation, and batch market retrieval.
+      - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) with lifecycle + batch get usage/limitations.
+    - Post-Phase-3 risk/alert slice complete:
+      - Added trade risk guardrails: `--max-amount-usdc`, `--min-probability-pct`, `--max-probability-pct`, and `--allow-unquoted-execute`.
+      - Enforced execute safety: unquoted `trade --execute` now fails by default unless explicitly bypassed or protected with `--min-shares-out-raw`.
+      - Added watch alerts: `--alert-yes-below`, `--alert-yes-above`, `--alert-net-liquidity-below`, `--alert-net-liquidity-above`, and `--fail-on-alert`.
+      - Added alert metadata in watch payload (`alertCount`, snapshot `alerts`, aggregated `alerts[]`).
+      - Added integration tests for trade guards, watch alert validation/triggering, and non-zero fail-on-alert exits.
+      - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) for risk guardrails and watch alert contracts.
+    - Latest validations all passing:
+      - `npm run test`
       - `npm run build`
       - `npm run pack:dry-run`
   - Now:
-    - Commit and push final Windows CI fix, then verify CI status.
+    - Critical review requested by user is complete: tests/build/pack and direct CLI smoke checks are passing.
+    - Preparing commit + push of the current post-Phase-3 + risk/alert bundle.
   - Next:
-    - Confirm green CI on `main` after fix.
-    - Publish to npm once auth is available.
-    - If publish happens after additional fixes, consider bumping from `1.0.1` to `1.0.2`.
+    - Complete push to remote and share commit hash.
+    - If requested: cut signed release tag/version for this bundle.
+    - If requested: continue with daemonized watch notifications or additional execution safety (e.g., enforced minShares derivation).
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: npm auth + 2FA availability in this environment for final `npm publish`.
-- UNCONFIRMED: publish target version after CI fix (`1.0.1` vs bump to `1.0.2`).
+- Release target for bundled post-Phase-3 patch (`1.0.3` now vs later). UNCONFIRMED.
 
 Working set (files/ids/commands):
 - Active files:
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/smoke/pack-install-smoke.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/pandora.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/cli/cli.integration.test.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/README_FOR_SHARING.md`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/SKILL.md`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/CONTINUITY.md`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/package.json`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/.github/workflows/ci.yml`
-- Recent refs:
-  - HEAD: `30879a4` (`v1.0.1`, `origin/main`)
-  - Prior: `df1a21a` (`v1.0.0`)
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/scripts/create_market_launcher.ts`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/scripts/create_polymarket_clone_and_bet.ts`
+- Validation commands:
+  - `npm run test`
+  - `npm run build`
+  - `npm run pack:dry-run`

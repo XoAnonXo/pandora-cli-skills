@@ -24,10 +24,14 @@ const parseArgs = (argv: string[]): { args: ParsedArgs; flags: Set<string> } => 
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
+    if (token === '-h') {
+      flags.add('help');
+      continue;
+    }
     if (!token.startsWith('--')) continue;
 
     const key = token.replace(/^--/, '');
-    if (key === 'dry-run' || key === 'execute' || key === 'allow-duplicate') {
+    if (key === 'dry-run' || key === 'execute' || key === 'allow-duplicate' || key === 'help') {
       flags.add(key);
       continue;
     }
@@ -111,6 +115,27 @@ const listArg = (name: string): string[] => {
   return Array.isArray(value) ? value : [];
 };
 const hasFlag = (name: string) => flags.has(name);
+
+if (hasFlag('help')) {
+  console.log(`
+Usage:
+  pandora clone-bet --dry-run|--execute [options]
+
+Required:
+  --question "<text>"
+  --rules "<resolution rules>"
+  --sources "<url1>" "<url2>" [more]
+  --target-timestamp <unix-seconds>
+
+Common options:
+  --bet-on yes|no
+  --bet-usd <amount>
+  --market-type amm|parimutuel
+  --liquidity <usdc>
+  --allow-duplicate
+`);
+  process.exit(0);
+}
 
 const question = arg('question');
 const rules = arg('rules');
