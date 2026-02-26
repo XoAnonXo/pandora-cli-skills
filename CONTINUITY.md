@@ -18,11 +18,11 @@ Key decisions:
 - Implement user-approved decision-complete mirror plan across M1-M4 in this patch.
 - Default execution posture is paper mode; live mode requires explicit opt-in and full guard flags.
 - Delta-neutral target is LP inventory neutral using reserve imbalance proxy.
-- Strict gating is enforced for match confidence, rules hash, lifecycle, close-time drift, depth, and risk caps.
+- Strict gating enforces match confidence, exact rule-hash presence/match (unless override), lifecycle, close-time drift, depth, and risk caps.
 
 State:
   - Done:
-    - Added new mirror services:
+    - Added mirror services:
       - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_service.cjs`
       - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_sizing_service.cjs`
       - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_verify_service.cjs`
@@ -30,29 +30,32 @@ State:
       - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_state_store.cjs`
       - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/polymarket_trade_adapter.cjs`
       - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/pandora_deploy_service.cjs`
-    - Wired new `mirror` command family into CLI entrypoint/dispatcher:
+    - Wired `mirror` command family into CLI:
       - `mirror plan`, `mirror deploy`, `mirror verify`, `mirror sync run|once`, `mirror status`
-      - Added strict flag validation, help output, JSON envelopes, and table renderers.
-    - Implemented formula-driven mirror sizing and distribution hint mapping.
-    - Implemented mirror verification with similarity scoring, rule hashing/diff, and gate evaluation.
-    - Implemented mirror sync loop with persisted state, idempotency, cooldown, kill-switch, risk caps, webhook support, and paper/live branching.
-    - Added Polymarket depth and trade adapter support (`getOrderBook`, depth calculation, market order posting path).
-    - Added deterministic unit tests for mirror sizing, rules hash/diff, mirror state persistence, and depth calculations.
-    - Added deterministic CLI integration tests for mirror plan/verify/deploy/sync/status and live guardrail enforcement.
-    - Added smoke checks for mirror help commands in pack/install test.
-    - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) with mirror command coverage and JSON contract notes.
-    - Validation completed and passing:
+      - Help, parsing, renderers, strict flag validation, JSON envelopes.
+    - Added deterministic tests:
+      - Unit mirror sizing/rules/state/depth coverage.
+      - CLI mirror command integration coverage.
+      - Smoke help checks for mirror commands.
+    - Critical review fixes applied:
+      - `RULE_HASH_MATCH` now fails strict gate when one side is missing rule text.
+      - `mirror status --state-file` no longer overwrites/misreports stored strategy hash.
+      - `--strategy-hash` validation added (`16` hex chars).
+    - Docs updated in `README_FOR_SHARING.md` and `SKILL.md` with mirror command/contracts.
+    - Validation passed:
       - `npm run build`
       - `npm run test:unit`
       - `npm run test:cli`
       - `npm run test:smoke`
       - `npm run test`
       - `npm run pack:dry-run`
+    - Committed and pushed to `main`:
+      - commit: `dacce9e`
+      - branch push: `origin/main` updated (`355912a..dacce9e`).
   - Now:
-    - Implementation complete and validated locally.
+    - Mirror implementation and critical review remediation are complete and pushed.
   - Next:
-    - Commit and push patch.
-    - Optionally version bump and publish to npm.
+    - Optional: version bump and npm publish.
 
 Open questions (UNCONFIRMED if needed):
 - None.
