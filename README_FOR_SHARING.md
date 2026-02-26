@@ -173,6 +173,7 @@ Prerequisite: Node.js `>=18`.
   - envelope is `ok=true`, `command="webhook.test"`, with per-target delivery and retry metadata.
 - `leaderboard`:
   - envelope is `ok=true`, `command="leaderboard"`, with ranked rows for selected metric.
+  - inconsistent indexer aggregates are sanitized (win-rate capped to 0-100%) and exposed in diagnostics.
 - `analyze`:
   - envelope is `ok=true`, `command="analyze"`, with provider/model metadata, market context, and `{ fairYesPct, confidence, rationale }`.
   - provider-agnostic interface; missing provider returns `ANALYZE_PROVIDER_NOT_CONFIGURED`.
@@ -181,6 +182,19 @@ Prerequisite: Node.js `>=18`.
 
 ## ABI-gated commands
 - `resolve` and `lp` are intentionally gated and return `ABI_READY_REQUIRED` until verified ABI signatures/events and integration tests are committed.
+
+## Pandora Mainnet Reference
+- PredictionOracle (Factory): `0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442`
+- PredictionPoll (Implementation): `0xC49c177736107fD8351ed6564136B9ADbE5B1eC3`
+- MarketFactory: `0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c`
+- OutcomeToken (Implementation): `0x15AF9A6cE764a7D2b6913e09494350893436Ab3d`
+- PredictionAMM (Implementation): `0x7D45D4835001347B31B722Fb830fc1D9336F09f4`
+- PredictionPariMutuel (Implementation): `0x5CaF2D85f17A8f3b57918d54c8B138Cacac014BD`
+- Initial collateral (USDC): `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
+- Platform treasury: `0x8789F22a0456FEddaf9074FF4cEE55E4122095f0`
+- Protocol fee rate: `20000` (`2%`)
+- Indexer URL: `https://pandoraindexer.up.railway.app/`
+- Full deployment notes: `references/contracts.md`
 
 ## Release and verified install
 - CI workflow: `.github/workflows/ci.yml` runs on Linux/macOS/Windows and covers install, lint/typecheck, full tests, and `npm pack --dry-run`.

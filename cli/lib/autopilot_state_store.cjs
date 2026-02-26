@@ -69,7 +69,7 @@ function loadState(filePath, hash) {
 function saveState(filePath, state) {
   const resolved = path.resolve(expandHome(filePath));
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  const tmp = `${resolved}.tmp`;
+  const tmp = `${resolved}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
   fs.renameSync(tmp, resolved);
   return resolved;

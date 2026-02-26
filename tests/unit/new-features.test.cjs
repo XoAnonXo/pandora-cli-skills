@@ -1,11 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const { normalizeQuestion, questionSimilarity } = require('../../cli/lib/arbitrage_service.cjs');
 const { buildSuggestions } = require('../../cli/lib/suggest_service.cjs');
 const { evaluateMarket, AnalyzeProviderError } = require('../../cli/lib/analyze_provider.cjs');
 const {
   strategyHash,
+  saveState,
   pruneIdempotencyKeys,
   resetDailyCountersIfNeeded,
 } = require('../../cli/lib/autopilot_state_store.cjs');
@@ -83,4 +87,38 @@ test('autopilot state helpers are deterministic', () => {
   assert.equal(stale.dailySpendUsdc, 0);
   assert.equal(stale.tradesToday, 0);
   assert.equal(stale.lastResetDay, '2026-02-26');
+});
+
+test('saveState uses unique temp files per write to avoid cross-process rename collisions', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-autopilot-state-'));
+  const stateFile = path.join(tempDir, 'state.json');
+
+  const originalWriteFileSync = fs.writeFileSync;
+  const originalRenameSync = fs.renameSync;
+  const writeTargets = [];
+  const renameTargets = [];
+
+  try {
+    fs.writeFileSync = (target, content) => {
+      writeTargets.push(target);
+      return originalWriteFileSync(target, content);
+    };
+    fs.renameSync = (from, to) => {
+      renameTargets.push([from, to]);
+      return originalRenameSync(from, to);
+    };
+
+    saveState(stateFile, { iteration: 1 });
+    saveState(stateFile, { iteration: 2 });
+  } finally {
+    fs.writeFileSync = originalWriteFileSync;
+    fs.renameSync = originalRenameSync;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  assert.equal(writeTargets.length, 2);
+  assert.equal(renameTargets.length, 2);
+  assert.notEqual(writeTargets[0], writeTargets[1]);
+  assert.match(path.basename(writeTargets[0]), /^state\.json\.\d+\.\d+\.[a-f0-9]{8}\.tmp$/);
+  assert.match(path.basename(writeTargets[1]), /^state\.json\.\d+\.\d+\.[a-f0-9]{8}\.tmp$/);
 });

@@ -1,111 +1,61 @@
 Goal (incl. success criteria):
-- Ship and publish `Pandora CLI & Skills` with production-ready install/release quality.
-- Execute post-release optimization roadmap to materially improve CLI usability for humans and agents.
-- Define and prioritize next growth roadmap features (Arbitrage, Autopilot, History, Leaderboard, Resolve, LP, Export, Analyze, Suggest, Webhook) with delivery sequencing.
-- Implement the decision-complete roadmap across Phases A-E with deterministic tests and additive compatibility.
+- Harden Pandora CLI against latest audit findings and publish a clean follow-up update.
 - Success criteria:
-  - `main` CI passes across Linux/macOS/Windows.
-  - npm package `pandora-cli-skills` is published.
-  - Signed release tag exists and is verified.
-  - Phase 1, Phase 2, and Phase 3 features are implemented and tested.
-  - Tiered roadmap with dependencies, MVP cuts, and measurable acceptance criteria is agreed.
+  - Leaderboard never reports impossible win-rate percentages from inconsistent indexer aggregates.
+  - Autopilot state persistence is robust under rapid repeated runs using the same strategy hash.
+  - Mainnet deployment/config reference is documented for ABI-gated `resolve`/`lp` readiness.
+  - Validation suite passes (`test`, `build`, `pack:dry-run`).
 
 Constraints/Assumptions:
 - Follow AGENTS.md continuity process every turn.
-- Keep existing `launch`/`clone-bet` behavior unchanged unless fixing defects.
-- Prefer deterministic local tests; do not rely on live network for CI.
-- npm publish requires authenticated npm session and (if enabled) 2FA.
+- Keep existing command behavior additive (no breaking changes).
+- `resolve` and `lp` remain ABI-gated until verified ABI integration lands.
 
 Key decisions:
-- Repository/package branding renamed to `Pandora CLI & Skills` / `pandora-cli-skills`.
-- Use signed git tags for releases (`v1.0.0`, `v1.0.1`, `v1.0.2`).
-- Harden smoke tests for Windows parity before publish confidence.
-- Phase 2 supports quote/trade with PariMutuel-compatible execute path.
-- Phase 3 now includes both portfolio analytics and watch polling.
-- New roadmap planning will prioritize highest user-impact + feasible features first, starting with arbitrage/history/autopilot foundation.
-- Proposed implementation order for next wave: `history` (trade journal + P&L) -> `arbitrage` (duplicate market mispricing detection) -> `autopilot` (rule-triggered execution with strict guardrails).
-- Locked execution decisions:
-  - Phase A starts with `history` + `export` + `arbitrage`.
-  - `arbitrage` scope is Pandora + Polymarket CLOB.
-  - `autopilot` is paper-first, foreground loop, local JSON state.
-  - `webhook` includes generic + Telegram + Discord in v1.
-  - `resolve`/`lp` are ABI-gated (`ABI_READY_REQUIRED` until ABI package is available).
-  - `analyze` is provider-agnostic first.
+- Keep leaderboard output deterministic by sanitizing inconsistent totals and surfacing explicit diagnostics.
+- Fix autopilot write race by using unique per-write temp files before atomic rename.
+- Keep provided mainnet deployment addresses/indexer as documentation source-of-truth (no ABI execution wiring yet).
 
 State:
   - Done:
-    - Repo rename, package rename, signed tags, npm publish, CI hardening complete.
-    - 5-bug audit fixes complete with regression tests.
-    - Phase 1 complete (`scan`, `--expand`, `--with-odds`) with docs + tests and full validation.
-    - Phase 2 complete (`quote`, `trade`, help handlers, dry-run plan, execute flow, tests, docs).
-    - Phase 3 advanced slice complete:
-      - Added `pandora portfolio` metrics: `cashflowNet`, `pnlProxy` and standardized table-mode error prefixing.
-      - Added `pandora watch` command for polling market and/or wallet snapshots.
-      - Added deterministic tests for watch targets/iterations and enhanced portfolio assertions.
-      - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) for watch + enriched Phase 3 contracts.
-    - Post-Phase-3 UX/query slice complete:
-      - Added nested subcommand help for `markets`, `polls`, `events`, `positions` (`--help` works at subcommand level).
-      - Added market lifecycle convenience filters: `--active`, `--resolved`, `--expiring-soon`, `--expiring-hours`.
-      - Added batch `markets get` support via repeated `--id` and `--stdin`, including partial-hit reporting (`missingIds`).
-      - Added integration coverage for scoped help, lifecycle filters, lifecycle validation, and batch market retrieval.
-      - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) with lifecycle + batch get usage/limitations.
-    - Post-Phase-3 risk/alert slice complete:
-      - Added trade risk guardrails: `--max-amount-usdc`, `--min-probability-pct`, `--max-probability-pct`, and `--allow-unquoted-execute`.
-      - Enforced execute safety: unquoted `trade --execute` now fails by default unless explicitly bypassed or protected with `--min-shares-out-raw`.
-      - Added watch alerts: `--alert-yes-below`, `--alert-yes-above`, `--alert-net-liquidity-below`, `--alert-net-liquidity-above`, and `--fail-on-alert`.
-      - Added alert metadata in watch payload (`alertCount`, snapshot `alerts`, aggregated `alerts[]`).
-      - Added integration tests for trade guards, watch alert validation/triggering, and non-zero fail-on-alert exits.
-      - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) for risk guardrails and watch alert contracts.
-    - CI failure diagnosis complete for run `22438277762`:
-      - Root cause: `clone-bet --help` test failed in clean runners because `runScriptCommand` loaded missing `scripts/.env` before forwarding help flags.
-      - Fix: skip dotenv loading for help-only passthrough in script wrapper; added regression test for `launch --help` without env file.
-      - Local validations after fix: `npm run test:cli`, `npm run test`, `npm run build`, `npm run pack:dry-run` all pass.
-    - Latest validations all passing:
+    - npm publish issue resolved earlier; package `pandora-cli-skills` latest is `1.1.2`.
+    - Implemented leaderboard hardening in `cli/lib/leaderboard_service.cjs`:
+      - Clamps inconsistent wins/losses against trades.
+      - Caps win-rate to `[0,1]`.
+      - Emits row diagnostics and payload-level diagnostics.
+      - Schema version bumped to `1.0.1`.
+    - Implemented autopilot persistence hardening in `cli/lib/autopilot_state_store.cjs`:
+      - Replaced shared `.tmp` path with unique temp file suffix (`pid + timestamp + random`).
+    - Added deterministic tests:
+      - Unit: unique temp path behavior for `saveState`.
+      - CLI integration: leaderboard inconsistent aggregate sanitization + diagnostics.
+      - Added fixture override support in indexer mock helper.
+    - Updated docs:
+      - `references/contracts.md` now includes full provided Pandora mainnet deployment/config and indexer URL.
+      - `README_FOR_SHARING.md` and `SKILL.md` include mainnet reference block.
+      - Documented leaderboard sanitization behavior.
+    - Validation completed and passing:
       - `npm run test`
       - `npm run build`
-      - `npm run pack:dry-run`
-    - Release `1.0.3` completed:
-      - Published `pandora-cli-skills@1.0.3` to npm (`latest` tag now `1.0.3`).
-      - Version bump commit pushed to `main` (`3359876`).
-      - GitHub Actions run `22438850776` completed with overall `success` across Ubuntu/macOS/Windows.
-      - Public npm smoke check passed: `npx -y pandora-cli-skills@1.0.3 --help`.
-      - Usage note validated: package is invoked directly (`pandora-cli-skills`), not `pandora-cli-skills pandora`.
-    - Phase A/B/C/E command surfaces implemented in CLI:
-      - Added `history`, `export`, `arbitrage`, `autopilot`, `webhook test`, `leaderboard`, `analyze`, `suggest`.
-      - Added ABI-gated placeholders with deterministic `ABI_READY_REQUIRED` behavior for `resolve` and `lp`.
-      - Added webhook delivery integration to `watch` and `autopilot`.
-      - Added new internal service modules under `cli/lib/` and wired command dispatch/renderers in `cli/pandora.cjs`.
-    - Deterministic test coverage expanded:
-      - Extended CLI integration fixtures (`tradess`, `winningss`, `userss`) and added integration tests for all new commands.
-      - Added unit tests for arbitrage normalization/similarity, suggestions, analyze provider errors, and autopilot state helpers.
-    - Packaging/docs updated for new features:
-      - Added `cli/lib/**` to npm published files.
-      - Updated `README_FOR_SHARING.md` and `SKILL.md` with new command usage/contracts and ABI-gated notes.
-    - Post-implementation validations passing:
-      - `npm run test:cli`
-      - `npm run test:unit`
-      - `npm run test`
-      - `npm run build`
-      - `npm run test:smoke`
       - `npm run pack:dry-run`
   - Now:
-    - Preparing final review summary and update recommendation for commit/release.
+    - Final critical review of patched files before commit/push.
   - Next:
-    - User confirmation to commit/push/tag/publish next package version for roadmap features.
+    - Commit and push hardening/docs update.
+    - Optionally publish next npm patch version if requested.
 
 Open questions (UNCONFIRMED if needed):
-- Should `v1.0.3` be signed and released on GitHub now? UNCONFIRMED.
-- Poll status semantic mapping remains `UNCONFIRMED` (`0=open`, `1=yes-resolved`, `2=no-resolved` treated as current assumption).
+- Should this hardening set be released as a new npm version immediately? UNCONFIRMED.
 
 Working set (files/ids/commands):
 - Active files:
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/pandora.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/leaderboard_service.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/autopilot_state_store.cjs`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/cli/cli.integration.test.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/unit/new-features.test.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/references/contracts.md`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/README_FOR_SHARING.md`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/SKILL.md`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/CONTINUITY.md`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/scripts/create_market_launcher.ts`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/scripts/create_polymarket_clone_and_bet.ts`
 - Validation commands:
   - `npm run test`
   - `npm run build`

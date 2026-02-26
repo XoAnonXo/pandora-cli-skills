@@ -193,7 +193,7 @@ function asPage(items) {
   };
 }
 
-async function startIndexerMockServer() {
+async function startIndexerMockServer(overrides = {}) {
   const fixtures = {
     markets: [
       {
@@ -356,6 +356,12 @@ async function startIndexerMockServer() {
       },
     ],
   };
+
+  for (const [key, value] of Object.entries(overrides || {})) {
+    if (Array.isArray(value)) {
+      fixtures[key] = value;
+    }
+  }
 
   return startJsonHttpServer(({ bodyJson }) => {
     const query = (bodyJson && bodyJson.query) || '';
@@ -2270,6 +2276,70 @@ test('leaderboard ranks by requested metric', async () => {
     assert.equal(payload.command, 'leaderboard');
     assert.equal(payload.data.items.length, 2);
     assert.equal(payload.data.items[0].address.toLowerCase(), ADDRESSES.wallet2.toLowerCase());
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('leaderboard clamps inconsistent indexer totals and surfaces diagnostics', async () => {
+  const indexer = await startIndexerMockServer({
+    users: [
+      {
+        id: 'user-1',
+        address: ADDRESSES.wallet1,
+        chainId: 1,
+        realizedPnL: '123.45',
+        totalVolume: '999.5',
+        totalTrades: '7',
+        totalWins: '5',
+        totalLosses: '2',
+        totalWinnings: '500',
+      },
+      {
+        id: 'user-invalid',
+        address: '0x6666666666666666666666666666666666666666',
+        chainId: 1,
+        realizedPnL: '10',
+        totalVolume: '100',
+        totalTrades: '5',
+        totalWins: '19',
+        totalLosses: '0',
+        totalWinnings: '50',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'leaderboard',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--metric',
+      'win-rate',
+      '--limit',
+      '5',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'leaderboard');
+    assert.equal(payload.data.schemaVersion, '1.0.1');
+
+    const item = payload.data.items.find(
+      (entry) => entry.address.toLowerCase() === '0x6666666666666666666666666666666666666666',
+    );
+    assert.equal(Boolean(item), true);
+    assert.equal(item.totalTrades, 5);
+    assert.equal(item.totalWins, 5);
+    assert.equal(item.winRate, 1);
+    assert.equal(item.sourceTotals.totalWins, 19);
+    assert.equal(Array.isArray(item.diagnostics), true);
+    assert.equal(item.diagnostics.length >= 1, true);
+    assert.equal(payload.data.diagnostics.length >= 1, true);
   } finally {
     await indexer.close();
   }

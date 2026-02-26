@@ -1,6 +1,6 @@
 const { createIndexerClient } = require('./indexer_client.cjs');
 
-const LEADERBOARD_SCHEMA_VERSION = '1.0.0';
+const LEADERBOARD_SCHEMA_VERSION = '1.0.1';
 
 function toNumber(value) {
   const numeric = Number(value);
@@ -8,14 +8,65 @@ function toNumber(value) {
   return numeric;
 }
 
+function toCount(value) {
+  const numeric = toNumber(value);
+  if (numeric === null || numeric < 0) return 0;
+  return numeric;
+}
+
+function normalizeUserAggregate(item) {
+  const diagnostics = [];
+
+  const rawTotalTrades = toCount(item.totalTrades);
+  const rawTotalWins = toCount(item.totalWins);
+  const rawTotalLosses = toCount(item.totalLosses);
+
+  let totalTrades = rawTotalTrades;
+  let totalWins = rawTotalWins;
+  let totalLosses = rawTotalLosses;
+
+  if (totalWins > totalTrades) {
+    diagnostics.push({
+      code: 'INDEXER_INCONSISTENT_TOTALS',
+      message: `totalWins (${rawTotalWins}) exceeded totalTrades (${rawTotalTrades}); wins clamped to trades.`,
+    });
+    totalWins = totalTrades;
+  }
+
+  const maxLosses = Math.max(0, totalTrades - totalWins);
+  if (totalLosses > maxLosses) {
+    diagnostics.push({
+      code: 'INDEXER_INCONSISTENT_TOTALS',
+      message: `totalLosses (${rawTotalLosses}) exceeded remaining trade slots (${maxLosses}); losses clamped.`,
+    });
+    totalLosses = maxLosses;
+  }
+
+  return {
+    address: item.address,
+    chainId: item.chainId,
+    realizedPnl: toNumber(item.realizedPnL) || 0,
+    totalVolume: toNumber(item.totalVolume) || 0,
+    totalTrades,
+    totalWins,
+    totalLosses,
+    totalWinnings: toNumber(item.totalWinnings) || 0,
+    winRate: totalTrades > 0 ? totalWins / totalTrades : 0,
+    diagnostics,
+    sourceTotals:
+      diagnostics.length > 0
+        ? {
+            totalTrades: rawTotalTrades,
+            totalWins: rawTotalWins,
+            totalLosses: rawTotalLosses,
+          }
+        : undefined,
+  };
+}
+
 function buildMetric(row, metric) {
   if (metric === 'volume') return toNumber(row.totalVolume) || 0;
-  if (metric === 'win-rate') {
-    const wins = toNumber(row.totalWins) || 0;
-    const trades = toNumber(row.totalTrades) || 0;
-    if (!trades) return 0;
-    return wins / trades;
-  }
+  if (metric === 'win-rate') return Math.max(0, Math.min(1, toNumber(row.winRate) || 0));
   return toNumber(row.realizedPnL) || 0;
 }
 
@@ -47,23 +98,18 @@ async function fetchLeaderboard(options) {
     },
   });
 
+  const anomalies = [];
   const items = (page.items || [])
-    .filter((item) => (toNumber(item.totalTrades) || 0) >= options.minTrades)
+    .filter((item) => toCount(item.totalTrades) >= options.minTrades)
     .map((item) => {
-      const totalTrades = toNumber(item.totalTrades) || 0;
-      const totalWins = toNumber(item.totalWins) || 0;
-      const winRate = totalTrades > 0 ? totalWins / totalTrades : 0;
-      return {
-        address: item.address,
-        chainId: item.chainId,
-        realizedPnl: toNumber(item.realizedPnL) || 0,
-        totalVolume: toNumber(item.totalVolume) || 0,
-        totalTrades,
-        totalWins,
-        totalLosses: toNumber(item.totalLosses) || 0,
-        totalWinnings: toNumber(item.totalWinnings) || 0,
-        winRate,
-      };
+      const normalized = normalizeUserAggregate(item);
+      if (normalized.diagnostics.length > 0) {
+        anomalies.push({
+          address: normalized.address,
+          diagnostics: normalized.diagnostics,
+        });
+      }
+      return normalized;
     })
     .sort((a, b) => buildMetric(b, options.metric) - buildMetric(a, options.metric))
     .slice(0, options.limit)
@@ -81,6 +127,7 @@ async function fetchLeaderboard(options) {
     limit: options.limit,
     minTrades: options.minTrades,
     count: items.length,
+    diagnostics: anomalies,
     items,
   };
 }
