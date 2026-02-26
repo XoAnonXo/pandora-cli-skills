@@ -83,6 +83,7 @@ Prerequisite: Node.js `>=18`.
   - `pandora export --wallet <0x...> --format csv --year 2026 --out ./trades-2026.csv`
   - `pandora arbitrage --venues pandora,polymarket --min-spread-pct 3`
   - `pandora autopilot run|once ...`
+  - `pandora mirror plan|deploy|verify|sync|status ...`
   - `pandora webhook test ...`
   - `pandora leaderboard --metric profit|volume|win-rate`
   - `pandora analyze --market-address <0x...> --provider <name>`
@@ -105,6 +106,10 @@ Prerequisite: Node.js `>=18`.
 - `pandora export --wallet <0x...> --format csv --out ./trades.csv`
 - `pandora arbitrage --venues pandora,polymarket --min-spread-pct 2 --cross-venue-only --with-rules --include-similarity`
 - `pandora autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper`
+- `pandora mirror plan --source polymarket --polymarket-market-id <id> --with-rules --include-similarity`
+- `pandora mirror verify --pandora-market-address <0x...> --polymarket-market-id <id> --include-similarity`
+- `pandora mirror sync once --pandora-market-address <0x...> --polymarket-market-id <id> --paper`
+- `pandora mirror status --strategy-hash <hash>`
 - `pandora webhook test --webhook-url https://example.com/hook`
 - `pandora leaderboard --metric volume --limit 20`
 - `pandora analyze --market-address <0x...> --provider mock`
@@ -174,6 +179,16 @@ Prerequisite: Node.js `>=18`.
 - `autopilot`:
   - envelope is `ok=true`, `command="autopilot"`, with `data.strategyHash`, `data.stateFile`, `data.snapshots[]`, and `data.actions[]`.
   - paper mode is default; live mode requires explicit caps (`--max-amount-usdc`, `--max-open-exposure-usdc`, `--max-trades-per-day`).
+- `mirror plan`:
+  - envelope is `ok=true`, `command="mirror.plan"`, with `data.sourceMarket`, `data.match`, `data.sizingInputs`, `data.liquidityRecommendation`, and `data.distributionHint`.
+- `mirror deploy`:
+  - envelope is `ok=true`, `command="mirror.deploy"`, with `data.planDigest`, `data.deploymentArgs`, `data.tx`, `data.pandora`, and `data.postDeployChecks`.
+- `mirror verify`:
+  - envelope is `ok=true`, `command="mirror.verify"`, with `data.matchConfidence`, `data.ruleHashLeft`, `data.ruleHashRight`, `data.ruleDiffSummary`, `data.similarityChecks[]`, and `data.gateResult`.
+- `mirror sync`:
+  - envelope is `ok=true`, `command="mirror.sync"`, with `data.strategyHash`, `data.stateFile`, `data.parameters`, `data.snapshots[]`, and `data.actions[]`.
+- `mirror status`:
+  - envelope is `ok=true`, `command="mirror.status"`, with `data.stateFile`, `data.strategyHash`, and persisted `data.state`.
 - `webhook test`:
   - envelope is `ok=true`, `command="webhook.test"`, with per-target delivery and retry metadata.
 - `leaderboard`:
@@ -227,6 +242,7 @@ Prerequisite: Node.js `>=18`.
   - `pandora export`
   - `pandora arbitrage`
   - `pandora autopilot`
+  - `pandora mirror`
   - `pandora webhook test`
   - `pandora leaderboard`
   - `pandora analyze`

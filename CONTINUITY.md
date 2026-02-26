@@ -1,108 +1,75 @@
 Goal (incl. success criteria):
-- Harden Pandora CLI against latest audit findings and improve arbitrage explainability for AI subagents.
+- Implement and ship the full `pandora mirror` workflow for Polymarket -> Pandora pAMM mirroring with delta-neutral sync.
 - Success criteria:
-  - Leaderboard never reports impossible win-rate percentages from inconsistent indexer aggregates.
-  - Autopilot state persistence is robust under rapid repeated runs using the same strategy hash.
-  - Mainnet deployment/config reference is documented for ABI-gated `resolve`/`lp` readiness.
-  - Validation suite passes (`test`, `build`, `pack:dry-run`).
-  - `arbitrage` can expose similarity checks and rule context for agent verification.
-  - `arbitrage` reduces same-venue false positives via cross-venue default behavior.
+  - New command family works end-to-end: `mirror plan`, `mirror deploy`, `mirror sync run|once`, `mirror status`, `mirror verify`.
+  - Liquidity sizing formula matches locked model+depth-cap specification.
+  - Sync loop is paper-first, supports live execution with strict gates and deterministic blocking errors.
+  - Rules/similarity verification is explicit and consumable by AI subagents.
+  - Existing commands remain backward-compatible and tests pass.
 
 Constraints/Assumptions:
 - Follow AGENTS.md continuity process every turn.
-- Keep existing command behavior additive (no breaking changes).
-- `resolve` and `lp` remain ABI-gated until verified ABI integration lands.
+- Additive-only changes to existing CLI behavior (no breaking changes).
+- Source venue for mirror v1 is Polymarket only.
+- Mirror deploy target is Pandora AMM only in v1.
+- Foreground loop runtime only (no daemon manager).
 
 Key decisions:
-- Keep leaderboard output deterministic by sanitizing inconsistent totals and surfacing explicit diagnostics.
-- Scope `leaderboard` payload-level diagnostics to returned rows only (avoid diagnostics for out-of-window rows).
-- Fix autopilot write race by using unique per-write temp files before atomic rename.
-- Keep provided mainnet deployment addresses/indexer as documentation source-of-truth (no ABI execution wiring yet).
-- Make `arbitrage` cross-venue-only by default; explicit `--allow-same-venue` opt-in.
-- Add agent-facing arbitrage flags: `--with-rules` and `--include-similarity`.
+- Implement user-approved decision-complete mirror plan across M1-M4 in this patch.
+- Default execution posture is paper mode; live mode requires explicit opt-in and full guard flags.
+- Delta-neutral target is LP inventory neutral using reserve imbalance proxy.
+- Strict gating is enforced for match confidence, rules hash, lifecycle, close-time drift, depth, and risk caps.
 
 State:
   - Done:
-    - npm publish issue resolved earlier; package `pandora-cli-skills` latest is `1.1.2`.
-    - Implemented leaderboard hardening in `cli/lib/leaderboard_service.cjs`:
-      - Clamps inconsistent wins/losses against trades.
-      - Caps win-rate to `[0,1]`.
-      - Emits row diagnostics and payload-level diagnostics.
-      - Schema version bumped to `1.0.1`.
-    - Implemented autopilot persistence hardening in `cli/lib/autopilot_state_store.cjs`:
-      - Replaced shared `.tmp` path with unique temp file suffix (`pid + timestamp + random`).
-    - Added deterministic tests:
-      - Unit: unique temp path behavior for `saveState`.
-      - CLI integration: leaderboard inconsistent aggregate sanitization + diagnostics.
-      - CLI integration: diagnostics scope only includes returned leaderboard rows.
-      - Added fixture override support in indexer mock helper.
-    - Updated docs:
-      - `references/contracts.md` now includes full provided Pandora mainnet deployment/config and indexer URL.
-      - `README_FOR_SHARING.md` and `SKILL.md` include mainnet reference block.
-      - Documented leaderboard sanitization behavior.
+    - Added new mirror services:
+      - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_service.cjs`
+      - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_sizing_service.cjs`
+      - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_verify_service.cjs`
+      - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_sync_service.cjs`
+      - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_state_store.cjs`
+      - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/polymarket_trade_adapter.cjs`
+      - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/pandora_deploy_service.cjs`
+    - Wired new `mirror` command family into CLI entrypoint/dispatcher:
+      - `mirror plan`, `mirror deploy`, `mirror verify`, `mirror sync run|once`, `mirror status`
+      - Added strict flag validation, help output, JSON envelopes, and table renderers.
+    - Implemented formula-driven mirror sizing and distribution hint mapping.
+    - Implemented mirror verification with similarity scoring, rule hashing/diff, and gate evaluation.
+    - Implemented mirror sync loop with persisted state, idempotency, cooldown, kill-switch, risk caps, webhook support, and paper/live branching.
+    - Added Polymarket depth and trade adapter support (`getOrderBook`, depth calculation, market order posting path).
+    - Added deterministic unit tests for mirror sizing, rules hash/diff, mirror state persistence, and depth calculations.
+    - Added deterministic CLI integration tests for mirror plan/verify/deploy/sync/status and live guardrail enforcement.
+    - Added smoke checks for mirror help commands in pack/install test.
+    - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) with mirror command coverage and JSON contract notes.
     - Validation completed and passing:
+      - `npm run build`
+      - `npm run test:unit`
+      - `npm run test:cli`
+      - `npm run test:smoke`
       - `npm run test`
-      - `npm run build`
       - `npm run pack:dry-run`
-    - Pushed hardening commits to `main`:
-      - `7baa17a` `cli: harden leaderboard metrics and autopilot state writes`
-      - `5ad3ff0` `docs: refresh continuity ledger after hardening push`
-      - `24c2cba` `cli: scope leaderboard diagnostics to returned rows` (P2 review fix)
-    - Prepared release candidate `1.1.3`:
-      - bumped `package.json` and `package-lock.json` to `1.1.3`.
-      - validations passed:
-        - `npm run test`
-        - `npm run pack:dry-run`
-    - Released `pandora-cli-skills@1.1.3`:
-      - published successfully to npm with `latest` tag.
-      - registry verification:
-        - `npm view pandora-cli-skills version --prefer-online` -> `1.1.3`
-        - `npm view pandora-cli-skills@1.1.3 version` -> `1.1.3`
-      - direct registry payload confirms `dist-tags.latest=1.1.3`.
-    - Arbitrage agent-explainability upgrade implemented:
-      - `cli/lib/arbitrage_service.cjs`:
-        - schema version `1.1.0`.
-        - added pairwise similarity breakdown (`tokenScore`, `jaroWinkler`, blended score).
-        - added `crossVenueOnly` matching rule and same-venue risk flag support.
-        - added optional `similarityChecks` payload and `matchSummary`.
-        - added optional per-leg rule/source metadata output.
-        - added diagnostics when cross-venue-only is used with fewer than 2 venues.
-        - added poll metadata fallback (graceful downgrade if indexer lacks `rules`/`sources` fields).
-      - `cli/lib/polymarket_adapter.cjs`:
-        - adds leg id and rule-text mapping from Polymarket description.
-      - `cli/pandora.cjs`:
-        - new arbitrage flags:
-          - `--cross-venue-only` (default)
-          - `--allow-same-venue`
-          - `--with-rules`
-          - `--include-similarity`
-        - updated help/usage strings and examples.
-        - `suggest` now invokes arbitrage with explicit safe defaults for new flags.
-    - Deterministic integration tests added for new arbitrage behavior:
-      - default cross-venue-only filtering vs same-venue override.
-      - rules + similarity diagnostics payload exposure.
-    - Validation after arbitrage upgrades:
-      - `npm run test:cli` (68 passing)
-      - `npm run test:unit` (7 passing)
-      - `npm run build`
   - Now:
-    - Reviewing and summarizing arbitrage-agent improvements for user.
+    - Implementation complete and validated locally.
   - Next:
-    - Commit and push arbitrage explainability updates.
-    - Optionally publish `1.1.4` patch release if requested.
+    - Commit and push patch.
+    - Optionally version bump and publish to npm.
 
 Open questions (UNCONFIRMED if needed):
-- Should arbitrage upgrades ship immediately as `1.1.4`? UNCONFIRMED.
+- None.
 
 Working set (files/ids/commands):
-- Active files:
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/leaderboard_service.cjs`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/autopilot_state_store.cjs`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/cli/cli.integration.test.cjs`
+- Core:
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/pandora.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_service.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_sizing_service.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_verify_service.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_sync_service.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/mirror_state_store.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/polymarket_trade_adapter.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/cli/lib/pandora_deploy_service.cjs`
+- Tests/docs:
   - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/unit/new-features.test.cjs`
-  - `/Users/mac/Desktop/pandora-market-setup-shareable/references/contracts.md`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/cli/cli.integration.test.cjs`
+  - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/smoke/pack-install-smoke.cjs`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/README_FOR_SHARING.md`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/SKILL.md`
-- Validation commands:
-  - `npm run test`
-  - `npm run pack:dry-run`

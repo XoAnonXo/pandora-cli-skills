@@ -18,6 +18,8 @@ const ADDRESSES = {
   usdc: '0x3333333333333333333333333333333333333333',
   wallet1: '0x4444444444444444444444444444444444444444',
   wallet2: '0x5555555555555555555555555555555555555555',
+  mirrorMarket: '0x6666666666666666666666666666666666666666',
+  mirrorPoll: '0x7777777777777777777777777777777777777777',
 };
 
 function writeFile(filePath, content) {
@@ -51,6 +53,75 @@ function buildRules() {
 }
 
 const FIXED_FUTURE_TIMESTAMP = '1893456000'; // 2030-01-01T00:00:00Z
+const FIXED_MIRROR_CLOSE_ISO = '2030-03-09T16:00:00Z';
+const FIXED_MIRROR_CLOSE_TS = String(Math.floor(Date.parse(FIXED_MIRROR_CLOSE_ISO) / 1000));
+
+function buildMirrorIndexerOverrides(overrides = {}) {
+  const base = {
+    markets: [
+      {
+        id: ADDRESSES.mirrorMarket,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: ADDRESSES.mirrorPoll,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: FIXED_MIRROR_CLOSE_TS,
+        totalVolume: '100000',
+        currentTvl: '200000',
+        yesChance: '0.55',
+        reserveYes: '50000',
+        reserveNo: '50000',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: ADDRESSES.mirrorPoll,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Will deterministic tests pass?',
+        status: 0,
+        category: 3,
+        deadlineEpoch: Number(FIXED_MIRROR_CLOSE_TS),
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpollmirror',
+        rules:
+          'Resolves YES if deterministic tests pass in CI. Resolves NO otherwise; canceled/postponed/abandoned/unresolved => NO.',
+        sources: '["https://github.com","https://ci.example.com"]',
+      },
+    ],
+  };
+
+  return {
+    markets: Array.isArray(overrides.markets) ? overrides.markets : base.markets,
+    polls: Array.isArray(overrides.polls) ? overrides.polls : base.polls,
+  };
+}
+
+function buildMirrorPolymarketOverrides() {
+  return {
+    markets: [
+      {
+        question: 'Will deterministic tests pass?',
+        description:
+          'Resolves YES if deterministic tests pass in CI. Resolves NO otherwise; canceled/postponed/abandoned/unresolved => NO.',
+        condition_id: 'poly-cond-1',
+        question_id: 'poly-q-1',
+        market_slug: 'deterministic-tests-pass',
+        end_date_iso: FIXED_MIRROR_CLOSE_ISO,
+        active: true,
+        closed: false,
+        volume24hr: 100000,
+        tokens: [
+          { outcome: 'Yes', price: '0.74', token_id: 'poly-yes-1' },
+          { outcome: 'No', price: '0.26', token_id: 'poly-no-1' },
+        ],
+      },
+    ],
+  };
+}
 
 function buildLaunchArgs() {
   return [
@@ -742,23 +813,45 @@ async function startAnalyzeIndexerMockServer() {
   });
 }
 
-async function startPolymarketMockServer() {
-  return startJsonHttpServer(() => ({
-    body: {
-      markets: [
-        {
-          question: 'Will deterministic tests pass?',
-          condition_id: 'poly-cond-1',
-          question_id: 'poly-q-1',
-          market_slug: 'deterministic-tests-pass',
-          end_date_iso: '2024-03-09T16:00:00Z',
-          tokens: [
-            { outcome: 'Yes', price: '0.74' },
-            { outcome: 'No', price: '0.26' },
-          ],
-        },
-      ],
+async function startPolymarketMockServer(overrides = {}) {
+  const basePayload = {
+    markets: [
+      {
+        question: 'Will deterministic tests pass?',
+        condition_id: 'poly-cond-1',
+        question_id: 'poly-q-1',
+        market_slug: 'deterministic-tests-pass',
+        end_date_iso: '2024-03-09T16:00:00Z',
+        active: true,
+        closed: false,
+        volume24hr: 100000,
+        tokens: [
+          { outcome: 'Yes', price: '0.74', token_id: 'poly-yes-1' },
+          { outcome: 'No', price: '0.26', token_id: 'poly-no-1' },
+        ],
+      },
+    ],
+    orderbooks: {
+      'poly-yes-1': {
+        bids: [{ price: '0.73', size: '500' }],
+        asks: [{ price: '0.74', size: '600' }],
+      },
+      'poly-no-1': {
+        bids: [{ price: '0.25', size: '500' }],
+        asks: [{ price: '0.26', size: '600' }],
+      },
     },
+  };
+
+  const payload = {
+    ...basePayload,
+    ...overrides,
+    markets: Array.isArray(overrides.markets) ? overrides.markets : basePayload.markets,
+    orderbooks: overrides.orderbooks || basePayload.orderbooks,
+  };
+
+  return startJsonHttpServer(() => ({
+    body: payload,
   }));
 }
 
@@ -2401,6 +2494,263 @@ test('autopilot --execute-live enforces required risk caps', () => {
   const payload = parseJsonOutput(result);
   assert.equal(payload.error.code, 'MISSING_REQUIRED_FLAG');
   assert.match(payload.error.message, /max-amount-usdc/);
+});
+
+test('mirror plan returns deterministic sizing and distribution payload', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'plan',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--with-rules',
+      '--include-similarity',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.plan');
+    assert.equal(payload.data.schemaVersion, '1.0.0');
+    assert.equal(payload.data.sourceMarket.marketId, 'poly-cond-1');
+    assert.equal(typeof payload.data.liquidityRecommendation.liquidityUsdc, 'number');
+    assert.equal(payload.data.distributionHint.distributionYes + payload.data.distributionHint.distributionNo, 1000000000);
+    assert.equal(Array.isArray(payload.data.similarityChecks), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror verify exposes confidence, rules hashes, and gate result for agent checks', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'verify',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--pandora-market-address',
+      ADDRESSES.mirrorMarket,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--include-similarity',
+      '--with-rules',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.verify');
+    assert.equal(typeof payload.data.matchConfidence, 'number');
+    assert.equal(payload.data.gateResult.ok, true);
+    assert.equal(typeof payload.data.ruleHashLeft, 'string');
+    assert.equal(typeof payload.data.ruleHashRight, 'string');
+    assert.equal(Array.isArray(payload.data.similarityChecks), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror verify blocks strict rule gate when one side lacks rule text', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    markets: [
+      {
+        ...buildMirrorPolymarketOverrides().markets[0],
+        description: '',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'verify',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--pandora-market-address',
+      ADDRESSES.mirrorMarket,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--with-rules',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.verify');
+    assert.equal(payload.data.gateResult.ok, false);
+    assert.equal(payload.data.gateResult.failedChecks.includes('RULE_HASH_MATCH'), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror deploy dry-run materializes deployment args without chain writes', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--dry-run',
+      '--fee-tier',
+      '3000',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.deploy');
+    assert.equal(payload.data.schemaVersion, '1.0.0');
+    assert.equal(payload.data.dryRun, true);
+    assert.equal(payload.data.tx, null);
+    assert.equal(payload.data.deploymentArgs.feeTier, 3000);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror sync once paper mode performs deterministic simulated action and persists state', async () => {
+  const tempDir = createTempDir('pandora-mirror-sync-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killFile = path.join(tempDir, 'STOP');
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'sync',
+      'once',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--pandora-market-address',
+      ADDRESSES.mirrorMarket,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--paper',
+      '--drift-trigger-bps',
+      '25',
+      '--hedge-trigger-usdc',
+      '1000000',
+      '--state-file',
+      stateFile,
+      '--kill-switch-file',
+      killFile,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.sync');
+    assert.equal(payload.data.mode, 'once');
+    assert.equal(payload.data.executeLive, false);
+    assert.equal(payload.data.actionCount, 1);
+    assert.equal(fs.existsSync(stateFile), true);
+    assert.equal(payload.data.actions[0].status, 'simulated');
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror sync --execute-live enforces required risk caps', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'sync',
+    'once',
+    '--skip-dotenv',
+    '--pandora-market-address',
+    ADDRESSES.mirrorMarket,
+    '--polymarket-market-id',
+    'poly-cond-1',
+    '--execute-live',
+  ]);
+
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.error.code, 'MISSING_REQUIRED_FLAG');
+  assert.match(payload.error.message, /max-open-exposure-usdc/);
+});
+
+test('mirror status can load state via strategy hash path', async () => {
+  const tempDir = createTempDir('pandora-mirror-status-');
+  const strategyHash = '0123456789abcdef';
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const statePath = path.join(stateDir, `${strategyHash}.json`);
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash,
+        tradesToday: 2,
+        dailySpendUsdc: 42,
+      },
+      null,
+      2,
+    ),
+  );
+
+  const result = runCli(['--output', 'json', 'mirror', 'status', '--strategy-hash', strategyHash], {
+    env: { HOME: tempDir },
+  });
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.status');
+  assert.equal(payload.data.strategyHash, strategyHash);
+  assert.equal(payload.data.state.tradesToday, 2);
+
+  removeDir(tempDir);
 });
 
 test('webhook test sends generic and discord payloads', async () => {

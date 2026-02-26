@@ -13,7 +13,17 @@ const { hasWebhookTargets, sendWebhookNotifications } = require('./lib/webhook_s
 const { fetchLeaderboard } = require('./lib/leaderboard_service.cjs');
 const { evaluateMarket, AnalyzeProviderError } = require('./lib/analyze_provider.cjs');
 const { buildSuggestions } = require('./lib/suggest_service.cjs');
-const { defaultStateFile, defaultKillSwitchFile } = require('./lib/autopilot_state_store.cjs');
+const { buildMirrorPlan, deployMirror, verifyMirror } = require('./lib/mirror_service.cjs');
+const { runMirrorSync } = require('./lib/mirror_sync_service.cjs');
+const {
+  defaultStateFile: defaultAutopilotStateFile,
+  defaultKillSwitchFile: defaultAutopilotKillSwitchFile,
+} = require('./lib/autopilot_state_store.cjs');
+const {
+  defaultStateFile: defaultMirrorStateFile,
+  defaultKillSwitchFile: defaultMirrorKillSwitchFile,
+  loadState: loadMirrorState,
+} = require('./lib/mirror_state_store.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ENV_FILE = path.join(ROOT, 'scripts', '.env');
@@ -206,6 +216,7 @@ Usage:
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
   pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
+  pandora [--output table|json] mirror plan|deploy|verify|sync|status ...
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
   pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
@@ -232,6 +243,9 @@ Examples:
   pandora export --wallet 0x1234... --format csv --year 2026 --out ./trades-2026.csv
   pandora arbitrage --chain-id 1 --limit 25 --venues pandora,polymarket --cross-venue-only --with-rules --include-similarity
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
+  pandora mirror plan --source polymarket --polymarket-market-id 0xabc... --with-rules --include-similarity
+  pandora mirror verify --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --include-similarity
+  pandora mirror sync once --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --paper
   pandora webhook test --webhook-url https://example.com/hook --webhook-template '{\"text\":\"{{message}}\"}'
   pandora leaderboard --metric profit --limit 20
   pandora analyze --market-address 0xabc... --provider mock
@@ -443,6 +457,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] export ...',
       'pandora [--output table|json] arbitrage ...',
       'pandora [--output table|json] autopilot run|once ...',
+      'pandora [--output table|json] mirror plan|deploy|verify|sync|status ...',
       'pandora [--output table|json] webhook test ...',
       'pandora [--output table|json] leaderboard ...',
       'pandora [--output table|json] analyze ...',
@@ -2493,7 +2508,7 @@ function parseAutopilotFlags(args) {
   }
 
   if (options.stateFile === null) {
-    options.stateFile = defaultStateFile({
+    options.stateFile = defaultAutopilotStateFile({
       mode: options.mode,
       marketAddress: options.marketAddress,
       side: options.side,
@@ -2504,7 +2519,632 @@ function parseAutopilotFlags(args) {
     });
   }
   if (options.killSwitchFile === null) {
-    options.killSwitchFile = defaultKillSwitchFile();
+    options.killSwitchFile = defaultAutopilotKillSwitchFile();
+  }
+
+  return options;
+}
+
+function parseMirrorPlanFlags(args) {
+  const options = {
+    source: 'polymarket',
+    polymarketMarketId: null,
+    polymarketSlug: null,
+    chainId: null,
+    targetSlippageBps: 150,
+    turnoverTarget: 1.25,
+    depthSlippageBps: 100,
+    safetyMultiplier: 1.2,
+    minLiquidityUsdc: 100,
+    maxLiquidityUsdc: 50_000,
+    withRules: false,
+    includeSimilarity: false,
+    polymarketHost: null,
+    polymarketMockUrl: null,
+  };
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+
+    if (token === '--source') {
+      const source = requireFlagValue(args, i, '--source').toLowerCase();
+      if (source !== 'polymarket') {
+        throw new CliError('INVALID_FLAG_VALUE', '--source must be polymarket in mirror v1.');
+      }
+      options.source = source;
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-market-id') {
+      options.polymarketMarketId = requireFlagValue(args, i, '--polymarket-market-id');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-slug') {
+      options.polymarketSlug = requireFlagValue(args, i, '--polymarket-slug');
+      i += 1;
+      continue;
+    }
+    if (token === '--chain-id') {
+      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
+      i += 1;
+      continue;
+    }
+    if (token === '--target-slippage-bps') {
+      options.targetSlippageBps = parsePositiveInteger(requireFlagValue(args, i, '--target-slippage-bps'), '--target-slippage-bps');
+      if (options.targetSlippageBps > 10_000) {
+        throw new CliError('INVALID_FLAG_VALUE', '--target-slippage-bps must be <= 10000.');
+      }
+      i += 1;
+      continue;
+    }
+    if (token === '--turnover-target') {
+      options.turnoverTarget = parsePositiveNumber(requireFlagValue(args, i, '--turnover-target'), '--turnover-target');
+      i += 1;
+      continue;
+    }
+    if (token === '--depth-slippage-bps') {
+      options.depthSlippageBps = parsePositiveInteger(requireFlagValue(args, i, '--depth-slippage-bps'), '--depth-slippage-bps');
+      if (options.depthSlippageBps > 10_000) {
+        throw new CliError('INVALID_FLAG_VALUE', '--depth-slippage-bps must be <= 10000.');
+      }
+      i += 1;
+      continue;
+    }
+    if (token === '--safety-multiplier') {
+      options.safetyMultiplier = parsePositiveNumber(requireFlagValue(args, i, '--safety-multiplier'), '--safety-multiplier');
+      i += 1;
+      continue;
+    }
+    if (token === '--min-liquidity-usdc') {
+      options.minLiquidityUsdc = parsePositiveNumber(requireFlagValue(args, i, '--min-liquidity-usdc'), '--min-liquidity-usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--max-liquidity-usdc') {
+      options.maxLiquidityUsdc = parsePositiveNumber(requireFlagValue(args, i, '--max-liquidity-usdc'), '--max-liquidity-usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--with-rules') {
+      options.withRules = true;
+      continue;
+    }
+    if (token === '--include-similarity') {
+      options.includeSimilarity = true;
+      continue;
+    }
+    if (token === '--polymarket-host') {
+      options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-mock-url') {
+      options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+      i += 1;
+      continue;
+    }
+
+    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror plan: ${token}`);
+  }
+
+  if (!options.polymarketMarketId && !options.polymarketSlug) {
+    throw new CliError(
+      'MISSING_REQUIRED_FLAG',
+      'mirror plan requires --polymarket-market-id <id> or --polymarket-slug <slug>.',
+    );
+  }
+  if (options.minLiquidityUsdc > options.maxLiquidityUsdc) {
+    throw new CliError('INVALID_ARGS', '--min-liquidity-usdc cannot be greater than --max-liquidity-usdc.');
+  }
+
+  return options;
+}
+
+function parseMirrorDeployFlags(args) {
+  const options = {
+    planFile: null,
+    polymarketMarketId: null,
+    polymarketSlug: null,
+    dryRun: false,
+    execute: false,
+    marketType: 'amm',
+    liquidityUsdc: null,
+    feeTier: 3000,
+    maxImbalance: 10_000,
+    arbiter: null,
+    category: 3,
+    allowRuleMismatch: false,
+    sources: [],
+    chainId: null,
+    rpcUrl: null,
+    privateKey: null,
+    oracle: null,
+    factory: null,
+    usdc: null,
+    distributionYes: null,
+    distributionNo: null,
+    polymarketHost: null,
+    polymarketMockUrl: null,
+  };
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+    if (token === '--plan-file') {
+      options.planFile = requireFlagValue(args, i, '--plan-file');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-market-id') {
+      options.polymarketMarketId = requireFlagValue(args, i, '--polymarket-market-id');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-slug') {
+      options.polymarketSlug = requireFlagValue(args, i, '--polymarket-slug');
+      i += 1;
+      continue;
+    }
+    if (token === '--dry-run') {
+      options.dryRun = true;
+      continue;
+    }
+    if (token === '--execute') {
+      options.execute = true;
+      continue;
+    }
+    if (token === '--market-type') {
+      options.marketType = requireFlagValue(args, i, '--market-type').toLowerCase();
+      i += 1;
+      continue;
+    }
+    if (token === '--liquidity-usdc') {
+      options.liquidityUsdc = parsePositiveNumber(requireFlagValue(args, i, '--liquidity-usdc'), '--liquidity-usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--fee-tier') {
+      options.feeTier = parsePositiveInteger(requireFlagValue(args, i, '--fee-tier'), '--fee-tier');
+      i += 1;
+      continue;
+    }
+    if (token === '--max-imbalance') {
+      options.maxImbalance = parsePositiveInteger(requireFlagValue(args, i, '--max-imbalance'), '--max-imbalance');
+      i += 1;
+      continue;
+    }
+    if (token === '--arbiter') {
+      options.arbiter = parseAddressFlag(requireFlagValue(args, i, '--arbiter'), '--arbiter');
+      i += 1;
+      continue;
+    }
+    if (token === '--category') {
+      options.category = parseInteger(requireFlagValue(args, i, '--category'), '--category');
+      i += 1;
+      continue;
+    }
+    if (token === '--allow-rule-mismatch') {
+      options.allowRuleMismatch = true;
+      continue;
+    }
+    if (token === '--sources') {
+      let j = i + 1;
+      const entries = [];
+      while (j < args.length && !args[j].startsWith('--')) {
+        entries.push(args[j]);
+        j += 1;
+      }
+      if (!entries.length) {
+        throw new CliError('MISSING_FLAG_VALUE', 'Missing value for --sources');
+      }
+      options.sources.push(...entries);
+      i = j - 1;
+      continue;
+    }
+    if (token === '--chain-id') {
+      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
+      i += 1;
+      continue;
+    }
+    if (token === '--rpc-url') {
+      options.rpcUrl = requireFlagValue(args, i, '--rpc-url');
+      i += 1;
+      continue;
+    }
+    if (token === '--private-key') {
+      options.privateKey = requireFlagValue(args, i, '--private-key');
+      i += 1;
+      continue;
+    }
+    if (token === '--oracle') {
+      options.oracle = parseAddressFlag(requireFlagValue(args, i, '--oracle'), '--oracle');
+      i += 1;
+      continue;
+    }
+    if (token === '--factory') {
+      options.factory = parseAddressFlag(requireFlagValue(args, i, '--factory'), '--factory');
+      i += 1;
+      continue;
+    }
+    if (token === '--usdc') {
+      options.usdc = parseAddressFlag(requireFlagValue(args, i, '--usdc'), '--usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--distribution-yes') {
+      options.distributionYes = parsePositiveInteger(requireFlagValue(args, i, '--distribution-yes'), '--distribution-yes');
+      i += 1;
+      continue;
+    }
+    if (token === '--distribution-no') {
+      options.distributionNo = parsePositiveInteger(requireFlagValue(args, i, '--distribution-no'), '--distribution-no');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-host') {
+      options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-mock-url') {
+      options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+      i += 1;
+      continue;
+    }
+    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror deploy: ${token}`);
+  }
+
+  if (options.dryRun === options.execute) {
+    throw new CliError('INVALID_ARGS', 'mirror deploy requires exactly one mode: --dry-run or --execute.');
+  }
+  if (options.marketType !== 'amm') {
+    throw new CliError('INVALID_FLAG_VALUE', 'mirror deploy only supports --market-type amm in v1.');
+  }
+  if (!options.planFile && !options.polymarketMarketId && !options.polymarketSlug) {
+    throw new CliError(
+      'MISSING_REQUIRED_FLAG',
+      'mirror deploy requires --plan-file <path> or a Polymarket selector (--polymarket-market-id/--polymarket-slug).',
+    );
+  }
+  if (![500, 3000, 10000].includes(options.feeTier)) {
+    throw new CliError('INVALID_FLAG_VALUE', '--fee-tier must be one of 500, 3000, 10000.');
+  }
+  if (
+    (options.distributionYes === null && options.distributionNo !== null) ||
+    (options.distributionYes !== null && options.distributionNo === null)
+  ) {
+    throw new CliError('INVALID_ARGS', 'Provide both --distribution-yes and --distribution-no together.');
+  }
+  if (
+    options.distributionYes !== null &&
+    options.distributionNo !== null &&
+    options.distributionYes + options.distributionNo !== 1_000_000_000
+  ) {
+    throw new CliError('INVALID_ARGS', '--distribution-yes + --distribution-no must equal 1000000000.');
+  }
+
+  return options;
+}
+
+function parseMirrorVerifyFlags(args) {
+  const options = {
+    pandoraMarketAddress: null,
+    polymarketMarketId: null,
+    polymarketSlug: null,
+    includeSimilarity: false,
+    withRules: false,
+    allowRuleMismatch: false,
+    polymarketHost: null,
+    polymarketMockUrl: null,
+  };
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+    if (token === '--pandora-market-address') {
+      options.pandoraMarketAddress = parseAddressFlag(
+        requireFlagValue(args, i, '--pandora-market-address'),
+        '--pandora-market-address',
+      );
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-market-id') {
+      options.polymarketMarketId = requireFlagValue(args, i, '--polymarket-market-id');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-slug') {
+      options.polymarketSlug = requireFlagValue(args, i, '--polymarket-slug');
+      i += 1;
+      continue;
+    }
+    if (token === '--include-similarity') {
+      options.includeSimilarity = true;
+      continue;
+    }
+    if (token === '--with-rules') {
+      options.withRules = true;
+      continue;
+    }
+    if (token === '--allow-rule-mismatch') {
+      options.allowRuleMismatch = true;
+      continue;
+    }
+    if (token === '--polymarket-host') {
+      options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-mock-url') {
+      options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+      i += 1;
+      continue;
+    }
+    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror verify: ${token}`);
+  }
+
+  if (!options.pandoraMarketAddress) {
+    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing --pandora-market-address <address>.');
+  }
+  if (!options.polymarketMarketId && !options.polymarketSlug) {
+    throw new CliError('MISSING_REQUIRED_FLAG', 'mirror verify requires --polymarket-market-id <id> or --polymarket-slug <slug>.');
+  }
+
+  return options;
+}
+
+function parseMirrorStatusFlags(args) {
+  const options = {
+    stateFile: null,
+    strategyHash: null,
+  };
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+    if (token === '--state-file') {
+      options.stateFile = requireFlagValue(args, i, '--state-file');
+      i += 1;
+      continue;
+    }
+    if (token === '--strategy-hash') {
+      const value = requireFlagValue(args, i, '--strategy-hash');
+      if (!/^[a-f0-9]{16}$/i.test(value)) {
+        throw new CliError('INVALID_FLAG_VALUE', '--strategy-hash must be a 16-character hex value.');
+      }
+      options.strategyHash = value.toLowerCase();
+      i += 1;
+      continue;
+    }
+    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror status: ${token}`);
+  }
+
+  if (!options.stateFile && !options.strategyHash) {
+    throw new CliError('MISSING_REQUIRED_FLAG', 'mirror status requires --state-file <path> or --strategy-hash <hash>.');
+  }
+
+  return options;
+}
+
+function parseMirrorSyncFlags(args) {
+  const mode = args[0];
+  if (mode !== 'run' && mode !== 'once') {
+    throw new CliError('INVALID_ARGS', 'mirror sync requires subcommand run|once.');
+  }
+
+  const rest = args.slice(1);
+  const options = {
+    mode,
+    pandoraMarketAddress: null,
+    polymarketMarketId: null,
+    polymarketSlug: null,
+    executeLive: false,
+    intervalMs: 5_000,
+    driftTriggerBps: 150,
+    hedgeTriggerUsdc: 10,
+    maxRebalanceUsdc: 25,
+    maxHedgeUsdc: 50,
+    maxOpenExposureUsdc: null,
+    maxTradesPerDay: null,
+    cooldownMs: 60_000,
+    depthSlippageBps: 100,
+    iterations: null,
+    stateFile: null,
+    killSwitchFile: null,
+    chainId: null,
+    rpcUrl: null,
+    privateKey: null,
+    usdc: null,
+    polymarketHost: null,
+    polymarketMockUrl: null,
+    webhookUrl: null,
+    webhookTemplate: null,
+    webhookSecret: null,
+    webhookTimeoutMs: 5_000,
+    webhookRetries: 3,
+    telegramBotToken: null,
+    telegramChatId: null,
+    discordWebhookUrl: null,
+    failOnWebhookError: false,
+  };
+
+  for (let i = 0; i < rest.length; i += 1) {
+    const token = rest[i];
+    if (token === '--pandora-market-address') {
+      options.pandoraMarketAddress = parseAddressFlag(
+        requireFlagValue(rest, i, '--pandora-market-address'),
+        '--pandora-market-address',
+      );
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-market-id') {
+      options.polymarketMarketId = requireFlagValue(rest, i, '--polymarket-market-id');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-slug') {
+      options.polymarketSlug = requireFlagValue(rest, i, '--polymarket-slug');
+      i += 1;
+      continue;
+    }
+    if (token === '--paper') {
+      options.executeLive = false;
+      continue;
+    }
+    if (token === '--execute-live') {
+      options.executeLive = true;
+      continue;
+    }
+    if (token === '--interval-ms') {
+      options.intervalMs = parsePositiveInteger(requireFlagValue(rest, i, '--interval-ms'), '--interval-ms');
+      if (options.intervalMs < 1_000) {
+        throw new CliError('INVALID_FLAG_VALUE', '--interval-ms must be >= 1000.');
+      }
+      i += 1;
+      continue;
+    }
+    if (token === '--drift-trigger-bps') {
+      options.driftTriggerBps = parsePositiveInteger(requireFlagValue(rest, i, '--drift-trigger-bps'), '--drift-trigger-bps');
+      i += 1;
+      continue;
+    }
+    if (token === '--hedge-trigger-usdc') {
+      options.hedgeTriggerUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--hedge-trigger-usdc'), '--hedge-trigger-usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--max-rebalance-usdc') {
+      options.maxRebalanceUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--max-rebalance-usdc'), '--max-rebalance-usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--max-hedge-usdc') {
+      options.maxHedgeUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--max-hedge-usdc'), '--max-hedge-usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--max-open-exposure-usdc') {
+      options.maxOpenExposureUsdc = parsePositiveNumber(
+        requireFlagValue(rest, i, '--max-open-exposure-usdc'),
+        '--max-open-exposure-usdc',
+      );
+      i += 1;
+      continue;
+    }
+    if (token === '--max-trades-per-day') {
+      options.maxTradesPerDay = parsePositiveInteger(
+        requireFlagValue(rest, i, '--max-trades-per-day'),
+        '--max-trades-per-day',
+      );
+      i += 1;
+      continue;
+    }
+    if (token === '--cooldown-ms') {
+      options.cooldownMs = parsePositiveInteger(requireFlagValue(rest, i, '--cooldown-ms'), '--cooldown-ms');
+      i += 1;
+      continue;
+    }
+    if (token === '--depth-slippage-bps') {
+      options.depthSlippageBps = parsePositiveInteger(requireFlagValue(rest, i, '--depth-slippage-bps'), '--depth-slippage-bps');
+      if (options.depthSlippageBps > 10_000) {
+        throw new CliError('INVALID_FLAG_VALUE', '--depth-slippage-bps must be <= 10000.');
+      }
+      i += 1;
+      continue;
+    }
+    if (token === '--iterations') {
+      options.iterations = parsePositiveInteger(requireFlagValue(rest, i, '--iterations'), '--iterations');
+      i += 1;
+      continue;
+    }
+    if (token === '--state-file') {
+      options.stateFile = requireFlagValue(rest, i, '--state-file');
+      i += 1;
+      continue;
+    }
+    if (token === '--kill-switch-file') {
+      options.killSwitchFile = requireFlagValue(rest, i, '--kill-switch-file');
+      i += 1;
+      continue;
+    }
+    if (token === '--chain-id') {
+      options.chainId = parseInteger(requireFlagValue(rest, i, '--chain-id'), '--chain-id');
+      i += 1;
+      continue;
+    }
+    if (token === '--rpc-url') {
+      options.rpcUrl = requireFlagValue(rest, i, '--rpc-url');
+      i += 1;
+      continue;
+    }
+    if (token === '--private-key') {
+      options.privateKey = requireFlagValue(rest, i, '--private-key');
+      i += 1;
+      continue;
+    }
+    if (token === '--usdc') {
+      options.usdc = parseAddressFlag(requireFlagValue(rest, i, '--usdc'), '--usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-host') {
+      options.polymarketHost = requireFlagValue(rest, i, '--polymarket-host');
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-mock-url') {
+      options.polymarketMockUrl = requireFlagValue(rest, i, '--polymarket-mock-url');
+      i += 1;
+      continue;
+    }
+
+    const webhookStep = parseWebhookFlagIntoOptions(rest, i, token, options);
+    if (webhookStep !== null) {
+      i += webhookStep;
+      continue;
+    }
+
+    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror sync: ${token}`);
+  }
+
+  if (!options.pandoraMarketAddress) {
+    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing --pandora-market-address <address>.');
+  }
+  if (!options.polymarketMarketId && !options.polymarketSlug) {
+    throw new CliError('MISSING_REQUIRED_FLAG', 'mirror sync requires --polymarket-market-id <id> or --polymarket-slug <slug>.');
+  }
+  if ((options.telegramBotToken && !options.telegramChatId) || (!options.telegramBotToken && options.telegramChatId)) {
+    throw new CliError(
+      'INVALID_ARGS',
+      'Telegram webhook requires both --telegram-bot-token and --telegram-chat-id.',
+    );
+  }
+
+  if (options.executeLive) {
+    if (options.maxOpenExposureUsdc === null) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-open-exposure-usdc.');
+    }
+    if (options.maxTradesPerDay === null) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-trades-per-day.');
+    }
+  } else {
+    if (options.maxOpenExposureUsdc === null) options.maxOpenExposureUsdc = Number.POSITIVE_INFINITY;
+    if (options.maxTradesPerDay === null) options.maxTradesPerDay = Number.MAX_SAFE_INTEGER;
+  }
+
+  if (options.stateFile === null) {
+    options.stateFile = defaultMirrorStateFile({
+      mode: options.mode,
+      pandoraMarketAddress: options.pandoraMarketAddress,
+      polymarketMarketId: options.polymarketMarketId,
+      polymarketSlug: options.polymarketSlug,
+      executeLive: options.executeLive,
+      driftTriggerBps: options.driftTriggerBps,
+      hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+    });
+  }
+  if (options.killSwitchFile === null) {
+    options.killSwitchFile = defaultMirrorKillSwitchFile();
   }
 
   return options;
@@ -3556,6 +4196,116 @@ function renderAutopilotTable(data) {
       short(action.reason || '', 56),
       short(action.execution && action.execution.buyTxHash ? action.execution.buyTxHash : '', 24),
     ]),
+  );
+}
+
+function renderMirrorPlanTable(data) {
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['source', data.source || 'polymarket'],
+      ['sourceMarketId', data.sourceMarket ? data.sourceMarket.marketId : ''],
+      ['sourceSlug', data.sourceMarket ? data.sourceMarket.slug || '' : ''],
+      ['sourceYesPct', data.sourceMarket && data.sourceMarket.yesPct !== null ? data.sourceMarket.yesPct : ''],
+      ['recommendedLiquidityUsdc', data.liquidityRecommendation ? data.liquidityRecommendation.liquidityUsdc : ''],
+      ['distributionYes', data.distributionHint ? data.distributionHint.distributionYes : ''],
+      ['distributionNo', data.distributionHint ? data.distributionHint.distributionNo : ''],
+      ['planDigest', data.planDigest || ''],
+    ],
+  );
+
+  if (data.match) {
+    console.log('');
+    printTable(
+      ['Match Market', 'Similarity', 'Status', 'Question'],
+      [[
+        short(data.match.marketAddress, 20),
+        data.match.similarity ? formatNumericCell(data.match.similarity.score, 4) : '',
+        data.match.status === null || data.match.status === undefined ? '' : data.match.status,
+        short(data.match.question || '', 72),
+      ]],
+    );
+  }
+}
+
+function renderMirrorDeployTable(data) {
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['dryRun', data.dryRun ? 'yes' : 'no'],
+      ['planDigest', data.planDigest || ''],
+      ['pollAddress', data.pandora && data.pandora.pollAddress ? data.pandora.pollAddress : ''],
+      ['marketAddress', data.pandora && data.pandora.marketAddress ? data.pandora.marketAddress : ''],
+      ['pollTxHash', data.tx && data.tx.pollTxHash ? data.tx.pollTxHash : ''],
+      ['approveTxHash', data.tx && data.tx.approveTxHash ? data.tx.approveTxHash : ''],
+      ['marketTxHash', data.tx && data.tx.marketTxHash ? data.tx.marketTxHash : ''],
+      ['seedOddsMatch', data.postDeployChecks && data.postDeployChecks.seedOddsMatch !== null ? (data.postDeployChecks.seedOddsMatch ? 'yes' : 'no') : ''],
+      ['seedDiffPct', data.postDeployChecks && data.postDeployChecks.diffPct !== null ? data.postDeployChecks.diffPct : ''],
+      ['blockedLiveSync', data.postDeployChecks && data.postDeployChecks.blockedLiveSync ? 'yes' : 'no'],
+    ],
+  );
+}
+
+function renderMirrorVerifyTable(data) {
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['matchConfidence', data.matchConfidence],
+      ['gateOk', data.gateResult && data.gateResult.ok ? 'yes' : 'no'],
+      ['failedChecks', data.gateResult && Array.isArray(data.gateResult.failedChecks) ? data.gateResult.failedChecks.join(', ') : ''],
+      ['pandoraMarket', data.pandora ? data.pandora.marketAddress : ''],
+      ['sourceMarket', data.sourceMarket ? data.sourceMarket.marketId : ''],
+      ['ruleHashLeft', data.ruleHashLeft || ''],
+      ['ruleHashRight', data.ruleHashRight || ''],
+      ['overlapRatio', data.ruleDiffSummary && data.ruleDiffSummary.overlapRatio !== null ? data.ruleDiffSummary.overlapRatio : ''],
+    ],
+  );
+}
+
+function renderMirrorSyncTable(data) {
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['mode', data.mode],
+      ['executeLive', data.executeLive ? 'yes' : 'no'],
+      ['strategyHash', data.strategyHash],
+      ['iterationsCompleted', data.iterationsCompleted],
+      ['actionCount', data.actionCount],
+      ['stateFile', data.stateFile],
+      ['stoppedReason', data.stoppedReason || ''],
+    ],
+  );
+
+  if (!Array.isArray(data.actions) || !data.actions.length) {
+    return;
+  }
+
+  console.log('');
+  printTable(
+    ['Mode', 'Status', 'Rebalance', 'Hedge', 'Key'],
+    data.actions.map((action) => [
+      action.mode || '',
+      action.status || '',
+      action.rebalance ? `${action.rebalance.side}:${action.rebalance.amountUsdc}` : '',
+      action.hedge ? `${short(action.hedge.tokenId, 14)}:${action.hedge.amountUsdc}` : '',
+      short(action.idempotencyKey || '', 24),
+    ]),
+  );
+}
+
+function renderMirrorStatusTable(data) {
+  const state = data.state || {};
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['strategyHash', data.strategyHash || state.strategyHash || ''],
+      ['stateFile', data.stateFile || ''],
+      ['lastTickAt', state.lastTickAt || ''],
+      ['dailySpendUsdc', state.dailySpendUsdc === undefined ? '' : state.dailySpendUsdc],
+      ['tradesToday', state.tradesToday === undefined ? '' : state.tradesToday],
+      ['currentHedgeUsdc', state.currentHedgeUsdc === undefined ? '' : state.currentHedgeUsdc],
+      ['idempotencyKeys', Array.isArray(state.idempotencyKeys) ? state.idempotencyKeys.length : 0],
+    ],
   );
 }
 
@@ -5696,6 +6446,248 @@ async function runAutopilotCommand(args, context) {
   emitSuccess(context.outputMode, 'autopilot', payload, renderAutopilotTable);
 }
 
+async function runMirrorCommand(args, context) {
+  const action = args[0];
+  const actionArgs = args.slice(1);
+
+  if (!action || action === '--help' || action === '-h') {
+    if (context.outputMode === 'json') {
+      emitSuccess(
+        context.outputMode,
+        'mirror.help',
+        commandHelpPayload('pandora [--output table|json] mirror plan|deploy|verify|sync|status ...'),
+      );
+    } else {
+      console.log('Usage: pandora [--output table|json] mirror plan|deploy|verify|sync|status ...');
+      console.log('');
+      console.log('Subcommands:');
+      console.log(
+        '  plan   --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity]',
+      );
+      console.log(
+        '  deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--market-type amm] [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--allow-rule-mismatch]',
+      );
+      console.log(
+        '  verify --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--include-similarity] [--with-rules]',
+      );
+      console.log(
+        '  sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
+      );
+      console.log('  status --state-file <path>|--strategy-hash <hash>');
+    }
+    return;
+  }
+
+  if (action === 'status') {
+    const options = parseMirrorStatusFlags(actionArgs);
+    const strategyHashValue = options.strategyHash || null;
+    const stateFile =
+      options.stateFile ||
+      path.join(
+        process.env.HOME || process.env.USERPROFILE || '.',
+        '.pandora',
+        'mirror',
+        `${strategyHashValue}.json`,
+      );
+    const loaded = loadMirrorState(stateFile, strategyHashValue);
+    emitSuccess(
+      context.outputMode,
+      'mirror.status',
+      {
+        schemaVersion: loaded.state.schemaVersion || '1.0.0',
+        generatedAt: new Date().toISOString(),
+        stateFile: loaded.filePath,
+        strategyHash: loaded.state.strategyHash || strategyHashValue,
+        state: loaded.state,
+      },
+      renderMirrorStatusTable,
+    );
+    return;
+  }
+
+  const shared = parseIndexerSharedFlags(actionArgs);
+
+  if (action === 'plan') {
+    if (includesHelpFlag(shared.rest)) {
+      if (context.outputMode === 'json') {
+        emitSuccess(
+          context.outputMode,
+          'mirror.plan.help',
+          commandHelpPayload(
+            'pandora [--output table|json] mirror plan --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity]',
+          ),
+        );
+      } else {
+        console.log(
+          'Usage: pandora [--output table|json] mirror plan --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity]',
+        );
+      }
+      return;
+    }
+
+    maybeLoadIndexerEnv(shared);
+    const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
+    const options = parseMirrorPlanFlags(shared.rest);
+    const payload = await buildMirrorPlan({
+      ...options,
+      indexerUrl,
+      timeoutMs: shared.timeoutMs,
+    });
+
+    emitSuccess(context.outputMode, 'mirror.plan', payload, renderMirrorPlanTable);
+    return;
+  }
+
+  if (action === 'deploy') {
+    if (includesHelpFlag(shared.rest)) {
+      if (context.outputMode === 'json') {
+        emitSuccess(
+          context.outputMode,
+          'mirror.deploy.help',
+          commandHelpPayload(
+            'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--market-type amm] [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--allow-rule-mismatch]',
+          ),
+        );
+      } else {
+        console.log(
+          'Usage: pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--market-type amm] [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--allow-rule-mismatch]',
+        );
+      }
+      return;
+    }
+
+    maybeLoadTradeEnv(shared);
+    const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
+    const options = parseMirrorDeployFlags(shared.rest);
+    const payload = await deployMirror({
+      ...options,
+      indexerUrl,
+      timeoutMs: shared.timeoutMs,
+      execute: options.execute,
+    });
+
+    emitSuccess(context.outputMode, 'mirror.deploy', payload, renderMirrorDeployTable);
+    return;
+  }
+
+  if (action === 'verify') {
+    if (includesHelpFlag(shared.rest)) {
+      if (context.outputMode === 'json') {
+        emitSuccess(
+          context.outputMode,
+          'mirror.verify.help',
+          commandHelpPayload(
+            'pandora [--output table|json] mirror verify --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--include-similarity] [--with-rules]',
+          ),
+        );
+      } else {
+        console.log(
+          'Usage: pandora [--output table|json] mirror verify --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--include-similarity] [--with-rules]',
+        );
+      }
+      return;
+    }
+
+    maybeLoadIndexerEnv(shared);
+    const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
+    const options = parseMirrorVerifyFlags(shared.rest);
+    const payload = await verifyMirror({
+      ...options,
+      indexerUrl,
+      timeoutMs: shared.timeoutMs,
+    });
+
+    if (!options.withRules && payload && payload.pandora) {
+      delete payload.pandora.rules;
+      if (payload.sourceMarket) delete payload.sourceMarket.description;
+    }
+
+    emitSuccess(context.outputMode, 'mirror.verify', payload, renderMirrorVerifyTable);
+    return;
+  }
+
+  if (action === 'sync') {
+    if (includesHelpFlag(shared.rest)) {
+      if (context.outputMode === 'json') {
+        emitSuccess(
+          context.outputMode,
+          'mirror.sync.help',
+          commandHelpPayload(
+            'pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
+          ),
+        );
+      } else {
+        console.log(
+          'Usage: pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
+        );
+      }
+      return;
+    }
+
+    maybeLoadTradeEnv(shared);
+    const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
+    const options = parseMirrorSyncFlags(shared.rest);
+
+    const payload = await runMirrorSync(
+      {
+        ...options,
+        indexerUrl,
+        timeoutMs: shared.timeoutMs,
+      },
+      {
+        rebalanceFn: async (executionOptions) => {
+          const tradeOptions = {
+            marketAddress: executionOptions.marketAddress,
+            side: executionOptions.side,
+            amountUsdc: executionOptions.amountUsdc,
+            yesPct: null,
+            slippageBps: 150,
+            dryRun: false,
+            execute: true,
+            minSharesOutRaw: null,
+            maxAmountUsdc: executionOptions.amountUsdc,
+            minProbabilityPct: null,
+            maxProbabilityPct: null,
+            allowUnquotedExecute: true,
+            chainId: options.chainId,
+            rpcUrl: options.rpcUrl,
+            privateKey: options.privateKey,
+            usdc: options.usdc,
+          };
+          const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
+          const execution = await executeTradeOnchain(tradeOptions);
+          return {
+            ...execution,
+            quote,
+          };
+        },
+        sendWebhook: async (webhookContext) => {
+          if (!hasWebhookTargets(options)) {
+            return {
+              schemaVersion: null,
+              generatedAt: new Date().toISOString(),
+              count: 0,
+              successCount: 0,
+              failureCount: 0,
+              results: [],
+            };
+          }
+          const report = await sendWebhookNotifications(options, webhookContext);
+          if (options.failOnWebhookError && report.failureCount > 0) {
+            throw new CliError('WEBHOOK_DELIVERY_FAILED', 'mirror sync webhook delivery failed.', { report });
+          }
+          return report;
+        },
+      },
+    );
+
+    emitSuccess(context.outputMode, 'mirror.sync', payload, renderMirrorSyncTable);
+    return;
+  }
+
+  throw new CliError('INVALID_ARGS', 'mirror requires subcommand: plan|deploy|verify|sync|status');
+}
+
 async function runWebhookCommand(args, context) {
   const action = args[0];
   const actionArgs = args.slice(1);
@@ -6176,6 +7168,11 @@ async function dispatch(command, args, context) {
 
   if (command === 'autopilot') {
     await runAutopilotCommand(args, context);
+    return;
+  }
+
+  if (command === 'mirror') {
+    await runMirrorCommand(args, context);
     return;
   }
 

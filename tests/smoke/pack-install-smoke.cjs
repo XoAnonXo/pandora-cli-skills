@@ -186,6 +186,18 @@ function main() {
     ensureExitCode(help, 0, 'pandora help');
     ensureOutputContains(help, /Prediction market CLI/, 'pandora help');
 
+    const mirrorHelp = runPandora(installedCli, ['mirror', '--help'], { cwd: appDir, env: cleanEnv() });
+    ensureExitCode(mirrorHelp, 0, 'pandora mirror --help');
+    ensureOutputContains(mirrorHelp, /mirror plan\|deploy\|verify\|sync\|status/, 'pandora mirror --help');
+
+    const mirrorPlanHelp = runPandora(installedCli, ['mirror', 'plan', '--help'], { cwd: appDir, env: cleanEnv() });
+    ensureExitCode(mirrorPlanHelp, 0, 'pandora mirror plan --help');
+    ensureOutputContains(mirrorPlanHelp, /polymarket-market-id/, 'pandora mirror plan --help');
+
+    const mirrorSyncHelp = runPandora(installedCli, ['mirror', 'sync', '--help'], { cwd: appDir, env: cleanEnv() });
+    ensureExitCode(mirrorSyncHelp, 0, 'pandora mirror sync --help');
+    ensureOutputContains(mirrorSyncHelp, /sync run\|once/, 'pandora mirror sync --help');
+
     const exampleEnvPath = path.join(appDir, 'example.env');
     fs.writeFileSync(
       exampleEnvPath,
