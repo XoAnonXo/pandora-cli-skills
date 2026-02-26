@@ -81,10 +81,14 @@ State:
       - documented Polymarket live-hedge env vars in `mirror sync --help` (table/json), `scripts/.env.example`, `README_FOR_SHARING.md`, and `SKILL.md`.
       - added CLI integration coverage for mirror sync help env requirements and rebalance sizing assertions.
       - validated with full gate: `npm run test` (build + unit + cli + smoke) passed.
+    - Release on 2026-02-26:
+      - bumped version `1.1.5 -> 1.1.6`.
+      - validation passed: `npm run test` (build + unit + cli + smoke).
+      - published `pandora-cli-skills@1.1.6` and verified `dist-tag latest=1.1.6`.
   - Now:
-    - Mirror follow-up fixes are committed and pushed to `origin/main`.
+    - NPM patch release `1.1.6` completed; preparing release metadata commit/push.
   - Next:
-    - Optional: bump patch version and publish npm for these follow-up fixes.
+    - Push release metadata to `origin/main`.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -115,5 +119,9 @@ Working set (files/ids/commands):
   - `npm run test` (unit + cli passed; smoke timeout once then passed on retry)
   - `npm publish --access public` (published `1.1.5`)
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.5`)
+  - `npm version patch --no-git-tag-version` (`v1.1.6`)
+  - `npm run test` (passed on `1.1.6`)
+  - `npm publish --access public` (published `1.1.6`)
+  - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.6`)
  - Current task:
-  - Completed: review-fix patch pushed (`f5ef5b7`).
+  - Finalize release metadata commit/push for npm `1.1.6`.
