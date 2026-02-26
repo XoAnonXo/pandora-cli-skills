@@ -100,7 +100,7 @@ pandora --output json arbitrage --venues pandora,polymarket --min-spread-pct 3 -
 pandora --output json autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper
 pandora --output json mirror plan --source polymarket --polymarket-market-id <id> --with-rules --include-similarity
 pandora --output json mirror verify --pandora-market-address <0x...> --polymarket-market-id <id> --include-similarity
-pandora --output json mirror sync once --pandora-market-address <0x...> --polymarket-market-id <id> --paper
+pandora --output json mirror sync once --pandora-market-address <0x...> --polymarket-market-id <id> --paper --hedge-ratio 1.0
 pandora --output json mirror status --strategy-hash <hash>
 pandora --output json webhook test --webhook-url https://example.com/hook
 pandora --output json leaderboard --metric profit --limit 20
@@ -164,7 +164,7 @@ pandora --output json suggest --wallet <0x...> --risk medium --budget 50 --inclu
 - `mirror plan`: Polymarket mirror sizing plan with liquidity recommendation and distribution hint.
 - `mirror deploy`: dry-run/execute Pandora AMM deployment from mirror plan inputs.
 - `mirror verify`: explicit question/rules similarity endpoint for AI-subagent validation.
-- `mirror sync`: paper-first delta-neutral loop with strict gates, state persistence, and optional live hedging.
+- `mirror sync`: paper-first delta-neutral loop with strict gates, state persistence, and optional live hedging (`--hedge-ratio <n>`, `--no-hedge`).
 - `mirror status`: local mirror state inspection (no network side effects).
 - `webhook test`: channel validation for generic, Telegram, and Discord payload delivery.
 - `leaderboard`: ranked user aggregates by profit/volume/win-rate.

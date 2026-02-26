@@ -108,7 +108,7 @@ Prerequisite: Node.js `>=18`.
 - `pandora autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper`
 - `pandora mirror plan --source polymarket --polymarket-market-id <id> --with-rules --include-similarity`
 - `pandora mirror verify --pandora-market-address <0x...> --polymarket-market-id <id> --include-similarity`
-- `pandora mirror sync once --pandora-market-address <0x...> --polymarket-market-id <id> --paper`
+- `pandora mirror sync once --pandora-market-address <0x...> --polymarket-market-id <id> --paper --hedge-ratio 1.0`
 - `pandora mirror status --strategy-hash <hash>`
 - `pandora webhook test --webhook-url https://example.com/hook`
 - `pandora leaderboard --metric volume --limit 20`
@@ -187,6 +187,7 @@ Prerequisite: Node.js `>=18`.
   - envelope is `ok=true`, `command="mirror.verify"`, with `data.matchConfidence`, `data.ruleHashLeft`, `data.ruleHashRight`, `data.ruleDiffSummary`, `data.similarityChecks[]`, and `data.gateResult`.
 - `mirror sync`:
   - envelope is `ok=true`, `command="mirror.sync"`, with `data.strategyHash`, `data.stateFile`, `data.parameters`, `data.snapshots[]`, and `data.actions[]`.
+  - hedge controls: `--hedge-trigger-usdc`, `--max-hedge-usdc`, `--hedge-ratio <n>` (default `1`), and `--no-hedge` to disable hedge execution while keeping drift rebalancing active.
 - `mirror status`:
   - envelope is `ok=true`, `command="mirror.status"`, with `data.stateFile`, `data.strategyHash`, and persisted `data.state`.
 - `webhook test`:

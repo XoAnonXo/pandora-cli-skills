@@ -2676,6 +2676,8 @@ test('mirror sync once paper mode performs deterministic simulated action and pe
       '25',
       '--hedge-trigger-usdc',
       '1000000',
+      '--hedge-ratio',
+      '0.75',
       '--state-file',
       stateFile,
       '--kill-switch-file',
@@ -2688,6 +2690,8 @@ test('mirror sync once paper mode performs deterministic simulated action and pe
     assert.equal(payload.command, 'mirror.sync');
     assert.equal(payload.data.mode, 'once');
     assert.equal(payload.data.executeLive, false);
+    assert.equal(payload.data.parameters.hedgeEnabled, true);
+    assert.equal(payload.data.parameters.hedgeRatio, 0.75);
     assert.equal(payload.data.actionCount, 1);
     assert.equal(fs.existsSync(stateFile), true);
     assert.equal(payload.data.actions[0].status, 'simulated');
@@ -2696,6 +2700,97 @@ test('mirror sync once paper mode performs deterministic simulated action and pe
     await polymarket.close();
     removeDir(tempDir);
   }
+});
+
+test('mirror sync --no-hedge suppresses hedge trigger path while preserving snapshot diagnostics', async () => {
+  const tempDir = createTempDir('pandora-mirror-sync-no-hedge-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const indexer = await startIndexerMockServer(
+    buildMirrorIndexerOverrides({
+      markets: [
+        {
+          id: ADDRESSES.mirrorMarket,
+          chainId: 1,
+          chainName: 'ethereum',
+          pollAddress: ADDRESSES.mirrorPoll,
+          creator: ADDRESSES.wallet1,
+          marketType: 'amm',
+          marketCloseTimestamp: FIXED_MIRROR_CLOSE_TS,
+          totalVolume: '100000',
+          currentTvl: '200000',
+          yesChance: '0.80',
+          reserveYes: '80',
+          reserveNo: '20',
+          createdAt: '1700000000',
+        },
+      ],
+    }),
+  );
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'sync',
+      'once',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--pandora-market-address',
+      ADDRESSES.mirrorMarket,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--paper',
+      '--drift-trigger-bps',
+      '2000',
+      '--hedge-trigger-usdc',
+      '10',
+      '--no-hedge',
+      '--state-file',
+      stateFile,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.sync');
+    assert.equal(payload.data.parameters.hedgeEnabled, false);
+    assert.equal(payload.data.actionCount, 0);
+    assert.equal(payload.data.snapshots[0].metrics.rawHedgeTriggered, true);
+    assert.equal(payload.data.snapshots[0].metrics.hedgeTriggered, false);
+    assert.equal(payload.data.snapshots[0].metrics.hedgeSuppressed, true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror sync validates --hedge-ratio upper bound', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'sync',
+    'once',
+    '--skip-dotenv',
+    '--pandora-market-address',
+    ADDRESSES.mirrorMarket,
+    '--polymarket-market-id',
+    'poly-cond-1',
+    '--paper',
+    '--hedge-ratio',
+    '2.5',
+  ]);
+
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /--hedge-ratio/);
 });
 
 test('mirror sync --execute-live enforces required risk caps', () => {

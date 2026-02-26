@@ -1,11 +1,12 @@
 Goal (incl. success criteria):
-- Implement and ship the full `pandora mirror` workflow for Polymarket -> Pandora pAMM mirroring with delta-neutral sync.
+- Keep `pandora mirror` production-grade and operator-safe for Polymarket -> Pandora pAMM delta-neutral sync.
 - Success criteria:
   - New command family works end-to-end: `mirror plan`, `mirror deploy`, `mirror sync run|once`, `mirror status`, `mirror verify`.
   - Liquidity sizing formula matches locked model+depth-cap specification.
   - Sync loop is paper-first, supports live execution with strict gates and deterministic blocking errors.
   - Rules/similarity verification is explicit and consumable by AI subagents.
   - Existing commands remain backward-compatible and tests pass.
+  - Mirror sync exposes explicit hedge controls for runtime tuning (requested).
 
 Constraints/Assumptions:
 - Follow AGENTS.md continuity process every turn.
@@ -63,10 +64,16 @@ State:
       - bumped version `1.1.3 -> 1.1.4`.
       - full validation passed via `npm run test`.
       - published `pandora-cli-skills@1.1.4` with `dist-tag latest=1.1.4`.
+    - Mirror hedge controls (2026-02-26):
+      - added `mirror sync` flags: `--hedge-ratio <n>` (default `1`, max `2`) and `--no-hedge`.
+      - added snapshot diagnostics: `rawHedgeTriggered`, `hedgeSuppressed`, and parameter echo (`hedgeEnabled`, `hedgeRatio`).
+      - added CLI integration tests for hedge-ratio acceptance, no-hedge suppression, and ratio bound validation.
+      - updated `README_FOR_SHARING.md` and `SKILL.md` examples/contracts for hedge controls.
+      - validated with full gate: `npm run test` (build + unit + cli + smoke).
   - Now:
-    - `pandora-cli-skills@1.1.4` is published and release metadata is pushed to `origin/main`.
+    - Preparing commit/push for mirror hedge control updates.
   - Next:
-    - Optional: create signed git tag/release notes for `v1.1.4`.
+    - Push update to `origin/main`; optionally publish a new npm patch if desired.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -93,3 +100,5 @@ Working set (files/ids/commands):
   - `npm run test` (passed on `1.1.4`)
   - `npm publish --access public` (published `1.1.4`)
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.4`)
+ - Current task:
+  - Ensure mirror hedge controls are explicit and practical for delta-neutral operation.

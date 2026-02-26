@@ -152,6 +152,8 @@ async function runMirrorSync(options, deps = {}) {
     polymarketSlug: options.polymarketSlug,
     executeLive: options.executeLive,
     driftTriggerBps: options.driftTriggerBps,
+    hedgeEnabled: options.hedgeEnabled,
+    hedgeRatio: options.hedgeRatio,
     hedgeTriggerUsdc: options.hedgeTriggerUsdc,
   };
 
@@ -209,11 +211,11 @@ async function runMirrorSync(options, deps = {}) {
         snapshotMetrics.targetHedgeUsdc === null
           ? null
           : round(snapshotMetrics.targetHedgeUsdc - (toNumber(state.currentHedgeUsdc) || 0), 6);
-      const hedgeTriggered = gapUsdc !== null && Math.abs(gapUsdc) >= options.hedgeTriggerUsdc;
+      const rawHedgeTriggered = gapUsdc !== null && Math.abs(gapUsdc) >= options.hedgeTriggerUsdc;
+      const hedgeTriggered = Boolean(options.hedgeEnabled) && rawHedgeTriggered;
 
-      const plannedHedgeUsdc = hedgeTriggered
-        ? Math.min(Math.abs(gapUsdc), options.maxHedgeUsdc)
-        : 0;
+      const scaledHedgeUsdc = rawHedgeTriggered ? Math.abs(gapUsdc) * options.hedgeRatio : 0;
+      const plannedHedgeUsdc = hedgeTriggered ? Math.min(scaledHedgeUsdc, options.maxHedgeUsdc) : 0;
 
       const driftMagnitudePct = snapshotMetrics.driftBps === null ? 0 : snapshotMetrics.driftBps / 100;
       const plannedRebalanceUsdc = snapshotMetrics.driftTriggered
@@ -249,7 +251,11 @@ async function runMirrorSync(options, deps = {}) {
         metrics: {
           ...snapshotMetrics,
           hedgeGapUsdc: gapUsdc,
+          rawHedgeTriggered,
           hedgeTriggered,
+          hedgeEnabled: Boolean(options.hedgeEnabled),
+          hedgeRatio: options.hedgeRatio,
+          hedgeSuppressed: rawHedgeTriggered && !options.hedgeEnabled,
           plannedHedgeUsdc,
           plannedRebalanceUsdc,
           plannedSpendUsdc,
@@ -405,6 +411,8 @@ async function runMirrorSync(options, deps = {}) {
       intervalMs: options.intervalMs,
       driftTriggerBps: options.driftTriggerBps,
       hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+      hedgeEnabled: options.hedgeEnabled,
+      hedgeRatio: options.hedgeRatio,
       maxRebalanceUsdc: options.maxRebalanceUsdc,
       maxHedgeUsdc: options.maxHedgeUsdc,
       maxOpenExposureUsdc: options.maxOpenExposureUsdc,

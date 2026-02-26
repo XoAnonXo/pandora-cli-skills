@@ -245,7 +245,7 @@ Examples:
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
   pandora mirror plan --source polymarket --polymarket-market-id 0xabc... --with-rules --include-similarity
   pandora mirror verify --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --include-similarity
-  pandora mirror sync once --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --paper
+  pandora mirror sync once --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --paper --hedge-ratio 1.0
   pandora webhook test --webhook-url https://example.com/hook --webhook-template '{\"text\":\"{{message}}\"}'
   pandora leaderboard --metric profit --limit 20
   pandora analyze --market-address 0xabc... --provider mock
@@ -2938,6 +2938,8 @@ function parseMirrorSyncFlags(args) {
     polymarketMarketId: null,
     polymarketSlug: null,
     executeLive: false,
+    hedgeEnabled: true,
+    hedgeRatio: 1,
     intervalMs: 5_000,
     driftTriggerBps: 150,
     hedgeTriggerUsdc: 10,
@@ -2995,6 +2997,10 @@ function parseMirrorSyncFlags(args) {
       options.executeLive = true;
       continue;
     }
+    if (token === '--no-hedge') {
+      options.hedgeEnabled = false;
+      continue;
+    }
     if (token === '--interval-ms') {
       options.intervalMs = parsePositiveInteger(requireFlagValue(rest, i, '--interval-ms'), '--interval-ms');
       if (options.intervalMs < 1_000) {
@@ -3010,6 +3016,14 @@ function parseMirrorSyncFlags(args) {
     }
     if (token === '--hedge-trigger-usdc') {
       options.hedgeTriggerUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--hedge-trigger-usdc'), '--hedge-trigger-usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--hedge-ratio') {
+      options.hedgeRatio = parsePositiveNumber(requireFlagValue(rest, i, '--hedge-ratio'), '--hedge-ratio');
+      if (options.hedgeRatio > 2) {
+        throw new CliError('INVALID_FLAG_VALUE', '--hedge-ratio must be <= 2.');
+      }
       i += 1;
       continue;
     }
@@ -3140,6 +3154,8 @@ function parseMirrorSyncFlags(args) {
       polymarketSlug: options.polymarketSlug,
       executeLive: options.executeLive,
       driftTriggerBps: options.driftTriggerBps,
+      hedgeEnabled: options.hedgeEnabled,
+      hedgeRatio: options.hedgeRatio,
       hedgeTriggerUsdc: options.hedgeTriggerUsdc,
     });
   }
@@ -4175,6 +4191,8 @@ function renderAutopilotTable(data) {
     [
       ['mode', data.mode],
       ['executeLive', data.executeLive ? 'yes' : 'no'],
+      ['hedgeEnabled', data.parameters && data.parameters.hedgeEnabled === false ? 'no' : 'yes'],
+      ['hedgeRatio', data.parameters && data.parameters.hedgeRatio !== undefined ? data.parameters.hedgeRatio : ''],
       ['strategyHash', data.strategyHash],
       ['iterationsCompleted', data.iterationsCompleted],
       ['actionCount', data.actionCount],
@@ -6471,7 +6489,7 @@ async function runMirrorCommand(args, context) {
         '  verify --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--include-similarity] [--with-rules]',
       );
       console.log(
-        '  sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
+        '  sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
       );
       console.log('  status --state-file <path>|--strategy-hash <hash>');
     }
@@ -6613,12 +6631,12 @@ async function runMirrorCommand(args, context) {
           context.outputMode,
           'mirror.sync.help',
           commandHelpPayload(
-            'pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
+            'pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
           ),
         );
       } else {
         console.log(
-          'Usage: pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
+          'Usage: pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
         );
       }
       return;
