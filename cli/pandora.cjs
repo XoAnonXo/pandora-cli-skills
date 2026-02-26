@@ -4330,8 +4330,9 @@ function runInitEnv(args, outputMode) {
 function runScriptCommand(command, args) {
   const targetScript = COMMAND_TARGETS[command];
   const { envFile, useEnvFile, passthrough } = parseScriptEnvFlags(args);
+  const helpOnly = passthrough.includes('--help') || passthrough.includes('-h');
 
-  if (useEnvFile) {
+  if (useEnvFile && !helpOnly) {
     try {
       loadEnvFile(envFile);
     } catch (err) {

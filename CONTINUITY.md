@@ -44,17 +44,20 @@ State:
       - Added alert metadata in watch payload (`alertCount`, snapshot `alerts`, aggregated `alerts[]`).
       - Added integration tests for trade guards, watch alert validation/triggering, and non-zero fail-on-alert exits.
       - Updated docs (`README_FOR_SHARING.md`, `SKILL.md`) for risk guardrails and watch alert contracts.
+    - CI failure diagnosis complete for run `22438277762`:
+      - Root cause: `clone-bet --help` test failed in clean runners because `runScriptCommand` loaded missing `scripts/.env` before forwarding help flags.
+      - Fix: skip dotenv loading for help-only passthrough in script wrapper; added regression test for `launch --help` without env file.
+      - Local validations after fix: `npm run test:cli`, `npm run test`, `npm run build`, `npm run pack:dry-run` all pass.
     - Latest validations all passing:
       - `npm run test`
       - `npm run build`
       - `npm run pack:dry-run`
   - Now:
-    - Critical review requested by user is complete: tests/build/pack and direct CLI smoke checks are passing.
-    - Preparing commit + push of the current post-Phase-3 + risk/alert bundle.
+    - Preparing commit/push for CI-fix patch.
+    - npm publish check complete: registry latest is `1.0.2`; this environment is currently not npm-authenticated (`npm whoami` 401).
   - Next:
-    - Complete push to remote and share commit hash.
-    - If requested: cut signed release tag/version for this bundle.
-    - If requested: continue with daemonized watch notifications or additional execution safety (e.g., enforced minShares derivation).
+    - Push CI-fix patch and verify GitHub Actions turns green.
+    - After user logs in to npm (`npm login`), bump/publish next patch release (likely `1.0.3`).
 
 Open questions (UNCONFIRMED if needed):
 - Release target for bundled post-Phase-3 patch (`1.0.3` now vs later). UNCONFIRMED.

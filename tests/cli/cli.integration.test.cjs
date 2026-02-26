@@ -1902,6 +1902,14 @@ test('clone-bet --help prints usage without stack traces', () => {
   assert.doesNotMatch(result.output, /Missing value for --help|at parseArgs/);
 });
 
+test('launch --help prints usage without requiring env file', () => {
+  const result = runCli(['launch', '--help']);
+  assert.equal(result.status, 0);
+  assert.match(result.output, /Usage:/);
+  assert.match(result.output, /pandora launch --dry-run\|--execute/);
+  assert.doesNotMatch(result.output, /Env file not found/);
+});
+
 test('launch supports --no-env-file alias', () => {
   const result = runCli([
     'launch',
