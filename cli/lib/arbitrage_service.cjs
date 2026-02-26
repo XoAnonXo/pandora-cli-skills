@@ -1,7 +1,7 @@
 const { createIndexerClient } = require('./indexer_client.cjs');
 const { fetchPolymarketMarkets } = require('./polymarket_adapter.cjs');
 
-const ARBITRAGE_SCHEMA_VERSION = '1.0.0';
+const ARBITRAGE_SCHEMA_VERSION = '1.1.0';
 
 function toNumber(value) {
   const numeric = Number(value);
@@ -93,10 +93,22 @@ function jaroWinkler(a, b) {
   return jaro + prefix * 0.1 * (1 - jaro);
 }
 
+function questionSimilarityBreakdown(a, b) {
+  const normalizedLeft = normalizeQuestion(a);
+  const normalizedRight = normalizeQuestion(b);
+  const tokenScore = jaccard(tokenize(normalizedLeft), tokenize(normalizedRight));
+  const jw = jaroWinkler(normalizedLeft, normalizedRight);
+  return {
+    normalizedLeft,
+    normalizedRight,
+    tokenScore: round(tokenScore, 6),
+    jaroWinkler: round(jw, 6),
+    score: round(tokenScore * 0.55 + jw * 0.45, 6),
+  };
+}
+
 function questionSimilarity(a, b) {
-  const tokenScore = jaccard(tokenize(a), tokenize(b));
-  const jw = jaroWinkler(normalizeQuestion(a), normalizeQuestion(b));
-  return round(tokenScore * 0.55 + jw * 0.45, 6);
+  return questionSimilarityBreakdown(a, b).score;
 }
 
 function toYesProbabilityFromYesChance(rawYesChance) {
@@ -141,7 +153,52 @@ function normalizeId(value) {
   return text || null;
 }
 
-async function fetchPandoraLegs(options) {
+function normalizeSources(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed.map((entry) => String(entry || '').trim()).filter(Boolean);
+      }
+    } catch {
+      // fall through to text splitting
+    }
+    return text
+      .split(/[\n,]/g)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+async function fetchPandoraPollDetails(client, pollIds, diagnostics) {
+  const baseFields = ['id', 'question', 'status', 'deadlineEpoch', 'resolvedAt'];
+  const extendedFields = [...baseFields, 'rules', 'sources'];
+  try {
+    return await client.getManyByIds({
+      queryName: 'polls',
+      fields: extendedFields,
+      ids: pollIds,
+    });
+  } catch (err) {
+    diagnostics.push(
+      `Pandora poll rule metadata unavailable from indexer; using question-only poll fields (${err && err.message ? err.message : String(err)}).`,
+    );
+    return client.getManyByIds({
+      queryName: 'polls',
+      fields: baseFields,
+      ids: pollIds,
+    });
+  }
+}
+
+async function fetchPandoraLegs(options, diagnostics) {
   const client = createIndexerClient(options.indexerUrl, options.timeoutMs);
   const page = await client.list({
     queryName: 'marketss',
@@ -171,11 +228,7 @@ async function fetchPandoraLegs(options) {
   });
 
   const pollIds = Array.from(new Set((page.items || []).map((item) => normalizeId(item && item.pollAddress)).filter(Boolean)));
-  const pollsById = await client.getManyByIds({
-    queryName: 'polls',
-    fields: ['id', 'question', 'status', 'deadlineEpoch', 'resolvedAt'],
-    ids: pollIds,
-  });
+  const pollsById = await fetchPandoraPollDetails(client, pollIds, diagnostics);
 
   const legs = [];
   for (const market of page.items || []) {
@@ -188,6 +241,7 @@ async function fetchPandoraLegs(options) {
 
     const odds = derivePandoraYesNo(market);
     legs.push({
+      legId: `pandora:${String(market.id || '')}`,
       venue: 'pandora',
       marketId: market.id,
       question,
@@ -202,6 +256,9 @@ async function fetchPandoraLegs(options) {
       chainId: market.chainId,
       marketType: market.marketType,
       pollAddress: market.pollAddress,
+      pollStatus: toNumber(poll && poll.status),
+      rules: poll && poll.rules ? String(poll.rules) : null,
+      sources: normalizeSources(poll && poll.sources),
     });
   }
 
@@ -210,6 +267,8 @@ async function fetchPandoraLegs(options) {
 
 function buildGroups(legs, options) {
   const parent = new Map();
+  const acceptedPairChecks = new Map();
+  const makePairKey = (a, b) => [a, b].sort().join('|');
   const find = (x) => {
     const p = parent.get(x);
     if (p === x) return x;
@@ -223,36 +282,107 @@ function buildGroups(legs, options) {
     if (ra !== rb) parent.set(rb, ra);
   };
 
-  for (const leg of legs) parent.set(leg.marketId, leg.marketId);
+  for (let index = 0; index < legs.length; index += 1) {
+    const leg = legs[index];
+    if (!leg.legId) {
+      leg.legId = `${leg.venue}:${String(leg.marketId || 'unknown')}:${index}`;
+    }
+    parent.set(leg.legId, leg.legId);
+  }
 
   for (let i = 0; i < legs.length; i += 1) {
     for (let j = i + 1; j < legs.length; j += 1) {
       const left = legs[i];
       const right = legs[j];
 
-      const similarity = questionSimilarity(left.question, right.question);
-      if (similarity < options.similarityThreshold) continue;
+      if (options.crossVenueOnly && left.venue === right.venue) continue;
 
+      const similarity = questionSimilarityBreakdown(left.question, right.question);
+      if (similarity.score < options.similarityThreshold) continue;
+
+      let closeDiffHours = null;
       if (left.closeTimestamp && right.closeTimestamp) {
-        const diffHours = Math.abs(left.closeTimestamp - right.closeTimestamp) / 3600;
-        if (diffHours > options.maxCloseDiffHours) continue;
+        closeDiffHours = Math.abs(left.closeTimestamp - right.closeTimestamp) / 3600;
+        if (closeDiffHours > options.maxCloseDiffHours) continue;
       }
 
-      union(left.marketId, right.marketId);
+      union(left.legId, right.legId);
+      acceptedPairChecks.set(makePairKey(left.legId, right.legId), {
+        leftLegId: left.legId,
+        rightLegId: right.legId,
+        leftVenue: left.venue,
+        rightVenue: right.venue,
+        leftMarketId: left.marketId,
+        rightMarketId: right.marketId,
+        leftQuestion: left.question,
+        rightQuestion: right.question,
+        normalizedLeft: similarity.normalizedLeft,
+        normalizedRight: similarity.normalizedRight,
+        similarityScore: similarity.score,
+        tokenScore: similarity.tokenScore,
+        jaroWinkler: similarity.jaroWinkler,
+        closeDiffHours: closeDiffHours === null ? null : round(closeDiffHours, 6),
+      });
     }
   }
 
   const grouped = new Map();
   for (const leg of legs) {
-    const root = find(leg.marketId);
+    const root = find(leg.legId);
     if (!grouped.has(root)) grouped.set(root, []);
     grouped.get(root).push(leg);
   }
 
-  return Array.from(grouped.values()).filter((group) => group.length >= 2);
+  return {
+    groups: Array.from(grouped.values()).filter((group) => group.length >= 2),
+    acceptedPairChecks,
+  };
 }
 
-function summarizeGroup(group, options) {
+function buildGroupPairChecks(group, options, acceptedPairChecks) {
+  const out = [];
+  const makePairKey = (a, b) => [a, b].sort().join('|');
+  for (let i = 0; i < group.length; i += 1) {
+    for (let j = i + 1; j < group.length; j += 1) {
+      const left = group[i];
+      const right = group[j];
+      const similarity = questionSimilarityBreakdown(left.question, right.question);
+      let closeDiffHours = null;
+      if (left.closeTimestamp && right.closeTimestamp) {
+        closeDiffHours = Math.abs(left.closeTimestamp - right.closeTimestamp) / 3600;
+      }
+      const accepted = acceptedPairChecks.has(makePairKey(left.legId, right.legId));
+      out.push({
+        leftLegId: left.legId,
+        rightLegId: right.legId,
+        leftVenue: left.venue,
+        rightVenue: right.venue,
+        leftMarketId: left.marketId,
+        rightMarketId: right.marketId,
+        leftQuestion: left.question,
+        rightQuestion: right.question,
+        normalizedLeft: similarity.normalizedLeft,
+        normalizedRight: similarity.normalizedRight,
+        similarityScore: similarity.score,
+        tokenScore: similarity.tokenScore,
+        jaroWinkler: similarity.jaroWinkler,
+        closeDiffHours: closeDiffHours === null ? null : round(closeDiffHours, 6),
+        passesSimilarity: similarity.score >= options.similarityThreshold,
+        passesCloseWindow: closeDiffHours === null ? true : closeDiffHours <= options.maxCloseDiffHours,
+        passesVenueRule: options.crossVenueOnly ? left.venue !== right.venue : true,
+        accepted,
+      });
+    }
+  }
+  return out;
+}
+
+function summarizeGroup(group, options, acceptedPairChecks) {
+  const venues = Array.from(new Set(group.map((leg) => leg.venue))).sort();
+  if (options.crossVenueOnly && venues.length < 2) {
+    return null;
+  }
+
   const yesValues = group.map((leg) => toNumber(leg.yesPct)).filter((value) => value !== null);
   const noValues = group.map((leg) => toNumber(leg.noPct)).filter((value) => value !== null);
   if (!yesValues.length || !noValues.length) {
@@ -285,6 +415,9 @@ function summarizeGroup(group, options) {
   if (!knownLiquidity.length) {
     riskFlags.push('UNKNOWN_LIQUIDITY');
   }
+  if (venues.length < 2) {
+    riskFlags.push('SINGLE_VENUE_GROUP');
+  }
 
   const labels = group.flatMap((leg) => leg.diagnostics || []);
   if (labels.length) riskFlags.push('NON_STANDARD_MARKET_MAPPING');
@@ -296,11 +429,23 @@ function summarizeGroup(group, options) {
     }
   }
 
+  const pairChecks = buildGroupPairChecks(group, options, acceptedPairChecks);
+  const crossVenueChecks = pairChecks.filter((pair) => pair.leftVenue !== pair.rightVenue);
+  const comparisonSet = crossVenueChecks.length ? crossVenueChecks : pairChecks;
+  const minPairSimilarity = comparisonSet.length
+    ? Math.min(...comparisonSet.map((pair) => toNumber(pair.similarityScore)).filter((value) => value !== null))
+    : null;
+  if (minPairSimilarity !== null && minPairSimilarity < options.similarityThreshold) {
+    riskFlags.push('TRANSITIVE_MATCH_GAP');
+  }
+
   let confidence = 1;
   if (riskFlags.includes('LOW_LIQUIDITY')) confidence -= 0.2;
   if (riskFlags.includes('UNKNOWN_LIQUIDITY')) confidence -= 0.1;
   if (riskFlags.includes('CLOSE_TIME_DRIFT')) confidence -= 0.1;
   if (riskFlags.includes('NON_STANDARD_MARKET_MAPPING')) confidence -= 0.15;
+  if (riskFlags.includes('TRANSITIVE_MATCH_GAP')) confidence -= 0.15;
+  if (riskFlags.includes('SINGLE_VENUE_GROUP')) confidence -= 0.1;
   confidence = round(Math.max(0, Math.min(1, confidence)), 4);
 
   const sortedQuestions = group.map((leg) => normalizeQuestion(leg.question)).filter(Boolean).sort();
@@ -316,6 +461,7 @@ function summarizeGroup(group, options) {
     },
     spreadYesPct: spreadYes,
     spreadNoPct: spreadNo,
+    venues,
     bestYesBuy: bestYesBuy
       ? {
           venue: bestYesBuy.venue,
@@ -334,6 +480,13 @@ function summarizeGroup(group, options) {
       : null,
     confidenceScore: confidence,
     riskFlags: Array.from(new Set(riskFlags)),
+    matchSummary: {
+      similarityThreshold: options.similarityThreshold,
+      minPairSimilarity,
+      pairCount: pairChecks.length,
+      crossVenuePairCount: crossVenueChecks.length,
+    },
+    similarityChecks: options.includeSimilarity ? pairChecks : undefined,
     legs: group.map((leg) => ({
       venue: leg.venue,
       marketId: leg.marketId,
@@ -346,6 +499,9 @@ function summarizeGroup(group, options) {
       volumeUsd: leg.volumeUsd,
       oddsSource: leg.oddsSource,
       diagnostics: leg.diagnostics,
+      rules: options.withRules ? leg.rules || null : undefined,
+      sources: options.withRules ? (Array.isArray(leg.sources) ? leg.sources : []) : undefined,
+      pollStatus: options.withRules ? leg.pollStatus : undefined,
     })),
   };
 }
@@ -356,10 +512,13 @@ async function scanArbitrage(options) {
   const sources = {};
   const allLegs = [];
   const diagnostics = [];
+  if (options.crossVenueOnly && venues.length < 2) {
+    diagnostics.push('cross-venue-only is enabled but fewer than two venues were selected; no opportunities will match.');
+  }
 
   if (venues.includes('pandora')) {
     try {
-      const pandoraLegs = await fetchPandoraLegs(options);
+      const pandoraLegs = await fetchPandoraLegs(options, diagnostics);
       allLegs.push(...pandoraLegs);
       sources.pandora = {
         indexerUrl: options.indexerUrl,
@@ -425,6 +584,9 @@ async function scanArbitrage(options) {
         minLiquidityUsd: options.minLiquidityUsd,
         maxCloseDiffHours: options.maxCloseDiffHours,
         similarityThreshold: options.similarityThreshold,
+        crossVenueOnly: options.crossVenueOnly,
+        withRules: options.withRules,
+        includeSimilarity: options.includeSimilarity,
         questionContains: options.questionContains,
       },
       sources,
@@ -434,9 +596,9 @@ async function scanArbitrage(options) {
     };
   }
 
-  const groups = buildGroups(allLegs, options);
-  const opportunities = groups
-    .map((group) => summarizeGroup(group, options))
+  const grouped = buildGroups(allLegs, options);
+  const opportunities = grouped.groups
+    .map((group) => summarizeGroup(group, options, grouped.acceptedPairChecks))
     .filter(Boolean)
     .sort((a, b) => {
       const left = Math.max(a.spreadYesPct || 0, a.spreadNoPct || 0);
@@ -456,6 +618,9 @@ async function scanArbitrage(options) {
       minLiquidityUsd: options.minLiquidityUsd,
       maxCloseDiffHours: options.maxCloseDiffHours,
       similarityThreshold: options.similarityThreshold,
+      crossVenueOnly: options.crossVenueOnly,
+      withRules: options.withRules,
+      includeSimilarity: options.includeSimilarity,
       questionContains: options.questionContains,
     },
     sources,

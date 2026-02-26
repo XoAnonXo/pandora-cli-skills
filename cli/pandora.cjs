@@ -204,7 +204,7 @@ Usage:
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
-  pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
+  pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
@@ -230,7 +230,7 @@ Examples:
   pandora trade --dry-run --market-address 0xabc... --side no --amount-usdc 25 --max-amount-usdc 50 --min-probability-pct 20
   pandora history --wallet 0x1234... --chain-id 1 --limit 50
   pandora export --wallet 0x1234... --format csv --year 2026 --out ./trades-2026.csv
-  pandora arbitrage --chain-id 1 --limit 25 --venues pandora,polymarket
+  pandora arbitrage --chain-id 1 --limit 25 --venues pandora,polymarket --cross-venue-only --with-rules --include-similarity
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
   pandora webhook test --webhook-url https://example.com/hook --webhook-template '{\"text\":\"{{message}}\"}'
   pandora leaderboard --metric profit --limit 20
@@ -2184,6 +2184,9 @@ function parseArbitrageFlags(args) {
     minLiquidityUsd: 1000,
     maxCloseDiffHours: 24,
     similarityThreshold: 0.86,
+    crossVenueOnly: true,
+    withRules: false,
+    includeSimilarity: false,
     questionContains: null,
     polymarketHost: null,
     polymarketMockUrl: null,
@@ -2240,6 +2243,22 @@ function parseArbitrageFlags(args) {
         throw new CliError('INVALID_FLAG_VALUE', '--similarity-threshold must be between 0 and 1.');
       }
       i += 1;
+      continue;
+    }
+    if (token === '--cross-venue-only') {
+      options.crossVenueOnly = true;
+      continue;
+    }
+    if (token === '--allow-same-venue') {
+      options.crossVenueOnly = false;
+      continue;
+    }
+    if (token === '--with-rules') {
+      options.withRules = true;
+      continue;
+    }
+    if (token === '--include-similarity') {
+      options.includeSimilarity = true;
       continue;
     }
     if (token === '--question-contains') {
@@ -5580,12 +5599,12 @@ async function runArbitrageCommand(args, context) {
         context.outputMode,
         'arbitrage.help',
         commandHelpPayload(
-          'pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
+          'pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
         ),
       );
     } else {
       console.log(
-        'Usage: pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
+        'Usage: pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
       );
     }
     return;
@@ -5886,6 +5905,9 @@ async function runSuggestCommand(args, context) {
     minLiquidityUsd: 1000,
     maxCloseDiffHours: 24,
     similarityThreshold: 0.86,
+    crossVenueOnly: true,
+    withRules: false,
+    includeSimilarity: false,
     questionContains: null,
     polymarketHost: null,
     polymarketMockUrl: null,

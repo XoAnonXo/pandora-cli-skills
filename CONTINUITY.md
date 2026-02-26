@@ -1,10 +1,12 @@
 Goal (incl. success criteria):
-- Harden Pandora CLI against latest audit findings and publish a clean follow-up update.
+- Harden Pandora CLI against latest audit findings and improve arbitrage explainability for AI subagents.
 - Success criteria:
   - Leaderboard never reports impossible win-rate percentages from inconsistent indexer aggregates.
   - Autopilot state persistence is robust under rapid repeated runs using the same strategy hash.
   - Mainnet deployment/config reference is documented for ABI-gated `resolve`/`lp` readiness.
   - Validation suite passes (`test`, `build`, `pack:dry-run`).
+  - `arbitrage` can expose similarity checks and rule context for agent verification.
+  - `arbitrage` reduces same-venue false positives via cross-venue default behavior.
 
 Constraints/Assumptions:
 - Follow AGENTS.md continuity process every turn.
@@ -16,6 +18,8 @@ Key decisions:
 - Scope `leaderboard` payload-level diagnostics to returned rows only (avoid diagnostics for out-of-window rows).
 - Fix autopilot write race by using unique per-write temp files before atomic rename.
 - Keep provided mainnet deployment addresses/indexer as documentation source-of-truth (no ABI execution wiring yet).
+- Make `arbitrage` cross-venue-only by default; explicit `--allow-same-venue` opt-in.
+- Add agent-facing arbitrage flags: `--with-rules` and `--include-similarity`.
 
 State:
   - Done:
@@ -55,14 +59,40 @@ State:
         - `npm view pandora-cli-skills version --prefer-online` -> `1.1.3`
         - `npm view pandora-cli-skills@1.1.3 version` -> `1.1.3`
       - direct registry payload confirms `dist-tags.latest=1.1.3`.
+    - Arbitrage agent-explainability upgrade implemented:
+      - `cli/lib/arbitrage_service.cjs`:
+        - schema version `1.1.0`.
+        - added pairwise similarity breakdown (`tokenScore`, `jaroWinkler`, blended score).
+        - added `crossVenueOnly` matching rule and same-venue risk flag support.
+        - added optional `similarityChecks` payload and `matchSummary`.
+        - added optional per-leg rule/source metadata output.
+        - added diagnostics when cross-venue-only is used with fewer than 2 venues.
+        - added poll metadata fallback (graceful downgrade if indexer lacks `rules`/`sources` fields).
+      - `cli/lib/polymarket_adapter.cjs`:
+        - adds leg id and rule-text mapping from Polymarket description.
+      - `cli/pandora.cjs`:
+        - new arbitrage flags:
+          - `--cross-venue-only` (default)
+          - `--allow-same-venue`
+          - `--with-rules`
+          - `--include-similarity`
+        - updated help/usage strings and examples.
+        - `suggest` now invokes arbitrage with explicit safe defaults for new flags.
+    - Deterministic integration tests added for new arbitrage behavior:
+      - default cross-venue-only filtering vs same-venue override.
+      - rules + similarity diagnostics payload exposure.
+    - Validation after arbitrage upgrades:
+      - `npm run test:cli` (68 passing)
+      - `npm run test:unit` (7 passing)
+      - `npm run build`
   - Now:
-    - npm publish objective complete for `1.1.3`.
+    - Reviewing and summarizing arbitrage-agent improvements for user.
   - Next:
-    - Optional: create signed git tag/release for `v1.1.3`.
-    - Optional: smoke-test public install via `npx -y pandora-cli-skills@latest --help`.
+    - Commit and push arbitrage explainability updates.
+    - Optionally publish `1.1.4` patch release if requested.
 
 Open questions (UNCONFIRMED if needed):
-- None (user requested publish now).
+- Should arbitrage upgrades ship immediately as `1.1.4`? UNCONFIRMED.
 
 Working set (files/ids/commands):
 - Active files:

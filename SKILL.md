@@ -95,7 +95,7 @@ pandora --output json portfolio --wallet <0x...> --chain-id 1
 pandora --output json watch --wallet <0x...> --iterations 3 --interval-ms 1000 --alert-net-liquidity-above 1000 --fail-on-alert
 pandora --output json history --wallet <0x...> --limit 50
 pandora --output json export --wallet <0x...> --format csv --out ./trades.csv
-pandora --output json arbitrage --venues pandora,polymarket --min-spread-pct 3
+pandora --output json arbitrage --venues pandora,polymarket --min-spread-pct 3 --cross-venue-only --with-rules --include-similarity
 pandora --output json autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper
 pandora --output json webhook test --webhook-url https://example.com/hook
 pandora --output json leaderboard --metric profit --limit 20
@@ -151,6 +151,10 @@ pandora --output json suggest --wallet <0x...> --risk medium --budget 50 --inclu
 - `history`: analytics-grade trade journal with per-trade approximate P&L and diagnostics.
 - `export`: deterministic CSV/JSON materialization from history rows.
 - `arbitrage`: duplicate/correlated market spread detection across Pandora + Polymarket.
+  - `--cross-venue-only` is default to suppress same-venue duplicate noise.
+  - `--allow-same-venue` opts back into same-venue matching.
+  - `--with-rules` includes per-leg rule/source context where indexer data exists.
+  - `--include-similarity` includes pairwise similarity diagnostics for agent verification.
 - `autopilot`: paper-first trigger loop with persisted local state and idempotency.
 - `webhook test`: channel validation for generic, Telegram, and Discord payload delivery.
 - `leaderboard`: ranked user aggregates by profit/volume/win-rate.

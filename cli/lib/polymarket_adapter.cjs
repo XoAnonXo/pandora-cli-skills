@@ -61,9 +61,11 @@ function normalizeTokens(tokens) {
 function mapPolymarketRow(row) {
   const mapped = normalizeTokens(row.tokens || []);
   const question = row.question || row.description || null;
+  const marketId = row.condition_id || row.question_id || null;
   return {
+    legId: `polymarket:${String(marketId || '')}`,
     venue: 'polymarket',
-    marketId: row.condition_id || row.question_id || null,
+    marketId,
     question,
     closeTimestamp: toTimestampSeconds(row.end_date_iso || row.game_start_time),
     yesPct: mapped.yes,
@@ -73,6 +75,9 @@ function mapPolymarketRow(row) {
     url: row.market_slug ? `https://polymarket.com/event/${row.market_slug}` : null,
     oddsSource: 'polymarket:clob-markets',
     diagnostics: mapped.diagnostics,
+    rules: row.description ? String(row.description) : null,
+    sources: [],
+    pollStatus: null,
   };
 }
 

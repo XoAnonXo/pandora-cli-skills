@@ -2148,9 +2148,189 @@ test('arbitrage combines pandora + polymarket fixtures', async () => {
     const payload = parseJsonOutput(result);
     assert.equal(payload.ok, true);
     assert.equal(payload.command, 'arbitrage');
-    assert.equal(payload.data.schemaVersion, '1.0.0');
+    assert.equal(payload.data.schemaVersion, '1.1.0');
+    assert.equal(payload.data.parameters.crossVenueOnly, true);
     assert.equal(payload.data.count >= 1, true);
     assert.equal(Array.isArray(payload.data.opportunities), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('arbitrage defaults to cross-venue-only and allows same-venue override', async () => {
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: 'market-dup-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-dup-1',
+        creator: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '12345',
+        currentTvl: '4567000000',
+        yesChance: '0.80',
+        reserveYes: '80',
+        reserveNo: '20',
+        createdAt: '1700000001',
+      },
+      {
+        id: 'market-dup-2',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-dup-2',
+        creator: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        marketType: 'amm',
+        marketCloseTimestamp: '1710001000',
+        totalVolume: '22345',
+        currentTvl: '5567000000',
+        yesChance: '0.55',
+        reserveYes: '55',
+        reserveNo: '45',
+        createdAt: '1700000002',
+      },
+    ],
+    polls: [
+      {
+        id: 'poll-dup-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        question: 'Will Arsenal win Premier League 2026?',
+        status: 1,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpoll-dup-1',
+      },
+      {
+        id: 'poll-dup-2',
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        question: 'Will Arsenal FC win the Premier League in 2026?',
+        status: 1,
+        category: 3,
+        deadlineEpoch: 1710001000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpoll-dup-2',
+      },
+    ],
+  });
+
+  try {
+    const crossVenueOnly = await runCliAsync([
+      '--output',
+      'json',
+      'arbitrage',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--venues',
+      'pandora',
+      '--limit',
+      '10',
+      '--min-spread-pct',
+      '1',
+      '--similarity-threshold',
+      '0.5',
+    ]);
+
+    assert.equal(crossVenueOnly.status, 0);
+    const crossPayload = parseJsonOutput(crossVenueOnly);
+    assert.equal(crossPayload.data.parameters.crossVenueOnly, true);
+    assert.equal(crossPayload.data.count, 0);
+
+    const allowSameVenue = await runCliAsync([
+      '--output',
+      'json',
+      'arbitrage',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--venues',
+      'pandora',
+      '--limit',
+      '10',
+      '--min-spread-pct',
+      '1',
+      '--similarity-threshold',
+      '0.5',
+      '--allow-same-venue',
+    ]);
+
+    assert.equal(allowSameVenue.status, 0);
+    const sameVenuePayload = parseJsonOutput(allowSameVenue);
+    assert.equal(sameVenuePayload.data.parameters.crossVenueOnly, false);
+    assert.equal(sameVenuePayload.data.count >= 1, true);
+    assert.equal(Array.isArray(sameVenuePayload.data.opportunities[0].venues), true);
+    assert.deepEqual(sameVenuePayload.data.opportunities[0].venues, ['pandora']);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('arbitrage exposes rules and similarity checks for agent verification', async () => {
+  const indexer = await startIndexerMockServer({
+    polls: [
+      {
+        id: 'poll-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        question: 'Will deterministic tests pass?',
+        status: 1,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpoll1',
+        rules:
+          'Resolves YES if deterministic tests pass in CI. Resolves NO if they fail. Unresolved or cancelled resolves NO.',
+        sources: '["https://github.com","https://ci.example.com"]',
+      },
+    ],
+  });
+  const polymarket = await startPolymarketMockServer();
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'arbitrage',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--venues',
+      'pandora,polymarket',
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--limit',
+      '10',
+      '--min-spread-pct',
+      '1',
+      '--with-rules',
+      '--include-similarity',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'arbitrage');
+    assert.equal(payload.data.parameters.withRules, true);
+    assert.equal(payload.data.parameters.includeSimilarity, true);
+    assert.equal(payload.data.count >= 1, true);
+
+    const opportunity = payload.data.opportunities[0];
+    assert.equal(Array.isArray(opportunity.similarityChecks), true);
+    assert.equal(opportunity.similarityChecks.length >= 1, true);
+    assert.equal(opportunity.similarityChecks.some((entry) => entry.accepted === true), true);
+    const pandoraLeg = opportunity.legs.find((leg) => leg.venue === 'pandora');
+    assert.equal(Boolean(pandoraLeg), true);
+    assert.equal(typeof pandoraLeg.rules, 'string');
+    assert.equal(Array.isArray(pandoraLeg.sources), true);
+    assert.equal(pandoraLeg.sources.length, 2);
   } finally {
     await indexer.close();
     await polymarket.close();

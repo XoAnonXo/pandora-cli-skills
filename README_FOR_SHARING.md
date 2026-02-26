@@ -103,7 +103,7 @@ Prerequisite: Node.js `>=18`.
 - `pandora watch --wallet <0x...> --iterations 3 --interval-ms 1000 --alert-net-liquidity-below -100`
 - `pandora history --wallet <0x...> --limit 50`
 - `pandora export --wallet <0x...> --format csv --out ./trades.csv`
-- `pandora arbitrage --venues pandora,polymarket --min-spread-pct 2`
+- `pandora arbitrage --venues pandora,polymarket --min-spread-pct 2 --cross-venue-only --with-rules --include-similarity`
 - `pandora autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper`
 - `pandora webhook test --webhook-url https://example.com/hook`
 - `pandora leaderboard --metric volume --limit 20`
@@ -165,6 +165,11 @@ Prerequisite: Node.js `>=18`.
   - envelope is `ok=true`, `command="export"`, with `data.format`, `data.columns`, `data.count`, optional `data.outPath`, and materialized `data.content`.
 - `arbitrage`:
   - envelope is `ok=true`, `command="arbitrage"`, with `data.parameters`, `data.sources`, and `data.opportunities[]`.
+  - agent-focused flags:
+    - `--cross-venue-only` (default) prevents same-venue duplicate-market noise.
+    - `--allow-same-venue` re-enables same-venue matching.
+    - `--with-rules` includes per-leg rules/source metadata where available.
+    - `--include-similarity` includes pairwise similarity diagnostics for each group.
   - source failures are emitted in diagnostics instead of hard crashes.
 - `autopilot`:
   - envelope is `ok=true`, `command="autopilot"`, with `data.strategyHash`, `data.stateFile`, `data.snapshots[]`, and `data.actions[]`.
