@@ -59,10 +59,14 @@ State:
     - NPM registry check on 2026-02-26:
       - package `pandora-cli-skills` latest published version is `1.1.3`.
       - published versions are `1.0.2`, `1.0.3`, `1.1.2`, `1.1.3`.
+    - Release on 2026-02-26:
+      - bumped version `1.1.3 -> 1.1.4`.
+      - full validation passed via `npm run test`.
+      - published `pandora-cli-skills@1.1.4` with `dist-tag latest=1.1.4`.
   - Now:
-    - Latest local changes are committed and pushed to `main`.
+    - Release artifacts are ready to commit and push (`package.json`, `package-lock.json`, `CONTINUITY.md`).
   - Next:
-    - Optional: version bump and npm publish if a new package release is needed.
+    - Commit release metadata and push to `origin/main`.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -83,3 +87,9 @@ Working set (files/ids/commands):
   - `/Users/mac/Desktop/pandora-market-setup-shareable/tests/smoke/pack-install-smoke.cjs`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/README_FOR_SHARING.md`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/SKILL.md`
+ - Release ops:
+  - `npm whoami` (failed with `E401` on 2026-02-26)
+  - `npm version patch --no-git-tag-version` (`v1.1.4`)
+  - `npm run test` (passed on `1.1.4`)
+  - `npm publish --access public` (published `1.1.4`)
+  - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.4`)
