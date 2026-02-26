@@ -56,6 +56,7 @@ function evaluateSnapshot(verifyPayload, options) {
 
   const reserveYes = toNumber(pandora.reserveYes);
   const reserveNo = toNumber(pandora.reserveNo);
+  const reserveTotalUsdc = reserveYes !== null && reserveNo !== null ? round(reserveYes + reserveNo, 6) : null;
   const deltaLpUsdc = reserveYes !== null && reserveNo !== null ? round(reserveYes - reserveNo, 6) : null;
   const targetHedgeUsdc = deltaLpUsdc === null ? null : round(-deltaLpUsdc, 6);
 
@@ -64,6 +65,9 @@ function evaluateSnapshot(verifyPayload, options) {
     pandoraYesPct: pandoraYes,
     driftBps,
     driftTriggered,
+    reserveYesUsdc: reserveYes,
+    reserveNoUsdc: reserveNo,
+    reserveTotalUsdc,
     deltaLpUsdc,
     targetHedgeUsdc,
   };
@@ -217,9 +221,14 @@ async function runMirrorSync(options, deps = {}) {
       const scaledHedgeUsdc = rawHedgeTriggered ? Math.abs(gapUsdc) * options.hedgeRatio : 0;
       const plannedHedgeUsdc = hedgeTriggered ? Math.min(scaledHedgeUsdc, options.maxHedgeUsdc) : 0;
 
-      const driftMagnitudePct = snapshotMetrics.driftBps === null ? 0 : snapshotMetrics.driftBps / 100;
+      const driftFraction = snapshotMetrics.driftBps === null ? 0 : snapshotMetrics.driftBps / 10_000;
+      const rebalanceFromPoolUsdc =
+        snapshotMetrics.reserveTotalUsdc === null ? null : snapshotMetrics.reserveTotalUsdc * driftFraction;
+      const rebalanceFromDriftPointsUsdc = snapshotMetrics.driftBps === null ? 0 : snapshotMetrics.driftBps / 100;
+      const rebalanceSizingBasis = rebalanceFromPoolUsdc === null ? 'drift-points-fallback' : 'pool-size-drift';
+      const rebalanceCandidateUsdc = rebalanceFromPoolUsdc === null ? rebalanceFromDriftPointsUsdc : rebalanceFromPoolUsdc;
       const plannedRebalanceUsdc = snapshotMetrics.driftTriggered
-        ? Math.min(options.maxRebalanceUsdc, Math.max(1, driftMagnitudePct))
+        ? Math.min(options.maxRebalanceUsdc, Math.max(1, rebalanceCandidateUsdc))
         : 0;
 
       const plannedSpendUsdc = round(plannedHedgeUsdc + plannedRebalanceUsdc, 6) || 0;
@@ -257,6 +266,8 @@ async function runMirrorSync(options, deps = {}) {
           hedgeRatio: options.hedgeRatio,
           hedgeSuppressed: rawHedgeTriggered && !options.hedgeEnabled,
           plannedHedgeUsdc,
+          rebalanceSizingBasis,
+          rebalanceCandidateUsdc: round(rebalanceCandidateUsdc, 6),
           plannedRebalanceUsdc,
           plannedSpendUsdc,
           depthWithinSlippageUsd: depth.depthWithinSlippageUsd,
@@ -320,7 +331,7 @@ async function runMirrorSync(options, deps = {}) {
           }
 
           if (hedgeTriggered && plannedHedgeUsdc > 0) {
-            const hedgeSide = gapUsdc >= 0 ? 'buy' : 'buy';
+            const hedgeSide = 'buy';
             const tokenId = gapUsdc >= 0 ? verifyPayload.sourceMarket.yesTokenId : verifyPayload.sourceMarket.noTokenId;
 
             if (options.executeLive) {

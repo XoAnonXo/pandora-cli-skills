@@ -6630,13 +6630,25 @@ async function runMirrorCommand(args, context) {
         emitSuccess(
           context.outputMode,
           'mirror.sync.help',
-          commandHelpPayload(
-            'pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
-          ),
+          {
+            usage:
+              'pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
+            liveHedgeEnv: [
+              'POLYMARKET_PRIVATE_KEY',
+              'POLYMARKET_FUNDER',
+              'POLYMARKET_API_KEY',
+              'POLYMARKET_API_SECRET',
+              'POLYMARKET_API_PASSPHRASE',
+              'POLYMARKET_HOST',
+            ],
+          },
         );
       } else {
         console.log(
           'Usage: pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
+        );
+        console.log(
+          'Live hedge env: POLYMARKET_PRIVATE_KEY, POLYMARKET_FUNDER, POLYMARKET_API_KEY, POLYMARKET_API_SECRET, POLYMARKET_API_PASSPHRASE, POLYMARKET_HOST.',
         );
       }
       return;

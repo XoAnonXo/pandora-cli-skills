@@ -2693,6 +2693,8 @@ test('mirror sync once paper mode performs deterministic simulated action and pe
     assert.equal(payload.data.parameters.hedgeEnabled, true);
     assert.equal(payload.data.parameters.hedgeRatio, 0.75);
     assert.equal(payload.data.actionCount, 1);
+    assert.equal(payload.data.snapshots[0].metrics.rebalanceSizingBasis, 'pool-size-drift');
+    assert.equal(payload.data.snapshots[0].metrics.plannedRebalanceUsdc, 25);
     assert.equal(fs.existsSync(stateFile), true);
     assert.equal(payload.data.actions[0].status, 'simulated');
   } finally {
@@ -2791,6 +2793,17 @@ test('mirror sync validates --hedge-ratio upper bound', () => {
   const payload = parseJsonOutput(result);
   assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
   assert.match(payload.error.message, /--hedge-ratio/);
+});
+
+test('mirror sync --help json includes live hedge environment requirements', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'sync', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.sync.help');
+  assert.equal(Array.isArray(payload.data.liveHedgeEnv), true);
+  assert.equal(payload.data.liveHedgeEnv.includes('POLYMARKET_PRIVATE_KEY'), true);
+  assert.equal(payload.data.liveHedgeEnv.includes('POLYMARKET_API_KEY'), true);
 });
 
 test('mirror sync --execute-live enforces required risk caps', () => {

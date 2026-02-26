@@ -35,6 +35,13 @@ Prerequisite: Node.js `>=18`.
    - `ORACLE`
    - `FACTORY`
    - `USDC`
+   - optional for live mirror hedging:
+     - `POLYMARKET_PRIVATE_KEY`
+     - `POLYMARKET_FUNDER`
+     - `POLYMARKET_API_KEY`
+     - `POLYMARKET_API_SECRET`
+     - `POLYMARKET_API_PASSPHRASE`
+     - `POLYMARKET_HOST`
 4. Validate and build:
    - `npm run doctor`
    - `npm run build`
@@ -188,6 +195,7 @@ Prerequisite: Node.js `>=18`.
 - `mirror sync`:
   - envelope is `ok=true`, `command="mirror.sync"`, with `data.strategyHash`, `data.stateFile`, `data.parameters`, `data.snapshots[]`, and `data.actions[]`.
   - hedge controls: `--hedge-trigger-usdc`, `--max-hedge-usdc`, `--hedge-ratio <n>` (default `1`), and `--no-hedge` to disable hedge execution while keeping drift rebalancing active.
+  - rebalance sizing is pool-aware: drift notional scales with `reserveYes + reserveNo`, then bounded by `--max-rebalance-usdc`.
 - `mirror status`:
   - envelope is `ok=true`, `command="mirror.status"`, with `data.stateFile`, `data.strategyHash`, and persisted `data.state`.
 - `webhook test`:

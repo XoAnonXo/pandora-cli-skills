@@ -74,10 +74,17 @@ State:
       - bumped version `1.1.4 -> 1.1.5`.
       - validation: unit + cli passed during `npm run test`; smoke had one transient timeout then passed on immediate rerun.
       - published `pandora-cli-skills@1.1.5` and verified `dist-tag latest=1.1.5`.
+    - Mirror follow-up fixes (2026-02-26):
+      - fixed hedge side code smell (`const hedgeSide = 'buy'`).
+      - made rebalance sizing pool-aware using reserve total * drift fraction, bounded by `--max-rebalance-usdc`.
+      - added rebalance diagnostics (`rebalanceSizingBasis`, `rebalanceCandidateUsdc`) to mirror sync snapshots.
+      - documented Polymarket live-hedge env vars in `mirror sync --help` (table/json), `scripts/.env.example`, `README_FOR_SHARING.md`, and `SKILL.md`.
+      - added CLI integration coverage for mirror sync help env requirements and rebalance sizing assertions.
+      - validated with full gate: `npm run test` (build + unit + cli + smoke) passed.
   - Now:
-    - NPM patch release `1.1.5` is complete, committed, and pushed to `origin/main`.
+    - Preparing commit/push for mirror follow-up fixes.
   - Next:
-    - Optional: create signed git tag/release notes for `v1.1.5`.
+    - Push review-fix patch to `origin/main`; optionally publish npm patch.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -109,4 +116,4 @@ Working set (files/ids/commands):
   - `npm publish --access public` (published `1.1.5`)
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.5`)
  - Current task:
-  - Completed: npm `1.1.5` release + git sync.
+  - Finalize and push review-fix patch.
