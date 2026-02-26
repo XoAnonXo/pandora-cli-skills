@@ -44,13 +44,18 @@ State:
       - `7baa17a` `cli: harden leaderboard metrics and autopilot state writes`
       - `5ad3ff0` `docs: refresh continuity ledger after hardening push`
       - `24c2cba` `cli: scope leaderboard diagnostics to returned rows` (P2 review fix)
+    - Prepared release candidate `1.1.3`:
+      - bumped `package.json` and `package-lock.json` to `1.1.3`.
+      - validations passed:
+        - `npm run test`
+        - `npm run pack:dry-run`
   - Now:
-    - P2 review fix is implemented, validated, and pushed to `origin/main`.
+    - Committing and pushing `1.1.3`, then publishing to npm.
   - Next:
-    - Cut/publish next npm patch release.
+    - Verify npm registry `latest` points to `1.1.3`.
 
 Open questions (UNCONFIRMED if needed):
-- Should this hardening set be released as a new npm version immediately? UNCONFIRMED.
+- None (user requested publish now).
 
 Working set (files/ids/commands):
 - Active files:
@@ -62,7 +67,5 @@ Working set (files/ids/commands):
   - `/Users/mac/Desktop/pandora-market-setup-shareable/README_FOR_SHARING.md`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/SKILL.md`
 - Validation commands:
-  - `npm run test:cli`
-  - `npm run test:unit`
-  - `npm run build`
+  - `npm run test`
   - `npm run pack:dry-run`
