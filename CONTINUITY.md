@@ -49,10 +49,17 @@ State:
       - validations passed:
         - `npm run test`
         - `npm run pack:dry-run`
+    - Released `pandora-cli-skills@1.1.3`:
+      - published successfully to npm with `latest` tag.
+      - registry verification:
+        - `npm view pandora-cli-skills version --prefer-online` -> `1.1.3`
+        - `npm view pandora-cli-skills@1.1.3 version` -> `1.1.3`
+      - direct registry payload confirms `dist-tags.latest=1.1.3`.
   - Now:
-    - Committing and pushing `1.1.3`, then publishing to npm.
+    - npm publish objective complete for `1.1.3`.
   - Next:
-    - Verify npm registry `latest` points to `1.1.3`.
+    - Optional: create signed git tag/release for `v1.1.3`.
+    - Optional: smoke-test public install via `npx -y pandora-cli-skills@latest --help`.
 
 Open questions (UNCONFIRMED if needed):
 - None (user requested publish now).
