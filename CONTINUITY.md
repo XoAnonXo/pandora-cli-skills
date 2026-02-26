@@ -43,10 +43,10 @@ State:
     - Pushed hardening commits to `main`:
       - `7baa17a` `cli: harden leaderboard metrics and autopilot state writes`
       - `5ad3ff0` `docs: refresh continuity ledger after hardening push`
+      - `24c2cba` `cli: scope leaderboard diagnostics to returned rows` (P2 review fix)
   - Now:
-    - Critical review pass completed with one additional leaderboard diagnostics-scoping fix applied locally.
+    - P2 review fix is implemented, validated, and pushed to `origin/main`.
   - Next:
-    - Commit and push the final review-fix patch.
     - Cut/publish next npm patch release.
 
 Open questions (UNCONFIRMED if needed):
