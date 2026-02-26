@@ -70,10 +70,14 @@ State:
       - added CLI integration tests for hedge-ratio acceptance, no-hedge suppression, and ratio bound validation.
       - updated `README_FOR_SHARING.md` and `SKILL.md` examples/contracts for hedge controls.
       - validated with full gate: `npm run test` (build + unit + cli + smoke).
+    - Release on 2026-02-26:
+      - bumped version `1.1.4 -> 1.1.5`.
+      - validation: unit + cli passed during `npm run test`; smoke had one transient timeout then passed on immediate rerun.
+      - published `pandora-cli-skills@1.1.5` and verified `dist-tag latest=1.1.5`.
   - Now:
-    - Mirror hedge control updates are implemented, validated, and pushed to `origin/main`.
+    - NPM patch release is complete; finalizing release metadata commit/push.
   - Next:
-    - Optional: bump version and publish npm patch for hedge-control release.
+    - Optional: create signed git tag/release notes for `v1.1.5`.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -100,5 +104,9 @@ Working set (files/ids/commands):
   - `npm run test` (passed on `1.1.4`)
   - `npm publish --access public` (published `1.1.4`)
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.4`)
+  - `npm version patch --no-git-tag-version` (`v1.1.5`)
+  - `npm run test` (unit + cli passed; smoke timeout once then passed on retry)
+  - `npm publish --access public` (published `1.1.5`)
+  - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.5`)
  - Current task:
-  - Ensure mirror hedge controls are explicit and practical for delta-neutral operation.
+  - Release metadata sync for npm `1.1.5`.
