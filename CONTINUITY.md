@@ -49,11 +49,15 @@ State:
       - `npm run test:smoke`
       - `npm run test`
       - `npm run pack:dry-run`
+    - Revalidated on 2026-02-26 with full suite:
+      - `npm run test` (build + unit + cli + smoke) passed.
     - Committed and pushed to `main`:
       - commit: `dacce9e`
       - branch push: `origin/main` updated (`355912a..dacce9e`).
+    - Latest remote state:
+      - `main` is clean and synchronized at `bd58917`.
   - Now:
-    - Mirror implementation and critical review remediation are complete and pushed.
+    - Mirror implementation and critical review remediation are complete, validated, and pushed.
   - Next:
     - Optional: version bump and npm publish.
 
