@@ -98,24 +98,24 @@ async function fetchLeaderboard(options) {
     },
   });
 
-  const anomalies = [];
   const items = (page.items || [])
     .filter((item) => toCount(item.totalTrades) >= options.minTrades)
     .map((item) => {
-      const normalized = normalizeUserAggregate(item);
-      if (normalized.diagnostics.length > 0) {
-        anomalies.push({
-          address: normalized.address,
-          diagnostics: normalized.diagnostics,
-        });
-      }
-      return normalized;
+      return normalizeUserAggregate(item);
     })
     .sort((a, b) => buildMetric(b, options.metric) - buildMetric(a, options.metric))
     .slice(0, options.limit)
     .map((item, index) => ({
       rank: index + 1,
       ...item,
+    }));
+
+  const diagnostics = items
+    .filter((item) => item.diagnostics.length > 0)
+    .map((item) => ({
+      address: item.address,
+      diagnostics: item.diagnostics,
+      sourceTotals: item.sourceTotals,
     }));
 
   return {
@@ -127,7 +127,7 @@ async function fetchLeaderboard(options) {
     limit: options.limit,
     minTrades: options.minTrades,
     count: items.length,
-    diagnostics: anomalies,
+    diagnostics,
     items,
   };
 }

@@ -2345,6 +2345,60 @@ test('leaderboard clamps inconsistent indexer totals and surfaces diagnostics', 
   }
 });
 
+test('leaderboard payload diagnostics only include returned rows', async () => {
+  const indexer = await startIndexerMockServer({
+    users: [
+      {
+        id: 'user-top-clean',
+        address: ADDRESSES.wallet1,
+        chainId: 1,
+        realizedPnL: '10',
+        totalVolume: '5000',
+        totalTrades: '10',
+        totalWins: '5',
+        totalLosses: '5',
+        totalWinnings: '200',
+      },
+      {
+        id: 'user-lower-anomaly',
+        address: '0x7777777777777777777777777777777777777777',
+        chainId: 1,
+        realizedPnL: '5',
+        totalVolume: '100',
+        totalTrades: '5',
+        totalWins: '12',
+        totalLosses: '0',
+        totalWinnings: '50',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'leaderboard',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--metric',
+      'volume',
+      '--limit',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'leaderboard');
+    assert.equal(payload.data.items.length, 1);
+    assert.equal(payload.data.items[0].address.toLowerCase(), ADDRESSES.wallet1.toLowerCase());
+    assert.deepEqual(payload.data.diagnostics, []);
+  } finally {
+    await indexer.close();
+  }
+});
+
 test('analyze fails gracefully when provider is missing', async () => {
   const indexer = await startAnalyzeIndexerMockServer();
   try {

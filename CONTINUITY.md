@@ -13,6 +13,7 @@ Constraints/Assumptions:
 
 Key decisions:
 - Keep leaderboard output deterministic by sanitizing inconsistent totals and surfacing explicit diagnostics.
+- Scope `leaderboard` payload-level diagnostics to returned rows only (avoid diagnostics for out-of-window rows).
 - Fix autopilot write race by using unique per-write temp files before atomic rename.
 - Keep provided mainnet deployment addresses/indexer as documentation source-of-truth (no ABI execution wiring yet).
 
@@ -29,6 +30,7 @@ State:
     - Added deterministic tests:
       - Unit: unique temp path behavior for `saveState`.
       - CLI integration: leaderboard inconsistent aggregate sanitization + diagnostics.
+      - CLI integration: diagnostics scope only includes returned leaderboard rows.
       - Added fixture override support in indexer mock helper.
     - Updated docs:
       - `references/contracts.md` now includes full provided Pandora mainnet deployment/config and indexer URL.
@@ -38,13 +40,14 @@ State:
       - `npm run test`
       - `npm run build`
       - `npm run pack:dry-run`
-    - Pushed hardening commit to `main`:
-      - commit: `7baa17a`
-      - message: `cli: harden leaderboard metrics and autopilot state writes`
+    - Pushed hardening commits to `main`:
+      - `7baa17a` `cli: harden leaderboard metrics and autopilot state writes`
+      - `5ad3ff0` `docs: refresh continuity ledger after hardening push`
   - Now:
-    - Repository is clean with hardening patches merged on `origin/main`.
+    - Critical review pass completed with one additional leaderboard diagnostics-scoping fix applied locally.
   - Next:
-    - Optionally cut and publish a new npm patch release (current npm latest remains `1.1.2`).
+    - Commit and push the final review-fix patch.
+    - Cut/publish next npm patch release.
 
 Open questions (UNCONFIRMED if needed):
 - Should this hardening set be released as a new npm version immediately? UNCONFIRMED.
@@ -59,6 +62,7 @@ Working set (files/ids/commands):
   - `/Users/mac/Desktop/pandora-market-setup-shareable/README_FOR_SHARING.md`
   - `/Users/mac/Desktop/pandora-market-setup-shareable/SKILL.md`
 - Validation commands:
-  - `npm run test`
+  - `npm run test:cli`
+  - `npm run test:unit`
   - `npm run build`
   - `npm run pack:dry-run`
