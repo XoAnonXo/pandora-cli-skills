@@ -71,9 +71,9 @@ State:
       - updated `README_FOR_SHARING.md` and `SKILL.md` examples/contracts for hedge controls.
       - validated with full gate: `npm run test` (build + unit + cli + smoke).
   - Now:
-    - Preparing commit/push for mirror hedge control updates.
+    - Mirror hedge control updates are implemented, validated, and pushed to `origin/main`.
   - Next:
-    - Push update to `origin/main`; optionally publish a new npm patch if desired.
+    - Optional: bump version and publish npm patch for hedge-control release.
 
 Open questions (UNCONFIRMED if needed):
 - None.
