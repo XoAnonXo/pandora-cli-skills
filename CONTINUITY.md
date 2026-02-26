@@ -104,10 +104,14 @@ State:
     - Release prep on 2026-02-26:
       - bumped version `1.1.6 -> 1.1.7`.
       - full validation re-run passed: `npm run test` (build + unit + cli + smoke).
+    - Release on 2026-02-26:
+      - committed resilience patch (`7c48221`) and pushed `main` to `origin/main`.
+      - published `pandora-cli-skills@1.1.7`.
+      - verified npm registry: `dist-tag latest=1.1.7` and version list includes `1.1.7`.
   - Now:
-    - Preparing commit/push/publish for `1.1.7`.
+    - Polymarket resilience patch is shipped and published.
   - Next:
-    - Commit/push the resilience patch and publish `pandora-cli-skills@1.1.7`.
+    - Monitor live user feedback from Polymarket outage windows; patch further only if fresh failures appear.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -144,5 +148,9 @@ Working set (files/ids/commands):
   - `npm view pandora-cli-skills dist-tags` (`latest: 1.1.6`)
   - `npm version patch --no-git-tag-version` (`v1.1.7`)
   - `npm run test` (passed on `1.1.7`)
+  - `git push origin main` (`261ec7a..7c48221`)
+  - `npm publish --access public` (published `1.1.7`)
+  - `npm view pandora-cli-skills dist-tags.latest` (`1.1.7`)
+  - `npm view pandora-cli-skills versions --json` (includes `1.1.7`)
  - Current task:
-  - Publish Polymarket resilience patch as `1.1.7`.
+  - Completed: Polymarket resilience patch published as `1.1.7`.
