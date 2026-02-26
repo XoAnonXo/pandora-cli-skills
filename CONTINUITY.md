@@ -64,9 +64,9 @@ State:
       - full validation passed via `npm run test`.
       - published `pandora-cli-skills@1.1.4` with `dist-tag latest=1.1.4`.
   - Now:
-    - Release artifacts are ready to commit and push (`package.json`, `package-lock.json`, `CONTINUITY.md`).
+    - `pandora-cli-skills@1.1.4` is published and release metadata is pushed to `origin/main`.
   - Next:
-    - Commit release metadata and push to `origin/main`.
+    - Optional: create signed git tag/release notes for `v1.1.4`.
 
 Open questions (UNCONFIRMED if needed):
 - None.
