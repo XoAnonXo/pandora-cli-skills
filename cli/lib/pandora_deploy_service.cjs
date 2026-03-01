@@ -14,6 +14,7 @@ const {
   DEFAULT_ORACLE,
   DEFAULT_FACTORY,
   DEFAULT_USDC,
+  DEFAULT_ARBITER,
 } = require('./shared/constants.cjs');
 
 const ERC20_ABI = [
@@ -209,7 +210,7 @@ function buildDeploymentArgs(options = {}) {
     distributionNo,
     feeTier,
     maxImbalance,
-    arbiter: String(options.arbiter || '0x0D7B957C47Da86c2968dc52111D633D42cb7a5F7').toLowerCase(),
+    arbiter: String(options.arbiter || DEFAULT_ARBITER).toLowerCase(),
     category,
   };
 }

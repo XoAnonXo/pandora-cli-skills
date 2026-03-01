@@ -237,12 +237,14 @@ function normalizeSoccerWinnerEvent(row, context = {}) {
 
   const homeTeam =
     toStringOrNull(row.homeTeam)
+    || toStringOrNull(row.home_team)
     || toStringOrNull(row.home_name)
     || toStringOrNull(row.home)
     || toStringOrNull(row.team1)
     || (Array.isArray(row.teams) && row.teams.length > 0 ? toStringOrNull(row.teams[0]) : null);
   const awayTeam =
     toStringOrNull(row.awayTeam)
+    || toStringOrNull(row.away_team)
     || toStringOrNull(row.away_name)
     || toStringOrNull(row.away)
     || toStringOrNull(row.team2)
@@ -259,6 +261,9 @@ function normalizeSoccerWinnerEvent(row, context = {}) {
   const competitionId =
     toStringOrNull(row.competitionId)
     || toStringOrNull(row.competition_id)
+    || toStringOrNull(row.sportKey)
+    || toStringOrNull(row.sport_key)
+    || toStringOrNull(row.sport)
     || toStringOrNull(row.leagueId)
     || toStringOrNull(row.league_id)
     || toStringOrNull(row.tournamentId)
@@ -299,8 +304,8 @@ function normalizeSoccerWinnerOdds(payload, context = {}) {
     competitionId: null,
     sport: 'soccer',
     marketType: SOCCER_WINNER_MARKET_TYPE,
-    homeTeam: toStringOrNull(payload && payload.homeTeam) || null,
-    awayTeam: toStringOrNull(payload && payload.awayTeam) || null,
+    homeTeam: toStringOrNull(payload && (payload.homeTeam || payload.home_team || payload.home_name || payload.home)) || null,
+    awayTeam: toStringOrNull(payload && (payload.awayTeam || payload.away_team || payload.away_name || payload.away)) || null,
     startTime: null,
     status: 'unknown',
     provider: toStringOrNull(context.provider) || null,

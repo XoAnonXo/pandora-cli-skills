@@ -18,6 +18,7 @@ const DEFAULT_PROVIDER_ENDPOINTS = Object.freeze({
   competitions: '/competitions',
   events: '/events',
   odds: '/events/{eventId}/odds',
+  bulkOdds: '/odds',
   status: '/events/{eventId}/status',
   health: '/health',
 });
@@ -196,6 +197,14 @@ function buildProviderConfig(role, options = {}, env = process.env) {
         pickFirst(explicit.oddsPath, explicit.endpoints && explicit.endpoints.odds, env[`SPORTSBOOK_${upper}_ODDS_PATH`]),
         DEFAULT_PROVIDER_ENDPOINTS.odds,
       ),
+      bulkOdds: normalizeEndpointPath(
+        pickFirst(
+          explicit.bulkOddsPath,
+          explicit.endpoints && explicit.endpoints.bulkOdds,
+          env[`SPORTSBOOK_${upper}_BULK_ODDS_PATH`],
+        ),
+        DEFAULT_PROVIDER_ENDPOINTS.bulkOdds,
+      ),
       status: normalizeEndpointPath(
         pickFirst(explicit.statusPath, explicit.endpoints && explicit.endpoints.status, env[`SPORTSBOOK_${upper}_STATUS_PATH`]),
         DEFAULT_PROVIDER_ENDPOINTS.status,
@@ -234,6 +243,7 @@ function buildUrl(baseUrl, endpointPath, pathParams = {}, query = {}) {
  * @returns {{
  *   listCompetitions: (filters?: object) => Promise<object>,
  *   listEvents: (filters?: object) => Promise<object>,
+ *   listCompetitionOdds: (filters?: object) => Promise<object>,
  *   getEventOdds: (eventId: string, marketType?: string) => Promise<object>,
  *   getEventStatus: (eventId: string) => Promise<object>,
  *   health: () => Promise<object>,
@@ -413,7 +423,7 @@ function createSportsProviderRegistry(options = {}) {
     return runWithFallback('list_competitions', filters.providerMode, async (provider, mode) => {
       const response = await requestProvider(provider, 'competitions', {
         query: {
-          sport: filters.sport || 'soccer',
+          sport: filters.sport || null,
           country: filters.country || null,
           limit: filters.limit || null,
         },
@@ -443,7 +453,7 @@ function createSportsProviderRegistry(options = {}) {
     return runWithFallback('list_events', filters.providerMode, async (provider, mode) => {
       const response = await requestProvider(provider, 'events', {
         query: {
-          sport: filters.sport || 'soccer',
+          sport: filters.sport || null,
           competitionId: filters.competitionId || null,
           from: filters.from || null,
           to: filters.to || null,
@@ -469,12 +479,85 @@ function createSportsProviderRegistry(options = {}) {
   }
 
   /**
+   * List normalized soccer winner odds for all events in one competition.
+   * @param {object} [filters]
+   * @returns {Promise<object>}
+   */
+  async function listCompetitionOdds(filters = {}) {
+    const competitionId = toStringOrNull(filters.competitionId || filters.competition);
+    if (!competitionId) {
+      throw providerError('MISSING_REQUIRED_INPUT', 'listCompetitionOdds requires competitionId.');
+    }
+
+    const normalizedMarketType = toStringOrNull(filters.marketType) || SOCCER_WINNER_MARKET_TYPE;
+    if (normalizedMarketType !== SOCCER_WINNER_MARKET_TYPE) {
+      throw providerError(
+        'UNSUPPORTED_MARKET_TYPE',
+        `Unsupported market type "${normalizedMarketType}". Only "${SOCCER_WINNER_MARKET_TYPE}" is supported.`,
+      );
+    }
+
+    return runWithFallback('list_competition_odds', filters.providerMode, async (provider, mode) => {
+      const response = await requestProvider(provider, 'bulkOdds', {
+        query: {
+          competitionId,
+          marketType: normalizedMarketType,
+          sport: filters.sport || null,
+          from: filters.from || null,
+          to: filters.to || null,
+          limit: filters.limit || null,
+        },
+        timeoutMs: filters.timeoutMs,
+      });
+
+      const rows = extractListFromPayload(response.payload, ['events', 'fixtures', 'matches', 'results']);
+      const byId = new Map();
+      for (const row of rows) {
+        const normalized = normalizeSoccerWinnerOdds(row, {
+          provider: response.provider,
+          eventId: row && (row.id || row.eventId || row.event_id || row.fixtureId || null),
+          marketType: normalizedMarketType,
+          preferredBooks,
+        });
+        if (!normalized || !normalized.event || !normalized.event.id) continue;
+
+        if (!normalized.event.competitionId) {
+          normalized.event = {
+            ...normalized.event,
+            competitionId: competitionId.toLowerCase(),
+          };
+        }
+        byId.set(normalized.event.id, normalized);
+      }
+
+      const odds = Array.from(byId.values()).sort((a, b) => {
+        const timeA = a.event && a.event.startTime ? a.event.startTime : '';
+        const timeB = b.event && b.event.startTime ? b.event.startTime : '';
+        const timeCmp = timeA.localeCompare(timeB);
+        if (timeCmp !== 0) return timeCmp;
+        return String(a.event && a.event.id ? a.event.id : '').localeCompare(String(b.event && b.event.id ? b.event.id : ''));
+      });
+
+      return {
+        schemaVersion: NORMALIZER_SCHEMA_VERSION,
+        mode,
+        provider: response.provider,
+        competitionId: competitionId.toLowerCase(),
+        marketType: normalizedMarketType,
+        count: odds.length,
+        odds,
+      };
+    });
+  }
+
+  /**
    * Get normalized soccer winner odds for one event.
    * @param {string} eventId
    * @param {string} [marketType]
+   * @param {{preferBulk?: boolean, competition?: string, providerMode?: string, timeoutMs?: number, limit?: number, from?: string, to?: string}} [options]
    * @returns {Promise<object>}
    */
-  async function getEventOdds(eventId, marketType = SOCCER_WINNER_MARKET_TYPE) {
+  async function getEventOdds(eventId, marketType = SOCCER_WINNER_MARKET_TYPE, options = {}) {
     const normalizedEventId = toStringOrNull(eventId);
     if (!normalizedEventId) {
       throw providerError('MISSING_REQUIRED_INPUT', 'getEventOdds requires eventId.');
@@ -485,6 +568,37 @@ function createSportsProviderRegistry(options = {}) {
         'UNSUPPORTED_MARKET_TYPE',
         `Unsupported market type "${normalizedMarketType}". Only "${SOCCER_WINNER_MARKET_TYPE}" is supported.`,
       );
+    }
+
+    const competitionId = toStringOrNull(options.competition || options.competitionId);
+    if (options.preferBulk && competitionId) {
+      const bulkSnapshot = await listCompetitionOdds({
+        providerMode: options.providerMode,
+        competitionId,
+        marketType: normalizedMarketType,
+        timeoutMs: options.timeoutMs,
+        limit: options.limit,
+        from: options.from,
+        to: options.to,
+      });
+      const match = bulkSnapshot.odds.find((row) => {
+        const rowEventId = row && row.event && row.event.id ? String(row.event.id).toLowerCase() : null;
+        return rowEventId === normalizedEventId.toLowerCase();
+      });
+      if (match) {
+        return {
+          ...match,
+          mode: bulkSnapshot.mode,
+          source: {
+            provider: bulkSnapshot.provider,
+            bulk: {
+              used: true,
+              competitionId: bulkSnapshot.competitionId,
+              count: bulkSnapshot.count,
+            },
+          },
+        };
+      }
     }
 
     return runWithFallback('get_event_odds', null, async (provider, mode) => {
@@ -594,6 +708,7 @@ function createSportsProviderRegistry(options = {}) {
   return {
     listCompetitions,
     listEvents,
+    listCompetitionOdds,
     getEventOdds,
     getEventStatus,
     health,

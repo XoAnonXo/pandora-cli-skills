@@ -1,7 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { runCli, startJsonHttpServer } = require('../helpers/cli_runner.cjs');
+const {
+  runCli,
+  runCliAsync,
+  startJsonHttpServer,
+  createTempDir,
+  removeDir,
+} = require('../helpers/cli_runner.cjs');
 const { createSportsProviderRegistry } = require('../../cli/lib/sports_provider_registry.cjs');
 
 function parseJsonEnvelopeStrict(result, label) {
@@ -68,8 +74,8 @@ test('sports provider registry returns normalized JSON from mocked sportsbook UR
             {
               id: 'evt-1',
               competitionId: 'prem',
-              homeTeam: 'Arsenal',
-              awayTeam: 'Chelsea',
+              home_team: 'Arsenal',
+              away_team: 'Chelsea',
               startTime: '2030-01-01T12:00:00Z',
               status: 'scheduled',
             },
@@ -84,8 +90,8 @@ test('sports provider registry returns normalized JSON from mocked sportsbook UR
           event: {
             id: 'evt-1',
             competitionId: 'prem',
-            homeTeam: 'Arsenal',
-            awayTeam: 'Chelsea',
+            home_team: 'Arsenal',
+            away_team: 'Chelsea',
             startTime: '2030-01-01T12:00:00Z',
             status: 'scheduled',
           },
@@ -154,6 +160,8 @@ test('sports provider registry returns normalized JSON from mocked sportsbook UR
   assert.equal(events.count, 1);
   assert.equal(events.events[0].id, 'evt-1');
   assert.equal(events.events[0].marketType, 'soccer_winner');
+  assert.equal(events.events[0].homeTeam, 'Arsenal');
+  assert.equal(events.events[0].awayTeam, 'Chelsea');
 
   const odds = await registry.getEventOdds('evt-1');
   assert.equal(odds.mode, 'primary');
@@ -181,8 +189,122 @@ test('sports provider registry returns normalized JSON from mocked sportsbook UR
   assert.equal(requestedPaths.length, 4);
   assert.ok(requestedPaths[0].startsWith('/events?'));
   assert.ok(requestedPaths[0].includes('competitionId=prem'));
-  assert.ok(requestedPaths[0].includes('sport=soccer'));
+  assert.equal(requestedPaths[0].includes('sport='), false);
   assert.equal(requestedPaths[1], '/events/evt-1/odds?marketType=soccer_winner');
   assert.equal(requestedPaths[2], '/events/evt-1/status');
   assert.equal(requestedPaths[3], '/health');
+});
+
+test('sports odds snapshot/consensus use bulk competition endpoint with disk cache across invocations', async (t) => {
+  const tempDir = createTempDir('pandora-sports-bulk-cache-');
+  const cacheFile = `${tempDir}/sports_bulk_odds_cache.json`;
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url.startsWith('/odds?')) {
+      return {
+        body: [
+          {
+            id: 'evt-a',
+            sport_key: 'soccer_epl',
+            commence_time: '2030-01-01T12:00:00Z',
+            home_team: 'Arsenal',
+            away_team: 'Chelsea',
+            bookmakers: [
+              {
+                key: 'bet365',
+                title: 'Bet365',
+                outcomes: [
+                  { name: 'Arsenal', price: 2.1 },
+                  { name: 'Draw', price: 3.3 },
+                  { name: 'Chelsea', price: 3.5 },
+                ],
+              },
+            ],
+          },
+          {
+            id: 'evt-b',
+            sport_key: 'soccer_epl',
+            commence_time: '2030-01-01T15:00:00Z',
+            home_team: 'Liverpool',
+            away_team: 'Tottenham',
+            bookmakers: [
+              {
+                key: 'bet365',
+                title: 'Bet365',
+                outcomes: [
+                  { name: 'Liverpool', price: 1.9 },
+                  { name: 'Draw', price: 3.4 },
+                  { name: 'Tottenham', price: 4.1 },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+    }
+
+    if (url.startsWith('/events/')) {
+      return { status: 500, body: { error: 'per-event endpoint should not be called in this test' } };
+    }
+
+    if (url === '/health') {
+      return { body: { ok: true, status: 'ok' } };
+    }
+
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+    removeDir(tempDir);
+  });
+
+  const env = {
+    SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+    SPORTSBOOK_PROVIDER_MODE: 'primary',
+    SPORTSBOOK_PRIMARY_BULK_ODDS_PATH: '/odds',
+    SPORTS_BULK_ODDS_CACHE_FILE: cacheFile,
+    SPORTS_BULK_ODDS_CACHE_TTL_MS: '120000',
+  };
+
+  const snapshot = await runCliAsync([
+    '--output',
+    'json',
+    'sports',
+    'odds',
+    'snapshot',
+    '--event-id',
+    'evt-a',
+    '--competition',
+    'soccer_epl',
+  ], { env });
+  assert.equal(snapshot.status, 0, snapshot.output);
+  const snapshotPayload = parseJsonEnvelopeStrict(snapshot, 'sports odds snapshot (bulk)');
+  assert.equal(snapshotPayload.ok, true);
+  assert.equal(snapshotPayload.command, 'sports.odds.snapshot');
+  assert.equal(snapshotPayload.data.event.id, 'evt-a');
+  assert.equal(snapshotPayload.data.source.bulk.used, true);
+  assert.equal(snapshotPayload.data.source.bulk.cacheHit, false);
+
+  const consensus = await runCliAsync([
+    '--output',
+    'json',
+    'sports',
+    'consensus',
+    '--event-id',
+    'evt-b',
+    '--competition',
+    'soccer_epl',
+  ], { env });
+  assert.equal(consensus.status, 0, consensus.output);
+  const consensusPayload = parseJsonEnvelopeStrict(consensus, 'sports consensus (bulk cache)');
+  assert.equal(consensusPayload.ok, true);
+  assert.equal(consensusPayload.command, 'sports.consensus');
+  assert.equal(consensusPayload.data.eventId, 'evt-b');
+  assert.equal(consensusPayload.data.source.bulk.used, true);
+  assert.equal(consensusPayload.data.source.bulk.cacheHit, true);
+
+  const requestedPaths = mock.requests.map((request) => String(request.url));
+  assert.equal(requestedPaths.length, 1);
+  assert.ok(requestedPaths[0].startsWith('/odds?'));
+  assert.equal(requestedPaths[0].includes('competitionId=soccer_epl'), true);
 });
