@@ -1,3 +1,5 @@
+const { buildTradeForkPreview } = require('./fork_preview_service.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunTradeCommand requires deps.${name}()`);
@@ -27,6 +29,7 @@ function createRunTradeCommand(deps) {
   const resolveForkRuntime = requireDep(deps, 'resolveForkRuntime');
   const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
   const renderTradeTable = requireDep(deps, 'renderTradeTable');
+  const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
 
   return async function runTradeCommand(args, context) {
     const shared = parseIndexerSharedFlags(args);
@@ -83,8 +86,22 @@ function createRunTradeCommand(deps) {
           executeFlagRequired: '--execute',
         },
       };
+      if (runtime.mode === 'fork') {
+        dryRunPayload.preview = buildTradeForkPreview({
+          quote,
+          amountUsdc: options.amountUsdc,
+          side: options.side,
+        });
+      }
       emitSuccess(context.outputMode, 'trade', dryRunPayload, renderTradeTable);
       return;
+    }
+
+    if (assertLiveWriteAllowed) {
+      await assertLiveWriteAllowed('trade.execute', {
+        notionalUsdc: options.amountUsdc,
+        runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+      });
     }
 
     const execution = await executeTradeOnchain(options);

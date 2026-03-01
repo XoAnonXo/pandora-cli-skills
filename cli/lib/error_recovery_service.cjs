@@ -68,6 +68,22 @@ function buildMcpBoundedCommand(cliName, details) {
   return `${cliName} help`;
 }
 
+function buildRiskShowCommand(cliName, details) {
+  const riskFile = cleanToken(details && details.riskFile, '');
+  if (riskFile) {
+    return `${cliName} risk show --risk-file ${riskFile}`;
+  }
+  return `${cliName} risk show`;
+}
+
+function buildRiskPanicClearCommand(cliName, details) {
+  const riskFile = cleanToken(details && details.riskFile, '');
+  if (riskFile) {
+    return `${cliName} risk panic --clear --risk-file ${riskFile}`;
+  }
+  return `${cliName} risk panic --clear`;
+}
+
 function buildSportsConsensusRetryCommand(cliName, details) {
   const eventId = cleanToken(details && details.eventId, '<event-id>');
   return `${cliName} sports consensus --event-id ${eventId}`;
@@ -164,6 +180,42 @@ function createErrorRecoveryService(options = {}) {
         return {
           action: 'Inspect available MCP tools and retry with a supported tool name',
           command: `${cliName} --output json schema`,
+          retryable: true,
+        };
+      case 'ERR_RISK_LIMIT':
+      case 'RISK_PANIC_ACTIVE':
+      case 'RISK_KILL_SWITCH_ACTIVE':
+        if (details.guardrail === 'kill_switch' || details.kill_switch === true) {
+          return {
+            action: 'Clear kill switch when intentional emergency lock is complete',
+            command: buildRiskPanicClearCommand(cliName, details),
+            retryable: true,
+          };
+        }
+        if (details.guardrail) {
+          return {
+            action: 'Review guardrail thresholds and reduce live write size/frequency',
+            command: buildRiskShowCommand(cliName, details),
+            retryable: true,
+          };
+        }
+        return {
+          action: 'Inspect risk panic status and clear if intentional lock is complete',
+          command: buildRiskShowCommand(cliName, details),
+          retryable: true,
+        };
+      case 'RISK_GUARDRAIL_BLOCKED':
+        return {
+          action: 'Review guardrail thresholds and reduce live write size/frequency',
+          command: buildRiskShowCommand(cliName, details),
+          retryable: true,
+        };
+      case 'RISK_STATE_READ_FAILED':
+      case 'RISK_STATE_WRITE_FAILED':
+      case 'RISK_STATE_INVALID':
+        return {
+          action: 'Repair risk state file and re-check risk status',
+          command: buildRiskShowCommand(cliName, details),
           retryable: true,
         };
       case 'SPORTS_PROVIDER_NOT_CONFIGURED':

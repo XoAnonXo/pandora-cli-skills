@@ -24,6 +24,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     runMirrorSync,
     buildQuotePayload,
     executeTradeOnchain,
+    assertLiveWriteAllowed,
     hasWebhookTargets,
     sendWebhookNotifications,
     coerceMirrorServiceError,
@@ -253,6 +254,12 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
             privateKey: options.privateKey,
             usdc: options.usdc,
           };
+          if (typeof assertLiveWriteAllowed === 'function') {
+            await assertLiveWriteAllowed('mirror.sync.execute', {
+              notionalUsdc: executionOptions.amountUsdc,
+              runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+            });
+          }
           const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
           const execution = await executeTradeOnchain(tradeOptions);
           return {

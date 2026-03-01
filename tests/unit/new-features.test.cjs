@@ -52,10 +52,12 @@ const { createParseWatchFlags } = require('../../cli/lib/parsers/watch_flags.cjs
 const { createParseAutopilotFlags } = require('../../cli/lib/parsers/autopilot_flags.cjs');
 const { createParseMirrorDeployFlags } = require('../../cli/lib/parsers/mirror_deploy_flags.cjs');
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
+const { createParseLifecycleFlags } = require('../../cli/lib/parsers/lifecycle_flags.cjs');
 const {
   createParseMirrorSyncFlags,
   createParseMirrorSyncDaemonSelectorFlags,
 } = require('../../cli/lib/parsers/mirror_sync_flags.cjs');
+const { parseArbScanFlags, buildArbOpportunities } = require('../../cli/lib/arb_command_service.cjs');
 const {
   buildTickPlan,
   buildTickSnapshot,
@@ -1763,6 +1765,96 @@ test('createParseMirrorGoFlags treats bare --skip-gate as force gate mode', () =
   assert.deepEqual(options.skipGateChecks, []);
 });
 
+test('createParseLifecycleFlags validates start|status|resolve contracts', () => {
+  const parseLifecycleFlags = createParseLifecycleFlags({
+    CliError: ParserCliError,
+    requireFlagValue: parserRequireFlagValue,
+  });
+
+  const startOptions = parseLifecycleFlags(['start', '--config', './lifecycle.json']);
+  assert.equal(startOptions.action, 'start');
+  assert.equal(startOptions.configPath, './lifecycle.json');
+  assert.equal(startOptions.id, null);
+
+  const statusOptions = parseLifecycleFlags(['status', '--id', 'lc-123']);
+  assert.equal(statusOptions.action, 'status');
+  assert.equal(statusOptions.id, 'lc-123');
+  assert.equal(statusOptions.confirm, false);
+
+  const resolveOptions = parseLifecycleFlags(['resolve', '--id', 'lc-123', '--confirm']);
+  assert.equal(resolveOptions.action, 'resolve');
+  assert.equal(resolveOptions.id, 'lc-123');
+  assert.equal(resolveOptions.confirm, true);
+});
+
+test('createParseLifecycleFlags requires explicit --confirm on resolve', () => {
+  const parseLifecycleFlags = createParseLifecycleFlags({
+    CliError: ParserCliError,
+    requireFlagValue: parserRequireFlagValue,
+  });
+
+  assert.throws(
+    () => parseLifecycleFlags(['resolve', '--id', 'lc-123']),
+    (error) => {
+      assert.equal(error.code, 'MISSING_REQUIRED_FLAG');
+      assert.match(error.message, /requires --confirm/i);
+      return true;
+    },
+  );
+});
+
+test('arb scan helpers parse ndjson options and emit deterministic spread math', () => {
+  const options = parseArbScanFlags(
+    [
+      'scan',
+      '--markets',
+      'm1,m2,m3',
+      '--output',
+      'ndjson',
+      '--min-net-spread-pct',
+      '3',
+      '--fee-pct-per-leg',
+      '0.5',
+      '--amount-usdc',
+      '200',
+      '--iterations',
+      '2',
+      '--interval-ms',
+      '1000',
+    ],
+    {
+      CliError: ParserCliError,
+      requireFlagValue: parserRequireFlagValue,
+      parseCsvList: (value) => value.split(',').map((item) => item.trim()).filter(Boolean),
+      parseNumber: parserParseNumber,
+      parsePositiveNumber: parserParsePositiveNumber,
+      parsePositiveInteger: parserParsePositiveInteger,
+    },
+  );
+
+  assert.deepEqual(options.markets, ['m1', 'm2', 'm3']);
+  assert.equal(options.output, 'ndjson');
+  assert.equal(options.minNetSpreadPct, 3);
+  assert.equal(options.feePctPerLeg, 0.5);
+
+  const opportunities = buildArbOpportunities({
+    marketSnapshots: [
+      { id: 'm1', yesPct: 40 },
+      { id: 'm2', yesPct: 52 },
+      { id: 'm3', yesPct: 49 },
+    ],
+    minNetSpreadPct: 3,
+    feePctPerLeg: 0.5,
+    amountUsdc: 200,
+  });
+
+  assert.equal(opportunities.length, 2);
+  assert.equal(opportunities[0].pair, 'm1|m2');
+  assert.equal(opportunities[0].grossSpreadPct, 12);
+  assert.equal(opportunities[0].netSpreadPct, 11);
+  assert.equal(opportunities[0].profitUsdc, 22);
+});
+
 test('createParseMirrorSyncFlags supports --market-address alias and default files', () => {
   let capturedDefaultStateInput = null;
   const parseMirrorSyncFlags = createParseMirrorSyncFlags(
@@ -1951,6 +2043,13 @@ test('error recovery service returns hints for all mapped codes', () => {
     'MCP_LONG_RUNNING_MODE_BLOCKED',
     'MCP_TOOL_FAILED',
     'UNKNOWN_TOOL',
+    'ERR_RISK_LIMIT',
+    'RISK_PANIC_ACTIVE',
+    'RISK_KILL_SWITCH_ACTIVE',
+    'RISK_GUARDRAIL_BLOCKED',
+    'RISK_STATE_READ_FAILED',
+    'RISK_STATE_WRITE_FAILED',
+    'RISK_STATE_INVALID',
     'MISSING_REQUIRED_FLAG',
     'MISSING_FLAG_VALUE',
     'INVALID_FLAG_VALUE',

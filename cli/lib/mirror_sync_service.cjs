@@ -95,7 +95,9 @@ async function runMirrorSync(options, deps = {}) {
       iteration += 1;
       const tickAt = now();
 
-      if (killSwitchFile && fs.existsSync(killSwitchFile)) {
+      // Kill-switch file is an execution safety guard for live writes.
+      // Paper mode should continue to emit diagnostics/snapshots.
+      if (options.executeLive && killSwitchFile && fs.existsSync(killSwitchFile)) {
         stoppedReason = `Kill switch file detected at ${killSwitchFile}`;
         break;
       }

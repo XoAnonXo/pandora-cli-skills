@@ -1,3 +1,5 @@
+const { buildPolymarketForkPreview } = require('./fork_preview_service.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunPolymarketCommand requires deps.${name}()`);
@@ -40,6 +42,7 @@ function createRunPolymarketCommand(deps) {
   const renderPolymarketPreflightTable = requireDep(deps, 'renderPolymarketPreflightTable');
   const renderSingleEntityTable = requireDep(deps, 'renderSingleEntityTable');
   const defaultEnvFile = requireStringDep(deps, 'defaultEnvFile');
+  const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
 
   function toCliError(err, fallbackCode, fallbackMessage) {
     if (err && err.code) {
@@ -143,6 +146,11 @@ function createRunPolymarketCommand(deps) {
       }
 
       const options = parsePolymarketApproveFlags(actionArgs);
+      if (options.execute && assertLiveWriteAllowed) {
+        await assertLiveWriteAllowed('polymarket.approve.execute', {
+          runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+        });
+      }
       const runtime = resolvePolymarketForkRuntime(options);
       if (runtime.mode === 'fork') {
         options.rpcUrl = runtime.rpcUrl;
@@ -211,6 +219,12 @@ function createRunPolymarketCommand(deps) {
       }
 
       const options = parsePolymarketTradeFlags(actionArgs);
+      if (options.execute && assertLiveWriteAllowed) {
+        await assertLiveWriteAllowed('polymarket.trade.execute', {
+          notionalUsdc: options.amountUsdc,
+          runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+        });
+      }
       const runtime = resolvePolymarketForkRuntime(options);
       if (runtime.mode === 'fork') {
         options.rpcUrl = runtime.rpcUrl;
@@ -247,7 +261,9 @@ function createRunPolymarketCommand(deps) {
       }
 
       if (options.dryRun) {
-        emitSuccess(context.outputMode, 'polymarket.trade', {
+        const tradeHost = options.host || process.env.POLYMARKET_HOST || null;
+        const previewHost = tradeHost || options.polymarketMockUrl || null;
+        const payload = {
           mode: 'dry-run',
           status: 'planned',
           runtime: {
@@ -266,8 +282,18 @@ function createRunPolymarketCommand(deps) {
           tokenId,
           side: options.side,
           amountUsdc: options.amountUsdc,
-          host: options.host || process.env.POLYMARKET_HOST || null,
-        }, renderSingleEntityTable);
+          host: tradeHost,
+        };
+        if (runtime.mode === 'fork') {
+          payload.preview = await buildPolymarketForkPreview({
+            host: previewHost,
+            tokenId,
+            side: options.side,
+            amountUsdc: options.amountUsdc,
+            timeoutMs: options.timeoutMs,
+          });
+        }
+        emitSuccess(context.outputMode, 'polymarket.trade', payload, renderSingleEntityTable);
         return;
       }
 

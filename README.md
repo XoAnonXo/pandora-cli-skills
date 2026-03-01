@@ -85,21 +85,25 @@ pandora --output json sports resolve plan --event-id <event-id> --poll-address <
 - `pandora markets list|get`
 - `pandora sports books list`
 - `pandora sports events list|live`
-- `pandora sports odds snapshot`
+- `pandora sports odds snapshot|bulk`
 - `pandora sports consensus`
 - `pandora sports create plan|run`
 - `pandora sports sync once|run|start|stop|status`
 - `pandora sports resolve plan`
+- `pandora lifecycle start|status|resolve`
 - `pandora quote`
 - `pandora trade`
 - `pandora history`
 - `pandora export`
 - `pandora arbitrage`
+- `pandora arb scan --output ndjson`
+- `pandora odds record|history`
 - `pandora autopilot run|once`
 - `pandora mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close`
 - `pandora polymarket check|approve|preflight|trade`
 - `pandora resolve`
 - `pandora lp add|remove|positions`
+- `pandora risk show|panic`
 - `pandora stream prices|events`
 - `pandora schema`
 - `pandora mcp`

@@ -35,7 +35,7 @@
     "typecheck": "npx tsc --noEmit",
     "pack:dry-run": "npm pack --dry-run",
     "build": "npm run typecheck",
-    "test:unit": "node --test tests/unit/sanity.test.cjs tests/unit/new-features.test.cjs tests/unit/sports_consensus.test.cjs tests/unit/sports_timing.test.cjs tests/unit/sports_creation.test.cjs tests/unit/sports_resolve_plan.test.cjs tests/unit/sports_sync.test.cjs",
+    "test:unit": "node --test tests/unit/sanity.test.cjs tests/unit/new-features.test.cjs tests/unit/risk_state_store.test.cjs tests/unit/risk_guard_service.test.cjs tests/unit/sports_consensus.test.cjs tests/unit/sports_timing.test.cjs tests/unit/sports_creation.test.cjs tests/unit/sports_resolve_plan.test.cjs tests/unit/sports_sync.test.cjs",
     "test:cli": "node --test tests/cli/cli.integration.test.cjs tests/cli/mcp.integration.test.cjs tests/cli/stream.integration.test.cjs tests/cli/sports.integration.test.cjs",
     "test:agent-workflow": "node --test tests/cli/agent_workflow.integration.test.cjs",
     "test:smoke:consumer-json": "node tests/smoke/consumer-json-smoke.cjs",

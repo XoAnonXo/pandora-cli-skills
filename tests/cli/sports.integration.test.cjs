@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
 
 const {
   runCli,
@@ -197,7 +199,7 @@ test('sports provider registry returns normalized JSON from mocked sportsbook UR
 
 test('sports odds snapshot/consensus use bulk competition endpoint with disk cache across invocations', async (t) => {
   const tempDir = createTempDir('pandora-sports-bulk-cache-');
-  const cacheFile = `${tempDir}/sports_bulk_odds_cache.json`;
+  const expectedCacheFile = path.join(tempDir, '.pandora', 'cache', 'odds', 'soccer_epl__soccer_winner.json');
   const mock = await startJsonHttpServer(({ url }) => {
     if (url.startsWith('/odds?')) {
       return {
@@ -259,12 +261,31 @@ test('sports odds snapshot/consensus use bulk competition endpoint with disk cac
   });
 
   const env = {
+    HOME: tempDir,
     SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
     SPORTSBOOK_PROVIDER_MODE: 'primary',
     SPORTSBOOK_PRIMARY_BULK_ODDS_PATH: '/odds',
-    SPORTS_BULK_ODDS_CACHE_FILE: cacheFile,
-    SPORTS_BULK_ODDS_CACHE_TTL_MS: '120000',
   };
+
+  const bulk = await runCliAsync([
+    '--output',
+    'json',
+    'sports',
+    'odds',
+    'bulk',
+    '--competition',
+    'soccer_epl',
+  ], { env });
+  assert.equal(bulk.status, 0, bulk.output);
+  const bulkPayload = parseJsonEnvelopeStrict(bulk, 'sports odds bulk');
+  assert.equal(bulkPayload.ok, true);
+  assert.equal(bulkPayload.command, 'sports.odds.bulk');
+  assert.equal(bulkPayload.data.count, 2);
+  assert.equal(bulkPayload.data.source.cache.source, 'api');
+  assert.equal(bulkPayload.data.source.cache.hit, false);
+  assert.equal(bulkPayload.data.source.cache.miss, true);
+  assert.equal(bulkPayload.data.source.cache.file, expectedCacheFile);
+  assert.equal(fs.existsSync(expectedCacheFile), true);
 
   const snapshot = await runCliAsync([
     '--output',
@@ -282,8 +303,12 @@ test('sports odds snapshot/consensus use bulk competition endpoint with disk cac
   assert.equal(snapshotPayload.ok, true);
   assert.equal(snapshotPayload.command, 'sports.odds.snapshot');
   assert.equal(snapshotPayload.data.event.id, 'evt-a');
+  assert.equal(snapshotPayload.data.source.cache.source, 'cache');
+  assert.equal(snapshotPayload.data.source.cache.hit, true);
+  assert.equal(snapshotPayload.data.source.cache.miss, false);
+  assert.equal(snapshotPayload.data.source.cache.file, expectedCacheFile);
   assert.equal(snapshotPayload.data.source.bulk.used, true);
-  assert.equal(snapshotPayload.data.source.bulk.cacheHit, false);
+  assert.equal(snapshotPayload.data.source.bulk.cacheHit, true);
 
   const consensus = await runCliAsync([
     '--output',
@@ -300,6 +325,10 @@ test('sports odds snapshot/consensus use bulk competition endpoint with disk cac
   assert.equal(consensusPayload.ok, true);
   assert.equal(consensusPayload.command, 'sports.consensus');
   assert.equal(consensusPayload.data.eventId, 'evt-b');
+  assert.equal(consensusPayload.data.source.cache.source, 'cache');
+  assert.equal(consensusPayload.data.source.cache.hit, true);
+  assert.equal(consensusPayload.data.source.cache.miss, false);
+  assert.equal(consensusPayload.data.source.cache.file, expectedCacheFile);
   assert.equal(consensusPayload.data.source.bulk.used, true);
   assert.equal(consensusPayload.data.source.bulk.cacheHit, true);
 
@@ -307,4 +336,110 @@ test('sports odds snapshot/consensus use bulk competition endpoint with disk cac
   assert.equal(requestedPaths.length, 1);
   assert.ok(requestedPaths[0].startsWith('/odds?'));
   assert.equal(requestedPaths[0].includes('competitionId=soccer_epl'), true);
+});
+
+test('sports create plan accepts --model-file BYOM input and attributes model source', async (t) => {
+  const tempDir = createTempDir('pandora-sports-model-file-');
+  const modelFile = path.join(tempDir, 'model.json');
+  fs.writeFileSync(
+    modelFile,
+    JSON.stringify({
+      probability: 0.62,
+      confidence: 'high',
+      source: 'my_model_v3',
+    }),
+    'utf8',
+  );
+
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url.startsWith('/events/evt-1/odds?')) {
+      return {
+        body: {
+          event: {
+            id: 'evt-1',
+            competitionId: 'prem',
+            home_team: 'Arsenal',
+            away_team: 'Chelsea',
+            startTime: '2030-01-01T12:00:00Z',
+            status: 'scheduled',
+          },
+          updatedAt: '2030-01-01T10:00:00Z',
+          bookmakers: [
+            {
+              book: 'bet365',
+              outcomes: [
+                { name: 'Arsenal', price: '2.2' },
+                { name: 'Draw', price: '3.3' },
+                { name: 'Chelsea', price: '3.4' },
+              ],
+            },
+          ],
+        },
+      };
+    }
+
+    if (url === '/events/evt-1/status') {
+      return {
+        body: {
+          event: {
+            id: 'evt-1',
+            homeTeam: 'Arsenal',
+            awayTeam: 'Chelsea',
+            startTime: '2030-01-01T12:00:00Z',
+            status: 'scheduled',
+            updatedAt: '2030-01-01T10:00:00Z',
+          },
+        },
+      };
+    }
+
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+    removeDir(tempDir);
+  });
+
+  const env = {
+    SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+    SPORTSBOOK_PROVIDER_MODE: 'primary',
+  };
+
+  const plan = await runCliAsync([
+    '--output',
+    'json',
+    'sports',
+    'create',
+    'plan',
+    '--event-id',
+    'evt-1',
+    '--model-file',
+    modelFile,
+    '--now-ms',
+    String(Date.parse('2030-01-01T10:00:00Z')),
+    '--min-total-books',
+    '6',
+    '--min-tier1-books',
+    '3',
+  ], { env });
+  assert.equal(plan.status, 0, plan.output);
+  const planPayload = parseJsonEnvelopeStrict(plan, 'sports create plan --model-file');
+  assert.equal(planPayload.ok, true);
+  assert.equal(planPayload.command, 'sports.create.plan');
+  assert.equal(planPayload.data.source.probabilitySource, 'model');
+  assert.equal(planPayload.data.source.model.probability, 0.62);
+  assert.equal(planPayload.data.source.model.confidence, 'high');
+  assert.equal(planPayload.data.source.model.source, 'my_model_v3');
+  assert.equal(planPayload.data.source.model.inputMode, 'file');
+  assert.equal(planPayload.data.source.model.modelFile, modelFile);
+  assert.equal(
+    planPayload.data.safety.blockedReasons.some((reason) => String(reason).includes('Insufficient book coverage')),
+    false,
+  );
+
+  const requestedPaths = mock.requests.map((request) => String(request.url));
+  assert.equal(requestedPaths.length, 2);
+  assert.equal(requestedPaths[0], '/events/evt-1/odds?marketType=soccer_winner');
+  assert.equal(requestedPaths[1], '/events/evt-1/status');
 });

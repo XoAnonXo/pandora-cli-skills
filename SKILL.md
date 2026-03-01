@@ -83,7 +83,11 @@ pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--c
 pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
 pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]
 pandora [--output table|json] markets get [--id <id> ...] [--stdin]
-pandora [--output table|json] sports books list|events list|events live|odds snapshot|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]
+pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]
+pandora [--output table|json] lifecycle start --config <path>|status --id <id>|resolve --id <id> --confirm
+pandora arb scan --markets <csv> --output ndjson [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--iterations <n>] [--interval-ms <ms>]
+pandora [--output table|json] odds record --competition <id> --interval <sec> [--max-samples <n>] [--event-id <id>] [--venues pandora_amm,polymarket]
+pandora [--output table|json] odds history --event-id <id> --output csv|json [--limit <n>]
 pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
 pandora [--output table|json] polls get --id <id>
 pandora [--output table|json] events list [--type all|liquidity|oracle-fee|claim] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-direction asc|desc] [--chain-id <id>] [--wallet <address>] [--market-address <address>] [--poll-address <address>] [--tx-hash <hash>]
@@ -152,9 +156,10 @@ trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-
 | `sports events list` | List normalized soccer events. | `--competition`, `--kickoff-after`, `--kickoff-before`, `--limit` |
 | `sports events live` | List only live/in-play events. | `--competition`, `--limit`, `--provider` |
 | `sports odds snapshot` | Fetch event odds snapshot plus consensus context. | `--event-id`, `--trim-percent`, `--min-tier1-books`, `--min-total-books` |
+| `sports odds bulk` | Fetch all odds for a competition and refresh local cache. | `--competition`, `--provider`, `--timeout-ms`, `--limit` |
 | `sports consensus` | Compute trimmed-median consensus from live or offline checks. | `--event-id` or `--checks-json`, `--trim-percent`, `--book-priority` |
 | `sports create plan` | Build conservative creation plan and safety gates. | `--event-id`, `--selection`, `--market-type`, `--creation-window-open-min`, `--creation-window-close-min` |
-| `sports create run` | Dry-run or execute creation path. | `--event-id`, `--dry-run/--execute`, `--liquidity-usdc`, `--chain-id`, `--rpc-url` |
+| `sports create run` | Dry-run or execute creation path. | `--event-id`, `--dry-run/--execute`, `--liquidity-usdc`, `--chain-id`, `--rpc-url`, `--model-file`, `--model-stdin` |
 | `sports sync once|run|start|stop|status` | Evaluate and operate sports sync runtime state. | `--event-id` (required for `once|run|start`), `--risk-profile`, `--state-file`, `--paper/--execute-live` |
 | `sports resolve plan` | Build manual-final resolution recommendation. | `--event-id` or `--checks-json/--checks-file`, `--poll-address`, `--settle-delay-ms`, `--consecutive-checks-required` |
 

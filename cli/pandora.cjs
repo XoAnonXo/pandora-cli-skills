@@ -34,14 +34,20 @@ const {
 } = require('./lib/parsers/polymarket_flags.cjs');
 const { createParseResolveFlags } = require('./lib/parsers/resolve_flags.cjs');
 const { createParseLpFlags } = require('./lib/parsers/lp_flags.cjs');
+const { createParseLifecycleFlags } = require('./lib/parsers/lifecycle_flags.cjs');
 const { createParseSportsFlags } = require('./lib/parsers/sports_flags.cjs');
+const { createParseOddsFlags } = require('./lib/parsers/odds_flags.cjs');
+const { createParseRiskShowFlags, createParseRiskPanicFlags } = require('./lib/parsers/risk_flags.cjs');
 const { createCoreCommandFlagParsers } = require('./lib/parsers/core_command_flags.cjs');
 const { createRunTradeCommand } = require('./lib/trade_command_service.cjs');
 const { createRunWatchCommand } = require('./lib/watch_command_service.cjs');
 const { createRunPolymarketCommand } = require('./lib/polymarket_command_service.cjs');
 const { createRunResolveCommand } = require('./lib/resolve_command_service.cjs');
 const { createRunLpCommand } = require('./lib/lp_command_service.cjs');
+const { createRunLifecycleCommand } = require('./lib/lifecycle_command_service.cjs');
+const { createRunArbCommand } = require('./lib/arb_command_service.cjs');
 const { createRunSportsCommand } = require('./lib/sports_command_service.cjs');
+const { createRunRiskCommand } = require('./lib/risk_command_service.cjs');
 const {
   DEFAULT_INDEXER_URL: SHARED_DEFAULT_INDEXER_URL,
   DEFAULT_RPC_BY_CHAIN_ID,
@@ -84,6 +90,8 @@ const getContractErrorDecoder = createLazyModuleLoader('./lib/contract_error_dec
 const getMirrorManifestStore = createLazyModuleLoader('./lib/mirror_manifest_store.cjs');
 const getAutopilotStateStore = createLazyModuleLoader('./lib/autopilot_state_store.cjs');
 const getMirrorStateStore = createLazyModuleLoader('./lib/mirror_state_store.cjs');
+const getRiskStateStore = createLazyModuleLoader('./lib/risk_state_store.cjs');
+const getRiskGuardService = createLazyModuleLoader('./lib/risk_guard_service.cjs');
 const getSchemaCommandService = createLazyModuleLoader('./lib/schema_command_service.cjs');
 const getMcpServerService = createLazyModuleLoader('./lib/mcp_server_service.cjs');
 const getStreamCommandService = createLazyModuleLoader('./lib/stream_command_service.cjs');
@@ -96,6 +104,8 @@ const getSportsSyncService = createLazyModuleLoader('./lib/sports_sync_service.c
 const getSportsResolvePlanService = createLazyModuleLoader('./lib/sports_resolve_plan_service.cjs');
 const getSportsCreationService = createLazyModuleLoader('./lib/sports_creation_service.cjs');
 const getPandoraDeployService = createLazyModuleLoader('./lib/pandora_deploy_service.cjs');
+const getVenueConnectorFactoryService = createLazyModuleLoader('./lib/venue_connector_factory.cjs');
+const getOddsHistoryService = createLazyModuleLoader('./lib/odds_history_service.cjs');
 
 /** Proxy to history service fetch. */
 function fetchHistory(...args) {
@@ -314,6 +324,38 @@ function loadMirrorState(...args) {
   return getMirrorStateStore().loadState(...args);
 }
 
+let cachedRiskGuard = null;
+
+function getRiskGuard() {
+  if (!cachedRiskGuard) {
+    const riskStateStore = getRiskStateStore();
+    cachedRiskGuard = getRiskGuardService().createRiskGuardService({
+      CliError,
+      defaultRiskFile: riskStateStore.defaultRiskFile,
+      loadRiskState: riskStateStore.loadRiskState,
+      saveRiskState: riskStateStore.saveRiskState,
+      touchPanicStopFiles: riskStateStore.touchPanicStopFiles,
+    });
+  }
+  return cachedRiskGuard;
+}
+
+function getRiskSnapshot(...args) {
+  return getRiskGuard().getRiskSnapshot(...args);
+}
+
+function assertLiveWriteAllowed(...args) {
+  return getRiskGuard().assertLiveWriteAllowed(...args);
+}
+
+function setRiskPanic(...args) {
+  return getRiskGuard().setPanic(...args);
+}
+
+function clearRiskPanic(...args) {
+  return getRiskGuard().clearPanic(...args);
+}
+
 /** Schema command adapter with CLI output wiring. */
 function runSchemaCommand(...args) {
   return getSchemaCommandService().createRunSchemaCommand({ emitSuccess, CliError }).runSchemaCommand(...args);
@@ -385,6 +427,16 @@ function buildSportsCreatePlan(...args) {
 /** AMM deployment service proxy. */
 function deployPandoraAmmMarket(...args) {
   return getPandoraDeployService().deployPandoraAmmMarket(...args);
+}
+
+/** Venue connector factory proxy. */
+function createVenueConnectorFactory(...args) {
+  return getVenueConnectorFactoryService().createVenueConnectorFactory(...args);
+}
+
+/** Odds history service proxy. */
+function createOddsHistoryService(...args) {
+  return getOddsHistoryService().createOddsHistoryService(...args);
 }
 
 let doctorServiceInstance = null;
@@ -692,6 +744,9 @@ Usage:
   pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]
   pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand]
   pandora [--output table|json] sports books list|events list|events live|odds snapshot|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan ...
+  pandora [--output table|json] odds record|history ...
+  pandora [--output table|json] lifecycle start|status|resolve ...
+  pandora arb scan --markets <csv> --output ndjson [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
@@ -706,6 +761,7 @@ Usage:
   pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
   pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
   pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
   pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
   pandora [--output json] schema
   pandora mcp
@@ -728,6 +784,8 @@ Examples:
   pandora history --wallet 0x1234... --chain-id 1 --limit 50
   pandora export --wallet 0x1234... --format csv --year 2026 --out ./trades-2026.csv
   pandora arbitrage --chain-id 1 --limit 25 --venues pandora,polymarket --cross-venue-only --with-rules --include-similarity
+  pandora lifecycle start --config ./configs/lifecycle.json
+  pandora arb scan --markets market-1,market-2 --output ndjson --iterations 1 --min-net-spread-pct 2
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
   pandora mirror plan --source polymarket --polymarket-market-id 0xabc... --with-rules --include-similarity
   pandora mirror browse --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10
@@ -746,6 +804,9 @@ Examples:
   pandora leaderboard --metric profit --limit 20
   pandora analyze --market-address 0xabc... --provider mock
   pandora suggest --wallet 0x1234... --risk medium --budget 50 --count 3
+  pandora risk show
+  pandora risk panic --reason "Manual incident stop"
+  pandora risk panic --clear
   pandora stream prices --indexer-url https://pandoraindexer.up.railway.app/ --interval-ms 1000
   pandora --output json schema
   pandora mcp
@@ -759,6 +820,7 @@ Notes:
   - mirror status --with-live can enrich output with Polymarket position data when POLYMARKET_* credentials are set; missing endpoints/creds return diagnostics instead of hard failures.
   - watch is non-transactional monitoring; use quote/trade for execution workflows.
   - stream always emits NDJSON to stdout (one JSON object per line).
+  - arb scan emits NDJSON opportunities only when thresholds are exceeded.
 `);
 }
 
@@ -954,6 +1016,9 @@ function helpJsonPayload() {
       'pandora [--output table|json] watch ...',
       'pandora [--output table|json] scan ...',
       'pandora [--output table|json] sports ...',
+      'pandora [--output table|json] odds record|history ...',
+      'pandora [--output table|json] lifecycle start|status|resolve ...',
+      'pandora arb scan --markets <csv> --output ndjson ...',
       'pandora [--output table|json] quote ...',
       'pandora [--output table|json] trade ...',
       'pandora [--output table|json] history ...',
@@ -968,6 +1033,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] suggest ...',
       'pandora [--output table|json] resolve ...',
       'pandora [--output table|json] lp add|remove|positions ...',
+      'pandora [--output table|json] risk show|panic ...',
       'pandora stream prices|events ...',
       'pandora [--output json] schema',
       'pandora mcp',
@@ -989,14 +1055,60 @@ function normalizeOutputMode(raw) {
   return mode;
 }
 
+function findOddsSubcommandActionIndex(argv) {
+  const tokens = Array.isArray(argv) ? argv : [];
+  let commandIndex = 0;
+  if (tokens[0] === 'pandora') commandIndex = 1;
+  const command = String(tokens[commandIndex] || '').trim().toLowerCase();
+  if (command !== 'odds') return -1;
+  for (let i = commandIndex + 1; i < tokens.length; i += 1) {
+    const token = String(tokens[i] || '').trim().toLowerCase();
+    if (token === 'history' || token === 'record') return i;
+  }
+  return -1;
+}
+
+function isOddsHistoryLocalOutputFlag(argv, index) {
+  const actionIndex = findOddsSubcommandActionIndex(argv);
+  if (actionIndex < 0 || index <= actionIndex) return false;
+  const action = String(argv[actionIndex] || '').trim().toLowerCase();
+  return action === 'history';
+}
+
+function findArbSubcommandActionIndex(argv) {
+  const tokens = Array.isArray(argv) ? argv : [];
+  let commandIndex = 0;
+  if (tokens[0] === 'pandora') commandIndex = 1;
+  const command = String(tokens[commandIndex] || '').trim().toLowerCase();
+  if (command !== 'arb') return -1;
+  for (let i = commandIndex + 1; i < tokens.length; i += 1) {
+    const token = String(tokens[i] || '').trim().toLowerCase();
+    if (token === 'scan') return i;
+  }
+  return -1;
+}
+
+function isArbScanLocalOutputFlag(argv, index) {
+  const actionIndex = findArbSubcommandActionIndex(argv);
+  if (actionIndex < 0 || index <= actionIndex) return false;
+  const action = String(argv[actionIndex] || '').trim().toLowerCase();
+  return action === 'scan';
+}
+
+function isCommandLocalOutputFlag(argv, index) {
+  return isOddsHistoryLocalOutputFlag(argv, index) || isArbScanLocalOutputFlag(argv, index);
+}
+
 function inferRequestedOutputMode(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--output' || token === '-o') {
+      if (isCommandLocalOutputFlag(argv, i)) continue;
       const next = argv[i + 1];
       if (String(next).trim().toLowerCase() === 'json') return 'json';
     }
     if (token.startsWith('--output=')) {
+      if (isCommandLocalOutputFlag(argv, i)) continue;
       if (token.slice('--output='.length).trim().toLowerCase() === 'json') return 'json';
     }
   }
@@ -1039,6 +1151,8 @@ function expandEqualsStyleFlags(argv) {
     '--daemon',
     '--stream',
     '--no-hedge',
+    '--clear',
+    '--confirm',
   ]);
   for (const token of Array.isArray(argv) ? argv : []) {
     if (
@@ -1084,6 +1198,11 @@ function extractOutputMode(argv) {
       if (!next) {
         throw new CliError('MISSING_FLAG_VALUE', `Missing value for ${token}`);
       }
+      if (isCommandLocalOutputFlag(argv, i)) {
+        args.push(token, next);
+        i += 1;
+        continue;
+      }
       const parsedMode = normalizeOutputMode(next);
       if (outputConfigured && parsedMode !== outputMode) {
         throw new CliError('INVALID_ARGS', `Conflicting --output values: "${outputMode}" and "${parsedMode}".`);
@@ -1095,6 +1214,10 @@ function extractOutputMode(argv) {
     }
 
     if (token.startsWith('--output=')) {
+      if (isCommandLocalOutputFlag(argv, i)) {
+        args.push(token);
+        continue;
+      }
       const parsedMode = normalizeOutputMode(token.slice('--output='.length));
       if (outputConfigured && parsedMode !== outputMode) {
         throw new CliError('INVALID_ARGS', `Conflicting --output values: "${outputMode}" and "${parsedMode}".`);
@@ -1625,6 +1748,9 @@ function renderPortfolioTable(data) {
     ['claims', data.summary.claims],
     ['cashflowNet', data.summary.cashflowNet],
     ['pnlProxy', data.summary.pnlProxy],
+    ['totalDeposited', data.summary.totalDeposited === null ? '' : data.summary.totalDeposited],
+    ['totalNetDelta', data.summary.totalNetDelta === null ? '' : data.summary.totalNetDelta],
+    ['totalUnrealizedPnl', data.summary.totalUnrealizedPnl === null ? '' : data.summary.totalUnrealizedPnl],
     ['eventsIncluded', data.summary.eventsIncluded ? 'yes' : 'no'],
     ['lpIncluded', data.summary.lpIncluded ? 'yes' : 'no'],
     ['lpPositionCount', data.summary.lpPositionCount === undefined ? '' : data.summary.lpPositionCount],
@@ -2336,6 +2462,54 @@ function renderSuggestTable(data) {
       formatNumericCell(item.confidenceScore, 3),
     ]),
   );
+}
+
+function renderRiskTable(data) {
+  const panic = data && typeof data.panic === 'object' && data.panic ? data.panic : {};
+  const guardrails = data && typeof data.guardrails === 'object' && data.guardrails ? data.guardrails : {};
+  const counters = data && typeof data.counters === 'object' && data.counters ? data.counters : {};
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['riskFile', data && data.riskFile ? data.riskFile : ''],
+      ['action', data && data.action ? data.action : 'show'],
+      ['changed', data && data.changed !== undefined ? String(Boolean(data.changed)) : ''],
+      ['panic.active', String(Boolean(panic.active))],
+      ['panic.reason', panic.reason || ''],
+      ['panic.engagedAt', panic.engagedAt || ''],
+      ['panic.engagedBy', panic.engagedBy || ''],
+      ['guardrails.enabled', String(guardrails.enabled !== false)],
+      [
+        'guardrails.maxSingleLiveNotionalUsdc',
+        guardrails.maxSingleLiveNotionalUsdc === null || guardrails.maxSingleLiveNotionalUsdc === undefined
+          ? ''
+          : String(guardrails.maxSingleLiveNotionalUsdc),
+      ],
+      [
+        'guardrails.maxDailyLiveNotionalUsdc',
+        guardrails.maxDailyLiveNotionalUsdc === null || guardrails.maxDailyLiveNotionalUsdc === undefined
+          ? ''
+          : String(guardrails.maxDailyLiveNotionalUsdc),
+      ],
+      [
+        'guardrails.maxDailyLiveOps',
+        guardrails.maxDailyLiveOps === null || guardrails.maxDailyLiveOps === undefined
+          ? ''
+          : String(guardrails.maxDailyLiveOps),
+      ],
+      ['guardrails.blockForkExecute', String(Boolean(guardrails.blockForkExecute))],
+      ['counters.day', counters.day || ''],
+      ['counters.liveOps', counters.liveOps === undefined ? '' : String(counters.liveOps)],
+      ['counters.liveNotionalUsdc', counters.liveNotionalUsdc === undefined ? '' : String(counters.liveNotionalUsdc)],
+    ],
+  );
+  if (Array.isArray(data && data.stopFiles) && data.stopFiles.length) {
+    console.log('');
+    printTable(
+      ['Stop Files'],
+      data.stopFiles.map((filePath) => [filePath]),
+    );
+  }
 }
 
 function renderSingleEntityTable(data) {
@@ -4080,6 +4254,27 @@ function summarizePortfolio(options, positions, liquidityEvents, claimEvents, lp
     }, 0),
     6,
   );
+  const hasAnyLpPreview = lpPositions.some((item) => {
+    const value = Number(item && item.preview && item.preview.collateralOutUsdc);
+    return Number.isFinite(value);
+  });
+
+  const totalDeposited = options.includeEvents ? round(liquidityAdded, 6) : null;
+  const totalNetDelta = options.includeEvents ? round(netLiquidity, 6) : null;
+  let totalUnrealizedPnl = null;
+
+  if (options.includeEvents && options.withLp) {
+    if (lpMarketsWithBalance === 0) {
+      totalUnrealizedPnl = 0;
+    } else if (hasAnyLpPreview && totalNetDelta !== null) {
+      totalUnrealizedPnl = round(lpEstimatedCollateralOutUsdc - totalNetDelta, 6);
+    } else {
+      totalUnrealizedPnl = null;
+      diagnostics.push('LP unrealized PnL unavailable: missing LP remove preview outputs.');
+    }
+  } else if (options.includeEvents && !options.withLp) {
+    diagnostics.push('LP unrealized PnL unavailable without --with-lp.');
+  }
 
   return {
     positionCount: positions.length,
@@ -4090,6 +4285,16 @@ function summarizePortfolio(options, positions, liquidityEvents, claimEvents, lp
     claims,
     cashflowNet,
     pnlProxy: cashflowNet,
+    totalDeposited,
+    totalNetDelta,
+    totalUnrealizedPnl,
+    totalsPolicy: {
+      eventDerivedTotalsWhenEventsDisabled: null,
+      eventDerivedTotalsDefaultWhenNoRows: 0,
+      unrealizedRequiresLp: true,
+      unrealizedWhenNoLpBalance: 0,
+      unrealizedWhenPreviewUnavailable: null,
+    },
     eventsIncluded: options.includeEvents,
     lpIncluded: Boolean(options.withLp),
     lpPositionCount,
@@ -4274,6 +4479,10 @@ const parseLpFlagsFromModule = createParseLpFlags({
   isSecureHttpUrlOrLocal,
   defaultTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
 });
+const parseLifecycleFlagsFromModule = createParseLifecycleFlags({
+  CliError,
+  requireFlagValue,
+});
 const parseSportsFlagsFromModule = createParseSportsFlags({
   CliError,
   requireFlagValue,
@@ -4286,6 +4495,20 @@ const parseSportsFlagsFromModule = createParseSportsFlags({
   parseCsvList,
   parseDateLikeFlag,
   isSecureHttpUrlOrLocal,
+});
+const parseOddsFlagsFromModule = createParseOddsFlags({
+  CliError,
+  requireFlagValue,
+  parsePositiveInteger,
+  parseCsvList,
+});
+const parseRiskShowFlagsFromModule = createParseRiskShowFlags({
+  CliError,
+  requireFlagValue,
+});
+const parseRiskPanicFlagsFromModule = createParseRiskPanicFlags({
+  CliError,
+  requireFlagValue,
 });
 
 const runTradeCommandFromService = createRunTradeCommand({
@@ -4304,6 +4527,7 @@ const runTradeCommandFromService = createRunTradeCommand({
   executeTradeOnchain,
   resolveForkRuntime,
   isSecureHttpUrlOrLocal,
+  assertLiveWriteAllowed,
   renderTradeTable,
 });
 
@@ -4346,6 +4570,7 @@ const runPolymarketCommandFromService = createRunPolymarketCommand({
   renderPolymarketApproveTable,
   renderPolymarketPreflightTable,
   renderSingleEntityTable,
+  assertLiveWriteAllowed,
   defaultEnvFile: DEFAULT_ENV_FILE,
 });
 
@@ -4357,6 +4582,7 @@ const runResolveCommandFromService = createRunResolveCommand({
   runResolve,
   renderSingleEntityTable,
   CliError,
+  assertLiveWriteAllowed,
 });
 
 const runLpCommandFromService = createRunLpCommand({
@@ -4367,6 +4593,7 @@ const runLpCommandFromService = createRunLpCommand({
   runLp,
   renderSingleEntityTable,
   CliError,
+  assertLiveWriteAllowed,
 });
 const runSportsCommandFromService = createRunSportsCommand({
   CliError,
@@ -4382,6 +4609,43 @@ const runSportsCommandFromService = createRunSportsCommand({
   buildSportsResolvePlan,
   buildSportsCreatePlan,
   deployPandoraAmmMarket,
+  assertLiveWriteAllowed,
+});
+const runRiskCommandFromService = createRunRiskCommand({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseRiskShowFlags: parseRiskShowFlagsFromModule,
+  parseRiskPanicFlags: parseRiskPanicFlagsFromModule,
+  getRiskSnapshot,
+  setPanic: setRiskPanic,
+  clearPanic: clearRiskPanic,
+  renderRiskTable,
+});
+const runLifecycleCommandFromService = createRunLifecycleCommand({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseLifecycleFlags: parseLifecycleFlagsFromModule,
+});
+const runArbCommandFromService = createRunArbCommand({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadIndexerEnv,
+  resolveIndexerUrl,
+  requireFlagValue,
+  parseCsvList,
+  parseNumber,
+  parsePositiveNumber,
+  parsePositiveInteger,
+  buildGraphqlGetQuery,
+  graphqlRequest,
+  sleepMs,
 });
 
 async function runPortfolioCommand(args, context) {
@@ -4426,6 +4690,148 @@ async function runWatchCommand(args, context) {
 
 async function runSportsCommand(args, context) {
   return runSportsCommandFromService(args, context);
+}
+
+async function runLifecycleCommand(args, context) {
+  return runLifecycleCommandFromService(args, context);
+}
+
+async function runArbCommand(args, context) {
+  return runArbCommandFromService(args, context);
+}
+
+async function runOddsCommand(args, context) {
+  const shared = parseIndexerSharedFlags(args);
+  if (!shared.rest.length || includesHelpFlag(shared.rest)) {
+    const usage =
+      'pandora [--output table|json] odds record --competition <id> --interval <sec> [--max-samples <n>] [--event-id <id>] [--venues pandora_amm,polymarket] [--indexer-url <url>] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>]';
+    const historyUsage =
+      'pandora [--output table|json] odds history --event-id <id> --output csv|json [--limit <n>]';
+    if (context.outputMode === 'json') {
+      emitSuccess(context.outputMode, 'odds.help', {
+        usage,
+        historyUsage,
+      });
+    } else {
+      console.log(`Usage: ${usage}`);
+      console.log(`       ${historyUsage}`);
+    }
+    return;
+  }
+
+  maybeLoadIndexerEnv(shared);
+  const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
+  const parsed = parseOddsFlagsFromModule(shared.rest);
+  const options = parsed.options || {};
+
+  const historyService = createOddsHistoryService();
+  const connectorFactory = createVenueConnectorFactory();
+
+  if (parsed.action === 'record') {
+    const intervalMs = Number(options.intervalSec) * 1000;
+    const maxSamples = Number.isInteger(options.maxSamples) && options.maxSamples > 0 ? options.maxSamples : 1;
+    const sampleResults = [];
+    let insertedTotal = 0;
+
+    for (let sample = 1; sample <= maxSamples; sample += 1) {
+      const rows = [];
+      const diagnostics = [];
+      for (const venue of options.venues) {
+        try {
+          const connector = connectorFactory.createConnector(venue, {
+            indexerUrl,
+            host: options.polymarketHost || null,
+            mockUrl: options.polymarketMockUrl || null,
+            timeoutMs: options.timeoutMs || shared.timeoutMs,
+          });
+          const pricePayload = await connector.getPrice({
+            competition: options.competition,
+            eventId: options.eventId,
+            indexerUrl,
+            host: options.polymarketHost || null,
+            mockUrl: options.polymarketMockUrl || null,
+            timeoutMs: options.timeoutMs || shared.timeoutMs,
+          });
+          if (pricePayload && Array.isArray(pricePayload.items)) {
+            rows.push(...pricePayload.items);
+          }
+        } catch (err) {
+          diagnostics.push({
+            venue,
+            code: err && err.code ? String(err.code) : 'ODDS_RECORD_CONNECTOR_FAILED',
+            message: err && err.message ? err.message : String(err),
+          });
+        }
+      }
+
+      const writeResult = historyService.recordEntries(rows);
+      insertedTotal += writeResult.inserted;
+      sampleResults.push({
+        sample,
+        observedAt: new Date().toISOString(),
+        inserted: writeResult.inserted,
+        diagnostics,
+      });
+
+      if (sample < maxSamples) {
+        await sleepMs(intervalMs);
+      }
+    }
+
+    const payload = {
+      schemaVersion: '1.0.0',
+      generatedAt: new Date().toISOString(),
+      action: 'record',
+      competition: options.competition,
+      eventId: options.eventId || null,
+      intervalSec: options.intervalSec,
+      maxSamples,
+      venues: options.venues,
+      backend: historyService.backend,
+      storage: historyService.paths,
+      insertedTotal,
+      samples: sampleResults,
+    };
+    emitSuccess(context.outputMode, 'odds.record', payload, renderSingleEntityTable);
+    return;
+  }
+
+  const rows = historyService.queryByEventId(options.eventId, {
+    limit: options.limit,
+  });
+  const basePayload = {
+    schemaVersion: '1.0.0',
+    generatedAt: new Date().toISOString(),
+    action: 'history',
+    eventId: options.eventId,
+    backend: historyService.backend,
+    storage: historyService.paths,
+    count: rows.length,
+    items: rows,
+  };
+
+  if (options.output === 'csv') {
+    const csv = historyService.formatRows(rows, 'csv');
+    if (context.outputMode === 'json') {
+      emitSuccess(context.outputMode, 'odds.history', {
+        ...basePayload,
+        output: 'csv',
+        csv,
+      });
+    } else {
+      console.log(csv);
+    }
+    return;
+  }
+
+  if (context.outputMode === 'json') {
+    emitSuccess(context.outputMode, 'odds.history', {
+      ...basePayload,
+      output: 'json',
+    });
+  } else {
+    console.log(JSON.stringify(basePayload, null, 2));
+  }
 }
 
 async function runHistoryCommand(args, context) {
@@ -4575,6 +4981,10 @@ async function runAutopilotCommand(args, context) {
         privateKey: null,
         usdc: null,
       };
+      await assertLiveWriteAllowed('autopilot.execute-live', {
+        notionalUsdc: executionOptions.amountUsdc,
+        runtimeMode: 'live',
+      });
       const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
       enforceTradeRiskGuards(tradeOptions, quote);
       const execution = await executeTradeOnchain(tradeOptions);
@@ -4876,6 +5286,7 @@ const runMirrorCommand = createRunMirrorCommand({
   buildMirrorSyncDaemonCliArgs,
   buildQuotePayload,
   executeTradeOnchain,
+  assertLiveWriteAllowed,
   hasWebhookTargets,
   sendWebhookNotifications,
   loadMirrorState,
@@ -5163,6 +5574,10 @@ async function runLpCommand(args, context) {
   return runLpCommandFromService(args, context);
 }
 
+async function runRiskCommand(args, context) {
+  return runRiskCommandFromService(args, context);
+}
+
 function runInitEnv(args, outputMode) {
   const options = parseInitEnvFlags(args);
 
@@ -5307,6 +5722,9 @@ const dispatch = createCommandRouter({
   runMarketsCommand,
   runScanCommand,
   runSportsCommand,
+  runLifecycleCommand,
+  runArbCommand,
+  runOddsCommand,
   runQuoteCommand,
   runTradeCommand,
   runPollsCommand,
@@ -5326,6 +5744,7 @@ const dispatch = createCommandRouter({
   runSuggestCommand,
   runResolveCommand,
   runLpCommand,
+  runRiskCommand,
   runMcpCommand,
   runStreamCommand,
   runSchemaCommand,

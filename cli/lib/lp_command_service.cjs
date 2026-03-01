@@ -18,6 +18,7 @@ function createRunLpCommand(deps) {
   const runLp = requireDep(deps, 'runLp');
   const renderSingleEntityTable = requireDep(deps, 'renderSingleEntityTable');
   const CliError = requireDep(deps, 'CliError');
+  const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
 
   return async function runLpCommand(args, context) {
     if (includesHelpFlag(args)) {
@@ -38,6 +39,12 @@ function createRunLpCommand(deps) {
       return;
     }
     const options = parseLpFlags(args);
+    if (options.execute && options.action !== 'positions' && assertLiveWriteAllowed) {
+      await assertLiveWriteAllowed(`lp.${options.action}.execute`, {
+        notionalUsdc: options.action === 'add' ? options.amountUsdc : null,
+        runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+      });
+    }
     let payload;
     try {
       payload = await runLp(options);

@@ -121,6 +121,8 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     reason: null,
     settleDelayMs: 600000,
     consecutiveChecksRequired: 2,
+    modelFile: null,
+    modelStdin: false,
     now: null,
     nowMs: null,
     ...defaults,
@@ -394,6 +396,15 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       i += 1;
       continue;
     }
+    if (token === '--model-file') {
+      options.modelFile = requireFlagValue(args, i, '--model-file');
+      i += 1;
+      continue;
+    }
+    if (token === '--model-stdin') {
+      options.modelStdin = true;
+      continue;
+    }
     if (token === '--poll-address') {
       options.pollAddress = requireFlagValue(args, i, '--poll-address');
       i += 1;
@@ -494,6 +505,13 @@ function createParseSportsFlags(deps) {
       }
       return { scope, action, command: 'sports.odds.snapshot', options };
     }
+    if (scope === 'odds' && action === 'bulk') {
+      const options = parseBaseSportsFlags(rest, baseDeps, {});
+      if (!options.competition) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'sports odds bulk requires --competition <id|slug>.');
+      }
+      return { scope, action, command: 'sports.odds.bulk', options };
+    }
     if (scope === 'consensus') {
       const options = parseBaseSportsFlags(args.slice(1), baseDeps, {});
       if (!options.eventId && !options.checksJson) {
@@ -529,7 +547,7 @@ function createParseSportsFlags(deps) {
 
     throw new CliError(
       'INVALID_USAGE',
-      'sports requires one of: books list | events list|live | odds snapshot | consensus | create plan|run | sync once|run|start|stop|status | resolve plan',
+      'sports requires one of: books list | events list|live | odds snapshot|bulk | consensus | create plan|run | sync once|run|start|stop|status | resolve plan',
     );
   };
 }

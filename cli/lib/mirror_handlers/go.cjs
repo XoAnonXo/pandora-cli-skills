@@ -21,6 +21,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     runMirrorSync,
     buildQuotePayload,
     executeTradeOnchain,
+    assertLiveWriteAllowed,
     renderMirrorSyncTickLine,
     coerceMirrorServiceError,
     renderMirrorGoTable,
@@ -53,6 +54,12 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
       indexerUrl,
       timeoutMs: shared.timeoutMs,
     });
+    if (options.executeLive && typeof assertLiveWriteAllowed === 'function') {
+      await assertLiveWriteAllowed('mirror.go.deploy.execute', {
+        notionalUsdc: options.liquidityUsdc,
+        runtimeMode: 'live',
+      });
+    }
     deployPayload = await deployMirror({
       ...options,
       planData: planPayload,
@@ -208,6 +215,12 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
               privateKey: options.privateKey,
               usdc: options.usdc,
             };
+            if (typeof assertLiveWriteAllowed === 'function') {
+              await assertLiveWriteAllowed('mirror.go.sync.execute', {
+                notionalUsdc: executionOptions.amountUsdc,
+                runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+              });
+            }
             const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
             const execution = await executeTradeOnchain(tradeOptions);
             return {

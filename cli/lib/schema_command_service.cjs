@@ -215,6 +215,19 @@ function buildCommandDescriptors() {
       emits: ['autopilot', 'autopilot.help'],
       dataSchema: '#/definitions/AutopilotPayload',
     }),
+    'risk.show': commandDescriptor({
+      summary: 'Inspect persisted risk guardrail + panic state.',
+      usage: 'pandora [--output table|json] risk show [--risk-file <path>]',
+      emits: ['risk.show', 'risk.show.help'],
+      dataSchema: '#/definitions/RiskPayload',
+    }),
+    'risk.panic': commandDescriptor({
+      summary: 'Engage or clear risk panic lock for all live writes.',
+      usage:
+        'pandora [--output table|json] risk panic [--risk-file <path>] [--reason <text> --actor <id>] | [--clear --actor <id>]',
+      emits: ['risk.panic', 'risk.panic.help'],
+      dataSchema: '#/definitions/RiskPayload',
+    }),
     leaderboard: commandDescriptor({
       summary: 'Compute wallet rankings from historical trade outcomes.',
       usage: 'pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]',
@@ -617,6 +630,20 @@ function buildSchemaPayload() {
           metric: { enum: ['profit', 'volume', 'win-rate'] },
           count: { type: 'integer' },
           items: { type: 'array', items: { type: 'object' } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      RiskPayload: {
+        type: 'object',
+        properties: {
+          action: { type: ['string', 'null'] },
+          changed: { type: ['boolean', 'null'] },
+          riskFile: { type: 'string' },
+          panic: { type: 'object' },
+          guardrails: { type: 'object' },
+          counters: { type: 'object' },
+          stopFiles: { type: 'array', items: { type: 'string' } },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },

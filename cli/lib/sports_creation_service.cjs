@@ -3,6 +3,15 @@ const { getCreationWindowStatus, planResolveWindow } = require('./sports_timing_
 
 const PPB_TOTAL = 1_000_000_000;
 
+function createCreatePlanError(code, message, details = undefined) {
+  const err = new Error(message);
+  err.code = code;
+  if (details !== undefined) {
+    err.details = details;
+  }
+  return err;
+}
+
 function toUnixSeconds(isoString) {
   const parsed = Date.parse(String(isoString || ''));
   if (Number.isNaN(parsed)) return null;
@@ -110,6 +119,7 @@ function buildSportsCreatePlan(input = {}) {
   const event = input.event || {};
   const oddsPayload = input.oddsPayload || {};
   const options = input.options || {};
+  const modelInput = input.modelInput && typeof input.modelInput === 'object' ? input.modelInput : null;
   const selection = options.selection || 'home';
 
   const quotes = buildConsensusQuotes(oddsPayload, selection, options.bookPriority || oddsPayload.preferredBooks);
@@ -119,6 +129,19 @@ function buildSportsCreatePlan(input = {}) {
     minTier1Books: options.minTier1Books,
     tier1Books: options.bookPriority || oddsPayload.preferredBooks,
   });
+
+  let probabilitySource = 'consensus';
+  let probabilityYesPct = consensus.consensusYesPct;
+  if (modelInput) {
+    const probability = Number(modelInput.probability);
+    if (!Number.isFinite(probability) || probability < 0.01 || probability > 0.99) {
+      throw createCreatePlanError('INVALID_FLAG_VALUE', 'BYOM probability must be within [0.01, 0.99].', {
+        probability: modelInput.probability,
+      });
+    }
+    probabilitySource = 'model';
+    probabilityYesPct = probability * 100;
+  }
 
   const kickoff = event.startTime || oddsPayload.event && oddsPayload.event.startTime;
   const kickoffMs = kickoff ? Date.parse(kickoff) : null;
@@ -148,7 +171,7 @@ function buildSportsCreatePlan(input = {}) {
   if (statusToken.includes('postpon') || statusToken.includes('cancel') || statusToken.includes('abandon')) {
     blockedReasons.push(`Event status is ${event.status}; creation blocked.`);
   }
-  if (consensus.confidence === 'insufficient') {
+  if (!modelInput && consensus.confidence === 'insufficient') {
     blockedReasons.push('Insufficient book coverage for creation policy.');
   }
 
@@ -160,12 +183,12 @@ function buildSportsCreatePlan(input = {}) {
   let distributionYes = options.distributionYes;
   let distributionNo = options.distributionNo;
   if (!Number.isInteger(distributionYes) || !Number.isInteger(distributionNo)) {
-    const suggestedYes = toPartsPerBillionFromPct(consensus.consensusYesPct);
+    const suggestedYes = toPartsPerBillionFromPct(probabilityYesPct);
     distributionYes = Number.isInteger(suggestedYes) ? suggestedYes : 500_000_000;
     distributionNo = PPB_TOTAL - distributionYes;
   }
 
-  const mechanics = deriveMechanics(consensus.consensusYesPct);
+  const mechanics = deriveMechanics(probabilityYesPct);
 
   return {
     schemaVersion: '1.0.0',
@@ -181,6 +204,19 @@ function buildSportsCreatePlan(input = {}) {
     source: {
       provider: options.provider || 'auto',
       consensus,
+      probabilitySource,
+      ...(modelInput
+        ? {
+            model: {
+              probability: Number(modelInput.probability),
+              probabilityPct: Number((Number(modelInput.probability) * 100).toFixed(6)),
+              confidence: modelInput.confidence || null,
+              source: modelInput.source || null,
+              inputMode: modelInput.inputMode || null,
+              modelFile: modelInput.modelFile || null,
+            },
+          }
+        : {}),
     },
     timing: {
       kickoffAt: kickoff || null,

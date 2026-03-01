@@ -15,6 +15,7 @@ module.exports = async function handleMirrorDeploy({ shared, context, deps }) {
     deployMirror,
     coerceMirrorServiceError,
     renderMirrorDeployTable,
+    assertLiveWriteAllowed,
   } = deps;
 
   if (includesHelpFlag(shared.rest)) {
@@ -37,6 +38,12 @@ module.exports = async function handleMirrorDeploy({ shared, context, deps }) {
   maybeLoadTradeEnv(shared);
   const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
   const options = parseMirrorDeployFlags(shared.rest);
+  if (options.execute && typeof assertLiveWriteAllowed === 'function') {
+    await assertLiveWriteAllowed('mirror.deploy.execute', {
+      notionalUsdc: options.liquidityUsdc,
+      runtimeMode: 'live',
+    });
+  }
   let payload;
   try {
     payload = await deployMirror({

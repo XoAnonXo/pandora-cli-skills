@@ -45,6 +45,14 @@ function parseJsonOutput(result) {
   return JSON.parse(payloadText);
 }
 
+function parseNdjsonOutput(output) {
+  const text = String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return text.map((line) => JSON.parse(line));
+}
+
 function buildValidEnv(rpcUrl, overrides = {}) {
   const entries = {
     CHAIN_ID: '1',
@@ -1084,6 +1092,10 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.equal(payload.data.commandDescriptors.trade.dataSchema, '#/definitions/TradePayload');
   assert.ok(payload.data.commandDescriptors['mirror.plan']);
   assert.equal(payload.data.commandDescriptors['mirror.plan'].dataSchema, '#/definitions/MirrorPlanPayload');
+  assert.ok(payload.data.commandDescriptors['risk.show']);
+  assert.equal(payload.data.commandDescriptors['risk.show'].dataSchema, '#/definitions/RiskPayload');
+  assert.ok(payload.data.commandDescriptors['risk.panic']);
+  assert.equal(payload.data.commandDescriptors['risk.panic'].dataSchema, '#/definitions/RiskPayload');
   assert.ok(payload.data.commandDescriptors.schema);
   assert.deepEqual(payload.data.commandDescriptors.schema.outputModes, ['json']);
   assert.ok(payload.data.commandDescriptors.mcp);
@@ -1092,6 +1104,7 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions.QuotePayload);
   assert.ok(payload.data.definitions.TradePayload);
   assert.ok(payload.data.definitions.MirrorPlanPayload);
+  assert.ok(payload.data.definitions.RiskPayload);
   assert.ok(payload.data.definitions.ErrorRecoveryPayload);
 });
 
@@ -1118,6 +1131,68 @@ test('json success envelopes include schemaVersion and generatedAt metadata', ()
   assert.equal(payload.ok, true);
   assert.equal(typeof payload.data.schemaVersion, 'string');
   assertIsoTimestamp(payload.data.generatedAt);
+});
+
+test('risk show and panic commands manage state in json envelopes', () => {
+  const tempHome = createTempDir('pandora-risk-cli-');
+  try {
+    const env = { HOME: tempHome, PANDORA_RISK_FILE: path.join(tempHome, 'risk.json') };
+
+    const showInitial = runCli(['--output', 'json', 'risk', 'show'], { env });
+    assert.equal(showInitial.status, 0);
+    const showInitialPayload = parseJsonOutput(showInitial);
+    assert.equal(showInitialPayload.ok, true);
+    assert.equal(showInitialPayload.command, 'risk.show');
+    assert.equal(showInitialPayload.data.panic.active, false);
+
+    const engage = runCli(['--output', 'json', 'risk', 'panic', '--reason', 'incident test'], { env });
+    assert.equal(engage.status, 0);
+    const engagePayload = parseJsonOutput(engage);
+    assert.equal(engagePayload.ok, true);
+    assert.equal(engagePayload.command, 'risk.panic');
+    assert.equal(engagePayload.data.action, 'engage');
+    assert.equal(engagePayload.data.panic.active, true);
+    assert.equal(Array.isArray(engagePayload.data.stopFiles), true);
+    assert.equal(engagePayload.data.stopFiles.length, 0);
+
+    const showAfter = runCli(['--output', 'json', 'risk', 'show'], { env });
+    assert.equal(showAfter.status, 0);
+    const showAfterPayload = parseJsonOutput(showAfter);
+    assert.equal(showAfterPayload.data.panic.active, true);
+
+    const clear = runCli(['--output', 'json', 'risk', 'panic', '--clear'], { env });
+    assert.equal(clear.status, 0);
+    const clearPayload = parseJsonOutput(clear);
+    assert.equal(clearPayload.ok, true);
+    assert.equal(clearPayload.command, 'risk.panic');
+    assert.equal(clearPayload.data.action, 'clear');
+    assert.equal(clearPayload.data.panic.active, false);
+  } finally {
+    removeDir(tempHome);
+  }
+});
+
+test('risk panic blocks live writes before onchain execution', () => {
+  const tempHome = createTempDir('pandora-risk-block-live-');
+  const env = { HOME: tempHome, PANDORA_RISK_FILE: path.join(tempHome, 'risk.json') };
+  try {
+    const panic = runCli(['--output', 'json', 'risk', 'panic', '--reason', 'block all'], { env });
+    assert.equal(panic.status, 0);
+
+    const blocked = runCli([
+      '--output', 'json', 'resolve',
+      '--poll-address', ADDRESSES.mirrorPoll,
+      '--answer', 'yes',
+      '--reason', 'manual resolve',
+      '--execute',
+    ], { env });
+    assert.equal(blocked.status, 1);
+    const payload = parseJsonOutput(blocked);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'RISK_PANIC_ACTIVE');
+  } finally {
+    removeDir(tempHome);
+  }
 });
 
 test('init-env copies example file and enforces --force overwrite', () => {
@@ -2147,6 +2222,12 @@ test('portfolio aggregates positions and event metrics for wallet', async () => 
     assert.equal(payload.data.summary.claims, 42);
     assert.equal(payload.data.summary.cashflowNet, -958);
     assert.equal(payload.data.summary.pnlProxy, -958);
+    assert.equal(payload.data.summary.totalDeposited, 1000);
+    assert.equal(payload.data.summary.totalNetDelta, 1000);
+    assert.equal(payload.data.summary.totalUnrealizedPnl, null);
+    assert.equal(payload.data.summary.totalsPolicy.eventDerivedTotalsWhenEventsDisabled, null);
+    assert.equal(payload.data.summary.totalsPolicy.eventDerivedTotalsDefaultWhenNoRows, 0);
+    assert.equal(payload.data.summary.totalsPolicy.unrealizedRequiresLp, true);
     assert.equal(payload.data.summary.eventsIncluded, true);
     assert.equal(Array.isArray(payload.data.positions), true);
     assert.equal(Array.isArray(payload.data.events.liquidity), true);
@@ -2181,6 +2262,9 @@ test('portfolio --no-events skips event aggregation', async () => {
     assert.equal(payload.data.summary.claims, 0);
     assert.equal(payload.data.summary.cashflowNet, 0);
     assert.equal(payload.data.summary.pnlProxy, 0);
+    assert.equal(payload.data.summary.totalDeposited, null);
+    assert.equal(payload.data.summary.totalNetDelta, null);
+    assert.equal(payload.data.summary.totalUnrealizedPnl, null);
     assert.equal(payload.data.events.liquidity.length, 0);
     assert.equal(payload.data.events.claims.length, 0);
   } finally {
@@ -2500,6 +2584,18 @@ test('export can materialize CSV to --out path', async () => {
     assert.equal(fs.existsSync(outPath), true);
     const csv = fs.readFileSync(outPath, 'utf8');
     assert.match(csv, /timestamp,chain_id,wallet/);
+    assert.match(csv, /,date,market,action,amount,price,gas_usd,realized_pnl/);
+    assert.match(csv, /0xtrade1/);
+    assert.equal(Array.isArray(payload.data.rows), true);
+    assert.equal(payload.data.rows.length > 0, true);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload.data.rows[0], 'date'), true);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload.data.rows[0], 'market'), true);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload.data.rows[0], 'action'), true);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload.data.rows[0], 'amount'), true);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload.data.rows[0], 'price'), true);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload.data.rows[0], 'gas_usd'), true);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload.data.rows[0], 'realized_pnl'), true);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload.data.rows[0], 'tx_hash'), true);
   } finally {
     await indexer.close();
     removeDir(tempDir);
@@ -2718,6 +2814,216 @@ test('arbitrage exposes rules and similarity checks for agent verification', asy
   } finally {
     await indexer.close();
     await polymarket.close();
+  }
+});
+
+test('lifecycle start/status/resolve persists state and requires explicit confirm', () => {
+  const tempDir = createTempDir('pandora-lifecycle-');
+  const lifecycleDir = path.join(tempDir, 'lifecycles');
+  const configPath = path.join(tempDir, 'lifecycle.json');
+  writeFile(
+    configPath,
+    JSON.stringify({
+      id: 'phase-e2e-1',
+      source: 'integration-test',
+      marketId: 'market-1',
+    }),
+  );
+
+  const env = {
+    HOME: tempDir,
+    PANDORA_LIFECYCLE_DIR: lifecycleDir,
+  };
+
+  try {
+    const start = runCli(
+      ['--output', 'json', 'lifecycle', 'start', '--config', configPath],
+      { env },
+    );
+    assert.equal(start.status, 0);
+    const startPayload = parseJsonOutput(start);
+    assert.equal(startPayload.command, 'lifecycle.start');
+    assert.equal(startPayload.data.id, 'phase-e2e-1');
+    assert.equal(startPayload.data.phase, 'AWAITING_RESOLVE');
+    assert.equal(fs.existsSync(path.join(lifecycleDir, 'phase-e2e-1.json')), true);
+
+    const status = runCli(
+      ['--output', 'json', 'lifecycle', 'status', '--id', 'phase-e2e-1'],
+      { env },
+    );
+    assert.equal(status.status, 0);
+    const statusPayload = parseJsonOutput(status);
+    assert.equal(statusPayload.command, 'lifecycle.status');
+    assert.equal(statusPayload.data.phase, 'AWAITING_RESOLVE');
+
+    const missingConfirm = runCli(
+      ['--output', 'json', 'lifecycle', 'resolve', '--id', 'phase-e2e-1'],
+      { env },
+    );
+    assert.equal(missingConfirm.status, 1);
+    const missingConfirmPayload = parseJsonOutput(missingConfirm);
+    assert.equal(missingConfirmPayload.error.code, 'MISSING_REQUIRED_FLAG');
+
+    const resolve = runCli(
+      ['--output', 'json', 'lifecycle', 'resolve', '--id', 'phase-e2e-1', '--confirm'],
+      { env },
+    );
+    assert.equal(resolve.status, 0);
+    const resolvePayload = parseJsonOutput(resolve);
+    assert.equal(resolvePayload.command, 'lifecycle.resolve');
+    assert.equal(resolvePayload.data.phase, 'RESOLVED');
+    assert.equal(resolvePayload.data.changed, true);
+
+    const resolvedStatus = runCli(
+      ['--output', 'json', 'lifecycle', 'status', '--id', 'phase-e2e-1'],
+      { env },
+    );
+    assert.equal(resolvedStatus.status, 0);
+    const resolvedStatusPayload = parseJsonOutput(resolvedStatus);
+    assert.equal(resolvedStatusPayload.data.phase, 'RESOLVED');
+    assert.equal(typeof resolvedStatusPayload.data.resolvedAt, 'string');
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('arb scan emits ndjson opportunities when net spread threshold is exceeded', async () => {
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: 'arb-m1',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-1',
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.40',
+        reserveYes: '400',
+        reserveNo: '600',
+        createdAt: '1700000000',
+      },
+      {
+        id: 'arb-m2',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-2',
+        creator: ADDRESSES.wallet2,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000001',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.60',
+        reserveYes: '600',
+        reserveNo: '400',
+        createdAt: '1700000001',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      'arb',
+      'scan',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--markets',
+      'arb-m1,arb-m2',
+      '--output',
+      'ndjson',
+      '--min-net-spread-pct',
+      '10',
+      '--fee-pct-per-leg',
+      '0.5',
+      '--amount-usdc',
+      '100',
+      '--iterations',
+      '1',
+      '--interval-ms',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const lines = parseNdjsonOutput(result.stdout);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].type, 'arb.scan.opportunity');
+    assert.equal(lines[0].buyYesMarket, 'arb-m1');
+    assert.equal(lines[0].buyNoMarket, 'arb-m2');
+    assert.equal(lines[0].netSpreadPct, 19);
+    assert.equal(lines[0].netSpread, 0.19);
+    assert.equal(lines[0].profitUsdc, 19);
+    assert.equal(lines[0].profit, 19);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('arb scan is silent when no opportunities clear the threshold', async () => {
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: 'arb-quiet-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-quiet-1',
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.47',
+        reserveYes: '470',
+        reserveNo: '530',
+        createdAt: '1700000000',
+      },
+      {
+        id: 'arb-quiet-2',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-quiet-2',
+        creator: ADDRESSES.wallet2,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000001',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.52',
+        reserveYes: '520',
+        reserveNo: '480',
+        createdAt: '1700000001',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      'arb',
+      'scan',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--markets',
+      'arb-quiet-1,arb-quiet-2',
+      '--output',
+      'ndjson',
+      '--min-net-spread-pct',
+      '8',
+      '--fee-pct-per-leg',
+      '0.5',
+      '--amount-usdc',
+      '100',
+      '--iterations',
+      '1',
+      '--interval-ms',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    assert.equal(String(result.stdout || '').trim(), '');
+  } finally {
+    await indexer.close();
   }
 });
 

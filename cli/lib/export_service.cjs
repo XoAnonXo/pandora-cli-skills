@@ -22,6 +22,13 @@ const CSV_COLUMNS = [
   'pnl_realized_approx_usdc',
   'status',
   'tx_hash',
+  'date',
+  'market',
+  'action',
+  'amount',
+  'price',
+  'gas_usd',
+  'realized_pnl',
 ];
 
 function csvEscape(value) {
@@ -34,6 +41,13 @@ function csvEscape(value) {
 function toExportRows(historyPayload) {
   const wallet = historyPayload.wallet;
   return (historyPayload.items || []).map((item) => ({
+    date: toReplayDate(item.timestamp),
+    market: item.marketAddress,
+    action: item.tradeType || null,
+    amount: item.collateralAmountUsdc,
+    price: item.entryPriceUsdcPerToken,
+    gas_usd: item.feeAmountUsdc === undefined ? null : item.feeAmountUsdc,
+    realized_pnl: item.pnlRealizedApproxUsdc === undefined ? null : item.pnlRealizedApproxUsdc,
     timestamp: item.timestamp,
     chain_id: item.chainId,
     wallet,
@@ -52,6 +66,12 @@ function toExportRows(historyPayload) {
     status: item.status,
     tx_hash: item.txHash,
   }));
+}
+
+function toReplayDate(timestampSeconds) {
+  const numeric = Number(timestampSeconds);
+  if (!Number.isFinite(numeric)) return null;
+  return new Date(Math.floor(numeric) * 1000).toISOString().slice(0, 10);
 }
 
 function toCsv(rows) {

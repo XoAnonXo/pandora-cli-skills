@@ -18,6 +18,7 @@ function createRunResolveCommand(deps) {
   const runResolve = requireDep(deps, 'runResolve');
   const renderSingleEntityTable = requireDep(deps, 'renderSingleEntityTable');
   const CliError = requireDep(deps, 'CliError');
+  const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
 
   return async function runResolveCommand(args, context) {
     if (includesHelpFlag(args)) {
@@ -38,6 +39,11 @@ function createRunResolveCommand(deps) {
       return;
     }
     const options = parseResolveFlags(args);
+    if (options.execute && assertLiveWriteAllowed) {
+      await assertLiveWriteAllowed('resolve.execute', {
+        runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+      });
+    }
     let payload;
     try {
       payload = await runResolve(options);

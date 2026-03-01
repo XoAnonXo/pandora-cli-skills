@@ -358,6 +358,13 @@ const TOOL_DEFINITIONS = [
   { name: 'leaderboard', command: ['leaderboard'], description: 'Compute leaderboard from history.' },
   { name: 'analyze', command: ['analyze'], description: 'Run strategy analysis provider.' },
   { name: 'suggest', command: ['suggest'], description: 'Produce trade suggestions from risk profile.' },
+  { name: 'risk.show', command: ['risk', 'show'], description: 'Inspect current risk panic/guardrail state.' },
+  {
+    name: 'risk.panic',
+    command: ['risk', 'panic'],
+    description: 'Engage or clear global risk panic lock.',
+    mutating: true,
+  },
   {
     name: 'resolve',
     command: ['resolve'],
