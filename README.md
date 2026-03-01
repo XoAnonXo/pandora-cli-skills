@@ -27,6 +27,7 @@ npx pandora-cli-skills@latest --help
   - `--fork`, `--fork-rpc-url`, `--fork-chain-id`.
 - Event-driven streaming:
   - `pandora stream prices|events` emits NDJSON lines on stdout.
+- MCP tool surface includes risk/lifecycle/odds command families in addition to core read/trade flows.
 
 ## Quickstart
 
@@ -62,6 +63,27 @@ pandora --output json sports consensus --event-id <event-id> --trim-percent 20
 pandora --output json sports create plan --event-id <event-id> --selection home
 pandora --output json sports resolve plan --event-id <event-id> --poll-address <0x...>
 ```
+
+### Lifecycle Quickstart
+
+```bash
+# lifecycle config must be JSON object (not YAML in current release)
+pandora --output json lifecycle start --config ./configs/lifecycle.json
+pandora --output json lifecycle status --id <lifecycle-id>
+pandora --output json lifecycle resolve --id <lifecycle-id> --confirm
+```
+
+## Risk Controls
+
+- Inspect/engage panic lock:
+  - `pandora --output json risk show`
+  - `pandora --output json risk panic --reason "incident"`
+  - `pandora --output json risk panic --clear`
+- Current guardrail semantics:
+  - `max_position_usd` guards per-operation notional.
+  - `max_daily_loss_usd` currently maps to daily live notional cap (`counters.liveNotionalUsdc`).
+  - `max_open_markets` currently maps to daily live operation cap (`counters.liveOps`).
+- All risk state and panic files are persisted with hardened permissions under `~/.pandora/`.
 
 ## Fork Mode Notes
 

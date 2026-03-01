@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
+const fs = require('fs');
 
 const { createTempDir, removeDir } = require('../helpers/cli_runner.cjs');
 const { createOddsHistoryService } = require('../../cli/lib/odds_history_service.cjs');
@@ -95,6 +96,36 @@ test('odds history service falls back to JSONL when sqlite dependencies are unav
     const rows = reopened.queryByEventId('evt-fallback');
     assert.equal(rows.length, 1);
     assert.equal(rows[0].eventId, 'evt-fallback');
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('odds history service hardens filesystem permissions for cache dir and files', () => {
+  if (process.platform === 'win32') return;
+
+  const tempDir = createTempDir('pandora-odds-history-perms-');
+  try {
+    const service = createOddsHistoryService({
+      baseDir: tempDir,
+      backend: 'jsonl',
+    });
+
+    const dirMode = fs.statSync(service.paths.baseDir).mode & 0o777;
+    assert.equal(dirMode, 0o700);
+
+    service.recordEntries([
+      {
+        competition: 'soccer_epl',
+        eventId: 'evt-perms-1',
+        venue: 'pandora_amm',
+        yesPrice: 0.5,
+        noPrice: 0.5,
+      },
+    ]);
+
+    const fileMode = fs.statSync(service.paths.jsonlFile).mode & 0o777;
+    assert.equal(fileMode, 0o600);
   } finally {
     removeDir(tempDir);
   }

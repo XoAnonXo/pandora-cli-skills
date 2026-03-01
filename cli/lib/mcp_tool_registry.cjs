@@ -238,6 +238,26 @@ const TOOL_DEFINITIONS = [
   { name: 'events.get', command: ['events', 'get'], description: 'Get one event by id.' },
   { name: 'positions.list', command: ['positions', 'list'], description: 'List wallet positions.' },
   { name: 'portfolio', command: ['portfolio'], description: 'Build portfolio snapshot.' },
+  { name: 'odds.history', command: ['odds', 'history'], description: 'Read stored venue odds history for one event.' },
+  {
+    name: 'odds.record',
+    command: ['odds', 'record'],
+    description: 'Record venue odds snapshots into local history storage.',
+    mutating: true,
+  },
+  { name: 'lifecycle.status', command: ['lifecycle', 'status'], description: 'Inspect lifecycle state by id.' },
+  {
+    name: 'lifecycle.start',
+    command: ['lifecycle', 'start'],
+    description: 'Create lifecycle state from a config file.',
+    mutating: true,
+  },
+  {
+    name: 'lifecycle.resolve',
+    command: ['lifecycle', 'resolve'],
+    description: 'Mark lifecycle as resolved (requires --confirm).',
+    mutating: true,
+  },
   {
     name: 'watch',
     command: ['watch'],

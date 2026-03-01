@@ -44,6 +44,11 @@ test('mcp tools/list exposes command tools and excludes unsupported launch/clone
     assert.ok(toolNames.includes('trade'));
     assert.ok(toolNames.includes('mirror.plan'));
     assert.ok(toolNames.includes('polymarket.check'));
+    assert.ok(toolNames.includes('odds.history'));
+    assert.ok(toolNames.includes('odds.record'));
+    assert.ok(toolNames.includes('lifecycle.status'));
+    assert.ok(toolNames.includes('lifecycle.start'));
+    assert.ok(toolNames.includes('lifecycle.resolve'));
     assert.ok(toolNames.includes('risk.show'));
     assert.ok(toolNames.includes('risk.panic'));
     assert.ok(!toolNames.includes('launch'));
@@ -94,6 +99,24 @@ test('mcp mutating tools without mode flags require execute intent', async () =>
       arguments: {
         flags: {
           'webhook-url': 'https://example.com/hook',
+        },
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_EXECUTE_INTENT_REQUIRED');
+    assert.equal(call.isError, true);
+  });
+});
+
+test('mcp lifecycle.start requires explicit execute intent', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'lifecycle.start',
+      arguments: {
+        flags: {
+          config: '/tmp/lifecycle.json',
         },
       },
     });

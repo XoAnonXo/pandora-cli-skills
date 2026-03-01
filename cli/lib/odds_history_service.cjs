@@ -180,7 +180,14 @@ function createJsonlAdapter(fsImpl, jsonlFile) {
     insertRows(rows) {
       if (!rows.length) return;
       const payload = rows.map((row) => JSON.stringify(row)).join('\n');
-      fsImpl.appendFileSync(jsonlFile, `${payload}\n`);
+      fsImpl.appendFileSync(jsonlFile, `${payload}\n`, { mode: 0o600, flag: 'a' });
+      try {
+        if (typeof fsImpl.chmodSync === 'function') {
+          fsImpl.chmodSync(jsonlFile, 0o600);
+        }
+      } catch {
+        // best-effort permission hardening
+      }
     },
     queryByEventId(eventId, options = {}) {
       if (!fsImpl.existsSync(jsonlFile)) return [];
@@ -221,6 +228,16 @@ function tryResolveSqliteDependency(requireFn) {
   return null;
 }
 
+function hardenFilePermissions(fsImpl, filePath) {
+  try {
+    if (typeof fsImpl.chmodSync !== 'function') return;
+    if (typeof fsImpl.existsSync === 'function' && !fsImpl.existsSync(filePath)) return;
+    fsImpl.chmodSync(filePath, 0o600);
+  } catch {
+    // best-effort permission hardening
+  }
+}
+
 /**
  * Create odds history storage service with sqlite-first fallback to JSONL.
  * @param {object} [options]
@@ -248,6 +265,13 @@ function createOddsHistoryService(options = {}) {
   const preferredBackend = String(options.backend || 'auto').toLowerCase();
 
   fsImpl.mkdirSync(baseDir, { recursive: true });
+  try {
+    if (typeof fsImpl.chmodSync === 'function') {
+      fsImpl.chmodSync(baseDir, 0o700);
+    }
+  } catch {
+    // best-effort permission hardening
+  }
 
   let adapter = null;
   if (preferredBackend === 'sqlite' || preferredBackend === 'auto') {
@@ -261,12 +285,19 @@ function createOddsHistoryService(options = {}) {
   if (!adapter) {
     adapter = createJsonlAdapter(fsImpl, jsonlFile);
   }
+  hardenFilePermissions(fsImpl, sqliteFile);
+  hardenFilePermissions(fsImpl, jsonlFile);
 
   function recordEntries(entries) {
     const rows = (Array.isArray(entries) ? entries : [])
       .map((entry) => normalizeRow(entry, now()))
       .filter((row) => row.eventId && row.venue);
     adapter.insertRows(rows);
+    if (adapter.kind === 'sqlite') {
+      hardenFilePermissions(fsImpl, sqliteFile);
+    } else {
+      hardenFilePermissions(fsImpl, jsonlFile);
+    }
     return {
       backend: adapter.kind,
       inserted: rows.length,

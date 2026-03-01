@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Canonical skill and operator guide for Pandora CLI including mirror, polymarket, resolve, and LP flows.
-version: 1.1.40
+version: 1.1.41
 ---
 
 # Pandora CLI & Skills
@@ -72,6 +72,14 @@ npm link
   - RPC reachability and chain id match
   - bytecode checks for `ORACLE` + `FACTORY` (`--check-usdc-code` optional)
 
+## Lifecycle and risk notes
+- `lifecycle start --config` expects a JSON object file in the current release.
+- `risk show|panic` controls a global execution lock used by live write paths.
+- Current risk-counter semantics:
+  - `max_position_usd` guards per-operation notional.
+  - `max_daily_loss_usd` is enforced as daily live notional (`counters.liveNotionalUsdc`).
+  - `max_open_markets` is enforced as daily live operation count (`counters.liveOps`).
+
 ## Complete command + flag reference (authoritative)
 This section mirrors live CLI help output so agent runs can rely on one source of truth.
 
@@ -110,6 +118,7 @@ pandora [--output table|json] analyze --market-address <address> [--provider <na
 pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
 pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
 pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
 pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
 pandora [--output json] schema
 pandora mcp

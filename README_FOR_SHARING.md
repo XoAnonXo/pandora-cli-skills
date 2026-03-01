@@ -61,6 +61,17 @@ Prerequisite: Node.js `>=18`.
 - Build manual resolve recommendation:
   - `pandora --output json sports resolve plan --event-id <event-id> --poll-address <0x...>`
 
+## Quickstart (Lifecycle + Risk)
+- Lifecycle config must be JSON in this release:
+  - `pandora --output json lifecycle start --config ./configs/lifecycle.json`
+  - `pandora --output json lifecycle status --id <lifecycle-id>`
+  - `pandora --output json lifecycle resolve --id <lifecycle-id> --confirm`
+- Risk controls:
+  - `pandora --output json risk show`
+  - `pandora --output json risk panic --reason "incident"`
+  - `pandora --output json risk panic --clear`
+  - semantic note: `max_daily_loss_usd` and `max_open_markets` are enforced as daily live-notional / daily operation counters in current implementation.
+
 ## New CLI capabilities
 - Global machine-readable output:
   - `pandora --output json doctor`
@@ -130,6 +141,7 @@ Prerequisite: Node.js `>=18`.
 ### MCP server (`pandora mcp`)
 - Runs MCP server over stdio with tool discovery + execution.
 - `tools/list` includes JSON-capable command tools (for example `markets.list`, `trade`, `mirror.plan`, `polymarket.check`).
+- Also includes `odds.history|record` and `lifecycle.status|start|resolve` tools.
 - `launch` and `clone-bet` are intentionally not exposed over MCP because they stream script output.
 - MCP safety rails:
   - mutating tools require explicit execute intent (`intent.execute=true`) for live execution.

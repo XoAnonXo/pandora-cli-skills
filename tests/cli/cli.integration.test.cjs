@@ -2845,7 +2845,12 @@ test('lifecycle start/status/resolve persists state and requires explicit confir
     assert.equal(startPayload.command, 'lifecycle.start');
     assert.equal(startPayload.data.id, 'phase-e2e-1');
     assert.equal(startPayload.data.phase, 'AWAITING_RESOLVE');
-    assert.equal(fs.existsSync(path.join(lifecycleDir, 'phase-e2e-1.json')), true);
+    const lifecycleFile = path.join(lifecycleDir, 'phase-e2e-1.json');
+    assert.equal(fs.existsSync(lifecycleFile), true);
+    if (process.platform !== 'win32') {
+      const mode = fs.statSync(lifecycleFile).mode & 0o777;
+      assert.equal(mode, 0o600);
+    }
 
     const status = runCli(
       ['--output', 'json', 'lifecycle', 'status', '--id', 'phase-e2e-1'],
