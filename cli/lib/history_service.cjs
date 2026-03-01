@@ -1,29 +1,17 @@
 const { createIndexerClient } = require('./indexer_client.cjs');
+const { round, toOptionalNumber } = require('./shared/utils.cjs');
 
 const USDC_DECIMALS = 6;
 const HISTORY_SCHEMA_VERSION = '1.0.0';
 
-function toNumber(value) {
-  if (value === null || value === undefined || value === '') return null;
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return numeric;
-}
-
-function round(value, decimals = 6) {
-  if (!Number.isFinite(value)) return null;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
 function toUsdc(raw) {
-  const numeric = toNumber(raw);
+  const numeric = toOptionalNumber(raw);
   if (numeric === null) return null;
   return round(numeric / 10 ** USDC_DECIMALS, 6);
 }
 
 function normalizeProbabilityFromYesChance(rawYesChance) {
-  const raw = toNumber(rawYesChance);
+  const raw = toOptionalNumber(rawYesChance);
   if (raw === null) return null;
   if (raw >= 0 && raw <= 1) return raw;
   if (raw > 1 && raw <= 100) return raw / 100;
@@ -34,8 +22,8 @@ function computeYesProbabilityFromMarket(market) {
   const yesChanceProb = normalizeProbabilityFromYesChance(market && market.yesChance);
   if (yesChanceProb !== null && yesChanceProb >= 0 && yesChanceProb <= 1) return yesChanceProb;
 
-  const reserveYes = toNumber(market && market.reserveYes);
-  const reserveNo = toNumber(market && market.reserveNo);
+  const reserveYes = toOptionalNumber(market && market.reserveYes);
+  const reserveNo = toOptionalNumber(market && market.reserveNo);
   if (reserveYes === null || reserveNo === null) return null;
   const total = reserveYes + reserveNo;
   if (!Number.isFinite(total) || total <= 0) return null;
@@ -117,21 +105,21 @@ function buildSummary(items) {
   };
 
   for (const item of items) {
-    const collateral = toNumber(item.collateralAmountUsdc) || 0;
+    const collateral = toOptionalNumber(item.collateralAmountUsdc) || 0;
     summary.grossVolumeUsdc += collateral;
 
     if (item.status === 'open') {
       summary.openCount += 1;
-      summary.unrealizedPnlApproxUsdc += toNumber(item.pnlUnrealizedApproxUsdc) || 0;
+      summary.unrealizedPnlApproxUsdc += toOptionalNumber(item.pnlUnrealizedApproxUsdc) || 0;
     } else if (item.status === 'won') {
       summary.wonCount += 1;
-      summary.realizedPnlApproxUsdc += toNumber(item.pnlRealizedApproxUsdc) || 0;
+      summary.realizedPnlApproxUsdc += toOptionalNumber(item.pnlRealizedApproxUsdc) || 0;
     } else if (item.status === 'lost') {
       summary.lostCount += 1;
-      summary.realizedPnlApproxUsdc += toNumber(item.pnlRealizedApproxUsdc) || 0;
+      summary.realizedPnlApproxUsdc += toOptionalNumber(item.pnlRealizedApproxUsdc) || 0;
     } else {
       summary.closedOtherCount += 1;
-      summary.realizedPnlApproxUsdc += toNumber(item.pnlRealizedApproxUsdc) || 0;
+      summary.realizedPnlApproxUsdc += toOptionalNumber(item.pnlRealizedApproxUsdc) || 0;
     }
   }
 
@@ -146,15 +134,15 @@ function sortHistoryItems(items, orderBy, orderDirection) {
   const dir = String(orderDirection || 'desc').toLowerCase() === 'asc' ? 1 : -1;
   const pick = (item) => {
     if (orderBy === 'pnl') {
-      return toNumber(item.pnlRealizedApproxUsdc) ?? toNumber(item.pnlUnrealizedApproxUsdc) ?? -Infinity;
+      return toOptionalNumber(item.pnlRealizedApproxUsdc) ?? toOptionalNumber(item.pnlUnrealizedApproxUsdc) ?? -Infinity;
     }
     if (orderBy === 'entry-price') {
-      return toNumber(item.entryPriceUsdcPerToken) ?? -Infinity;
+      return toOptionalNumber(item.entryPriceUsdcPerToken) ?? -Infinity;
     }
     if (orderBy === 'mark-price') {
-      return toNumber(item.markPriceUsdcPerToken) ?? -Infinity;
+      return toOptionalNumber(item.markPriceUsdcPerToken) ?? -Infinity;
     }
-    return toNumber(item.timestamp) ?? 0;
+    return toOptionalNumber(item.timestamp) ?? 0;
   };
 
   items.sort((a, b) => {

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const EXPORT_SCHEMA_VERSION = '1.0.0';
 
@@ -85,7 +86,23 @@ function maybeWriteOutput(content, outPath) {
   if (!outPath) return null;
   const resolved = path.resolve(outPath);
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  fs.writeFileSync(resolved, content);
+  const tmpPath = `${resolved}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, content, { mode: 0o600 });
+    fs.renameSync(tmpPath, resolved);
+    try {
+      fs.chmodSync(resolved, 0o600);
+    } catch {
+      // best-effort hardening on platforms that ignore/limit chmod
+    }
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+      // best-effort temp cleanup
+    }
+    throw err;
+  }
   return resolved;
 }
 

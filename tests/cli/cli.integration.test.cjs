@@ -22,14 +22,27 @@ const ADDRESSES = {
   mirrorPoll: '0x7777777777777777777777777777777777777777',
 };
 
+const POLYMARKET_DEFAULTS = {
+  usdc: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+  ctf: '0x4d97dcd97ec945f40cf65f87097ace5ea0476045',
+  funder: '0x8888888888888888888888888888888888888888',
+  spenders: {
+    exchange: '0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e',
+    negRiskExchange: '0xc5d563a36ae78145c45a50134d48a1215220f80a',
+    negRiskAdapter: '0xd91e80cf2e7be2e162c6513ced06f1dd0da35296',
+  },
+};
+
 function writeFile(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content);
 }
 
 function parseJsonOutput(result) {
-  assert.match(result.output, /\{/);
-  return JSON.parse(result.output);
+  const stdout = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+  const payloadText = stdout || String(result.output || '').trim();
+  assert.match(payloadText, /\{/);
+  return JSON.parse(payloadText);
 }
 
 function buildValidEnv(rpcUrl, overrides = {}) {
@@ -70,8 +83,8 @@ function buildMirrorIndexerOverrides(overrides = {}) {
         totalVolume: '100000',
         currentTvl: '200000',
         yesChance: '0.55',
-        reserveYes: '50000',
-        reserveNo: '50000',
+        reserveYes: '500000000',
+        reserveNo: '500000000',
         createdAt: '1700000000',
       },
     ],
@@ -207,6 +220,117 @@ async function startRpcMockServer(options = {}) {
         id: bodyJson.id || 1,
         error: { message: `Unsupported method ${bodyJson.method}` },
       },
+    };
+  });
+}
+
+function encodeUint256(value) {
+  const normalized = BigInt(value || 0);
+  return `0x${normalized.toString(16).padStart(64, '0')}`;
+}
+
+function encodeBool(value) {
+  return value ? `0x${'0'.repeat(63)}1` : `0x${'0'.repeat(64)}`;
+}
+
+function decodeAddressFromCallData(data, index) {
+  const raw = String(data || '').toLowerCase().replace(/^0x/, '');
+  const start = 8 + index * 64 + 24;
+  return `0x${raw.slice(start, start + 40)}`;
+}
+
+async function startPolymarketOpsRpcMock(options = {}) {
+  const funder = String(options.funder || POLYMARKET_DEFAULTS.funder).toLowerCase();
+  const usdc = String(options.usdc || POLYMARKET_DEFAULTS.usdc).toLowerCase();
+  const ctf = String(options.ctf || POLYMARKET_DEFAULTS.ctf).toLowerCase();
+  const chainIdHex = options.chainIdHex || '0x89';
+  const safeOwner = options.safeOwner !== false;
+  const usdcBalanceRaw = BigInt(options.usdcBalanceRaw || 0n);
+
+  const allowanceBySpender = {};
+  for (const [key, address] of Object.entries(POLYMARKET_DEFAULTS.spenders)) {
+    const configured = options.allowanceBySpender && Object.prototype.hasOwnProperty.call(options.allowanceBySpender, key)
+      ? options.allowanceBySpender[key]
+      : 0n;
+    allowanceBySpender[String(address).toLowerCase()] = BigInt(configured || 0n);
+  }
+
+  const operatorBySpender = {};
+  for (const [key, address] of Object.entries(POLYMARKET_DEFAULTS.spenders)) {
+    const configured = options.operatorBySpender && Object.prototype.hasOwnProperty.call(options.operatorBySpender, key)
+      ? options.operatorBySpender[key]
+      : false;
+    operatorBySpender[String(address).toLowerCase()] = Boolean(configured);
+  }
+
+  return startJsonHttpServer(({ bodyJson }) => {
+    const requests = Array.isArray(bodyJson) ? bodyJson : [bodyJson];
+    const responses = requests.map((request, index) => {
+      const id = request && request.id !== undefined ? request.id : index + 1;
+      if (!request || typeof request !== 'object') {
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { message: 'Invalid JSON-RPC payload' },
+        };
+      }
+
+      if (request.method === 'eth_chainId') {
+        return { jsonrpc: '2.0', id, result: chainIdHex };
+      }
+
+      if (request.method === 'eth_getCode') {
+        const address = String((request.params && request.params[0]) || '').toLowerCase();
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: address === funder ? '0x6001600101' : '0x',
+        };
+      }
+
+      if (request.method === 'eth_call') {
+        const tx = request.params && request.params[0] ? request.params[0] : {};
+        const target = String(tx.to || '').toLowerCase();
+        const data = String(tx.data || '').toLowerCase();
+        const selector = data.slice(0, 10);
+
+        if (target === usdc && selector === '0x70a08231') {
+          return { jsonrpc: '2.0', id, result: encodeUint256(usdcBalanceRaw) };
+        }
+        if (target === usdc && selector === '0xdd62ed3e') {
+          const spender = decodeAddressFromCallData(data, 1);
+          const allowance = Object.prototype.hasOwnProperty.call(allowanceBySpender, spender)
+            ? allowanceBySpender[spender]
+            : 0n;
+          return { jsonrpc: '2.0', id, result: encodeUint256(allowance) };
+        }
+        if (target === ctf && selector === '0xe985e9c5') {
+          const spender = decodeAddressFromCallData(data, 1);
+          const approved = Object.prototype.hasOwnProperty.call(operatorBySpender, spender)
+            ? operatorBySpender[spender]
+            : false;
+          return { jsonrpc: '2.0', id, result: encodeBool(approved) };
+        }
+        if (target === funder && selector === '0x2f54bf6e') {
+          return { jsonrpc: '2.0', id, result: encodeBool(safeOwner) };
+        }
+
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { message: `Unsupported eth_call target/selector ${target} ${selector}` },
+        };
+      }
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        error: { message: `Unsupported method ${request.method}` },
+      };
+    });
+
+    return {
+      body: Array.isArray(bodyJson) ? responses : responses[0],
     };
   });
 }
@@ -863,6 +987,14 @@ test('help prints usage with zero exit code', () => {
   assert.match(result.output, /Usage:/);
 });
 
+test('help accepts optional leading pandora token for npx compatibility', () => {
+  const result = runCli(['pandora', '--help']);
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0);
+  assert.match(result.output, /pandora - Prediction market CLI/);
+  assert.match(result.output, /Usage:/);
+});
+
 test('global --output json returns structured error envelope', () => {
   const result = runCli(['--output', 'json', 'not-a-command']);
   assert.equal(result.status, 1);
@@ -872,12 +1004,120 @@ test('global --output json returns structured error envelope', () => {
   assert.equal(payload.error.code, 'UNKNOWN_COMMAND');
 });
 
+test('json error envelopes are emitted on stdout (not stderr)', () => {
+  const result = runCli(['--output', 'json', 'not-a-command']);
+  assert.equal(result.status, 1);
+  assert.equal(String(result.stderr || '').trim(), '');
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'UNKNOWN_COMMAND');
+});
+
+test('invalid --output mode returns json error envelope', () => {
+  const result = runCli(['--output', 'xml', 'help']);
+  assert.equal(result.status, 1);
+  assert.equal(String(result.stderr || '').trim(), '');
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_OUTPUT_MODE');
+});
+
+test('missing --output value returns json error envelope', () => {
+  const result = runCli(['--output']);
+  assert.equal(result.status, 1);
+  assert.equal(String(result.stderr || '').trim(), '');
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'MISSING_FLAG_VALUE');
+});
+
+test('private key parse errors redact the provided key value', () => {
+  const badPrivateKey = '0x1234';
+  const result = runCli(['--output', 'json', 'mirror', 'deploy', '--private-key', badPrivateKey]);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /\[redacted\]/);
+  assert.ok(!payload.error.message.includes(badPrivateKey));
+});
+
 test('unknown command prints help hint in table mode', () => {
   const result = runCli(['not-a-command']);
   assert.equal(result.status, 1);
   assert.match(result.output, /\[UNKNOWN_COMMAND\]/);
   assert.match(result.output, /Unknown command: not-a-command/);
   assert.match(result.output, /Run `pandora help` to see available commands\./);
+});
+
+test('schema command requires --output json mode', () => {
+  const result = runCli(['schema']);
+  assert.equal(result.status, 1);
+  assert.match(result.output, /\[INVALID_USAGE\]/);
+  assert.match(result.output, /only supported in --output json mode/i);
+});
+
+test('schema --help succeeds in table mode', () => {
+  const result = runCli(['schema', '--help']);
+  assert.equal(result.status, 0);
+  assert.match(String(result.stdout || ''), /Usage:\s+pandora --output json schema/);
+});
+
+test('schema command returns envelope schema plus command descriptors', () => {
+  const result = runCli(['--output', 'json', 'schema']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'schema');
+
+  assert.equal(payload.data.title, 'PandoraCliEnvelope');
+  assert.ok(String(payload.data.$schema).includes('json-schema.org'));
+  assert.ok(payload.data.definitions && payload.data.definitions.SuccessEnvelope);
+  assert.ok(payload.data.definitions && payload.data.definitions.ErrorEnvelope);
+
+  assert.equal(payload.data.commandDescriptorVersion, '1.0.0');
+  assert.ok(payload.data.commandDescriptors);
+  assert.ok(payload.data.commandDescriptors.quote);
+  assert.equal(payload.data.commandDescriptors.quote.dataSchema, '#/definitions/QuotePayload');
+  assert.ok(payload.data.commandDescriptors.quote.emits.includes('quote'));
+  assert.ok(payload.data.commandDescriptors.trade);
+  assert.equal(payload.data.commandDescriptors.trade.dataSchema, '#/definitions/TradePayload');
+  assert.ok(payload.data.commandDescriptors['mirror.plan']);
+  assert.equal(payload.data.commandDescriptors['mirror.plan'].dataSchema, '#/definitions/MirrorPlanPayload');
+  assert.ok(payload.data.commandDescriptors.schema);
+  assert.deepEqual(payload.data.commandDescriptors.schema.outputModes, ['json']);
+  assert.ok(payload.data.commandDescriptors.mcp);
+  assert.deepEqual(payload.data.commandDescriptors.mcp.outputModes, ['table']);
+  assert.equal(payload.data.descriptorScope, 'curated-core');
+  assert.ok(payload.data.definitions.QuotePayload);
+  assert.ok(payload.data.definitions.TradePayload);
+  assert.ok(payload.data.definitions.MirrorPlanPayload);
+  assert.ok(payload.data.definitions.ErrorRecoveryPayload);
+});
+
+test('schema command rejects unknown trailing flags', () => {
+  const result = runCli(['--output', 'json', 'schema', '--bad-flag']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_ARGS');
+});
+
+test('mcp command rejects --output json mode with stable CLI error', () => {
+  const result = runCli(['--output', 'json', 'mcp']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'UNSUPPORTED_OUTPUT_MODE');
+});
+
+test('json success envelopes include schemaVersion and generatedAt metadata', () => {
+  const result = runCli(['--output', 'json', 'quote', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(typeof payload.data.schemaVersion, 'string');
+  assertIsoTimestamp(payload.data.generatedAt);
 });
 
 test('init-env copies example file and enforces --force overwrite', () => {
@@ -900,6 +1140,44 @@ test('init-env copies example file and enforces --force overwrite', () => {
   const forced = runCli(['init-env', '--force', '--example', examplePath, '--dotenv-path', targetPath]);
   assert.equal(forced.status, 0);
   assert.match(forced.output, /Wrote env file:/);
+
+  removeDir(tempDir);
+});
+
+test('setup --help returns structured JSON help payload', () => {
+  const result = runCli(['--output', 'json', 'setup', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.command, 'setup.help');
+  assert.match(payload.data.usage, /^pandora .* setup /);
+  assert.equal(payload.data.schemaVersion, '1.0.0');
+  assertIsoTimestamp(payload.data.generatedAt);
+});
+
+test('init-env writes env files with 0600 permissions (non-Windows)', () => {
+  const tempDir = createTempDir('pandora-init-env-mode-');
+  const examplePath = path.join(tempDir, 'example.env');
+  const envPath = path.join(tempDir, 'generated.env');
+  writeFile(examplePath, 'CHAIN_ID=1\n');
+
+  const result = runCli([
+    '--output',
+    'json',
+    'init-env',
+    '--example',
+    examplePath,
+    '--dotenv-path',
+    envPath,
+  ]);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(fs.existsSync(envPath), true);
+  if (process.platform !== 'win32') {
+    const mode = fs.statSync(envPath).mode & 0o777;
+    assert.equal(mode, 0o600);
+  }
 
   removeDir(tempDir);
 });
@@ -1094,6 +1372,15 @@ test('read-only subcommands expose scoped --help output', () => {
   const positionsList = runCli(['positions', 'list', '--help']);
   assert.equal(positionsList.status, 0);
   assert.match(positionsList.output, /pandora positions - Query wallet position entities/);
+});
+
+test('scan --help returns structured help instead of parser errors', () => {
+  const result = runCli(['--output', 'json', 'scan', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'scan.help');
+  assert.match(payload.data.usage, /scan/);
 });
 
 test('markets list supports lifecycle convenience filters', async () => {
@@ -1318,6 +1605,8 @@ test('markets list --with-odds includes normalized yes/no percentages in json it
 
     const first = payload.data.items[0];
     assert.equal(typeof first.id, 'string');
+    assert.equal(typeof first.totalVolume, 'number');
+    assert.equal(typeof first.currentTvl, 'number');
     assertOddsShape(first.odds);
   } finally {
     await indexer.close();
@@ -1356,6 +1645,8 @@ test('scan returns deterministic json contract for market candidates', async () 
     assert.equal(typeof first.chainId, 'number');
     assert.equal(typeof first.marketType, 'string');
     assert.equal(typeof first.question, 'string');
+    assert.equal(typeof first.totalVolume, 'number');
+    assert.equal(typeof first.currentTvl, 'number');
     assert.ok(first.marketCloseTimestamp !== undefined && first.marketCloseTimestamp !== null);
     assertOddsShape(first.odds);
   } finally {
@@ -2673,6 +2964,119 @@ test('mirror verify falls back to cached Polymarket snapshot when endpoint is un
   }
 });
 
+test('mirror lp-explain returns complete-set inventory walkthrough payload', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'lp-explain',
+    '--liquidity-usdc',
+    '10000',
+    '--source-yes-pct',
+    '58',
+  ]);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.lp-explain');
+  assert.equal(payload.data.flow.totalLpInventory.neutralCompleteSets, true);
+  assert.equal(payload.data.inputs.distributionYes + payload.data.inputs.distributionNo, 1000000000);
+});
+
+test('mirror hedge-calc supports manual reserve inputs', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'hedge-calc',
+    '--reserve-yes-usdc',
+    '8',
+    '--reserve-no-usdc',
+    '12',
+    '--excess-no-usdc',
+    '2',
+    '--polymarket-yes-pct',
+    '60',
+    '--volume-scenarios',
+    '1000,5000',
+  ]);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.hedge-calc');
+  assert.equal(payload.data.metrics.hedgeToken, 'yes');
+  assert.equal(payload.data.scenarios.length, 2);
+});
+
+test('mirror hedge-calc can auto-resolve reserves from a mirror pair', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides({
+    markets: [
+      {
+        ...buildMirrorIndexerOverrides().markets[0],
+        reserveYes: '8000000',
+        reserveNo: '12000000',
+      },
+    ],
+  }));
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'hedge-calc',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--pandora-market-address',
+      ADDRESSES.mirrorMarket,
+      '--polymarket-market-id',
+      'poly-cond-1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.hedge-calc');
+    assert.equal(payload.data.metrics.reserveYesUsdc, 8);
+    assert.equal(payload.data.metrics.reserveNoUsdc, 12);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror simulate returns deterministic scenarios for LP economics planning', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'simulate',
+    '--liquidity-usdc',
+    '5000',
+    '--source-yes-pct',
+    '60',
+    '--target-yes-pct',
+    '60',
+    '--polymarket-yes-pct',
+    '60',
+    '--volume-scenarios',
+    '500,2500',
+  ]);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.simulate');
+  assert.equal(payload.data.scenarios.length, 2);
+  assert.equal(payload.data.inputs.tradeSide, 'yes');
+});
+
 test('mirror deploy dry-run materializes deployment args without chain writes', async () => {
   const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
   const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
@@ -2703,6 +3107,39 @@ test('mirror deploy dry-run materializes deployment args without chain writes', 
     assert.equal(payload.data.dryRun, true);
     assert.equal(payload.data.tx, null);
     assert.equal(payload.data.deploymentArgs.feeTier, 3000);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror deploy validates --private-key format', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--dry-run',
+      '--private-key',
+      '0x1234',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+    assert.match(payload.error.message, /--private-key must be a valid private key/i);
   } finally {
     await indexer.close();
     await polymarket.close();
@@ -2756,6 +3193,39 @@ test('mirror deploy copies exact Polymarket question and full rules text', async
   }
 });
 
+test('mirror go accepts named --skip-gate lists during parsing', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'go',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--paper',
+      '--auto-sync',
+      '--skip-gate',
+      'MAX_TRADES_PER_DAY,DEPTH_COVERAGE',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'MIRROR_GO_SYNC_REQUIRES_DEPLOYED_MARKET');
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
 test('mirror sync once paper mode performs deterministic simulated action and persists state', async () => {
   const tempDir = createTempDir('pandora-mirror-sync-');
   const stateFile = path.join(tempDir, 'mirror-state.json');
@@ -2780,6 +3250,8 @@ test('mirror sync once paper mode performs deterministic simulated action and pe
       '--polymarket-market-id',
       'poly-cond-1',
       '--paper',
+      '--funder',
+      '0x2222222222222222222222222222222222222222',
       '--drift-trigger-bps',
       '25',
       '--hedge-trigger-usdc',
@@ -2812,6 +3284,187 @@ test('mirror sync once paper mode performs deterministic simulated action and pe
   }
 });
 
+test('mirror sync --skip-gate keeps legacy skip-all bypass behavior', async () => {
+  const tempDir = createTempDir('pandora-mirror-sync-skip-all-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        lastResetDay: new Date().toISOString().slice(0, 10),
+        tradesToday: 1,
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'sync',
+      'once',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--pandora-market-address',
+      ADDRESSES.mirrorMarket,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--paper',
+      '--drift-trigger-bps',
+      '25',
+      '--hedge-trigger-usdc',
+      '1000000',
+      '--max-trades-per-day',
+      '1',
+      '--skip-gate',
+      '--state-file',
+      stateFile,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.sync');
+    assert.equal(payload.data.actionCount, 1);
+    assert.equal(payload.data.actions[0].status, 'simulated');
+    assert.equal(payload.data.actions[0].forcedGateBypass, true);
+    assert.equal(payload.data.actions[0].bypassedFailedChecks.includes('MAX_TRADES_PER_DAY'), true);
+    assert.equal(payload.data.snapshots[0].strictGate.ok, true);
+    assert.equal(payload.data.snapshots[0].strictGate.failedChecksRaw.includes('MAX_TRADES_PER_DAY'), true);
+    assert.equal(payload.data.snapshots[0].strictGate.bypassedFailedChecks.includes('MAX_TRADES_PER_DAY'), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror sync --skip-gate with named checks bypasses only matching failures', async () => {
+  const tempDir = createTempDir('pandora-mirror-sync-skip-selective-');
+  const bypassStateFile = path.join(tempDir, 'mirror-state-bypass.json');
+  const blockedStateFile = path.join(tempDir, 'mirror-state-blocked.json');
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  fs.writeFileSync(
+    bypassStateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        lastResetDay: new Date().toISOString().slice(0, 10),
+        tradesToday: 1,
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const selectiveBypassResult = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'sync',
+      'once',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--pandora-market-address',
+      ADDRESSES.mirrorMarket,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--paper',
+      '--drift-trigger-bps',
+      '25',
+      '--hedge-trigger-usdc',
+      '1000000',
+      '--max-trades-per-day',
+      '1',
+      '--skip-gate=MAX_TRADES_PER_DAY',
+      '--state-file',
+      bypassStateFile,
+    ]);
+
+    assert.equal(selectiveBypassResult.status, 0);
+    const selectiveBypassPayload = parseJsonOutput(selectiveBypassResult);
+    assert.equal(selectiveBypassPayload.ok, true);
+    assert.equal(selectiveBypassPayload.command, 'mirror.sync');
+    assert.equal(selectiveBypassPayload.data.parameters.forceGate, false);
+    assert.deepEqual(selectiveBypassPayload.data.parameters.skipGateChecks, ['MAX_TRADES_PER_DAY']);
+    assert.equal(selectiveBypassPayload.data.actionCount, 1);
+    assert.equal(selectiveBypassPayload.data.actions[0].status, 'simulated');
+    assert.equal(selectiveBypassPayload.data.actions[0].failedChecks.length, 0);
+    assert.equal(selectiveBypassPayload.data.actions[0].bypassedFailedChecks.includes('MAX_TRADES_PER_DAY'), true);
+
+    fs.writeFileSync(
+      blockedStateFile,
+      JSON.stringify(
+        {
+          schemaVersion: '1.0.0',
+          lastResetDay: new Date().toISOString().slice(0, 10),
+          tradesToday: 1,
+        },
+        null,
+        2,
+      ),
+    );
+
+    const selectiveNoBypassResult = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'sync',
+      'once',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--pandora-market-address',
+      ADDRESSES.mirrorMarket,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--paper',
+      '--drift-trigger-bps',
+      '25',
+      '--hedge-trigger-usdc',
+      '1000000',
+      '--max-trades-per-day',
+      '1',
+      '--skip-gate',
+      'DEPTH_COVERAGE',
+      '--state-file',
+      blockedStateFile,
+    ]);
+
+    assert.equal(selectiveNoBypassResult.status, 0);
+    const selectiveNoBypassPayload = parseJsonOutput(selectiveNoBypassResult);
+    assert.equal(selectiveNoBypassPayload.ok, true);
+    assert.equal(selectiveNoBypassPayload.command, 'mirror.sync');
+    assert.deepEqual(selectiveNoBypassPayload.data.parameters.skipGateChecks, ['DEPTH_COVERAGE']);
+    assert.equal(selectiveNoBypassPayload.data.actionCount, 0);
+    assert.equal(selectiveNoBypassPayload.data.snapshots[0].action.status, 'blocked');
+    assert.equal(selectiveNoBypassPayload.data.snapshots[0].action.failedChecks.includes('MAX_TRADES_PER_DAY'), true);
+    assert.equal(selectiveNoBypassPayload.data.snapshots[0].action.bypassedFailedChecks.length, 0);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
 test('mirror sync --no-hedge suppresses hedge trigger path while preserving snapshot diagnostics', async () => {
   const tempDir = createTempDir('pandora-mirror-sync-no-hedge-');
   const stateFile = path.join(tempDir, 'mirror-state.json');
@@ -2829,8 +3482,8 @@ test('mirror sync --no-hedge suppresses hedge trigger path while preserving snap
           totalVolume: '100000',
           currentTvl: '200000',
           yesChance: '0.80',
-          reserveYes: '80',
-          reserveNo: '20',
+          reserveYes: '80000000',
+          reserveNo: '20000000',
           createdAt: '1700000000',
         },
       ],
@@ -2912,6 +3565,94 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   assert.equal(Array.isArray(payload.data.liveHedgeEnv), true);
   assert.equal(payload.data.liveHedgeEnv.includes('POLYMARKET_PRIVATE_KEY'), true);
   assert.equal(payload.data.liveHedgeEnv.includes('POLYMARKET_API_KEY'), true);
+  assert.match(payload.data.usage, /--funder <address>/);
+});
+
+test('polymarket check returns deterministic JSON payload shape', async () => {
+  const rpc = await startPolymarketOpsRpcMock({
+    funder: POLYMARKET_DEFAULTS.funder,
+    usdcBalanceRaw: 2_500_000n,
+    safeOwner: true,
+  });
+
+  try {
+    const result = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'polymarket',
+        'check',
+        '--rpc-url',
+        rpc.url,
+        '--private-key',
+        `0x${'1'.repeat(64)}`,
+        '--funder',
+        POLYMARKET_DEFAULTS.funder,
+      ],
+      {
+        env: {
+          POLYMARKET_SKIP_API_KEY_SANITY: '1',
+        },
+      },
+    );
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'polymarket.check');
+    assert.equal(payload.data.schemaVersion, '1.0.0');
+    assert.equal(payload.data.chainId, 137);
+    assert.equal(Array.isArray(payload.data.runtime.spenders), true);
+    assert.equal(payload.data.runtime.spenders.length, 3);
+    assert.equal(Array.isArray(payload.data.approvals.checks), true);
+    assert.equal(payload.data.approvals.checks.length, 6);
+    assert.equal(payload.data.apiKeySanity.status, 'skipped');
+  } finally {
+    await rpc.close();
+  }
+});
+
+test('polymarket approve --dry-run returns deterministic JSON plan shape', async () => {
+  const rpc = await startPolymarketOpsRpcMock({
+    funder: POLYMARKET_DEFAULTS.funder,
+    usdcBalanceRaw: 1_000_000n,
+    safeOwner: true,
+  });
+
+  try {
+    const result = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'polymarket',
+        'approve',
+        '--dry-run',
+        '--rpc-url',
+        rpc.url,
+        '--private-key',
+        `0x${'1'.repeat(64)}`,
+        '--funder',
+        POLYMARKET_DEFAULTS.funder,
+      ],
+      {
+        env: {
+          POLYMARKET_SKIP_API_KEY_SANITY: '1',
+        },
+      },
+    );
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'polymarket.approve');
+    assert.equal(payload.data.mode, 'dry-run');
+    assert.equal(payload.data.status, 'planned');
+    assert.equal(Array.isArray(payload.data.txPlan), true);
+    assert.equal(payload.data.txPlan.length, 6);
+    assert.equal(payload.data.approvalSummary.missingCount, 6);
+  } finally {
+    await rpc.close();
+  }
 });
 
 test('mirror sync --execute-live enforces required risk caps', () => {
@@ -2933,6 +3674,229 @@ test('mirror sync --execute-live enforces required risk caps', () => {
   const payload = parseJsonOutput(result);
   assert.equal(payload.error.code, 'MISSING_REQUIRED_FLAG');
   assert.match(payload.error.message, /max-open-exposure-usdc/);
+});
+
+test('mirror sync start/status/stop manages daemon lifecycle in paper mode', async () => {
+  const tempDir = createTempDir('pandora-mirror-sync-daemon-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+  let strategyHash = null;
+  let daemonPid = null;
+
+  try {
+    const startResult = runCli(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'sync',
+        'start',
+        '--skip-dotenv',
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--paper',
+        '--interval-ms',
+        '1000',
+        '--iterations',
+        '30',
+        '--drift-trigger-bps',
+        '25',
+        '--hedge-trigger-usdc',
+        '1000000',
+        '--state-file',
+        stateFile,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(startResult.status, 0);
+    const startPayload = parseJsonOutput(startResult);
+    assert.equal(startPayload.ok, true);
+    assert.equal(startPayload.command, 'mirror.sync.start');
+    assert.equal(startPayload.data.found, true);
+    assert.equal(typeof startPayload.data.strategyHash, 'string');
+    assert.equal(startPayload.data.strategyHash.length, 16);
+    assert.equal(typeof startPayload.data.pid, 'number');
+    assert.equal(fs.existsSync(startPayload.data.pidFile), true);
+    assert.equal(fs.existsSync(startPayload.data.logFile), true);
+
+    strategyHash = startPayload.data.strategyHash;
+    daemonPid = startPayload.data.pid;
+
+    const statusResult = runCli(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'sync',
+        'status',
+        '--strategy-hash',
+        strategyHash,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(statusResult.status, 0);
+    const statusPayload = parseJsonOutput(statusResult);
+    assert.equal(statusPayload.ok, true);
+    assert.equal(statusPayload.command, 'mirror.sync.status');
+    assert.equal(statusPayload.data.found, true);
+    assert.equal(statusPayload.data.strategyHash, strategyHash);
+    assert.equal(typeof statusPayload.data.pid, 'number');
+    assert.equal(statusPayload.data.alive, true);
+
+    const stopResult = runCli(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'sync',
+        'stop',
+        '--strategy-hash',
+        strategyHash,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(stopResult.status, 0);
+    const stopPayload = parseJsonOutput(stopResult);
+    assert.equal(stopPayload.ok, true);
+    assert.equal(stopPayload.command, 'mirror.sync.stop');
+    assert.equal(stopPayload.data.strategyHash, strategyHash);
+    assert.equal(stopPayload.data.alive, false);
+
+    const afterStopResult = runCli(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'sync',
+        'status',
+        '--strategy-hash',
+        strategyHash,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(afterStopResult.status, 0);
+    const afterStopPayload = parseJsonOutput(afterStopResult);
+    assert.equal(afterStopPayload.ok, true);
+    assert.equal(afterStopPayload.data.found, true);
+    assert.equal(afterStopPayload.data.alive, false);
+  } finally {
+    if (strategyHash) {
+      runCli(['--output', 'json', 'mirror', 'sync', 'stop', '--strategy-hash', strategyHash], {
+        env: { HOME: tempDir },
+      });
+    }
+    if (daemonPid && Number.isInteger(daemonPid)) {
+      try {
+        process.kill(daemonPid, 'SIGKILL');
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror sync start does not leak --private-key in daemon metadata', async () => {
+  const tempDir = createTempDir('pandora-mirror-sync-daemon-private-key-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+  let strategyHash = null;
+  let daemonPid = null;
+  const privateKey = `0x${'1'.repeat(64)}`;
+  const funder = '0x9999999999999999999999999999999999999999';
+
+  try {
+    const startResult = runCli(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'sync',
+        'start',
+        '--skip-dotenv',
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--paper',
+        '--private-key',
+        privateKey,
+        '--funder',
+        funder,
+        '--interval-ms',
+        '1000',
+        '--iterations',
+        '30',
+        '--drift-trigger-bps',
+        '25',
+        '--hedge-trigger-usdc',
+        '1000000',
+        '--state-file',
+        stateFile,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(startResult.status, 0);
+    const startPayload = parseJsonOutput(startResult);
+    assert.equal(startPayload.ok, true);
+    assert.equal(startPayload.command, 'mirror.sync.start');
+    assert.equal(Array.isArray(startPayload.data.cliArgs), true);
+    assert.equal(startPayload.data.cliArgs.includes('--private-key'), false);
+    assert.equal(startPayload.data.launchCommand.includes('--private-key'), false);
+    assert.equal(startPayload.data.launchCommand.includes(privateKey), false);
+
+    strategyHash = startPayload.data.strategyHash;
+    daemonPid = startPayload.data.pid;
+
+    const stopResult = runCli(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'sync',
+        'stop',
+        '--strategy-hash',
+        strategyHash,
+      ],
+      { env: { HOME: tempDir } },
+    );
+    assert.equal(stopResult.status, 0);
+  } finally {
+    if (strategyHash) {
+      runCli(['--output', 'json', 'mirror', 'sync', 'stop', '--strategy-hash', strategyHash], {
+        env: { HOME: tempDir },
+      });
+    }
+    if (daemonPid && Number.isInteger(daemonPid)) {
+      try {
+        process.kill(daemonPid, 'SIGKILL');
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
 });
 
 test('mirror status can load state via strategy hash path', async () => {
@@ -2979,6 +3943,435 @@ test('mirror status --help returns usage payload', () => {
   assert.match(payload.data.usage, /mirror status/);
 });
 
+test('--version returns package version in json mode', () => {
+  const result = runCli(['--output', 'json', '--version']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'version');
+  assert.match(payload.data.version, /^\d+\.\d+\.\d+/);
+});
+
+test('conflicting --output values fail with INVALID_ARGS in json envelope', () => {
+  const result = runCli(['--output', 'json', '--output', 'table', 'help']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_ARGS');
+  assert.match(payload.error.message, /Conflicting --output values/);
+});
+
+test('mirror browse validates invalid date strings', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'browse', '--closes-after', 'not-a-date']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /--closes-after must be an ISO date\/time string/);
+});
+
+test('mirror browse rejects numeric-only date strings', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'browse', '--closes-after', '-1000']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /not a bare number/);
+});
+
+test('mirror browse rejects invalid calendar rollover dates', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'browse', '--closes-after', '2026-02-31']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /real calendar date/);
+});
+
+test('boolean flags with --key=false do not silently flip behavior', () => {
+  const result = runCli(['--output', 'json', 'scan', '--active=false']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'UNKNOWN_FLAG');
+  assert.match(payload.error.message, /--active=false/);
+});
+
+test('subcommand flags support --key=value syntax', () => {
+  const tempDir = createTempDir('pandora-equals-flags-');
+  const strategyHash = '0123456789abcdef';
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const statePath = path.join(stateDir, `${strategyHash}.json`);
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash,
+        tradesToday: 1,
+      },
+      null,
+      2,
+    ),
+  );
+
+  const result = runCli(['--output=json', 'mirror', 'status', `--strategy-hash=${strategyHash}`], {
+    env: { HOME: tempDir },
+  });
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.status');
+  assert.equal(payload.data.strategyHash, strategyHash);
+  removeDir(tempDir);
+});
+
+test('mirror close accepts --market-address alias', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'close',
+    '--market-address',
+    ADDRESSES.mirrorMarket,
+    '--polymarket-market-id',
+    'poly-cond-1',
+    '--dry-run',
+  ]);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.close');
+  assert.equal(payload.data.pandoraMarketAddress, ADDRESSES.mirrorMarket.toLowerCase());
+});
+
+test('mirror browse returns candidate markets with existing mirror hint', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'browse',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--limit',
+      '5',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.browse');
+    assert.equal(Array.isArray(payload.data.items), true);
+    assert.equal(payload.data.filters.minYesPct, null);
+    assert.equal(payload.data.filters.maxYesPct, null);
+    assert.equal(payload.data.filters.limit, 5);
+    if (payload.data.items.length > 0) {
+      assert.equal(Object.prototype.hasOwnProperty.call(payload.data.items[0], 'existingMirror'), true);
+      if (payload.data.items[0].existingMirror) {
+        assert.equal(typeof payload.data.items[0].existingMirror.marketAddress, 'string');
+        assert.equal(typeof payload.data.items[0].existingMirror.similarity, 'number');
+      }
+    }
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror sync accepts --market-address with --dry-run mode alias', async () => {
+  const tempDir = createTempDir('pandora-mirror-sync-aliases-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'sync',
+      'once',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--market-address',
+      ADDRESSES.mirrorMarket,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--dry-run',
+      '--drift-trigger-bps',
+      '25',
+      '--hedge-trigger-usdc',
+      '1000000',
+      '--state-file',
+      stateFile,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.sync');
+    assert.equal(payload.data.mode, 'once');
+    assert.equal(payload.data.executeLive, false);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror plan resolves slug selectors via gamma mock endpoint', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'plan',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-slug',
+      'deterministic-tests-pass',
+      '--polymarket-gamma-mock-url',
+      polymarket.url,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.plan');
+    assert.equal(payload.data.sourceMarket.sourceType, 'polymarket:gamma');
+    assert.equal(payload.data.sourceMarket.slug, 'deterministic-tests-pass');
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror verify --trust-deploy bypasses similarity for trusted manifest pairs', async () => {
+  const tempDir = createTempDir('pandora-mirror-trust-');
+  const manifestFile = path.join(tempDir, '.pandora', 'mirror', 'pairs.json');
+  fs.mkdirSync(path.dirname(manifestFile), { recursive: true });
+  fs.writeFileSync(
+    manifestFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        generatedAt: new Date().toISOString(),
+        pairs: [
+          {
+            id: 'pair-1',
+            trusted: true,
+            pandoraMarketAddress: ADDRESSES.mirrorMarket,
+            polymarketMarketId: 'poly-cond-1',
+            polymarketSlug: 'deterministic-tests-pass',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const indexer = await startIndexerMockServer(
+    buildMirrorIndexerOverrides({
+      polls: [
+        {
+          ...buildMirrorIndexerOverrides().polls[0],
+          question: 'Completely different wording for Pandora side',
+        },
+      ],
+    }),
+  );
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'verify',
+        '--skip-dotenv',
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--trust-deploy',
+        '--manifest-file',
+        manifestFile,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.verify');
+    assert.equal(payload.data.gateResult.ok, true);
+    const matchCheck = payload.data.gateResult.checks.find((item) => item.code === 'MATCH_CONFIDENCE');
+    assert.equal(Boolean(matchCheck && matchCheck.ok), true);
+    assert.equal(Boolean(matchCheck && matchCheck.meta && matchCheck.meta.trustDeploy), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror sync --trust-deploy fails fast when trusted pair is missing', () => {
+  const tempDir = createTempDir('pandora-mirror-trust-missing-');
+  try {
+    const result = runCli(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'sync',
+        'once',
+        '--skip-dotenv',
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--paper',
+        '--trust-deploy',
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.error.code, 'TRUST_DEPLOY_PAIR_NOT_FOUND');
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('mirror status --with-live includes polymarket position visibility diagnostics', async () => {
+  const tempDir = createTempDir('pandora-mirror-status-live-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'feedfacecafebeef',
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+        polymarketMarketId: 'poly-cond-1',
+        currentHedgeUsdc: 5,
+        cumulativeLpFeesApproxUsdc: 2.5,
+        cumulativeHedgeCostApproxUsdc: 1.25,
+      },
+      null,
+      2,
+    ),
+  );
+
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    balances: {
+      'poly-yes-1': '12.5',
+      'poly-no-1': '3.25',
+    },
+    openOrders: [
+      {
+        id: 'order-1',
+        market: 'poly-cond-1',
+        asset_id: 'poly-yes-1',
+        original_size: '10',
+        size_matched: '4',
+        price: '0.74',
+      },
+      {
+        id: 'order-2',
+        market: 'poly-cond-1',
+        asset_id: 'poly-no-1',
+        remaining_size: '2',
+        price: '0.26',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'status',
+      '--state-file',
+      stateFile,
+      '--with-live',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.status');
+    assert.equal(typeof payload.data.live.driftBps, 'number');
+    assert.equal(typeof payload.data.live.netPnlApproxUsdc, 'number');
+    assert.equal(payload.data.live.netPnlApproxUsdc, 1.25);
+    assert.equal(typeof payload.data.live.netDeltaApprox, 'number');
+    assert.equal(typeof payload.data.live.pnlApprox, 'number');
+    assert.equal(payload.data.live.polymarketPosition.yesBalance, 12.5);
+    assert.equal(payload.data.live.polymarketPosition.noBalance, 3.25);
+    assert.equal(payload.data.live.polymarketPosition.openOrdersCount, 2);
+    assert.equal(payload.data.live.polymarketPosition.estimatedValueUsd, 10.095);
+    assert.equal(Array.isArray(payload.data.live.polymarketPosition.diagnostics), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror close dry-run returns deterministic close plan scaffold', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'close',
+    '--pandora-market-address',
+    ADDRESSES.mirrorMarket,
+    '--polymarket-market-id',
+    'poly-cond-1',
+    '--dry-run',
+  ]);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.close');
+  assert.equal(payload.data.mode, 'dry-run');
+  assert.equal(Array.isArray(payload.data.steps), true);
+  assert.equal(payload.data.steps.length >= 3, true);
+});
+
 test('webhook test sends generic and discord payloads', async () => {
   const generic = await startJsonHttpServer(() => ({ body: { ok: true } }));
   const discord = await startJsonHttpServer(() => ({ body: { ok: true } }));
@@ -3007,6 +4400,16 @@ test('webhook test sends generic and discord payloads', async () => {
     await generic.close();
     await discord.close();
   }
+});
+
+test('webhook test --help returns structured JSON help payload', () => {
+  const result = runCli(['--output', 'json', 'webhook', 'test', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.command, 'webhook.test.help');
+  assert.match(payload.data.usage, /^pandora .* webhook test /);
+  assert.equal(payload.data.schemaVersion, '1.0.0');
+  assertIsoTimestamp(payload.data.generatedAt);
 });
 
 test('leaderboard ranks by requested metric', async () => {
@@ -3083,7 +4486,7 @@ test('leaderboard clamps inconsistent indexer totals and surfaces diagnostics', 
     const payload = parseJsonOutput(result);
     assert.equal(payload.ok, true);
     assert.equal(payload.command, 'leaderboard');
-    assert.equal(payload.data.schemaVersion, '1.0.1');
+    assert.equal(payload.data.schemaVersion, '1.0.0');
 
     const item = payload.data.items.find(
       (entry) => entry.address.toLowerCase() === '0x6666666666666666666666666666666666666666',
@@ -3237,7 +4640,7 @@ test('suggest returns deterministic envelope', async () => {
   }
 });
 
-test('resolve and lp are ABI-gated', () => {
+test('resolve and lp commands are enabled', () => {
   const resolveResult = runCli([
     '--output',
     'json',
@@ -3250,9 +4653,12 @@ test('resolve and lp are ABI-gated', () => {
     'fixture',
     '--dry-run',
   ]);
-  assert.equal(resolveResult.status, 1);
+  assert.equal(resolveResult.status, 0);
   const resolvePayload = parseJsonOutput(resolveResult);
-  assert.equal(resolvePayload.error.code, 'ABI_READY_REQUIRED');
+  assert.equal(resolvePayload.ok, true);
+  assert.equal(resolvePayload.command, 'resolve');
+  assert.equal(resolvePayload.data.mode, 'dry-run');
+  assert.equal(resolvePayload.data.txPlan.functionName, 'resolveMarket');
 
   const lpResult = runCli([
     '--output',
@@ -3262,9 +4668,12 @@ test('resolve and lp are ABI-gated', () => {
     '--wallet',
     ADDRESSES.wallet1,
   ]);
-  assert.equal(lpResult.status, 1);
+  assert.equal(lpResult.status, 0);
   const lpPayload = parseJsonOutput(lpResult);
-  assert.equal(lpPayload.error.code, 'ABI_READY_REQUIRED');
+  assert.equal(lpPayload.ok, true);
+  assert.equal(lpPayload.command, 'lp');
+  assert.equal(lpPayload.data.action, 'positions');
+  assert.equal(lpPayload.data.wallet, ADDRESSES.wallet1.toLowerCase());
 });
 
 test('launch enforces mode flag and dry-run reaches deterministic preflight', () => {
@@ -3371,4 +4780,154 @@ test('launch rejects --output json mode', () => {
   assert.equal(result.status, 1);
   const payload = parseJsonOutput(result);
   assert.equal(payload.error.code, 'UNSUPPORTED_OUTPUT_MODE');
+});
+
+test('json errors include next-best-action recovery hints', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'trade',
+    '--dry-run',
+    '--side',
+    'yes',
+    '--amount-usdc',
+    '10',
+  ]);
+
+  assert.equal(result.status, 1, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'MISSING_REQUIRED_FLAG');
+  assert.equal(typeof payload.error.recovery, 'object');
+  assert.equal(payload.error.recovery.retryable, true);
+  assert.equal(typeof payload.error.recovery.command, 'string');
+  assert.match(payload.error.recovery.command, /pandora help|pandora trade --dry-run/);
+});
+
+test('unknown command errors include structured recovery hints', () => {
+  const result = runCli(['--output', 'json', 'totally-unknown-command']);
+  assert.equal(result.status, 1, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'UNKNOWN_COMMAND');
+  assert.equal(typeof payload.error.recovery, 'object');
+  assert.equal(payload.error.recovery.retryable, true);
+  assert.equal(payload.error.recovery.command, 'pandora help');
+});
+
+test('trade dry-run with fork flags marks runtime.mode=fork', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'trade',
+    '--dry-run',
+    '--market-address',
+    ADDRESSES.mirrorMarket,
+    '--side',
+    'yes',
+    '--amount-usdc',
+    '10',
+    '--yes-pct',
+    '55',
+    '--fork-rpc-url',
+    'http://127.0.0.1:8545',
+    '--fork-chain-id',
+    '1',
+  ]);
+
+  assert.equal(result.status, 0, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'trade');
+  assert.equal(payload.data.runtime.mode, 'fork');
+});
+
+test('resolve dry-run with fork flags marks runtime.mode=fork', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'resolve',
+    '--poll-address',
+    ADDRESSES.mirrorPoll,
+    '--answer',
+    'yes',
+    '--reason',
+    'Fork simulation',
+    '--dry-run',
+    '--fork-rpc-url',
+    'http://127.0.0.1:8545',
+  ]);
+
+  assert.equal(result.status, 0, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'resolve');
+  assert.equal(payload.data.runtime.mode, 'fork');
+});
+
+test('lp add dry-run with fork flags marks runtime.mode=fork', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'lp',
+    'add',
+    '--market-address',
+    ADDRESSES.mirrorMarket,
+    '--amount-usdc',
+    '15',
+    '--dry-run',
+    '--fork-rpc-url',
+    'http://127.0.0.1:8545',
+  ]);
+
+  assert.equal(result.status, 0, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'lp');
+  assert.equal(payload.data.runtime.mode, 'fork');
+});
+
+test('polymarket trade execute in fork mode requires --polymarket-mock-url', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'polymarket',
+    'trade',
+    '--token-id',
+    '12345',
+    '--amount-usdc',
+    '1',
+    '--execute',
+    '--fork-rpc-url',
+    'http://127.0.0.1:8545',
+  ]);
+
+  assert.equal(result.status, 1, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'FORK_EXECUTION_REQUIRES_MOCK_URL');
+});
+
+test('polymarket fork mode reports structured missing FORK_RPC_URL errors', () => {
+  const result = runCli(
+    ['--output', 'json', 'polymarket', 'check', '--fork'],
+    { unsetEnvKeys: ['FORK_RPC_URL'] },
+  );
+
+  assert.equal(result.status, 1, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'MISSING_REQUIRED_FLAG');
+});
+
+test('polymarket fork mode validates FORK_RPC_URL from env', () => {
+  const result = runCli(
+    ['--output', 'json', 'polymarket', 'check', '--fork'],
+    { env: { FORK_RPC_URL: 'ftp://example.com' } },
+  );
+
+  assert.equal(result.status, 1, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
 });

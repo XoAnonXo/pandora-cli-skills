@@ -1,5 +1,5 @@
 Goal (incl. success criteria):
-- Keep `pandora mirror` production-grade and operator-safe for Polymarket -> Pandora pAMM delta-neutral sync.
+- Keep `pandora mirror` production-grade and operator-safe for Polymarket -> Pandora pAMM delta-neutral sync, while removing live-ops friction in discovery/deploy/sync and adding operator dashboards.
 - Success criteria:
   - New command family works end-to-end: `mirror plan`, `mirror deploy`, `mirror sync run|once`, `mirror status`, `mirror verify`.
   - Liquidity sizing formula matches locked model+depth-cap specification.
@@ -23,6 +23,7 @@ Key decisions:
 
 State:
   - Done:
+    - User requested a full execution sweep for 11 mirror/polymarket enhancements, with subagent-driven implementation, rerun/improvement, and full CLI audit.
     - Live-test blocker fixes (2026-02-26):
       - fixed Polymarket selector pagination in `resolvePolymarketMarket`:
         - selector mode now scans pages until a match or cursor exhaustion (instead of stopping at 500-row working set).
@@ -130,9 +131,9 @@ State:
       - published `pandora-cli-skills@1.1.8`.
       - verified npm registry: `dist-tag latest=1.1.8`.
   - Now:
-    - NPM release `1.1.8` is published.
+    - Implementing the 11-item mirror/polymarket enhancement list with subagents, then rerunning and auditing.
   - Next:
-    - Commit version bump + continuity update to `main`.
+    - Deliver code + tests for direct lookup, gamma-first discovery/browse, mirror go, trust-deploy pairing, status dashboard, expiry/readiness guards, streaming sync logs, and close/unwind scaffolding.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -174,4 +175,4 @@ Working set (files/ids/commands):
   - `npm view pandora-cli-skills dist-tags.latest` (`1.1.7`)
   - `npm view pandora-cli-skills versions --json` (includes `1.1.7`)
  - Current task:
-  - Publish updated package to npm.
+  - Execute full mirror/polymarket enhancement sweep and audit.

@@ -66,12 +66,70 @@ function loadState(filePath, hash) {
   };
 }
 
+function sleepSync(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return;
+  const shared = new SharedArrayBuffer(4);
+  const view = new Int32Array(shared);
+  Atomics.wait(view, 0, 0, Math.max(1, Math.floor(ms)));
+}
+
+function acquireLock(lockPath, options = {}) {
+  const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Number(options.timeoutMs) : 2_000;
+  const pollMs = Number.isFinite(Number(options.pollMs)) ? Number(options.pollMs) : 10;
+  const staleMs = Number.isFinite(Number(options.staleMs)) ? Number(options.staleMs) : 5 * 60 * 1000;
+  const deadline = Date.now() + Math.max(50, timeoutMs);
+
+  while (true) {
+    try {
+      return fs.openSync(lockPath, 'wx');
+    } catch (err) {
+      if (!err || err.code !== 'EEXIST') throw err;
+
+      try {
+        const stats = fs.statSync(lockPath);
+        const ageMs = Date.now() - stats.mtimeMs;
+        if (Number.isFinite(ageMs) && ageMs > staleMs) {
+          fs.unlinkSync(lockPath);
+          continue;
+        }
+      } catch {
+        // best-effort stale lock cleanup
+      }
+
+      if (Date.now() >= deadline) {
+        throw new Error(`Unable to acquire state lock within ${timeoutMs}ms: ${lockPath}`);
+      }
+      sleepSync(pollMs);
+    }
+  }
+}
+
 function saveState(filePath, state) {
   const resolved = path.resolve(expandHome(filePath));
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  const tmp = `${resolved}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-  fs.renameSync(tmp, resolved);
+  const lockPath = `${resolved}.lock`;
+  const lockFd = acquireLock(lockPath);
+  try {
+    const tmp = `${resolved}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, resolved);
+    try {
+      fs.chmodSync(resolved, 0o600);
+    } catch {
+      // best-effort permission hardening
+    }
+  } finally {
+    try {
+      fs.closeSync(lockFd);
+    } catch {
+      // ignore lock close failures
+    }
+    try {
+      fs.unlinkSync(lockPath);
+    } catch {
+      // ignore lock cleanup failures
+    }
+  }
   return resolved;
 }
 

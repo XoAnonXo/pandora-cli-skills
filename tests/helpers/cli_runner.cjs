@@ -6,7 +6,7 @@ const { spawn, spawnSync } = require('child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'cli', 'pandora.cjs');
-const DOCTOR_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC', 'DEPLOYER_PRIVATE_KEY'];
+const DOCTOR_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PANDORA_PRIVATE_KEY', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC', 'DEPLOYER_PRIVATE_KEY'];
 
 function createTempDir(prefix = 'pandora-test-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

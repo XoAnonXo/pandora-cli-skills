@@ -9,17 +9,7 @@ const {
   pruneIdempotencyKeys,
   resetDailyCountersIfNeeded,
 } = require('./autopilot_state_store.cjs');
-
-function toNumber(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return numeric;
-}
-
-function sleepMs(ms) {
-  if (!Number.isFinite(ms) || ms <= 0) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const { toNumber, sleepMs } = require('./shared/utils.cjs');
 
 function buildIdempotencyKey(options, quote, nowMs) {
   const yesPct = toNumber(quote && quote.odds && quote.odds.yesPct);
@@ -30,6 +20,14 @@ function buildIdempotencyKey(options, quote, nowMs) {
 }
 
 function evaluateTrigger(options, quote) {
+  if (quote && quote.quoteAvailable === false) {
+    return {
+      triggered: false,
+      reason: 'quote unavailable; skipping trigger evaluation.',
+      yesPct: null,
+    };
+  }
+
   const yesPct = toNumber(quote && quote.odds && quote.odds.yesPct);
   if (yesPct === null) {
     return {
@@ -148,26 +146,40 @@ async function runAutopilot(options, deps) {
           snapshot.action = {
             mode: options.executeLive ? 'live' : 'paper',
             status: 'blocked',
-            reason: `Exposure cap exceeded: ${(state.dailySpendUsdc + options.amountUsdc).toFixed(2)} > ${options.maxOpenExposureUsdc}.`,
+            reason: `Daily spend cap exceeded: ${(state.dailySpendUsdc + options.amountUsdc).toFixed(2)} > ${options.maxOpenExposureUsdc}.`,
           };
         } else {
+          let executionSucceeded = true;
           if (options.executeLive) {
-            const execution = await deps.executeFn({
-              marketAddress: options.marketAddress,
-              side: options.side,
-              amountUsdc: options.amountUsdc,
-              yesPct: trigger.yesPct,
-              maxAmountUsdc: options.maxAmountUsdc,
-              minProbabilityPct: options.minProbabilityPct,
-              maxProbabilityPct: options.maxProbabilityPct,
-            });
+            try {
+              const execution = await deps.executeFn({
+                marketAddress: options.marketAddress,
+                side: options.side,
+                amountUsdc: options.amountUsdc,
+                yesPct: trigger.yesPct,
+                maxAmountUsdc: options.maxAmountUsdc,
+                minProbabilityPct: options.minProbabilityPct,
+                maxProbabilityPct: options.maxProbabilityPct,
+              });
 
-            snapshot.action = {
-              mode: 'live',
-              status: 'executed',
-              idempotencyKey: key,
-              execution,
-            };
+              snapshot.action = {
+                mode: 'live',
+                status: 'executed',
+                idempotencyKey: key,
+                execution,
+              };
+            } catch (err) {
+              executionSucceeded = false;
+              snapshot.action = {
+                mode: 'live',
+                status: 'failed',
+                idempotencyKey: key,
+                error: {
+                  code: err && err.code ? String(err.code) : null,
+                  message: err && err.message ? String(err.message) : String(err),
+                },
+              };
+            }
           } else {
             snapshot.action = {
               mode: 'paper',
@@ -178,10 +190,12 @@ async function runAutopilot(options, deps) {
             };
           }
 
-          state.idempotencyKeys.push(key);
-          pruneIdempotencyKeys(state);
-          state.dailySpendUsdc = Number((state.dailySpendUsdc + options.amountUsdc).toFixed(6));
-          state.tradesToday += 1;
+          if (executionSucceeded) {
+            state.idempotencyKeys.push(key);
+            pruneIdempotencyKeys(state);
+            state.dailySpendUsdc = Number((state.dailySpendUsdc + options.amountUsdc).toFixed(6));
+            state.tradesToday += 1;
+          }
           state.lastExecution = snapshot.action;
           actions.push(snapshot.action);
 
@@ -239,6 +253,7 @@ async function runAutopilot(options, deps) {
       cooldownMs: options.cooldownMs,
       maxAmountUsdc: options.maxAmountUsdc,
       maxOpenExposureUsdc: options.maxOpenExposureUsdc,
+      dailySpendCapUsdc: options.maxOpenExposureUsdc,
       maxTradesPerDay: options.maxTradesPerDay,
     },
     state,

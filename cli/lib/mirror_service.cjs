@@ -2,22 +2,23 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { computeLiquidityRecommendation, computeDistributionHint, normalizeProbability } = require('./mirror_sizing_service.cjs');
-const { resolvePolymarketMarket, fetchDepthForMarket } = require('./polymarket_trade_adapter.cjs');
-const { findBestPandoraMatch, fetchPandoraMarketContext, verifyMirrorPair } = require('./mirror_verify_service.cjs');
+const { resolvePolymarketMarket, fetchDepthForMarket, browsePolymarketMarkets } = require('./polymarket_trade_adapter.cjs');
+const { findBestPandoraMatch, fetchPandoraMarketContext, verifyMirrorPair, hashRules } = require('./mirror_verify_service.cjs');
 const { deployPandoraAmmMarket } = require('./pandora_deploy_service.cjs');
+const { defaultManifestFile, upsertPair } = require('./mirror_manifest_store.cjs');
+const { round } = require('./shared/utils.cjs');
 
 const MIRROR_PLAN_SCHEMA_VERSION = '1.0.0';
 const MIRROR_DEPLOY_SCHEMA_VERSION = '1.0.0';
+const MIRROR_BROWSE_SCHEMA_VERSION = '1.0.0';
 
-function round(value, decimals = 6) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  const factor = 10 ** decimals;
-  return Math.round(numeric * factor) / factor;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+function createServiceError(code, message, details = undefined) {
+  const err = new Error(message);
+  err.code = code;
+  if (details !== undefined) {
+    err.details = details;
+  }
+  return err;
 }
 
 function normalizeSources(value) {
@@ -54,9 +55,18 @@ function buildPlanDigest(planData) {
     sourceMarket: {
       marketId: planData.sourceMarket && planData.sourceMarket.marketId,
       slug: planData.sourceMarket && planData.sourceMarket.slug,
+      question: planData.sourceMarket && planData.sourceMarket.question,
+      description: planData.sourceMarket && planData.sourceMarket.description,
       yesPct: planData.sourceMarket && planData.sourceMarket.yesPct,
       closeTimestamp: planData.sourceMarket && planData.sourceMarket.closeTimestamp,
     },
+    rules: planData.rules
+      ? {
+          sourceRules: planData.rules.sourceRules || null,
+          proposedPandoraRules: planData.rules.proposedPandoraRules || null,
+          sourceCount: planData.rules.sourceCount || null,
+        }
+      : null,
     liquidityRecommendation: planData.liquidityRecommendation,
     distributionHint: planData.distributionHint,
   }));
@@ -68,6 +78,8 @@ async function buildMirrorPlan(options = {}) {
 
   const sourceMarket = await resolvePolymarketMarket({
     host: options.polymarketHost,
+    gammaUrl: options.polymarketGammaUrl,
+    gammaMockUrl: options.polymarketGammaMockUrl,
     mockUrl: options.polymarketMockUrl,
     timeoutMs: options.timeoutMs,
     marketId: options.polymarketMarketId,
@@ -102,13 +114,26 @@ async function buildMirrorPlan(options = {}) {
   const distribution = computeDistributionHint(sourceYesProbability === null ? 0.5 : sourceYesProbability);
   const rules = buildRuleTemplate(sourceMarket);
 
-  const match = await findBestPandoraMatch({
-    indexerUrl: options.indexerUrl,
-    timeoutMs: options.timeoutMs,
-    chainId: options.chainId,
-    sourceQuestion: sourceMarket.question,
-    limit: 150,
-  });
+  let match = { best: null, diagnostics: [] };
+  try {
+    match = await findBestPandoraMatch({
+      indexerUrl: options.indexerUrl,
+      timeoutMs: options.timeoutMs,
+      chainId: options.chainId,
+      sourceQuestion: sourceMarket.question,
+      limit: 150,
+    });
+  } catch (err) {
+    diagnostics.push(`Duplicate-check fallback: ${err && err.message ? err.message : String(err)}`);
+  }
+
+  if (Number.isFinite(sourceMarket.closeTimestamp)) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const timeToCloseSec = sourceMarket.closeTimestamp - nowSec;
+    if (timeToCloseSec <= 24 * 60 * 60) {
+      diagnostics.push(`Source market closes soon (${timeToCloseSec}s). Consider higher monitoring cadence.`);
+    }
+  }
 
   for (const item of sourceMarket.diagnostics || []) diagnostics.push(item);
   for (const item of depth.diagnostics || []) diagnostics.push(item);
@@ -214,7 +239,7 @@ function resolveDeployPlanInput(options = {}) {
 }
 
 async function deployMirror(options = {}) {
-  let planData = resolveDeployPlanInput(options);
+  let planData = options.planData || resolveDeployPlanInput(options);
   if (!planData) {
     planData = await buildMirrorPlan(options);
   }
@@ -249,26 +274,63 @@ async function deployMirror(options = {}) {
     diagnostics.push('Using fallback source URLs because explicit --sources were not provided.');
   }
 
-  const deployPayload = await deployPandoraAmmMarket({
-    execute: Boolean(options.execute),
-    chainId: options.chainId,
-    rpcUrl: options.rpcUrl,
-    privateKey: options.privateKey,
-    oracle: options.oracle,
-    factory: options.factory,
-    usdc: options.usdc,
-    question,
-    rules: sourceRulesText,
-    sources: sources.length >= 2 ? sources : ['https://polymarket.com', 'https://clob.polymarket.com'],
-    targetTimestamp,
-    liquidityUsdc,
-    distributionYes,
-    distributionNo,
-    feeTier: options.feeTier || 3000,
-    maxImbalance: options.maxImbalance || 10_000,
-    arbiter: options.arbiter,
-    category: options.category,
-  });
+  let deployPayload;
+  try {
+    deployPayload = await deployPandoraAmmMarket({
+      execute: Boolean(options.execute),
+      chainId: options.chainId,
+      rpcUrl: options.rpcUrl,
+      privateKey: options.privateKey,
+      oracle: options.oracle,
+      factory: options.factory,
+      usdc: options.usdc,
+      question,
+      rules: sourceRulesText,
+      sources: sources.length >= 2 ? sources : ['https://polymarket.com', 'https://clob.polymarket.com'],
+      targetTimestamp,
+      minCloseLeadSeconds: Number.isFinite(Number(options.minCloseLeadSeconds))
+        ? Number(options.minCloseLeadSeconds)
+        : 3600,
+      liquidityUsdc,
+      distributionYes,
+      distributionNo,
+      feeTier: options.feeTier || 3000,
+      maxImbalance: options.maxImbalance || 10_000,
+      arbiter: options.arbiter,
+      category: options.category,
+    });
+  } catch (err) {
+    throw createServiceError(
+      err && err.code ? err.code : 'MIRROR_DEPLOY_FAILED',
+      err && err.message ? err.message : String(err),
+      err && err.details ? err.details : undefined,
+    );
+  }
+
+  let trustManifest = null;
+  if (options.execute && deployPayload.pandora && deployPayload.pandora.marketAddress) {
+    const manifestFile = options.manifestFile || defaultManifestFile();
+    try {
+      const manifestUpdate = upsertPair(manifestFile, {
+        trusted: true,
+        pandoraMarketAddress: deployPayload.pandora.marketAddress,
+        pandoraPollAddress: deployPayload.pandora.pollAddress,
+        polymarketMarketId: planData.sourceMarket && planData.sourceMarket.marketId ? String(planData.sourceMarket.marketId) : options.polymarketMarketId || null,
+        polymarketSlug: planData.sourceMarket && planData.sourceMarket.slug ? String(planData.sourceMarket.slug) : options.polymarketSlug || null,
+        sourceQuestion: planData.sourceMarket && planData.sourceMarket.question ? planData.sourceMarket.question : null,
+        sourceRuleHash: hashRules(sourceRulesText),
+      });
+      trustManifest = {
+        filePath: manifestUpdate.filePath,
+        pair: manifestUpdate.pair,
+      };
+    } catch (err) {
+      throw createServiceError(
+        'MIRROR_MANIFEST_WRITE_FAILED',
+        `Failed to persist mirror trust manifest: ${err && err.message ? err.message : String(err)}`,
+      );
+    }
+  }
 
   const postDeployChecks = {
     seedOddsMatch: null,
@@ -318,6 +380,7 @@ async function deployMirror(options = {}) {
     tx: deployPayload.tx,
     pandora: deployPayload.pandora,
     postDeployChecks,
+    trustManifest,
     diagnostics: diagnostics.concat(deployPayload.diagnostics || []),
   };
 }
@@ -326,11 +389,71 @@ async function verifyMirror(options = {}) {
   return verifyMirrorPair(options);
 }
 
+async function browseMirrorMarkets(options = {}) {
+  const diagnostics = [];
+  const polymarket = await browsePolymarketMarkets({
+    gammaUrl: options.polymarketGammaUrl,
+    gammaMockUrl: options.polymarketGammaMockUrl,
+    mockUrl: options.polymarketMockUrl,
+    timeoutMs: options.timeoutMs,
+    minYesPct: options.minYesPct,
+    maxYesPct: options.maxYesPct,
+    minVolume24h: options.minVolume24h,
+    closesAfter: options.closesAfter,
+    closesBefore: options.closesBefore,
+    questionContains: options.questionContains,
+    limit: options.limit,
+  });
+
+  const items = [];
+  for (const entry of polymarket.items || []) {
+    let existingMirror = null;
+    if (options.indexerUrl) {
+      try {
+        const match = await findBestPandoraMatch({
+          indexerUrl: options.indexerUrl,
+          timeoutMs: options.timeoutMs,
+          chainId: options.chainId,
+          sourceQuestion: entry.question,
+          limit: 100,
+        });
+        if (match.best && match.best.similarity && Number(match.best.similarity.score) >= 0.86) {
+          existingMirror = {
+            marketAddress: match.best.marketAddress,
+            similarity: match.best.similarity.score,
+          };
+        }
+        diagnostics.push(...(match.diagnostics || []));
+      } catch (err) {
+        diagnostics.push(`Duplicate-check skipped for "${entry.slug || entry.marketId || entry.question || 'market'}": ${err && err.message ? err.message : String(err)}`);
+      }
+    }
+
+    items.push({
+      ...entry,
+      existingMirror,
+    });
+  }
+
+  return {
+    schemaVersion: MIRROR_BROWSE_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    source: polymarket.source,
+    gammaApiError: polymarket.gammaApiError || null,
+    filters: polymarket.filters,
+    count: items.length,
+    items,
+    diagnostics: (polymarket.diagnostics || []).concat(diagnostics),
+  };
+}
+
 module.exports = {
   MIRROR_PLAN_SCHEMA_VERSION,
   MIRROR_DEPLOY_SCHEMA_VERSION,
+  MIRROR_BROWSE_SCHEMA_VERSION,
   buildMirrorPlan,
   deployMirror,
   verifyMirror,
+  browseMirrorMarkets,
   buildPlanDigest,
 };

@@ -1,12 +1,7 @@
 const { createIndexerClient } = require('./indexer_client.cjs');
+const { toNumber } = require('./shared/utils.cjs');
 
-const LEADERBOARD_SCHEMA_VERSION = '1.0.1';
-
-function toNumber(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return numeric;
-}
+const LEADERBOARD_SCHEMA_VERSION = '1.0.0';
 
 function toCount(value) {
   const numeric = toNumber(value);

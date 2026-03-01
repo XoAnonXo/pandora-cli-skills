@@ -1,20 +1,5 @@
 const MIRROR_SIZING_SCHEMA_VERSION = '1.0.0';
-
-function toNumber(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return numeric;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function round(value, decimals = 6) {
-  if (!Number.isFinite(value)) return null;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
+const { toNumber, clamp, round } = require('./shared/utils.cjs');
 
 function normalizeProbability(raw) {
   const numeric = toNumber(raw);

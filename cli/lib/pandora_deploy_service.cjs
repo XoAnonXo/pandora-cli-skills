@@ -2,18 +2,19 @@ const {
   createPublicClient,
   createWalletClient,
   decodeEventLog,
+  formatUnits,
   http,
+  parseEther,
   parseUnits,
 } = require('viem');
 const { privateKeyToAccount } = require('viem/accounts');
-
-const DEFAULT_ORACLE = '0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442';
-const DEFAULT_FACTORY = '0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c';
-const DEFAULT_USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
-const DEFAULT_RPC_BY_CHAIN_ID = {
-  1: 'https://ethereum.publicnode.com',
-  146: 'https://rpc.soniclabs.com',
-};
+const { decodeContractError, formatDecodedContractError } = require('./contract_error_decoder.cjs');
+const {
+  DEFAULT_RPC_BY_CHAIN_ID,
+  DEFAULT_ORACLE,
+  DEFAULT_FACTORY,
+  DEFAULT_USDC,
+} = require('./shared/constants.cjs');
 
 const ERC20_ABI = [
   {
@@ -25,6 +26,13 @@ const ERC20_ABI = [
       { name: 'amount', type: 'uint256' },
     ],
     outputs: [{ type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'owner', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
   },
   {
     type: 'function',
@@ -97,29 +105,39 @@ function normalizeSources(sources) {
     .filter(Boolean);
 }
 
+function createDeployError(code, message, details = undefined) {
+  const err = new Error(message);
+  err.code = code;
+  if (details !== undefined) {
+    err.details = details;
+  }
+  return err;
+}
+
+async function wrapDeployExecutionError(err, code, fallbackMessage, details = undefined) {
+  const decoded = await decodeContractError(err);
+  const decodedMessage = formatDecodedContractError(decoded);
+  return createDeployError(code, decodedMessage || (err && err.message ? err.message : fallbackMessage), {
+    decodedError: decoded,
+    cause: err && err.message ? err.message : String(err),
+    ...((details && typeof details === 'object') ? details : {}),
+  });
+}
+
 function resolveChain(chainId, rpcUrl) {
   const id = Number(chainId || process.env.CHAIN_ID || 1);
-  if (![1, 146].includes(id)) {
-    throw new Error(`Unsupported CHAIN_ID=${id}. Supported values: 1 or 146.`);
+  if (id !== 1) {
+    throw new Error(`Unsupported CHAIN_ID=${id}. Supported values: 1.`);
   }
 
   const finalRpcUrl = rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[id];
-  const chain =
-    id === 1
-      ? {
-          id: 1,
-          name: 'Ethereum',
-          nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-          rpcUrls: { default: { http: [finalRpcUrl] }, public: { http: [finalRpcUrl] } },
-          blockExplorers: { default: { name: 'Etherscan', url: 'https://etherscan.io' } },
-        }
-      : {
-          id: 146,
-          name: 'Sonic',
-          nativeCurrency: { name: 'Sonic', symbol: 'S', decimals: 18 },
-          rpcUrls: { default: { http: [finalRpcUrl] }, public: { http: [finalRpcUrl] } },
-          blockExplorers: { default: { name: 'SonicScan', url: 'https://sonicscan.org' } },
-        };
+  const chain = {
+    id: 1,
+    name: 'Ethereum',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: { default: { http: [finalRpcUrl] }, public: { http: [finalRpcUrl] } },
+    blockExplorers: { default: { name: 'Etherscan', url: 'https://etherscan.io' } },
+  };
 
   return {
     chain,
@@ -143,8 +161,19 @@ function buildDeploymentArgs(options = {}) {
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  if (targetTimestamp <= nowSec) {
-    throw new Error('targetTimestamp must be in the future.');
+  const minCloseLeadSeconds = Number.isFinite(Number(options.minCloseLeadSeconds))
+    ? Math.max(0, Math.trunc(Number(options.minCloseLeadSeconds)))
+    : 0;
+  if (targetTimestamp <= nowSec + minCloseLeadSeconds) {
+    throw createDeployError(
+      'MIRROR_EXPIRY_TOO_CLOSE',
+      `targetTimestamp must be at least ${minCloseLeadSeconds}s in the future.`,
+      {
+        nowSec,
+        minCloseLeadSeconds,
+        targetTimestamp,
+      },
+    );
   }
 
   const liquidityUsdc = Number(options.liquidityUsdc);
@@ -180,7 +209,7 @@ function buildDeploymentArgs(options = {}) {
     distributionNo,
     feeTier,
     maxImbalance,
-    arbiter: String(options.arbiter || '0x818457C9e2b18D87981CCB09b75AE183D107b257').toLowerCase(),
+    arbiter: String(options.arbiter || '0x0D7B957C47Da86c2968dc52111D633D42cb7a5F7').toLowerCase(),
     category,
   };
 }
@@ -208,6 +237,7 @@ async function deployPandoraAmmMarket(options = {}) {
       usdc,
     },
     tx: null,
+    preflight: null,
     pandora: {
       pollAddress: null,
       marketAddress: null,
@@ -242,18 +272,76 @@ async function deployPandoraAmmMarket(options = {}) {
   ]);
 
   const pollFee = operatorGasFee + protocolFee;
+  const gasReserveWei = parseEther(String(options.gasReserveEth || '0.005'));
+  const liquidityRaw = parseUnits(String(args.liquidityUsdc), 6);
+  const [nativeBalance, usdcBalance, currentAllowance] = await Promise.all([
+    publicClient.getBalance({ address: account.address }),
+    publicClient.readContract({
+      address: usdc,
+      abi: ERC20_ABI,
+      functionName: 'balanceOf',
+      args: [account.address],
+    }),
+    publicClient.readContract({
+      address: usdc,
+      abi: ERC20_ABI,
+      functionName: 'allowance',
+      args: [account.address, factory],
+    }),
+  ]);
 
-  const pollSimulation = await publicClient.simulateContract({
-    account,
-    address: oracle,
-    abi: ORACLE_ABI,
-    functionName: 'createPoll',
-    args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
-    value: pollFee,
-  });
+  payload.preflight = {
+    account: account.address,
+    nativeSymbol: chain.nativeCurrency.symbol,
+    nativeBalance: formatUnits(nativeBalance, 18),
+    nativeRequired: formatUnits(pollFee + gasReserveWei, 18),
+    pollFeeNative: formatUnits(pollFee, 18),
+    gasReserveNative: formatUnits(gasReserveWei, 18),
+    usdcBalance: formatUnits(usdcBalance, 6),
+    usdcRequired: formatUnits(liquidityRaw, 6),
+    usdcAllowance: formatUnits(currentAllowance, 6),
+    allowanceSufficient: currentAllowance >= liquidityRaw,
+  };
 
-  const pollTxHash = await walletClient.writeContract(pollSimulation.request);
-  const pollReceipt = await publicClient.waitForTransactionReceipt({ hash: pollTxHash });
+  if (nativeBalance < pollFee + gasReserveWei) {
+    throw createDeployError(
+      'INSUFFICIENT_NATIVE_BALANCE',
+      `Wallet native balance is insufficient for poll fee + gas reserve (${payload.preflight.nativeRequired} ${chain.nativeCurrency.symbol}).`,
+      payload.preflight,
+    );
+  }
+  if (usdcBalance < liquidityRaw) {
+    throw createDeployError(
+      'INSUFFICIENT_USDC_BALANCE',
+      `Wallet USDC balance is insufficient for liquidity (${payload.preflight.usdcRequired} required).`,
+      payload.preflight,
+    );
+  }
+
+  let pollSimulation;
+  try {
+    pollSimulation = await publicClient.simulateContract({
+      account,
+      address: oracle,
+      abi: ORACLE_ABI,
+      functionName: 'createPoll',
+      args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
+      value: pollFee,
+    });
+  } catch (err) {
+    throw await wrapDeployExecutionError(err, 'POLL_SIMULATION_FAILED', 'createPoll simulation failed.');
+  }
+
+  let pollTxHash;
+  let pollReceipt;
+  try {
+    pollTxHash = await walletClient.writeContract(pollSimulation.request);
+    pollReceipt = await publicClient.waitForTransactionReceipt({ hash: pollTxHash });
+  } catch (err) {
+    throw await wrapDeployExecutionError(err, 'POLL_EXECUTION_FAILED', 'createPoll transaction failed.', {
+      pollTxHash: pollTxHash || null,
+    });
+  }
 
   let pollAddress = pollSimulation.result || null;
   for (const log of pollReceipt.logs || []) {
@@ -277,37 +365,47 @@ async function deployPandoraAmmMarket(options = {}) {
     throw new Error('Unable to resolve poll address from createPoll transaction.');
   }
 
-  const liquidityRaw = parseUnits(String(args.liquidityUsdc), 6);
-  const currentAllowance = await publicClient.readContract({
-    address: usdc,
-    abi: ERC20_ABI,
-    functionName: 'allowance',
-    args: [account.address, factory],
-  });
-
   let approveTxHash = null;
   if (currentAllowance < liquidityRaw) {
-    approveTxHash = await walletClient.writeContract({
-      address: usdc,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [factory, liquidityRaw],
-    });
-    await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+    try {
+      approveTxHash = await walletClient.writeContract({
+        address: usdc,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [factory, liquidityRaw],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+    } catch (err) {
+      throw await wrapDeployExecutionError(err, 'APPROVE_EXECUTION_FAILED', 'USDC approve failed.', {
+        approveTxHash: approveTxHash || null,
+      });
+    }
   }
 
   const distributionHint = [BigInt(args.distributionYes), BigInt(args.distributionNo)];
 
-  const marketSimulation = await publicClient.simulateContract({
-    account,
-    address: factory,
-    abi: FACTORY_ABI,
-    functionName: 'createMarket',
-    args: [pollAddress, usdc, liquidityRaw, distributionHint, args.feeTier, args.maxImbalance],
-  });
+  let marketSimulation;
+  try {
+    marketSimulation = await publicClient.simulateContract({
+      account,
+      address: factory,
+      abi: FACTORY_ABI,
+      functionName: 'createMarket',
+      args: [pollAddress, usdc, liquidityRaw, distributionHint, args.feeTier, args.maxImbalance],
+    });
+  } catch (err) {
+    throw await wrapDeployExecutionError(err, 'MARKET_SIMULATION_FAILED', 'createMarket simulation failed.');
+  }
 
-  const marketTxHash = await walletClient.writeContract(marketSimulation.request);
-  await publicClient.waitForTransactionReceipt({ hash: marketTxHash });
+  let marketTxHash;
+  try {
+    marketTxHash = await walletClient.writeContract(marketSimulation.request);
+    await publicClient.waitForTransactionReceipt({ hash: marketTxHash });
+  } catch (err) {
+    throw await wrapDeployExecutionError(err, 'MARKET_EXECUTION_FAILED', 'createMarket transaction failed.', {
+      marketTxHash: marketTxHash || null,
+    });
+  }
 
   payload.tx = {
     pollTxHash,

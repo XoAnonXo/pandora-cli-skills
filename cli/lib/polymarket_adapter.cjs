@@ -1,12 +1,7 @@
 const { ClobClient, Chain } = require('@polymarket/clob-client');
+const { toNumber } = require('./shared/utils.cjs');
 
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
-
-function toNumber(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return numeric;
-}
 
 function toTimestampSeconds(value) {
   if (!value) return null;

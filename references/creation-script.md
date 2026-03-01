@@ -47,7 +47,7 @@ pandora launch \
   --sources "https://coinmarketcap.com/currencies/bitcoin/" "https://www.coingecko.com/en/coins/bitcoin" \
   --target-timestamp 1798675200 \
   --target-timestamp-offset-hours 1 \
-  --arbiter 0x818457C9e2b18D87981CCB09b75AE183D107b257 \
+  --arbiter 0x0D7B957C47Da86c2968dc52111D633D42cb7a5F7 \
   --category 3 \
   --market-type amm \
   --liquidity 100 \

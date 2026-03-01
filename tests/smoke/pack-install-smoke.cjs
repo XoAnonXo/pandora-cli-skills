@@ -188,7 +188,11 @@ function main() {
 
     const mirrorHelp = runPandora(installedCli, ['mirror', '--help'], { cwd: appDir, env: cleanEnv() });
     ensureExitCode(mirrorHelp, 0, 'pandora mirror --help');
-    ensureOutputContains(mirrorHelp, /mirror plan\|deploy\|verify\|sync\|status/, 'pandora mirror --help');
+    ensureOutputContains(
+      mirrorHelp,
+      /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|simulate\|go\|sync\|status\|close/,
+      'pandora mirror --help',
+    );
 
     const mirrorPlanHelp = runPandora(installedCli, ['mirror', 'plan', '--help'], { cwd: appDir, env: cleanEnv() });
     ensureExitCode(mirrorPlanHelp, 0, 'pandora mirror plan --help');

@@ -1,31 +1,41 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ClobClient, Chain, Side, OrderType } = require('@polymarket/clob-client');
+const crypto = require('crypto');
+const { ClobClient, Chain, Side, OrderType, AssetType } = require('@polymarket/clob-client');
+const { round, toOptionalNumber } = require('./shared/utils.cjs');
 
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
+const DEFAULT_POLYMARKET_GAMMA_URL = 'https://gamma-api.polymarket.com';
 const DEFAULT_POLYMARKET_CHAIN = Chain.POLYGON;
 const POLYMARKET_CACHE_SCHEMA_VERSION = '1.0.0';
+const POLYMARKET_SIG_TYPE_EOA = 0;
+const POLYMARKET_SIG_TYPE_PROXY = 2;
 
-function toNumber(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return numeric;
-}
-
-function round(value, decimals = 6) {
-  if (!Number.isFinite(value)) return null;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
+const tradingClientCache = new Map();
+const derivedCredsCache = new Map();
 
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function isConditionId(value) {
+  return /^0x[a-fA-F0-9]{64}$/.test(String(value || '').trim());
+}
+
+function isValidPrivateKey(value) {
+  return /^0x[a-fA-F0-9]{64}$/.test(String(value || '').trim());
+}
+
 function toStringOrNull(value) {
   const normalized = String(value || '').trim();
   return normalized || null;
+}
+
+function toIntegerOrNull(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.trunc(numeric);
 }
 
 function toTimestampSeconds(value) {
@@ -35,7 +45,8 @@ function toTimestampSeconds(value) {
     return Math.floor(parsed / 1000);
   }
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.floor(numeric) : null;
+  if (!Number.isFinite(numeric)) return null;
+  return numeric > 1e12 ? Math.floor(numeric / 1000) : Math.floor(numeric);
 }
 
 function normalizeHostList(hostInput) {
@@ -49,6 +60,25 @@ function normalizeHostList(hostInput) {
   }
 
   return Array.from(new Set(hosts));
+}
+
+function normalizeGammaBaseUrl(gammaUrl) {
+  const raw = String(gammaUrl || process.env.POLYMARKET_GAMMA_URL || DEFAULT_POLYMARKET_GAMMA_URL).trim();
+  return raw.replace(/\/+$/, '');
+}
+
+function parseMaybeJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value === null || value === undefined) return [];
+
+  const raw = String(value).trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function buildSelectorKey(options = {}) {
@@ -71,6 +101,65 @@ function formatNetworkError(err) {
   return message;
 }
 
+function resolveSignatureType(options = {}) {
+  return options.funder ? POLYMARKET_SIG_TYPE_PROXY : POLYMARKET_SIG_TYPE_EOA;
+}
+
+function hashSensitiveCachePart(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+function buildTradingCacheKey(host, chain, options = {}) {
+  const signatureType = resolveSignatureType(options);
+  return [
+    String(host || ''),
+    String(chain || ''),
+    String(signatureType),
+    String(options.funder || ''),
+    hashSensitiveCachePart(options.privateKey),
+    hashSensitiveCachePart(options.apiKey),
+    hashSensitiveCachePart(options.apiSecret),
+    hashSensitiveCachePart(options.apiPassphrase),
+  ].join('|');
+}
+
+function clearCachedTradingClient(key) {
+  if (!key) return;
+  tradingClientCache.delete(key);
+  derivedCredsCache.delete(key);
+}
+
+function responseContainsError(response) {
+  if (!response || typeof response !== 'object') return false;
+  if (response.error) return true;
+  if (response.err) return true;
+  const status = toIntegerOrNull(response.status);
+  return status !== null && status >= 400;
+}
+
+function responseIndicatesSuccess(response) {
+  if (!response || typeof response !== 'object') return false;
+  if (Object.prototype.hasOwnProperty.call(response, 'success')) {
+    return Boolean(response.success) && !responseContainsError(response);
+  }
+  return !responseContainsError(response);
+}
+
+function classifyAuthFailure(value) {
+  const status =
+    toIntegerOrNull(value && value.status) ||
+    toIntegerOrNull(value && value.code) ||
+    toIntegerOrNull(value && value.response && value.response.status);
+  const text = JSON.stringify(value || '').toLowerCase();
+  return (
+    status === 401 ||
+    status === 403 ||
+    /unauthorized|invalid signature|forbidden|invalid api key|api key/.test(text)
+  );
+}
+
 function readCacheFile(cacheFile) {
   try {
     if (!cacheFile || !fs.existsSync(cacheFile)) return null;
@@ -88,9 +177,26 @@ function writeCacheFile(cacheFile, payload) {
 
   const dir = path.dirname(cacheFile);
   fs.mkdirSync(dir, { recursive: true });
-  const tmpPath = `${cacheFile}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2));
-  fs.renameSync(tmpPath, cacheFile);
+  const tmpPath = `${cacheFile}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  let wroteTmp = false;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), { mode: 0o600 });
+    wroteTmp = true;
+    fs.renameSync(tmpPath, cacheFile);
+    try {
+      fs.chmodSync(cacheFile, 0o600);
+    } catch {
+      // best-effort hardening on platforms that ignore/limit chmod
+    }
+  } finally {
+    if (wroteTmp && fs.existsSync(tmpPath)) {
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
 }
 
 function buildCachePayload(options, host, marketRow, orderbooks = null, sourceType = 'polymarket:clob') {
@@ -169,8 +275,8 @@ function normalizeTokens(tokens) {
     };
   }
 
-  const yesPrice = toNumber(yes.price);
-  const noPrice = toNumber(no.price);
+  const yesPrice = toOptionalNumber(yes.price);
+  const noPrice = toOptionalNumber(no.price);
 
   let yesPct = null;
   let noPct = null;
@@ -222,18 +328,56 @@ function collectRuleSections(row) {
   return sections;
 }
 
+function normalizeTokenIdArray(row) {
+  const arrayFromFields =
+    parseMaybeJsonArray(row && row.clobTokenIds).length
+      ? parseMaybeJsonArray(row && row.clobTokenIds)
+      : parseMaybeJsonArray(row && row.clob_token_ids);
+  return arrayFromFields
+    .map((value) => toStringOrNull(value))
+    .filter(Boolean);
+}
+
+function materializeOutcomeTokens(row) {
+  if (Array.isArray(row && row.tokens) && row.tokens.length) {
+    return row.tokens;
+  }
+
+  const outcomes = parseMaybeJsonArray(row && (row.outcomes || row.outcome_names));
+  const prices = parseMaybeJsonArray(row && (row.outcomePrices || row.outcome_prices));
+  if (outcomes.length < 2 || prices.length < 2) {
+    return [];
+  }
+
+  const tokenIds = normalizeTokenIdArray(row);
+  return [
+    {
+      outcome: outcomes[0],
+      price: prices[0],
+      token_id: tokenIds[0] || null,
+    },
+    {
+      outcome: outcomes[1],
+      price: prices[1],
+      token_id: tokenIds[1] || null,
+    },
+  ];
+}
+
 function extractQuestionText(row) {
   return (
     toStringOrNull(row && row.question) ||
     toStringOrNull(row && row.title) ||
     toStringOrNull(row && row.name) ||
     toStringOrNull(row && row.market_question) ||
-    toStringOrNull(row && row.marketQuestion)
+    toStringOrNull(row && row.marketQuestion) ||
+    toStringOrNull(row && row.shortQuestion) ||
+    toStringOrNull(row && row.short_question)
   );
 }
 
 function normalizeMarketRow(row) {
-  const tokens = normalizeTokens(row && row.tokens);
+  const tokens = normalizeTokens(materializeOutcomeTokens(row));
   const rulesSections = collectRuleSections(row);
   const resolved = Boolean(row && (row.resolved === true || row.closed === true || row.archived === true));
   let active = true;
@@ -246,22 +390,45 @@ function normalizeMarketRow(row) {
   }
   return {
     marketId: String(
-      (row && (row.condition_id || row.question_id || row.id || row.market_id || row.slug || row.market_slug)) || '',
+      (row &&
+        (row.condition_id ||
+          row.conditionId ||
+          row.question_id ||
+          row.questionId ||
+          row.id ||
+          row.market_id ||
+          row.marketId ||
+          row.slug ||
+          row.market_slug ||
+          row.marketSlug)) ||
+        '',
     ).trim() || null,
-    slug: String((row && (row.market_slug || row.slug)) || '').trim() || null,
+    slug: String((row && (row.market_slug || row.marketSlug || row.slug)) || '').trim() || null,
     question: extractQuestionText(row),
     description: rulesSections.length ? rulesSections.join('\n\n') : null,
-    closeTimestamp: toTimestampSeconds(row && (row.end_date_iso || row.game_start_time || row.endDate || row.closeTime)),
+    closeTimestamp: toTimestampSeconds(
+      row &&
+        (row.end_date_iso ||
+          row.endDate ||
+          row.end_date ||
+          row.endDateIso ||
+          row.accepting_orders_timestamp ||
+          row.game_start_time ||
+          row.closeTime),
+    ),
     yesPct: tokens.yes,
     noPct: tokens.no,
     yesTokenId: tokens.yesTokenId,
     noTokenId: tokens.noTokenId,
-    volume24hUsd: toNumber(row && (row.volume24hr || row.volume_24hr || row.volume24h || row.one_day_volume || 0)) || 0,
-    volumeTotalUsd: toNumber(row && (row.volume || row.total_volume || row.totalVolume || 0)) || 0,
-    liquidityUsd: toNumber(row && (row.liquidity || row.liquidity_num || row.totalLiquidity || 0)) || 0,
+    volume24hUsd: toOptionalNumber(row && (row.volume24hr || row.volume_24hr || row.volume24h || row.one_day_volume || row.oneDayVolume || 0)) || 0,
+    volumeTotalUsd: toOptionalNumber(row && (row.volume || row.total_volume || row.totalVolume || row.volumeNum || 0)) || 0,
+    liquidityUsd: toOptionalNumber(row && (row.liquidity || row.liquidity_num || row.totalLiquidity || 0)) || 0,
     active,
     resolved,
-    url: row && row.market_slug ? `https://polymarket.com/event/${row.market_slug}` : null,
+    url:
+      row && (row.market_slug || row.marketSlug || row.slug)
+        ? `https://polymarket.com/event/${row.market_slug || row.marketSlug || row.slug}`
+        : null,
     diagnostics: tokens.diagnostics,
     raw: row,
   };
@@ -294,16 +461,139 @@ function marketMatches(row, options) {
 
   if (!idNeedle && !slugNeedle) return true;
 
-  const idCandidates = [row.condition_id, row.question_id, row.id, row.market_id]
+  const idCandidates = [row.condition_id, row.conditionId, row.question_id, row.questionId, row.id, row.market_id, row.marketId]
     .map((value) => normalizeText(value))
     .filter(Boolean);
-  const slugCandidates = [row.market_slug, row.slug].map((value) => normalizeText(value)).filter(Boolean);
+  const slugCandidates = [row.market_slug, row.marketSlug, row.slug].map((value) => normalizeText(value)).filter(Boolean);
 
   if (idNeedle && idCandidates.includes(idNeedle)) return true;
   if (slugNeedle && slugCandidates.includes(slugNeedle)) return true;
   return false;
 }
 
+function parseMarketsPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.markets)) return payload.markets;
+  if (payload && payload.data && Array.isArray(payload.data.markets)) return payload.data.markets;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  return [];
+}
+
+async function fetchJson(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callWithTimeout(work, timeoutMs, label) {
+  const limitMs = Number.isInteger(timeoutMs) && timeoutMs > 0 ? timeoutMs : null;
+  if (!limitMs) {
+    return work(undefined);
+  }
+
+  const abortController = new AbortController();
+  let timer = null;
+  try {
+    return await Promise.race([
+      work(abortController.signal),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          // Best-effort cancellation: this only interrupts clients that support AbortSignal.
+          abortController.abort();
+          reject(new Error(`${label} timed out after ${limitMs}ms`));
+        }, limitMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function buildGammaUrl(baseUrl, params) {
+  const url = new URL(`${baseUrl}/markets`);
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === null || value === undefined || value === '') continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url.toString();
+}
+
+async function fetchGammaRows(params, options = {}, diagnostics = []) {
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const gammaUrl = normalizeGammaBaseUrl(options.gammaUrl);
+  const targetUrl = options.gammaMockUrl || buildGammaUrl(gammaUrl, params);
+  try {
+    const payload = await fetchJson(targetUrl, timeoutMs);
+    return parseMarketsPayload(payload);
+  } catch (err) {
+    diagnostics.push(`Gamma request failed (${targetUrl}): ${formatNetworkError(err)}`);
+    return [];
+  }
+}
+
+function extractConditionId(row) {
+  const value = toStringOrNull(
+    row &&
+      (row.condition_id ||
+        row.conditionId ||
+        row.market_id ||
+        row.marketId ||
+        row.question_id ||
+        row.questionId),
+  );
+  return value;
+}
+
+async function resolveByClobDirect(conditionId, hosts, options, diagnostics, timeoutMs) {
+  const hostErrors = [];
+  for (const candidateHost of hosts) {
+    try {
+      const client =
+        typeof options.clientFactory === 'function'
+          ? options.clientFactory(candidateHost, DEFAULT_POLYMARKET_CHAIN)
+          : new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+      if (!client || typeof client.getMarket !== 'function') {
+        throw new Error('CLOB client does not expose getMarket.');
+      }
+      const market = await callWithTimeout(
+        (_signal) => client.getMarket(conditionId),
+        timeoutMs,
+        `Polymarket getMarket(${conditionId})`,
+      );
+      if (!market) continue;
+      return {
+        row: market,
+        host: candidateHost,
+      };
+    } catch (err) {
+      hostErrors.push(`[${candidateHost}] ${formatNetworkError(err)}`);
+    }
+  }
+
+  if (hostErrors.length) {
+    diagnostics.push(`Polymarket direct getMarket failed: ${hostErrors.join(' | ')}`);
+  }
+  return null;
+}
+
+/**
+ * Resolve one Polymarket market snapshot from CLOB/Gamma/mock/cache sources.
+ * Normalized `yesPct`/`noPct` values are percentages (`0..100`).
+ * @param {object} [options]
+ * @returns {Promise<object>}
+ */
 async function resolvePolymarketMarket(options = {}) {
   const hosts = normalizeHostList(options.host || options.hosts || process.env.POLYMARKET_HOSTS || DEFAULT_POLYMARKET_HOST);
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
@@ -338,53 +628,92 @@ async function resolvePolymarketMarket(options = {}) {
       throw err;
     }
   } else {
+    let gammaRow = null;
+    if (selectorMode) {
+      const gammaRowsBySelector = options.slug
+        ? await fetchGammaRows({ slug: options.slug, limit: 5, active: true }, options, diagnostics)
+        : await fetchGammaRows({ condition_ids: options.marketId, limit: 5 }, options, diagnostics);
+      gammaRow = gammaRowsBySelector.find((row) => marketMatches(row, options)) || null;
+      if (!gammaRow && gammaRowsBySelector.length) {
+        diagnostics.push('Gamma returned candidate rows but none matched the selector exactly; continuing with CLOB lookup.');
+      }
+    }
+
+    let directConditionId = null;
+    if (isConditionId(options.marketId)) {
+      directConditionId = options.marketId;
+    } else if (gammaRow) {
+      directConditionId = extractConditionId(gammaRow);
+    }
+
+    if (directConditionId && isConditionId(directConditionId)) {
+      const direct = await resolveByClobDirect(directConditionId, hosts, options, diagnostics, timeoutMs);
+      if (direct && direct.row) {
+        rows = [direct.row];
+        hostUsed = direct.host;
+        sourceType = 'polymarket:clob-direct';
+      }
+    }
+
+    if (!rows.length && gammaRow) {
+      rows = [gammaRow];
+      sourceType = 'polymarket:gamma';
+      hostUsed = normalizeGammaBaseUrl(options.gammaUrl);
+    }
+
     const hostErrors = [];
-    for (const candidateHost of hosts) {
-      try {
-        const client = typeof options.clientFactory === 'function'
-          ? options.clientFactory(candidateHost, DEFAULT_POLYMARKET_CHAIN)
-          : new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
-        let cursor;
-        let loops = 0;
-        const candidateRows = [];
-        let matchedRow = null;
+    if (!rows.length) {
+      for (const candidateHost of hosts) {
+        try {
+          const client = typeof options.clientFactory === 'function'
+            ? options.clientFactory(candidateHost, DEFAULT_POLYMARKET_CHAIN)
+            : new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+          let cursor;
+          let loops = 0;
+          const candidateRows = [];
+          let matchedRow = null;
 
-        while (loops < maxPages) {
-          loops += 1;
-          const page = cursor ? await client.getMarkets(cursor) : await client.getMarkets();
-          const chunk = Array.isArray(page && page.data) ? page.data : [];
+          while (loops < maxPages) {
+            loops += 1;
+            const page = await callWithTimeout(
+              (_signal) => (cursor ? client.getMarkets(cursor) : client.getMarkets()),
+              timeoutMs,
+              `Polymarket getMarkets(${candidateHost})`,
+            );
+            const chunk = Array.isArray(page && page.data) ? page.data : [];
 
-          if (selectorMode) {
-            matchedRow = chunk.find((row) => marketMatches(row, options)) || null;
-            if (matchedRow) {
-              candidateRows.push(matchedRow);
+            if (selectorMode) {
+              matchedRow = chunk.find((row) => marketMatches(row, options)) || null;
+              if (matchedRow) {
+                candidateRows.push(matchedRow);
+                break;
+              }
+            } else {
+              candidateRows.push(...chunk);
+            }
+
+            if (!selectorMode && candidateRows.length >= limit) {
               break;
             }
-          } else {
-            candidateRows.push(...chunk);
+
+            if (!page || !page.next_cursor || page.next_cursor === cursor) {
+              break;
+            }
+            cursor = page.next_cursor;
           }
 
-          if (!selectorMode && candidateRows.length >= limit) {
+          if (selectorMode && loops >= maxPages && !candidateRows.length) {
+            diagnostics.push(`Polymarket scan reached max pages (${maxPages}) without selector match on host ${candidateHost}.`);
+          }
+
+          rows = candidateRows;
+          hostUsed = candidateHost;
+          if (rows.length) {
             break;
           }
-
-          if (!page || !page.next_cursor || page.next_cursor === cursor) {
-            break;
-          }
-          cursor = page.next_cursor;
+        } catch (err) {
+          hostErrors.push(`[${candidateHost}] ${formatNetworkError(err)}`);
         }
-
-        if (selectorMode && loops >= maxPages && !candidateRows.length) {
-          diagnostics.push(`Polymarket scan reached max pages (${maxPages}) without selector match on host ${candidateHost}.`);
-        }
-
-        rows = candidateRows;
-        hostUsed = candidateHost;
-        if (rows.length) {
-          break;
-        }
-      } catch (err) {
-        hostErrors.push(`[${candidateHost}] ${formatNetworkError(err)}`);
       }
     }
 
@@ -438,14 +767,14 @@ function normalizeOrderbook(book) {
 
   const bids = Array.isArray(book.bids)
     ? book.bids
-        .map((entry) => ({ price: toNumber(entry && entry.price), size: toNumber(entry && entry.size) }))
+        .map((entry) => ({ price: toOptionalNumber(entry && entry.price), size: toOptionalNumber(entry && entry.size) }))
         .filter((entry) => entry.price !== null && entry.size !== null && entry.size > 0)
         .sort((a, b) => b.price - a.price)
     : [];
 
   const asks = Array.isArray(book.asks)
     ? book.asks
-        .map((entry) => ({ price: toNumber(entry && entry.price), size: toNumber(entry && entry.size) }))
+        .map((entry) => ({ price: toOptionalNumber(entry && entry.price), size: toOptionalNumber(entry && entry.size) }))
         .filter((entry) => entry.price !== null && entry.size !== null && entry.size > 0)
         .sort((a, b) => a.price - b.price)
     : [];
@@ -461,6 +790,21 @@ function normalizeOrderbook(book) {
   };
 }
 
+/**
+ * Estimate executable depth under a slippage cap.
+ * `depthUsd` is USD notional and `depthShares` is token size.
+ * @param {{bids?: Array<{price: number, size: number}>, asks?: Array<{price: number, size: number}>}} orderbook
+ * @param {'buy'|'sell'} side
+ * @param {number} slippageBps Slippage tolerance in basis points.
+ * @returns {{
+ *   depthUsd: number,
+ *   depthShares: number,
+ *   worstPrice: number|null,
+ *   midPrice: number|null,
+ *   referencePrice: number|undefined,
+ *   diagnostics: string[]
+ * }}
+ */
 function calculateExecutableDepthUsd(orderbook, side, slippageBps) {
   const normalized = normalizeOrderbook(orderbook);
   const mid = normalized.midPrice;
@@ -476,7 +820,15 @@ function calculateExecutableDepthUsd(orderbook, side, slippageBps) {
 
   const limitPriceFactor = slippageBps / 10_000;
   const entries = side === 'buy' ? normalized.asks : normalized.bids;
-  const priceLimit = side === 'buy' ? mid * (1 + limitPriceFactor) : mid * (1 - limitPriceFactor);
+  const bestBid = normalized.bids.length ? normalized.bids[0].price : null;
+  const bestAsk = normalized.asks.length ? normalized.asks[0].price : null;
+  const referencePrice =
+    side === 'buy'
+      ? (bestAsk !== null ? bestAsk : mid)
+      : (bestBid !== null ? bestBid : mid);
+  const priceLimit = side === 'buy'
+    ? referencePrice * (1 + limitPriceFactor)
+    : referencePrice * (1 - limitPriceFactor);
 
   let depthUsd = 0;
   let depthShares = 0;
@@ -495,11 +847,12 @@ function calculateExecutableDepthUsd(orderbook, side, slippageBps) {
     depthShares: round(depthShares, 6) || 0,
     worstPrice: worstPrice === null ? null : round(worstPrice, 8),
     midPrice: round(mid, 8),
+    referencePrice: round(referencePrice, 8),
     diagnostics: [],
   };
 }
 
-async function getOrderbook(clientOrOptions, tokenId, fallbackOrderbooks = null) {
+async function getOrderbook(clientOrOptions, tokenId, fallbackOrderbooks = null, timeoutMs = null) {
   if (!tokenId) return null;
 
   if (fallbackOrderbooks && typeof fallbackOrderbooks === 'object' && fallbackOrderbooks[tokenId]) {
@@ -510,11 +863,23 @@ async function getOrderbook(clientOrOptions, tokenId, fallbackOrderbooks = null)
     return null;
   }
 
-  return clientOrOptions.getOrderBook(tokenId);
+  return callWithTimeout(
+    (_signal) => clientOrOptions.getOrderBook(tokenId),
+    timeoutMs,
+    `Polymarket getOrderBook(${tokenId})`,
+  );
 }
 
+/**
+ * Fetch YES/NO orderbooks for a market and compute depth metrics.
+ * Returned depth fields are USD notional at the configured `slippageBps`.
+ * @param {object} market
+ * @param {object} [options]
+ * @returns {Promise<object>}
+ */
 async function fetchDepthForMarket(market, options = {}) {
   const slippageBps = Number.isFinite(Number(options.slippageBps)) ? Number(options.slippageBps) : 100;
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const diagnostics = [];
   const hosts = normalizeHostList(options.host || options.hosts || process.env.POLYMARKET_HOSTS || DEFAULT_POLYMARKET_HOST);
   const cacheFile =
@@ -534,8 +899,8 @@ async function fetchDepthForMarket(market, options = {}) {
     for (const candidateHost of hosts) {
       try {
         const client = new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
-        const yesFromHost = await getOrderbook(client, market.yesTokenId, null);
-        const noFromHost = await getOrderbook(client, market.noTokenId, null);
+        const yesFromHost = await getOrderbook(client, market.yesTokenId, null, timeoutMs);
+        const noFromHost = await getOrderbook(client, market.noTokenId, null, timeoutMs);
         yesBook = yesFromHost || yesBook;
         noBook = noFromHost || noBook;
         if (yesFromHost || noFromHost) {
@@ -575,7 +940,11 @@ async function fetchDepthForMarket(market, options = {}) {
   const noDepth = noBook ? calculateExecutableDepthUsd(noBook, 'buy', slippageBps) : null;
 
   const candidates = [yesDepth && yesDepth.depthUsd, noDepth && noDepth.depthUsd].filter((value) => Number.isFinite(value));
-  const depthWithinSlippageUsd = candidates.length ? Math.min(...candidates) : 0;
+  const minDepthWithinSlippageUsd = candidates.length ? Math.min(...candidates) : 0;
+  const bestDepthWithinSlippageUsd = candidates.length ? Math.max(...candidates) : 0;
+  // Keep the legacy/conservative aggregate as min depth (used by sizing paths),
+  // while exposing best-depth separately for hedge-side diagnostics.
+  const depthWithinSlippageUsd = minDepthWithinSlippageUsd;
 
   if (!yesDepth) diagnostics.push('YES token orderbook unavailable.');
   if (!noDepth) diagnostics.push('NO token orderbook unavailable.');
@@ -609,6 +978,8 @@ async function fetchDepthForMarket(market, options = {}) {
     slippageBps,
     host: hostUsed || null,
     depthWithinSlippageUsd: round(depthWithinSlippageUsd, 6) || 0,
+    minDepthWithinSlippageUsd: round(minDepthWithinSlippageUsd, 6) || 0,
+    bestDepthWithinSlippageUsd: round(bestDepthWithinSlippageUsd, 6) || 0,
     yesDepth,
     noDepth,
     cacheFile,
@@ -616,9 +987,113 @@ async function fetchDepthForMarket(market, options = {}) {
   };
 }
 
+/**
+ * Browse active Polymarket markets with probability/liquidity filters.
+ * Returned `yesPct`/`noPct` values are percentages (`0..100`).
+ * @param {object} [options]
+ * @returns {Promise<object>}
+ */
+async function browsePolymarketMarkets(options = {}) {
+  const diagnostics = [];
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const requestedLimit = Number.isInteger(Number(options.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 10;
+  const scanLimit = Math.max(requestedLimit * 5, 100);
+
+  let rows = [];
+  if (options.mockUrl) {
+    const payload = await fetchMockPayload(options.mockUrl, timeoutMs);
+    rows = parseMarketsPayload(payload);
+  } else {
+    rows = await fetchGammaRows(
+      {
+        active: true,
+        closed: false,
+        limit: Math.min(scanLimit, 500),
+      },
+      options,
+      diagnostics,
+    );
+  }
+
+  const minYesPct = toOptionalNumber(options.minYesPct);
+  const maxYesPct = toOptionalNumber(options.maxYesPct);
+  const minVolume24h = toOptionalNumber(options.minVolume24h) || 0;
+  const closesAfter = toTimestampSeconds(options.closesAfter);
+  const closesBefore = toTimestampSeconds(options.closesBefore);
+  const questionContains = normalizeText(options.questionContains);
+
+  const normalized = rows.map((row) => normalizeMarketRow(row));
+  const filtered = normalized.filter((item) => {
+    if (item.active === false || item.resolved) return false;
+    if (minYesPct !== null && toOptionalNumber(item.yesPct) !== null && toOptionalNumber(item.yesPct) < minYesPct) return false;
+    if (maxYesPct !== null && toOptionalNumber(item.yesPct) !== null && toOptionalNumber(item.yesPct) > maxYesPct) return false;
+    if ((toOptionalNumber(item.volume24hUsd) || 0) < minVolume24h) return false;
+    if (closesAfter !== null && toIntegerOrNull(item.closeTimestamp) !== null && toIntegerOrNull(item.closeTimestamp) < closesAfter) return false;
+    if (closesBefore !== null && toIntegerOrNull(item.closeTimestamp) !== null && toIntegerOrNull(item.closeTimestamp) > closesBefore) return false;
+    if (questionContains && !normalizeText(item.question).includes(questionContains)) return false;
+    return true;
+  });
+
+  filtered.sort((left, right) => (toOptionalNumber(right.volume24hUsd) || 0) - (toOptionalNumber(left.volume24hUsd) || 0));
+
+  const items = filtered.slice(0, requestedLimit).map((item) => ({
+    marketId: item.marketId,
+    slug: item.slug,
+    question: item.question,
+    closeTimestamp: item.closeTimestamp,
+    yesPct: item.yesPct,
+    noPct: item.noPct,
+    volume24hUsd: round(item.volume24hUsd, 6),
+    liquidityUsd: round(item.liquidityUsd, 6),
+    active: item.active,
+    resolved: item.resolved,
+    url: item.url,
+    sourceType: item.source || (options.mockUrl ? 'polymarket:mock' : 'polymarket:gamma'),
+  }));
+
+  const gammaApiError =
+    diagnostics.find((line) => /^Gamma request failed/i.test(String(line || ''))) || null;
+
+  return {
+    schemaVersion: '1.0.0',
+    generatedAt: new Date().toISOString(),
+    source: options.mockUrl ? 'polymarket:mock' : 'polymarket:gamma',
+    filters: {
+      minYesPct,
+      maxYesPct,
+      minVolume24h,
+      closesAfter,
+      closesBefore,
+      questionContains: options.questionContains || null,
+      limit: requestedLimit,
+    },
+    count: items.length,
+    items,
+    gammaApiError,
+    diagnostics,
+  };
+}
+
+/**
+ * Read Polymarket trading credentials from environment variables.
+ * `privateKey` is validated; API credentials are returned as-is.
+ * @param {Record<string, string|undefined>} [env=process.env]
+ * @returns {{
+ *   privateKey: string|null,
+ *   privateKeyInvalid: boolean,
+ *   funder: string|null,
+ *   apiKey: string|null,
+ *   apiSecret: string|null,
+ *   apiPassphrase: string|null,
+ *   host: string
+ * }}
+ */
 function readTradingCredsFromEnv(env = process.env) {
+  const rawPrivateKey = String(env.POLYMARKET_PRIVATE_KEY || '').trim();
+  const privateKey = rawPrivateKey && isValidPrivateKey(rawPrivateKey) ? rawPrivateKey : null;
   const creds = {
-    privateKey: env.POLYMARKET_PRIVATE_KEY || env.PRIVATE_KEY || null,
+    privateKey,
+    privateKeyInvalid: Boolean(rawPrivateKey && !privateKey),
     funder: env.POLYMARKET_FUNDER || null,
     apiKey: env.POLYMARKET_API_KEY || null,
     apiSecret: env.POLYMARKET_API_SECRET || null,
@@ -628,9 +1103,418 @@ function readTradingCredsFromEnv(env = process.env) {
   return creds;
 }
 
+/**
+ * Normalize price/probability input to decimal probability in `[0,1]`.
+ * Accepts fractions (`0..1`) or percent values (`0..100`).
+ * @param {*} value
+ * @returns {number|null}
+ */
+function toPrice01(value) {
+  const numeric = toOptionalNumber(value);
+  if (numeric === null) return null;
+  if (numeric >= 0 && numeric <= 1) return round(numeric, 8);
+  if (numeric > 1 && numeric <= 100) return round(numeric / 100, 8);
+  return null;
+}
+
+function dedupeDiagnostics(lines) {
+  const seen = new Set();
+  const output = [];
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const text = String(line || '').trim();
+    if (!text) continue;
+    if (seen.has(text)) continue;
+    seen.add(text);
+    output.push(text);
+  }
+  return output;
+}
+
+/**
+ * Derive remaining order size in token shares from mixed order fields.
+ * @param {object} order
+ * @returns {number|null}
+ */
+function deriveRemainingOrderSize(order) {
+  if (!order || typeof order !== 'object') return null;
+
+  const explicitRemaining = toOptionalNumber(order.remaining_size || order.remainingSize || order.remaining);
+  if (explicitRemaining !== null) {
+    return Math.max(0, explicitRemaining);
+  }
+
+  const original = toOptionalNumber(order.original_size || order.originalSize || order.size || order.amount);
+  if (original === null) return null;
+  const matched = toOptionalNumber(order.size_matched || order.sizeMatched || 0);
+  if (matched === null) return Math.max(0, original);
+  return Math.max(0, original - matched);
+}
+
+function pickFirstArray(values) {
+  for (const candidate of values) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+  return null;
+}
+
+function pickFirstObject(values) {
+  for (const candidate of values) {
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function extractMockPositionData(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return { balancesByToken: null, openOrders: null };
+  }
+
+  return {
+    balancesByToken: pickFirstObject([
+      payload.balances,
+      payload.positionBalances,
+      payload.data && payload.data.balances,
+      payload.data && payload.data.positionBalances,
+      payload.position && payload.position.balances,
+    ]),
+    openOrders: pickFirstArray([
+      payload.openOrders,
+      payload.orders,
+      payload.data && payload.data.openOrders,
+      payload.data && payload.data.orders,
+      payload.position && payload.position.openOrders,
+    ]),
+  };
+}
+
+/**
+ * Build a normalized Polymarket position summary.
+ * Balances are token shares; prices are probabilities in `[0,1]`;
+ * USD outputs are `openOrdersNotionalUsd` and `estimatedValueUsd`.
+ * @param {object} [options]
+ * @returns {{
+ *   yesBalance: number|null,
+ *   noBalance: number|null,
+ *   openOrdersCount: number|null,
+ *   openOrdersNotionalUsd: number|null,
+ *   estimatedValueUsd: number|null,
+ *   positionDeltaApprox: number|null,
+ *   prices: { yes: number|null, no: number|null },
+ *   diagnostics: string[]
+ * }}
+ */
+function normalizePolymarketPositionSummary(options = {}) {
+  const diagnostics = Array.isArray(options.diagnostics) ? [...options.diagnostics] : [];
+  const marketId = toStringOrNull(options.marketId);
+  const yesTokenId = toStringOrNull(options.yesTokenId);
+  const noTokenId = toStringOrNull(options.noTokenId);
+  const yesPrice = toPrice01(options.yesPrice);
+  const noPriceInput = options.noPrice === undefined || options.noPrice === null ? null : options.noPrice;
+  const noPriceFromYes = yesPrice !== null ? round(1 - yesPrice, 8) : null;
+  const noPrice = noPriceInput === null ? noPriceFromYes : toPrice01(noPriceInput);
+  const balancesByToken =
+    options.balancesByToken && typeof options.balancesByToken === 'object' ? options.balancesByToken : null;
+  const openOrders = Array.isArray(options.openOrders) ? options.openOrders : null;
+
+  const readBalance = (tokenId, sideLabel) => {
+    if (!tokenId) {
+      diagnostics.push(`Missing ${sideLabel} token id; cannot query ${sideLabel} balance.`);
+      return null;
+    }
+    if (!balancesByToken) {
+      diagnostics.push(`${sideLabel} balance unavailable (no balance payload).`);
+      return null;
+    }
+
+    const sideKey = sideLabel.toLowerCase();
+    const rawValue = Object.prototype.hasOwnProperty.call(balancesByToken, tokenId)
+      ? balancesByToken[tokenId]
+      : balancesByToken[sideKey];
+    const rawBalance = rawValue && typeof rawValue === 'object' && rawValue.balance !== undefined
+      ? rawValue.balance
+      : rawValue;
+    const numeric = toOptionalNumber(rawBalance);
+    if (numeric === null) {
+      diagnostics.push(`${sideLabel} balance missing or invalid.`);
+      return null;
+    }
+    return round(numeric, 6);
+  };
+
+  const yesBalance = readBalance(yesTokenId, 'YES');
+  const noBalance = readBalance(noTokenId, 'NO');
+
+  let scopedOrders = null;
+  let openOrdersCount = null;
+  let openOrdersNotionalUsd = null;
+  if (openOrders) {
+    const marketNeedle = normalizeText(marketId);
+    const tokenNeedles = new Set(
+      [yesTokenId, noTokenId]
+        .map((tokenId) => normalizeText(tokenId))
+        .filter(Boolean),
+    );
+
+    scopedOrders = openOrders.filter((order) => {
+      if (!order || typeof order !== 'object') return false;
+      if (!marketNeedle && !tokenNeedles.size) return true;
+      const orderMarket = normalizeText(order.market || order.condition_id || order.conditionId);
+      const orderAsset = normalizeText(order.asset_id || order.assetId || order.token_id || order.tokenId);
+      const marketMatch = marketNeedle ? orderMarket === marketNeedle : false;
+      const tokenMatch = tokenNeedles.size ? tokenNeedles.has(orderAsset) : false;
+      return marketMatch || tokenMatch;
+    });
+
+    openOrdersCount = scopedOrders.length;
+    if (scopedOrders.length) {
+      let totalNotional = 0;
+      let seenValidNotional = false;
+      for (const order of scopedOrders) {
+        const price = toOptionalNumber(order.price);
+        const remainingSize = deriveRemainingOrderSize(order);
+        if (price === null || remainingSize === null) continue;
+        totalNotional += price * remainingSize;
+        seenValidNotional = true;
+      }
+      if (seenValidNotional) {
+        openOrdersNotionalUsd = round(totalNotional, 6);
+      } else {
+        diagnostics.push('Open orders notional unavailable (missing price/size fields).');
+      }
+    } else {
+      openOrdersNotionalUsd = 0;
+    }
+  } else {
+    diagnostics.push('Open orders unavailable (no orders payload).');
+  }
+
+  let estimatedValueUsd = null;
+  let estimatedValueComponents = 0;
+  let estimatedValueAccumulator = 0;
+
+  if (yesBalance !== null && yesPrice !== null) {
+    estimatedValueAccumulator += yesBalance * yesPrice;
+    estimatedValueComponents += 1;
+  }
+  if (noBalance !== null && noPrice !== null) {
+    estimatedValueAccumulator += noBalance * noPrice;
+    estimatedValueComponents += 1;
+  }
+
+  if (estimatedValueComponents > 0) {
+    estimatedValueUsd = round(estimatedValueAccumulator, 6);
+    if (estimatedValueComponents < 2) {
+      diagnostics.push('Estimated value uses partial YES/NO pricing coverage.');
+    }
+  } else {
+    diagnostics.push('Estimated value unavailable (missing balances or prices).');
+  }
+
+  const positionDeltaApprox =
+    yesBalance !== null && noBalance !== null ? round(yesBalance - noBalance, 6) : null;
+
+  return {
+    yesBalance,
+    noBalance,
+    openOrdersCount,
+    openOrdersNotionalUsd,
+    estimatedValueUsd,
+    positionDeltaApprox,
+    prices: {
+      yes: yesPrice,
+      no: noPrice,
+    },
+    diagnostics: dedupeDiagnostics(diagnostics),
+  };
+}
+
+/**
+ * Fetch/compose a position summary for a Polymarket market.
+ * Accepts direct balances/orders, mock payloads, or authenticated API reads.
+ * @param {object} [options]
+ * @returns {Promise<ReturnType<typeof normalizePolymarketPositionSummary>>}
+ */
+async function fetchPolymarketPositionSummary(options = {}) {
+  const market = options.market && typeof options.market === 'object' ? options.market : {};
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const diagnostics = [];
+  const baseSummary = {
+    marketId: options.marketId || market.marketId || null,
+    yesTokenId: options.yesTokenId || market.yesTokenId || null,
+    noTokenId: options.noTokenId || market.noTokenId || null,
+    yesPrice: options.yesPrice !== undefined ? options.yesPrice : market.yesPct,
+    noPrice: options.noPrice !== undefined ? options.noPrice : market.noPct,
+  };
+
+  if (options.balancesByToken || Array.isArray(options.openOrders)) {
+    return normalizePolymarketPositionSummary({
+      ...baseSummary,
+      balancesByToken: options.balancesByToken || null,
+      openOrders: Array.isArray(options.openOrders) ? options.openOrders : null,
+      diagnostics,
+    });
+  }
+
+  if (options.mockUrl) {
+    try {
+      const payload = await fetchMockPayload(options.mockUrl, timeoutMs);
+      const mockData = extractMockPositionData(payload);
+      const summaryFromMock = normalizePolymarketPositionSummary({
+        ...baseSummary,
+        balancesByToken: mockData.balancesByToken,
+        openOrders: mockData.openOrders,
+        diagnostics: diagnostics.concat('Loaded Polymarket position summary from mock payload.'),
+      });
+      return summaryFromMock;
+    } catch (err) {
+      diagnostics.push(`Polymarket mock position fetch failed: ${formatNetworkError(err)}`);
+    }
+  }
+
+  const envCreds = readTradingCredsFromEnv(options.env || process.env);
+  if (!options.privateKey && envCreds.privateKeyInvalid) {
+    diagnostics.push('POLYMARKET_PRIVATE_KEY is set but invalid (expected 0x + 64 hex chars).');
+  }
+  const privateKey = options.privateKey || envCreds.privateKey;
+  const funder = options.funder || envCreds.funder;
+  const apiKey = options.apiKey || envCreds.apiKey;
+  const apiSecret = options.apiSecret || envCreds.apiSecret;
+  const apiPassphrase = options.apiPassphrase || envCreds.apiPassphrase;
+  const host = options.host || envCreds.host || DEFAULT_POLYMARKET_HOST;
+  const chain = options.chain || DEFAULT_POLYMARKET_CHAIN;
+
+  if (!privateKey) {
+    diagnostics.push('POLYMARKET_PRIVATE_KEY not configured; skipping authenticated Polymarket position lookup.');
+    return normalizePolymarketPositionSummary({
+      ...baseSummary,
+      balancesByToken: null,
+      openOrders: null,
+      diagnostics,
+    });
+  }
+
+  let client = options.client || null;
+  if (!client) {
+    try {
+      client = await buildTradingClient({
+        host,
+        chain,
+        privateKey,
+        funder,
+        apiKey,
+        apiSecret,
+        apiPassphrase,
+      });
+    } catch (err) {
+      diagnostics.push(`Unable to initialize Polymarket trading client: ${formatNetworkError(err)}`);
+      return normalizePolymarketPositionSummary({
+        ...baseSummary,
+        balancesByToken: null,
+        openOrders: null,
+        diagnostics,
+      });
+    }
+  }
+
+  const balancesByToken = {};
+  const fetchBalance = async (tokenId, sideLabel) => {
+    if (!tokenId) return;
+    try {
+      const response = await callWithTimeout(
+        (_signal) =>
+          client.getBalanceAllowance({
+            asset_type: AssetType.CONDITIONAL,
+            token_id: tokenId,
+          }),
+        timeoutMs,
+        `Polymarket getBalanceAllowance(${tokenId})`,
+      );
+      if (responseContainsError(response)) {
+        diagnostics.push(
+          `${sideLabel} balance lookup failed: ${response && response.error ? response.error : `HTTP ${response && response.status ? response.status : 'error'}`}.`,
+        );
+        return;
+      }
+      if (response && response.balance !== undefined) {
+        balancesByToken[tokenId] = response.balance;
+      } else {
+        diagnostics.push(`${sideLabel} balance response missing balance field.`);
+      }
+    } catch (err) {
+      diagnostics.push(`${sideLabel} balance lookup failed: ${formatNetworkError(err)}`);
+    }
+  };
+
+  await Promise.all([
+    fetchBalance(baseSummary.yesTokenId, 'YES'),
+    fetchBalance(baseSummary.noTokenId, 'NO'),
+  ]);
+
+  let openOrders = null;
+  try {
+    if (baseSummary.marketId) {
+      openOrders = await callWithTimeout(
+        (_signal) => client.getOpenOrders({ market: baseSummary.marketId }),
+        timeoutMs,
+        `Polymarket getOpenOrders(market:${baseSummary.marketId})`,
+      );
+    } else {
+      const grouped = [];
+      if (baseSummary.yesTokenId) {
+        grouped.push(
+          await callWithTimeout(
+            (_signal) => client.getOpenOrders({ asset_id: baseSummary.yesTokenId }),
+            timeoutMs,
+            `Polymarket getOpenOrders(asset:${baseSummary.yesTokenId})`,
+          ),
+        );
+      }
+      if (baseSummary.noTokenId && baseSummary.noTokenId !== baseSummary.yesTokenId) {
+        grouped.push(
+          await callWithTimeout(
+            (_signal) => client.getOpenOrders({ asset_id: baseSummary.noTokenId }),
+            timeoutMs,
+            `Polymarket getOpenOrders(asset:${baseSummary.noTokenId})`,
+          ),
+        );
+      }
+      const dedup = new Map();
+      for (const group of grouped) {
+        for (const order of Array.isArray(group) ? group : []) {
+          const key = String(
+            order && (order.id || `${order.asset_id || ''}-${order.price || ''}-${order.original_size || ''}-${order.created_at || ''}`),
+          );
+          dedup.set(key, order);
+        }
+      }
+      openOrders = Array.from(dedup.values());
+    }
+  } catch (err) {
+    diagnostics.push(`Open orders lookup failed: ${formatNetworkError(err)}`);
+  }
+
+  return normalizePolymarketPositionSummary({
+    ...baseSummary,
+    balancesByToken,
+    openOrders,
+    diagnostics,
+  });
+}
+
 async function buildTradingClient(options = {}) {
   const host = options.host || DEFAULT_POLYMARKET_HOST;
   const chain = options.chain || DEFAULT_POLYMARKET_CHAIN;
+  const signatureType = resolveSignatureType(options);
+  const cacheKey = buildTradingCacheKey(host, chain, options);
+  const allowCache = options.disableCache !== true;
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const ClobCtor = options.clobClientClass || ClobClient;
+
+  if (allowCache && tradingClientCache.has(cacheKey)) {
+    return tradingClientCache.get(cacheKey);
+  }
 
   const privateKey = options.privateKey;
   if (!privateKey) {
@@ -654,11 +1538,72 @@ async function buildTradingClient(options = {}) {
       passphrase: options.apiPassphrase,
     };
   } else {
-    const bootstrap = new ClobClient(host, chain, signer);
-    creds = await bootstrap.createOrDeriveApiKey();
+    if (allowCache && derivedCredsCache.has(cacheKey)) {
+      creds = derivedCredsCache.get(cacheKey);
+    } else {
+      const bootstrap = new ClobCtor(
+        host,
+        chain,
+        signer,
+        undefined,
+        signatureType,
+        options.funder || undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      if (typeof bootstrap.deriveApiKey === 'function') {
+        try {
+          // deriveApiKey expects nonce, not signature type; default to nonce 0.
+          creds = await callWithTimeout(
+            () => bootstrap.deriveApiKey(0),
+            timeoutMs,
+            'Polymarket deriveApiKey(0)',
+          );
+        } catch (err) {
+          if (err && typeof err.message === 'string' && err.message.includes('timed out')) {
+            throw err;
+          }
+          creds = await callWithTimeout(
+            () => bootstrap.deriveApiKey(),
+            timeoutMs,
+            'Polymarket deriveApiKey()',
+          );
+        }
+      } else if (typeof bootstrap.createOrDeriveApiKey === 'function') {
+        creds = await callWithTimeout(
+          () => bootstrap.createOrDeriveApiKey(),
+          timeoutMs,
+          'Polymarket createOrDeriveApiKey()',
+        );
+      } else {
+        throw new Error('CLOB client does not support API key derivation.');
+      }
+      if (allowCache && creds) {
+        derivedCredsCache.set(cacheKey, creds);
+      }
+    }
   }
 
-  return new ClobClient(host, chain, signer, creds, 0, options.funder || undefined, undefined, undefined, undefined, undefined, true);
+  const client = new ClobCtor(
+    host,
+    chain,
+    signer,
+    creds,
+    signatureType,
+    options.funder || undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
+  if (allowCache) {
+    tradingClientCache.set(cacheKey, client);
+  }
+  return client;
 }
 
 function resolveOrderSide(side) {
@@ -668,6 +1613,21 @@ function resolveOrderSide(side) {
   throw new Error(`Unsupported order side: ${side}`);
 }
 
+/**
+ * Place a Polymarket FAK hedge order.
+ * `amountUsd` is decimal USD notional (not USDC raw units).
+ * @param {object} [options]
+ * @returns {Promise<{
+ *   mode: 'mock'|'live',
+ *   ok: boolean,
+ *   orderType: 'FAK',
+ *   tokenId: string,
+ *   side: string,
+ *   amountUsd: number,
+ *   response: any,
+ *   error?: { code: string|null, message: string, details?: any }|null
+ * }>}
+ */
 async function placeHedgeOrder(options = {}) {
   if (options.mockUrl) {
     return {
@@ -676,59 +1636,109 @@ async function placeHedgeOrder(options = {}) {
       orderType: 'FAK',
       tokenId: options.tokenId,
       side: String(options.side || '').toUpperCase(),
-      amountUsd: round(toNumber(options.amountUsd) || 0, 6),
+      amountUsd: round(toOptionalNumber(options.amountUsd) || 0, 6),
       response: {
         status: 'simulated',
       },
     };
   }
 
-  const client = await buildTradingClient(options);
   const tokenId = String(options.tokenId || '').trim();
   if (!tokenId) {
     throw new Error('Missing tokenId for Polymarket hedge order.');
   }
 
-  const amountUsd = toNumber(options.amountUsd);
+  const amountUsd = toOptionalNumber(options.amountUsd);
   if (amountUsd === null || amountUsd <= 0) {
     throw new Error('amountUsd must be a positive number for hedge execution.');
   }
 
+  const host = options.host || DEFAULT_POLYMARKET_HOST;
+  const chain = options.chain || DEFAULT_POLYMARKET_CHAIN;
+  const cacheKey = buildTradingCacheKey(host, chain, options);
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const client = options.client || (await buildTradingClient(options));
   const side = resolveOrderSide(options.side || 'buy');
-  const tickSize = options.tickSize || (await client.getTickSize(tokenId));
-  const negRisk = typeof options.negRisk === 'boolean' ? options.negRisk : await client.getNegRisk(tokenId);
+  try {
+    const tickSize =
+      options.tickSize ||
+      (await callWithTimeout(
+        () => client.getTickSize(tokenId),
+        timeoutMs,
+        `Polymarket getTickSize(${tokenId})`,
+      ));
+    const negRisk =
+      typeof options.negRisk === 'boolean'
+        ? options.negRisk
+        : await callWithTimeout(
+            () => client.getNegRisk(tokenId),
+            timeoutMs,
+            `Polymarket getNegRisk(${tokenId})`,
+          );
 
-  const response = await client.createAndPostMarketOrder(
-    {
-      tokenID: tokenId,
-      amount: amountUsd,
+    const response = await callWithTimeout(
+      () =>
+        client.createAndPostMarketOrder(
+          {
+            tokenID: tokenId,
+            amount: amountUsd,
+            side,
+            orderType: OrderType.FAK,
+          },
+          {
+            tickSize,
+            negRisk,
+          },
+          OrderType.FAK,
+          false,
+        ),
+      timeoutMs,
+      `Polymarket createAndPostMarketOrder(${tokenId})`,
+    );
+    const ok = responseIndicatesSuccess(response);
+    if (!ok && classifyAuthFailure(response)) {
+      clearCachedTradingClient(cacheKey);
+    }
+    return {
+      mode: 'live',
+      ok,
+      orderType: 'FAK',
+      tokenId,
       side,
-      orderType: OrderType.FAK,
-    },
-    {
-      tickSize,
-      negRisk,
-    },
-    OrderType.FAK,
-    false,
-  );
-
-  return {
-    mode: 'live',
-    ok: true,
-    orderType: 'FAK',
-    tokenId,
-    side,
-    amountUsd: round(amountUsd, 6),
-    response,
-  };
+      amountUsd: round(amountUsd, 6),
+      response,
+      error: ok ? null : { message: 'Polymarket order rejected.', details: response },
+    };
+  } catch (err) {
+    if (classifyAuthFailure(err)) {
+      clearCachedTradingClient(cacheKey);
+    }
+    return {
+      mode: 'live',
+      ok: false,
+      orderType: 'FAK',
+      tokenId,
+      side,
+      amountUsd: round(amountUsd, 6),
+      response: null,
+      error: {
+        code: err && err.code ? String(err.code) : null,
+        message: err && err.message ? String(err.message) : String(err),
+      },
+    };
+  }
 }
 
+/** Public adapter API used by CLI mirror/polymarket command handlers. */
 module.exports = {
   DEFAULT_POLYMARKET_HOST,
+  DEFAULT_POLYMARKET_GAMMA_URL,
   readTradingCredsFromEnv,
   resolvePolymarketMarket,
+  browsePolymarketMarkets,
   fetchDepthForMarket,
   calculateExecutableDepthUsd,
   placeHedgeOrder,
+  normalizePolymarketPositionSummary,
+  fetchPolymarketPositionSummary,
 };

@@ -3,35 +3,431 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { createCommandRouter } = require('./lib/command_router.cjs');
+const { createCliOutputService } = require('./lib/cli_output_service.cjs');
+const { createErrorRecoveryService } = require('./lib/error_recovery_service.cjs');
+const { createRunScanCommand } = require('./lib/scan_command_service.cjs');
+const { createRunMirrorCommand } = require('./lib/mirror_command_service.cjs');
+const { createParseTradeFlags } = require('./lib/parsers/trade_flags.cjs');
+const { createParseWatchFlags } = require('./lib/parsers/watch_flags.cjs');
+const { createParseAutopilotFlags } = require('./lib/parsers/autopilot_flags.cjs');
+const { createParseMirrorPlanFlags } = require('./lib/parsers/mirror_plan_flags.cjs');
+const { createParseMirrorHedgeCalcFlags } = require('./lib/parsers/mirror_hedge_calc_flags.cjs');
+const { createParseMirrorDeployFlags } = require('./lib/parsers/mirror_deploy_flags.cjs');
+const { createParseMirrorGoFlags } = require('./lib/parsers/mirror_go_flags.cjs');
 const {
-  fetchHistory,
-} = require('./lib/history_service.cjs');
-const { buildExportPayload } = require('./lib/export_service.cjs');
-const { scanArbitrage } = require('./lib/arbitrage_service.cjs');
-const { runAutopilot } = require('./lib/autopilot_service.cjs');
-const { hasWebhookTargets, sendWebhookNotifications } = require('./lib/webhook_service.cjs');
-const { fetchLeaderboard } = require('./lib/leaderboard_service.cjs');
-const { evaluateMarket, AnalyzeProviderError } = require('./lib/analyze_provider.cjs');
-const { buildSuggestions } = require('./lib/suggest_service.cjs');
-const { buildMirrorPlan, deployMirror, verifyMirror } = require('./lib/mirror_service.cjs');
-const { runMirrorSync } = require('./lib/mirror_sync_service.cjs');
+  createParseMirrorSyncFlags,
+  createParseMirrorSyncDaemonSelectorFlags,
+} = require('./lib/parsers/mirror_sync_flags.cjs');
 const {
-  defaultStateFile: defaultAutopilotStateFile,
-  defaultKillSwitchFile: defaultAutopilotKillSwitchFile,
-} = require('./lib/autopilot_state_store.cjs');
+  createParseMirrorBrowseFlags,
+  createParseMirrorVerifyFlags,
+  createParseMirrorStatusFlags,
+  createParseMirrorCloseFlags,
+  createParseMirrorLpExplainFlags,
+  createParseMirrorSimulateFlags,
+} = require('./lib/parsers/mirror_remaining_flags.cjs');
 const {
-  defaultStateFile: defaultMirrorStateFile,
-  defaultKillSwitchFile: defaultMirrorKillSwitchFile,
-  loadState: loadMirrorState,
-} = require('./lib/mirror_state_store.cjs');
+  createParsePolymarketSharedFlags,
+  createParsePolymarketApproveFlags,
+  createParsePolymarketTradeFlags,
+} = require('./lib/parsers/polymarket_flags.cjs');
+const { createParseResolveFlags } = require('./lib/parsers/resolve_flags.cjs');
+const { createParseLpFlags } = require('./lib/parsers/lp_flags.cjs');
+const { createParseSportsFlags } = require('./lib/parsers/sports_flags.cjs');
+const { createCoreCommandFlagParsers } = require('./lib/parsers/core_command_flags.cjs');
+const { createRunTradeCommand } = require('./lib/trade_command_service.cjs');
+const { createRunWatchCommand } = require('./lib/watch_command_service.cjs');
+const { createRunPolymarketCommand } = require('./lib/polymarket_command_service.cjs');
+const { createRunResolveCommand } = require('./lib/resolve_command_service.cjs');
+const { createRunLpCommand } = require('./lib/lp_command_service.cjs');
+const { createRunSportsCommand } = require('./lib/sports_command_service.cjs');
+const {
+  DEFAULT_INDEXER_URL: SHARED_DEFAULT_INDEXER_URL,
+  DEFAULT_RPC_BY_CHAIN_ID,
+} = require('./lib/shared/constants.cjs');
+const { createParsePrimitives } = require('./lib/shared/parse_primitives.cjs');
+const { round, sleepMs, toOptionalNumber, isSecureHttpUrlOrLocal } = require('./lib/shared/utils.cjs');
+
+/**
+ * Lazily loads and memoizes CommonJS modules on first use.
+ * @param {string} modulePath
+ * @returns {() => any}
+ */
+function createLazyModuleLoader(modulePath) {
+  let cached = null;
+  return function getModule() {
+    if (!cached) {
+      cached = require(modulePath);
+    }
+    return cached;
+  };
+}
+
+const getHistoryService = createLazyModuleLoader('./lib/history_service.cjs');
+const getExportService = createLazyModuleLoader('./lib/export_service.cjs');
+const getArbitrageService = createLazyModuleLoader('./lib/arbitrage_service.cjs');
+const getAutopilotService = createLazyModuleLoader('./lib/autopilot_service.cjs');
+const getWebhookService = createLazyModuleLoader('./lib/webhook_service.cjs');
+const getLeaderboardService = createLazyModuleLoader('./lib/leaderboard_service.cjs');
+const getAnalyzeProviderService = createLazyModuleLoader('./lib/analyze_provider.cjs');
+const getSuggestService = createLazyModuleLoader('./lib/suggest_service.cjs');
+const getMirrorService = createLazyModuleLoader('./lib/mirror_service.cjs');
+const getMirrorSyncService = createLazyModuleLoader('./lib/mirror_sync_service.cjs');
+const getMirrorEconService = createLazyModuleLoader('./lib/mirror_econ_service.cjs');
+const getMirrorDaemonService = createLazyModuleLoader('./lib/mirror_daemon_service.cjs');
+const getMirrorCloseService = createLazyModuleLoader('./lib/mirror_close_service.cjs');
+const getPolymarketTradeAdapter = createLazyModuleLoader('./lib/polymarket_trade_adapter.cjs');
+const getPolymarketOpsService = createLazyModuleLoader('./lib/polymarket_ops_service.cjs');
+const getMarketAdminService = createLazyModuleLoader('./lib/market_admin_service.cjs');
+const getContractErrorDecoder = createLazyModuleLoader('./lib/contract_error_decoder.cjs');
+const getMirrorManifestStore = createLazyModuleLoader('./lib/mirror_manifest_store.cjs');
+const getAutopilotStateStore = createLazyModuleLoader('./lib/autopilot_state_store.cjs');
+const getMirrorStateStore = createLazyModuleLoader('./lib/mirror_state_store.cjs');
+const getSchemaCommandService = createLazyModuleLoader('./lib/schema_command_service.cjs');
+const getMcpServerService = createLazyModuleLoader('./lib/mcp_server_service.cjs');
+const getStreamCommandService = createLazyModuleLoader('./lib/stream_command_service.cjs');
+const getForkRuntimeService = createLazyModuleLoader('./lib/fork_runtime_service.cjs');
+const getDoctorService = createLazyModuleLoader('./lib/doctor_service.cjs');
+const getSportsProviderRegistry = createLazyModuleLoader('./lib/sports_provider_registry.cjs');
+const getSportsConsensusService = createLazyModuleLoader('./lib/sports_consensus_service.cjs');
+const getSportsTimingService = createLazyModuleLoader('./lib/sports_timing_service.cjs');
+const getSportsSyncService = createLazyModuleLoader('./lib/sports_sync_service.cjs');
+const getSportsResolvePlanService = createLazyModuleLoader('./lib/sports_resolve_plan_service.cjs');
+const getSportsCreationService = createLazyModuleLoader('./lib/sports_creation_service.cjs');
+const getPandoraDeployService = createLazyModuleLoader('./lib/pandora_deploy_service.cjs');
+
+/** Proxy to history service fetch. */
+function fetchHistory(...args) {
+  return getHistoryService().fetchHistory(...args);
+}
+
+/** Proxy to export payload builder. */
+function buildExportPayload(...args) {
+  return getExportService().buildExportPayload(...args);
+}
+
+/** Proxy to arbitrage scanner. */
+function scanArbitrage(...args) {
+  return getArbitrageService().scanArbitrage(...args);
+}
+
+/** Proxy to autopilot runner. */
+function runAutopilot(...args) {
+  return getAutopilotService().runAutopilot(...args);
+}
+
+/** Proxy to webhook target detector. */
+function hasWebhookTargets(...args) {
+  return getWebhookService().hasWebhookTargets(...args);
+}
+
+/** Proxy to webhook dispatcher. */
+function sendWebhookNotifications(...args) {
+  return getWebhookService().sendWebhookNotifications(...args);
+}
+
+/** Proxy to leaderboard fetcher. */
+function fetchLeaderboard(...args) {
+  return getLeaderboardService().fetchLeaderboard(...args);
+}
+
+/** Proxy to analysis provider evaluator. */
+function evaluateMarket(...args) {
+  return getAnalyzeProviderService().evaluateMarket(...args);
+}
+
+/** Runtime type guard for provider-specific analyze errors. */
+function isAnalyzeProviderError(err) {
+  const { AnalyzeProviderError } = getAnalyzeProviderService();
+  return Boolean(AnalyzeProviderError && err instanceof AnalyzeProviderError);
+}
+
+/** Proxy to suggestion engine. */
+function buildSuggestions(...args) {
+  return getSuggestService().buildSuggestions(...args);
+}
+
+/** Proxy to mirror plan builder. */
+function buildMirrorPlan(...args) {
+  return getMirrorService().buildMirrorPlan(...args);
+}
+
+/** Proxy to mirror deploy executor. */
+function deployMirror(...args) {
+  return getMirrorService().deployMirror(...args);
+}
+
+/** Proxy to mirror verifier. */
+function verifyMirror(...args) {
+  return getMirrorService().verifyMirror(...args);
+}
+
+/** Proxy to mirror market browser. */
+function browseMirrorMarkets(...args) {
+  return getMirrorService().browseMirrorMarkets(...args);
+}
+
+/** Proxy to mirror sync runner. */
+function runMirrorSync(...args) {
+  return getMirrorSyncService().runMirrorSync(...args);
+}
+
+/** Returns supported mirror sync gate codes from service constants. */
+function getMirrorSyncGateCodes() {
+  const { MIRROR_SYNC_GATE_CODES } = getMirrorSyncService();
+  return Array.isArray(MIRROR_SYNC_GATE_CODES) ? MIRROR_SYNC_GATE_CODES : [];
+}
+
+/** Proxy to LP explanation builder. */
+function buildMirrorLpExplain(...args) {
+  return getMirrorEconService().buildMirrorLpExplain(...args);
+}
+
+/** Proxy to hedge calculator. */
+function buildMirrorHedgeCalc(...args) {
+  return getMirrorEconService().buildMirrorHedgeCalc(...args);
+}
+
+/** Proxy to mirror simulation builder. */
+function buildMirrorSimulate(...args) {
+  return getMirrorEconService().buildMirrorSimulate(...args);
+}
+
+/** Proxy to mirror daemon starter. */
+function startMirrorDaemon(...args) {
+  return getMirrorDaemonService().startDaemon(...args);
+}
+
+/** Proxy to mirror daemon stop routine. */
+function stopMirrorDaemon(...args) {
+  return getMirrorDaemonService().stopDaemon(...args);
+}
+
+/** Proxy to mirror daemon status reader. */
+function mirrorDaemonStatus(...args) {
+  return getMirrorDaemonService().daemonStatus(...args);
+}
+
+/** Proxy to mirror close plan builder. */
+function buildMirrorClosePlan(...args) {
+  return getMirrorCloseService().buildMirrorClosePlan(...args);
+}
+
+/** Proxy to Polymarket position summary fetcher. */
+function fetchPolymarketPositionSummary(...args) {
+  return getPolymarketTradeAdapter().fetchPolymarketPositionSummary(...args);
+}
+
+/** Proxy to Polymarket market resolver. */
+function resolvePolymarketMarket(...args) {
+  return getPolymarketTradeAdapter().resolvePolymarketMarket(...args);
+}
+
+/** Proxy to Polymarket hedge order placer. */
+function placeHedgeOrder(...args) {
+  return getPolymarketTradeAdapter().placeHedgeOrder(...args);
+}
+
+/** Proxy to Polymarket credential loader. */
+function readTradingCredsFromEnv(...args) {
+  return getPolymarketTradeAdapter().readTradingCredsFromEnv(...args);
+}
+
+/** Proxy to Polymarket readiness check. */
+function runPolymarketCheck(...args) {
+  return getPolymarketOpsService().runPolymarketCheck(...args);
+}
+
+/** Proxy to Polymarket approval flow. */
+function runPolymarketApprove(...args) {
+  return getPolymarketOpsService().runPolymarketApprove(...args);
+}
+
+/** Proxy to Polymarket preflight flow. */
+function runPolymarketPreflight(...args) {
+  return getPolymarketOpsService().runPolymarketPreflight(...args);
+}
+
+/** Proxy to resolve command on-chain executor. */
+function runResolve(...args) {
+  return getMarketAdminService().runResolve(...args);
+}
+
+/** Proxy to LP add/remove executor. */
+function runLp(...args) {
+  return getMarketAdminService().runLp(...args);
+}
+
+/** Proxy to LP position fetcher. */
+function runLpPositions(...args) {
+  return getMarketAdminService().runLpPositions(...args);
+}
+
+/** Proxy to contract error decoder. */
+function decodeContractError(...args) {
+  return getContractErrorDecoder().decodeContractError(...args);
+}
+
+/** Proxy to decoded contract error formatter. */
+function formatDecodedContractError(...args) {
+  return getContractErrorDecoder().formatDecodedContractError(...args);
+}
+
+/** Proxy to default manifest path resolver. */
+function defaultMirrorManifestFile(...args) {
+  return getMirrorManifestStore().defaultManifestFile(...args);
+}
+
+/** Proxy to trusted pair lookup by selector. */
+function findMirrorPair(...args) {
+  return getMirrorManifestStore().findPair(...args);
+}
+
+/** Proxy to default autopilot state file resolver. */
+function defaultAutopilotStateFile(...args) {
+  return getAutopilotStateStore().defaultStateFile(...args);
+}
+
+/** Proxy to default autopilot kill-switch path resolver. */
+function defaultAutopilotKillSwitchFile(...args) {
+  return getAutopilotStateStore().defaultKillSwitchFile(...args);
+}
+
+/** Proxy to default mirror state file resolver. */
+function defaultMirrorStateFile(...args) {
+  return getMirrorStateStore().defaultStateFile(...args);
+}
+
+/** Proxy to default mirror kill-switch path resolver. */
+function defaultMirrorKillSwitchFile(...args) {
+  return getMirrorStateStore().defaultKillSwitchFile(...args);
+}
+
+/** Proxy to mirror strategy hash calculator. */
+function mirrorStrategyHash(...args) {
+  return getMirrorStateStore().strategyHash(...args);
+}
+
+/** Proxy to mirror state loader. */
+function loadMirrorState(...args) {
+  return getMirrorStateStore().loadState(...args);
+}
+
+/** Schema command adapter with CLI output wiring. */
+function runSchemaCommand(...args) {
+  return getSchemaCommandService().createRunSchemaCommand({ emitSuccess, CliError }).runSchemaCommand(...args);
+}
+
+function resolveForkRuntime(...args) {
+  return getForkRuntimeService().resolveForkRuntime(...args);
+}
+
+/** MCP server command adapter with package version wiring. */
+function runMcpCommand(...args) {
+  return getMcpServerService().createRunMcpServer({ packageVersion: PACKAGE_VERSION }).runMcpServer(...args);
+}
+
+/** Streaming command adapter with shared parser/runtime dependencies. */
+function runStreamCommand(...args) {
+  return getStreamCommandService().createRunStreamCommand({
+    CliError,
+    includesHelpFlag,
+    emitSuccess,
+    commandHelpPayload,
+    parseIndexerSharedFlags,
+    maybeLoadIndexerEnv,
+    resolveIndexerUrl,
+    parseAddressFlag,
+    parseInteger,
+    parsePositiveInteger,
+    requireFlagValue,
+    isSecureHttpUrlOrLocal,
+    sleepMs,
+  }).runStreamCommand(...args);
+}
+
+/** Sports provider registry factory proxy. */
+function createSportsProviderRegistry(...args) {
+  return getSportsProviderRegistry().createSportsProviderRegistry(...args);
+}
+
+/** Sports consensus calculator proxy. */
+function computeSportsConsensus(...args) {
+  return getSportsConsensusService().computeSportsConsensus(...args);
+}
+
+/** Sports timing planner proxy. */
+function evaluateSportsTimingStatus(...args) {
+  return getSportsTimingService().evaluateTimingStatus(...args);
+}
+
+/** Sports sync status builder proxy. */
+function buildSyncStatusPayload(...args) {
+  return getSportsSyncService().buildSyncStatusPayload(...args);
+}
+
+/** Sports sync concurrent-start guard proxy. */
+function detectConcurrentSyncConflict(...args) {
+  return getSportsSyncService().detectConcurrentSyncConflict(...args);
+}
+
+/** Sports resolve-plan builder proxy. */
+function buildSportsResolvePlan(...args) {
+  return getSportsResolvePlanService().buildSportsResolvePlan(...args);
+}
+
+/** Sports create planner proxy. */
+function buildSportsCreatePlan(...args) {
+  return getSportsCreationService().buildSportsCreatePlan(...args);
+}
+
+/** AMM deployment service proxy. */
+function deployPandoraAmmMarket(...args) {
+  return getPandoraDeployService().deployPandoraAmmMarket(...args);
+}
+
+let doctorServiceInstance = null;
+
+/**
+ * Returns memoized doctor service instance configured with CLI validators.
+ * @returns {{ buildDoctorReport: (options: object) => Promise<object> }}
+ */
+function getDoctorServiceInstance() {
+  if (!doctorServiceInstance) {
+    doctorServiceInstance = getDoctorService().createDoctorService({
+      CliError,
+      loadEnvFile,
+      runPolymarketCheck,
+      isValidPrivateKey,
+      isValidAddress,
+      isSecureHttpUrlOrLocal,
+      requiredEnvKeys: REQUIRED_ENV_KEYS,
+      supportedChainIds: SUPPORTED_CHAIN_IDS,
+      zeroAddress: ZERO_ADDRESS,
+      defaultPolymarketHost: DEFAULT_POLYMARKET_HOST,
+      defaultPolymarketRpcUrl: DEFAULT_POLYMARKET_RPC_URL,
+    });
+  }
+  return doctorServiceInstance;
+}
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ENV_FILE = path.join(ROOT, 'scripts', '.env');
 const DEFAULT_ENV_EXAMPLE = path.join(ROOT, 'scripts', '.env.example');
-const DEFAULT_INDEXER_URL = 'https://pandoraindexer.up.railway.app/';
+const DEFAULT_INDEXER_URL = SHARED_DEFAULT_INDEXER_URL;
+let PACKAGE_VERSION = '0.0.0';
+try {
+  const packageJson = require(path.join(ROOT, 'package.json'));
+  if (packageJson && typeof packageJson.version === 'string' && packageJson.version.trim()) {
+    PACKAGE_VERSION = packageJson.version.trim();
+  }
+} catch {
+  // best effort
+}
 
 const REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC'];
-const SUPPORTED_CHAIN_IDS = new Set([1, 146]);
+const SUPPORTED_CHAIN_IDS = new Set([1]);
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 const COMMAND_TARGETS = {
@@ -40,8 +436,11 @@ const COMMAND_TARGETS = {
 };
 
 const OUTPUT_MODES = new Set(['table', 'json']);
+const CLI_JSON_SCHEMA_VERSION = '1.0.0';
 const DEFAULT_RPC_TIMEOUT_MS = 12_000;
 const DEFAULT_INDEXER_TIMEOUT_MS = 12_000;
+const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
+const DEFAULT_POLYMARKET_RPC_URL = 'https://polygon-bor-rpc.publicnode.com';
 const POSITIONS_ORDER_BY_FIELDS = ['lastTradeAt', 'id', 'chainId', 'marketAddress', 'user'];
 const POSITIONS_ORDER_BY_FIELD_SET = new Set(POSITIONS_ORDER_BY_FIELDS);
 const MARKET_LIFECYCLE_FILTERS = new Set(['all', 'active', 'resolved', 'expiring-soon']);
@@ -78,10 +477,6 @@ const LIQUIDITY_EVENT_ODDS_FIELDS = [
   'noTokenAmount',
   'timestamp',
 ];
-const DEFAULT_RPC_BY_CHAIN_ID = {
-  1: 'https://ethereum.publicnode.com',
-  146: 'https://rpc.soniclabs.com',
-};
 const ERC20_ABI = [
   {
     type: 'function',
@@ -191,15 +586,101 @@ class CliError extends Error {
   }
 }
 
+const { emitFailure, emitSuccess } = createCliOutputService({
+  defaultSchemaVersion: CLI_JSON_SCHEMA_VERSION,
+  CliError,
+  getRecoveryForError: createErrorRecoveryService({ cliName: 'pandora' }).getRecoveryForError,
+});
+
+const {
+  parseDateLikeFlag,
+  parseDotEnv,
+  parsePositiveInteger,
+  parseInteger,
+  parseNonNegativeInteger,
+  parsePositiveNumber,
+  parseNumber,
+  parseCsvList,
+  parseMirrorSyncGateSkipList,
+  mergeMirrorSyncGateSkipLists,
+  parseCsvNumberList,
+  parseProbabilityPercent,
+  parseBigIntString,
+  parseOutcomeSide,
+  parseAddressFlag,
+  parsePrivateKeyFlag,
+  parsePositionsOrderBy,
+  requireFlagValue,
+  mergeWhere,
+  normalizeDirection,
+  isValidAddress,
+  isValidPrivateKey,
+} = createParsePrimitives({
+  CliError,
+  getMirrorSyncGateCodes,
+  positionsOrderByFields: POSITIONS_ORDER_BY_FIELDS,
+  positionsOrderByFieldSet: POSITIONS_ORDER_BY_FIELD_SET,
+});
+
+const {
+  parseScriptEnvFlags,
+  parseDoctorFlags,
+  parseSetupFlags,
+  parseInitEnvFlags,
+  parseIndexerSharedFlags,
+  parseGetIdFlags,
+  parseMarketsGetFlags,
+  readIdsFromStdin,
+  parseMarketsListFlags,
+  parseQuoteFlags,
+  parsePollsListFlags,
+  parsePositionsListFlags,
+  parsePortfolioFlags,
+  parseWebhookFlagIntoOptions,
+  parseEventsListFlags,
+  parseEventsGetFlags,
+  parseHistoryFlags,
+  parseExportFlags,
+  parseArbitrageFlags,
+  parseWebhookTestFlags,
+  parseLeaderboardFlags,
+  parseAnalyzeFlags,
+  parseSuggestFlags,
+} = createCoreCommandFlagParsers({
+  CliError,
+  formatErrorValue,
+  hasWebhookTargets,
+  requireFlagValue,
+  parsePositiveInteger,
+  parseInteger,
+  parseNonNegativeInteger,
+  parsePositiveNumber,
+  parseNumber,
+  parseCsvList,
+  parseProbabilityPercent,
+  parseAddressFlag,
+  parsePositionsOrderBy,
+  parseOutcomeSide,
+  mergeWhere,
+  normalizeDirection,
+  isSecureHttpUrlOrLocal,
+  defaultEnvFile: DEFAULT_ENV_FILE,
+  defaultEnvExample: DEFAULT_ENV_EXAMPLE,
+  defaultRpcTimeoutMs: DEFAULT_RPC_TIMEOUT_MS,
+  defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
+  defaultExpiringSoonHours: DEFAULT_EXPIRING_SOON_HOURS,
+});
+
 function printHelpTable() {
   console.log(`
 pandora - Prediction market CLI
 
 Usage:
   pandora [--output table|json] help
+  pandora [--output table|json] --version
   pandora [--output table|json] init-env [--force] [--dotenv-path <path>] [--example <path>]
-  pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--rpc-timeout-ms <ms>]
-  pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--rpc-timeout-ms <ms>]
+  pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
+  pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
   pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
   pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
@@ -207,36 +688,41 @@ Usage:
   pandora [--output table|json] events list [--type all|liquidity|oracle-fee|claim] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-direction asc|desc] [--chain-id <id>] [--wallet <address>] [--market-address <address>] [--poll-address <address>] [--tx-hash <hash>]
   pandora [--output table|json] events get --id <id> [--type all|liquidity|oracle-fee|claim]
   pandora [--output table|json] positions list [--wallet <address>] [--market-address <address>] [--chain-id <id>] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--where-json <json>]
-  pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events]
+  pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
   pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]
-  pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--expand] [--with-odds]
+  pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand]
+  pandora [--output table|json] sports books list|events list|events live|odds snapshot|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan ...
   pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
   pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
-  pandora [--output table|json] mirror plan|deploy|verify|sync|status ...
+  pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...
+  pandora [--output table|json] polymarket check|approve|preflight|trade ...
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
   pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
   pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
-  pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute
-  pandora [--output table|json] lp add|remove|positions ...
+  pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
+  pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
+  pandora [--output json] schema
+  pandora mcp
   pandora launch [--dotenv-path <path>] [--skip-dotenv] [script args...]
   pandora clone-bet [--dotenv-path <path>] [--skip-dotenv] [script args...]
 
 Examples:
   pandora setup
-  pandora --output json doctor --check-usdc-code
+  pandora --output json doctor --check-usdc-code --check-polymarket
   pandora markets list --active --with-odds --limit 10
   pandora markets get --id market-1 --id market-2
   pandora polls get --id 0xabc...
   pandora events list --type all --limit 25
   pandora positions list --wallet 0x1234...
-  pandora portfolio --wallet 0x1234... --chain-id 1
+  pandora portfolio --wallet 0x1234... --chain-id 1 --with-lp
   pandora watch --market-address 0xabc... --side yes --amount-usdc 10 --iterations 5 --interval-ms 2000
-  pandora scan --limit 25 --chain-id 1 --with-odds
+  pandora scan --active --limit 25 --chain-id 1
   pandora quote --market-address 0xabc... --side yes --amount-usdc 50
   pandora trade --dry-run --market-address 0xabc... --side no --amount-usdc 25 --max-amount-usdc 50 --min-probability-pct 20
   pandora history --wallet 0x1234... --chain-id 1 --limit 50
@@ -244,12 +730,25 @@ Examples:
   pandora arbitrage --chain-id 1 --limit 25 --venues pandora,polymarket --cross-venue-only --with-rules --include-similarity
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
   pandora mirror plan --source polymarket --polymarket-market-id 0xabc... --with-rules --include-similarity
+  pandora mirror browse --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10
   pandora mirror verify --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --include-similarity
-  pandora mirror sync once --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --paper --hedge-ratio 1.0
+  pandora mirror lp-explain --liquidity-usdc 10000 --source-yes-pct 58
+  pandora mirror hedge-calc --reserve-yes-usdc 8 --reserve-no-usdc 12 --excess-no-usdc 2 --polymarket-yes-pct 60
+  pandora mirror simulate --liquidity-usdc 10000 --source-yes-pct 58 --target-yes-pct 58 --volume-scenarios 1000,5000,10000
+  pandora mirror go --polymarket-slug nba-mia-phi-2026-02-28 --liquidity-usdc 10 --paper
+  pandora mirror sync once --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --paper --hedge-ratio 1.0 --skip-gate
+  pandora polymarket check --rpc-url https://polygon-bor-rpc.publicnode.com --private-key 0x... --funder 0xproxy...
+  pandora polymarket approve --dry-run --rpc-url https://polygon-bor-rpc.publicnode.com --private-key 0x... --funder 0xproxy...
+  pandora polymarket preflight --rpc-url https://polygon-bor-rpc.publicnode.com --private-key 0x... --funder 0xproxy...
+  pandora polymarket trade --condition-id 0xabc... --token yes --amount-usdc 2 --dry-run
+  pandora mirror close --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --dry-run
   pandora webhook test --webhook-url https://example.com/hook --webhook-template '{\"text\":\"{{message}}\"}'
   pandora leaderboard --metric profit --limit 20
   pandora analyze --market-address 0xabc... --provider mock
   pandora suggest --wallet 0x1234... --risk medium --budget 50 --count 3
+  pandora stream prices --indexer-url https://pandoraindexer.up.railway.app/ --interval-ms 1000
+  pandora --output json schema
+  pandora mcp
   pandora launch --dry-run --market-type amm --question "Will BTC close above $100k by end of 2026?" --rules "Resolves YES if ... Resolves NO if ... cancelled/postponed/abandoned/unresolved => NO." --sources "https://coinmarketcap.com/currencies/bitcoin/" "https://www.coingecko.com/en/coins/bitcoin" --target-timestamp 1798675200 --liquidity 100 --fee-tier 3000
 
 Notes:
@@ -257,7 +756,9 @@ Notes:
   - scripts/.env is loaded automatically for launch/clone-bet unless --skip-dotenv is used.
   - --output json is supported for all commands except launch/clone-bet.
   - Indexer URL resolution order: --indexer-url, PANDORA_INDEXER_URL, INDEXER_URL, default public indexer.
+  - mirror status --with-live can enrich output with Polymarket position data when POLYMARKET_* credentials are set; missing endpoints/creds return diagnostics instead of hard failures.
   - watch is non-transactional monitoring; use quote/trade for execution workflows.
+  - stream always emits NDJSON to stdout (one JSON object per line).
 `);
 }
 
@@ -279,7 +780,7 @@ function printTradeHelpTable() {
 pandora trade - Execute a buy on a market
 
 Usage:
-  pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
+  pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
 
 Notes:
   - --dry-run prints the execution plan and quote without sending transactions.
@@ -422,7 +923,7 @@ function quoteHelpJsonPayload() {
 function tradeHelpJsonPayload() {
   return {
     usage:
-      'pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
+      'pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
   };
 }
 
@@ -441,6 +942,7 @@ function helpJsonPayload() {
   return {
     usage: [
       'pandora [--output table|json] help',
+      'pandora [--output table|json] version',
       'pandora [--output table|json] init-env ...',
       'pandora [--output table|json] doctor ...',
       'pandora [--output table|json] setup ...',
@@ -451,19 +953,24 @@ function helpJsonPayload() {
       'pandora [--output table|json] portfolio ...',
       'pandora [--output table|json] watch ...',
       'pandora [--output table|json] scan ...',
+      'pandora [--output table|json] sports ...',
       'pandora [--output table|json] quote ...',
       'pandora [--output table|json] trade ...',
       'pandora [--output table|json] history ...',
       'pandora [--output table|json] export ...',
       'pandora [--output table|json] arbitrage ...',
       'pandora [--output table|json] autopilot run|once ...',
-      'pandora [--output table|json] mirror plan|deploy|verify|sync|status ...',
+      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...',
+      'pandora [--output table|json] polymarket check|approve|preflight|trade ...',
       'pandora [--output table|json] webhook test ...',
       'pandora [--output table|json] leaderboard ...',
       'pandora [--output table|json] analyze ...',
       'pandora [--output table|json] suggest ...',
       'pandora [--output table|json] resolve ...',
       'pandora [--output table|json] lp add|remove|positions ...',
+      'pandora stream prices|events ...',
+      'pandora [--output json] schema',
+      'pandora mcp',
       'pandora launch ...',
       'pandora clone-bet ...',
     ],
@@ -496,8 +1003,78 @@ function inferRequestedOutputMode(argv) {
   return 'table';
 }
 
+function expandEqualsStyleFlags(argv) {
+  const expanded = [];
+  const unaryBooleanFlags = new Set([
+    '--force',
+    '--skip-dotenv',
+    '--no-env-file',
+    '--check-usdc-code',
+    '--check-polymarket',
+    '--stdin',
+    '--active',
+    '--resolved',
+    '--expiring-soon',
+    '--expand',
+    '--with-odds',
+    '--include-events',
+    '--no-events',
+    '--fail-on-alert',
+    '--dry-run',
+    '--execute',
+    '--allow-unquoted-execute',
+    '--cross-venue-only',
+    '--allow-same-venue',
+    '--with-rules',
+    '--include-similarity',
+    '--paper',
+    '--execute-live',
+    '--fork',
+    '--trust-deploy',
+    '--allow-rule-mismatch',
+    '--auto-sync',
+    '--sync-once',
+    '--skip-gate',
+    '--force-gate',
+    '--daemon',
+    '--stream',
+    '--no-hedge',
+  ]);
+  for (const token of Array.isArray(argv) ? argv : []) {
+    if (
+      typeof token === 'string' &&
+      token.startsWith('--') &&
+      token.includes('=') &&
+      token !== '--'
+    ) {
+      const eqIndex = token.indexOf('=');
+      const flag = token.slice(0, eqIndex);
+      const value = token.slice(eqIndex + 1);
+      if (flag && flag !== '--') {
+        const normalizedValue = value.trim().toLowerCase();
+        if (
+          unaryBooleanFlags.has(flag) &&
+          (normalizedValue === 'true' || normalizedValue === 'false')
+        ) {
+          // Preserve explicit boolean-literal assignments for unary flags so they
+          // are handled as invalid/explicit input by command parsers instead of
+          // silently flipping behavior (for example, --dry-run=false).
+          expanded.push(token);
+          continue;
+        }
+        expanded.push(flag);
+        if (value.length) expanded.push(value);
+        continue;
+      }
+    }
+    expanded.push(token);
+  }
+  return expanded;
+}
+
 function extractOutputMode(argv) {
   let outputMode = 'table';
+  let outputConfigured = false;
   const args = [];
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -507,13 +1084,23 @@ function extractOutputMode(argv) {
       if (!next) {
         throw new CliError('MISSING_FLAG_VALUE', `Missing value for ${token}`);
       }
-      outputMode = normalizeOutputMode(next);
+      const parsedMode = normalizeOutputMode(next);
+      if (outputConfigured && parsedMode !== outputMode) {
+        throw new CliError('INVALID_ARGS', `Conflicting --output values: "${outputMode}" and "${parsedMode}".`);
+      }
+      outputMode = parsedMode;
+      outputConfigured = true;
       i += 1;
       continue;
     }
 
     if (token.startsWith('--output=')) {
-      outputMode = normalizeOutputMode(token.slice('--output='.length));
+      const parsedMode = normalizeOutputMode(token.slice('--output='.length));
+      if (outputConfigured && parsedMode !== outputMode) {
+        throw new CliError('INVALID_ARGS', `Conflicting --output values: "${outputMode}" and "${parsedMode}".`);
+      }
+      outputMode = parsedMode;
+      outputConfigured = true;
       continue;
     }
 
@@ -521,38 +1108,6 @@ function extractOutputMode(argv) {
   }
 
   return { outputMode, args };
-}
-
-function emitJson(payload) {
-  console.log(JSON.stringify(payload, null, 2));
-}
-
-function emitJsonError(payload) {
-  console.error(JSON.stringify(payload, null, 2));
-}
-
-function toErrorEnvelope(error) {
-  if (error instanceof CliError) {
-    const envelope = {
-      ok: false,
-      error: {
-        code: error.code,
-        message: error.message,
-      },
-    };
-    if (error.details !== undefined) {
-      envelope.error.details = error.details;
-    }
-    return envelope;
-  }
-
-  return {
-    ok: false,
-    error: {
-      code: 'UNEXPECTED_ERROR',
-      message: formatErrorValue(error && error.message ? error.message : error),
-    },
-  };
 }
 
 function formatErrorValue(value) {
@@ -566,77 +1121,6 @@ function formatErrorValue(value) {
   }
 }
 
-function emitFailure(outputMode, error) {
-  const envelope = toErrorEnvelope(error);
-
-  if (outputMode === 'json') {
-    emitJsonError(envelope);
-  } else {
-    console.error(`[${envelope.error.code}] ${envelope.error.message}`);
-    if (envelope.error.details && Array.isArray(envelope.error.details.errors) && envelope.error.details.errors.length) {
-      for (const err of envelope.error.details.errors) {
-        console.error(`- ${formatErrorValue(err)}`);
-      }
-    }
-    if (envelope.error.details && Array.isArray(envelope.error.details.hints) && envelope.error.details.hints.length) {
-      for (const hint of envelope.error.details.hints) {
-        console.error(`Hint: ${hint}`);
-      }
-    }
-    if (
-      envelope.error.details &&
-      !Array.isArray(envelope.error.details.errors) &&
-      !Array.isArray(envelope.error.details.hints)
-    ) {
-      try {
-        console.error(`Details: ${JSON.stringify(envelope.error.details)}`);
-      } catch {
-        console.error(`Details: ${String(envelope.error.details)}`);
-      }
-    }
-  }
-
-  process.exit(error instanceof CliError ? error.exitCode : 1);
-}
-
-function emitSuccess(outputMode, command, data, tableRenderer) {
-  if (outputMode === 'json') {
-    emitJson({ ok: true, command, data });
-    return;
-  }
-
-  if (typeof tableRenderer === 'function') {
-    tableRenderer(data);
-    return;
-  }
-
-  console.log('Done.');
-}
-
-function parseDotEnv(content) {
-  const env = {};
-  const lines = content.split(/\r?\n/);
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-
-    const eq = trimmed.indexOf('=');
-    if (eq <= 0) continue;
-
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-
-    env[key] = value;
-  }
-
-  return env;
-}
-
 function isValidHttpUrl(value) {
   try {
     const parsed = new URL(value);
@@ -644,14 +1128,6 @@ function isValidHttpUrl(value) {
   } catch {
     return false;
   }
-}
-
-function isValidAddress(value) {
-  return /^0x[a-fA-F0-9]{40}$/.test(value);
-}
-
-function isValidPrivateKey(value) {
-  return /^0x[a-fA-F0-9]{64}$/.test(value);
 }
 
 function loadEnvFile(filePath) {
@@ -697,3048 +1173,109 @@ function runTargetScript(targetScript, passThroughArgs) {
   process.exit(result.status === null ? 1 : result.status);
 }
 
-function parsePositiveInteger(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a positive integer. Received: "${value}"`);
-  }
-  return parsed;
-}
-
-function parseInteger(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed)) {
-    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be an integer. Received: "${value}"`);
-  }
-  return parsed;
-}
-
-function parseNonNegativeInteger(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a non-negative integer. Received: "${value}"`);
-  }
-  return parsed;
-}
-
-function parsePositiveNumber(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a positive number. Received: "${value}"`);
-  }
-  return parsed;
-}
-
-function parseNumber(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a numeric value. Received: "${value}"`);
-  }
-  return parsed;
-}
-
-function parseCsvList(value, flagName) {
-  const list = String(value)
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-  if (!list.length) {
-    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must include at least one comma-separated value.`);
-  }
-  return list;
-}
-
-function parseProbabilityPercent(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
-    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be between 0 and 100. Received: "${value}"`);
-  }
-  return parsed;
-}
-
-function parseBigIntString(value, flagName) {
-  try {
-    const parsed = BigInt(value);
-    if (parsed < 0n) {
-      throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a non-negative integer. Received: "${value}"`);
-    }
-    return parsed;
-  } catch (err) {
-    if (err instanceof CliError) throw err;
-    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a non-negative integer. Received: "${value}"`);
-  }
-}
-
-function parseOutcomeSide(value, flagName = '--side') {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase();
-  if (['yes', 'y', 'true', '1'].includes(normalized)) return 'yes';
-  if (['no', 'n', 'false', '0'].includes(normalized)) return 'no';
-  throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be yes or no. Received: "${value}"`);
-}
-
-function parseAddressFlag(value, flagName) {
-  if (!isValidAddress(value)) {
-    throw new CliError(
-      'INVALID_FLAG_VALUE',
-      `${flagName} must be a valid 20-byte hex address (0x + 40 hex chars). Received: "${value}"`,
-    );
-  }
-  return value.toLowerCase();
-}
-
-function parsePositionsOrderBy(value) {
-  if (!POSITIONS_ORDER_BY_FIELD_SET.has(value)) {
-    throw new CliError(
-      'INVALID_FLAG_VALUE',
-      `--order-by must be one of ${POSITIONS_ORDER_BY_FIELDS.join(', ')}. Received: "${value}"`,
-    );
-  }
-  return value;
-}
-
-function requireFlagValue(args, index, flagName) {
-  const next = args[index + 1];
-  if (!next) {
-    throw new CliError('MISSING_FLAG_VALUE', `Missing value for ${flagName}`);
-  }
-  return next;
-}
-
-function mergeWhere(where, jsonText, flagName) {
-  let parsed;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    throw new CliError('INVALID_JSON', `${flagName} must be valid JSON.`);
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new CliError('INVALID_JSON', `${flagName} must decode to a JSON object.`);
-  }
-
-  return { ...where, ...parsed };
-}
-
-function normalizeDirection(raw) {
-  const value = String(raw).trim().toLowerCase();
-  if (value !== 'asc' && value !== 'desc') {
-    throw new CliError('INVALID_FLAG_VALUE', `--order-direction must be asc or desc. Received: "${raw}"`);
-  }
-  return value;
-}
-
-function parseScriptEnvFlags(args) {
-  let envFile = DEFAULT_ENV_FILE;
-  let useEnvFile = true;
-  const passthrough = [];
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--dotenv-path' || token === '--env-file') {
-      const next = requireFlagValue(args, i, '--dotenv-path');
-      envFile = path.resolve(process.cwd(), next);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--skip-dotenv' || token === '--no-env-file') {
-      useEnvFile = false;
-      continue;
-    }
-
-    passthrough.push(token);
-  }
-
-  return { envFile, useEnvFile, passthrough };
-}
-
-function parseDoctorFlags(args) {
-  let envFile = DEFAULT_ENV_FILE;
-  let useEnvFile = true;
-  let checkUsdcCode = false;
-  let rpcTimeoutMs = DEFAULT_RPC_TIMEOUT_MS;
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--dotenv-path' || token === '--env-file') {
-      const next = requireFlagValue(args, i, '--dotenv-path');
-      envFile = path.resolve(process.cwd(), next);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--skip-dotenv' || token === '--no-env-file') {
-      useEnvFile = false;
-      continue;
-    }
-
-    if (token === '--check-usdc-code') {
-      checkUsdcCode = true;
-      continue;
-    }
-
-    if (token === '--rpc-timeout-ms') {
-      const next = requireFlagValue(args, i, '--rpc-timeout-ms');
-      rpcTimeoutMs = parsePositiveInteger(next, '--rpc-timeout-ms');
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for doctor: ${token}`);
-  }
-
-  return { envFile, useEnvFile, checkUsdcCode, rpcTimeoutMs };
-}
-
-function parseSetupFlags(args) {
-  let envFile = DEFAULT_ENV_FILE;
-  let exampleFile = DEFAULT_ENV_EXAMPLE;
-  let force = false;
-  let checkUsdcCode = false;
-  let rpcTimeoutMs = DEFAULT_RPC_TIMEOUT_MS;
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--force') {
-      force = true;
-      continue;
-    }
-
-    if (token === '--dotenv-path' || token === '--env-file') {
-      const next = requireFlagValue(args, i, '--dotenv-path');
-      envFile = path.resolve(process.cwd(), next);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--example') {
-      const next = requireFlagValue(args, i, '--example');
-      exampleFile = path.resolve(process.cwd(), next);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--check-usdc-code') {
-      checkUsdcCode = true;
-      continue;
-    }
-
-    if (token === '--rpc-timeout-ms') {
-      const next = requireFlagValue(args, i, '--rpc-timeout-ms');
-      rpcTimeoutMs = parsePositiveInteger(next, '--rpc-timeout-ms');
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for setup: ${token}`);
-  }
-
-  return { envFile, exampleFile, force, checkUsdcCode, rpcTimeoutMs };
-}
-
-function parseInitEnvFlags(args) {
-  let envFile = DEFAULT_ENV_FILE;
-  let exampleFile = DEFAULT_ENV_EXAMPLE;
-  let force = false;
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--force') {
-      force = true;
-      continue;
-    }
-
-    if (token === '--dotenv-path' || token === '--env-file') {
-      const next = requireFlagValue(args, i, '--dotenv-path');
-      envFile = path.resolve(process.cwd(), next);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--example') {
-      const next = requireFlagValue(args, i, '--example');
-      exampleFile = path.resolve(process.cwd(), next);
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for init-env: ${token}`);
-  }
-
-  return { envFile, exampleFile, force };
-}
-
-function parseIndexerSharedFlags(args) {
-  let envFile = DEFAULT_ENV_FILE;
-  let envFileExplicit = false;
-  let useEnvFile = true;
-  let indexerUrl = null;
-  let timeoutMs = DEFAULT_INDEXER_TIMEOUT_MS;
-  const rest = [];
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--dotenv-path' || token === '--env-file') {
-      const next = requireFlagValue(args, i, '--dotenv-path');
-      envFile = path.resolve(process.cwd(), next);
-      envFileExplicit = true;
-      i += 1;
-      continue;
-    }
-
-    if (token === '--skip-dotenv' || token === '--no-env-file') {
-      useEnvFile = false;
-      continue;
-    }
-
-    if (token === '--indexer-url') {
-      const next = requireFlagValue(args, i, '--indexer-url');
-      indexerUrl = next;
-      i += 1;
-      continue;
-    }
-
-    if (token === '--timeout-ms') {
-      const next = requireFlagValue(args, i, '--timeout-ms');
-      timeoutMs = parsePositiveInteger(next, '--timeout-ms');
-      i += 1;
-      continue;
-    }
-
-    rest.push(token);
-  }
-
+function buildMirrorSyncStrategy(options) {
   return {
-    envFile,
-    envFileExplicit,
-    useEnvFile,
-    indexerUrl,
-    timeoutMs,
-    rest,
+    mode: options.mode,
+    pandoraMarketAddress: options.pandoraMarketAddress,
+    polymarketMarketId: options.polymarketMarketId,
+    polymarketSlug: options.polymarketSlug,
+    executeLive: options.executeLive,
+    driftTriggerBps: options.driftTriggerBps,
+    hedgeEnabled: options.hedgeEnabled,
+    hedgeRatio: options.hedgeRatio,
+    hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+    forceGate: options.forceGate,
+    skipGateChecks:
+      Array.isArray(options.skipGateChecks) && options.skipGateChecks.length
+        ? [...options.skipGateChecks].sort()
+        : [],
   };
 }
 
-function parseGetIdFlags(args, entityName) {
-  let id = null;
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--id') {
-      const next = requireFlagValue(args, i, '--id');
-      id = next;
-      i += 1;
-      continue;
-    }
-
-    if (token.startsWith('--')) {
-      throw new CliError('UNKNOWN_FLAG', `Unknown flag for ${entityName} get: ${token}`);
-    }
-
-    if (id) {
-      throw new CliError('INVALID_ARGS', `Unexpected extra argument for ${entityName} get: ${token}`);
-    }
-
-    id = token;
-  }
-
-  if (!id) {
-    throw new CliError('MISSING_REQUIRED_FLAG', `Missing ${entityName} id. Use --id <id>.`);
-  }
-
-  return { id };
-}
-
-function parseMarketsGetFlags(args) {
-  const options = {
-    ids: [],
-    readFromStdin: false,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--id') {
-      options.ids.push(requireFlagValue(args, i, '--id'));
-      i += 1;
-      continue;
-    }
-
-    if (token === '--stdin') {
-      options.readFromStdin = true;
-      continue;
-    }
-
-    if (token.startsWith('--')) {
-      throw new CliError('UNKNOWN_FLAG', `Unknown flag for markets get: ${token}`);
-    }
-
-    options.ids.push(token);
-  }
-
-  if (!options.ids.length && !options.readFromStdin) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market id. Use --id <id> or --stdin.');
-  }
-
-  return options;
-}
-
-function readIdsFromStdin() {
-  if (process.stdin.isTTY) {
-    throw new CliError('MISSING_REQUIRED_FLAG', '--stdin requires piped newline-delimited ids.');
-  }
-
-  let raw = '';
-  try {
-    raw = fs.readFileSync(0, 'utf8');
-  } catch (err) {
-    throw new CliError('STDIN_READ_FAILED', `Unable to read ids from stdin: ${formatErrorValue(err)}`);
-  }
-
-  const ids = String(raw)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (!ids.length) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'No market ids were provided on stdin.');
-  }
-
-  return ids;
-}
-
-function setLifecycleFilter(current, next, flagName) {
-  if (current === next || current === 'all') {
-    return next;
-  }
-  throw new CliError(
-    'INVALID_ARGS',
-    `Lifecycle filters are mutually exclusive. Received ${flagName} with existing --${current}.`,
-  );
-}
-
-function parseMarketsListFlags(args) {
-  const options = {
-    where: {},
-    limit: 20,
-    after: null,
-    before: null,
-    orderBy: 'createdAt',
-    orderDirection: 'desc',
-    lifecycle: 'all',
-    expiringSoonHours: DEFAULT_EXPIRING_SOON_HOURS,
-    expand: false,
-    withOdds: false,
-  };
-  let expiringSoonHoursExplicit = false;
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--after') {
-      options.after = requireFlagValue(args, i, '--after');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--before') {
-      options.before = requireFlagValue(args, i, '--before');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--order-by') {
-      options.orderBy = requireFlagValue(args, i, '--order-by');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--order-direction') {
-      options.orderDirection = normalizeDirection(requireFlagValue(args, i, '--order-direction'));
-      i += 1;
-      continue;
-    }
-
-    if (token === '--chain-id') {
-      options.where.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--creator') {
-      options.where.creator = parseAddressFlag(requireFlagValue(args, i, '--creator'), '--creator');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--poll-address') {
-      options.where.pollAddress = parseAddressFlag(requireFlagValue(args, i, '--poll-address'), '--poll-address');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--market-type') {
-      options.where.marketType = requireFlagValue(args, i, '--market-type');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--where-json') {
-      options.where = mergeWhere(options.where, requireFlagValue(args, i, '--where-json'), '--where-json');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--active') {
-      options.lifecycle = setLifecycleFilter(options.lifecycle, 'active', '--active');
-      continue;
-    }
-
-    if (token === '--resolved') {
-      options.lifecycle = setLifecycleFilter(options.lifecycle, 'resolved', '--resolved');
-      continue;
-    }
-
-    if (token === '--expiring-soon') {
-      options.lifecycle = setLifecycleFilter(options.lifecycle, 'expiring-soon', '--expiring-soon');
-      continue;
-    }
-
-    if (token === '--expiring-hours') {
-      options.expiringSoonHours = parsePositiveInteger(requireFlagValue(args, i, '--expiring-hours'), '--expiring-hours');
-      expiringSoonHoursExplicit = true;
-      i += 1;
-      continue;
-    }
-
-    if (token === '--expand') {
-      options.expand = true;
-      continue;
-    }
-
-    if (token === '--with-odds') {
-      options.withOdds = true;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for markets list: ${token}`);
-  }
-
-  if (expiringSoonHoursExplicit && options.lifecycle !== 'expiring-soon') {
-    throw new CliError('INVALID_ARGS', '--expiring-hours requires --expiring-soon.');
-  }
-
-  return options;
-}
-
-function parseQuoteFlags(args) {
-  const options = {
-    marketAddress: null,
-    side: null,
-    amountUsdc: null,
-    yesPct: null,
-    slippageBps: 100,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--market-address') {
-      options.marketAddress = parseAddressFlag(requireFlagValue(args, i, '--market-address'), '--market-address');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--side') {
-      options.side = parseOutcomeSide(requireFlagValue(args, i, '--side'), '--side');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--amount-usdc' || token === '--amount') {
-      options.amountUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--yes-pct') {
-      options.yesPct = parseProbabilityPercent(requireFlagValue(args, i, '--yes-pct'), '--yes-pct');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--slippage-bps') {
-      options.slippageBps = parseNonNegativeInteger(requireFlagValue(args, i, '--slippage-bps'), '--slippage-bps');
-      if (options.slippageBps > 10_000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--slippage-bps must be between 0 and 10000.');
-      }
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for quote: ${token}`);
-  }
-
-  if (!options.marketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market address. Use --market-address <address>.');
-  }
-  if (!options.side) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing side. Use --side yes|no.');
-  }
-  if (options.amountUsdc === null) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount>.');
-  }
-
-  return options;
-}
-
-function parseTradeFlags(args) {
-  const options = {
-    marketAddress: null,
-    side: null,
-    amountUsdc: null,
-    yesPct: null,
-    slippageBps: 100,
-    dryRun: false,
-    execute: false,
-    minSharesOutRaw: null,
-    maxAmountUsdc: null,
-    minProbabilityPct: null,
-    maxProbabilityPct: null,
-    allowUnquotedExecute: false,
-    chainId: null,
-    rpcUrl: null,
-    privateKey: null,
-    usdc: null,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--market-address') {
-      options.marketAddress = parseAddressFlag(requireFlagValue(args, i, '--market-address'), '--market-address');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--side') {
-      options.side = parseOutcomeSide(requireFlagValue(args, i, '--side'), '--side');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--amount-usdc' || token === '--amount') {
-      options.amountUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--yes-pct') {
-      options.yesPct = parseProbabilityPercent(requireFlagValue(args, i, '--yes-pct'), '--yes-pct');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--slippage-bps') {
-      options.slippageBps = parseNonNegativeInteger(requireFlagValue(args, i, '--slippage-bps'), '--slippage-bps');
-      if (options.slippageBps > 10_000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--slippage-bps must be between 0 and 10000.');
-      }
-      i += 1;
-      continue;
-    }
-
-    if (token === '--dry-run') {
-      options.dryRun = true;
-      continue;
-    }
-
-    if (token === '--execute') {
-      options.execute = true;
-      continue;
-    }
-
-    if (token === '--min-shares-out-raw') {
-      options.minSharesOutRaw = parseBigIntString(requireFlagValue(args, i, '--min-shares-out-raw'), '--min-shares-out-raw');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--max-amount-usdc') {
-      options.maxAmountUsdc = parsePositiveNumber(requireFlagValue(args, i, '--max-amount-usdc'), '--max-amount-usdc');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--min-probability-pct') {
-      options.minProbabilityPct = parseProbabilityPercent(
-        requireFlagValue(args, i, '--min-probability-pct'),
-        '--min-probability-pct',
-      );
-      i += 1;
-      continue;
-    }
-
-    if (token === '--max-probability-pct') {
-      options.maxProbabilityPct = parseProbabilityPercent(
-        requireFlagValue(args, i, '--max-probability-pct'),
-        '--max-probability-pct',
-      );
-      i += 1;
-      continue;
-    }
-
-    if (token === '--allow-unquoted-execute') {
-      options.allowUnquotedExecute = true;
-      continue;
-    }
-
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--rpc-url') {
-      options.rpcUrl = requireFlagValue(args, i, '--rpc-url');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--private-key') {
-      options.privateKey = requireFlagValue(args, i, '--private-key');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--usdc') {
-      options.usdc = parseAddressFlag(requireFlagValue(args, i, '--usdc'), '--usdc');
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for trade: ${token}`);
-  }
-
-  if (!options.marketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market address. Use --market-address <address>.');
-  }
-  if (!options.side) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing side. Use --side yes|no.');
-  }
-  if (options.amountUsdc === null) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount>.');
-  }
-  if (options.dryRun === options.execute) {
-    throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');
-  }
-  if (
-    options.minProbabilityPct !== null &&
-    options.maxProbabilityPct !== null &&
-    options.minProbabilityPct > options.maxProbabilityPct
-  ) {
-    throw new CliError('INVALID_ARGS', '--min-probability-pct cannot be greater than --max-probability-pct.');
-  }
-
-  return options;
-}
-
-function parsePollsListFlags(args) {
-  const options = {
-    where: {},
-    limit: 20,
-    after: null,
-    before: null,
-    orderBy: 'createdAt',
-    orderDirection: 'desc',
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--after') {
-      options.after = requireFlagValue(args, i, '--after');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--before') {
-      options.before = requireFlagValue(args, i, '--before');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--order-by') {
-      options.orderBy = requireFlagValue(args, i, '--order-by');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--order-direction') {
-      options.orderDirection = normalizeDirection(requireFlagValue(args, i, '--order-direction'));
-      i += 1;
-      continue;
-    }
-
-    if (token === '--chain-id') {
-      options.where.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--creator') {
-      options.where.creator = parseAddressFlag(requireFlagValue(args, i, '--creator'), '--creator');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--status') {
-      options.where.status = parseInteger(requireFlagValue(args, i, '--status'), '--status');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--category') {
-      options.where.category = parseInteger(requireFlagValue(args, i, '--category'), '--category');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--question-contains') {
-      options.where.question_contains = requireFlagValue(args, i, '--question-contains');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--where-json') {
-      options.where = mergeWhere(options.where, requireFlagValue(args, i, '--where-json'), '--where-json');
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for polls list: ${token}`);
-  }
-
-  return options;
-}
-
-function parsePositionsListFlags(args) {
-  const options = {
-    where: {},
-    wallet: null,
-    limit: 20,
-    after: null,
-    before: null,
-    orderBy: 'lastTradeAt',
-    orderDirection: 'desc',
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--after') {
-      options.after = requireFlagValue(args, i, '--after');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--before') {
-      options.before = requireFlagValue(args, i, '--before');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--order-by') {
-      options.orderBy = parsePositionsOrderBy(requireFlagValue(args, i, '--order-by'));
-      i += 1;
-      continue;
-    }
-
-    if (token === '--order-direction') {
-      options.orderDirection = normalizeDirection(requireFlagValue(args, i, '--order-direction'));
-      i += 1;
-      continue;
-    }
-
-    if (token === '--wallet') {
-      options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
-      options.where.user = options.wallet;
-      i += 1;
-      continue;
-    }
-
-    if (token === '--market-address') {
-      options.where.marketAddress = parseAddressFlag(requireFlagValue(args, i, '--market-address'), '--market-address');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--chain-id') {
-      options.where.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--where-json') {
-      options.where = mergeWhere(options.where, requireFlagValue(args, i, '--where-json'), '--where-json');
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for positions list: ${token}`);
-  }
-
-  return options;
-}
-
-function parsePortfolioFlags(args) {
-  const options = {
-    wallet: null,
-    chainId: null,
-    limit: 100,
-    includeEvents: true,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--wallet') {
-      options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--include-events') {
-      options.includeEvents = true;
-      continue;
-    }
-
-    if (token === '--no-events') {
-      options.includeEvents = false;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for portfolio: ${token}`);
-  }
-
-  if (!options.wallet) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing wallet address. Use --wallet <address>.');
-  }
-
-  return options;
-}
-
-function parseWebhookFlagIntoOptions(args, i, token, options) {
-  if (token === '--webhook-url') {
-    options.webhookUrl = requireFlagValue(args, i, '--webhook-url');
-    return 1;
-  }
-  if (token === '--webhook-template') {
-    options.webhookTemplate = requireFlagValue(args, i, '--webhook-template');
-    return 1;
-  }
-  if (token === '--webhook-secret') {
-    options.webhookSecret = requireFlagValue(args, i, '--webhook-secret');
-    return 1;
-  }
-  if (token === '--webhook-timeout-ms') {
-    options.webhookTimeoutMs = parsePositiveInteger(
-      requireFlagValue(args, i, '--webhook-timeout-ms'),
-      '--webhook-timeout-ms',
-    );
-    return 1;
-  }
-  if (token === '--webhook-retries') {
-    options.webhookRetries = parseNonNegativeInteger(
-      requireFlagValue(args, i, '--webhook-retries'),
-      '--webhook-retries',
-    );
-    return 1;
-  }
-  if (token === '--telegram-bot-token') {
-    options.telegramBotToken = requireFlagValue(args, i, '--telegram-bot-token');
-    return 1;
-  }
-  if (token === '--telegram-chat-id') {
-    options.telegramChatId = requireFlagValue(args, i, '--telegram-chat-id');
-    return 1;
-  }
-  if (token === '--discord-webhook-url') {
-    options.discordWebhookUrl = requireFlagValue(args, i, '--discord-webhook-url');
-    return 1;
-  }
-  if (token === '--fail-on-webhook-error') {
-    options.failOnWebhookError = true;
-    return 0;
-  }
-
-  return null;
-}
-
-function parseWatchFlags(args) {
-  const options = {
-    wallet: null,
-    marketAddress: null,
-    side: 'yes',
-    amountUsdc: 1,
-    yesPct: null,
-    slippageBps: 100,
-    chainId: null,
-    limit: 100,
-    includeEvents: true,
-    iterations: 5,
-    intervalMs: 2_000,
-    alertYesBelow: null,
-    alertYesAbove: null,
-    alertNetLiquidityBelow: null,
-    alertNetLiquidityAbove: null,
-    failOnAlert: false,
-    webhookUrl: null,
-    webhookTemplate: null,
-    webhookSecret: null,
-    webhookTimeoutMs: 5_000,
-    webhookRetries: 3,
-    telegramBotToken: null,
-    telegramChatId: null,
-    discordWebhookUrl: null,
-    failOnWebhookError: false,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--wallet') {
-      options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--market-address') {
-      options.marketAddress = parseAddressFlag(requireFlagValue(args, i, '--market-address'), '--market-address');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--side') {
-      options.side = parseOutcomeSide(requireFlagValue(args, i, '--side'), '--side');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--amount-usdc' || token === '--amount') {
-      options.amountUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--yes-pct') {
-      options.yesPct = parseProbabilityPercent(requireFlagValue(args, i, '--yes-pct'), '--yes-pct');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--slippage-bps') {
-      options.slippageBps = parseNonNegativeInteger(requireFlagValue(args, i, '--slippage-bps'), '--slippage-bps');
-      if (options.slippageBps > 10_000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--slippage-bps must be between 0 and 10000.');
-      }
-      i += 1;
-      continue;
-    }
-
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--include-events') {
-      options.includeEvents = true;
-      continue;
-    }
-
-    if (token === '--no-events') {
-      options.includeEvents = false;
-      continue;
-    }
-
-    if (token === '--iterations') {
-      options.iterations = parsePositiveInteger(requireFlagValue(args, i, '--iterations'), '--iterations');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--interval-ms') {
-      options.intervalMs = parseNonNegativeInteger(requireFlagValue(args, i, '--interval-ms'), '--interval-ms');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--alert-yes-below') {
-      options.alertYesBelow = parseProbabilityPercent(requireFlagValue(args, i, '--alert-yes-below'), '--alert-yes-below');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--alert-yes-above') {
-      options.alertYesAbove = parseProbabilityPercent(requireFlagValue(args, i, '--alert-yes-above'), '--alert-yes-above');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--alert-net-liquidity-below') {
-      options.alertNetLiquidityBelow = parseNumber(
-        requireFlagValue(args, i, '--alert-net-liquidity-below'),
-        '--alert-net-liquidity-below',
-      );
-      i += 1;
-      continue;
-    }
-
-    if (token === '--alert-net-liquidity-above') {
-      options.alertNetLiquidityAbove = parseNumber(
-        requireFlagValue(args, i, '--alert-net-liquidity-above'),
-        '--alert-net-liquidity-above',
-      );
-      i += 1;
-      continue;
-    }
-
-    if (token === '--fail-on-alert') {
-      options.failOnAlert = true;
-      continue;
-    }
-
-    const webhookStep = parseWebhookFlagIntoOptions(args, i, token, options);
-    if (webhookStep !== null) {
-      i += webhookStep;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for watch: ${token}`);
-  }
-
-  if (!options.wallet && !options.marketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'watch requires at least one target: --wallet and/or --market-address.');
-  }
-  if ((options.alertYesBelow !== null || options.alertYesAbove !== null) && !options.marketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'YES-odds alerts require --market-address.');
-  }
-  if ((options.alertNetLiquidityBelow !== null || options.alertNetLiquidityAbove !== null) && !options.wallet) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Net-liquidity alerts require --wallet.');
-  }
-  if (
-    options.alertYesBelow !== null &&
-    options.alertYesAbove !== null &&
-    options.alertYesBelow > options.alertYesAbove
-  ) {
-    throw new CliError('INVALID_ARGS', '--alert-yes-below cannot be greater than --alert-yes-above.');
-  }
-  if (
-    options.alertNetLiquidityBelow !== null &&
-    options.alertNetLiquidityAbove !== null &&
-    options.alertNetLiquidityBelow > options.alertNetLiquidityAbove
-  ) {
-    throw new CliError('INVALID_ARGS', '--alert-net-liquidity-below cannot be greater than --alert-net-liquidity-above.');
-  }
-  if ((options.telegramBotToken && !options.telegramChatId) || (!options.telegramBotToken && options.telegramChatId)) {
-    throw new CliError(
-      'INVALID_ARGS',
-      'Telegram webhook requires both --telegram-bot-token and --telegram-chat-id.',
-    );
-  }
-
-  return options;
-}
-
-function parseEventsListFlags(args) {
-  const options = {
-    type: 'all',
-    limit: 20,
-    after: null,
-    before: null,
-    orderDirection: 'desc',
-    chainId: null,
-    wallet: null,
-    marketAddress: null,
-    pollAddress: null,
-    txHash: null,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--type') {
-      const value = requireFlagValue(args, i, '--type').toLowerCase();
-      if (value !== 'all' && value !== 'liquidity' && value !== 'oracle-fee' && value !== 'claim') {
-        throw new CliError('INVALID_FLAG_VALUE', `--type must be one of all|liquidity|oracle-fee|claim. Received: "${value}"`);
-      }
-      options.type = value;
-      i += 1;
-      continue;
-    }
-
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--after') {
-      options.after = requireFlagValue(args, i, '--after');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--before') {
-      options.before = requireFlagValue(args, i, '--before');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--order-direction') {
-      options.orderDirection = normalizeDirection(requireFlagValue(args, i, '--order-direction'));
-      i += 1;
-      continue;
-    }
-
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--wallet') {
-      options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--market-address') {
-      options.marketAddress = parseAddressFlag(requireFlagValue(args, i, '--market-address'), '--market-address');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--poll-address') {
-      options.pollAddress = parseAddressFlag(requireFlagValue(args, i, '--poll-address'), '--poll-address');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--tx-hash') {
-      options.txHash = requireFlagValue(args, i, '--tx-hash').toLowerCase();
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for events list: ${token}`);
-  }
-
-  return options;
-}
-
-function parseEventsGetFlags(args) {
-  const options = { id: null, type: 'all' };
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--id') {
-      options.id = requireFlagValue(args, i, '--id');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--type') {
-      const value = requireFlagValue(args, i, '--type').toLowerCase();
-      if (value !== 'all' && value !== 'liquidity' && value !== 'oracle-fee' && value !== 'claim') {
-        throw new CliError('INVALID_FLAG_VALUE', `--type must be one of all|liquidity|oracle-fee|claim. Received: "${value}"`);
-      }
-      options.type = value;
-      i += 1;
-      continue;
-    }
-
-    if (token.startsWith('--')) {
-      throw new CliError('UNKNOWN_FLAG', `Unknown flag for events get: ${token}`);
-    }
-
-    if (options.id) {
-      throw new CliError('INVALID_ARGS', `Unexpected extra argument for events get: ${token}`);
-    }
-
-    options.id = token;
-  }
-
-  if (!options.id) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing event id. Use --id <id>.');
-  }
-
-  return options;
-}
-
-function parseHistoryFlags(args) {
-  const options = {
-    wallet: null,
-    chainId: null,
-    marketAddress: null,
-    side: 'both',
-    status: 'all',
-    limit: 50,
-    after: null,
-    before: null,
-    orderBy: 'timestamp',
-    orderDirection: 'desc',
-    includeSeed: false,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--wallet') {
-      options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
-      i += 1;
-      continue;
-    }
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--market-address') {
-      options.marketAddress = parseAddressFlag(requireFlagValue(args, i, '--market-address'), '--market-address');
-      i += 1;
-      continue;
-    }
-    if (token === '--side') {
-      const side = requireFlagValue(args, i, '--side').toLowerCase();
-      if (side !== 'yes' && side !== 'no' && side !== 'both') {
-        throw new CliError('INVALID_FLAG_VALUE', '--side must be yes|no|both.');
-      }
-      options.side = side;
-      i += 1;
-      continue;
-    }
-    if (token === '--status') {
-      const status = requireFlagValue(args, i, '--status').toLowerCase();
-      if (!['all', 'open', 'won', 'lost', 'closed'].includes(status)) {
-        throw new CliError('INVALID_FLAG_VALUE', '--status must be all|open|won|lost|closed.');
-      }
-      options.status = status;
-      i += 1;
-      continue;
-    }
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-    if (token === '--after') {
-      options.after = requireFlagValue(args, i, '--after');
-      i += 1;
-      continue;
-    }
-    if (token === '--before') {
-      options.before = requireFlagValue(args, i, '--before');
-      i += 1;
-      continue;
-    }
-    if (token === '--order-by') {
-      const orderBy = requireFlagValue(args, i, '--order-by').toLowerCase();
-      if (!['timestamp', 'pnl', 'entry-price', 'mark-price'].includes(orderBy)) {
-        throw new CliError('INVALID_FLAG_VALUE', '--order-by must be timestamp|pnl|entry-price|mark-price.');
-      }
-      options.orderBy = orderBy;
-      i += 1;
-      continue;
-    }
-    if (token === '--order-direction') {
-      options.orderDirection = normalizeDirection(requireFlagValue(args, i, '--order-direction'));
-      i += 1;
-      continue;
-    }
-    if (token === '--include-seed') {
-      options.includeSeed = true;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for history: ${token}`);
-  }
-
-  if (!options.wallet) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing wallet address. Use --wallet <address>.');
-  }
-
-  return options;
-}
-
-function parseExportFlags(args) {
-  const options = {
-    wallet: null,
-    chainId: null,
-    format: null,
-    year: null,
-    from: null,
-    to: null,
-    outPath: null,
-    limit: 1000,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--wallet') {
-      options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
-      i += 1;
-      continue;
-    }
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--format') {
-      const format = requireFlagValue(args, i, '--format').toLowerCase();
-      if (format !== 'csv' && format !== 'json') {
-        throw new CliError('INVALID_FLAG_VALUE', '--format must be csv|json.');
-      }
-      options.format = format;
-      i += 1;
-      continue;
-    }
-    if (token === '--year') {
-      const year = parseInteger(requireFlagValue(args, i, '--year'), '--year');
-      if (year < 1970 || year > 3000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--year must be between 1970 and 3000.');
-      }
-      options.year = year;
-      i += 1;
-      continue;
-    }
-    if (token === '--from') {
-      options.from = parseInteger(requireFlagValue(args, i, '--from'), '--from');
-      i += 1;
-      continue;
-    }
-    if (token === '--to') {
-      options.to = parseInteger(requireFlagValue(args, i, '--to'), '--to');
-      i += 1;
-      continue;
-    }
-    if (token === '--out') {
-      options.outPath = requireFlagValue(args, i, '--out');
-      i += 1;
-      continue;
-    }
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for export: ${token}`);
-  }
-
-  if (!options.wallet) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing wallet address. Use --wallet <address>.');
-  }
-  if (!options.format) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing export format. Use --format csv|json.');
-  }
-  if (options.from !== null && options.to !== null && options.from > options.to) {
-    throw new CliError('INVALID_ARGS', '--from cannot be greater than --to.');
-  }
-
-  return options;
-}
-
-function parseArbitrageFlags(args) {
-  const options = {
-    chainId: null,
-    venues: ['pandora', 'polymarket'],
-    limit: 20,
-    minSpreadPct: 3,
-    minLiquidityUsd: 1000,
-    maxCloseDiffHours: 24,
-    similarityThreshold: 0.86,
-    crossVenueOnly: true,
-    withRules: false,
-    includeSimilarity: false,
-    questionContains: null,
-    polymarketHost: null,
-    polymarketMockUrl: null,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--venues') {
-      const venues = parseCsvList(requireFlagValue(args, i, '--venues'), '--venues').map((value) => value.toLowerCase());
-      const allowed = new Set(['pandora', 'polymarket']);
-      for (const venue of venues) {
-        if (!allowed.has(venue)) {
-          throw new CliError('INVALID_FLAG_VALUE', `Unsupported venue in --venues: ${venue}`);
-        }
-      }
-      options.venues = venues;
-      i += 1;
-      continue;
-    }
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-    if (token === '--min-spread-pct') {
-      options.minSpreadPct = parsePositiveNumber(requireFlagValue(args, i, '--min-spread-pct'), '--min-spread-pct');
-      i += 1;
-      continue;
-    }
-    if (token === '--min-liquidity-usdc') {
-      options.minLiquidityUsd = parsePositiveNumber(requireFlagValue(args, i, '--min-liquidity-usdc'), '--min-liquidity-usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--max-close-diff-hours') {
-      options.maxCloseDiffHours = parsePositiveNumber(
-        requireFlagValue(args, i, '--max-close-diff-hours'),
-        '--max-close-diff-hours',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--similarity-threshold') {
-      options.similarityThreshold = parseNumber(
-        requireFlagValue(args, i, '--similarity-threshold'),
-        '--similarity-threshold',
-      );
-      if (options.similarityThreshold < 0 || options.similarityThreshold > 1) {
-        throw new CliError('INVALID_FLAG_VALUE', '--similarity-threshold must be between 0 and 1.');
-      }
-      i += 1;
-      continue;
-    }
-    if (token === '--cross-venue-only') {
-      options.crossVenueOnly = true;
-      continue;
-    }
-    if (token === '--allow-same-venue') {
-      options.crossVenueOnly = false;
-      continue;
-    }
-    if (token === '--with-rules') {
-      options.withRules = true;
-      continue;
-    }
-    if (token === '--include-similarity') {
-      options.includeSimilarity = true;
-      continue;
-    }
-    if (token === '--question-contains') {
-      options.questionContains = requireFlagValue(args, i, '--question-contains');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-host') {
-      options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-mock-url') {
-      options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for arbitrage: ${token}`);
-  }
-
-  return options;
-}
-
-function parseAutopilotFlags(args) {
-  const mode = args[0];
-  if (mode !== 'run' && mode !== 'once') {
-    throw new CliError('INVALID_ARGS', 'autopilot requires subcommand run|once.');
-  }
-
-  const rest = args.slice(1);
-  const options = {
-    mode,
-    marketAddress: null,
-    side: null,
-    amountUsdc: null,
-    triggerYesBelow: null,
-    triggerYesAbove: null,
-    yesPct: null,
-    slippageBps: 100,
-    executeLive: false,
-    intervalMs: 5_000,
-    cooldownMs: 60_000,
-    maxAmountUsdc: null,
-    maxOpenExposureUsdc: null,
-    maxTradesPerDay: null,
-    minProbabilityPct: null,
-    maxProbabilityPct: null,
-    iterations: null,
-    stateFile: null,
-    killSwitchFile: null,
-    webhookUrl: null,
-    webhookTemplate: null,
-    webhookSecret: null,
-    webhookTimeoutMs: 5_000,
-    webhookRetries: 3,
-    telegramBotToken: null,
-    telegramChatId: null,
-    discordWebhookUrl: null,
-    failOnWebhookError: false,
-  };
-
-  for (let i = 0; i < rest.length; i += 1) {
-    const token = rest[i];
-    if (token === '--market-address') {
-      options.marketAddress = parseAddressFlag(requireFlagValue(rest, i, '--market-address'), '--market-address');
-      i += 1;
-      continue;
-    }
-    if (token === '--side') {
-      options.side = parseOutcomeSide(requireFlagValue(rest, i, '--side'), '--side');
-      i += 1;
-      continue;
-    }
-    if (token === '--amount-usdc' || token === '--amount') {
-      options.amountUsdc = parsePositiveNumber(requireFlagValue(rest, i, token), token);
-      i += 1;
-      continue;
-    }
-    if (token === '--trigger-yes-below') {
-      options.triggerYesBelow = parseProbabilityPercent(requireFlagValue(rest, i, '--trigger-yes-below'), '--trigger-yes-below');
-      i += 1;
-      continue;
-    }
-    if (token === '--trigger-yes-above') {
-      options.triggerYesAbove = parseProbabilityPercent(requireFlagValue(rest, i, '--trigger-yes-above'), '--trigger-yes-above');
-      i += 1;
-      continue;
-    }
-    if (token === '--paper') {
-      options.executeLive = false;
-      continue;
-    }
-    if (token === '--execute-live') {
-      options.executeLive = true;
-      continue;
-    }
-    if (token === '--interval-ms') {
-      options.intervalMs = parsePositiveInteger(requireFlagValue(rest, i, '--interval-ms'), '--interval-ms');
-      if (options.intervalMs < 1_000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--interval-ms must be >= 1000.');
-      }
-      i += 1;
-      continue;
-    }
-    if (token === '--cooldown-ms') {
-      options.cooldownMs = parsePositiveInteger(requireFlagValue(rest, i, '--cooldown-ms'), '--cooldown-ms');
-      i += 1;
-      continue;
-    }
-    if (token === '--max-amount-usdc') {
-      options.maxAmountUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--max-amount-usdc'), '--max-amount-usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--max-open-exposure-usdc') {
-      options.maxOpenExposureUsdc = parsePositiveNumber(
-        requireFlagValue(rest, i, '--max-open-exposure-usdc'),
-        '--max-open-exposure-usdc',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--max-trades-per-day') {
-      options.maxTradesPerDay = parsePositiveInteger(
-        requireFlagValue(rest, i, '--max-trades-per-day'),
-        '--max-trades-per-day',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--min-probability-pct') {
-      options.minProbabilityPct = parseProbabilityPercent(
-        requireFlagValue(rest, i, '--min-probability-pct'),
-        '--min-probability-pct',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--max-probability-pct') {
-      options.maxProbabilityPct = parseProbabilityPercent(
-        requireFlagValue(rest, i, '--max-probability-pct'),
-        '--max-probability-pct',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--yes-pct') {
-      options.yesPct = parseProbabilityPercent(requireFlagValue(rest, i, '--yes-pct'), '--yes-pct');
-      i += 1;
-      continue;
-    }
-    if (token === '--slippage-bps') {
-      options.slippageBps = parseNonNegativeInteger(requireFlagValue(rest, i, '--slippage-bps'), '--slippage-bps');
-      if (options.slippageBps > 10_000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--slippage-bps must be between 0 and 10000.');
-      }
-      i += 1;
-      continue;
-    }
-    if (token === '--iterations') {
-      options.iterations = parsePositiveInteger(requireFlagValue(rest, i, '--iterations'), '--iterations');
-      i += 1;
-      continue;
-    }
-    if (token === '--state-file') {
-      options.stateFile = requireFlagValue(rest, i, '--state-file');
-      i += 1;
-      continue;
-    }
-    if (token === '--kill-switch-file') {
-      options.killSwitchFile = requireFlagValue(rest, i, '--kill-switch-file');
-      i += 1;
-      continue;
-    }
-
-    const webhookStep = parseWebhookFlagIntoOptions(rest, i, token, options);
-    if (webhookStep !== null) {
-      i += webhookStep;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for autopilot: ${token}`);
-  }
-
-  if (!options.marketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market address. Use --market-address <address>.');
-  }
-  if (!options.side) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing side. Use --side yes|no.');
-  }
-  if (options.amountUsdc === null) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing amount. Use --amount-usdc <amount>.');
-  }
-  if (options.triggerYesBelow === null && options.triggerYesAbove === null) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'At least one trigger is required: --trigger-yes-below and/or --trigger-yes-above.');
-  }
-  if (
-    options.triggerYesBelow !== null &&
-    options.triggerYesAbove !== null &&
-    options.triggerYesBelow > options.triggerYesAbove
-  ) {
-    throw new CliError('INVALID_ARGS', '--trigger-yes-below cannot be greater than --trigger-yes-above.');
-  }
-  if (
-    options.minProbabilityPct !== null &&
-    options.maxProbabilityPct !== null &&
-    options.minProbabilityPct > options.maxProbabilityPct
-  ) {
-    throw new CliError('INVALID_ARGS', '--min-probability-pct cannot be greater than --max-probability-pct.');
-  }
-  if ((options.telegramBotToken && !options.telegramChatId) || (!options.telegramBotToken && options.telegramChatId)) {
-    throw new CliError(
-      'INVALID_ARGS',
-      'Telegram webhook requires both --telegram-bot-token and --telegram-chat-id.',
-    );
-  }
-
-  if (options.executeLive) {
-    if (options.maxAmountUsdc === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-amount-usdc.');
-    }
-    if (options.maxOpenExposureUsdc === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-open-exposure-usdc.');
-    }
-    if (options.maxTradesPerDay === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-trades-per-day.');
-    }
-  } else {
-    if (options.maxOpenExposureUsdc === null) options.maxOpenExposureUsdc = Number.POSITIVE_INFINITY;
-    if (options.maxTradesPerDay === null) options.maxTradesPerDay = Number.MAX_SAFE_INTEGER;
-  }
-
-  if (options.stateFile === null) {
-    options.stateFile = defaultAutopilotStateFile({
-      mode: options.mode,
-      marketAddress: options.marketAddress,
-      side: options.side,
-      amountUsdc: options.amountUsdc,
-      triggerYesBelow: options.triggerYesBelow,
-      triggerYesAbove: options.triggerYesAbove,
-      executeLive: options.executeLive,
-    });
-  }
-  if (options.killSwitchFile === null) {
-    options.killSwitchFile = defaultAutopilotKillSwitchFile();
-  }
-
-  return options;
-}
-
-function parseMirrorPlanFlags(args) {
-  const options = {
-    source: 'polymarket',
-    polymarketMarketId: null,
-    polymarketSlug: null,
-    chainId: null,
-    targetSlippageBps: 150,
-    turnoverTarget: 1.25,
-    depthSlippageBps: 100,
-    safetyMultiplier: 1.2,
-    minLiquidityUsdc: 100,
-    maxLiquidityUsdc: 50_000,
-    withRules: false,
-    includeSimilarity: false,
-    polymarketHost: null,
-    polymarketMockUrl: null,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--source') {
-      const source = requireFlagValue(args, i, '--source').toLowerCase();
-      if (source !== 'polymarket') {
-        throw new CliError('INVALID_FLAG_VALUE', '--source must be polymarket in mirror v1.');
-      }
-      options.source = source;
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-market-id') {
-      options.polymarketMarketId = requireFlagValue(args, i, '--polymarket-market-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-slug') {
-      options.polymarketSlug = requireFlagValue(args, i, '--polymarket-slug');
-      i += 1;
-      continue;
-    }
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--target-slippage-bps') {
-      options.targetSlippageBps = parsePositiveInteger(requireFlagValue(args, i, '--target-slippage-bps'), '--target-slippage-bps');
-      if (options.targetSlippageBps > 10_000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--target-slippage-bps must be <= 10000.');
-      }
-      i += 1;
-      continue;
-    }
-    if (token === '--turnover-target') {
-      options.turnoverTarget = parsePositiveNumber(requireFlagValue(args, i, '--turnover-target'), '--turnover-target');
-      i += 1;
-      continue;
-    }
-    if (token === '--depth-slippage-bps') {
-      options.depthSlippageBps = parsePositiveInteger(requireFlagValue(args, i, '--depth-slippage-bps'), '--depth-slippage-bps');
-      if (options.depthSlippageBps > 10_000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--depth-slippage-bps must be <= 10000.');
-      }
-      i += 1;
-      continue;
-    }
-    if (token === '--safety-multiplier') {
-      options.safetyMultiplier = parsePositiveNumber(requireFlagValue(args, i, '--safety-multiplier'), '--safety-multiplier');
-      i += 1;
-      continue;
-    }
-    if (token === '--min-liquidity-usdc') {
-      options.minLiquidityUsdc = parsePositiveNumber(requireFlagValue(args, i, '--min-liquidity-usdc'), '--min-liquidity-usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--max-liquidity-usdc') {
-      options.maxLiquidityUsdc = parsePositiveNumber(requireFlagValue(args, i, '--max-liquidity-usdc'), '--max-liquidity-usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--with-rules') {
-      options.withRules = true;
-      continue;
-    }
-    if (token === '--include-similarity') {
-      options.includeSimilarity = true;
-      continue;
-    }
-    if (token === '--polymarket-host') {
-      options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-mock-url') {
-      options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror plan: ${token}`);
-  }
-
-  if (!options.polymarketMarketId && !options.polymarketSlug) {
-    throw new CliError(
-      'MISSING_REQUIRED_FLAG',
-      'mirror plan requires --polymarket-market-id <id> or --polymarket-slug <slug>.',
-    );
-  }
-  if (options.minLiquidityUsdc > options.maxLiquidityUsdc) {
-    throw new CliError('INVALID_ARGS', '--min-liquidity-usdc cannot be greater than --max-liquidity-usdc.');
-  }
-
-  return options;
-}
-
-function parseMirrorDeployFlags(args) {
-  const options = {
-    planFile: null,
-    polymarketMarketId: null,
-    polymarketSlug: null,
-    dryRun: false,
-    execute: false,
-    marketType: 'amm',
-    liquidityUsdc: null,
-    feeTier: 3000,
-    maxImbalance: 10_000,
-    arbiter: null,
-    category: 3,
-    allowRuleMismatch: false,
-    sources: [],
-    chainId: null,
-    rpcUrl: null,
-    privateKey: null,
-    oracle: null,
-    factory: null,
-    usdc: null,
-    distributionYes: null,
-    distributionNo: null,
-    polymarketHost: null,
-    polymarketMockUrl: null,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--plan-file') {
-      options.planFile = requireFlagValue(args, i, '--plan-file');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-market-id') {
-      options.polymarketMarketId = requireFlagValue(args, i, '--polymarket-market-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-slug') {
-      options.polymarketSlug = requireFlagValue(args, i, '--polymarket-slug');
-      i += 1;
-      continue;
-    }
-    if (token === '--dry-run') {
-      options.dryRun = true;
-      continue;
-    }
-    if (token === '--execute') {
-      options.execute = true;
-      continue;
-    }
-    if (token === '--market-type') {
-      options.marketType = requireFlagValue(args, i, '--market-type').toLowerCase();
-      i += 1;
-      continue;
-    }
-    if (token === '--liquidity-usdc') {
-      options.liquidityUsdc = parsePositiveNumber(requireFlagValue(args, i, '--liquidity-usdc'), '--liquidity-usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--fee-tier') {
-      options.feeTier = parsePositiveInteger(requireFlagValue(args, i, '--fee-tier'), '--fee-tier');
-      i += 1;
-      continue;
-    }
-    if (token === '--max-imbalance') {
-      options.maxImbalance = parsePositiveInteger(requireFlagValue(args, i, '--max-imbalance'), '--max-imbalance');
-      i += 1;
-      continue;
-    }
-    if (token === '--arbiter') {
-      options.arbiter = parseAddressFlag(requireFlagValue(args, i, '--arbiter'), '--arbiter');
-      i += 1;
-      continue;
-    }
-    if (token === '--category') {
-      options.category = parseInteger(requireFlagValue(args, i, '--category'), '--category');
-      i += 1;
-      continue;
-    }
-    if (token === '--allow-rule-mismatch') {
-      options.allowRuleMismatch = true;
-      continue;
-    }
-    if (token === '--sources') {
-      let j = i + 1;
-      const entries = [];
-      while (j < args.length && !args[j].startsWith('--')) {
-        entries.push(args[j]);
-        j += 1;
-      }
-      if (!entries.length) {
-        throw new CliError('MISSING_FLAG_VALUE', 'Missing value for --sources');
-      }
-      options.sources.push(...entries);
-      i = j - 1;
-      continue;
-    }
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--rpc-url') {
-      options.rpcUrl = requireFlagValue(args, i, '--rpc-url');
-      i += 1;
-      continue;
-    }
-    if (token === '--private-key') {
-      options.privateKey = requireFlagValue(args, i, '--private-key');
-      i += 1;
-      continue;
-    }
-    if (token === '--oracle') {
-      options.oracle = parseAddressFlag(requireFlagValue(args, i, '--oracle'), '--oracle');
-      i += 1;
-      continue;
-    }
-    if (token === '--factory') {
-      options.factory = parseAddressFlag(requireFlagValue(args, i, '--factory'), '--factory');
-      i += 1;
-      continue;
-    }
-    if (token === '--usdc') {
-      options.usdc = parseAddressFlag(requireFlagValue(args, i, '--usdc'), '--usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--distribution-yes') {
-      options.distributionYes = parsePositiveInteger(requireFlagValue(args, i, '--distribution-yes'), '--distribution-yes');
-      i += 1;
-      continue;
-    }
-    if (token === '--distribution-no') {
-      options.distributionNo = parsePositiveInteger(requireFlagValue(args, i, '--distribution-no'), '--distribution-no');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-host') {
-      options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-mock-url') {
-      options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
-      i += 1;
-      continue;
-    }
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror deploy: ${token}`);
-  }
-
-  if (options.dryRun === options.execute) {
-    throw new CliError('INVALID_ARGS', 'mirror deploy requires exactly one mode: --dry-run or --execute.');
-  }
-  if (options.marketType !== 'amm') {
-    throw new CliError('INVALID_FLAG_VALUE', 'mirror deploy only supports --market-type amm in v1.');
-  }
-  if (!options.planFile && !options.polymarketMarketId && !options.polymarketSlug) {
-    throw new CliError(
-      'MISSING_REQUIRED_FLAG',
-      'mirror deploy requires --plan-file <path> or a Polymarket selector (--polymarket-market-id/--polymarket-slug).',
-    );
-  }
-  if (![500, 3000, 10000].includes(options.feeTier)) {
-    throw new CliError('INVALID_FLAG_VALUE', '--fee-tier must be one of 500, 3000, 10000.');
-  }
-  if (
-    (options.distributionYes === null && options.distributionNo !== null) ||
-    (options.distributionYes !== null && options.distributionNo === null)
-  ) {
-    throw new CliError('INVALID_ARGS', 'Provide both --distribution-yes and --distribution-no together.');
-  }
-  if (
-    options.distributionYes !== null &&
-    options.distributionNo !== null &&
-    options.distributionYes + options.distributionNo !== 1_000_000_000
-  ) {
-    throw new CliError('INVALID_ARGS', '--distribution-yes + --distribution-no must equal 1000000000.');
-  }
-
-  return options;
-}
-
-function parseMirrorVerifyFlags(args) {
-  const options = {
-    pandoraMarketAddress: null,
-    polymarketMarketId: null,
-    polymarketSlug: null,
-    includeSimilarity: false,
-    withRules: false,
-    allowRuleMismatch: false,
-    polymarketHost: null,
-    polymarketMockUrl: null,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--pandora-market-address') {
-      options.pandoraMarketAddress = parseAddressFlag(
-        requireFlagValue(args, i, '--pandora-market-address'),
-        '--pandora-market-address',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-market-id') {
-      options.polymarketMarketId = requireFlagValue(args, i, '--polymarket-market-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-slug') {
-      options.polymarketSlug = requireFlagValue(args, i, '--polymarket-slug');
-      i += 1;
-      continue;
-    }
-    if (token === '--include-similarity') {
-      options.includeSimilarity = true;
-      continue;
-    }
-    if (token === '--with-rules') {
-      options.withRules = true;
-      continue;
-    }
-    if (token === '--allow-rule-mismatch') {
-      options.allowRuleMismatch = true;
-      continue;
-    }
-    if (token === '--polymarket-host') {
-      options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-mock-url') {
-      options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
-      i += 1;
-      continue;
-    }
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror verify: ${token}`);
-  }
-
-  if (!options.pandoraMarketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing --pandora-market-address <address>.');
-  }
-  if (!options.polymarketMarketId && !options.polymarketSlug) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'mirror verify requires --polymarket-market-id <id> or --polymarket-slug <slug>.');
-  }
-
-  return options;
-}
-
-function parseMirrorStatusFlags(args) {
-  const options = {
-    stateFile: null,
-    strategyHash: null,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--state-file') {
-      options.stateFile = requireFlagValue(args, i, '--state-file');
-      i += 1;
-      continue;
-    }
-    if (token === '--strategy-hash') {
-      const value = requireFlagValue(args, i, '--strategy-hash');
-      if (!/^[a-f0-9]{16}$/i.test(value)) {
-        throw new CliError('INVALID_FLAG_VALUE', '--strategy-hash must be a 16-character hex value.');
-      }
-      options.strategyHash = value.toLowerCase();
-      i += 1;
-      continue;
-    }
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror status: ${token}`);
-  }
-
-  if (!options.stateFile && !options.strategyHash) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'mirror status requires --state-file <path> or --strategy-hash <hash>.');
-  }
-
-  return options;
-}
-
-function parseMirrorSyncFlags(args) {
-  const mode = args[0];
-  if (mode !== 'run' && mode !== 'once') {
-    throw new CliError('INVALID_ARGS', 'mirror sync requires subcommand run|once.');
-  }
-
-  const rest = args.slice(1);
-  const options = {
-    mode,
-    pandoraMarketAddress: null,
-    polymarketMarketId: null,
-    polymarketSlug: null,
-    executeLive: false,
-    hedgeEnabled: true,
-    hedgeRatio: 1,
-    intervalMs: 5_000,
-    driftTriggerBps: 150,
-    hedgeTriggerUsdc: 10,
-    maxRebalanceUsdc: 25,
-    maxHedgeUsdc: 50,
-    maxOpenExposureUsdc: null,
-    maxTradesPerDay: null,
-    cooldownMs: 60_000,
-    depthSlippageBps: 100,
-    iterations: null,
-    stateFile: null,
-    killSwitchFile: null,
-    chainId: null,
-    rpcUrl: null,
-    privateKey: null,
-    usdc: null,
-    polymarketHost: null,
-    polymarketMockUrl: null,
-    webhookUrl: null,
-    webhookTemplate: null,
-    webhookSecret: null,
-    webhookTimeoutMs: 5_000,
-    webhookRetries: 3,
-    telegramBotToken: null,
-    telegramChatId: null,
-    discordWebhookUrl: null,
-    failOnWebhookError: false,
-  };
-
-  for (let i = 0; i < rest.length; i += 1) {
-    const token = rest[i];
-    if (token === '--pandora-market-address') {
-      options.pandoraMarketAddress = parseAddressFlag(
-        requireFlagValue(rest, i, '--pandora-market-address'),
-        '--pandora-market-address',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-market-id') {
-      options.polymarketMarketId = requireFlagValue(rest, i, '--polymarket-market-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-slug') {
-      options.polymarketSlug = requireFlagValue(rest, i, '--polymarket-slug');
-      i += 1;
-      continue;
-    }
-    if (token === '--paper') {
-      options.executeLive = false;
-      continue;
-    }
-    if (token === '--execute-live') {
-      options.executeLive = true;
-      continue;
-    }
-    if (token === '--no-hedge') {
-      options.hedgeEnabled = false;
-      continue;
-    }
-    if (token === '--interval-ms') {
-      options.intervalMs = parsePositiveInteger(requireFlagValue(rest, i, '--interval-ms'), '--interval-ms');
-      if (options.intervalMs < 1_000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--interval-ms must be >= 1000.');
-      }
-      i += 1;
-      continue;
-    }
-    if (token === '--drift-trigger-bps') {
-      options.driftTriggerBps = parsePositiveInteger(requireFlagValue(rest, i, '--drift-trigger-bps'), '--drift-trigger-bps');
-      i += 1;
-      continue;
-    }
-    if (token === '--hedge-trigger-usdc') {
-      options.hedgeTriggerUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--hedge-trigger-usdc'), '--hedge-trigger-usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--hedge-ratio') {
-      options.hedgeRatio = parsePositiveNumber(requireFlagValue(rest, i, '--hedge-ratio'), '--hedge-ratio');
-      if (options.hedgeRatio > 2) {
-        throw new CliError('INVALID_FLAG_VALUE', '--hedge-ratio must be <= 2.');
-      }
-      i += 1;
-      continue;
-    }
-    if (token === '--max-rebalance-usdc') {
-      options.maxRebalanceUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--max-rebalance-usdc'), '--max-rebalance-usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--max-hedge-usdc') {
-      options.maxHedgeUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--max-hedge-usdc'), '--max-hedge-usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--max-open-exposure-usdc') {
-      options.maxOpenExposureUsdc = parsePositiveNumber(
-        requireFlagValue(rest, i, '--max-open-exposure-usdc'),
-        '--max-open-exposure-usdc',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--max-trades-per-day') {
-      options.maxTradesPerDay = parsePositiveInteger(
-        requireFlagValue(rest, i, '--max-trades-per-day'),
-        '--max-trades-per-day',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--cooldown-ms') {
-      options.cooldownMs = parsePositiveInteger(requireFlagValue(rest, i, '--cooldown-ms'), '--cooldown-ms');
-      i += 1;
-      continue;
-    }
-    if (token === '--depth-slippage-bps') {
-      options.depthSlippageBps = parsePositiveInteger(requireFlagValue(rest, i, '--depth-slippage-bps'), '--depth-slippage-bps');
-      if (options.depthSlippageBps > 10_000) {
-        throw new CliError('INVALID_FLAG_VALUE', '--depth-slippage-bps must be <= 10000.');
-      }
-      i += 1;
-      continue;
-    }
-    if (token === '--iterations') {
-      options.iterations = parsePositiveInteger(requireFlagValue(rest, i, '--iterations'), '--iterations');
-      i += 1;
-      continue;
-    }
-    if (token === '--state-file') {
-      options.stateFile = requireFlagValue(rest, i, '--state-file');
-      i += 1;
-      continue;
-    }
-    if (token === '--kill-switch-file') {
-      options.killSwitchFile = requireFlagValue(rest, i, '--kill-switch-file');
-      i += 1;
-      continue;
-    }
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(rest, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--rpc-url') {
-      options.rpcUrl = requireFlagValue(rest, i, '--rpc-url');
-      i += 1;
-      continue;
-    }
-    if (token === '--private-key') {
-      options.privateKey = requireFlagValue(rest, i, '--private-key');
-      i += 1;
-      continue;
-    }
-    if (token === '--usdc') {
-      options.usdc = parseAddressFlag(requireFlagValue(rest, i, '--usdc'), '--usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-host') {
-      options.polymarketHost = requireFlagValue(rest, i, '--polymarket-host');
-      i += 1;
-      continue;
-    }
-    if (token === '--polymarket-mock-url') {
-      options.polymarketMockUrl = requireFlagValue(rest, i, '--polymarket-mock-url');
-      i += 1;
-      continue;
-    }
-
-    const webhookStep = parseWebhookFlagIntoOptions(rest, i, token, options);
-    if (webhookStep !== null) {
-      i += webhookStep;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror sync: ${token}`);
-  }
-
-  if (!options.pandoraMarketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing --pandora-market-address <address>.');
-  }
-  if (!options.polymarketMarketId && !options.polymarketSlug) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'mirror sync requires --polymarket-market-id <id> or --polymarket-slug <slug>.');
-  }
-  if ((options.telegramBotToken && !options.telegramChatId) || (!options.telegramBotToken && options.telegramChatId)) {
-    throw new CliError(
-      'INVALID_ARGS',
-      'Telegram webhook requires both --telegram-bot-token and --telegram-chat-id.',
-    );
-  }
-
-  if (options.executeLive) {
-    if (options.maxOpenExposureUsdc === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-open-exposure-usdc.');
-    }
-    if (options.maxTradesPerDay === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-trades-per-day.');
-    }
-  } else {
-    if (options.maxOpenExposureUsdc === null) options.maxOpenExposureUsdc = Number.POSITIVE_INFINITY;
-    if (options.maxTradesPerDay === null) options.maxTradesPerDay = Number.MAX_SAFE_INTEGER;
-  }
-
-  if (options.stateFile === null) {
-    options.stateFile = defaultMirrorStateFile({
-      mode: options.mode,
-      pandoraMarketAddress: options.pandoraMarketAddress,
-      polymarketMarketId: options.polymarketMarketId,
-      polymarketSlug: options.polymarketSlug,
-      executeLive: options.executeLive,
-      driftTriggerBps: options.driftTriggerBps,
-      hedgeEnabled: options.hedgeEnabled,
-      hedgeRatio: options.hedgeRatio,
-      hedgeTriggerUsdc: options.hedgeTriggerUsdc,
-    });
-  }
-  if (options.killSwitchFile === null) {
-    options.killSwitchFile = defaultMirrorKillSwitchFile();
-  }
-
-  return options;
-}
-
-function parseWebhookTestFlags(args) {
-  const options = {
-    webhookUrl: null,
-    webhookTemplate: null,
-    webhookSecret: null,
-    webhookTimeoutMs: 5_000,
-    webhookRetries: 3,
-    telegramBotToken: null,
-    telegramChatId: null,
-    discordWebhookUrl: null,
-    failOnWebhookError: false,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    const step = parseWebhookFlagIntoOptions(args, i, token, options);
-    if (step !== null) {
-      i += step;
-      continue;
-    }
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for webhook test: ${token}`);
-  }
-
-  if (!hasWebhookTargets(options)) {
-    throw new CliError(
-      'MISSING_REQUIRED_FLAG',
-      'webhook test requires at least one target: --webhook-url, Telegram, or Discord flags.',
-    );
-  }
-  if ((options.telegramBotToken && !options.telegramChatId) || (!options.telegramBotToken && options.telegramChatId)) {
-    throw new CliError(
-      'INVALID_ARGS',
-      'Telegram webhook requires both --telegram-bot-token and --telegram-chat-id.',
-    );
-  }
-
-  return options;
-}
-
-function parseLeaderboardFlags(args) {
-  const options = {
-    metric: 'profit',
-    chainId: null,
-    limit: 20,
-    minTrades: 0,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--metric') {
-      const metric = requireFlagValue(args, i, '--metric').toLowerCase();
-      if (!['profit', 'volume', 'win-rate'].includes(metric)) {
-        throw new CliError('INVALID_FLAG_VALUE', '--metric must be profit|volume|win-rate.');
-      }
-      options.metric = metric;
-      i += 1;
-      continue;
-    }
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--limit') {
-      options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
-      i += 1;
-      continue;
-    }
-    if (token === '--min-trades') {
-      options.minTrades = parseNonNegativeInteger(requireFlagValue(args, i, '--min-trades'), '--min-trades');
-      i += 1;
-      continue;
-    }
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for leaderboard: ${token}`);
-  }
-
-  return options;
-}
-
-function parseAnalyzeFlags(args) {
-  const options = {
-    marketAddress: null,
-    provider: null,
-    model: null,
-    maxCostUsd: null,
-    temperature: null,
-    timeoutMs: 12_000,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--market-address') {
-      options.marketAddress = parseAddressFlag(requireFlagValue(args, i, '--market-address'), '--market-address');
-      i += 1;
-      continue;
-    }
-    if (token === '--provider') {
-      options.provider = requireFlagValue(args, i, '--provider');
-      i += 1;
-      continue;
-    }
-    if (token === '--model') {
-      options.model = requireFlagValue(args, i, '--model');
-      i += 1;
-      continue;
-    }
-    if (token === '--max-cost-usd') {
-      options.maxCostUsd = parsePositiveNumber(requireFlagValue(args, i, '--max-cost-usd'), '--max-cost-usd');
-      i += 1;
-      continue;
-    }
-    if (token === '--temperature') {
-      options.temperature = parseNumber(requireFlagValue(args, i, '--temperature'), '--temperature');
-      i += 1;
-      continue;
-    }
-    if (token === '--timeout-ms') {
-      options.timeoutMs = parsePositiveInteger(requireFlagValue(args, i, '--timeout-ms'), '--timeout-ms');
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for analyze: ${token}`);
-  }
-
-  if (!options.marketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market address. Use --market-address <address>.');
-  }
-
-  return options;
-}
-
-function parseSuggestFlags(args) {
-  const options = {
-    wallet: null,
-    risk: null,
-    budget: null,
-    count: 3,
-    includeVenues: ['pandora', 'polymarket'],
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--wallet') {
-      options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
-      i += 1;
-      continue;
-    }
-    if (token === '--risk') {
-      const risk = requireFlagValue(args, i, '--risk').toLowerCase();
-      if (!['low', 'medium', 'high'].includes(risk)) {
-        throw new CliError('INVALID_FLAG_VALUE', '--risk must be low|medium|high.');
-      }
-      options.risk = risk;
-      i += 1;
-      continue;
-    }
-    if (token === '--budget') {
-      options.budget = parsePositiveNumber(requireFlagValue(args, i, '--budget'), '--budget');
-      i += 1;
-      continue;
-    }
-    if (token === '--count') {
-      options.count = parsePositiveInteger(requireFlagValue(args, i, '--count'), '--count');
-      i += 1;
-      continue;
-    }
-    if (token === '--include-venues') {
-      const venues = parseCsvList(requireFlagValue(args, i, '--include-venues'), '--include-venues').map((value) =>
-        value.toLowerCase(),
-      );
-      const allowed = new Set(['pandora', 'polymarket']);
-      for (const venue of venues) {
-        if (!allowed.has(venue)) {
-          throw new CliError('INVALID_FLAG_VALUE', `Unsupported venue in --include-venues: ${venue}`);
-        }
-      }
-      options.includeVenues = venues;
-      i += 1;
-      continue;
-    }
-
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for suggest: ${token}`);
-  }
-
-  if (!options.wallet) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing wallet address. Use --wallet <address>.');
-  }
-  if (!options.risk) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing risk profile. Use --risk low|medium|high.');
-  }
-  if (options.budget === null) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing budget. Use --budget <amount>.');
-  }
-
-  return options;
-}
-
-function parseResolveFlags(args) {
-  const options = {
-    pollAddress: null,
-    answer: null,
-    reason: null,
-    dryRun: false,
-    execute: false,
-  };
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === '--poll-address') {
-      options.pollAddress = parseAddressFlag(requireFlagValue(args, i, '--poll-address'), '--poll-address');
-      i += 1;
-      continue;
-    }
-    if (token === '--answer') {
-      const answer = requireFlagValue(args, i, '--answer').toLowerCase();
-      if (!['yes', 'no', 'invalid'].includes(answer)) {
-        throw new CliError('INVALID_FLAG_VALUE', '--answer must be yes|no|invalid.');
-      }
-      options.answer = answer;
-      i += 1;
-      continue;
-    }
-    if (token === '--reason') {
-      options.reason = requireFlagValue(args, i, '--reason');
-      i += 1;
-      continue;
-    }
-    if (token === '--dry-run') {
-      options.dryRun = true;
-      continue;
-    }
-    if (token === '--execute') {
-      options.execute = true;
-      continue;
-    }
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for resolve: ${token}`);
-  }
-
-  if (!options.pollAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing poll address. Use --poll-address <address>.');
-  }
-  if (!options.answer) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing answer. Use --answer yes|no|invalid.');
-  }
-  if (!options.reason) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing reason. Use --reason <text>.');
-  }
-  if (options.dryRun === options.execute) {
-    throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');
-  }
-
-  return options;
-}
-
-function parseLpFlags(args) {
-  const action = args[0];
-  if (!action || !['add', 'remove', 'positions'].includes(action)) {
-    throw new CliError('INVALID_ARGS', 'lp requires subcommand add|remove|positions.');
-  }
-
-  const rest = args.slice(1);
-  const options = {
-    action,
-    marketAddress: null,
-    wallet: null,
-    amountUsdc: null,
-    lpTokens: null,
-    chainId: null,
-    dryRun: false,
-    execute: false,
-  };
-
-  for (let i = 0; i < rest.length; i += 1) {
-    const token = rest[i];
-    if (token === '--market-address') {
-      options.marketAddress = parseAddressFlag(requireFlagValue(rest, i, '--market-address'), '--market-address');
-      i += 1;
-      continue;
-    }
-    if (token === '--wallet') {
-      options.wallet = parseAddressFlag(requireFlagValue(rest, i, '--wallet'), '--wallet');
-      i += 1;
-      continue;
-    }
-    if (token === '--amount-usdc') {
-      options.amountUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--amount-usdc'), '--amount-usdc');
-      i += 1;
-      continue;
-    }
-    if (token === '--lp-tokens') {
-      options.lpTokens = parsePositiveNumber(requireFlagValue(rest, i, '--lp-tokens'), '--lp-tokens');
-      i += 1;
-      continue;
-    }
-    if (token === '--chain-id') {
-      options.chainId = parseInteger(requireFlagValue(rest, i, '--chain-id'), '--chain-id');
-      i += 1;
-      continue;
-    }
-    if (token === '--dry-run') {
-      options.dryRun = true;
-      continue;
-    }
-    if (token === '--execute') {
-      options.execute = true;
-      continue;
-    }
-    throw new CliError('UNKNOWN_FLAG', `Unknown flag for lp ${action}: ${token}`);
-  }
-
-  if (action === 'positions') {
-    if (!options.wallet) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing wallet address. Use --wallet <address>.');
-    }
-    return options;
-  }
-
-  if (!options.marketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market address. Use --market-address <address>.');
-  }
-  if (action === 'add' && options.amountUsdc === null) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing liquidity amount. Use --amount-usdc <amount>.');
-  }
-  if (action === 'remove' && options.lpTokens === null) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing LP token amount. Use --lp-tokens <amount>.');
-  }
-  if (options.dryRun === options.execute) {
-    throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');
-  }
-
-  return options;
-}
-
-function parseChainIdFromHex(value) {
-  if (!value || typeof value !== 'string') return null;
-  const parsed = Number.parseInt(value, 16);
-  if (!Number.isInteger(parsed)) return null;
-  return parsed;
-}
-
-async function rpcRequest(rpcUrl, method, params, timeoutMs) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  let response;
-  try {
-    response = await fetch(rpcUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (err && err.name === 'AbortError') {
-      throw new CliError('RPC_TIMEOUT', `RPC request timed out after ${timeoutMs}ms.`);
-    }
-    throw new CliError('RPC_REQUEST_FAILED', `RPC request failed: ${err.message}`);
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  if (!response.ok) {
-    throw new CliError('RPC_HTTP_ERROR', `RPC endpoint returned HTTP ${response.status}.`);
-  }
-
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new CliError('RPC_INVALID_JSON', 'RPC endpoint returned a non-JSON response.');
-  }
-
-  if (payload.error) {
-    throw new CliError('RPC_RESPONSE_ERROR', `RPC error: ${payload.error.message || 'Unknown RPC error'}`);
-  }
-
-  return payload.result;
-}
-
-function validateEnvValues() {
-  const missing = REQUIRED_ENV_KEYS.filter((key) => !process.env[key] || !String(process.env[key]).trim());
-  const missingSet = new Set(missing);
-  const errors = [];
-
-  const chainIdRaw = String(process.env.CHAIN_ID || '').trim();
-  let chainId = null;
-  if (!missingSet.has('CHAIN_ID')) {
-    chainId = Number(chainIdRaw);
-    if (!Number.isInteger(chainId)) {
-      errors.push(`CHAIN_ID must be an integer. Received: "${chainIdRaw}"`);
-    } else if (!SUPPORTED_CHAIN_IDS.has(chainId)) {
-      errors.push(`Unsupported CHAIN_ID=${chainId}. Supported values: 1, 146`);
-    }
-  }
-
-  const rpcUrl = String(process.env.RPC_URL || '').trim();
-  if (!missingSet.has('RPC_URL') && !isValidHttpUrl(rpcUrl)) {
-    errors.push(`RPC_URL must be a valid http/https URL. Received: "${rpcUrl}"`);
-  }
-
-  const privateKey = String(process.env.PRIVATE_KEY || '').trim();
-  if (!missingSet.has('PRIVATE_KEY') && !isValidPrivateKey(privateKey)) {
-    errors.push('PRIVATE_KEY must be a full 32-byte hex key (0x + 64 hex chars), not a placeholder.');
-  }
-
-  for (const key of ['ORACLE', 'FACTORY', 'USDC']) {
-    const value = String(process.env[key] || '').trim();
-    if (missingSet.has(key)) {
-      continue;
-    }
-    if (!isValidAddress(value)) {
-      errors.push(`${key} must be a valid 20-byte hex address (0x + 40 hex chars). Received: "${value}"`);
-      continue;
-    }
-    if (value.toLowerCase() === ZERO_ADDRESS) {
-      errors.push(`${key} cannot be the zero address.`);
-    }
-  }
-
-  return {
-    missing,
-    errors,
-    chainId,
-    rpcUrl,
-    addresses: {
-      ORACLE: String(process.env.ORACLE || '').trim(),
-      FACTORY: String(process.env.FACTORY || '').trim(),
-      USDC: String(process.env.USDC || '').trim(),
-    },
-  };
-}
-
-function summarizeCodePresence(code) {
-  if (typeof code !== 'string') return { hasCode: false, byteLength: 0 };
-  const normalized = code.trim().toLowerCase();
-  if (normalized === '0x' || normalized === '0x0') {
-    return { hasCode: false, byteLength: 0 };
-  }
-
-  const hex = normalized.startsWith('0x') ? normalized.slice(2) : normalized;
-  const byteLength = hex.length > 0 ? Math.floor(hex.length / 2) : 0;
-  return { hasCode: byteLength > 0, byteLength };
+function buildMirrorSyncDaemonCliArgs(options, shared) {
+  const args = ['mirror', 'sync', 'run'];
+
+  if (!shared.useEnvFile) {
+    args.push('--skip-dotenv');
+  } else if (shared.envFileExplicit) {
+    args.push('--dotenv-path', shared.envFile);
+  }
+  if (shared.indexerUrl) {
+    args.push('--indexer-url', shared.indexerUrl);
+  }
+  if (shared.timeoutMs !== DEFAULT_INDEXER_TIMEOUT_MS) {
+    args.push('--timeout-ms', String(shared.timeoutMs));
+  }
+
+  args.push('--pandora-market-address', options.pandoraMarketAddress);
+  if (options.polymarketMarketId) {
+    args.push('--polymarket-market-id', options.polymarketMarketId);
+  } else if (options.polymarketSlug) {
+    args.push('--polymarket-slug', options.polymarketSlug);
+  }
+  args.push(options.executeLive ? '--execute-live' : '--paper');
+
+  if (!options.hedgeEnabled) args.push('--no-hedge');
+  if (options.stream) args.push('--stream');
+  args.push('--interval-ms', String(options.intervalMs));
+  args.push('--drift-trigger-bps', String(options.driftTriggerBps));
+  args.push('--hedge-trigger-usdc', String(options.hedgeTriggerUsdc));
+  args.push('--hedge-ratio', String(options.hedgeRatio));
+  args.push('--max-rebalance-usdc', String(options.maxRebalanceUsdc));
+  args.push('--max-hedge-usdc', String(options.maxHedgeUsdc));
+  if (Number.isFinite(options.maxOpenExposureUsdc) && options.maxOpenExposureUsdc !== Number.POSITIVE_INFINITY) {
+    args.push('--max-open-exposure-usdc', String(options.maxOpenExposureUsdc));
+  }
+  if (Number.isFinite(options.maxTradesPerDay) && options.maxTradesPerDay !== Number.MAX_SAFE_INTEGER) {
+    args.push('--max-trades-per-day', String(options.maxTradesPerDay));
+  }
+  args.push('--cooldown-ms', String(options.cooldownMs));
+  args.push('--depth-slippage-bps', String(options.depthSlippageBps));
+  if (options.minTimeToCloseSec !== 1800) {
+    args.push('--min-time-to-close-sec', String(options.minTimeToCloseSec));
+  }
+  if (Number.isFinite(options.iterations) && options.iterations > 0) {
+    args.push('--iterations', String(options.iterations));
+  }
+  if (options.stateFile) {
+    args.push('--state-file', options.stateFile);
+  }
+  if (options.killSwitchFile) {
+    args.push('--kill-switch-file', options.killSwitchFile);
+  }
+  if (options.chainId !== null && options.chainId !== undefined) {
+    args.push('--chain-id', String(options.chainId));
+  }
+  if (options.rpcUrl) args.push('--rpc-url', options.rpcUrl);
+  if (options.funder) args.push('--funder', options.funder);
+  if (options.usdc) args.push('--usdc', options.usdc);
+  if (options.polymarketHost) args.push('--polymarket-host', options.polymarketHost);
+  if (options.polymarketGammaUrl) args.push('--polymarket-gamma-url', options.polymarketGammaUrl);
+  if (options.polymarketGammaMockUrl) args.push('--polymarket-gamma-mock-url', options.polymarketGammaMockUrl);
+  if (options.polymarketMockUrl) args.push('--polymarket-mock-url', options.polymarketMockUrl);
+  if (options.trustDeploy) args.push('--trust-deploy');
+  if (options.forceGate) {
+    args.push('--skip-gate');
+  } else if (Array.isArray(options.skipGateChecks) && options.skipGateChecks.length) {
+    args.push('--skip-gate', [...options.skipGateChecks].sort().join(','));
+  }
+  if (options.manifestFile) args.push('--manifest-file', options.manifestFile);
+
+  if (options.webhookUrl) args.push('--webhook-url', options.webhookUrl);
+  if (options.webhookTemplate) args.push('--webhook-template', options.webhookTemplate);
+  if (options.webhookSecret) args.push('--webhook-secret', options.webhookSecret);
+  if (options.webhookTimeoutMs !== 5_000) args.push('--webhook-timeout-ms', String(options.webhookTimeoutMs));
+  if (options.webhookRetries !== 3) args.push('--webhook-retries', String(options.webhookRetries));
+  if (options.telegramBotToken) args.push('--telegram-bot-token', options.telegramBotToken);
+  if (options.telegramChatId) args.push('--telegram-chat-id', options.telegramChatId);
+  if (options.discordWebhookUrl) args.push('--discord-webhook-url', options.discordWebhookUrl);
+  if (options.failOnWebhookError) args.push('--fail-on-webhook-error');
+
+  return args;
 }
 
 async function buildDoctorReport(options) {
-  if (options.useEnvFile) {
-    loadEnvFile(options.envFile);
-  }
-
-  const envState = validateEnvValues();
-  const report = {
-    env: {
-      envFile: options.envFile,
-      usedEnvFile: options.useEnvFile,
-      required: {
-        ok: envState.missing.length === 0,
-        missing: envState.missing,
-      },
-      validation: {
-        ok: envState.errors.length === 0,
-        errors: envState.errors,
-      },
-    },
-    rpc: {
-      ok: false,
-      url: String(process.env.RPC_URL || '').trim(),
-      chainIdHex: null,
-      chainId: null,
-      expectedChainId: Number.isInteger(envState.chainId) ? envState.chainId : null,
-      matchesExpectedChainId: null,
-      error: null,
-    },
-    codeChecks: [],
-    summary: {
-      ok: false,
-      errorCount: 0,
-      warningCount: 0,
-    },
-  };
-
-  if (!report.env.required.ok || !report.env.validation.ok) {
-    const envErrorCount = report.env.required.missing.length + report.env.validation.errors.length;
-    report.summary.ok = false;
-    report.summary.errorCount = envErrorCount;
-    return report;
-  }
-
-  try {
-    const chainIdHex = await rpcRequest(envState.rpcUrl, 'eth_chainId', [], options.rpcTimeoutMs);
-    report.rpc.chainIdHex = chainIdHex;
-    report.rpc.chainId = parseChainIdFromHex(chainIdHex);
-    report.rpc.matchesExpectedChainId = report.rpc.chainId === report.rpc.expectedChainId;
-    report.rpc.ok = Boolean(report.rpc.chainIdHex) && report.rpc.matchesExpectedChainId;
-
-    if (!report.rpc.matchesExpectedChainId) {
-      report.rpc.error = `RPC chain id mismatch. RPC=${report.rpc.chainId} expected=${report.rpc.expectedChainId}`;
-    }
-  } catch (err) {
-    report.rpc.ok = false;
-    report.rpc.error = err instanceof CliError ? err.message : String(err);
-  }
-
-  const codeTargets = [
-    { key: 'ORACLE', required: true },
-    { key: 'FACTORY', required: true },
-  ];
-
-  if (options.checkUsdcCode) {
-    codeTargets.push({ key: 'USDC', required: false });
-  }
-
-  for (const target of codeTargets) {
-    const address = envState.addresses[target.key];
-    const check = {
-      key: target.key,
-      address,
-      required: target.required,
-      checked: false,
-      ok: false,
-      hasCode: false,
-      codeByteLength: 0,
-      error: null,
-    };
-
-    if (!report.rpc.ok) {
-      check.error = 'Skipped because RPC reachability check failed.';
-      report.codeChecks.push(check);
-      continue;
-    }
-
-    try {
-      const code = await rpcRequest(envState.rpcUrl, 'eth_getCode', [address, 'latest'], options.rpcTimeoutMs);
-      const summary = summarizeCodePresence(code);
-      check.checked = true;
-      check.hasCode = summary.hasCode;
-      check.codeByteLength = summary.byteLength;
-      check.ok = summary.hasCode;
-      if (!summary.hasCode && target.required) {
-        check.error = `${target.key} returned empty bytecode.`;
-      }
-    } catch (err) {
-      check.checked = true;
-      check.ok = false;
-      check.error = err instanceof CliError ? err.message : String(err);
-    }
-
-    report.codeChecks.push(check);
-  }
-
-  const failures = [];
-  if (!report.env.required.ok) {
-    failures.push(...report.env.required.missing.map((name) => `Missing required env var: ${name}`));
-  }
-  if (!report.env.validation.ok) {
-    failures.push(...report.env.validation.errors);
-  }
-  if (!report.rpc.ok) {
-    failures.push(report.rpc.error || 'RPC reachability check failed.');
-  }
-  for (const check of report.codeChecks) {
-    if (!check.ok && check.required) {
-      failures.push(check.error || `${check.key} failed code check.`);
-    }
-    if (!check.ok && !check.required && check.error) {
-      report.summary.warningCount += 1;
-    }
-  }
-
-  report.summary.errorCount = failures.length;
-  report.summary.ok = failures.length === 0;
-  report.summary.failures = failures;
-  return report;
+  return getDoctorServiceInstance().buildDoctorReport(options);
 }
 
 function short(value, length = 16) {
@@ -3757,6 +1294,17 @@ function formatTimestamp(raw) {
   const date = new Date(millis);
   if (Number.isNaN(date.getTime())) return String(raw);
   return date.toISOString();
+}
+
+function formatUnixTimestampIfLikely(raw) {
+  if (raw === null || raw === undefined || raw === '') return '';
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return String(raw);
+  if (numeric <= 0) return String(raw);
+  const seconds = numeric > 1e12 ? numeric / 1000 : numeric;
+  // Guard against block-number-like values rendered as 1970 dates.
+  if (seconds < 946684800) return String(raw); // 2000-01-01T00:00:00Z
+  return formatTimestamp(raw);
 }
 
 function valueToCell(value) {
@@ -3808,6 +1356,38 @@ function renderDoctorReportTable(report) {
     statusRows.push([`code:${check.key}`, status, detail]);
   }
 
+  if (report.polymarket && report.polymarket.checked) {
+    const host = report.polymarket.hostReachability || {};
+    statusRows.push([
+      'polymarket:host',
+      host.ok ? 'PASS' : 'FAIL',
+      host.ok ? `${report.polymarket.host} (${host.status})` : host.error || 'Unreachable',
+    ]);
+    const polyCheck = report.polymarket.check;
+    statusRows.push([
+      'polymarket:chain',
+      polyCheck && polyCheck.chainOk && polyCheck.chainId === 137 ? 'PASS' : 'FAIL',
+      polyCheck ? `chainId=${polyCheck.chainId} expected=137` : 'Unavailable',
+    ]);
+    statusRows.push([
+      'polymarket:funder',
+      polyCheck && polyCheck.ownership && polyCheck.ownership.funderCodePresent === true ? 'PASS' : 'FAIL',
+      polyCheck && polyCheck.runtime ? polyCheck.runtime.funderAddress || 'missing' : 'Unavailable',
+    ]);
+    statusRows.push([
+      'polymarket:ownership',
+      polyCheck && polyCheck.ownership && polyCheck.ownership.ok ? 'PASS' : 'FAIL',
+      polyCheck && polyCheck.ownership && polyCheck.ownership.ownerCheckError
+        ? polyCheck.ownership.ownerCheckError
+        : '',
+    ]);
+    statusRows.push([
+      'polymarket:api-key',
+      polyCheck && polyCheck.apiKeySanity && polyCheck.apiKeySanity.ok ? 'PASS' : 'FAIL',
+      polyCheck && polyCheck.apiKeySanity ? polyCheck.apiKeySanity.status : 'Unavailable',
+    ]);
+  }
+
   printTable(['Check', 'Status', 'Details'], statusRows);
 
   if (report.summary.ok) {
@@ -3818,6 +1398,13 @@ function renderDoctorReportTable(report) {
       for (const failure of report.summary.failures) {
         console.log(`- ${failure}`);
       }
+    }
+  }
+
+  if (report.polymarket && report.polymarket.checked && Array.isArray(report.polymarket.warnings) && report.polymarket.warnings.length) {
+    console.log('Polymarket diagnostics:');
+    for (const warning of report.polymarket.warnings) {
+      console.log(`- ${warning}`);
     }
   }
 }
@@ -3843,8 +1430,8 @@ function renderSetupTable(data) {
 function renderMarketsListTable(data) {
   const hasOdds = Boolean(
     data.enrichment &&
-      data.enrichment.withOdds &&
-      Array.isArray(data.enrichedItems),
+    data.enrichment.withOdds &&
+    Array.isArray(data.enrichedItems),
   );
   const tableItems = hasOdds ? data.enrichedItems : data.items;
 
@@ -3884,7 +1471,11 @@ function renderMarketsListTable(data) {
 }
 
 function renderScanTable(data) {
-  const items = Array.isArray(data.enrichedItems) ? data.enrichedItems : [];
+  const items = Array.isArray(data.enrichedItems)
+    ? data.enrichedItems
+    : Array.isArray(data.items)
+      ? data.items
+      : [];
   if (!items.length) {
     console.log('No markets found.');
     return;
@@ -3943,20 +1534,25 @@ function renderTradeTable(data) {
     ['maxAmountUsdcGuard', riskGuards.maxAmountUsdc === null || riskGuards.maxAmountUsdc === undefined ? '' : riskGuards.maxAmountUsdc],
     [
       'probabilityRangeGuard',
-      `${
-        riskGuards.minProbabilityPct === null || riskGuards.minProbabilityPct === undefined
-          ? '-inf'
-          : `${riskGuards.minProbabilityPct}%`
-      } .. ${
-        riskGuards.maxProbabilityPct === null || riskGuards.maxProbabilityPct === undefined
-          ? '+inf'
-          : `${riskGuards.maxProbabilityPct}%`
+      `${riskGuards.minProbabilityPct === null || riskGuards.minProbabilityPct === undefined
+        ? '-inf'
+        : `${riskGuards.minProbabilityPct}%`
+      } .. ${riskGuards.maxProbabilityPct === null || riskGuards.maxProbabilityPct === undefined
+        ? '+inf'
+        : `${riskGuards.maxProbabilityPct}%`
       }`,
     ],
     ['quoteAvailable', data.quote && data.quote.quoteAvailable ? 'yes' : 'no'],
     ['account', data.account || ''],
     ['approveTxHash', data.approveTxHash || ''],
+    ['approveTxUrl', data.approveTxUrl || ''],
+    ['approveGasEstimate', data.approveGasEstimate || ''],
+    ['approveStatus', data.approveStatus || ''],
     ['buyTxHash', data.buyTxHash || ''],
+    ['buyTxUrl', data.buyTxUrl || ''],
+    ['buyGasEstimate', data.buyGasEstimate || ''],
+    ['buyStatus', data.buyStatus || ''],
+    ['finalStatus', data.finalStatus || ''],
     ['status', data.status || ''],
   ];
   printTable(['Field', 'Value'], rows);
@@ -3974,7 +1570,7 @@ function renderPollsListTable(data) {
       short(item.id, 18),
       item.status,
       short(item.creator, 16),
-      formatTimestamp(item.deadlineEpoch),
+      formatUnixTimestampIfLikely(item.deadlineEpoch),
       short(item.question, 56),
     ]),
   );
@@ -4030,6 +1626,10 @@ function renderPortfolioTable(data) {
     ['cashflowNet', data.summary.cashflowNet],
     ['pnlProxy', data.summary.pnlProxy],
     ['eventsIncluded', data.summary.eventsIncluded ? 'yes' : 'no'],
+    ['lpIncluded', data.summary.lpIncluded ? 'yes' : 'no'],
+    ['lpPositionCount', data.summary.lpPositionCount === undefined ? '' : data.summary.lpPositionCount],
+    ['lpMarketsWithBalance', data.summary.lpMarketsWithBalance === undefined ? '' : data.summary.lpMarketsWithBalance],
+    ['lpEstimatedCollateralOutUsdc', data.summary.lpEstimatedCollateralOutUsdc === undefined ? '' : data.summary.lpEstimatedCollateralOutUsdc],
     ['diagnostic', data.summary.diagnostic || ''],
   ];
 
@@ -4043,6 +1643,19 @@ function renderPortfolioTable(data) {
         short(item.marketAddress, 18),
         item.chainId,
         formatTimestamp(item.lastTradeAt),
+      ]),
+    );
+  }
+
+  if (Array.isArray(data.lpPositions) && data.lpPositions.length) {
+    console.log('');
+    printTable(
+      ['LP Market', 'LP Tokens', 'Est. Collateral Out (USDC)', 'Diagnostics'],
+      data.lpPositions.map((item) => [
+        short(item.marketAddress, 18),
+        item.lpTokenBalance || '',
+        item.preview && item.preview.collateralOutUsdc ? item.preview.collateralOutUsdc : '',
+        short(Array.isArray(item.diagnostics) ? item.diagnostics.join('; ') : '', 56),
       ]),
     );
   }
@@ -4246,6 +1859,141 @@ function renderMirrorPlanTable(data) {
   }
 }
 
+function renderMirrorLpExplainTable(data) {
+  const flow = data.flow || {};
+  const minted = flow.mintedCompleteSets || {};
+  const seeded = flow.seededPoolReserves || {};
+  const excess = flow.returnedExcessTokens || {};
+  const inventory = flow.totalLpInventory || {};
+
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['liquidityUsdc', data.inputs ? data.inputs.liquidityUsdc : ''],
+      ['sourceYesPct', data.inputs && data.inputs.sourceYesPct !== null ? data.inputs.sourceYesPct : ''],
+      ['distributionYes', data.inputs ? data.inputs.distributionYes : ''],
+      ['distributionNo', data.inputs ? data.inputs.distributionNo : ''],
+      ['mintedYes', minted.yesTokens !== undefined ? minted.yesTokens : ''],
+      ['mintedNo', minted.noTokens !== undefined ? minted.noTokens : ''],
+      ['poolReserveYes', seeded.reserveYesUsdc !== undefined ? seeded.reserveYesUsdc : ''],
+      ['poolReserveNo', seeded.reserveNoUsdc !== undefined ? seeded.reserveNoUsdc : ''],
+      ['impliedPandoraYesPct', seeded.impliedPandoraYesPct !== undefined ? seeded.impliedPandoraYesPct : ''],
+      ['returnedExcessYes', excess.excessYesUsdc !== undefined ? excess.excessYesUsdc : ''],
+      ['returnedExcessNo', excess.excessNoUsdc !== undefined ? excess.excessNoUsdc : ''],
+      ['totalYes', inventory.totalYesUsdc !== undefined ? inventory.totalYesUsdc : ''],
+      ['totalNo', inventory.totalNoUsdc !== undefined ? inventory.totalNoUsdc : ''],
+      ['inventoryDelta', inventory.deltaUsdc !== undefined ? inventory.deltaUsdc : ''],
+      ['neutralCompleteSets', inventory.neutralCompleteSets ? 'yes' : 'no'],
+    ],
+  );
+}
+
+function renderMirrorHedgeCalcTable(data) {
+  const metrics = data.metrics || {};
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['reserveYesUsdc', metrics.reserveYesUsdc !== undefined ? metrics.reserveYesUsdc : ''],
+      ['reserveNoUsdc', metrics.reserveNoUsdc !== undefined ? metrics.reserveNoUsdc : ''],
+      ['excessYesUsdc', metrics.excessYesUsdc !== undefined ? metrics.excessYesUsdc : ''],
+      ['excessNoUsdc', metrics.excessNoUsdc !== undefined ? metrics.excessNoUsdc : ''],
+      ['deltaPoolUsdc', metrics.deltaPoolUsdc !== undefined ? metrics.deltaPoolUsdc : ''],
+      ['deltaTotalUsdc', metrics.deltaTotalUsdc !== undefined ? metrics.deltaTotalUsdc : ''],
+      ['targetHedgeUsdc', metrics.targetHedgeUsdcSigned !== undefined ? metrics.targetHedgeUsdcSigned : ''],
+      ['hedgeToken', metrics.hedgeToken || ''],
+      ['hedgeSharesApprox', metrics.hedgeSharesApprox !== undefined ? metrics.hedgeSharesApprox : ''],
+      ['hedgeCostApproxUsdc', metrics.hedgeCostApproxUsdc !== undefined ? metrics.hedgeCostApproxUsdc : ''],
+      ['breakEvenVolumeUsdc', metrics.breakEvenVolumeUsdc !== undefined ? metrics.breakEvenVolumeUsdc : ''],
+    ],
+  );
+
+  if (!Array.isArray(data.scenarios) || !data.scenarios.length) return;
+  console.log('');
+  printTable(
+    ['Volume', 'Fee Revenue', 'Hedge Cost', 'Net PnL Approx'],
+    data.scenarios.map((row) => [
+      row.volumeUsdc !== undefined ? row.volumeUsdc : '',
+      row.feeRevenueUsdc !== undefined ? row.feeRevenueUsdc : '',
+      row.hedgeCostApproxUsdc !== undefined ? row.hedgeCostApproxUsdc : '',
+      row.netPnlApproxUsdc !== undefined ? row.netPnlApproxUsdc : '',
+    ]),
+  );
+}
+
+function renderMirrorSimulateTable(data) {
+  const initial = data.initialState || {};
+  const targeting = data.targeting || {};
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['liquidityUsdc', data.inputs ? data.inputs.liquidityUsdc : ''],
+      ['sourceYesPct', data.inputs && data.inputs.sourceYesPct !== null ? data.inputs.sourceYesPct : ''],
+      ['targetYesPct', data.inputs && data.inputs.targetYesPct !== null ? data.inputs.targetYesPct : ''],
+      ['tradeSide', data.inputs ? data.inputs.tradeSide : ''],
+      ['initialReserveYes', initial.reserveYesUsdc !== undefined ? initial.reserveYesUsdc : ''],
+      ['initialReserveNo', initial.reserveNoUsdc !== undefined ? initial.reserveNoUsdc : ''],
+      ['initialYesPct', initial.initialYesPct !== undefined ? initial.initialYesPct : ''],
+      ['volumeNeededToTarget', targeting.volumeNeededToTargetUsdc !== undefined ? targeting.volumeNeededToTargetUsdc : ''],
+    ],
+  );
+
+  if (!Array.isArray(data.scenarios) || !data.scenarios.length) return;
+  console.log('');
+  printTable(
+    ['Volume', 'Post YES%', 'Fees', 'Hedge', 'Hedge Cost', 'Net PnL Approx'],
+    data.scenarios.map((row) => [
+      row.volumeUsdc !== undefined ? row.volumeUsdc : '',
+      row.postYesPct !== undefined ? row.postYesPct : '',
+      row.feesEarnedUsdc !== undefined ? row.feesEarnedUsdc : '',
+      row.hedge && row.hedge.hedgeToken
+        ? `${row.hedge.hedgeToken}:${row.hedge.targetHedgeUsdc}`
+        : '',
+      row.hedge && row.hedge.hedgeCostApproxUsdc !== undefined ? row.hedge.hedgeCostApproxUsdc : '',
+      row.netPnlApproxUsdc !== undefined ? row.netPnlApproxUsdc : '',
+    ]),
+  );
+}
+
+function renderMirrorBrowseTable(data) {
+  if (!Array.isArray(data.items) || !data.items.length) {
+    console.log('No mirrorable markets found for current filters.');
+    if (data.gammaApiError) {
+      console.log(`Gamma API error: ${data.gammaApiError}`);
+    }
+    if (Array.isArray(data.diagnostics) && data.diagnostics.length) {
+      console.log('Diagnostics:');
+      for (const diagnostic of data.diagnostics) {
+        console.log(`- ${diagnostic}`);
+      }
+    }
+    return;
+  }
+
+  printTable(
+    ['Slug', 'YES%', '24h Vol', 'Close', 'Mirror', 'Question'],
+    data.items.map((item) => [
+      short(item.slug || item.marketId || '', 28),
+      formatNumericCell(item.yesPct, 3),
+      formatNumericCell(item.volume24hUsd, 2),
+      formatTimestamp(item.closeTimestamp),
+      item.existingMirror ? short(item.existingMirror.marketAddress, 14) : '',
+      short(item.question || '', 72),
+    ]),
+  );
+
+  if (Array.isArray(data.diagnostics) && data.diagnostics.length) {
+    console.log('');
+    console.log('Diagnostics:');
+    for (const diagnostic of data.diagnostics) {
+      console.log(`- ${diagnostic}`);
+    }
+  }
+  if (data.gammaApiError) {
+    console.log('');
+    console.log(`Gamma API error: ${data.gammaApiError}`);
+  }
+}
+
 function renderMirrorDeployTable(data) {
   printTable(
     ['Field', 'Value'],
@@ -4260,6 +2008,9 @@ function renderMirrorDeployTable(data) {
       ['seedOddsMatch', data.postDeployChecks && data.postDeployChecks.seedOddsMatch !== null ? (data.postDeployChecks.seedOddsMatch ? 'yes' : 'no') : ''],
       ['seedDiffPct', data.postDeployChecks && data.postDeployChecks.diffPct !== null ? data.postDeployChecks.diffPct : ''],
       ['blockedLiveSync', data.postDeployChecks && data.postDeployChecks.blockedLiveSync ? 'yes' : 'no'],
+      ['manifestFile', data.trustManifest && data.trustManifest.filePath ? data.trustManifest.filePath : ''],
+      ['nativeRequired', data.preflight && data.preflight.nativeRequired ? data.preflight.nativeRequired : ''],
+      ['usdcRequired', data.preflight && data.preflight.usdcRequired ? data.preflight.usdcRequired : ''],
     ],
   );
 }
@@ -4271,6 +2022,13 @@ function renderMirrorVerifyTable(data) {
       ['matchConfidence', data.matchConfidence],
       ['gateOk', data.gateResult && data.gateResult.ok ? 'yes' : 'no'],
       ['failedChecks', data.gateResult && Array.isArray(data.gateResult.failedChecks) ? data.gateResult.failedChecks.join(', ') : ''],
+      [
+        'minTimeToExpirySec',
+        data.expiry && data.expiry.minTimeToExpirySec !== null && data.expiry.minTimeToExpirySec !== undefined
+          ? data.expiry.minTimeToExpirySec
+          : '',
+      ],
+      ['expiryWarn', data.expiry && data.expiry.warn ? 'yes' : 'no'],
       ['pandoraMarket', data.pandora ? data.pandora.marketAddress : ''],
       ['sourceMarket', data.sourceMarket ? data.sourceMarket.marketId : ''],
       ['ruleHashLeft', data.ruleHashLeft || ''],
@@ -4311,6 +2069,25 @@ function renderMirrorSyncTable(data) {
   );
 }
 
+function renderMirrorSyncDaemonTable(data) {
+  const meta = data && data.metadata ? data.metadata : {};
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['found', data && data.found === false ? 'no' : 'yes'],
+      ['status', data && data.status ? data.status : ''],
+      ['alive', data && data.alive ? 'yes' : 'no'],
+      ['strategyHash', data && data.strategyHash ? data.strategyHash : meta.strategyHash || ''],
+      ['pid', data && data.pid !== null && data.pid !== undefined ? data.pid : meta.pid || ''],
+      ['pidFile', data && data.pidFile ? data.pidFile : meta.pidFile || ''],
+      ['logFile', data && data.logFile ? data.logFile : meta.logFile || ''],
+      ['startedAt', meta.startedAt || ''],
+      ['checkedAt', meta.checkedAt || data.checkedAt || ''],
+      ['stopSignalSent', data && Object.prototype.hasOwnProperty.call(data, 'signalSent') ? (data.signalSent ? 'yes' : 'no') : ''],
+    ],
+  );
+}
+
 function renderMirrorStatusTable(data) {
   const state = data.state || {};
   printTable(
@@ -4322,8 +2099,151 @@ function renderMirrorStatusTable(data) {
       ['dailySpendUsdc', state.dailySpendUsdc === undefined ? '' : state.dailySpendUsdc],
       ['tradesToday', state.tradesToday === undefined ? '' : state.tradesToday],
       ['currentHedgeUsdc', state.currentHedgeUsdc === undefined ? '' : state.currentHedgeUsdc],
+      ['cumulativeLpFeesApproxUsdc', state.cumulativeLpFeesApproxUsdc === undefined ? '' : state.cumulativeLpFeesApproxUsdc],
+      ['cumulativeHedgeCostApproxUsdc', state.cumulativeHedgeCostApproxUsdc === undefined ? '' : state.cumulativeHedgeCostApproxUsdc],
       ['idempotencyKeys', Array.isArray(state.idempotencyKeys) ? state.idempotencyKeys.length : 0],
     ],
+  );
+
+  if (!data.live) {
+    return;
+  }
+
+  console.log('');
+  printTable(
+    ['Live Field', 'Value'],
+    [
+      ['pandoraYesPct', data.live.pandoraYesPct],
+      ['sourceYesPct', data.live.sourceYesPct],
+      ['driftBps', data.live.driftBps],
+      ['driftTriggered', data.live.driftTriggered ? 'yes' : 'no'],
+      ['hedgeGapUsdc', data.live.hedgeGapUsdc],
+      ['hedgeTriggered', data.live.hedgeTriggered ? 'yes' : 'no'],
+      ['lifecycleActive', data.live.lifecycleActive ? 'yes' : 'no'],
+      ['minTimeToExpirySec', data.live.minTimeToExpirySec],
+      ['netPnlApproxUsdc', data.live.netPnlApproxUsdc],
+      ['netDeltaApprox', data.live.netDeltaApprox === undefined ? '' : data.live.netDeltaApprox],
+      ['pnlApprox', data.live.pnlApprox === undefined ? '' : data.live.pnlApprox],
+      [
+        'polymarketPosition',
+        data.live.polymarketPosition
+          ? `yes=${data.live.polymarketPosition.yesBalance ?? 'n/a'} no=${data.live.polymarketPosition.noBalance ?? 'n/a'} openOrders=${data.live.polymarketPosition.openOrdersCount ?? 'n/a'} estUsd=${data.live.polymarketPosition.estimatedValueUsd ?? 'n/a'}`
+          : '',
+      ],
+    ],
+  );
+}
+
+function renderMirrorCloseTable(data) {
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['mode', data.mode || ''],
+      ['pandoraMarketAddress', data.pandoraMarketAddress || ''],
+      ['polymarketMarketId', data.polymarketMarketId || ''],
+      ['polymarketSlug', data.polymarketSlug || ''],
+    ],
+  );
+
+  if (!Array.isArray(data.steps) || !data.steps.length) {
+    return;
+  }
+
+  console.log('');
+  printTable(
+    ['Step', 'Status', 'Description'],
+    data.steps.map((step) => [step.key || '', step.status || '', step.description || '']),
+  );
+}
+
+function renderMirrorGoTable(data) {
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['mode', data.mode || ''],
+      ['planDigest', data.plan && data.plan.planDigest ? data.plan.planDigest : ''],
+      ['deployedMarket', data.deploy && data.deploy.pandora ? data.deploy.pandora.marketAddress || '' : ''],
+      ['verifyGateOk', data.verify && data.verify.gateResult ? (data.verify.gateResult.ok ? 'yes' : 'no') : ''],
+      ['syncStarted', data.sync ? 'yes' : 'no'],
+      ['suggestedSyncCommand', data.suggestedSyncCommand || ''],
+    ],
+  );
+}
+
+function renderPolymarketCheckTable(data) {
+  const runtime = data.runtime || {};
+  const balance = data.balances && data.balances.usdc ? data.balances.usdc : {};
+  const approvals = data.approvals || {};
+  const apiSanity = data.apiKeySanity || {};
+
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['readyForLive', data.readyForLive ? 'yes' : 'no'],
+      ['chainId', data.chainId === null || data.chainId === undefined ? '' : data.chainId],
+      ['signerAddress', runtime.signerAddress || ''],
+      ['funderAddress', runtime.funderAddress || ''],
+      ['ownerAddress', runtime.ownerAddress || ''],
+      ['usdcBalance', balance.formatted || balance.raw || ''],
+      ['missingApprovals', approvals.missingCount || 0],
+      ['apiKeySanity', apiSanity.status || 'unknown'],
+    ],
+  );
+
+  if (!Array.isArray(approvals.missingChecks) || !approvals.missingChecks.length) {
+    return;
+  }
+
+  console.log('');
+  printTable(
+    ['Missing Check', 'Spender', 'Type'],
+    approvals.missingChecks.map((item) => [item.key || '', short(item.spender || '', 20), item.type || '']),
+  );
+}
+
+function renderPolymarketApproveTable(data) {
+  const summary = data.approvalSummary || {};
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['mode', data.mode || ''],
+      ['status', data.status || ''],
+      ['missingCount', summary.missingCount || 0],
+      ['plannedTxCount', Array.isArray(data.txPlan) ? data.txPlan.length : 0],
+      ['executedTxCount', data.executedCount || 0],
+      ['signerMatchesOwner', data.signerMatchesOwner ? 'yes' : 'no'],
+      ['manualProxyActionRequired', data.manualProxyActionRequired ? 'yes' : 'no'],
+    ],
+  );
+
+  if (!Array.isArray(data.txReceipts) || !data.txReceipts.length) {
+    return;
+  }
+
+  console.log('');
+  printTable(
+    ['Key', 'Tx Hash', 'Status'],
+    data.txReceipts.map((item) => [item.key || '', short(item.txHash || '', 24), item.status || '']),
+  );
+}
+
+function renderPolymarketPreflightTable(data) {
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['ok', data.ok ? 'yes' : 'no'],
+      ['failedChecks', Array.isArray(data.failedChecks) ? data.failedChecks.length : 0],
+    ],
+  );
+
+  if (!Array.isArray(data.checks) || !data.checks.length) {
+    return;
+  }
+
+  console.log('');
+  printTable(
+    ['Check', 'Status', 'Message'],
+    data.checks.map((item) => [item.code || '', item.ok ? 'ok' : 'failed', item.message || '']),
   );
 }
 
@@ -4419,7 +2339,26 @@ function renderSuggestTable(data) {
 }
 
 function renderSingleEntityTable(data) {
-  printRecord(data.item);
+  if (data && typeof data.item === 'object' && data.item !== null) {
+    printRecord(data.item);
+    return;
+  }
+  if (Array.isArray(data && data.items)) {
+    if (!data.items.length) {
+      console.log('No items found.');
+      return;
+    }
+    for (const item of data.items) {
+      printRecord(item);
+      console.log('');
+    }
+    return;
+  }
+  if (data && typeof data === 'object') {
+    printRecord(data);
+    return;
+  }
+  console.log(String(data));
 }
 
 function renderMarketsGetTable(data) {
@@ -4697,22 +2636,9 @@ function buildMarketsPagination(options) {
   };
 }
 
-function toFiniteNumber(value) {
-  if (value === null || value === undefined || value === '') return null;
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return numeric;
-}
-
-function roundNumber(value, decimals = 6) {
-  if (!Number.isFinite(value)) return null;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
 function toDecimalOdds(probability) {
   if (!Number.isFinite(probability) || probability <= 0) return null;
-  return roundNumber(1 / probability);
+  return round(1 / probability);
 }
 
 function formatOddsPercent(probability) {
@@ -4736,8 +2662,8 @@ function buildNullOdds(source, diagnostic) {
 }
 
 function normalizeOddsFromPair(yesRaw, noRaw, source) {
-  const yes = toFiniteNumber(yesRaw);
-  const no = toFiniteNumber(noRaw);
+  const yes = toOptionalNumber(yesRaw);
+  const no = toOptionalNumber(noRaw);
   if (yes === null && no === null) return null;
 
   let normalizedYes = yes;
@@ -4766,10 +2692,10 @@ function normalizeOddsFromPair(yesRaw, noRaw, source) {
     return buildNullOdds(source, `Unable to compute odds from ${source}: sum of outcomes must be > 0.`);
   }
 
-  const yesProbability = roundNumber(normalizedYes / total);
-  const noProbability = roundNumber(normalizedNo / total);
-  const yesPct = roundNumber(yesProbability * 100, 4);
-  const noPct = roundNumber(noProbability * 100, 4);
+  const yesProbability = round(normalizedYes / total);
+  const noProbability = round(normalizedNo / total);
+  const yesPct = round(yesProbability * 100, 4);
+  const noPct = round(noProbability * 100, 4);
   return {
     yesPct,
     noPct,
@@ -4796,8 +2722,8 @@ function tryOddsFromReservePair(item, pair) {
     return null;
   }
 
-  const yesReserve = toFiniteNumber(item[pair.yesField]);
-  const noReserve = toFiniteNumber(item[pair.noField]);
+  const yesReserve = toOptionalNumber(item[pair.yesField]);
+  const noReserve = toOptionalNumber(item[pair.noField]);
   if (yesReserve === null || noReserve === null) {
     return buildNullOdds(pair.source, `Unable to compute odds from ${pair.source}: reserve values must be numeric.`);
   }
@@ -4926,16 +2852,48 @@ function buildPollSnapshot(item, supplementalPoll) {
 
 function buildMarketExpansion(item) {
   const nowEpochSeconds = Math.floor(Date.now() / 1000);
-  const closeEpoch = toFiniteNumber(item.marketCloseTimestamp);
-  const createdEpoch = toFiniteNumber(item.createdAt);
+  const closeEpoch = toOptionalNumber(item.marketCloseTimestamp);
+  const createdEpoch = toOptionalNumber(item.createdAt);
 
   return {
     closeTimeIso: formatTimestamp(item.marketCloseTimestamp) || null,
     createdAtIso: formatTimestamp(item.createdAt) || null,
-    totalVolumeNumeric: toFiniteNumber(item.totalVolume),
-    currentTvlNumeric: toFiniteNumber(item.currentTvl),
+    totalVolumeNumeric: toOptionalNumber(item.totalVolume),
+    currentTvlNumeric: toOptionalNumber(item.currentTvl),
     isClosed: closeEpoch === null ? null : closeEpoch <= nowEpochSeconds,
     ageSeconds: createdEpoch === null ? null : Math.max(0, nowEpochSeconds - createdEpoch),
+  };
+}
+
+function normalizeNumericLikeValue(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : value;
+  }
+  if (typeof value !== 'string') {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return value;
+  }
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric)) {
+    return value;
+  }
+  return numeric;
+}
+
+function normalizeMarketNumericFields(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    return item;
+  }
+  return {
+    ...item,
+    chainId: normalizeNumericLikeValue(item.chainId),
+    marketCloseTimestamp: normalizeNumericLikeValue(item.marketCloseTimestamp),
+    createdAt: normalizeNumericLikeValue(item.createdAt),
+    totalVolume: normalizeNumericLikeValue(item.totalVolume),
+    currentTvl: normalizeNumericLikeValue(item.currentTvl),
   };
 }
 
@@ -5002,6 +2960,7 @@ function buildEnrichedMarketItems(items, options, enrichmentContext) {
 function buildMarketsListPayload(indexerUrl, options, items, pageInfo, opts = {}) {
   const isScanMode = Boolean(opts.scanMode);
   const enrichmentContext = opts.enrichmentContext || null;
+  const normalizedItems = Array.isArray(items) ? items.map((item) => normalizeMarketNumericFields(item)) : [];
   const filters = { ...(options.where || {}) };
   if (options.lifecycle && options.lifecycle !== 'all') {
     filters.lifecycle = options.lifecycle;
@@ -5013,23 +2972,27 @@ function buildMarketsListPayload(indexerUrl, options, items, pageInfo, opts = {}
     indexerUrl,
     pagination: buildMarketsPagination(options),
     filters,
-    count: items.length,
+    count: normalizedItems.length,
     pageInfo,
-    items,
+    items: normalizedItems,
   };
 
-  if (typeof opts.unfilteredCount === 'number' && opts.unfilteredCount >= items.length && options.lifecycle !== 'all') {
+  if (
+    typeof opts.unfilteredCount === 'number' &&
+    opts.unfilteredCount >= normalizedItems.length &&
+    options.lifecycle !== 'all'
+  ) {
     payload.lifecycle = {
       mode: options.lifecycle,
       expiringHours: options.lifecycle === 'expiring-soon' ? options.expiringSoonHours : null,
       unfilteredCount: opts.unfilteredCount,
-      filteredOut: opts.unfilteredCount - items.length,
+      filteredOut: opts.unfilteredCount - normalizedItems.length,
     };
   }
 
   const includeEnrichedItems = Boolean(opts.includeEnrichedItems || options.expand || options.withOdds);
   if (includeEnrichedItems) {
-    const enrichedItems = buildEnrichedMarketItems(items, options, enrichmentContext);
+    const enrichedItems = buildEnrichedMarketItems(normalizedItems, options, enrichmentContext);
     payload.enrichment = {
       expand: Boolean(options.expand),
       withOdds: Boolean(options.withOdds),
@@ -5078,7 +3041,7 @@ function applyMarketLifecycleFilter(items, options) {
     nowEpochSeconds + parsePositiveInteger(options.expiringSoonHours, '--expiring-hours') * 60 * 60;
 
   return items.filter((item) => {
-    const closeEpoch = toFiniteNumber(item && item.marketCloseTimestamp);
+    const closeEpoch = toOptionalNumber(item && item.marketCloseTimestamp);
     if (!Number.isFinite(closeEpoch)) return false;
 
     if (options.lifecycle === 'active') {
@@ -5113,12 +3076,6 @@ function maybeLoadTradeEnv(sharedFlags) {
   loadEnvIfPresent(sharedFlags.envFile);
 }
 
-function toFixedNumber(value, decimals = 6) {
-  if (!Number.isFinite(value)) return null;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
 function sumNumericField(items, key) {
   let total = 0;
   for (const item of items) {
@@ -5127,12 +3084,7 @@ function sumNumericField(items, key) {
       total += numeric;
     }
   }
-  return toFixedNumber(total, 6);
-}
-
-function sleepMs(durationMs) {
-  if (!Number.isFinite(durationMs) || durationMs <= 0) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, durationMs));
+  return round(total, 6);
 }
 
 function getSelectedOutcomeProbabilityPct(quote, side) {
@@ -5212,12 +3164,12 @@ function buildQuoteEstimate(odds, side, amountUsdc, slippageBps) {
   const profitIfWin = payoutIfWin - amountUsdc;
 
   return {
-    impliedProbability: toFixedNumber(probability, 6),
-    pricePerShare: toFixedNumber(pricePerShare, 6),
-    estimatedShares: toFixedNumber(estimatedShares, 6),
-    minSharesOut: toFixedNumber(minSharesOut, 6),
-    potentialPayoutIfWin: toFixedNumber(payoutIfWin, 6),
-    potentialProfitIfWin: toFixedNumber(profitIfWin, 6),
+    impliedProbability: round(probability, 6),
+    pricePerShare: round(pricePerShare, 6),
+    estimatedShares: round(estimatedShares, 6),
+    minSharesOut: round(minSharesOut, 6),
+    potentialPayoutIfWin: round(payoutIfWin, 6),
+    potentialProfitIfWin: round(profitIfWin, 6),
     slippageBps,
   };
 }
@@ -5289,19 +3241,44 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
 }
 
 function resolveTradeRuntimeConfig(options) {
-  const chainIdRaw = options.chainId !== null ? options.chainId : Number(process.env.CHAIN_ID || 1);
+  let forkRuntime;
+  try {
+    forkRuntime = resolveForkRuntime(options, {
+      env: process.env,
+      isSecureHttpUrlOrLocal,
+      defaultChainId: Number(process.env.CHAIN_ID || 1) || 1,
+    });
+  } catch (err) {
+    if (err && err.code) {
+      throw new CliError(err.code, err.message || 'Invalid fork runtime configuration.', err.details);
+    }
+    throw err;
+  }
+  const chainIdRaw = Number.isInteger(forkRuntime.chainId)
+    ? forkRuntime.chainId
+    : options.chainId !== null
+      ? options.chainId
+      : Number(process.env.CHAIN_ID || 1);
   if (!Number.isInteger(chainIdRaw) || !SUPPORTED_CHAIN_IDS.has(chainIdRaw)) {
-    throw new CliError('INVALID_FLAG_VALUE', `Unsupported --chain-id=${chainIdRaw}. Supported values: 1, 146`);
+    throw new CliError('INVALID_FLAG_VALUE', `Unsupported --chain-id=${chainIdRaw}. Supported values: 1`);
   }
 
-  const rpcUrl = options.rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[chainIdRaw];
-  if (!isValidHttpUrl(rpcUrl)) {
-    throw new CliError('INVALID_FLAG_VALUE', `RPC URL must be a valid http/https URL. Received: "${rpcUrl}"`);
+  const rpcUrl = forkRuntime.mode === 'fork'
+    ? forkRuntime.rpcUrl
+    : options.rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[chainIdRaw];
+  if (!isSecureHttpUrlOrLocal(rpcUrl)) {
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      `RPC URL must use https:// (or http://localhost/127.0.0.1 for local testing). Received: "${rpcUrl}"`,
+    );
   }
 
-  const privateKey = options.privateKey || process.env.PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = options.privateKey || process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY;
   if (!privateKey || !isValidPrivateKey(privateKey)) {
-    throw new CliError('INVALID_FLAG_VALUE', 'Missing or invalid private key. Set PRIVATE_KEY or pass --private-key.');
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      'Missing or invalid private key. Set PANDORA_PRIVATE_KEY (preferred) or PRIVATE_KEY, or pass --private-key.',
+    );
   }
 
   const usdc = options.usdc || String(process.env.USDC || '').trim();
@@ -5310,25 +3287,17 @@ function resolveTradeRuntimeConfig(options) {
   }
   const usdcAddress = parseAddressFlag(usdc, '--usdc');
 
-  const chain =
-    chainIdRaw === 1
-      ? {
-          id: 1,
-          name: 'Ethereum',
-          nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-          rpcUrls: { default: { http: [rpcUrl] }, public: { http: [rpcUrl] } },
-          blockExplorers: { default: { name: 'Etherscan', url: 'https://etherscan.io' } },
-        }
-      : {
-          id: 146,
-          name: 'Sonic',
-          nativeCurrency: { name: 'Sonic', symbol: 'S', decimals: 18 },
-          rpcUrls: { default: { http: [rpcUrl] }, public: { http: [rpcUrl] } },
-          blockExplorers: { default: { name: 'SonicScan', url: 'https://sonicscan.org' } },
-        };
+  const chain = {
+    id: 1,
+    name: 'Ethereum',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: { default: { http: [rpcUrl] }, public: { http: [rpcUrl] } },
+    blockExplorers: { default: { name: 'Etherscan', url: 'https://etherscan.io' } },
+  };
 
   return {
     chainId: chainIdRaw,
+    mode: forkRuntime.mode,
     chain,
     rpcUrl,
     privateKey,
@@ -5356,43 +3325,125 @@ async function executeTradeOnchain(options) {
   const publicClient = createPublicClient({ chain: runtime.chain, transport: http(runtime.rpcUrl) });
   const walletClient = createWalletClient({ account, chain: runtime.chain, transport: http(runtime.rpcUrl) });
 
-  const amountRaw = parseUnits(String(options.amountUsdc), 6);
-  const minSharesOutRaw = options.minSharesOutRaw === null ? 0n : options.minSharesOutRaw;
-
-  const allowance = await publicClient.readContract({
-    address: runtime.usdcAddress,
-    abi: ERC20_ABI,
-    functionName: 'allowance',
-    args: [account.address, options.marketAddress],
-  });
-
-  let approveTxHash = null;
-  if (allowance < amountRaw) {
-    approveTxHash = await walletClient.writeContract({
-      address: runtime.usdcAddress,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [options.marketAddress, amountRaw],
-    });
-    await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+  const marketCode = await publicClient.getBytecode({ address: options.marketAddress });
+  if (!marketCode || marketCode === '0x' || marketCode === '0x0') {
+    throw new CliError(
+      'MARKET_ADDRESS_NO_CODE',
+      `--market-address has no bytecode on chain ${runtime.chainId}: ${options.marketAddress}`,
+      {
+        chainId: runtime.chainId,
+        marketAddress: options.marketAddress,
+      },
+    );
   }
 
-  const buyTxHash = await walletClient.writeContract({
-    address: options.marketAddress,
-    abi: PARI_MUTUEL_ABI,
-    functionName: 'buy',
-    args: [options.side === 'yes', amountRaw, minSharesOutRaw],
-  });
-  await publicClient.waitForTransactionReceipt({ hash: buyTxHash });
+  const amountRaw = parseUnits(String(options.amountUsdc), 6);
+  const minSharesOutRaw = options.minSharesOutRaw === null ? 0n : options.minSharesOutRaw;
+  const explorerBase = 'https://etherscan.io/tx/';
+  const toExplorerUrl = (hash) => (hash ? `${explorerBase}${hash}` : null);
+  const decodeTradeError = async (error, code, fallbackMessage, details = {}) => {
+    const decoded = await decodeContractError(error);
+    const decodedMessage = formatDecodedContractError(decoded);
+    const causeMessage =
+      (error && (error.shortMessage || error.message)) || formatErrorValue(error) || fallbackMessage;
+    throw new CliError(code, decodedMessage || causeMessage || fallbackMessage, {
+      ...details,
+      decodedError: decoded,
+      cause: causeMessage,
+    });
+  };
+
+  let allowance;
+  try {
+    allowance = await publicClient.readContract({
+      address: runtime.usdcAddress,
+      abi: ERC20_ABI,
+      functionName: 'allowance',
+      args: [account.address, options.marketAddress],
+    });
+  } catch (error) {
+    await decodeTradeError(error, 'ALLOWANCE_READ_FAILED', 'Failed to read USDC allowance.', {
+      stage: 'allowance-read',
+      usdc: runtime.usdcAddress,
+    });
+  }
+
+  let approveTxHash = null;
+  let approveGasEstimate = null;
+  let approveStatus = null;
+  if (allowance < amountRaw) {
+    let approveSimulation;
+    try {
+      approveSimulation = await publicClient.simulateContract({
+        account,
+        address: runtime.usdcAddress,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [options.marketAddress, amountRaw],
+      });
+      approveGasEstimate =
+        approveSimulation && approveSimulation.request && approveSimulation.request.gas
+          ? approveSimulation.request.gas.toString()
+          : null;
+    } catch (error) {
+      await decodeTradeError(error, 'APPROVE_SIMULATION_FAILED', 'USDC approve simulation failed.', {
+        stage: 'approve-simulate',
+      });
+    }
+    try {
+      approveTxHash = await walletClient.writeContract(approveSimulation.request);
+      const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+      approveStatus = approveReceipt && approveReceipt.status ? approveReceipt.status : null;
+    } catch (error) {
+      await decodeTradeError(error, 'APPROVE_EXECUTION_FAILED', 'USDC approve transaction failed.', {
+        stage: 'approve-execute',
+        approveTxHash,
+      });
+    }
+  }
+
+  let buyTxHash = null;
+  let buyGasEstimate = null;
+  let buyStatus = null;
+  try {
+    const buySimulation = await publicClient.simulateContract({
+      account,
+      address: options.marketAddress,
+      abi: PARI_MUTUEL_ABI,
+      functionName: 'buy',
+      args: [options.side === 'yes', amountRaw, minSharesOutRaw],
+    });
+    buyGasEstimate =
+      buySimulation && buySimulation.request && buySimulation.request.gas
+        ? buySimulation.request.gas.toString()
+        : null;
+    buyTxHash = await walletClient.writeContract(buySimulation.request);
+    const buyReceipt = await publicClient.waitForTransactionReceipt({ hash: buyTxHash });
+    buyStatus = buyReceipt && buyReceipt.status ? buyReceipt.status : null;
+  } catch (error) {
+    await decodeTradeError(error, 'TRADE_EXECUTION_FAILED', 'Buy transaction failed.', {
+      stage: 'buy',
+      buyTxHash,
+    });
+  }
 
   return {
+    mode: runtime.mode,
     chainId: runtime.chainId,
+    rpcUrl: runtime.rpcUrl,
     account: account.address,
     usdc: runtime.usdcAddress,
     amountRaw: amountRaw.toString(),
     minSharesOutRaw: minSharesOutRaw.toString(),
     approveTxHash,
+    approveTxUrl: toExplorerUrl(approveTxHash),
+    approveGasEstimate,
+    approveStatus,
     buyTxHash,
+    buyTxUrl: toExplorerUrl(buyTxHash),
+    buyGasEstimate,
+    buyStatus,
+    status: buyStatus || 'confirmed',
   };
 }
 
@@ -5414,66 +3465,7 @@ async function runQuoteCommand(args, context) {
 }
 
 async function runTradeCommand(args, context) {
-  const shared = parseIndexerSharedFlags(args);
-  if (shared.rest.includes('--help') || shared.rest.includes('-h')) {
-    if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'trade.help', tradeHelpJsonPayload());
-    } else {
-      printTradeHelpTable();
-    }
-    return;
-  }
-  maybeLoadTradeEnv(shared);
-  const options = parseTradeFlags(shared.rest);
-  const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
-  const quote = await buildQuotePayload(indexerUrl, options, shared.timeoutMs);
-  enforceTradeRiskGuards(options, quote);
-  const selectedProbabilityPct = getSelectedOutcomeProbabilityPct(quote, options.side);
-  const riskGuards = buildTradeRiskGuardConfig(options);
-
-  if (options.dryRun) {
-    const dryRunPayload = {
-      mode: 'dry-run',
-      generatedAt: new Date().toISOString(),
-      status: 'ok',
-      marketAddress: options.marketAddress,
-      side: options.side,
-      amountUsdc: options.amountUsdc,
-      minSharesOutRaw: options.minSharesOutRaw === null ? '0' : options.minSharesOutRaw.toString(),
-      selectedProbabilityPct,
-      riskGuards,
-      quote,
-      executionPlan: {
-        steps: ['check allowance', 'approve USDC if needed', 'buy outcome shares'],
-        executeFlagRequired: '--execute',
-      },
-    };
-    emitSuccess(context.outputMode, 'trade', dryRunPayload, renderTradeTable);
-    return;
-  }
-
-  const execution = await executeTradeOnchain(options);
-
-  const payload = {
-    mode: 'execute',
-    generatedAt: new Date().toISOString(),
-    status: 'submitted',
-    chainId: execution.chainId,
-    marketAddress: options.marketAddress,
-    side: options.side,
-    amountUsdc: options.amountUsdc,
-    amountRaw: execution.amountRaw,
-    minSharesOutRaw: execution.minSharesOutRaw,
-    selectedProbabilityPct,
-    riskGuards,
-    account: execution.account,
-    usdc: execution.usdc,
-    approveTxHash: execution.approveTxHash,
-    buyTxHash: execution.buyTxHash,
-    quote,
-  };
-
-  emitSuccess(context.outputMode, 'trade', payload, renderTradeTable);
+  return runTradeCommandFromService(args, context);
 }
 
 async function runMarketsCommand(args, context) {
@@ -5557,7 +3549,7 @@ async function runMarketsCommand(args, context) {
     const responses = await Promise.all(
       ids.map(async (id) => {
         const data = await graphqlRequest(indexerUrl, query, { id }, shared.timeoutMs);
-        return { id, item: data.markets || null };
+        return { id, item: normalizeMarketNumericFields(data.markets || null) };
       }),
     );
 
@@ -5594,26 +3586,19 @@ async function runMarketsCommand(args, context) {
   throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get');
 }
 
-async function runScanCommand(args, context) {
-  const shared = parseIndexerSharedFlags(args);
-  maybeLoadIndexerEnv(shared);
-  const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
-
-  const options = parseMarketsListFlags(shared.rest);
-  options.expand = true;
-  options.withOdds = true;
-
-  const { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
-  const enrichmentContext = await buildMarketsEnrichmentContext(indexerUrl, items, options, shared.timeoutMs);
-  const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, {
-    includeEnrichedItems: true,
-    scanMode: true,
-    enrichmentContext,
-    unfilteredCount,
-  });
-
-  emitSuccess(context.outputMode, 'scan', payload, renderScanTable);
-}
+const runScanCommand = createRunScanCommand({
+  parseIndexerSharedFlags,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  maybeLoadIndexerEnv,
+  resolveIndexerUrl,
+  parseMarketsListFlags,
+  fetchMarketsListPage,
+  buildMarketsEnrichmentContext,
+  buildMarketsListPayload,
+  renderScanTable,
+});
 
 async function runPollsCommand(args, context) {
   const shared = parseIndexerSharedFlags(args);
@@ -6000,6 +3985,7 @@ async function collectPortfolioSnapshot(indexerUrl, options, timeoutMs) {
   const positionsPage = await fetchPortfolioPositions(indexerUrl, options, timeoutMs);
   let liquidityPage = { items: [] };
   let claimPage = { items: [] };
+  let lpPayload = null;
 
   if (options.includeEvents) {
     [liquidityPage, claimPage] = await Promise.all([
@@ -6008,21 +3994,37 @@ async function collectPortfolioSnapshot(indexerUrl, options, timeoutMs) {
     ]);
   }
 
+  if (options.withLp) {
+    lpPayload = await runLpPositions({
+      wallet: options.wallet,
+      chainId: options.chainId,
+      rpcUrl: options.rpcUrl || null,
+      indexerUrl,
+      timeoutMs,
+    });
+  }
+
   const positions = Array.isArray(positionsPage.items) ? positionsPage.items : [];
   const liquidityEvents = Array.isArray(liquidityPage.items) ? liquidityPage.items : [];
   const claimEvents = Array.isArray(claimPage.items) ? claimPage.items : [];
+  const lpPositions = Array.isArray(lpPayload && lpPayload.items) ? lpPayload.items : [];
+  const lpDiagnostics = Array.isArray(lpPayload && lpPayload.diagnostics) ? lpPayload.diagnostics : [];
 
   return {
-    summary: summarizePortfolio(options, positions, liquidityEvents, claimEvents),
+    summary: summarizePortfolio(options, positions, liquidityEvents, claimEvents, lpPositions, lpDiagnostics),
     positions,
+    lpPositions,
     events: {
       liquidity: liquidityEvents,
       claims: claimEvents,
     },
+    diagnostics: {
+      lp: lpDiagnostics,
+    },
   };
 }
 
-function summarizePortfolio(options, positions, liquidityEvents, claimEvents) {
+function summarizePortfolio(options, positions, liquidityEvents, claimEvents, lpPositions = [], lpDiagnostics = []) {
   const uniqueMarkets = new Set(
     positions
       .map((item) => normalizeLookupKey(item && item.marketAddress))
@@ -6045,7 +4047,7 @@ function summarizePortfolio(options, positions, liquidityEvents, claimEvents) {
   }
   const netLiquidity = liquidityAdded - liquidityRemoved;
   const claims = sumNumericField(claimEvents, 'amount');
-  const cashflowNet = toFixedNumber((liquidityRemoved + claims) - liquidityAdded, 6);
+  const cashflowNet = round((liquidityRemoved + claims) - liquidityAdded, 6);
 
   const diagnostics = [];
   if (!options.includeEvents) {
@@ -6056,17 +4058,43 @@ function summarizePortfolio(options, positions, liquidityEvents, claimEvents) {
   if (options.chainId !== null && options.includeEvents) {
     diagnostics.push('Claim events are not chain-filtered by indexer schema; values may span chains.');
   }
+  if (options.withLp && !lpPositions.length) {
+    diagnostics.push('No LP positions found for this wallet/filter.');
+  }
+  if (options.withLp && lpDiagnostics.length) {
+    diagnostics.push(...lpDiagnostics);
+  }
+
+  const lpPositionCount = Array.isArray(lpPositions) ? lpPositions.length : 0;
+  const lpMarketsWithBalance = lpPositions.filter((item) => {
+    try {
+      return BigInt(item && item.lpTokenBalanceRaw ? item.lpTokenBalanceRaw : '0') > 0n;
+    } catch {
+      return false;
+    }
+  }).length;
+  const lpEstimatedCollateralOutUsdc = round(
+    lpPositions.reduce((sum, item) => {
+      const value = Number(item && item.preview && item.preview.collateralOutUsdc);
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0),
+    6,
+  );
 
   return {
     positionCount: positions.length,
     uniqueMarkets,
-    liquidityAdded: toFixedNumber(liquidityAdded, 6),
-    liquidityRemoved: toFixedNumber(liquidityRemoved, 6),
-    netLiquidity: toFixedNumber(netLiquidity, 6),
+    liquidityAdded: round(liquidityAdded, 6),
+    liquidityRemoved: round(liquidityRemoved, 6),
+    netLiquidity: round(netLiquidity, 6),
     claims,
     cashflowNet,
     pnlProxy: cashflowNet,
     eventsIncluded: options.includeEvents,
+    lpIncluded: Boolean(options.withLp),
+    lpPositionCount,
+    lpMarketsWithBalance,
+    lpEstimatedCollateralOutUsdc,
     diagnostic: diagnostics.join(' '),
   };
 }
@@ -6143,16 +4171,231 @@ function evaluateWatchAlerts(snapshot, options) {
   return alerts;
 }
 
+const sharedParserDeps = {
+  CliError,
+  parseAddressFlag,
+  parsePrivateKeyFlag,
+  requireFlagValue,
+  parsePositiveInteger,
+  parsePositiveNumber,
+  parseInteger,
+  parseNonNegativeInteger,
+  parseProbabilityPercent,
+  parseOutcomeSide,
+  parseNumber,
+  parseWebhookFlagIntoOptions,
+  isSecureHttpUrlOrLocal,
+};
+
+const parseTradeFlagsFromModule = createParseTradeFlags({
+  ...sharedParserDeps,
+  parseBigIntString,
+});
+const parseWatchFlagsFromModule = createParseWatchFlags(sharedParserDeps);
+const parseAutopilotFlagsFromModule = createParseAutopilotFlags({
+  ...sharedParserDeps,
+  defaultAutopilotStateFile,
+  defaultAutopilotKillSwitchFile,
+});
+const parseMirrorPlanFlagsFromModule = createParseMirrorPlanFlags(sharedParserDeps);
+const parseMirrorHedgeCalcFlagsFromModule = createParseMirrorHedgeCalcFlags({
+  ...sharedParserDeps,
+  parseCsvNumberList,
+});
+const parseMirrorDeployFlagsFromModule = createParseMirrorDeployFlags(sharedParserDeps);
+const parseMirrorGoFlagsFromModule = createParseMirrorGoFlags({
+  ...sharedParserDeps,
+  parseMirrorSyncGateSkipList,
+  mergeMirrorSyncGateSkipLists,
+});
+const parseMirrorSyncFlagsFromModule = createParseMirrorSyncFlags({
+  ...sharedParserDeps,
+  defaultMirrorStateFile,
+  defaultMirrorKillSwitchFile,
+  parseMirrorSyncGateSkipList,
+  mergeMirrorSyncGateSkipLists,
+});
+const parseMirrorSyncDaemonSelectorFlagsFromModule = createParseMirrorSyncDaemonSelectorFlags({
+  CliError,
+  requireFlagValue,
+});
+const parseMirrorBrowseFlagsFromModule = createParseMirrorBrowseFlags({
+  ...sharedParserDeps,
+  parseDateLikeFlag,
+});
+const parseMirrorVerifyFlagsFromModule = createParseMirrorVerifyFlags(sharedParserDeps);
+const parseMirrorStatusFlagsFromModule = createParseMirrorStatusFlags({
+  ...sharedParserDeps,
+  defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
+});
+const parseMirrorCloseFlagsFromModule = createParseMirrorCloseFlags(sharedParserDeps);
+const parseMirrorLpExplainFlagsFromModule = createParseMirrorLpExplainFlags(sharedParserDeps);
+const parseMirrorSimulateFlagsFromModule = createParseMirrorSimulateFlags({
+  ...sharedParserDeps,
+  parseCsvNumberList,
+});
+const parsePolymarketSharedFlagsFromModule = createParsePolymarketSharedFlags({
+  CliError,
+  requireFlagValue,
+  parseAddressFlag,
+  parseInteger,
+  isValidPrivateKey,
+  isSecureHttpUrlOrLocal,
+});
+const parsePolymarketApproveFlagsFromModule = createParsePolymarketApproveFlags({
+  CliError,
+  parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
+});
+const parsePolymarketTradeFlagsFromModule = createParsePolymarketTradeFlags({
+  CliError,
+  requireFlagValue,
+  parsePositiveNumber,
+  parsePositiveInteger,
+  parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
+  isSecureHttpUrlOrLocal,
+  defaultTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
+});
+const parseResolveFlagsFromModule = createParseResolveFlags({
+  CliError,
+  parseAddressFlag,
+  requireFlagValue,
+  parseInteger,
+  isValidPrivateKey,
+  isSecureHttpUrlOrLocal,
+});
+const parseLpFlagsFromModule = createParseLpFlags({
+  CliError,
+  parseAddressFlag,
+  requireFlagValue,
+  parsePositiveNumber,
+  parseInteger,
+  parsePositiveInteger,
+  isValidPrivateKey,
+  isSecureHttpUrlOrLocal,
+  defaultTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
+});
+const parseSportsFlagsFromModule = createParseSportsFlags({
+  CliError,
+  requireFlagValue,
+  parsePositiveInteger,
+  parsePositiveNumber,
+  parseInteger,
+  parseNumber,
+  parseAddressFlag,
+  parsePrivateKeyFlag,
+  parseCsvList,
+  parseDateLikeFlag,
+  isSecureHttpUrlOrLocal,
+});
+
+const runTradeCommandFromService = createRunTradeCommand({
+  CliError,
+  parseIndexerSharedFlags,
+  emitSuccess,
+  tradeHelpJsonPayload,
+  printTradeHelpTable,
+  maybeLoadTradeEnv,
+  parseTradeFlags: parseTradeFlagsFromModule,
+  resolveIndexerUrl,
+  buildQuotePayload,
+  enforceTradeRiskGuards,
+  getSelectedOutcomeProbabilityPct,
+  buildTradeRiskGuardConfig,
+  executeTradeOnchain,
+  resolveForkRuntime,
+  isSecureHttpUrlOrLocal,
+  renderTradeTable,
+});
+
+const runWatchCommandFromService = createRunWatchCommand({
+  CliError,
+  parseIndexerSharedFlags,
+  emitSuccess,
+  watchHelpJsonPayload,
+  printWatchHelpTable,
+  maybeLoadIndexerEnv,
+  resolveIndexerUrl,
+  parseWatchFlags: parseWatchFlagsFromModule,
+  collectPortfolioSnapshot,
+  buildQuotePayload,
+  evaluateWatchAlerts,
+  hasWebhookTargets,
+  sendWebhookNotifications,
+  sleepMs,
+  renderWatchTable,
+});
+
+const runPolymarketCommandFromService = createRunPolymarketCommand({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  loadEnvIfPresent,
+  parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
+  parsePolymarketApproveFlags: parsePolymarketApproveFlagsFromModule,
+  parsePolymarketTradeFlags: parsePolymarketTradeFlagsFromModule,
+  resolveForkRuntime,
+  isSecureHttpUrlOrLocal,
+  runPolymarketCheck,
+  runPolymarketApprove,
+  runPolymarketPreflight,
+  resolvePolymarketMarket,
+  readTradingCredsFromEnv,
+  placeHedgeOrder,
+  renderPolymarketCheckTable,
+  renderPolymarketApproveTable,
+  renderPolymarketPreflightTable,
+  renderSingleEntityTable,
+  defaultEnvFile: DEFAULT_ENV_FILE,
+});
+
+const runResolveCommandFromService = createRunResolveCommand({
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseResolveFlags: parseResolveFlagsFromModule,
+  runResolve,
+  renderSingleEntityTable,
+  CliError,
+});
+
+const runLpCommandFromService = createRunLpCommand({
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseLpFlags: parseLpFlagsFromModule,
+  runLp,
+  renderSingleEntityTable,
+  CliError,
+});
+const runSportsCommandFromService = createRunSportsCommand({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseSportsFlags: parseSportsFlagsFromModule,
+  createSportsProviderRegistry,
+  computeSportsConsensus,
+  evaluateSportsTimingStatus,
+  buildSyncStatusPayload,
+  detectConcurrentSyncConflict,
+  buildSportsResolvePlan,
+  buildSportsCreatePlan,
+  deployPandoraAmmMarket,
+});
+
 async function runPortfolioCommand(args, context) {
   const shared = parseIndexerSharedFlags(args);
   if (shared.rest.includes('--help') || shared.rest.includes('-h')) {
     if (context.outputMode === 'json') {
       emitSuccess(context.outputMode, 'portfolio.help', {
         usage:
-          'pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events]',
+          'pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
       });
     } else {
-      console.log('Usage: pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events]');
+      console.log(
+        'Usage: pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
+      );
     }
     return;
   }
@@ -6166,125 +4409,23 @@ async function runPortfolioCommand(args, context) {
     wallet: options.wallet,
     chainId: options.chainId,
     limit: options.limit,
+    withLp: options.withLp,
     summary: snapshot.summary,
     positions: snapshot.positions,
+    lpPositions: snapshot.lpPositions,
     events: snapshot.events,
+    diagnostics: snapshot.diagnostics,
   };
 
   emitSuccess(context.outputMode, 'portfolio', payload, renderPortfolioTable);
 }
 
 async function runWatchCommand(args, context) {
-  const shared = parseIndexerSharedFlags(args);
-  if (shared.rest.includes('--help') || shared.rest.includes('-h')) {
-    if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'watch.help', watchHelpJsonPayload());
-    } else {
-      printWatchHelpTable();
-    }
-    return;
-  }
+  return runWatchCommandFromService(args, context);
+}
 
-  maybeLoadIndexerEnv(shared);
-  const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
-  const options = parseWatchFlags(shared.rest);
-
-  const snapshots = [];
-  const alerts = [];
-  const webhookReports = [];
-  for (let iteration = 1; iteration <= options.iterations; iteration += 1) {
-    const snapshot = {
-      iteration,
-      timestamp: new Date().toISOString(),
-    };
-
-    if (options.wallet) {
-      const portfolio = await collectPortfolioSnapshot(indexerUrl, options, shared.timeoutMs);
-      snapshot.portfolioSummary = portfolio.summary;
-    }
-
-    if (options.marketAddress) {
-      const quote = await buildQuotePayload(indexerUrl, {
-        marketAddress: options.marketAddress,
-        side: options.side,
-        amountUsdc: options.amountUsdc,
-        yesPct: options.yesPct,
-        slippageBps: options.slippageBps,
-      }, shared.timeoutMs);
-      snapshot.quote = quote;
-    }
-
-    snapshot.alerts = evaluateWatchAlerts(snapshot, options);
-    snapshot.alertCount = snapshot.alerts.length;
-    if (snapshot.alertCount) {
-      alerts.push(...snapshot.alerts);
-    }
-
-    if (snapshot.alertCount && hasWebhookTargets(options)) {
-      const report = await sendWebhookNotifications(options, {
-        event: 'watch.alert',
-        iteration,
-        alertCount: snapshot.alertCount,
-        alerts: snapshot.alerts,
-        snapshot,
-        message: `[Pandora Watch] ${snapshot.alerts[0].message}`,
-      });
-      webhookReports.push({ iteration, report });
-      if (options.failOnWebhookError && report.failureCount > 0) {
-        throw new CliError(
-          'WEBHOOK_DELIVERY_FAILED',
-          `watch webhook delivery failed for iteration ${iteration}.`,
-          { iteration, report, snapshot },
-          2,
-        );
-      }
-    }
-
-    snapshots.push(snapshot);
-    if (iteration < options.iterations) {
-      // Keep watch responsive while still supporting deterministic tiny intervals in tests.
-      await sleepMs(options.intervalMs);
-    }
-  }
-
-  const payload = {
-    generatedAt: new Date().toISOString(),
-    indexerUrl,
-    iterationsRequested: options.iterations,
-    intervalMs: options.intervalMs,
-    count: snapshots.length,
-    alertCount: alerts.length,
-    parameters: {
-      wallet: options.wallet,
-      marketAddress: options.marketAddress,
-      side: options.side,
-      amountUsdc: options.amountUsdc,
-      chainId: options.chainId,
-      includeEvents: options.includeEvents,
-      yesPct: options.yesPct,
-      alertYesBelow: options.alertYesBelow,
-      alertYesAbove: options.alertYesAbove,
-      alertNetLiquidityBelow: options.alertNetLiquidityBelow,
-      alertNetLiquidityAbove: options.alertNetLiquidityAbove,
-      failOnAlert: options.failOnAlert,
-      webhookEnabled: hasWebhookTargets(options),
-      failOnWebhookError: options.failOnWebhookError,
-    },
-    snapshots,
-    alerts,
-    webhookReports,
-  };
-
-  if (options.failOnAlert && alerts.length) {
-    throw new CliError(
-      'WATCH_ALERT_TRIGGERED',
-      `watch detected ${alerts.length} alert(s).`,
-      payload,
-      2,
-    );
-  }
-
-  emitSuccess(context.outputMode, 'watch', payload, renderWatchTable);
+async function runSportsCommand(args, context) {
+  return runSportsCommandFromService(args, context);
 }
 
 async function runHistoryCommand(args, context) {
@@ -6411,7 +4552,7 @@ async function runAutopilotCommand(args, context) {
 
   maybeLoadTradeEnv(shared);
   const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
-  const options = parseAutopilotFlags(shared.rest);
+  const options = parseAutopilotFlagsFromModule(shared.rest);
 
   const payload = await runAutopilot(options, {
     quoteFn: (quoteOptions) => buildQuotePayload(indexerUrl, quoteOptions, shared.timeoutMs),
@@ -6464,273 +4605,299 @@ async function runAutopilotCommand(args, context) {
   emitSuccess(context.outputMode, 'autopilot', payload, renderAutopilotTable);
 }
 
-async function runMirrorCommand(args, context) {
-  const action = args[0];
-  const actionArgs = args.slice(1);
+function toMirrorSelector(options = {}) {
+  return {
+    pandoraMarketAddress: options.pandoraMarketAddress || null,
+    polymarketMarketId: options.polymarketMarketId || null,
+    polymarketSlug: options.polymarketSlug || null,
+  };
+}
 
-  if (!action || action === '--help' || action === '-h') {
-    if (context.outputMode === 'json') {
-      emitSuccess(
-        context.outputMode,
-        'mirror.help',
-        commandHelpPayload('pandora [--output table|json] mirror plan|deploy|verify|sync|status ...'),
-      );
-    } else {
-      console.log('Usage: pandora [--output table|json] mirror plan|deploy|verify|sync|status ...');
-      console.log('');
-      console.log('Subcommands:');
-      console.log(
-        '  plan   --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity]',
-      );
-      console.log(
-        '  deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--market-type amm] [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--allow-rule-mismatch]',
-      );
-      console.log(
-        '  verify --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--include-similarity] [--with-rules]',
-      );
-      console.log(
-        '  sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
-      );
-      console.log('  status --state-file <path>|--strategy-hash <hash>');
-    }
-    return;
+function resolveTrustedDeployPair(options = {}) {
+  const selector = toMirrorSelector(options);
+  const manifestFile = options.manifestFile || defaultMirrorManifestFile();
+  const lookup = findMirrorPair(manifestFile, selector);
+  if (!lookup.pair || lookup.pair.trusted === false) {
+    throw new CliError(
+      'TRUST_DEPLOY_PAIR_NOT_FOUND',
+      'Trusted deploy pair not found in mirror manifest. Run mirror deploy --execute first or pass explicit pair mapping.',
+      {
+        manifestFile: lookup.filePath,
+        selector,
+      },
+    );
   }
 
-  if (action === 'status') {
-    if (includesHelpFlag(actionArgs)) {
-      const usage = 'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'mirror.status.help', commandHelpPayload(usage));
-      } else {
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
+  return {
+    trustDeploy: true,
+    trustPair: lookup.pair,
+    manifestFile: lookup.filePath,
+  };
+}
 
-    const options = parseMirrorStatusFlags(actionArgs);
-    const strategyHashValue = options.strategyHash || null;
-    const stateFile =
-      options.stateFile ||
-      path.join(
-        process.env.HOME || process.env.USERPROFILE || '.',
-        '.pandora',
-        'mirror',
-        `${strategyHashValue}.json`,
-      );
-    const loaded = loadMirrorState(stateFile, strategyHashValue);
-    emitSuccess(
-      context.outputMode,
-      'mirror.status',
-      {
-        schemaVersion: loaded.state.schemaVersion || '1.0.0',
-        generatedAt: new Date().toISOString(),
-        stateFile: loaded.filePath,
-        strategyHash: loaded.state.strategyHash || strategyHashValue,
-        state: loaded.state,
-      },
-      renderMirrorStatusTable,
+async function toMirrorStatusLivePayload(verifyPayload, state, options) {
+  const pandoraYesPct = verifyPayload && verifyPayload.pandora ? Number(verifyPayload.pandora.yesPct) : null;
+  const sourceYesPct = verifyPayload && verifyPayload.sourceMarket ? Number(verifyPayload.sourceMarket.yesPct) : null;
+  const driftBps =
+    Number.isFinite(sourceYesPct) && Number.isFinite(pandoraYesPct)
+      ? Math.round(Math.abs(sourceYesPct - pandoraYesPct) * 10000) / 100
+      : null;
+  const reserveYesUsdc = verifyPayload && verifyPayload.pandora ? Number(verifyPayload.pandora.reserveYes) : null;
+  const reserveNoUsdc = verifyPayload && verifyPayload.pandora ? Number(verifyPayload.pandora.reserveNo) : null;
+  const deltaLpUsdc =
+    Number.isFinite(reserveYesUsdc) && Number.isFinite(reserveNoUsdc)
+      ? Math.round((reserveYesUsdc - reserveNoUsdc) * 1e6) / 1e6
+      : null;
+  const targetHedgeUsdc = deltaLpUsdc === null ? null : Math.round((-deltaLpUsdc) * 1e6) / 1e6;
+  const currentHedgeUsdc = Number.isFinite(Number(state.currentHedgeUsdc)) ? Number(state.currentHedgeUsdc) : 0;
+  const hedgeGapUsdc = targetHedgeUsdc === null ? null : Math.round((targetHedgeUsdc - currentHedgeUsdc) * 1e6) / 1e6;
+
+  const gateChecks = verifyPayload && verifyPayload.gateResult && Array.isArray(verifyPayload.gateResult.checks)
+    ? verifyPayload.gateResult.checks
+    : [];
+  const lifecycleCheck = gateChecks.find((item) => item.code === 'LIFECYCLE_ACTIVE');
+  const notExpiredCheck = gateChecks.find((item) => item.code === 'NOT_EXPIRED');
+
+  const cumulativeLpFeesApproxUsdc = Number.isFinite(Number(state.cumulativeLpFeesApproxUsdc))
+    ? Number(state.cumulativeLpFeesApproxUsdc)
+    : 0;
+  const cumulativeHedgeCostApproxUsdc = Number.isFinite(Number(state.cumulativeHedgeCostApproxUsdc))
+    ? Number(state.cumulativeHedgeCostApproxUsdc)
+    : 0;
+  const netPnlApproxUsdc = Math.round((cumulativeLpFeesApproxUsdc - cumulativeHedgeCostApproxUsdc) * 1e6) / 1e6;
+
+  let positionSummary = {
+    yesBalance: null,
+    noBalance: null,
+    openOrdersCount: null,
+    estimatedValueUsd: null,
+    positionDeltaApprox: null,
+    diagnostics: [],
+  };
+  try {
+    positionSummary = await fetchPolymarketPositionSummary({
+      market: verifyPayload && verifyPayload.sourceMarket ? verifyPayload.sourceMarket : {},
+      host: options.polymarketHost || null,
+      mockUrl: options.polymarketMockUrl || null,
+      timeoutMs: options.timeoutMs,
+    });
+  } catch (err) {
+    positionSummary = {
+      yesBalance: null,
+      noBalance: null,
+      openOrdersCount: null,
+      estimatedValueUsd: null,
+      positionDeltaApprox: null,
+      diagnostics: [`Position summary unavailable: ${err && err.message ? err.message : String(err)}`],
+    };
+  }
+
+  const hedgePositionDeltaApprox = Number.isFinite(Number(positionSummary.positionDeltaApprox))
+    ? Number(positionSummary.positionDeltaApprox)
+    : null;
+  const netDeltaCandidates = [deltaLpUsdc, hedgePositionDeltaApprox].filter((value) => Number.isFinite(value));
+  const netDeltaApprox = netDeltaCandidates.length
+    ? Math.round(netDeltaCandidates.reduce((sum, value) => sum + value, 0) * 1e6) / 1e6
+    : null;
+  const pnlApprox = Number.isFinite(Number(positionSummary.estimatedValueUsd))
+    ? Math.round((netPnlApproxUsdc + Number(positionSummary.estimatedValueUsd)) * 1e6) / 1e6
+    : netPnlApproxUsdc;
+
+  const minTimeToExpirySec =
+    verifyPayload && verifyPayload.expiry && Number.isFinite(Number(verifyPayload.expiry.minTimeToExpirySec))
+      ? Number(verifyPayload.expiry.minTimeToExpirySec)
+      : null;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    pandoraYesPct: Number.isFinite(pandoraYesPct) ? pandoraYesPct : null,
+    sourceYesPct: Number.isFinite(sourceYesPct) ? sourceYesPct : null,
+    driftBps,
+    driftTriggerBps: options.driftTriggerBps,
+    driftTriggered: driftBps !== null ? driftBps >= options.driftTriggerBps : false,
+    reserveYesUsdc: Number.isFinite(reserveYesUsdc) ? reserveYesUsdc : null,
+    reserveNoUsdc: Number.isFinite(reserveNoUsdc) ? reserveNoUsdc : null,
+    deltaLpUsdc,
+    targetHedgeUsdc,
+    currentHedgeUsdc,
+    hedgeGapUsdc,
+    hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+    hedgeTriggered: hedgeGapUsdc !== null ? Math.abs(hedgeGapUsdc) >= options.hedgeTriggerUsdc : false,
+    lifecycleActive: lifecycleCheck ? Boolean(lifecycleCheck.ok) : null,
+    notExpired: notExpiredCheck ? Boolean(notExpiredCheck.ok) : null,
+    minTimeToExpirySec,
+    cumulativeLpFeesApproxUsdc,
+    cumulativeHedgeCostApproxUsdc,
+    netPnlApproxUsdc,
+    netDeltaApprox,
+    pnlApprox,
+    polymarketPosition: {
+      yesBalance: Number.isFinite(Number(positionSummary.yesBalance)) ? Number(positionSummary.yesBalance) : null,
+      noBalance: Number.isFinite(Number(positionSummary.noBalance)) ? Number(positionSummary.noBalance) : null,
+      openOrdersCount:
+        Number.isInteger(positionSummary.openOrdersCount)
+          ? positionSummary.openOrdersCount
+          : Number.isFinite(Number(positionSummary.openOrdersCount))
+            ? Math.trunc(Number(positionSummary.openOrdersCount))
+            : null,
+      estimatedValueUsd: Number.isFinite(Number(positionSummary.estimatedValueUsd))
+        ? Number(positionSummary.estimatedValueUsd)
+        : null,
+      diagnostics: Array.isArray(positionSummary.diagnostics) ? positionSummary.diagnostics : [],
+    },
+    gateResult: verifyPayload.gateResult,
+    matchConfidence: verifyPayload.matchConfidence,
+    verifyDiagnostics: verifyPayload.diagnostics || [],
+    sourceMarket: {
+      marketId: verifyPayload.sourceMarket && verifyPayload.sourceMarket.marketId ? verifyPayload.sourceMarket.marketId : null,
+      slug: verifyPayload.sourceMarket && verifyPayload.sourceMarket.slug ? verifyPayload.sourceMarket.slug : null,
+      question: verifyPayload.sourceMarket && verifyPayload.sourceMarket.question ? verifyPayload.sourceMarket.question : null,
+      active: verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.active) : null,
+      resolved: verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.resolved) : null,
+      closeTimestamp: verifyPayload.sourceMarket && verifyPayload.sourceMarket.closeTimestamp !== undefined
+        ? verifyPayload.sourceMarket.closeTimestamp
+        : null,
+    },
+    pandoraMarket: {
+      marketAddress: verifyPayload.pandora && verifyPayload.pandora.marketAddress ? verifyPayload.pandora.marketAddress : null,
+      pollAddress: verifyPayload.pandora && verifyPayload.pandora.pollAddress ? verifyPayload.pandora.pollAddress : null,
+      question: verifyPayload.pandora && verifyPayload.pandora.question ? verifyPayload.pandora.question : null,
+      active: verifyPayload.pandora ? Boolean(verifyPayload.pandora.active) : null,
+      resolved: verifyPayload.pandora ? Boolean(verifyPayload.pandora.resolved) : null,
+      closeTimestamp: verifyPayload.pandora && verifyPayload.pandora.closeTimestamp !== undefined
+        ? verifyPayload.pandora.closeTimestamp
+        : null,
+    },
+  };
+}
+
+function renderMirrorSyncTickLine(tickContext, outputMode) {
+  const snapshot = tickContext.snapshot || {};
+  const metrics = snapshot.metrics || {};
+  const strictGate = snapshot.strictGate || {};
+  const action = snapshot.action || null;
+  const actionStatus = action && action.status ? action.status : 'idle';
+  const gateCode =
+    action && Array.isArray(action.failedChecks) && action.failedChecks.length
+      ? action.forcedGateBypass
+        ? `forced:${action.failedChecks[0]}`
+        : action.failedChecks[0]
+      : '';
+
+  if (outputMode === 'json') {
+    console.log(
+      JSON.stringify({
+        event: 'mirror.sync.tick',
+        timestamp: tickContext.timestamp,
+        tick: tickContext.iteration,
+        driftBps: metrics.driftBps,
+        plannedRebalanceUsdc: metrics.plannedRebalanceUsdc,
+        plannedHedgeUsdc: metrics.plannedHedgeUsdc,
+        gateOk: strictGate.ok,
+        gateCode,
+        actionStatus,
+      }),
     );
     return;
   }
 
-  const shared = parseIndexerSharedFlags(actionArgs);
+  const ts = tickContext.timestamp || new Date().toISOString();
+  const drift = metrics.driftBps === null || metrics.driftBps === undefined ? 'n/a' : `${metrics.driftBps}`;
+  const rebalance = metrics.plannedRebalanceUsdc === undefined ? '0' : String(metrics.plannedRebalanceUsdc);
+  const hedge = metrics.plannedHedgeUsdc === undefined ? '0' : String(metrics.plannedHedgeUsdc);
+  const gateText = strictGate.ok ? 'ok' : gateCode || 'blocked';
+  console.log(`[${ts}] tick=${tickContext.iteration} drift=${drift}bps rebalance=$${rebalance} hedge=$${hedge} action=${actionStatus} gate=${gateText}`);
+}
 
-  if (action === 'plan') {
-    if (includesHelpFlag(shared.rest)) {
-      if (context.outputMode === 'json') {
-        emitSuccess(
-          context.outputMode,
-          'mirror.plan.help',
-          commandHelpPayload(
-            'pandora [--output table|json] mirror plan --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity]',
-          ),
-        );
-      } else {
-        console.log(
-          'Usage: pandora [--output table|json] mirror plan --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity]',
-        );
-      }
-      return;
-    }
-
-    maybeLoadIndexerEnv(shared);
-    const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
-    const options = parseMirrorPlanFlags(shared.rest);
-    const payload = await buildMirrorPlan({
-      ...options,
-      indexerUrl,
-      timeoutMs: shared.timeoutMs,
-    });
-
-    emitSuccess(context.outputMode, 'mirror.plan', payload, renderMirrorPlanTable);
-    return;
+function coerceMirrorServiceError(err, fallbackCode = 'MIRROR_ERROR') {
+  if (err instanceof CliError) return err;
+  if (err && err.code) {
+    return new CliError(err.code, err.message || 'Mirror command failed.', err.details);
   }
+  return new CliError(fallbackCode, err && err.message ? err.message : String(err));
+}
 
-  if (action === 'deploy') {
-    if (includesHelpFlag(shared.rest)) {
-      if (context.outputMode === 'json') {
-        emitSuccess(
-          context.outputMode,
-          'mirror.deploy.help',
-          commandHelpPayload(
-            'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--market-type amm] [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--allow-rule-mismatch]',
-          ),
-        );
-      } else {
-        console.log(
-          'Usage: pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--market-type amm] [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--allow-rule-mismatch]',
-        );
-      }
-      return;
+async function runLivePolymarketPreflightForMirror(options = {}) {
+  const preflightOptions = {};
+  if (options.rpcUrl) preflightOptions.rpcUrl = options.rpcUrl;
+  if (options.privateKey) preflightOptions.privateKey = options.privateKey;
+  if (options.funder) preflightOptions.funder = options.funder;
+  else if (process.env.POLYMARKET_FUNDER) preflightOptions.funder = process.env.POLYMARKET_FUNDER;
+
+  try {
+    return await runPolymarketPreflight(preflightOptions);
+  } catch (err) {
+    if (err && err.code) {
+      throw new CliError(err.code, err.message || 'Polymarket live preflight failed.', err.details);
     }
-
-    maybeLoadTradeEnv(shared);
-    const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
-    const options = parseMirrorDeployFlags(shared.rest);
-    const payload = await deployMirror({
-      ...options,
-      indexerUrl,
-      timeoutMs: shared.timeoutMs,
-      execute: options.execute,
-    });
-
-    emitSuccess(context.outputMode, 'mirror.deploy', payload, renderMirrorDeployTable);
-    return;
+    throw err;
   }
+}
 
-  if (action === 'verify') {
-    if (includesHelpFlag(shared.rest)) {
-      if (context.outputMode === 'json') {
-        emitSuccess(
-          context.outputMode,
-          'mirror.verify.help',
-          commandHelpPayload(
-            'pandora [--output table|json] mirror verify --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--include-similarity] [--with-rules]',
-          ),
-        );
-      } else {
-        console.log(
-          'Usage: pandora [--output table|json] mirror verify --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--include-similarity] [--with-rules]',
-        );
-      }
-      return;
-    }
+const runMirrorCommand = createRunMirrorCommand({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadIndexerEnv,
+  maybeLoadTradeEnv,
+  resolveIndexerUrl,
+  parseMirrorBrowseFlags: parseMirrorBrowseFlagsFromModule,
+  parseMirrorPlanFlags: parseMirrorPlanFlagsFromModule,
+  parseMirrorDeployFlags: parseMirrorDeployFlagsFromModule,
+  parseMirrorVerifyFlags: parseMirrorVerifyFlagsFromModule,
+  parseMirrorStatusFlags: parseMirrorStatusFlagsFromModule,
+  parseMirrorSyncFlags: parseMirrorSyncFlagsFromModule,
+  parseMirrorSyncDaemonSelectorFlags: parseMirrorSyncDaemonSelectorFlagsFromModule,
+  parseMirrorGoFlags: parseMirrorGoFlagsFromModule,
+  parseMirrorCloseFlags: parseMirrorCloseFlagsFromModule,
+  parseMirrorLpExplainFlags: parseMirrorLpExplainFlagsFromModule,
+  parseMirrorHedgeCalcFlags: parseMirrorHedgeCalcFlagsFromModule,
+  parseMirrorSimulateFlags: parseMirrorSimulateFlagsFromModule,
+  buildMirrorPlan,
+  deployMirror,
+  verifyMirror,
+  browseMirrorMarkets,
+  buildMirrorLpExplain,
+  buildMirrorHedgeCalc,
+  buildMirrorSimulate,
+  runMirrorSync,
+  startMirrorDaemon,
+  stopMirrorDaemon,
+  mirrorDaemonStatus,
+  buildMirrorClosePlan,
+  resolveTrustedDeployPair,
+  toMirrorStatusLivePayload,
+  coerceMirrorServiceError,
+  runLivePolymarketPreflightForMirror,
+  buildMirrorSyncStrategy,
+  mirrorStrategyHash,
+  buildMirrorSyncDaemonCliArgs,
+  buildQuotePayload,
+  executeTradeOnchain,
+  hasWebhookTargets,
+  sendWebhookNotifications,
+  loadMirrorState,
+  renderMirrorSyncTickLine,
+  renderMirrorBrowseTable,
+  renderMirrorPlanTable,
+  renderMirrorDeployTable,
+  renderMirrorVerifyTable,
+  renderMirrorLpExplainTable,
+  renderMirrorHedgeCalcTable,
+  renderMirrorSimulateTable,
+  renderMirrorGoTable,
+  renderMirrorSyncTable,
+  renderMirrorSyncDaemonTable,
+  renderMirrorStatusTable,
+  renderMirrorCloseTable,
+  cliPath: __filename,
+});
 
-    maybeLoadIndexerEnv(shared);
-    const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
-    const options = parseMirrorVerifyFlags(shared.rest);
-    const payload = await verifyMirror({
-      ...options,
-      indexerUrl,
-      timeoutMs: shared.timeoutMs,
-    });
 
-    if (!options.withRules && payload && payload.pandora) {
-      delete payload.pandora.rules;
-      if (payload.sourceMarket) delete payload.sourceMarket.description;
-    }
-
-    emitSuccess(context.outputMode, 'mirror.verify', payload, renderMirrorVerifyTable);
-    return;
-  }
-
-  if (action === 'sync') {
-    if (includesHelpFlag(shared.rest)) {
-      if (context.outputMode === 'json') {
-        emitSuccess(
-          context.outputMode,
-          'mirror.sync.help',
-          {
-            usage:
-              'pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
-            liveHedgeEnv: [
-              'POLYMARKET_PRIVATE_KEY',
-              'POLYMARKET_FUNDER',
-              'POLYMARKET_API_KEY',
-              'POLYMARKET_API_SECRET',
-              'POLYMARKET_API_PASSPHRASE',
-              'POLYMARKET_HOST',
-            ],
-            staleCacheFallback:
-              'When Polymarket is unreachable, mirror commands reuse cached snapshots from ~/.pandora/polymarket. Live mode blocks cached sources.',
-          },
-        );
-      } else {
-        console.log(
-          'Usage: pandora [--output table|json] mirror sync run|once --pandora-market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--execute-live] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--state-file <path>] [--kill-switch-file <path>]',
-        );
-        console.log(
-          'Live hedge env: POLYMARKET_PRIVATE_KEY, POLYMARKET_FUNDER, POLYMARKET_API_KEY, POLYMARKET_API_SECRET, POLYMARKET_API_PASSPHRASE, POLYMARKET_HOST.',
-        );
-        console.log(
-          'Polymarket outage fallback: cached snapshots under ~/.pandora/polymarket are reused; live mode blocks cached sources.',
-        );
-      }
-      return;
-    }
-
-    maybeLoadTradeEnv(shared);
-    const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
-    const options = parseMirrorSyncFlags(shared.rest);
-
-    const payload = await runMirrorSync(
-      {
-        ...options,
-        indexerUrl,
-        timeoutMs: shared.timeoutMs,
-      },
-      {
-        rebalanceFn: async (executionOptions) => {
-          const tradeOptions = {
-            marketAddress: executionOptions.marketAddress,
-            side: executionOptions.side,
-            amountUsdc: executionOptions.amountUsdc,
-            yesPct: null,
-            slippageBps: 150,
-            dryRun: false,
-            execute: true,
-            minSharesOutRaw: null,
-            maxAmountUsdc: executionOptions.amountUsdc,
-            minProbabilityPct: null,
-            maxProbabilityPct: null,
-            allowUnquotedExecute: true,
-            chainId: options.chainId,
-            rpcUrl: options.rpcUrl,
-            privateKey: options.privateKey,
-            usdc: options.usdc,
-          };
-          const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
-          const execution = await executeTradeOnchain(tradeOptions);
-          return {
-            ...execution,
-            quote,
-          };
-        },
-        sendWebhook: async (webhookContext) => {
-          if (!hasWebhookTargets(options)) {
-            return {
-              schemaVersion: null,
-              generatedAt: new Date().toISOString(),
-              count: 0,
-              successCount: 0,
-              failureCount: 0,
-              results: [],
-            };
-          }
-          const report = await sendWebhookNotifications(options, webhookContext);
-          if (options.failOnWebhookError && report.failureCount > 0) {
-            throw new CliError('WEBHOOK_DELIVERY_FAILED', 'mirror sync webhook delivery failed.', { report });
-          }
-          return report;
-        },
-      },
-    );
-
-    emitSuccess(context.outputMode, 'mirror.sync', payload, renderMirrorSyncTable);
-    return;
-  }
-
-  throw new CliError('INVALID_ARGS', 'mirror requires subcommand: plan|deploy|verify|sync|status');
+async function runPolymarketCommand(args, context) {
+  return runPolymarketCommandFromService(args, context);
 }
 
 async function runWebhookCommand(args, context) {
@@ -6756,6 +4923,17 @@ async function runWebhookCommand(args, context) {
 
   if (action !== 'test') {
     throw new CliError('INVALID_ARGS', 'webhook requires subcommand: test');
+  }
+
+  if (includesHelpFlag(actionArgs)) {
+    const usage =
+      'pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]';
+    if (context.outputMode === 'json') {
+      emitSuccess(context.outputMode, 'webhook.test.help', commandHelpPayload(usage));
+    } else {
+      console.log(`Usage: ${usage}`);
+    }
+    return;
   }
 
   const options = parseWebhookTestFlags(actionArgs);
@@ -6875,7 +5053,7 @@ async function runAnalyzeCommand(args, context) {
   try {
     analysis = await evaluateMarket(contextPayload, options);
   } catch (err) {
-    if (err instanceof AnalyzeProviderError) {
+    if (isAnalyzeProviderError(err)) {
       throw new CliError(err.code || 'ANALYZE_PROVIDER_ERROR', err.message, err.details);
     }
     throw err;
@@ -6917,38 +5095,47 @@ async function runSuggestCommand(args, context) {
   maybeLoadIndexerEnv(shared);
   const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
   const options = parseSuggestFlags(shared.rest);
-  const history = await fetchHistory({
-    wallet: options.wallet,
-    chainId: null,
-    marketAddress: null,
-    side: 'both',
-    status: 'all',
-    limit: 250,
-    after: null,
-    before: null,
-    orderBy: 'timestamp',
-    orderDirection: 'desc',
-    includeSeed: false,
-    indexerUrl,
-    timeoutMs: shared.timeoutMs,
-  });
-  const arbitrage = await scanArbitrage({
-    indexerUrl,
-    timeoutMs: shared.timeoutMs,
-    chainId: null,
-    venues: options.includeVenues,
-    limit: Math.max(options.count * 3, 10),
-    minSpreadPct: 3,
-    minLiquidityUsd: 1000,
-    maxCloseDiffHours: 24,
-    similarityThreshold: 0.86,
-    crossVenueOnly: true,
-    withRules: false,
-    includeSimilarity: false,
-    questionContains: null,
-    polymarketHost: null,
-    polymarketMockUrl: null,
-  });
+  let history;
+  let arbitrage;
+  try {
+    history = await fetchHistory({
+      wallet: options.wallet,
+      chainId: null,
+      marketAddress: null,
+      side: 'both',
+      status: 'all',
+      limit: 250,
+      after: null,
+      before: null,
+      orderBy: 'timestamp',
+      orderDirection: 'desc',
+      includeSeed: false,
+      indexerUrl,
+      timeoutMs: shared.timeoutMs,
+    });
+    arbitrage = await scanArbitrage({
+      indexerUrl,
+      timeoutMs: shared.timeoutMs,
+      chainId: null,
+      venues: options.includeVenues,
+      limit: Math.max(options.count * 3, 10),
+      minSpreadPct: 3,
+      minLiquidityUsd: 1000,
+      maxCloseDiffHours: 24,
+      similarityThreshold: 0.86,
+      crossVenueOnly: true,
+      withRules: false,
+      includeSimilarity: false,
+      questionContains: null,
+      polymarketHost: null,
+      polymarketMockUrl: null,
+    });
+  } catch (err) {
+    if (err && err.code) {
+      throw new CliError(err.code, err.message || 'suggest failed.', err.details);
+    }
+    throw err;
+  }
 
   const suggestions = buildSuggestions({
     wallet: options.wallet,
@@ -6968,48 +5155,12 @@ async function runSuggestCommand(args, context) {
   emitSuccess(context.outputMode, 'suggest', payload, renderSuggestTable);
 }
 
-function runResolveCommand(args, context) {
-  if (includesHelpFlag(args)) {
-    if (context.outputMode === 'json') {
-      emitSuccess(
-        context.outputMode,
-        'resolve.help',
-        commandHelpPayload(
-          'pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute',
-        ),
-      );
-    } else {
-      console.log(
-        'Usage: pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute',
-      );
-    }
-    return;
-  }
-  parseResolveFlags(args);
-  throw new CliError(
-    'ABI_READY_REQUIRED',
-    'resolve is ABI-gated and not available yet. Commit verified ABI signatures/events and tests first.',
-    { command: 'resolve' },
-  );
+async function runResolveCommand(args, context) {
+  return runResolveCommandFromService(args, context);
 }
 
-function runLpCommand(args, context) {
-  if (includesHelpFlag(args)) {
-    if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'lp.help', commandHelpPayload('pandora [--output table|json] lp add|remove|positions ...'));
-    } else {
-      console.log(
-        'Usage: pandora [--output table|json] lp add|remove|positions ...',
-      );
-    }
-    return;
-  }
-  parseLpFlags(args);
-  throw new CliError(
-    'ABI_READY_REQUIRED',
-    'lp is ABI-gated and not available yet. Commit verified ABI signatures/events and tests first.',
-    { command: 'lp' },
-  );
+async function runLpCommand(args, context) {
+  return runLpCommandFromService(args, context);
 }
 
 function runInitEnv(args, outputMode) {
@@ -7025,6 +5176,11 @@ function runInitEnv(args, outputMode) {
 
   fs.mkdirSync(path.dirname(options.envFile), { recursive: true });
   fs.copyFileSync(options.exampleFile, options.envFile);
+  try {
+    fs.chmodSync(options.envFile, 0o600);
+  } catch {
+    // best-effort hardening on platforms that ignore/limit chmod
+  }
 
   emitSuccess(outputMode, 'init-env', {
     envFile: options.envFile,
@@ -7083,6 +5239,11 @@ async function runSetup(args, outputMode) {
 
   let envStep;
   if (fs.existsSync(options.envFile) && !options.force) {
+    try {
+      fs.chmodSync(options.envFile, 0o600);
+    } catch {
+      // best-effort hardening on pre-existing files
+    }
     envStep = {
       status: 'skipped',
       message: `Env file exists at ${options.envFile}. Reusing existing file.`,
@@ -7092,6 +5253,11 @@ async function runSetup(args, outputMode) {
   } else {
     fs.mkdirSync(path.dirname(options.envFile), { recursive: true });
     fs.copyFileSync(options.exampleFile, options.envFile);
+    try {
+      fs.chmodSync(options.envFile, 0o600);
+    } catch {
+      // best-effort hardening on platforms that ignore/limit chmod
+    }
     envStep = {
       status: 'written',
       message: `Wrote env file: ${options.envFile}`,
@@ -7104,6 +5270,7 @@ async function runSetup(args, outputMode) {
     envFile: options.envFile,
     useEnvFile: true,
     checkUsdcCode: options.checkUsdcCode,
+    checkPolymarket: options.checkPolymarket,
     rpcTimeoutMs: options.rpcTimeoutMs,
   });
 
@@ -7126,149 +5293,47 @@ async function runSetup(args, outputMode) {
   emitSuccess(outputMode, 'setup', payload, renderSetupTable);
 }
 
-async function dispatch(command, args, context) {
-  if (!command || command === 'help' || command === '--help' || command === '-h') {
-    if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'help', helpJsonPayload());
-    } else {
-      printHelpTable();
-    }
-    return;
-  }
-
-  if (command === 'init-env') {
-    runInitEnv(args, context.outputMode);
-    return;
-  }
-
-  if (command === 'doctor') {
-    await runDoctor(args, context.outputMode);
-    return;
-  }
-
-  if (command === 'setup') {
-    await runSetup(args, context.outputMode);
-    return;
-  }
-
-  if (command === 'markets') {
-    await runMarketsCommand(args, context);
-    return;
-  }
-
-  if (command === 'scan') {
-    await runScanCommand(args, context);
-    return;
-  }
-
-  if (command === 'quote') {
-    await runQuoteCommand(args, context);
-    return;
-  }
-
-  if (command === 'trade') {
-    await runTradeCommand(args, context);
-    return;
-  }
-
-  if (command === 'polls') {
-    await runPollsCommand(args, context);
-    return;
-  }
-
-  if (command === 'events') {
-    await runEventsCommand(args, context);
-    return;
-  }
-
-  if (command === 'positions') {
-    await runPositionsCommand(args, context);
-    return;
-  }
-
-  if (command === 'portfolio') {
-    await runPortfolioCommand(args, context);
-    return;
-  }
-
-  if (command === 'watch') {
-    await runWatchCommand(args, context);
-    return;
-  }
-
-  if (command === 'history') {
-    await runHistoryCommand(args, context);
-    return;
-  }
-
-  if (command === 'export') {
-    await runExportCommand(args, context);
-    return;
-  }
-
-  if (command === 'arbitrage') {
-    await runArbitrageCommand(args, context);
-    return;
-  }
-
-  if (command === 'autopilot') {
-    await runAutopilotCommand(args, context);
-    return;
-  }
-
-  if (command === 'mirror') {
-    await runMirrorCommand(args, context);
-    return;
-  }
-
-  if (command === 'webhook') {
-    await runWebhookCommand(args, context);
-    return;
-  }
-
-  if (command === 'leaderboard') {
-    await runLeaderboardCommand(args, context);
-    return;
-  }
-
-  if (command === 'analyze') {
-    await runAnalyzeCommand(args, context);
-    return;
-  }
-
-  if (command === 'suggest') {
-    await runSuggestCommand(args, context);
-    return;
-  }
-
-  if (command === 'resolve') {
-    runResolveCommand(args, context);
-    return;
-  }
-
-  if (command === 'lp') {
-    runLpCommand(args, context);
-    return;
-  }
-
-  if (command === 'launch' || command === 'clone-bet') {
-    if (context.outputMode === 'json') {
-      throw new CliError(
-        'UNSUPPORTED_OUTPUT_MODE',
-        '--output json is not supported for launch/clone-bet because these commands stream script output directly.',
-      );
-    }
-    runScriptCommand(command, args);
-    return;
-  }
-
-  throw new CliError('UNKNOWN_COMMAND', `Unknown command: ${command}`, {
-    hints: ['Run `pandora help` to see available commands.'],
-  });
-}
+const dispatch = createCommandRouter({
+  CliError,
+  packageVersion: PACKAGE_VERSION,
+  emitSuccess,
+  helpJsonPayload,
+  printHelpTable,
+  includesHelpFlag,
+  commandHelpPayload,
+  runInitEnv,
+  runDoctor,
+  runSetup,
+  runMarketsCommand,
+  runScanCommand,
+  runSportsCommand,
+  runQuoteCommand,
+  runTradeCommand,
+  runPollsCommand,
+  runEventsCommand,
+  runPositionsCommand,
+  runPortfolioCommand,
+  runWatchCommand,
+  runHistoryCommand,
+  runExportCommand,
+  runArbitrageCommand,
+  runAutopilotCommand,
+  runMirrorCommand,
+  runPolymarketCommand,
+  runWebhookCommand,
+  runLeaderboardCommand,
+  runAnalyzeCommand,
+  runSuggestCommand,
+  runResolveCommand,
+  runLpCommand,
+  runMcpCommand,
+  runStreamCommand,
+  runSchemaCommand,
+  runScriptCommand,
+});
 
 async function main() {
-  const rawArgv = process.argv.slice(2);
+  const rawArgv = expandEqualsStyleFlags(process.argv.slice(2));
   let outputMode = inferRequestedOutputMode(rawArgv);
   let args = rawArgv;
 
@@ -7277,8 +5342,14 @@ async function main() {
     outputMode = parsed.outputMode;
     args = parsed.args;
   } catch (err) {
-    emitFailure(outputMode, err);
+    // Keep parse-time failures machine-readable for agent callers even when
+    // --output itself is malformed or missing.
+    emitFailure('json', err);
     return;
+  }
+
+  if (args[0] === 'pandora') {
+    args = args.slice(1);
   }
 
   const command = args[0];
@@ -7291,4 +5362,36 @@ async function main() {
   }
 }
 
+function installGlobalCrashHandlers() {
+  const outputMode = inferRequestedOutputMode(expandEqualsStyleFlags(process.argv.slice(2)));
+  const normalizedOutputMode = outputMode === 'json' ? 'json' : 'table';
+
+  const emitFatal = (error, code) => {
+    const fatalError =
+      error instanceof Error
+        ? error
+        : new CliError(code, formatErrorValue(error || code));
+
+    try {
+      emitFailure(normalizedOutputMode, fatalError);
+    } catch (handlerErr) {
+      try {
+        console.error(`[${code}] ${formatErrorValue(fatalError)}`);
+        console.error(`Fatal handler failure: ${formatErrorValue(handlerErr)}`);
+      } finally {
+        process.exit(1);
+      }
+    }
+  };
+
+  process.on('uncaughtException', (error) => {
+    emitFatal(error, 'UNCAUGHT_EXCEPTION');
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    emitFatal(reason, 'UNHANDLED_REJECTION');
+  });
+}
+
+installGlobalCrashHandlers();
 main();

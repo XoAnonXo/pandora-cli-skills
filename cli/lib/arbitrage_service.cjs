@@ -1,114 +1,18 @@
 const { createIndexerClient } = require('./indexer_client.cjs');
 const { fetchPolymarketMarkets } = require('./polymarket_adapter.cjs');
+const {
+  normalizeQuestion,
+  questionSimilarityBreakdown,
+  questionSimilarity,
+} = require('./similarity_service.cjs');
+const { toNumber, round } = require('./shared/utils.cjs');
 
 const ARBITRAGE_SCHEMA_VERSION = '1.1.0';
-
-function toNumber(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return numeric;
-}
-
-function round(value, decimals = 6) {
-  if (!Number.isFinite(value)) return null;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
 
 function toUsdc(raw) {
   const numeric = toNumber(raw);
   if (numeric === null) return null;
   return round(numeric / 1_000_000, 6);
-}
-
-function normalizeQuestion(question) {
-  return String(question || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\b(the|a|an|will|be|on|at|in|to|for|by|of|is|are|was|were)\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function tokenize(question) {
-  return new Set(normalizeQuestion(question).split(' ').filter(Boolean));
-}
-
-function jaccard(a, b) {
-  if (!a.size || !b.size) return 0;
-  let intersection = 0;
-  for (const token of a) {
-    if (b.has(token)) intersection += 1;
-  }
-  const union = a.size + b.size - intersection;
-  return union ? intersection / union : 0;
-}
-
-function jaroDistance(s1, s2) {
-  const a = String(s1 || '');
-  const b = String(s2 || '');
-  if (a === b) return 1;
-  const maxDist = Math.floor(Math.max(a.length, b.length) / 2) - 1;
-  const aMatches = new Array(a.length).fill(false);
-  const bMatches = new Array(b.length).fill(false);
-
-  let matches = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    const start = Math.max(0, i - maxDist);
-    const end = Math.min(i + maxDist + 1, b.length);
-    for (let j = start; j < end; j += 1) {
-      if (bMatches[j]) continue;
-      if (a[i] !== b[j]) continue;
-      aMatches[i] = true;
-      bMatches[j] = true;
-      matches += 1;
-      break;
-    }
-  }
-
-  if (!matches) return 0;
-
-  let t = 0;
-  let j = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    if (!aMatches[i]) continue;
-    while (!bMatches[j]) j += 1;
-    if (a[i] !== b[j]) t += 1;
-    j += 1;
-  }
-
-  const transpositions = t / 2;
-  return (matches / a.length + matches / b.length + (matches - transpositions) / matches) / 3;
-}
-
-function jaroWinkler(a, b) {
-  const jaro = jaroDistance(a, b);
-  let prefix = 0;
-  const s1 = String(a || '');
-  const s2 = String(b || '');
-  for (let i = 0; i < Math.min(4, s1.length, s2.length); i += 1) {
-    if (s1[i] === s2[i]) prefix += 1;
-    else break;
-  }
-  return jaro + prefix * 0.1 * (1 - jaro);
-}
-
-function questionSimilarityBreakdown(a, b) {
-  const normalizedLeft = normalizeQuestion(a);
-  const normalizedRight = normalizeQuestion(b);
-  const tokenScore = jaccard(tokenize(normalizedLeft), tokenize(normalizedRight));
-  const jw = jaroWinkler(normalizedLeft, normalizedRight);
-  return {
-    normalizedLeft,
-    normalizedRight,
-    tokenScore: round(tokenScore, 6),
-    jaroWinkler: round(jw, 6),
-    score: round(tokenScore * 0.55 + jw * 0.45, 6),
-  };
-}
-
-function questionSimilarity(a, b) {
-  return questionSimilarityBreakdown(a, b).score;
 }
 
 function toYesProbabilityFromYesChance(rawYesChance) {

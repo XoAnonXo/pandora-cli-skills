@@ -1,118 +1,20 @@
 const crypto = require('crypto');
 const { createIndexerClient } = require('./indexer_client.cjs');
 const { resolvePolymarketMarket } = require('./polymarket_trade_adapter.cjs');
+const { questionSimilarityBreakdown } = require('./similarity_service.cjs');
+const { round, toOptionalNumber } = require('./shared/utils.cjs');
 
 const MIRROR_VERIFY_SCHEMA_VERSION = '1.0.0';
+const USDC_DECIMALS = 6;
 
-function toNumber(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return numeric;
-}
-
-function round(value, decimals = 6) {
-  if (!Number.isFinite(value)) return null;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
-function normalizeQuestion(question) {
-  return String(question || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\b(the|a|an|will|be|on|at|in|to|for|by|of|is|are|was|were)\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function tokenize(question) {
-  return new Set(normalizeQuestion(question).split(' ').filter(Boolean));
-}
-
-function jaccard(a, b) {
-  if (!a.size || !b.size) return 0;
-  let intersection = 0;
-  for (const token of a) {
-    if (b.has(token)) intersection += 1;
-  }
-  const union = a.size + b.size - intersection;
-  return union ? intersection / union : 0;
-}
-
-function jaroDistance(leftInput, rightInput) {
-  const left = String(leftInput || '');
-  const right = String(rightInput || '');
-  if (left === right) return 1;
-
-  const maxDistance = Math.floor(Math.max(left.length, right.length) / 2) - 1;
-  const leftMatches = new Array(left.length).fill(false);
-  const rightMatches = new Array(right.length).fill(false);
-
-  let matches = 0;
-  for (let i = 0; i < left.length; i += 1) {
-    const start = Math.max(0, i - maxDistance);
-    const end = Math.min(i + maxDistance + 1, right.length);
-    for (let j = start; j < end; j += 1) {
-      if (rightMatches[j]) continue;
-      if (left[i] !== right[j]) continue;
-      leftMatches[i] = true;
-      rightMatches[j] = true;
-      matches += 1;
-      break;
-    }
-  }
-
-  if (!matches) return 0;
-
-  let transpositions = 0;
-  let rightIndex = 0;
-  for (let i = 0; i < left.length; i += 1) {
-    if (!leftMatches[i]) continue;
-    while (!rightMatches[rightIndex]) {
-      rightIndex += 1;
-    }
-    if (left[i] !== right[rightIndex]) transpositions += 1;
-    rightIndex += 1;
-  }
-
-  const t = transpositions / 2;
-  return (matches / left.length + matches / right.length + (matches - t) / matches) / 3;
-}
-
-function jaroWinkler(left, right) {
-  const jaro = jaroDistance(left, right);
-  const a = String(left || '');
-  const b = String(right || '');
-  let prefix = 0;
-
-  for (let i = 0; i < Math.min(4, a.length, b.length); i += 1) {
-    if (a[i] === b[i]) {
-      prefix += 1;
-    } else {
-      break;
-    }
-  }
-
-  return jaro + prefix * 0.1 * (1 - jaro);
-}
-
-function questionSimilarityBreakdown(leftQuestion, rightQuestion) {
-  const normalizedLeft = normalizeQuestion(leftQuestion);
-  const normalizedRight = normalizeQuestion(rightQuestion);
-  const tokenScore = jaccard(tokenize(normalizedLeft), tokenize(normalizedRight));
-  const jw = jaroWinkler(normalizedLeft, normalizedRight);
-
-  return {
-    normalizedLeft,
-    normalizedRight,
-    tokenScore: round(tokenScore, 6),
-    jaroWinkler: round(jw, 6),
-    score: round(tokenScore * 0.55 + jw * 0.45, 6),
-  };
+function normalizeUsdcRawToUsd(value) {
+  const numeric = toOptionalNumber(value);
+  if (numeric === null) return null;
+  return round(numeric / (10 ** USDC_DECIMALS), 6);
 }
 
 function normalizeProbabilityFromYesChance(value) {
-  const raw = toNumber(value);
+  const raw = toOptionalNumber(value);
   if (raw === null) return null;
   if (raw >= 0 && raw <= 1) return raw;
   if (raw > 1 && raw <= 100) return raw / 100;
@@ -125,8 +27,8 @@ function derivePandoraYesPct(market) {
     return round(yesFromChance * 100, 6);
   }
 
-  const reserveYes = toNumber(market && market.reserveYes);
-  const reserveNo = toNumber(market && market.reserveNo);
+  const reserveYes = normalizeUsdcRawToUsd(market && market.reserveYes);
+  const reserveNo = normalizeUsdcRawToUsd(market && market.reserveNo);
   if (reserveYes === null || reserveNo === null) return null;
 
   const total = reserveYes + reserveNo;
@@ -236,11 +138,11 @@ async function fetchPandoraMarketContext(options = {}) {
   const poll = await fetchPandoraPoll(client, market.pollAddress, diagnostics);
   const yesPct = derivePandoraYesPct(market);
   const noPct = yesPct === null ? null : round(100 - yesPct, 6);
-  const status = toNumber(poll && poll.status);
+  const status = toOptionalNumber(poll && poll.status);
 
   return {
     marketAddress: market.id,
-    chainId: toNumber(market.chainId),
+    chainId: toOptionalNumber(market.chainId),
     marketType: market.marketType || null,
     pollAddress: market.pollAddress || null,
     question: poll && poll.question ? String(poll.question) : null,
@@ -248,13 +150,13 @@ async function fetchPandoraMarketContext(options = {}) {
     status,
     active: status === 0,
     resolved: status !== 0 && status !== null,
-    closeTimestamp: toNumber(market.marketCloseTimestamp) || toNumber(poll && poll.deadlineEpoch),
+    closeTimestamp: toOptionalNumber(market.marketCloseTimestamp) || toOptionalNumber(poll && poll.deadlineEpoch),
     yesPct,
     noPct,
-    reserveYes: toNumber(market.reserveYes),
-    reserveNo: toNumber(market.reserveNo),
-    totalVolumeUsd: toNumber(market.totalVolume),
-    tvlUsd: toNumber(market.currentTvl),
+    reserveYes: normalizeUsdcRawToUsd(market.reserveYes),
+    reserveNo: normalizeUsdcRawToUsd(market.reserveNo),
+    totalVolumeUsd: toOptionalNumber(market.totalVolume),
+    tvlUsd: toOptionalNumber(market.currentTvl),
     diagnostics,
   };
 }
@@ -262,18 +164,25 @@ async function fetchPandoraMarketContext(options = {}) {
 function buildGateChecks({
   similarity,
   confidenceThreshold,
+  trustDeploy,
   ruleHashes,
   allowRuleMismatch,
   pandora,
   polymarket,
   strictCloseDiffSeconds,
+  nowSec,
 }) {
   const checks = [];
 
   checks.push({
     code: 'MATCH_CONFIDENCE',
-    ok: similarity.score >= confidenceThreshold,
-    message: `Similarity ${similarity.score} must be >= ${confidenceThreshold}.`,
+    ok: trustDeploy ? true : similarity.score >= confidenceThreshold,
+    message: trustDeploy
+      ? 'Similarity check bypassed by trusted deploy pairing.'
+      : `Similarity ${similarity.score} must be >= ${confidenceThreshold}.`,
+    meta: {
+      trustDeploy: Boolean(trustDeploy),
+    },
   });
 
   const bothRulesPresent = Boolean(ruleHashes.left && ruleHashes.right);
@@ -281,17 +190,20 @@ function buildGateChecks({
   const strictRuleCheckOk = bothRulesPresent && rulesEqual;
   checks.push({
     code: 'RULE_HASH_MATCH',
-    ok: allowRuleMismatch ? true : strictRuleCheckOk,
-    message: allowRuleMismatch
-      ? 'Rule hash mismatch bypassed by --allow-rule-mismatch.'
-      : bothRulesPresent
-        ? 'Rule hashes must match.'
-        : 'Rule text missing on one or both sides.',
+    ok: trustDeploy ? true : allowRuleMismatch ? true : strictRuleCheckOk,
+    message: trustDeploy
+      ? 'Rule hash mismatch bypassed by trusted deploy pairing.'
+      : allowRuleMismatch
+        ? 'Rule hash mismatch bypassed by --allow-rule-mismatch.'
+        : bothRulesPresent
+          ? 'Rule hashes must match.'
+          : 'Rule text missing on one or both sides.',
     meta: {
       left: ruleHashes.left,
       right: ruleHashes.right,
       bothRulesPresent,
       rulesEqual: bothRulesPresent ? rulesEqual : null,
+      trustDeploy: Boolean(trustDeploy),
     },
   });
 
@@ -315,11 +227,27 @@ function buildGateChecks({
     },
   });
 
+  const pandoraTte = Number.isFinite(pandora.closeTimestamp) ? pandora.closeTimestamp - nowSec : null;
+  const polymarketTte = Number.isFinite(polymarket.closeTimestamp) ? polymarket.closeTimestamp - nowSec : null;
+  const minTte = [pandoraTte, polymarketTte].filter((value) => Number.isFinite(value));
+  const minTimeToExpirySec = minTte.length ? Math.min(...minTte) : null;
+  checks.push({
+    code: 'NOT_EXPIRED',
+    ok: minTimeToExpirySec === null ? true : minTimeToExpirySec > 0,
+    message: 'Both markets must remain open (not expired).',
+    meta: {
+      pandoraTimeToExpirySec: pandoraTte,
+      sourceTimeToExpirySec: polymarketTte,
+      minTimeToExpirySec,
+    },
+  });
+
   return checks;
 }
 
 async function verifyMirrorPair(options = {}) {
   const diagnostics = [];
+  const nowSec = Number.isFinite(Number(options.nowSec)) ? Number(options.nowSec) : Math.floor(Date.now() / 1000);
 
   const [pandora, polymarket] = await Promise.all([
     fetchPandoraMarketContext({
@@ -329,6 +257,8 @@ async function verifyMirrorPair(options = {}) {
     }),
     resolvePolymarketMarket({
       host: options.polymarketHost,
+      gammaUrl: options.polymarketGammaUrl,
+      gammaMockUrl: options.polymarketGammaMockUrl,
       mockUrl: options.polymarketMockUrl,
       timeoutMs: options.timeoutMs,
       marketId: options.polymarketMarketId,
@@ -344,15 +274,25 @@ async function verifyMirrorPair(options = {}) {
   const checks = buildGateChecks({
     similarity,
     confidenceThreshold: options.confidenceThreshold || 0.92,
+    trustDeploy: Boolean(options.trustDeploy),
     ruleHashes: { left: leftRuleHash, right: rightRuleHash },
     allowRuleMismatch: Boolean(options.allowRuleMismatch),
     pandora,
     polymarket,
     strictCloseDiffSeconds: 2 * 60 * 60,
+    nowSec,
   });
 
   for (const item of pandora.diagnostics || []) diagnostics.push(item);
   for (const item of polymarket.diagnostics || []) diagnostics.push(item);
+
+  const pandoraTimeToExpirySec = Number.isFinite(pandora.closeTimestamp) ? pandora.closeTimestamp - nowSec : null;
+  const sourceTimeToExpirySec = Number.isFinite(polymarket.closeTimestamp) ? polymarket.closeTimestamp - nowSec : null;
+  const minTimeCandidates = [pandoraTimeToExpirySec, sourceTimeToExpirySec].filter((value) => Number.isFinite(value));
+  const minTimeToExpirySec = minTimeCandidates.length ? Math.min(...minTimeCandidates) : null;
+  if (minTimeToExpirySec !== null && minTimeToExpirySec < 3600) {
+    diagnostics.push(`Mirror pair expires soon (${minTimeToExpirySec}s).`);
+  }
 
   const failed = checks.filter((check) => !check.ok).map((check) => check.code);
 
@@ -364,6 +304,14 @@ async function verifyMirrorPair(options = {}) {
     ruleHashLeft: leftRuleHash,
     ruleHashRight: rightRuleHash,
     ruleDiffSummary,
+    expiry: {
+      nowSec,
+      pandoraTimeToExpirySec,
+      sourceTimeToExpirySec,
+      minTimeToExpirySec,
+      warnThresholdSec: 3600,
+      warn: minTimeToExpirySec !== null ? minTimeToExpirySec < 3600 : false,
+    },
     gateResult: {
       ok: failed.length === 0,
       failedChecks: failed,
@@ -423,11 +371,11 @@ async function findBestPandoraMatch(options = {}) {
       pollAddress: market.pollAddress,
       question,
       similarity,
-      status: toNumber(poll && poll.status),
+      status: toOptionalNumber(poll && poll.status),
       rules: poll && poll.rules ? String(poll.rules) : null,
       yesPct: derivePandoraYesPct(market),
-      closeTimestamp: toNumber(market.marketCloseTimestamp),
-      chainId: toNumber(market.chainId),
+      closeTimestamp: toOptionalNumber(market.marketCloseTimestamp),
+      chainId: toOptionalNumber(market.chainId),
       marketType: market.marketType || null,
     });
   }
