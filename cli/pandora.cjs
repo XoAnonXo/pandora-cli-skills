@@ -60,6 +60,7 @@ const { createRunOddsCommand } = require('./lib/odds_command_service.cjs');
 const { createRunSportsCommand } = require('./lib/sports_command_service.cjs');
 const { createRunRiskCommand } = require('./lib/risk_command_service.cjs');
 const { createRunModelCommand } = require('./lib/model_command_service.cjs');
+const { resolveTradeBuyCall } = require('./lib/trade_market_type_service.cjs');
 const {
   DEFAULT_INDEXER_URL: SHARED_DEFAULT_INDEXER_URL,
   DEFAULT_RPC_BY_CHAIN_ID,
@@ -598,20 +599,6 @@ const ERC20_ABI = [
     outputs: [{ type: 'uint256' }],
   },
 ];
-const PARI_MUTUEL_ABI = [
-  {
-    name: 'buy',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'isYes', type: 'bool' },
-      { name: 'collateralAmount', type: 'uint256' },
-      { name: 'minSharesOut', type: 'uint256' },
-    ],
-    outputs: [{ name: 'sharesOut', type: 'uint256' }],
-  },
-];
-
 const MARKET_DIRECT_ODDS_FIELDS = [
   { yesField: 'yesPct', noField: 'noPct', source: 'direct:yesPct/noPct' },
   { yesField: 'yesOdds', noField: 'noOdds', source: 'direct:yesOdds/noOdds' },
@@ -897,10 +884,10 @@ Usage:
 
 Notes:
   - --dry-run prints the execution plan and quote without sending transactions.
-  - --execute performs allowance check, optional USDC approve, then calls buy(bool,uint256,uint256).
+  - --execute performs allowance check, optional USDC approve, then calls market buy() using the detected market ABI.
   - --max-amount-usdc and probability guard flags fail fast before execution.
   - --execute requires a quote by default unless --min-shares-out-raw or --allow-unquoted-execute is set.
-  - Current execute path targets PariMutuel-compatible markets.
+  - Supports both PariMutuel and AMM market buy signatures.
 `);
 }
 
@@ -3604,6 +3591,28 @@ async function executeTradeOnchain(options) {
     });
   };
 
+  let buyCall;
+  try {
+    buyCall = await resolveTradeBuyCall({
+      publicClient,
+      marketAddress: options.marketAddress,
+      side: options.side,
+      amountRaw,
+      minSharesOutRaw,
+    });
+  } catch (error) {
+    if (error && error.code) {
+      throw new CliError(
+        error.code,
+        error.message || 'Unsupported market trade interface.',
+        error.details,
+      );
+    }
+    await decodeTradeError(error, 'TRADE_MARKET_TYPE_RESOLUTION_FAILED', 'Unable to resolve market trade interface.', {
+      stage: 'market-type-resolve',
+    });
+  }
+
   let allowance;
   try {
     allowance = await publicClient.readContract({
@@ -3660,9 +3669,9 @@ async function executeTradeOnchain(options) {
     const buySimulation = await publicClient.simulateContract({
       account,
       address: options.marketAddress,
-      abi: PARI_MUTUEL_ABI,
-      functionName: 'buy',
-      args: [options.side === 'yes', amountRaw, minSharesOutRaw],
+      abi: buyCall.abi,
+      functionName: buyCall.functionName,
+      args: buyCall.args,
     });
     buyGasEstimate =
       buySimulation && buySimulation.request && buySimulation.request.gas
@@ -3675,6 +3684,9 @@ async function executeTradeOnchain(options) {
     await decodeTradeError(error, 'TRADE_EXECUTION_FAILED', 'Buy transaction failed.', {
       stage: 'buy',
       buyTxHash,
+      marketType: buyCall ? buyCall.marketType : null,
+      buySignature: buyCall ? buyCall.signature : null,
+      ammDeadlineEpoch: buyCall && buyCall.ammDeadlineEpoch ? buyCall.ammDeadlineEpoch : null,
     });
   }
 
@@ -3684,6 +3696,9 @@ async function executeTradeOnchain(options) {
     rpcUrl: runtime.rpcUrl,
     account: account.address,
     usdc: runtime.usdcAddress,
+    marketType: buyCall.marketType,
+    buySignature: buyCall.signature,
+    ammDeadlineEpoch: buyCall.ammDeadlineEpoch,
     amountRaw: amountRaw.toString(),
     minSharesOutRaw: minSharesOutRaw.toString(),
     approveTxHash,

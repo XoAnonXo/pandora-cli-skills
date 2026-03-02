@@ -262,7 +262,9 @@ Mirror advanced flags (for operator tuning):
   - envelope is `ok=true`, `command="trade"`, with tx metadata (`approveTxHash` optional, `buyTxHash` required on success) plus `selectedProbabilityPct` and `riskGuards`.
 
 ## Phase 2 limitations
-- `trade` currently targets PariMutuel-compatible `buy(bool,uint256,uint256)` markets.
+- `trade` auto-detects market type and uses the correct buy signature:
+  - PariMutuel: `buy(bool,uint256,uint256)`
+  - AMM: `buy(bool,uint256,uint256,uint256)` (deadline-aware)
 - `minSharesOut` protection defaults to raw `0` unless explicitly set with `--min-shares-out-raw`.
 - If indexer odds are unavailable, `quote` still returns a structured payload with `quoteAvailable=false`.
 - `trade --execute` blocks unquoted execution by default unless `--min-shares-out-raw` or `--allow-unquoted-execute` is provided.

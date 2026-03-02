@@ -359,7 +359,9 @@ pandora --output json schema
   - envelope is `ok=true`, `command="trade"`, with tx metadata (`approveTxHash` optional, `buyTxHash` required on success) plus `selectedProbabilityPct` and `riskGuards`.
 
 ## Phase 2 limitations
-- `trade` currently targets PariMutuel-compatible `buy(bool,uint256,uint256)` markets.
+- `trade` auto-detects market type and uses the correct buy signature:
+  - PariMutuel: `buy(bool,uint256,uint256)`
+  - AMM: `buy(bool,uint256,uint256,uint256)` (deadline-aware)
 - `--min-shares-out-raw` is the explicit slippage guard input for on-chain execution.
 - If indexer odds are unavailable, `quote` still returns structured output with `quoteAvailable=false`.
 - `trade --execute` blocks unquoted execution by default unless `--min-shares-out-raw` or `--allow-unquoted-execute` is provided.
