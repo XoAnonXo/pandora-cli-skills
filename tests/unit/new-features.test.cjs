@@ -53,6 +53,7 @@ const { createParseAutopilotFlags } = require('../../cli/lib/parsers/autopilot_f
 const { createParseMirrorDeployFlags } = require('../../cli/lib/parsers/mirror_deploy_flags.cjs');
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
 const { createParseLifecycleFlags } = require('../../cli/lib/parsers/lifecycle_flags.cjs');
+const { createParseOddsFlags } = require('../../cli/lib/parsers/odds_flags.cjs');
 const {
   createParseMirrorSyncFlags,
   createParseMirrorSyncDaemonSelectorFlags,
@@ -1803,6 +1804,59 @@ test('createParseLifecycleFlags requires explicit --confirm on resolve', () => {
   );
 });
 
+test('createParseOddsFlags rejects insecure remote URLs for connector hosts', () => {
+  const parseOddsFlags = createParseOddsFlags({
+    CliError: ParserCliError,
+    requireFlagValue: parserRequireFlagValue,
+    parsePositiveInteger: parserParsePositiveInteger,
+    parseCsvList: (value) => String(value).split(',').map((item) => item.trim()).filter(Boolean),
+    isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
+  });
+
+  assert.throws(
+    () => parseOddsFlags([
+      'record',
+      '--competition',
+      'soccer_epl',
+      '--interval',
+      '60',
+      '--polymarket-host',
+      'http://example.com',
+    ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /--polymarket-host must use https/i);
+      return true;
+    },
+  );
+});
+
+test('createParseOddsFlags accepts secure/localhost connector URLs', () => {
+  const parseOddsFlags = createParseOddsFlags({
+    CliError: ParserCliError,
+    requireFlagValue: parserRequireFlagValue,
+    parsePositiveInteger: parserParsePositiveInteger,
+    parseCsvList: (value) => String(value).split(',').map((item) => item.trim()).filter(Boolean),
+    isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
+  });
+
+  const parsed = parseOddsFlags([
+    'record',
+    '--competition',
+    'soccer_epl',
+    '--interval',
+    '60',
+    '--polymarket-host',
+    'https://clob.polymarket.com',
+    '--polymarket-mock-url',
+    'http://127.0.0.1:7777',
+  ]);
+
+  assert.equal(parsed.action, 'record');
+  assert.equal(parsed.options.polymarketHost, 'https://clob.polymarket.com');
+  assert.equal(parsed.options.polymarketMockUrl, 'http://127.0.0.1:7777');
+});
+
 test('arb scan helpers parse ndjson options and emit deterministic spread math', () => {
   const options = parseArbScanFlags(
     [
@@ -2039,6 +2093,13 @@ test('error recovery service returns hints for all mapped codes', () => {
     'POLYMARKET_MARKET_RESOLUTION_FAILED',
     'MIRROR_DEPLOY_FAILED',
     'MIRROR_SYNC_FAILED',
+    'LIFECYCLE_EXISTS',
+    'LIFECYCLE_NOT_FOUND',
+    'CONFIG_FILE_NOT_FOUND',
+    'ODDS_RECORD_FAILED',
+    'ODDS_HISTORY_FAILED',
+    'ARB_SCAN_FAILED',
+    'MCP_FILE_ACCESS_BLOCKED',
     'MCP_EXECUTE_INTENT_REQUIRED',
     'MCP_LONG_RUNNING_MODE_BLOCKED',
     'MCP_TOOL_FAILED',
@@ -2099,4 +2160,25 @@ test('error recovery service builds deterministic command hints for key flows', 
 
   const mcpRetry = recovery.getRecoveryForError({ code: 'MCP_EXECUTE_INTENT_REQUIRED' });
   assert.equal(mcpRetry.command, 'pandora mcp');
+
+  const lifecycleExists = recovery.getRecoveryForError({
+    code: 'LIFECYCLE_EXISTS',
+    details: { id: 'lc-abc' },
+  });
+  assert.equal(lifecycleExists.command, 'pandora lifecycle status --id lc-abc');
+
+  const configMissing = recovery.getRecoveryForError({
+    code: 'CONFIG_FILE_NOT_FOUND',
+    details: { configPath: '/tmp/lifecycle.json' },
+  });
+  assert.equal(configMissing.command, 'pandora lifecycle start --config /tmp/lifecycle.json');
+
+  const oddsHistory = recovery.getRecoveryForError({
+    code: 'ODDS_HISTORY_FAILED',
+    details: { eventId: 'evt-1' },
+  });
+  assert.equal(oddsHistory.command, 'pandora odds history --event-id evt-1 --output json');
+
+  const arbRetry = recovery.getRecoveryForError({ code: 'ARB_SCAN_FAILED' });
+  assert.equal(arbRetry.command, 'pandora arb scan --markets <market-a>,<market-b> --output json --iterations 1');
 });

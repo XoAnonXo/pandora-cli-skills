@@ -42,8 +42,10 @@ function createCommandRouter(deps = {}) {
     runResolveCommand,
     runLpCommand,
     runRiskCommand,
+    runModelCommand,
     runMcpCommand,
     runStreamCommand,
+    runSimulateCommand,
     runScriptCommand,
   } = deps;
 
@@ -94,8 +96,10 @@ function createCommandRouter(deps = {}) {
   requireFn('runResolveCommand', runResolveCommand);
   requireFn('runLpCommand', runLpCommand);
   requireFn('runRiskCommand', runRiskCommand);
+  requireFn('runModelCommand', runModelCommand);
   requireFn('runMcpCommand', runMcpCommand);
   requireFn('runStreamCommand', runStreamCommand);
+  requireFn('runSimulateCommand', runSimulateCommand);
   requireFn('runSchemaCommand', deps.runSchemaCommand);
   requireFn('runScriptCommand', runScriptCommand);
 
@@ -187,6 +191,7 @@ function createCommandRouter(deps = {}) {
       resolve: async (handlerArgs, handlerContext) => runResolveCommand(handlerArgs, handlerContext),
       lp: async (handlerArgs, handlerContext) => runLpCommand(handlerArgs, handlerContext),
       risk: async (handlerArgs, handlerContext) => runRiskCommand(handlerArgs, handlerContext),
+      model: async (handlerArgs, handlerContext) => runModelCommand(handlerArgs, handlerContext),
       mcp: async (handlerArgs, handlerContext) => {
         if (handlerContext.outputMode === 'json') {
           throw new CliError(
@@ -197,6 +202,7 @@ function createCommandRouter(deps = {}) {
         await runMcpCommand(handlerArgs, handlerContext);
       },
       stream: async (handlerArgs, handlerContext) => runStreamCommand(handlerArgs, handlerContext),
+      simulate: async (handlerArgs, handlerContext) => runSimulateCommand(handlerArgs, handlerContext),
       schema: async (handlerArgs, handlerContext) => deps.runSchemaCommand(handlerArgs, handlerContext),
       launch: async (handlerArgs, handlerContext) => {
         if (handlerContext.outputMode === 'json') {

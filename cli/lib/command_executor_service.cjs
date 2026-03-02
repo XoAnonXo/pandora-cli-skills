@@ -149,11 +149,16 @@ function createCommandExecutorService(options = {}) {
       ? Math.max(1_000, Math.trunc(runtime.timeoutMs))
       : defaultTimeoutMs;
     const env = runtime.env && typeof runtime.env === 'object' ? runtime.env : baseEnv;
+    const childEnv = {
+      ...env,
+      // Mark child CLI invocations as MCP-controlled to enable stricter file/path safety guards.
+      PANDORA_MCP_MODE: '1',
+    };
     const argv = ['--output', 'json', ...commandArgs];
 
     const result = spawnSync(process.execPath, [cliPath, ...argv], {
       encoding: 'utf8',
-      env,
+      env: childEnv,
       timeout: timeoutMs,
       killSignal: 'SIGKILL',
       maxBuffer: 10 * 1024 * 1024,

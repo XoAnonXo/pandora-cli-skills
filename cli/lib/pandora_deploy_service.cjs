@@ -15,6 +15,8 @@ const {
   DEFAULT_FACTORY,
   DEFAULT_USDC,
   DEFAULT_ARBITER,
+  MIN_AMM_FEE_TIER,
+  MAX_AMM_FEE_TIER,
 } = require('./shared/constants.cjs');
 
 const ERC20_ABI = [
@@ -189,8 +191,8 @@ function buildDeploymentArgs(options = {}) {
   }
 
   const feeTier = Number(options.feeTier);
-  if (![500, 3000, 10000].includes(feeTier)) {
-    throw new Error('feeTier must be one of 500, 3000, 10000.');
+  if (feeTier < MIN_AMM_FEE_TIER || feeTier > MAX_AMM_FEE_TIER) {
+    throw new Error(`feeTier must be between ${MIN_AMM_FEE_TIER} and ${MAX_AMM_FEE_TIER} (max 5%).`);
   }
 
   const maxImbalance = Number(options.maxImbalance);

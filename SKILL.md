@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Canonical skill and operator guide for Pandora CLI including mirror, polymarket, resolve, and LP flows.
-version: 1.1.42
+version: 1.1.44
 ---
 
 # Pandora CLI & Skills
@@ -80,6 +80,29 @@ npm link
   - `max_daily_loss_usd` is enforced as daily live notional (`counters.liveNotionalUsdc`).
   - `max_open_markets` is enforced as daily live operation count (`counters.liveOps`).
 
+## Quant ABM baseline (module contract)
+- Deterministic ABM core:
+  - `cli/lib/quant/abm_market.cjs`
+- Simulate-agents handler:
+  - `cli/lib/simulate_handlers/agents.cjs`
+- Handler flags:
+  - `--n-informed|--n_informed`
+  - `--n-noise|--n_noise`
+  - `--n-mm|--n_mm`
+  - `--n-steps|--n_steps`
+  - `--seed`
+- ABM payload fields:
+  - `convergenceError`
+  - `spreadTrajectory[]`
+  - `volume` (`total`, `averagePerStep`, `byAgentType`)
+  - `pnlByAgentType`
+  - `runtimeBounds` (`complexity`, `estimatedAgentDecisions`, `estimatedWorkUnits`)
+- Runtime complexity metadata: `O(n_steps * (n_informed + n_noise))`.
+- Unit coverage:
+  - `tests/unit/abm_market.test.cjs`
+- Note:
+  - This section documents the current module + handler contract. Top-level simulate namespace routing can consume this handler when wired by command service.
+
 ## Complete command + flag reference (authoritative)
 This section mirrors live CLI help output so agent runs can rely on one source of truth.
 
@@ -93,7 +116,7 @@ pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--b
 pandora [--output table|json] markets get [--id <id> ...] [--stdin]
 pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]
 pandora [--output table|json] lifecycle start --config <path>|status --id <id>|resolve --id <id> --confirm
-pandora arb scan --markets <csv> --output ndjson [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--iterations <n>] [--interval-ms <ms>]
+pandora arb scan --markets <csv> --output ndjson|json [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--iterations <n>] [--interval-ms <ms>]
 pandora [--output table|json] odds record --competition <id> --interval <sec> [--max-samples <n>] [--event-id <id>] [--venues pandora_amm,polymarket]
 pandora [--output table|json] odds history --event-id <id> --output csv|json [--limit <n>]
 pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
@@ -131,12 +154,12 @@ Mirror subcommand detail:
 ```text
 browse --min-yes-pct <n> --max-yes-pct <n> --min-volume-24h <n> [--closes-after <date>] [--closes-before <date>] [--question-contains <text>] [--limit <n>] [--chain-id <id>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 plan   --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
-deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--min-close-lead-seconds <n>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
+deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--min-close-lead-seconds <n>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 verify --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--trust-deploy] [--manifest-file <path>] [--include-similarity] [--with-rules] [--allow-rule-mismatch] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 lp-explain --liquidity-usdc <n> [--source-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>]
 hedge-calc [--reserve-yes-usdc <n> --reserve-no-usdc <n>] [--excess-yes-usdc <n>] [--excess-no-usdc <n>] [--polymarket-yes-pct <0-100>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--volume-scenarios <csv>] [--pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>]
-simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier 500|3000|10000] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--polymarket-yes-pct <0-100>]
-go     --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--sources <url...>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]
+simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--polymarket-yes-pct <0-100>]
+go     --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--sources <url...>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]
 sync run|once|start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
 status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>]
 close  --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute
@@ -443,6 +466,12 @@ Common structured error codes for automation:
 - `INDEXER_HTTP_ERROR` / `INDEXER_TIMEOUT`: indexer transport failure.
 - `MIRROR_*`: mirror pipeline/service failures (plan/deploy/verify/sync/go/status).
 - `POLYMARKET_*`: Polymarket resolution/auth/order/preflight failures.
+- `RISK_*`: risk state/guardrail/panic failures (`RISK_PANIC_ACTIVE`, `RISK_GUARDRAIL_BLOCKED`, etc.).
+- `LIFECYCLE_*`: lifecycle state-machine file operations (`LIFECYCLE_EXISTS`, `LIFECYCLE_NOT_FOUND`).
+- `ODDS_*`: odds record/history storage and connector failures.
+- `ARB_*`: arb scan parsing/execution output-mode failures.
+- `CONFIG_*`: config read/parse failures (for example `CONFIG_FILE_NOT_FOUND`).
+- `MCP_FILE_ACCESS_BLOCKED`: MCP-mode file path denied outside workspace root.
 - `WEBHOOK_DELIVERY_FAILED`: webhook hard-fail when `--fail-on-webhook-error` is set.
 
 Error envelope:

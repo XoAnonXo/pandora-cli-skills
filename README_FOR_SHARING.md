@@ -136,6 +136,27 @@ Prerequisite: Node.js `>=18`.
   - `pandora resolve`
 - `pandora lp add|remove|positions`
 
+## Quant ABM baseline (current implementation)
+- Deterministic ABM engine module:
+  - `cli/lib/quant/abm_market.cjs`
+- Simulate-agents handler module:
+  - `cli/lib/simulate_handlers/agents.cjs`
+- Handler parser accepts:
+  - `--n-informed|--n_informed`
+  - `--n-noise|--n_noise`
+  - `--n-mm|--n_mm`
+  - `--n-steps|--n_steps`
+  - `--seed`
+- ABM output fields include:
+  - `convergenceError`
+  - `spreadTrajectory[]`
+  - `volume` (`total`, `averagePerStep`, `byAgentType`)
+  - `pnlByAgentType`
+  - `runtimeBounds` with complexity `O(n_steps * (n_informed + n_noise))`
+- Coverage notes:
+  - `tests/unit/abm_market.test.cjs` validates deterministic seed behavior, required ABM metrics, parser/handler behavior, and runtime-bound calculations.
+  - `package.json` `test:unit` includes the ABM suite in default unit execution.
+
 ## Agent-native expansion details
 
 ### MCP server (`pandora mcp`)

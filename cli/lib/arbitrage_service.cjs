@@ -410,8 +410,147 @@ function summarizeGroup(group, options, acceptedPairChecks) {
   };
 }
 
+function enumerateCombinations(items, size, onCombination) {
+  if (!Array.isArray(items) || !Number.isInteger(size) || size < 1 || size > items.length) return;
+  if (typeof onCombination !== 'function') return;
+
+  const selected = [];
+  function walk(startIndex) {
+    if (selected.length === size) {
+      onCombination(selected.slice());
+      return;
+    }
+    const remaining = size - selected.length;
+    const maxStart = items.length - remaining;
+    for (let index = startIndex; index <= maxStart; index += 1) {
+      selected.push(items[index]);
+      walk(index + 1);
+      selected.pop();
+    }
+  }
+  walk(0);
+}
+
+function resolveCombinatorialSettings(options) {
+  return {
+    enabled: Boolean(options && options.combinatorial),
+    minNetEdgePct: Number.isFinite(options && options.minSpreadPct) ? Number(options.minSpreadPct) : 0,
+    feePctPerLeg: Number.isFinite(options && options.combinatorialFeePctPerLeg)
+      ? Number(options.combinatorialFeePctPerLeg)
+      : Number.isFinite(options && options.feePctPerLeg)
+        ? Number(options.feePctPerLeg)
+        : 0,
+    slippagePctPerLeg: Number.isFinite(options && options.combinatorialSlippagePctPerLeg)
+      ? Number(options.combinatorialSlippagePctPerLeg)
+      : Number.isFinite(options && options.slippagePctPerLeg)
+        ? Number(options.slippagePctPerLeg)
+        : 0,
+    amountUsdc: Number.isFinite(options && options.combinatorialAmountUsdc)
+      ? Number(options.combinatorialAmountUsdc)
+      : Number.isFinite(options && options.amountUsdc)
+        ? Number(options.amountUsdc)
+        : 100,
+    maxBundleSize: Number.isInteger(options && options.maxBundleSize) ? Number(options.maxBundleSize) : 4,
+  };
+}
+
+function buildCombinatorialBundleOpportunities(group, summary, options) {
+  const settings = resolveCombinatorialSettings(options);
+  if (!settings.enabled) return [];
+
+  const legs = Array.isArray(group)
+    ? group.filter(
+        (leg) => leg && Number.isFinite(toNumber(leg.yesPct)) && Number.isFinite(toNumber(leg.noPct)),
+      )
+    : [];
+  if (legs.length < 3) return [];
+
+  const maxBundleSize = Math.max(3, Math.min(settings.maxBundleSize, legs.length));
+  const opportunities = [];
+
+  for (let bundleSize = 3; bundleSize <= maxBundleSize; bundleSize += 1) {
+    enumerateCombinations(legs, bundleSize, (bundle) => {
+      const bundleMarketIds = bundle.map((leg) => leg.marketId);
+      const bundleVenues = Array.from(new Set(bundle.map((leg) => leg.venue))).sort();
+      const bundleCloseValues = bundle.map((leg) => toNumber(leg.closeTimestamp)).filter((value) => value !== null);
+      const sumYesPct = round(bundle.reduce((total, leg) => total + Number(leg.yesPct), 0), 6);
+      const sumNoPct = round(bundle.reduce((total, leg) => total + Number(leg.noPct), 0), 6);
+      const feeImpactPct = round(bundleSize * settings.feePctPerLeg, 6);
+      const slippageImpactPct = round(bundleSize * settings.slippagePctPerLeg, 6);
+
+      const evaluate = (strategy) => {
+        const grossEdgePct = strategy === 'buy_yes_bundle' ? round(100 - sumYesPct, 6) : round(sumYesPct - 100, 6);
+        if (grossEdgePct <= 0) return;
+
+        const netEdgePct = round(grossEdgePct - feeImpactPct - slippageImpactPct, 6);
+        if (netEdgePct <= 0 || netEdgePct < settings.minNetEdgePct) return;
+
+        const payoutPct = strategy === 'buy_yes_bundle' ? 100 : round((bundleSize - 1) * 100, 6);
+        const totalEntryPct = strategy === 'buy_yes_bundle' ? sumYesPct : sumNoPct;
+        const grossProfitUsdc = round((settings.amountUsdc * grossEdgePct) / 100, 6);
+        const profitUsdc = round((settings.amountUsdc * netEdgePct) / 100, 6);
+
+        opportunities.push({
+          opportunityType: 'combinatorial',
+          strategy,
+          groupId: summary.groupId,
+          normalizedQuestion: summary.normalizedQuestion,
+          bundleSize,
+          bundleMarketIds,
+          bundleVenues,
+          closeTimeWindow: {
+            min: bundleCloseValues.length ? Math.min(...bundleCloseValues) : null,
+            max: bundleCloseValues.length ? Math.max(...bundleCloseValues) : null,
+          },
+          sumYesPct,
+          sumNoPct,
+          totalEntryPct,
+          payoutPct,
+          grossEdgePct,
+          feePctPerLeg: round(settings.feePctPerLeg, 6),
+          slippagePctPerLeg: round(settings.slippagePctPerLeg, 6),
+          feeImpactPct,
+          slippageImpactPct,
+          netEdgePct,
+          netEdge: round(netEdgePct / 100, 8),
+          amountUsdc: round(settings.amountUsdc, 6),
+          grossProfitUsdc,
+          profitUsdc,
+          legs: bundle.map((leg) => ({
+            venue: leg.venue,
+            marketId: leg.marketId,
+            yesPct: leg.yesPct,
+            noPct: leg.noPct,
+            liquidityUsd: leg.liquidityUsd,
+            volumeUsd: leg.volumeUsd,
+            closeTimestamp: leg.closeTimestamp,
+            rules: options.withRules ? leg.rules || null : undefined,
+            sources: options.withRules ? (Array.isArray(leg.sources) ? leg.sources : []) : undefined,
+          })),
+        });
+      };
+
+      evaluate('buy_yes_bundle');
+      evaluate('buy_no_bundle');
+    });
+  }
+
+  opportunities.sort((left, right) => {
+    if (right.netEdgePct !== left.netEdgePct) {
+      return right.netEdgePct - left.netEdgePct;
+    }
+    if (right.bundleSize !== left.bundleSize) {
+      return right.bundleSize - left.bundleSize;
+    }
+    return String(left.groupId || '').localeCompare(String(right.groupId || ''));
+  });
+
+  return opportunities;
+}
+
 async function scanArbitrage(options) {
   const venues = Array.from(new Set((options.venues || ['pandora', 'polymarket']).map((value) => String(value).toLowerCase())));
+  const combinatorialSettings = resolveCombinatorialSettings(options);
 
   const sources = {};
   const allLegs = [];
@@ -492,24 +631,57 @@ async function scanArbitrage(options) {
         withRules: options.withRules,
         includeSimilarity: options.includeSimilarity,
         questionContains: options.questionContains,
+        combinatorial: combinatorialSettings.enabled,
+        maxBundleSize: combinatorialSettings.maxBundleSize,
+        combinatorialFeePctPerLeg: combinatorialSettings.feePctPerLeg,
+        combinatorialSlippagePctPerLeg: combinatorialSettings.slippagePctPerLeg,
+        combinatorialAmountUsdc: combinatorialSettings.amountUsdc,
       },
       sources,
       diagnostics,
       count: 0,
       opportunities: [],
+      ...(combinatorialSettings.enabled
+        ? {
+            bundleCount: 0,
+            bundleOpportunities: [],
+          }
+        : {}),
     };
   }
 
   const grouped = buildGroups(allLegs, options);
-  const opportunities = grouped.groups
-    .map((group) => summarizeGroup(group, options, grouped.acceptedPairChecks))
-    .filter(Boolean)
+  const groupSummaries = grouped.groups
+    .map((group) => ({
+      group,
+      summary: summarizeGroup(group, options, grouped.acceptedPairChecks),
+    }))
+    .filter((entry) => Boolean(entry.summary));
+
+  const opportunities = groupSummaries
+    .map((entry) => entry.summary)
     .sort((a, b) => {
       const left = Math.max(a.spreadYesPct || 0, a.spreadNoPct || 0);
       const right = Math.max(b.spreadYesPct || 0, b.spreadNoPct || 0);
       return right - left;
     })
     .slice(0, options.limit);
+
+  const bundleOpportunities = combinatorialSettings.enabled
+    ? groupSummaries
+        .flatMap((entry) => buildCombinatorialBundleOpportunities(entry.group, entry.summary, options))
+        .sort((a, b) => {
+          if ((b.netEdgePct || 0) !== (a.netEdgePct || 0)) {
+            return (b.netEdgePct || 0) - (a.netEdgePct || 0);
+          }
+          return String(a.groupId || '').localeCompare(String(b.groupId || ''));
+        })
+        .slice(0, options.limit)
+    : [];
+
+  if (combinatorialSettings.enabled && bundleOpportunities.length === 0) {
+    diagnostics.push('Combinatorial mode enabled but no bundle opportunities cleared net edge thresholds.');
+  }
 
   return {
     schemaVersion: ARBITRAGE_SCHEMA_VERSION,
@@ -526,16 +698,28 @@ async function scanArbitrage(options) {
       withRules: options.withRules,
       includeSimilarity: options.includeSimilarity,
       questionContains: options.questionContains,
+      combinatorial: combinatorialSettings.enabled,
+      maxBundleSize: combinatorialSettings.maxBundleSize,
+      combinatorialFeePctPerLeg: combinatorialSettings.feePctPerLeg,
+      combinatorialSlippagePctPerLeg: combinatorialSettings.slippagePctPerLeg,
+      combinatorialAmountUsdc: combinatorialSettings.amountUsdc,
     },
     sources,
     diagnostics,
     count: opportunities.length,
     opportunities,
+    ...(combinatorialSettings.enabled
+      ? {
+          bundleCount: bundleOpportunities.length,
+          bundleOpportunities,
+        }
+      : {}),
   };
 }
 
 module.exports = {
   ARBITRAGE_SCHEMA_VERSION,
+  buildCombinatorialBundleOpportunities,
   normalizeQuestion,
   questionSimilarity,
   scanArbitrage,

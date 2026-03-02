@@ -1,0 +1,282 @@
+const { createRng } = require('./rng.cjs');
+const { mean, standardDeviation } = require('./mc_stats.cjs');
+
+const ABM_SCHEMA_VERSION = '1.0.0';
+
+function createQuantError(code, message, details) {
+  const error = new Error(message);
+  error.code = code;
+  if (details !== undefined) {
+    error.details = details;
+  }
+  return error;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function validatePositiveInteger(value, name) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    throw createQuantError('QUANT_INVALID_INPUT', `${name} must be a positive integer.`, {
+      [name]: value,
+    });
+  }
+  return numeric;
+}
+
+function validateFinite(value, name) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    throw createQuantError('QUANT_INVALID_INPUT', `${name} must be a finite number.`, {
+      [name]: value,
+    });
+  }
+  return numeric;
+}
+
+function parseOptionalPositiveInteger(value, name) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  return validatePositiveInteger(value, name);
+}
+
+function parseOptionalInteger(value, name) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric)) {
+    throw createQuantError('QUANT_INVALID_INPUT', `${name} must be an integer.`, {
+      [name]: value,
+    });
+  }
+  return numeric;
+}
+
+function normalizeAbmOptions(options = {}) {
+  const normalized = {};
+  normalized.n_informed = parseOptionalPositiveInteger(
+    options.n_informed !== undefined ? options.n_informed : options.nInformed,
+    'n_informed',
+  );
+  normalized.n_noise = parseOptionalPositiveInteger(options.n_noise !== undefined ? options.n_noise : options.nNoise, 'n_noise');
+  normalized.n_mm = parseOptionalPositiveInteger(
+    options.n_mm !== undefined ? options.n_mm : options.nMm !== undefined ? options.nMm : options.nMarketMakers,
+    'n_mm',
+  );
+  normalized.n_steps = parseOptionalPositiveInteger(options.n_steps !== undefined ? options.n_steps : options.nSteps, 'n_steps');
+  normalized.seed = parseOptionalInteger(options.seed, 'seed');
+  return normalized;
+}
+
+function simulateAbmMarket(options = {}) {
+  const steps = validatePositiveInteger(options.steps === undefined ? 100 : options.steps, 'steps');
+  const nInformed = validatePositiveInteger(options.nInformed === undefined ? 20 : options.nInformed, 'nInformed');
+  const nNoise = validatePositiveInteger(options.nNoise === undefined ? 80 : options.nNoise, 'nNoise');
+  const nMarketMakers = validatePositiveInteger(options.nMarketMakers === undefined ? 10 : options.nMarketMakers, 'nMarketMakers');
+
+  const seed = options.seed === undefined ? 1 : options.seed;
+  const initialPrice = clamp(validateFinite(options.initialPrice === undefined ? 0.5 : options.initialPrice, 'initialPrice'), 0.001, 0.999);
+  const fundamentalPrice = clamp(
+    validateFinite(options.fundamentalPrice === undefined ? initialPrice : options.fundamentalPrice, 'fundamentalPrice'),
+    0.001,
+    0.999,
+  );
+  const impact = Math.max(0, validateFinite(options.impact === undefined ? 0.003 : options.impact, 'impact'));
+  const meanReversion = Math.max(0, validateFinite(options.meanReversion === undefined ? 0.06 : options.meanReversion, 'meanReversion'));
+  const noiseScale = Math.max(0, validateFinite(options.noiseScale === undefined ? 0.6 : options.noiseScale, 'noiseScale'));
+  const mmInventorySensitivity = Math.max(
+    0,
+    validateFinite(options.mmInventorySensitivity === undefined ? 0.03 : options.mmInventorySensitivity, 'mmInventorySensitivity'),
+  );
+  const spreadBase = Math.max(0, validateFinite(options.spreadBase === undefined ? 0.01 : options.spreadBase, 'spreadBase'));
+
+  const rng = createRng(seed);
+
+  let price = initialPrice;
+  let mmInventory = 0;
+  let pnlInformed = 0;
+  let pnlNoise = 0;
+  let pnlMarketMakers = 0;
+  let totalVolume = 0;
+
+  const trajectory = [];
+  const returns = [];
+  const spreads = [];
+
+  for (let step = 1; step <= steps; step += 1) {
+    const priorPrice = price;
+
+    const mispricing = fundamentalPrice - priorPrice;
+    const informedIntensity = clamp(Math.abs(mispricing) * 6, 0, 1);
+    const informedDirection = mispricing >= 0 ? 1 : -1;
+    const informedFlow = nInformed * informedDirection * informedIntensity * (0.5 + 0.5 * rng.next());
+
+    const noiseFlow = rng.nextNormal(0, Math.sqrt(nNoise) * noiseScale);
+
+    const mmFlow = -mmInventory * mmInventorySensitivity;
+
+    const netFlow = informedFlow + noiseFlow + mmFlow;
+    const priceImpact = netFlow * impact;
+    const reversion = (fundamentalPrice - priorPrice) * meanReversion;
+
+    price = clamp(priorPrice + priceImpact + reversion, 0.001, 0.999);
+
+    const spread = spreadBase
+      + Math.abs(netFlow) * impact * 0.5
+      + (nMarketMakers > 0 ? 0.004 / nMarketMakers : 0.02);
+
+    const stepReturn = price - priorPrice;
+    returns.push(stepReturn);
+    spreads.push(spread);
+
+    const flowWithoutMm = informedFlow + noiseFlow;
+    mmInventory = clamp(mmInventory - flowWithoutMm / Math.max(nMarketMakers, 1), -1_000, 1_000);
+
+    const stepVolume = Math.abs(informedFlow) + Math.abs(noiseFlow) + Math.abs(mmFlow);
+    totalVolume += stepVolume;
+
+    pnlInformed += informedFlow * stepReturn;
+    pnlNoise += noiseFlow * stepReturn - Math.abs(noiseFlow) * spread * 0.5;
+    pnlMarketMakers += Math.abs(flowWithoutMm) * spread * 0.5 - Math.abs(mmInventory) * impact * 0.01;
+
+    trajectory.push({
+      step,
+      price,
+      spread,
+      netFlow,
+      informedFlow,
+      noiseFlow,
+      marketMakerFlow: mmFlow,
+      volume: stepVolume,
+      marketMakerInventory: mmInventory,
+    });
+  }
+
+  return {
+    schemaVersion: ABM_SCHEMA_VERSION,
+    configuration: {
+      steps,
+      seed,
+      nInformed,
+      nNoise,
+      nMarketMakers,
+      initialPrice,
+      fundamentalPrice,
+      impact,
+      meanReversion,
+      noiseScale,
+      mmInventorySensitivity,
+      spreadBase,
+    },
+    trajectory,
+    summary: {
+      finalPrice: price,
+      convergenceError: Math.abs(price - fundamentalPrice),
+      totalVolume,
+      averageSpread: spreads.length ? mean(spreads) : 0,
+      realizedVolatility: returns.length ? standardDeviation(returns) : 0,
+      pnlByAgentType: {
+        informed: pnlInformed,
+        noise: pnlNoise,
+        marketMakers: pnlMarketMakers,
+      },
+    },
+  };
+}
+
+function runAbmMarket(options = {}) {
+  const normalized = normalizeAbmOptions(options);
+  const base = simulateAbmMarket({
+    seed: normalized.seed !== undefined ? normalized.seed : options.seed,
+    steps: normalized.n_steps !== undefined ? normalized.n_steps : options.steps,
+    nInformed: normalized.n_informed !== undefined ? normalized.n_informed : options.nInformed,
+    nNoise: normalized.n_noise !== undefined ? normalized.n_noise : options.nNoise,
+    nMarketMakers: normalized.n_mm !== undefined ? normalized.n_mm : options.nMarketMakers,
+    initialPrice: options.initialPrice,
+    fundamentalPrice: options.fundamentalPrice,
+    impact: options.impact,
+    meanReversion: options.meanReversion,
+    noiseScale: options.noiseScale,
+    mmInventorySensitivity: options.mmInventorySensitivity,
+    spreadBase: options.spreadBase,
+  });
+
+  const params = base.configuration || {};
+  const trajectory = Array.isArray(base.trajectory) ? base.trajectory : [];
+  const summary = base.summary || {};
+  const flowTotals = trajectory.reduce(
+    (acc, point) => {
+      acc.informed += Math.abs(Number(point.informedFlow) || 0);
+      acc.noise += Math.abs(Number(point.noiseFlow) || 0);
+      acc.market_maker += Math.abs(Number(point.marketMakerFlow) || 0);
+      return acc;
+    },
+    { informed: 0, noise: 0, market_maker: 0 },
+  );
+
+  const spreadTrajectory = trajectory.map((point) => ({
+    step: point.step,
+    spreadBps: (Number(point.spread) || 0) * 10_000,
+    midPrice: point.price,
+  }));
+
+  const pnlByAgentType = {
+    informed: Number(summary.pnlByAgentType && summary.pnlByAgentType.informed) || 0,
+    noise: Number(summary.pnlByAgentType && summary.pnlByAgentType.noise) || 0,
+    market_maker: Number(summary.pnlByAgentType && summary.pnlByAgentType.marketMakers) || 0,
+  };
+  pnlByAgentType.total = pnlByAgentType.informed + pnlByAgentType.noise + pnlByAgentType.market_maker;
+
+  const nInformed = Number(params.nInformed) || 0;
+  const nNoise = Number(params.nNoise) || 0;
+  const nMm = Number(params.nMarketMakers) || 0;
+  const nSteps = Number(params.steps) || 0;
+
+  return {
+    schemaVersion: ABM_SCHEMA_VERSION,
+    parameters: {
+      n_informed: nInformed,
+      n_noise: nNoise,
+      n_mm: nMm,
+      n_steps: nSteps,
+      seed: params.seed,
+    },
+    convergenceError: Number(summary.convergenceError) || 0,
+    spreadTrajectory,
+    volume: {
+      total: Number(summary.totalVolume) || 0,
+      averagePerStep: nSteps > 0 ? (Number(summary.totalVolume) || 0) / nSteps : 0,
+      byAgentType: flowTotals,
+    },
+    pnlByAgentType,
+    finalState: {
+      midPrice: Number(summary.finalPrice) || 0,
+      fundamentalValue: Number(params.fundamentalPrice) || 0,
+      distanceToFundamental: Number(summary.convergenceError) || 0,
+      averageSpreadBps: (Number(summary.averageSpread) || 0) * 10_000,
+    },
+    runtimeBounds: {
+      complexity: 'O(n_steps * (n_informed + n_noise))',
+      estimatedAgentDecisions: nSteps * (nInformed + nNoise),
+      estimatedWorkUnits: nSteps * (nInformed + nNoise + nMm),
+      notes: 'Deterministic seeded simulation under simplified ABM assumptions.',
+    },
+  };
+}
+
+/**
+ * Documented exports:
+ * - normalizeAbmOptions: canonicalize snake_case and camelCase simulate.agents inputs.
+ * - runAbmMarket: adapter payload for simulate.agents command contract.
+ * - simulateAbmMarket: seeded simplified market ABM with trajectory + summary diagnostics.
+ */
+module.exports = {
+  ABM_SCHEMA_VERSION,
+  normalizeAbmOptions,
+  runAbmMarket,
+  simulateAbmMarket,
+};

@@ -1,3 +1,5 @@
+const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`mirror remaining parser requires deps.${name}()`);
@@ -472,6 +474,7 @@ function createParseMirrorSimulateFlags(deps) {
   const parseProbabilityPercent = requireDep(deps, 'parseProbabilityPercent');
   const parseNonNegativeInteger = requireDep(deps, 'parseNonNegativeInteger');
   const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
+  const parseInteger = requireDep(deps, 'parseInteger');
   const parseCsvNumberList = requireDep(deps, 'parseCsvNumberList');
 
   return function parseMirrorSimulateFlags(args) {
@@ -486,6 +489,14 @@ function createParseMirrorSimulateFlags(deps) {
       hedgeRatio: 1,
       hedgeCostBps: 35,
       volumeScenarios: null,
+      engine: 'linear',
+      paths: 2000,
+      steps: 48,
+      seed: 42,
+      importanceSampling: false,
+      antithetic: false,
+      controlVariate: false,
+      stratified: false,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -540,6 +551,48 @@ function createParseMirrorSimulateFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--engine') {
+        const engine = String(requireFlagValue(args, i, '--engine') || '')
+          .trim()
+          .toLowerCase();
+        if (engine !== 'linear' && engine !== 'mc') {
+          throw new CliError('INVALID_FLAG_VALUE', '--engine must be linear or mc.');
+        }
+        options.engine = engine;
+        i += 1;
+        continue;
+      }
+      if (token === '--paths') {
+        options.paths = parsePositiveInteger(requireFlagValue(args, i, '--paths'), '--paths');
+        i += 1;
+        continue;
+      }
+      if (token === '--steps') {
+        options.steps = parsePositiveInteger(requireFlagValue(args, i, '--steps'), '--steps');
+        i += 1;
+        continue;
+      }
+      if (token === '--seed') {
+        options.seed = parseInteger(requireFlagValue(args, i, '--seed'), '--seed');
+        i += 1;
+        continue;
+      }
+      if (token === '--importance-sampling') {
+        options.importanceSampling = true;
+        continue;
+      }
+      if (token === '--antithetic') {
+        options.antithetic = true;
+        continue;
+      }
+      if (token === '--control-variate') {
+        options.controlVariate = true;
+        continue;
+      }
+      if (token === '--stratified') {
+        options.stratified = true;
+        continue;
+      }
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror simulate: ${token}`);
     }
 
@@ -559,11 +612,20 @@ function createParseMirrorSimulateFlags(deps) {
     ) {
       throw new CliError('INVALID_ARGS', '--distribution-yes + --distribution-no must equal 1000000000.');
     }
-    if (![500, 3000, 10000].includes(options.feeTier)) {
-      throw new CliError('INVALID_FLAG_VALUE', '--fee-tier must be one of 500, 3000, 10000.');
+    if (options.feeTier < MIN_AMM_FEE_TIER || options.feeTier > MAX_AMM_FEE_TIER) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `--fee-tier must be between ${MIN_AMM_FEE_TIER} and ${MAX_AMM_FEE_TIER} (max 5%).`,
+      );
     }
     if (options.hedgeRatio > 5) {
       throw new CliError('INVALID_FLAG_VALUE', '--hedge-ratio must be <= 5.');
+    }
+    if (options.paths > 200_000) {
+      throw new CliError('INVALID_FLAG_VALUE', '--paths must be <= 200000.');
+    }
+    if (options.steps > 1_000) {
+      throw new CliError('INVALID_FLAG_VALUE', '--steps must be <= 1000.');
     }
 
     return options;

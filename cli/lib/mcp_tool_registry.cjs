@@ -14,7 +14,8 @@
  *   mutating?: boolean,
  *   safeFlags?: string[],
  *   executeFlags?: string[],
- *   longRunningBlocked?: boolean
+ *   longRunningBlocked?: boolean,
+ *   placeholderBlocked?: boolean
  * }} ToolDefinition
  */
 
@@ -243,7 +244,48 @@ const TOOL_DEFINITIONS = [
     name: 'odds.record',
     command: ['odds', 'record'],
     description: 'Record venue odds snapshots into local history storage.',
+    longRunningBlocked: true,
     mutating: true,
+  },
+  {
+    name: 'arb.scan',
+    command: ['arb', 'scan', '--output', 'json', '--iterations', '1'],
+    description: 'Run one bounded arb scan iteration and return a structured payload.',
+  },
+  {
+    name: 'simulate.mc',
+    command: ['simulate', 'mc'],
+    description: 'Run bounded Monte Carlo simulations with risk metrics.',
+  },
+  {
+    name: 'simulate.particle-filter',
+    command: ['simulate', 'particle-filter'],
+    description: 'Run bounded particle-filter simulations with ESS diagnostics.',
+  },
+  {
+    name: 'simulate.agents',
+    command: ['simulate', 'agents'],
+    description: 'Run bounded agent-based market simulations.',
+  },
+  {
+    name: 'model.score.brier',
+    command: ['model', 'score', 'brier'],
+    description: 'Score forecast calibration with Brier metrics.',
+  },
+  {
+    name: 'model.calibrate',
+    command: ['model', 'calibrate'],
+    description: 'Calibrate jump-diffusion parameters from historical inputs.',
+  },
+  {
+    name: 'model.correlation',
+    command: ['model', 'correlation'],
+    description: 'Estimate dependency and tail metrics with copula methods.',
+  },
+  {
+    name: 'model.diagnose',
+    command: ['model', 'diagnose'],
+    description: 'Diagnose market/model signal quality for execution gating.',
   },
   { name: 'lifecycle.status', command: ['lifecycle', 'status'], description: 'Inspect lifecycle state by id.' },
   {
@@ -458,6 +500,21 @@ function createMcpToolRegistry() {
       const missing = new Error(`Unknown MCP tool: ${toolName}`);
       missing.code = 'UNKNOWN_TOOL';
       throw missing;
+    }
+
+    if (definition.placeholderBlocked) {
+      const unavailable = new Error(
+        `${toolName} is registered as an agent contract placeholder but is not executable in this build.`,
+      );
+      unavailable.code = 'MCP_TOOL_UNAVAILABLE';
+      unavailable.details = {
+        toolName: definition.name,
+        hints: [
+          'Use `pandora --output json schema` to inspect the placeholder contract.',
+          'Update to a build that includes the target simulate/model command handlers.',
+        ],
+      };
+      throw unavailable;
     }
 
     if (definition.longRunningBlocked) {

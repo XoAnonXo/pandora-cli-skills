@@ -29,6 +29,7 @@ function createParseOddsFlags(deps) {
   const requireFlagValue = requireDep(deps, 'requireFlagValue');
   const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
   const parseCsvList = requireDep(deps, 'parseCsvList');
+  const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
 
   return function parseOddsFlags(args) {
     const action = String((args && args[0]) || '').trim().toLowerCase();
@@ -79,16 +80,34 @@ function createParseOddsFlags(deps) {
         }
         if (token === '--indexer-url') {
           options.indexerUrl = requireFlagValue(rest, i, '--indexer-url');
+          if (!isSecureHttpUrlOrLocal(options.indexerUrl)) {
+            throw new CliError(
+              'INVALID_FLAG_VALUE',
+              `--indexer-url must use https:// (or http://localhost/127.0.0.1). Received: "${options.indexerUrl}"`,
+            );
+          }
           i += 1;
           continue;
         }
         if (token === '--polymarket-host') {
           options.polymarketHost = requireFlagValue(rest, i, '--polymarket-host');
+          if (!isSecureHttpUrlOrLocal(options.polymarketHost)) {
+            throw new CliError(
+              'INVALID_FLAG_VALUE',
+              `--polymarket-host must use https:// (or http://localhost/127.0.0.1). Received: "${options.polymarketHost}"`,
+            );
+          }
           i += 1;
           continue;
         }
         if (token === '--polymarket-mock-url') {
           options.polymarketMockUrl = requireFlagValue(rest, i, '--polymarket-mock-url');
+          if (!isSecureHttpUrlOrLocal(options.polymarketMockUrl)) {
+            throw new CliError(
+              'INVALID_FLAG_VALUE',
+              `--polymarket-mock-url must use https:// (or http://localhost/127.0.0.1). Received: "${options.polymarketMockUrl}"`,
+            );
+          }
           i += 1;
           continue;
         }

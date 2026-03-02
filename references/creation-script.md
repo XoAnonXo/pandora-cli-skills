@@ -26,7 +26,7 @@ The skill includes `scripts/create_market_launcher.ts`, which performs:
 - `--distribution-yes` / `--distribution-no`: distribution hint (1e9 scale, must sum to `1000000000`)
 
 AMM-only:
-- `--fee-tier`: `500`, `3000`, `10000` (default `3000`)
+- `--fee-tier`: integer in `[500..50000]` (default `3000`, max `5%`)
 - `--max-imbalance`: `maxPriceImbalancePerHour` (default `10000`)
 
 PariMutuel-only:

@@ -38,6 +38,16 @@ const { createParseLifecycleFlags } = require('./lib/parsers/lifecycle_flags.cjs
 const { createParseSportsFlags } = require('./lib/parsers/sports_flags.cjs');
 const { createParseOddsFlags } = require('./lib/parsers/odds_flags.cjs');
 const { createParseRiskShowFlags, createParseRiskPanicFlags } = require('./lib/parsers/risk_flags.cjs');
+const {
+  createParseModelCalibrateFlags,
+  createParseModelCorrelationFlags,
+  createParseModelDiagnoseFlags,
+  createParseModelScoreBrierFlags,
+} = require('./lib/parsers/model_flags.cjs');
+const {
+  createParseSimulateMcFlags,
+  createParseSimulateParticleFilterFlags,
+} = require('./lib/parsers/simulate_flags.cjs');
 const { createCoreCommandFlagParsers } = require('./lib/parsers/core_command_flags.cjs');
 const { createRunTradeCommand } = require('./lib/trade_command_service.cjs');
 const { createRunWatchCommand } = require('./lib/watch_command_service.cjs');
@@ -46,8 +56,10 @@ const { createRunResolveCommand } = require('./lib/resolve_command_service.cjs')
 const { createRunLpCommand } = require('./lib/lp_command_service.cjs');
 const { createRunLifecycleCommand } = require('./lib/lifecycle_command_service.cjs');
 const { createRunArbCommand } = require('./lib/arb_command_service.cjs');
+const { createRunOddsCommand } = require('./lib/odds_command_service.cjs');
 const { createRunSportsCommand } = require('./lib/sports_command_service.cjs');
 const { createRunRiskCommand } = require('./lib/risk_command_service.cjs');
+const { createRunModelCommand } = require('./lib/model_command_service.cjs');
 const {
   DEFAULT_INDEXER_URL: SHARED_DEFAULT_INDEXER_URL,
   DEFAULT_RPC_BY_CHAIN_ID,
@@ -92,9 +104,12 @@ const getAutopilotStateStore = createLazyModuleLoader('./lib/autopilot_state_sto
 const getMirrorStateStore = createLazyModuleLoader('./lib/mirror_state_store.cjs');
 const getRiskStateStore = createLazyModuleLoader('./lib/risk_state_store.cjs');
 const getRiskGuardService = createLazyModuleLoader('./lib/risk_guard_service.cjs');
+const getForecastStore = createLazyModuleLoader('./lib/forecast_store.cjs');
+const getBrierScoreService = createLazyModuleLoader('./lib/brier_score_service.cjs');
 const getSchemaCommandService = createLazyModuleLoader('./lib/schema_command_service.cjs');
 const getMcpServerService = createLazyModuleLoader('./lib/mcp_server_service.cjs');
 const getStreamCommandService = createLazyModuleLoader('./lib/stream_command_service.cjs');
+const getSimulateCommandService = createLazyModuleLoader('./lib/simulate_command_service.cjs');
 const getForkRuntimeService = createLazyModuleLoader('./lib/fork_runtime_service.cjs');
 const getDoctorService = createLazyModuleLoader('./lib/doctor_service.cjs');
 const getSportsProviderRegistry = createLazyModuleLoader('./lib/sports_provider_registry.cjs');
@@ -356,6 +371,26 @@ function clearRiskPanic(...args) {
   return getRiskGuard().clearPanic(...args);
 }
 
+/** Proxy to forecast-store append helper. */
+function appendForecastRecord(...args) {
+  return getForecastStore().appendForecastRecord(...args);
+}
+
+/** Proxy to forecast-store default file resolver. */
+function defaultForecastFile(...args) {
+  return getForecastStore().defaultForecastFile(...args);
+}
+
+/** Proxy to forecast-store reader. */
+function readForecastRecords(...args) {
+  return getForecastStore().readForecastRecords(...args);
+}
+
+/** Proxy to Brier scoring report service. */
+function computeBrierReport(...args) {
+  return getBrierScoreService().computeBrierReport(...args);
+}
+
 /** Schema command adapter with CLI output wiring. */
 function runSchemaCommand(...args) {
   return getSchemaCommandService().createRunSchemaCommand({ emitSuccess, CliError }).runSchemaCommand(...args);
@@ -387,6 +422,18 @@ function runStreamCommand(...args) {
     isSecureHttpUrlOrLocal,
     sleepMs,
   }).runStreamCommand(...args);
+}
+
+/** Simulation command adapter with Monte Carlo + particle-filter handlers. */
+function runSimulateCommand(...args) {
+  return getSimulateCommandService().createRunSimulateCommand({
+    CliError,
+    includesHelpFlag,
+    emitSuccess,
+    commandHelpPayload,
+    parseSimulateMcFlags: parseSimulateMcFlagsFromModule,
+    parseSimulateParticleFilterFlags: parseSimulateParticleFilterFlagsFromModule,
+  }).runSimulateCommand(...args);
 }
 
 /** Sports provider registry factory proxy. */
@@ -741,12 +788,12 @@ Usage:
   pandora [--output table|json] events get --id <id> [--type all|liquidity|oracle-fee|claim]
   pandora [--output table|json] positions list [--wallet <address>] [--market-address <address>] [--chain-id <id>] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--where-json <json>]
   pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
-  pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]
+  pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
   pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand]
   pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan ...
   pandora [--output table|json] odds record|history ...
   pandora [--output table|json] lifecycle start|status|resolve ...
-  pandora arb scan --markets <csv> --output ndjson [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora arb scan --markets <csv> --output ndjson|json [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
@@ -763,6 +810,8 @@ Usage:
   pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
   pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
+  pandora [--output table|json] simulate mc|particle-filter|agents ...
+  pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...
   pandora [--output json] schema
   pandora mcp
   pandora launch [--dotenv-path <path>] [--skip-dotenv] [script args...]
@@ -808,6 +857,8 @@ Examples:
   pandora risk panic --reason "Manual incident stop"
   pandora risk panic --clear
   pandora stream prices --indexer-url https://pandoraindexer.up.railway.app/ --interval-ms 1000
+  pandora --output json simulate mc --trials 4000 --horizon 48 --start-yes-pct 57 --seed 7 --antithetic
+  pandora --output json simulate particle-filter --observations-json '[{\"yesPct\":56},{\"yesPct\":58},{\"yesPct\":57}]' --particles 750 --seed 11
   pandora --output json schema
   pandora mcp
   pandora launch --dry-run --market-type amm --question "Will BTC close above $100k by end of 2026?" --rules "Resolves YES if ... Resolves NO if ... cancelled/postponed/abandoned/unresolved => NO." --sources "https://coinmarketcap.com/currencies/bitcoin/" "https://www.coingecko.com/en/coins/bitcoin" --target-timestamp 1798675200 --liquidity 100 --fee-tier 3000
@@ -820,7 +871,7 @@ Notes:
   - mirror status --with-live can enrich output with Polymarket position data when POLYMARKET_* credentials are set; missing endpoints/creds return diagnostics instead of hard failures.
   - watch is non-transactional monitoring; use quote/trade for execution workflows.
   - stream always emits NDJSON to stdout (one JSON object per line).
-  - arb scan emits NDJSON opportunities only when thresholds are exceeded.
+  - arb scan supports streaming NDJSON and bounded JSON (--output json --iterations 1) for agent workflows.
 `);
 }
 
@@ -858,7 +909,7 @@ function printWatchHelpTable() {
 pandora watch - Poll portfolio/market snapshots
 
 Usage:
-  pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]
+  pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
 
 Notes:
   - At least one target is required: --wallet and/or --market-address.
@@ -992,7 +1043,7 @@ function tradeHelpJsonPayload() {
 function watchHelpJsonPayload() {
   return {
     usage:
-      'pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]',
+      'pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]',
   };
 }
 
@@ -1018,7 +1069,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] sports ...',
       'pandora [--output table|json] odds record|history ...',
       'pandora [--output table|json] lifecycle start|status|resolve ...',
-      'pandora arb scan --markets <csv> --output ndjson ...',
+      'pandora arb scan --markets <csv> --output ndjson|json ...',
       'pandora [--output table|json] quote ...',
       'pandora [--output table|json] trade ...',
       'pandora [--output table|json] history ...',
@@ -1035,6 +1086,8 @@ function helpJsonPayload() {
       'pandora [--output table|json] lp add|remove|positions ...',
       'pandora [--output table|json] risk show|panic ...',
       'pandora stream prices|events ...',
+      'pandora [--output table|json] simulate mc|particle-filter|agents ...',
+      'pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...',
       'pandora [--output json] schema',
       'pandora mcp',
       'pandora launch ...',
@@ -1055,10 +1108,31 @@ function normalizeOutputMode(raw) {
   return mode;
 }
 
+function findTopLevelCommandIndex(argv) {
+  const tokens = Array.isArray(argv) ? argv : [];
+  let index = 0;
+  if (tokens[0] === 'pandora') index = 1;
+
+  while (index < tokens.length) {
+    const token = String(tokens[index] || '').trim();
+    if (token === '--output' || token === '-o') {
+      index += 2;
+      continue;
+    }
+    if (token.startsWith('--output=')) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+
+  return index < tokens.length ? index : -1;
+}
+
 function findOddsSubcommandActionIndex(argv) {
   const tokens = Array.isArray(argv) ? argv : [];
-  let commandIndex = 0;
-  if (tokens[0] === 'pandora') commandIndex = 1;
+  const commandIndex = findTopLevelCommandIndex(tokens);
+  if (commandIndex < 0) return -1;
   const command = String(tokens[commandIndex] || '').trim().toLowerCase();
   if (command !== 'odds') return -1;
   for (let i = commandIndex + 1; i < tokens.length; i += 1) {
@@ -1077,8 +1151,8 @@ function isOddsHistoryLocalOutputFlag(argv, index) {
 
 function findArbSubcommandActionIndex(argv) {
   const tokens = Array.isArray(argv) ? argv : [];
-  let commandIndex = 0;
-  if (tokens[0] === 'pandora') commandIndex = 1;
+  const commandIndex = findTopLevelCommandIndex(tokens);
+  if (commandIndex < 0) return -1;
   const command = String(tokens[commandIndex] || '').trim().toLowerCase();
   if (command !== 'arb') return -1;
   for (let i = commandIndex + 1; i < tokens.length; i += 1) {
@@ -2632,8 +2706,11 @@ async function graphqlRequest(indexerUrl, query, variables, timeoutMs) {
 
 function resolveIndexerUrl(explicitUrl) {
   const resolved = explicitUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
-  if (!isValidHttpUrl(resolved)) {
-    throw new CliError('INVALID_INDEXER_URL', `Indexer URL must be a valid http/https URL. Received: "${resolved}"`);
+  if (!isSecureHttpUrlOrLocal(resolved)) {
+    throw new CliError(
+      'INVALID_INDEXER_URL',
+      `Indexer URL must use https:// (or http://localhost/127.0.0.1 for local testing). Received: "${resolved}"`,
+    );
   }
   return resolved;
 }
@@ -4501,6 +4578,7 @@ const parseOddsFlagsFromModule = createParseOddsFlags({
   requireFlagValue,
   parsePositiveInteger,
   parseCsvList,
+  isSecureHttpUrlOrLocal,
 });
 const parseRiskShowFlagsFromModule = createParseRiskShowFlags({
   CliError,
@@ -4509,6 +4587,50 @@ const parseRiskShowFlagsFromModule = createParseRiskShowFlags({
 const parseRiskPanicFlagsFromModule = createParseRiskPanicFlags({
   CliError,
   requireFlagValue,
+});
+const parseModelCalibrateFlagsFromModule = createParseModelCalibrateFlags({
+  CliError,
+  requireFlagValue,
+  parseNumber,
+  parsePositiveNumber,
+  parsePositiveInteger,
+  parseCsvList,
+});
+const parseModelCorrelationFlagsFromModule = createParseModelCorrelationFlags({
+  CliError,
+  requireFlagValue,
+  parseNumber,
+  parsePositiveNumber,
+  parseCsvList,
+});
+const parseModelDiagnoseFlagsFromModule = createParseModelDiagnoseFlags({
+  CliError,
+  requireFlagValue,
+  parseNumber,
+});
+const parseModelScoreBrierFlagsFromModule = createParseModelScoreBrierFlags({
+  CliError,
+  requireFlagValue,
+  parsePositiveInteger,
+});
+const parseSimulateMcFlagsFromModule = createParseSimulateMcFlags({
+  CliError,
+  requireFlagValue,
+  parsePositiveInteger,
+  parsePositiveNumber,
+  parseProbabilityPercent,
+  parseNumber,
+  parseOutcomeSide,
+  parseNonNegativeInteger,
+});
+const parseSimulateParticleFilterFlagsFromModule = createParseSimulateParticleFilterFlags({
+  CliError,
+  requireFlagValue,
+  parsePositiveInteger,
+  parsePositiveNumber,
+  parseProbabilityPercent,
+  parseNumber,
+  parseNonNegativeInteger,
 });
 
 const runTradeCommandFromService = createRunTradeCommand({
@@ -4545,6 +4667,8 @@ const runWatchCommandFromService = createRunWatchCommand({
   evaluateWatchAlerts,
   hasWebhookTargets,
   sendWebhookNotifications,
+  appendForecastRecord,
+  defaultForecastFile,
   sleepMs,
   renderWatchTable,
 });
@@ -4623,6 +4747,19 @@ const runRiskCommandFromService = createRunRiskCommand({
   clearPanic: clearRiskPanic,
   renderRiskTable,
 });
+const runModelCommandFromService = createRunModelCommand({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseModelCalibrateFlags: parseModelCalibrateFlagsFromModule,
+  parseModelCorrelationFlags: parseModelCorrelationFlagsFromModule,
+  parseModelDiagnoseFlags: parseModelDiagnoseFlagsFromModule,
+  parseModelScoreBrierFlags: parseModelScoreBrierFlagsFromModule,
+  readForecastRecords,
+  defaultForecastFile,
+  computeBrierReport,
+});
 const runLifecycleCommandFromService = createRunLifecycleCommand({
   CliError,
   includesHelpFlag,
@@ -4646,6 +4783,18 @@ const runArbCommandFromService = createRunArbCommand({
   buildGraphqlGetQuery,
   graphqlRequest,
   sleepMs,
+});
+const runOddsCommandFromService = createRunOddsCommand({
+  parseIndexerSharedFlags,
+  includesHelpFlag,
+  maybeLoadIndexerEnv,
+  resolveIndexerUrl,
+  parseOddsFlags: parseOddsFlagsFromModule,
+  createOddsHistoryService,
+  createVenueConnectorFactory,
+  sleepMs,
+  emitSuccess,
+  renderSingleEntityTable,
 });
 
 async function runPortfolioCommand(args, context) {
@@ -4701,137 +4850,7 @@ async function runArbCommand(args, context) {
 }
 
 async function runOddsCommand(args, context) {
-  const shared = parseIndexerSharedFlags(args);
-  if (!shared.rest.length || includesHelpFlag(shared.rest)) {
-    const usage =
-      'pandora [--output table|json] odds record --competition <id> --interval <sec> [--max-samples <n>] [--event-id <id>] [--venues pandora_amm,polymarket] [--indexer-url <url>] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>]';
-    const historyUsage =
-      'pandora [--output table|json] odds history --event-id <id> --output csv|json [--limit <n>]';
-    if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'odds.help', {
-        usage,
-        historyUsage,
-      });
-    } else {
-      console.log(`Usage: ${usage}`);
-      console.log(`       ${historyUsage}`);
-    }
-    return;
-  }
-
-  maybeLoadIndexerEnv(shared);
-  const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
-  const parsed = parseOddsFlagsFromModule(shared.rest);
-  const options = parsed.options || {};
-
-  const historyService = createOddsHistoryService();
-  const connectorFactory = createVenueConnectorFactory();
-
-  if (parsed.action === 'record') {
-    const intervalMs = Number(options.intervalSec) * 1000;
-    const maxSamples = Number.isInteger(options.maxSamples) && options.maxSamples > 0 ? options.maxSamples : 1;
-    const sampleResults = [];
-    let insertedTotal = 0;
-
-    for (let sample = 1; sample <= maxSamples; sample += 1) {
-      const rows = [];
-      const diagnostics = [];
-      for (const venue of options.venues) {
-        try {
-          const connector = connectorFactory.createConnector(venue, {
-            indexerUrl,
-            host: options.polymarketHost || null,
-            mockUrl: options.polymarketMockUrl || null,
-            timeoutMs: options.timeoutMs || shared.timeoutMs,
-          });
-          const pricePayload = await connector.getPrice({
-            competition: options.competition,
-            eventId: options.eventId,
-            indexerUrl,
-            host: options.polymarketHost || null,
-            mockUrl: options.polymarketMockUrl || null,
-            timeoutMs: options.timeoutMs || shared.timeoutMs,
-          });
-          if (pricePayload && Array.isArray(pricePayload.items)) {
-            rows.push(...pricePayload.items);
-          }
-        } catch (err) {
-          diagnostics.push({
-            venue,
-            code: err && err.code ? String(err.code) : 'ODDS_RECORD_CONNECTOR_FAILED',
-            message: err && err.message ? err.message : String(err),
-          });
-        }
-      }
-
-      const writeResult = historyService.recordEntries(rows);
-      insertedTotal += writeResult.inserted;
-      sampleResults.push({
-        sample,
-        observedAt: new Date().toISOString(),
-        inserted: writeResult.inserted,
-        diagnostics,
-      });
-
-      if (sample < maxSamples) {
-        await sleepMs(intervalMs);
-      }
-    }
-
-    const payload = {
-      schemaVersion: '1.0.0',
-      generatedAt: new Date().toISOString(),
-      action: 'record',
-      competition: options.competition,
-      eventId: options.eventId || null,
-      intervalSec: options.intervalSec,
-      maxSamples,
-      venues: options.venues,
-      backend: historyService.backend,
-      storage: historyService.paths,
-      insertedTotal,
-      samples: sampleResults,
-    };
-    emitSuccess(context.outputMode, 'odds.record', payload, renderSingleEntityTable);
-    return;
-  }
-
-  const rows = historyService.queryByEventId(options.eventId, {
-    limit: options.limit,
-  });
-  const basePayload = {
-    schemaVersion: '1.0.0',
-    generatedAt: new Date().toISOString(),
-    action: 'history',
-    eventId: options.eventId,
-    backend: historyService.backend,
-    storage: historyService.paths,
-    count: rows.length,
-    items: rows,
-  };
-
-  if (options.output === 'csv') {
-    const csv = historyService.formatRows(rows, 'csv');
-    if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'odds.history', {
-        ...basePayload,
-        output: 'csv',
-        csv,
-      });
-    } else {
-      console.log(csv);
-    }
-    return;
-  }
-
-  if (context.outputMode === 'json') {
-    emitSuccess(context.outputMode, 'odds.history', {
-      ...basePayload,
-      output: 'json',
-    });
-  } else {
-    console.log(JSON.stringify(basePayload, null, 2));
-  }
+  return runOddsCommandFromService(args, context);
 }
 
 async function runHistoryCommand(args, context) {
@@ -5578,6 +5597,10 @@ async function runRiskCommand(args, context) {
   return runRiskCommandFromService(args, context);
 }
 
+async function runModelCommand(args, context) {
+  return runModelCommandFromService(args, context);
+}
+
 function runInitEnv(args, outputMode) {
   const options = parseInitEnvFlags(args);
 
@@ -5745,8 +5768,10 @@ const dispatch = createCommandRouter({
   runResolveCommand,
   runLpCommand,
   runRiskCommand,
+  runModelCommand,
   runMcpCommand,
   runStreamCommand,
+  runSimulateCommand,
   runSchemaCommand,
   runScriptCommand,
 });

@@ -4,6 +4,9 @@ const { round, clamp, toOptionalNumber } = require('./shared/utils.cjs');
 const MIRROR_LP_EXPLAIN_SCHEMA_VERSION = '1.0.0';
 const MIRROR_HEDGE_CALC_SCHEMA_VERSION = '1.0.0';
 const MIRROR_SIMULATE_SCHEMA_VERSION = '1.0.0';
+const MIRROR_SIMULATE_MC_DEFAULT_PATHS = 2000;
+const MIRROR_SIMULATE_MC_DEFAULT_STEPS = 48;
+const MIRROR_SIMULATE_MC_DEFAULT_SEED = 42;
 const USDC_DECIMALS = 6;
 const USDC_SCALE = 10 ** USDC_DECIMALS;
 
@@ -417,7 +420,201 @@ function buildMirrorHedgeCalc(options = {}) {
   };
 }
 
-function buildMirrorSimulate(options = {}) {
+function normalizeSimulateEngine(value) {
+  const normalized = String(value || 'linear')
+    .trim()
+    .toLowerCase();
+  return normalized === 'mc' ? 'mc' : 'linear';
+}
+
+function toBoundedPositiveInteger(value, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric)) return fallback;
+  return clamp(numeric, min, max);
+}
+
+function normalizeMcConfig(options = {}) {
+  return {
+    engine: 'mc',
+    paths: toBoundedPositiveInteger(options.paths, MIRROR_SIMULATE_MC_DEFAULT_PATHS, 10, 200_000),
+    steps: toBoundedPositiveInteger(options.steps, MIRROR_SIMULATE_MC_DEFAULT_STEPS, 1, 1_000),
+    seed: Number.isInteger(Number(options.seed)) ? Number(options.seed) : MIRROR_SIMULATE_MC_DEFAULT_SEED,
+    importanceSampling: Boolean(options.importanceSampling),
+    antithetic: Boolean(options.antithetic),
+    controlVariate: Boolean(options.controlVariate),
+    stratified: Boolean(options.stratified),
+  };
+}
+
+function createSeededRng(seed) {
+  let state = (Number(seed) >>> 0) || 0x6d2b79f5;
+  return function nextRandom01() {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function sampleStandardNormal(rng, options = {}) {
+  const pathCount = Number.isInteger(options.pathCount) && options.pathCount > 1 ? options.pathCount : 1;
+  const pathIndex = Number.isInteger(options.pathIndex) ? options.pathIndex : 0;
+  const stepIndex = Number.isInteger(options.stepIndex) ? options.stepIndex : 0;
+  const useStratified = Boolean(options.stratified) && pathCount > 1;
+
+  let u1 = rng();
+  if (useStratified) {
+    const rotation = (stepIndex * 0.6180339887498949) % 1;
+    const shifted = (pathIndex + rotation * pathCount) % pathCount;
+    const stratumIndex = Math.floor(shifted);
+    u1 = (stratumIndex + u1) / pathCount;
+  }
+  const u2 = rng();
+
+  const safeU1 = clamp(u1, 1e-12, 1 - 1e-12);
+  const safeU2 = clamp(u2, 1e-12, 1 - 1e-12);
+  const radius = Math.sqrt(-2 * Math.log(safeU1));
+  const theta = 2 * Math.PI * safeU2;
+  return radius * Math.cos(theta);
+}
+
+function weightedMean(values, weights) {
+  if (!Array.isArray(values) || !values.length) return 0;
+  const safeWeights =
+    Array.isArray(weights) && weights.length === values.length ? weights : new Array(values.length).fill(1);
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const value = Number(values[i]);
+    const weight = Number(safeWeights[i]);
+    if (!Number.isFinite(value) || !Number.isFinite(weight) || weight <= 0) continue;
+    weightedSum += value * weight;
+    totalWeight += weight;
+  }
+  return totalWeight > 0 ? weightedSum / totalWeight : 0;
+}
+
+function weightedStdDev(values, weights, meanOverride = null) {
+  if (!Array.isArray(values) || values.length <= 1) return 0;
+  const safeWeights =
+    Array.isArray(weights) && weights.length === values.length ? weights : new Array(values.length).fill(1);
+  const mean = meanOverride === null ? weightedMean(values, safeWeights) : meanOverride;
+  let weightedVar = 0;
+  let totalWeight = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const value = Number(values[i]);
+    const weight = Number(safeWeights[i]);
+    if (!Number.isFinite(value) || !Number.isFinite(weight) || weight <= 0) continue;
+    const diff = value - mean;
+    weightedVar += diff * diff * weight;
+    totalWeight += weight;
+  }
+  return totalWeight > 0 ? Math.sqrt(weightedVar / totalWeight) : 0;
+}
+
+function weightedQuantile(values, weights, quantile) {
+  if (!Array.isArray(values) || !values.length) return 0;
+  const q = clamp(Number(quantile), 0, 1);
+  const safeWeights =
+    Array.isArray(weights) && weights.length === values.length ? weights : new Array(values.length).fill(1);
+
+  const sorted = values
+    .map((value, index) => ({ value: Number(value), weight: Number(safeWeights[index]) }))
+    .filter((entry) => Number.isFinite(entry.value) && Number.isFinite(entry.weight) && entry.weight > 0)
+    .sort((a, b) => a.value - b.value);
+
+  if (!sorted.length) return 0;
+  const totalWeight = sorted.reduce((acc, entry) => acc + entry.weight, 0);
+  if (totalWeight <= 0) return sorted[0].value;
+
+  const threshold = totalWeight * q;
+  let cumulative = 0;
+  for (const entry of sorted) {
+    cumulative += entry.weight;
+    if (cumulative >= threshold) {
+      return entry.value;
+    }
+  }
+  return sorted[sorted.length - 1].value;
+}
+
+function weightedTailMean(values, weights, threshold) {
+  if (!Array.isArray(values) || !values.length) return 0;
+  const safeWeights =
+    Array.isArray(weights) && weights.length === values.length ? weights : new Array(values.length).fill(1);
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const value = Number(values[i]);
+    const weight = Number(safeWeights[i]);
+    if (!Number.isFinite(value) || !Number.isFinite(weight) || weight <= 0) continue;
+    if (value + 1e-12 < threshold) continue;
+    weightedSum += value * weight;
+    totalWeight += weight;
+  }
+  return totalWeight > 0 ? weightedSum / totalWeight : 0;
+}
+
+function effectiveSampleSize(weights) {
+  if (!Array.isArray(weights) || !weights.length) return 0;
+  let sum = 0;
+  let sumSquares = 0;
+  for (const rawWeight of weights) {
+    const weight = Number(rawWeight);
+    if (!Number.isFinite(weight) || weight <= 0) continue;
+    sum += weight;
+    sumSquares += weight * weight;
+  }
+  if (sum <= 0 || sumSquares <= 0) return 0;
+  return (sum * sum) / sumSquares;
+}
+
+function normalizeWeightsFromLog(logWeights) {
+  if (!Array.isArray(logWeights) || !logWeights.length) return [];
+  const finite = logWeights.filter((value) => Number.isFinite(value));
+  const maxLogWeight = finite.length ? Math.max(...finite) : 0;
+  return logWeights.map((value) => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.exp(value - maxLogWeight);
+  });
+}
+
+function applyControlVariate(pathResults, options = {}) {
+  if (!Array.isArray(pathResults) || !pathResults.length) {
+    return {
+      adjustedPnlUsdc: [],
+      beta: 0,
+      expectedControl: 0,
+    };
+  }
+
+  const pnl = pathResults.map((item) => Number(item.totalPnlUsdc) || 0);
+  const controls = pathResults.map((item) => Number(item.totalFeesUsdc) || 0);
+  const meanPnl = weightedMean(pnl);
+  const meanControl = weightedMean(controls);
+  const expectedControl = Number(options.expectedControl) || 0;
+
+  let covariance = 0;
+  let controlVariance = 0;
+  for (let i = 0; i < pnl.length; i += 1) {
+    const centeredPnl = pnl[i] - meanPnl;
+    const centeredControl = controls[i] - meanControl;
+    covariance += centeredPnl * centeredControl;
+    controlVariance += centeredControl * centeredControl;
+  }
+
+  const beta = controlVariance > 0 ? covariance / controlVariance : 0;
+  const adjustedPnlUsdc = pnl.map((value, index) => value - beta * (controls[index] - expectedControl));
+
+  return {
+    adjustedPnlUsdc,
+    beta,
+    expectedControl,
+  };
+}
+
+function buildMirrorSimulateLinear(options = {}) {
   const distribution = resolveDistribution(options);
   const allocation = computeCompleteSetAllocation({
     liquidityUsdc: options.liquidityUsdc,
@@ -535,6 +732,215 @@ function buildMirrorSimulate(options = {}) {
   };
 }
 
+function buildMirrorSimulateMonteCarlo(options = {}, linearPayload) {
+  const mcConfig = normalizeMcConfig(options);
+  const inputs = linearPayload && linearPayload.inputs ? linearPayload.inputs : {};
+  const initialState = linearPayload && linearPayload.initialState ? linearPayload.initialState : {};
+
+  const reserveYesStart = toOptionalNumber(initialState.reserveYesUsdc) || 0;
+  const reserveNoStart = toOptionalNumber(initialState.reserveNoUsdc) || 0;
+  const excessYesUsdc = toOptionalNumber(initialState.excessYesUsdc) || 0;
+  const excessNoUsdc = toOptionalNumber(initialState.excessNoUsdc) || 0;
+  const feeTier = Number.isFinite(Number(inputs.feeTier)) ? Number(inputs.feeTier) : 3000;
+  const hedgeRatio = clamp(toOptionalNumber(inputs.hedgeRatio) || 1, 0, 5);
+  const hedgeCostBps = Math.max(0, toOptionalNumber(inputs.hedgeCostBps) || 35);
+  const tradeSide = String(inputs.tradeSide || 'none').toLowerCase();
+  const polymarketYesPct = toPercent(inputs.polymarketYesPct) === null ? 50 : toPercent(inputs.polymarketYesPct);
+  const scenarioVolumes = Array.isArray(inputs.volumeScenarios)
+    ? inputs.volumeScenarios.map((value) => toOptionalNumber(value)).filter((value) => Number.isFinite(value) && value >= 0)
+    : [];
+  const averageScenarioVolume =
+    scenarioVolumes.length > 0
+      ? scenarioVolumes.reduce((acc, value) => acc + value, 0) / scenarioVolumes.length
+      : Math.max(1, toOptionalNumber(inputs.liquidityUsdc) || 1);
+  const baseVolumeUsdc = round(averageScenarioVolume, 6) || 1;
+
+  const rng = createSeededRng(mcConfig.seed);
+  const importanceShift = -0.75;
+  const pathResults = [];
+  const basePathCount = mcConfig.antithetic ? Math.ceil(mcConfig.paths / 2) : mcConfig.paths;
+
+  const runSinglePath = (pathIndex, antitheticSign) => {
+    let reserveYesUsdc = reserveYesStart;
+    let reserveNoUsdc = reserveNoStart;
+    let totalPnlUsdc = 0;
+    let totalFeesUsdc = 0;
+    let totalHedgeCostUsdc = 0;
+    let logWeight = 0;
+
+    for (let stepIndex = 0; stepIndex < mcConfig.steps; stepIndex += 1) {
+      let z =
+        sampleStandardNormal(rng, {
+          stratified: mcConfig.stratified,
+          pathIndex,
+          pathCount: mcConfig.paths,
+          stepIndex,
+        }) * antitheticSign;
+
+      if (mcConfig.importanceSampling) {
+        const shifted = z + importanceShift;
+        logWeight += -importanceShift * shifted + 0.5 * importanceShift * importanceShift;
+        z = shifted;
+      }
+
+      const volumeMultiplier = clamp(1 + 0.35 * z, 0.05, 3.5);
+      const stepVolumeUsdc = round(baseVolumeUsdc * volumeMultiplier, 6) || 0;
+      const swap = simulateDirectionalSwap({
+        reserveYesUsdc,
+        reserveNoUsdc,
+        side: tradeSide,
+        volumeUsdc: stepVolumeUsdc,
+        feeTier,
+      });
+
+      reserveYesUsdc = toOptionalNumber(swap.reserveYesUsdc) || reserveYesUsdc;
+      reserveNoUsdc = toOptionalNumber(swap.reserveNoUsdc) || reserveNoUsdc;
+
+      const hedge = computeHedgeMetrics({
+        reserveYesUsdc,
+        reserveNoUsdc,
+        excessYesUsdc,
+        excessNoUsdc,
+        hedgeRatio,
+        polymarketYesPct,
+        hedgeCostBps,
+        feeTier,
+      });
+
+      const stressMultiplier = 1 + Math.max(0, -z) * 0.2;
+      const hedgeCostUsdc = (hedge.hedgeCostApproxUsdc || 0) * stressMultiplier;
+      const feesEarnedUsdc = swap.feesEarnedUsdc || 0;
+      const stepPnlUsdc = feesEarnedUsdc - hedgeCostUsdc;
+
+      totalFeesUsdc += feesEarnedUsdc;
+      totalHedgeCostUsdc += hedgeCostUsdc;
+      totalPnlUsdc += stepPnlUsdc;
+    }
+
+    return {
+      totalPnlUsdc,
+      totalFeesUsdc,
+      totalHedgeCostUsdc,
+      logWeight,
+    };
+  };
+
+  for (let pathIndex = 0; pathIndex < basePathCount && pathResults.length < mcConfig.paths; pathIndex += 1) {
+    pathResults.push(runSinglePath(pathIndex, 1));
+    if (mcConfig.antithetic && pathResults.length < mcConfig.paths) {
+      pathResults.push(runSinglePath(pathIndex, -1));
+    }
+  }
+
+  const pathWeights = mcConfig.importanceSampling
+    ? normalizeWeightsFromLog(pathResults.map((entry) => entry.logWeight))
+    : new Array(pathResults.length).fill(1);
+
+  const feeRate = clamp(feeTier / 1_000_000, 0, 0.1);
+  const expectedControl = tradeSide === 'none' ? 0 : baseVolumeUsdc * mcConfig.steps * feeRate;
+  const control = mcConfig.controlVariate
+    ? applyControlVariate(pathResults, { expectedControl })
+    : {
+        adjustedPnlUsdc: pathResults.map((entry) => entry.totalPnlUsdc),
+        beta: 0,
+        expectedControl,
+      };
+
+  const adjustedPnlUsdc = control.adjustedPnlUsdc;
+  const lossesUsdc = adjustedPnlUsdc.map((value) => Math.max(0, -value));
+
+  const expectedPnlUsdc = weightedMean(adjustedPnlUsdc, pathWeights);
+  const stdDevPnlUsdc = weightedStdDev(adjustedPnlUsdc, pathWeights, expectedPnlUsdc);
+  const sampleCount = pathResults.length;
+  const nEff = effectiveSampleSize(pathWeights);
+  const sampleForCi = Math.max(1, nEff || sampleCount);
+  const standardError = stdDevPnlUsdc / Math.sqrt(sampleForCi);
+  const ci95LowUsdc = expectedPnlUsdc - 1.96 * standardError;
+  const ci95HighUsdc = expectedPnlUsdc + 1.96 * standardError;
+  const lossProbabilityPct = weightedMean(
+    adjustedPnlUsdc.map((value) => (value < 0 ? 1 : 0)),
+    pathWeights,
+  ) * 100;
+
+  const var95Usdc = weightedQuantile(lossesUsdc, pathWeights, 0.95);
+  const var99Usdc = weightedQuantile(lossesUsdc, pathWeights, 0.99);
+  const es95Usdc = weightedTailMean(lossesUsdc, pathWeights, var95Usdc);
+  const es99Usdc = weightedTailMean(lossesUsdc, pathWeights, var99Usdc);
+
+  const mcDiagnostics = [
+    `Monte Carlo executed ${sampleCount} paths x ${mcConfig.steps} steps (seed=${mcConfig.seed}).`,
+  ];
+  if (mcConfig.antithetic) {
+    mcDiagnostics.push('Variance reduction enabled: antithetic pairing.');
+  }
+  if (mcConfig.controlVariate) {
+    mcDiagnostics.push('Variance reduction enabled: control variate adjustment on fee accrual.');
+  }
+  if (mcConfig.stratified) {
+    mcDiagnostics.push('Variance reduction enabled: stratified normal draws.');
+  }
+  if (mcConfig.importanceSampling) {
+    mcDiagnostics.push('Tail sampling enabled: importance-sampling likelihood reweighting.');
+  }
+
+  return {
+    ...linearPayload,
+    inputs: {
+      ...inputs,
+      engine: 'mc',
+      paths: mcConfig.paths,
+      steps: mcConfig.steps,
+      seed: mcConfig.seed,
+      varianceReduction: {
+        importanceSampling: mcConfig.importanceSampling,
+        antithetic: mcConfig.antithetic,
+        controlVariate: mcConfig.controlVariate,
+        stratified: mcConfig.stratified,
+      },
+    },
+    mc: {
+      summary: {
+        paths: mcConfig.paths,
+        steps: mcConfig.steps,
+        seed: mcConfig.seed,
+        expectedPnlUsdc: round(expectedPnlUsdc, 6),
+        stdDevPnlUsdc: round(stdDevPnlUsdc, 6),
+        ci95LowUsdc: round(ci95LowUsdc, 6),
+        ci95HighUsdc: round(ci95HighUsdc, 6),
+        lossProbabilityPct: round(lossProbabilityPct, 6),
+        effectiveSampleSize: round(nEff || sampleCount, 6),
+        controlVariateBeta: mcConfig.controlVariate ? round(control.beta, 6) : null,
+      },
+      distribution: {
+        pnlUsdcPercentiles: {
+          p01: round(weightedQuantile(adjustedPnlUsdc, pathWeights, 0.01), 6),
+          p05: round(weightedQuantile(adjustedPnlUsdc, pathWeights, 0.05), 6),
+          p50: round(weightedQuantile(adjustedPnlUsdc, pathWeights, 0.5), 6),
+          p95: round(weightedQuantile(adjustedPnlUsdc, pathWeights, 0.95), 6),
+          p99: round(weightedQuantile(adjustedPnlUsdc, pathWeights, 0.99), 6),
+        },
+        minPnlUsdc: round(Math.min(...adjustedPnlUsdc), 6),
+        maxPnlUsdc: round(Math.max(...adjustedPnlUsdc), 6),
+      },
+      tailRisk: {
+        var95Usdc: round(var95Usdc, 6),
+        var99Usdc: round(var99Usdc, 6),
+        es95Usdc: round(es95Usdc, 6),
+        es99Usdc: round(es99Usdc, 6),
+      },
+      diagnostics: mcDiagnostics,
+    },
+    diagnostics: (Array.isArray(linearPayload.diagnostics) ? linearPayload.diagnostics : []).concat(mcDiagnostics),
+  };
+}
+
+function buildMirrorSimulate(options = {}) {
+  const engine = normalizeSimulateEngine(options.engine);
+  const linearPayload = buildMirrorSimulateLinear(options);
+  if (engine !== 'mc') return linearPayload;
+  return buildMirrorSimulateMonteCarlo(options, linearPayload);
+}
+
 module.exports = {
   MIRROR_LP_EXPLAIN_SCHEMA_VERSION,
   MIRROR_HEDGE_CALC_SCHEMA_VERSION,
@@ -546,5 +952,7 @@ module.exports = {
   computeHedgeMetrics,
   buildMirrorLpExplain,
   buildMirrorHedgeCalc,
+  buildMirrorSimulateLinear,
+  buildMirrorSimulateMonteCarlo,
   buildMirrorSimulate,
 };

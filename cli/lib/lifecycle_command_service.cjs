@@ -59,7 +59,10 @@ function readJsonFile(filePath, CliError) {
     raw = fs.readFileSync(filePath, 'utf8');
   } catch (err) {
     if (err && err.code === 'ENOENT') {
-      throw new CliError('NOT_FOUND', `Lifecycle not found for id: ${path.basename(filePath, '.json')}`);
+      throw new CliError('LIFECYCLE_NOT_FOUND', `Lifecycle not found for id: ${path.basename(filePath, '.json')}`, {
+        id: path.basename(filePath, '.json'),
+        filePath,
+      });
     }
     throw err;
   }
@@ -82,6 +85,15 @@ function writeJsonFileAtomic(filePath, payload) {
   } catch {
     // best-effort hardening
   }
+}
+
+function isMcpMode() {
+  return String(process.env.PANDORA_MCP_MODE || '').trim() === '1';
+}
+
+function isPathInside(baseDir, candidatePath) {
+  const relative = path.relative(baseDir, candidatePath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 function renderLifecycleTable(payload) {
@@ -110,6 +122,24 @@ function createRunLifecycleCommand(deps) {
   const emitSuccess = requireDep(deps, 'emitSuccess');
   const commandHelpPayload = requireDep(deps, 'commandHelpPayload');
   const parseLifecycleFlags = requireDep(deps, 'parseLifecycleFlags');
+
+  function assertMcpReadablePathAllowed(targetPath, flagName) {
+    if (!isMcpMode()) return;
+    const workspaceRoot = path.resolve(process.cwd());
+    const resolvedPath = path.resolve(targetPath);
+    if (!isPathInside(workspaceRoot, resolvedPath)) {
+      throw new CliError(
+        'MCP_FILE_ACCESS_BLOCKED',
+        `${flagName} must point to a file within the current workspace when running via MCP.`,
+        {
+          flag: flagName,
+          requestedPath: targetPath,
+          resolvedPath,
+          workspaceRoot,
+        },
+      );
+    }
+  }
 
   return async function runLifecycleCommand(args, context) {
     const action = args[0];
@@ -165,12 +195,15 @@ function createRunLifecycleCommand(deps) {
 
     if (options.action === 'start') {
       const configPath = path.resolve(process.cwd(), options.configPath);
+      assertMcpReadablePathAllowed(configPath, '--config');
       let configRaw;
       try {
         configRaw = fs.readFileSync(configPath, 'utf8');
       } catch (err) {
         if (err && err.code === 'ENOENT') {
-          throw new CliError('CONFIG_FILE_NOT_FOUND', `Lifecycle config file not found: ${configPath}`);
+          throw new CliError('CONFIG_FILE_NOT_FOUND', `Lifecycle config file not found: ${configPath}`, {
+            configPath,
+          });
         }
         throw err;
       }
@@ -179,7 +212,9 @@ function createRunLifecycleCommand(deps) {
       try {
         config = JSON.parse(configRaw);
       } catch {
-        throw new CliError('INVALID_JSON', `Lifecycle config must be valid JSON: ${configPath}`);
+        throw new CliError('INVALID_JSON', `Lifecycle config must be valid JSON: ${configPath}`, {
+          configPath,
+        });
       }
 
       if (!config || typeof config !== 'object' || Array.isArray(config)) {
@@ -197,7 +232,10 @@ function createRunLifecycleCommand(deps) {
 
       const filePath = lifecycleFilePath(lifecycleDir, id);
       if (fs.existsSync(filePath)) {
-        throw new CliError('LIFECYCLE_EXISTS', `Lifecycle already exists for id: ${id}`);
+        throw new CliError('LIFECYCLE_EXISTS', `Lifecycle already exists for id: ${id}`, {
+          id,
+          filePath,
+        });
       }
 
       const nowIso = new Date().toISOString();

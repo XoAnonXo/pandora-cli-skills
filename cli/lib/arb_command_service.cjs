@@ -14,7 +14,7 @@ const ARB_MARKET_FIELDS = [
 ];
 
 const ARB_USAGE =
-  'pandora arb scan --markets <csv> --output ndjson [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
+  'pandora arb scan --markets <csv> --output ndjson|json [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -139,6 +139,114 @@ function buildArbOpportunities(options) {
   return opportunities;
 }
 
+function enumerateCombinations(items, size, onCombination) {
+  if (!Array.isArray(items) || !Number.isInteger(size) || size < 1 || size > items.length) return;
+  if (typeof onCombination !== 'function') return;
+
+  const selected = [];
+  function walk(startIndex) {
+    if (selected.length === size) {
+      onCombination(selected.slice());
+      return;
+    }
+    const remaining = size - selected.length;
+    const maxStart = items.length - remaining;
+    for (let index = startIndex; index <= maxStart; index += 1) {
+      selected.push(items[index]);
+      walk(index + 1);
+      selected.pop();
+    }
+  }
+  walk(0);
+}
+
+/**
+ * Build bundle-level combinatorial opportunities across provided markets.
+ * @param {object} options
+ * @returns {object[]}
+ */
+function buildCombinatorialArbOpportunities(options) {
+  const marketSnapshots = Array.isArray(options.marketSnapshots)
+    ? options.marketSnapshots.filter((item) => item && Number.isFinite(item.yesPct))
+    : [];
+  if (marketSnapshots.length < 3) return [];
+
+  const minNetSpreadPct = Number.isFinite(options.minNetSpreadPct) ? Number(options.minNetSpreadPct) : 0;
+  const feePctPerLeg = Number.isFinite(options.feePctPerLeg) ? Number(options.feePctPerLeg) : 0;
+  const slippagePctPerLeg = Number.isFinite(options.slippagePctPerLeg) ? Number(options.slippagePctPerLeg) : 0;
+  const amountUsdc = Number.isFinite(options.amountUsdc) ? Number(options.amountUsdc) : 0;
+  const requestedMaxBundleSize = Number.isInteger(options.maxBundleSize) ? options.maxBundleSize : 4;
+  const maxBundleSize = Math.max(3, Math.min(requestedMaxBundleSize, marketSnapshots.length));
+
+  const opportunities = [];
+  for (let bundleSize = 3; bundleSize <= maxBundleSize; bundleSize += 1) {
+    enumerateCombinations(marketSnapshots, bundleSize, (bundle) => {
+      const bundleMarketIds = bundle.map((item) => item.id);
+      const sumYesPct = roundNumber(bundle.reduce((total, item) => total + Number(item.yesPct), 0), 6);
+      const sumNoPct = roundNumber(bundle.reduce((total, item) => total + (100 - Number(item.yesPct)), 0), 6);
+      const feeImpactPct = roundNumber(bundleSize * feePctPerLeg, 6);
+      const slippageImpactPct = roundNumber(bundleSize * slippagePctPerLeg, 6);
+
+      const evaluate = (strategy) => {
+        const grossEdgePct = strategy === 'buy_yes_bundle' ? roundNumber(100 - sumYesPct, 6) : roundNumber(sumYesPct - 100, 6);
+        if (grossEdgePct <= 0) return;
+
+        const netSpreadPct = roundNumber(grossEdgePct - feeImpactPct - slippageImpactPct, 6);
+        if (netSpreadPct <= 0 || netSpreadPct < minNetSpreadPct) return;
+
+        const payoutPct = strategy === 'buy_yes_bundle' ? 100 : roundNumber((bundleSize - 1) * 100, 6);
+        const totalEntryPct = strategy === 'buy_yes_bundle' ? sumYesPct : sumNoPct;
+        const grossProfitUsdc = roundNumber((amountUsdc * grossEdgePct) / 100, 6);
+        const profitUsdc = roundNumber((amountUsdc * netSpreadPct) / 100, 6);
+
+        opportunities.push({
+          opportunityType: 'combinatorial',
+          strategy,
+          pair: `bundle:${bundleMarketIds.join('|')}:${strategy}`,
+          bundleMarketIds,
+          bundleSize,
+          legs: bundle.map((item) => ({
+            marketId: item.id,
+            yesPct: roundNumber(item.yesPct, 6),
+            noPct: roundNumber(100 - item.yesPct, 6),
+          })),
+          sumYesPct,
+          sumNoPct,
+          totalEntryPct,
+          payoutPct,
+          grossSpreadPct: grossEdgePct,
+          grossEdgePct,
+          feePctPerLeg: roundNumber(feePctPerLeg, 6),
+          slippagePctPerLeg: roundNumber(slippagePctPerLeg, 6),
+          feeImpactPct,
+          slippageImpactPct,
+          netSpreadPct,
+          netSpread: roundNumber(netSpreadPct / 100, 8),
+          amountUsdc: roundNumber(amountUsdc, 6),
+          grossProfitUsdc,
+          profitUsdc,
+          profit: profitUsdc,
+        });
+      };
+
+      evaluate('buy_yes_bundle');
+      evaluate('buy_no_bundle');
+    });
+  }
+
+  opportunities.sort((left, right) => {
+    if (right.netSpreadPct !== left.netSpreadPct) {
+      return right.netSpreadPct - left.netSpreadPct;
+    }
+    if (right.bundleSize !== left.bundleSize) {
+      return right.bundleSize - left.bundleSize;
+    }
+    return left.pair.localeCompare(right.pair);
+  });
+
+  return opportunities;
+}
+
 /**
  * Parse `arb scan` command flags.
  * @param {string[]} args
@@ -159,7 +267,10 @@ function parseArbScanFlags(args, deps) {
     output: 'ndjson',
     minNetSpreadPct: 0,
     feePctPerLeg: 0,
+    slippagePctPerLeg: 0,
     amountUsdc: 100,
+    combinatorial: false,
+    maxBundleSize: 4,
     intervalMs: 5_000,
     iterations: null,
   };
@@ -187,8 +298,22 @@ function parseArbScanFlags(args, deps) {
       i += 1;
       continue;
     }
+    if (token === '--slippage-pct-per-leg') {
+      options.slippagePctPerLeg = parseNumber(requireFlagValue(rest, i, '--slippage-pct-per-leg'), '--slippage-pct-per-leg');
+      i += 1;
+      continue;
+    }
     if (token === '--amount-usdc') {
       options.amountUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--amount-usdc'), '--amount-usdc');
+      i += 1;
+      continue;
+    }
+    if (token === '--combinatorial') {
+      options.combinatorial = true;
+      continue;
+    }
+    if (token === '--max-bundle-size') {
+      options.maxBundleSize = parsePositiveInteger(requireFlagValue(rest, i, '--max-bundle-size'), '--max-bundle-size');
       i += 1;
       continue;
     }
@@ -210,8 +335,8 @@ function parseArbScanFlags(args, deps) {
     throw new CliError('MISSING_REQUIRED_FLAG', 'arb scan requires at least two markets via --markets <csv>.');
   }
 
-  if (options.output !== 'ndjson') {
-    throw new CliError('INVALID_FLAG_VALUE', 'arb scan currently supports only --output ndjson.');
+  if (!['ndjson', 'json'].includes(options.output)) {
+    throw new CliError('INVALID_FLAG_VALUE', 'arb scan supports --output ndjson|json.');
   }
 
   if (options.minNetSpreadPct < 0) {
@@ -220,6 +345,14 @@ function parseArbScanFlags(args, deps) {
 
   if (options.feePctPerLeg < 0) {
     throw new CliError('INVALID_FLAG_VALUE', '--fee-pct-per-leg must be >= 0.');
+  }
+
+  if (options.slippagePctPerLeg < 0) {
+    throw new CliError('INVALID_FLAG_VALUE', '--slippage-pct-per-leg must be >= 0.');
+  }
+
+  if (!Number.isInteger(options.maxBundleSize) || options.maxBundleSize < 3) {
+    throw new CliError('INVALID_FLAG_VALUE', '--max-bundle-size must be an integer >= 3.');
   }
 
   options.markets = Array.from(
@@ -232,6 +365,10 @@ function parseArbScanFlags(args, deps) {
 
   if (options.markets.length < 2) {
     throw new CliError('INVALID_ARGS', 'arb scan requires at least two distinct market ids.');
+  }
+
+  if (options.combinatorial && options.markets.length < 3) {
+    throw new CliError('INVALID_ARGS', 'arb scan --combinatorial requires at least three distinct market ids.');
   }
 
   return options;
@@ -291,8 +428,30 @@ function createRunArbCommand(deps) {
       parsePositiveInteger,
     });
 
+    const mcpMode = String(process.env.PANDORA_MCP_MODE || '').trim() === '1';
+    if (mcpMode && options.output !== 'json') {
+      throw new CliError('MCP_LONG_RUNNING_MODE_BLOCKED', 'arb scan via MCP requires --output json and a bounded iteration count.', {
+        toolName: 'arb.scan',
+        hints: ['Use arb.scan with --output json --iterations 1 when calling via MCP.'],
+      });
+    }
+
+    if (options.output === 'json' && !Number.isInteger(options.iterations)) {
+      options.iterations = 1;
+    }
+
+    if (options.output === 'json' && Number.isInteger(options.iterations) && options.iterations > 1) {
+      const code = mcpMode ? 'MCP_LONG_RUNNING_MODE_BLOCKED' : 'INVALID_FLAG_VALUE';
+      throw new CliError(code, 'arb scan --output json supports only --iterations 1.', {
+        toolName: 'arb.scan',
+        hints: ['Use --output ndjson for streaming multi-iteration scans.'],
+      });
+    }
+
     const maxIterations = Number.isInteger(options.iterations) ? options.iterations : Number.POSITIVE_INFINITY;
     let iteration = 0;
+    const iterationSnapshots = [];
+    let emittedCombinatorialCount = 0;
 
     while (iteration < maxIterations) {
       iteration += 1;
@@ -300,29 +459,91 @@ function createRunArbCommand(deps) {
         buildGraphqlGetQuery,
         graphqlRequest,
       });
-      const snapshots = buildMarketSnapshots(markets, options.markets);
-      const opportunities = buildArbOpportunities({
-        marketSnapshots: snapshots,
+      const marketSnapshots = buildMarketSnapshots(markets, options.markets);
+      const pairwiseOpportunities = buildArbOpportunities({
+        marketSnapshots,
         minNetSpreadPct: options.minNetSpreadPct,
         feePctPerLeg: options.feePctPerLeg,
         amountUsdc: options.amountUsdc,
       });
+      const combinatorialOpportunities = options.combinatorial
+        ? buildCombinatorialArbOpportunities({
+            marketSnapshots,
+            minNetSpreadPct: options.minNetSpreadPct,
+            feePctPerLeg: options.feePctPerLeg,
+            slippagePctPerLeg: options.slippagePctPerLeg,
+            amountUsdc: options.amountUsdc,
+            maxBundleSize: options.maxBundleSize,
+          })
+        : [];
+      emittedCombinatorialCount += combinatorialOpportunities.length;
+      const opportunities = [...pairwiseOpportunities, ...combinatorialOpportunities].sort((left, right) => {
+        if (right.netSpreadPct !== left.netSpreadPct) {
+          return right.netSpreadPct - left.netSpreadPct;
+        }
+        return String(left.pair || '').localeCompare(String(right.pair || ''));
+      });
 
-      for (const opportunity of opportunities) {
-        // eslint-disable-next-line no-console
-        console.log(
-          JSON.stringify({
-            type: 'arb.scan.opportunity',
-            timestamp: new Date().toISOString(),
-            iteration,
-            indexerUrl,
-            ...opportunity,
-          }),
-        );
+      if (options.output === 'ndjson') {
+        for (const opportunity of opportunities) {
+          // eslint-disable-next-line no-console
+          console.log(
+            JSON.stringify({
+              type: 'arb.scan.opportunity',
+              timestamp: new Date().toISOString(),
+              iteration,
+              indexerUrl,
+              ...opportunity,
+            }),
+          );
+        }
+      } else {
+        iterationSnapshots.push({
+          iteration,
+          observedAt: new Date().toISOString(),
+          count: opportunities.length,
+          pairwiseCount: pairwiseOpportunities.length,
+          combinatorialCount: combinatorialOpportunities.length,
+          opportunities,
+        });
       }
 
       if (iteration < maxIterations) {
         await sleepMs(options.intervalMs);
+      }
+    }
+
+    if (options.output === 'json') {
+      const diagnostics = [];
+      if (options.combinatorial && emittedCombinatorialCount === 0) {
+        diagnostics.push('No combinatorial bundles cleared net spread thresholds for this run.');
+      }
+
+      const payload = {
+        action: 'scan',
+        indexerUrl,
+        iterationsCompleted: iteration,
+        requestedIterations: options.iterations,
+        intervalMs: options.intervalMs,
+        filters: {
+          markets: options.markets,
+          minNetSpreadPct: options.minNetSpreadPct,
+          feePctPerLeg: options.feePctPerLeg,
+          slippagePctPerLeg: options.slippagePctPerLeg,
+          amountUsdc: options.amountUsdc,
+          combinatorial: options.combinatorial,
+          maxBundleSize: options.maxBundleSize,
+        },
+        opportunities: iterationSnapshots.flatMap((row) => row.opportunities),
+        snapshots: iterationSnapshots,
+        diagnostics,
+      };
+
+      if (context.outputMode === 'json') {
+        emitSuccess(context.outputMode, 'arb.scan', payload);
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(JSON.stringify(payload, null, 2));
       }
     }
   };
@@ -331,6 +552,7 @@ function createRunArbCommand(deps) {
 module.exports = {
   ARB_USAGE,
   buildArbOpportunities,
+  buildCombinatorialArbOpportunities,
   createRunArbCommand,
   parseArbScanFlags,
 };

@@ -130,6 +130,25 @@ pandora --output json lifecycle resolve --id <lifecycle-id> --confirm
 - `pandora schema`
 - `pandora mcp`
 
+## Quant ABM Baseline (Module Contract)
+
+- Deterministic ABM engine: `cli/lib/quant/abm_market.cjs`.
+- Simulate-agents handler module: `cli/lib/simulate_handlers/agents.cjs`.
+- Supported handler flags:
+  - `--n-informed` or `--n_informed`
+  - `--n-noise` or `--n_noise`
+  - `--n-mm` or `--n_mm`
+  - `--n-steps` or `--n_steps`
+  - `--seed`
+- ABM payload fields include:
+  - `convergenceError`
+  - `spreadTrajectory[]`
+  - `volume` (`total`, `averagePerStep`, `byAgentType`)
+  - `pnlByAgentType`
+  - `runtimeBounds` (`complexity`, `estimatedAgentDecisions`, `estimatedWorkUnits`)
+- Runtime bound metadata is documented as `O(n_steps * (n_informed + n_noise))`.
+- Unit coverage for this baseline is in `tests/unit/abm_market.test.cjs`.
+
 ## Docs
 
 - Full command contract and workflows: [`SKILL.md`](./SKILL.md)

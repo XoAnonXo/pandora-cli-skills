@@ -1,3 +1,5 @@
+const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseMirrorDeployFlags requires deps.${name}()`);
@@ -220,8 +222,11 @@ function createParseMirrorDeployFlags(deps) {
         'mirror deploy requires --plan-file <path> or a Polymarket selector (--polymarket-market-id/--polymarket-slug).',
       );
     }
-    if (![500, 3000, 10000].includes(options.feeTier)) {
-      throw new CliError('INVALID_FLAG_VALUE', '--fee-tier must be one of 500, 3000, 10000.');
+    if (options.feeTier < MIN_AMM_FEE_TIER || options.feeTier > MAX_AMM_FEE_TIER) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `--fee-tier must be between ${MIN_AMM_FEE_TIER} and ${MAX_AMM_FEE_TIER} (max 5%).`,
+      );
     }
     if (
       (options.distributionYes === null && options.distributionNo !== null) ||

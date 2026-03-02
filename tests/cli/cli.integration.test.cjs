@@ -1096,6 +1096,37 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.equal(payload.data.commandDescriptors['risk.show'].dataSchema, '#/definitions/RiskPayload');
   assert.ok(payload.data.commandDescriptors['risk.panic']);
   assert.equal(payload.data.commandDescriptors['risk.panic'].dataSchema, '#/definitions/RiskPayload');
+  assert.ok(payload.data.commandDescriptors.lifecycle);
+  assert.equal(payload.data.commandDescriptors.lifecycle.dataSchema, '#/definitions/LifecyclePayload');
+  assert.ok(payload.data.commandDescriptors['odds.record']);
+  assert.equal(payload.data.commandDescriptors['odds.record'].dataSchema, '#/definitions/OddsRecordPayload');
+  assert.ok(payload.data.commandDescriptors['odds.history']);
+  assert.equal(payload.data.commandDescriptors['odds.history'].dataSchema, '#/definitions/OddsHistoryPayload');
+  assert.ok(payload.data.commandDescriptors.portfolio);
+  assert.equal(payload.data.commandDescriptors.portfolio.dataSchema, '#/definitions/PortfolioPayload');
+  assert.ok(payload.data.commandDescriptors.export);
+  assert.equal(payload.data.commandDescriptors.export.dataSchema, '#/definitions/ExportPayload');
+  assert.ok(payload.data.commandDescriptors['arb.scan']);
+  assert.equal(payload.data.commandDescriptors['arb.scan'].dataSchema, '#/definitions/ArbScanPayload');
+  assert.match(payload.data.commandDescriptors['arb.scan'].usage, /--combinatorial/);
+  assert.match(payload.data.commandDescriptors['arb.scan'].usage, /--slippage-pct-per-leg/);
+  assert.ok(payload.data.commandDescriptors['simulate.mc']);
+  assert.equal(payload.data.commandDescriptors['simulate.mc'].dataSchema, '#/definitions/SimulateMcPayload');
+  assert.ok(payload.data.commandDescriptors['simulate.particle-filter']);
+  assert.equal(
+    payload.data.commandDescriptors['simulate.particle-filter'].dataSchema,
+    '#/definitions/SimulateParticleFilterPayload',
+  );
+  assert.ok(payload.data.commandDescriptors['simulate.agents']);
+  assert.equal(payload.data.commandDescriptors['simulate.agents'].dataSchema, '#/definitions/SimulateAgentsPayload');
+  assert.ok(payload.data.commandDescriptors['model.score.brier']);
+  assert.equal(payload.data.commandDescriptors['model.score.brier'].dataSchema, '#/definitions/ModelScoreBrierPayload');
+  assert.ok(payload.data.commandDescriptors['model.calibrate']);
+  assert.equal(payload.data.commandDescriptors['model.calibrate'].dataSchema, '#/definitions/ModelCalibratePayload');
+  assert.ok(payload.data.commandDescriptors['model.correlation']);
+  assert.equal(payload.data.commandDescriptors['model.correlation'].dataSchema, '#/definitions/ModelCorrelationPayload');
+  assert.ok(payload.data.commandDescriptors['model.diagnose']);
+  assert.equal(payload.data.commandDescriptors['model.diagnose'].dataSchema, '#/definitions/ModelDiagnosePayload');
   assert.ok(payload.data.commandDescriptors.schema);
   assert.deepEqual(payload.data.commandDescriptors.schema.outputModes, ['json']);
   assert.ok(payload.data.commandDescriptors.mcp);
@@ -1105,6 +1136,19 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions.TradePayload);
   assert.ok(payload.data.definitions.MirrorPlanPayload);
   assert.ok(payload.data.definitions.RiskPayload);
+  assert.ok(payload.data.definitions.LifecyclePayload);
+  assert.ok(payload.data.definitions.OddsRecordPayload);
+  assert.ok(payload.data.definitions.OddsHistoryPayload);
+  assert.ok(payload.data.definitions.PortfolioPayload);
+  assert.ok(payload.data.definitions.ExportPayload);
+  assert.ok(payload.data.definitions.ArbScanPayload);
+  assert.ok(payload.data.definitions.SimulateMcPayload);
+  assert.ok(payload.data.definitions.SimulateParticleFilterPayload);
+  assert.ok(payload.data.definitions.SimulateAgentsPayload);
+  assert.ok(payload.data.definitions.ModelScoreBrierPayload);
+  assert.ok(payload.data.definitions.ModelCalibratePayload);
+  assert.ok(payload.data.definitions.ModelCorrelationPayload);
+  assert.ok(payload.data.definitions.ModelDiagnosePayload);
   assert.ok(payload.data.definitions.ErrorRecoveryPayload);
 });
 
@@ -2892,6 +2936,41 @@ test('lifecycle start/status/resolve persists state and requires explicit confir
   }
 });
 
+test('odds record rejects insecure non-local indexer urls', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'odds',
+    'record',
+    '--indexer-url',
+    'http://example.com',
+  ]);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_INDEXER_URL');
+});
+
+test('odds record rejects insecure polymarket host urls', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'odds',
+    'record',
+    '--competition',
+    'soccer_epl',
+    '--interval',
+    '60',
+    '--polymarket-host',
+    'http://example.com',
+  ]);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /--polymarket-host must use https/i);
+});
+
 test('arb scan emits ndjson opportunities when net spread threshold is exceeded', async () => {
   const indexer = await startIndexerMockServer({
     markets: [
@@ -2961,6 +3040,178 @@ test('arb scan emits ndjson opportunities when net spread threshold is exceeded'
     assert.equal(lines[0].netSpread, 0.19);
     assert.equal(lines[0].profitUsdc, 19);
     assert.equal(lines[0].profit, 19);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('arb scan supports bounded JSON envelope output for agent integrations', async () => {
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: 'arb-json-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-json-1',
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710001000',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.40',
+        reserveYes: '400',
+        reserveNo: '600',
+        createdAt: '1700001000',
+      },
+      {
+        id: 'arb-json-2',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-json-2',
+        creator: ADDRESSES.wallet2,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710001001',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.61',
+        reserveYes: '610',
+        reserveNo: '390',
+        createdAt: '1700001001',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'arb',
+      'scan',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--markets',
+      'arb-json-1,arb-json-2',
+      '--output',
+      'json',
+      '--iterations',
+      '1',
+      '--min-net-spread-pct',
+      '5',
+      '--fee-pct-per-leg',
+      '0.5',
+      '--amount-usdc',
+      '100',
+    ]);
+
+    assert.equal(result.status, 0, result.output);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'arb.scan');
+    assert.equal(payload.data.iterationsCompleted, 1);
+    assert.equal(Array.isArray(payload.data.opportunities), true);
+    assert.equal(typeof payload.data.opportunities.length, 'number');
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('arb scan --combinatorial emits bundle opportunities with fee/slippage-adjusted net edge', async () => {
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: 'arb-combo-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-combo-1',
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710001100',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.20',
+        reserveYes: '200',
+        reserveNo: '800',
+        createdAt: '1700001100',
+      },
+      {
+        id: 'arb-combo-2',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-combo-2',
+        creator: ADDRESSES.wallet2,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710001101',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.25',
+        reserveYes: '250',
+        reserveNo: '750',
+        createdAt: '1700001101',
+      },
+      {
+        id: 'arb-combo-3',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-combo-3',
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710001102',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.30',
+        reserveYes: '300',
+        reserveNo: '700',
+        createdAt: '1700001102',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      'arb',
+      'scan',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--markets',
+      'arb-combo-1,arb-combo-2,arb-combo-3',
+      '--output',
+      'ndjson',
+      '--combinatorial',
+      '--max-bundle-size',
+      '3',
+      '--min-net-spread-pct',
+      '10',
+      '--fee-pct-per-leg',
+      '0.5',
+      '--slippage-pct-per-leg',
+      '0.25',
+      '--amount-usdc',
+      '100',
+      '--iterations',
+      '1',
+      '--interval-ms',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const lines = parseNdjsonOutput(result.stdout);
+    const combo = lines.find(
+      (row) =>
+        row &&
+        row.opportunityType === 'combinatorial' &&
+        row.strategy === 'buy_yes_bundle' &&
+        Array.isArray(row.bundleMarketIds) &&
+        row.bundleMarketIds.length === 3,
+    );
+
+    assert.ok(combo);
+    assert.equal(combo.grossEdgePct, 25);
+    assert.equal(combo.feeImpactPct, 1.5);
+    assert.equal(combo.slippageImpactPct, 0.75);
+    assert.equal(combo.netSpreadPct, 22.75);
+    assert.equal(combo.profitUsdc, 22.75);
   } finally {
     await indexer.close();
   }
@@ -3388,6 +3639,261 @@ test('mirror simulate returns deterministic scenarios for LP economics planning'
   assert.equal(payload.data.inputs.tradeSide, 'yes');
 });
 
+test('simulate namespace supports scoped json help', () => {
+  const result = runCli(['--output', 'json', 'simulate', '--help']);
+  assert.equal(result.status, 0);
+
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'simulate.help');
+  assert.match(payload.data.usage, /simulate mc\|particle-filter\|agents/);
+});
+
+test('simulate mc returns deterministic CI + VaR/ES with seed replay', () => {
+  const args = [
+    '--output',
+    'json',
+    'simulate',
+    'mc',
+    '--trials',
+    '2500',
+    '--horizon',
+    '48',
+    '--start-yes-pct',
+    '57',
+    '--entry-yes-pct',
+    '57',
+    '--position',
+    'yes',
+    '--stake-usdc',
+    '100',
+    '--drift-bps',
+    '0',
+    '--vol-bps',
+    '175',
+    '--confidence',
+    '95',
+    '--var-level',
+    '95',
+    '--seed',
+    '23',
+    '--antithetic',
+  ];
+
+  const first = runCli(args);
+  const second = runCli(args);
+  assert.equal(first.status, 0);
+  assert.equal(second.status, 0);
+
+  const firstPayload = parseJsonOutput(first);
+  const secondPayload = parseJsonOutput(second);
+
+  assert.equal(firstPayload.command, 'simulate.mc');
+  assert.equal(secondPayload.command, 'simulate.mc');
+  assert.equal(firstPayload.data.summary.finalYesPct.mean, secondPayload.data.summary.finalYesPct.mean);
+  assert.equal(firstPayload.data.summary.pnlUsdc.mean, secondPayload.data.summary.pnlUsdc.mean);
+  assert.equal(
+    firstPayload.data.summary.risk.valueAtRiskUsdc,
+    secondPayload.data.summary.risk.valueAtRiskUsdc,
+  );
+  assert.equal(
+    firstPayload.data.summary.risk.expectedShortfallUsdc,
+    secondPayload.data.summary.risk.expectedShortfallUsdc,
+  );
+  assert.equal(typeof firstPayload.data.summary.finalYesPct.ciLower, 'number');
+  assert.equal(typeof firstPayload.data.summary.finalYesPct.ciUpper, 'number');
+  assert.equal(typeof firstPayload.data.summary.risk.valueAtRiskUsdc, 'number');
+  assert.equal(typeof firstPayload.data.summary.risk.expectedShortfallUsdc, 'number');
+});
+
+test('simulate particle-filter consumes inline observations and emits ESS diagnostics', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'simulate',
+    'particle-filter',
+    '--observations-json',
+    '[{\"yesPct\":52},null,{\"yesPct\":49},{\"yesPct\":51}]',
+    '--particles',
+    '600',
+    '--process-noise',
+    '0.15',
+    '--observation-noise',
+    '0.08',
+    '--resample-threshold',
+    '0.55',
+    '--resample-method',
+    'systematic',
+    '--credible-interval',
+    '90',
+    '--seed',
+    '31',
+  ]);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.command, 'simulate.particle-filter');
+  assert.equal(payload.data.trajectory.length, 4);
+  assert.equal(payload.data.summary.observedCount, 3);
+  assert.equal(payload.data.summary.missingCount, 1);
+  assert.equal(typeof payload.data.summary.averageEss, 'number');
+  assert.equal(Array.isArray(payload.data.diagnostics), true);
+  assert.equal(payload.data.diagnostics.some((item) => item && item.code === 'SPARSE_OBSERVATIONS'), true);
+});
+
+test('simulate particle-filter accepts NDJSON file input', () => {
+  const tempDir = createTempDir('pandora-simulate-pf-');
+  const inputPath = path.join(tempDir, 'observations.ndjson');
+  writeFile(
+    inputPath,
+    ['{\"yesPct\":48}', '{\"yesPct\":49}', '{\"yesPct\":52}', '{\"yesPct\":54}'].join('\n'),
+  );
+
+  try {
+    const result = runCli([
+      '--output',
+      'json',
+      'simulate',
+      'particle-filter',
+      '--input',
+      inputPath,
+      '--particles',
+      '700',
+      '--seed',
+      '5',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'simulate.particle-filter');
+    assert.equal(payload.data.trajectory.length, 4);
+    assert.equal(typeof payload.data.summary.final.filteredYesPct, 'number');
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('simulate agents returns deterministic ABM diagnostics in json mode', () => {
+  const args = [
+    '--output',
+    'json',
+    'simulate',
+    'agents',
+    '--n-informed',
+    '6',
+    '--n-noise',
+    '20',
+    '--n-mm',
+    '4',
+    '--n-steps',
+    '35',
+    '--seed',
+    '99',
+  ];
+
+  const first = runCli(args);
+  const second = runCli(args);
+  assert.equal(first.status, 0);
+  assert.equal(second.status, 0);
+
+  const firstPayload = parseJsonOutput(first);
+  const secondPayload = parseJsonOutput(second);
+  const { generatedAt: _firstGeneratedAt, ...firstDataStable } = firstPayload.data;
+  const { generatedAt: _secondGeneratedAt, ...secondDataStable } = secondPayload.data;
+
+  assert.equal(firstPayload.ok, true);
+  assert.equal(firstPayload.command, 'simulate.agents');
+  assert.deepEqual(firstDataStable, secondDataStable);
+  assert.equal(firstPayload.data.parameters.n_informed, 6);
+  assert.equal(firstPayload.data.parameters.n_noise, 20);
+  assert.equal(firstPayload.data.parameters.n_mm, 4);
+  assert.equal(firstPayload.data.parameters.n_steps, 35);
+  assert.equal(typeof firstPayload.data.finalState.midPrice, 'number');
+  assert.equal(typeof firstPayload.data.volume.total, 'number');
+  assert.equal(typeof firstPayload.data.runtimeBounds.estimatedWorkUnits, 'number');
+});
+
+test('mirror simulate --engine mc returns Monte Carlo summary and tail risk blocks', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'simulate',
+    '--liquidity-usdc',
+    '5000',
+    '--source-yes-pct',
+    '60',
+    '--target-yes-pct',
+    '60',
+    '--polymarket-yes-pct',
+    '60',
+    '--engine',
+    'mc',
+    '--paths',
+    '400',
+    '--steps',
+    '16',
+    '--seed',
+    '17',
+    '--importance-sampling',
+    '--antithetic',
+    '--control-variate',
+    '--stratified',
+    '--volume-scenarios',
+    '500,2500',
+  ]);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.simulate');
+  assert.equal(payload.data.inputs.engine, 'mc');
+  assert.equal(payload.data.mc.summary.paths, 400);
+  assert.equal(payload.data.mc.summary.steps, 16);
+  assert.equal(payload.data.mc.summary.seed, 17);
+  assert.equal(typeof payload.data.mc.tailRisk.var95Usdc, 'number');
+  assert.equal(typeof payload.data.mc.tailRisk.var99Usdc, 'number');
+  assert.equal(typeof payload.data.mc.tailRisk.es95Usdc, 'number');
+  assert.equal(typeof payload.data.mc.tailRisk.es99Usdc, 'number');
+  assert.ok(payload.data.mc.tailRisk.var99Usdc >= payload.data.mc.tailRisk.var95Usdc);
+});
+
+test('model diagnose returns classification and machine-readable gating flags', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'model',
+    'diagnose',
+    '--calibration-rmse',
+    '0.12',
+    '--drift-bps',
+    '85',
+    '--spread-bps',
+    '70',
+    '--depth-coverage',
+    '0.72',
+    '--informed-flow-ratio',
+    '0.61',
+    '--noise-ratio',
+    '0.34',
+    '--anomaly-rate',
+    '0.08',
+    '--manipulation-alerts',
+    '1',
+    '--tail-dependence',
+    '0.22',
+  ]);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'model.diagnose');
+  assert.equal(typeof payload.data.aggregate.classification, 'string');
+  assert.equal(typeof payload.data.flags.allowExecution, 'boolean');
+  assert.equal(typeof payload.data.flags.requireHumanReview, 'boolean');
+  assert.equal(typeof payload.data.flags.blockExecution, 'boolean');
+});
+
 test('mirror deploy dry-run materializes deployment args without chain writes', async () => {
   const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
   const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
@@ -3407,7 +3913,7 @@ test('mirror deploy dry-run materializes deployment args without chain writes', 
       'poly-cond-1',
       '--dry-run',
       '--fee-tier',
-      '3000',
+      '50000',
     ]);
 
     assert.equal(result.status, 0);
@@ -3417,11 +3923,31 @@ test('mirror deploy dry-run materializes deployment args without chain writes', 
     assert.equal(payload.data.schemaVersion, '1.0.0');
     assert.equal(payload.data.dryRun, true);
     assert.equal(payload.data.tx, null);
-    assert.equal(payload.data.deploymentArgs.feeTier, 3000);
+    assert.equal(payload.data.deploymentArgs.feeTier, 50000);
   } finally {
     await indexer.close();
     await polymarket.close();
   }
+});
+
+test('mirror deploy rejects fee tiers above 5%', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'deploy',
+    '--dry-run',
+    '--polymarket-market-id',
+    'poly-cond-1',
+    '--fee-tier',
+    '50001',
+  ]);
+
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /--fee-tier must be between 500 and 50000/i);
 });
 
 test('mirror deploy validates --private-key format', async () => {
@@ -5241,4 +5767,64 @@ test('polymarket fork mode validates FORK_RPC_URL from env', () => {
   const payload = parseJsonOutput(result);
   assert.equal(payload.ok, false);
   assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+});
+
+test('model calibrate returns jump-diffusion artifact and persists with --save-model', () => {
+  const tempDir = createTempDir('pandora-model-calibrate-cli-');
+  const modelPath = path.join(tempDir, 'jd-model.json');
+
+  try {
+    const result = runCli([
+      '--output',
+      'json',
+      'model',
+      'calibrate',
+      '--returns',
+      '0.03,-0.04,0.01,-0.02,0.05,-0.06,0.02,-0.01',
+      '--jump-threshold-sigma',
+      '1.2',
+      '--model-id',
+      'cli-jd',
+      '--save-model',
+      modelPath,
+    ]);
+
+    assert.equal(result.status, 0, result.output);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'model.calibrate');
+    assert.equal(payload.data.model.kind, 'jump_diffusion');
+    assert.equal(payload.data.model.modelId, 'cli-jd');
+    assert.equal(payload.data.persistence.saved, true);
+    assert.equal(fs.existsSync(modelPath), true);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('model correlation defaults to t-copula and emits stress metrics', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'model',
+    'correlation',
+    '--series',
+    'btc:0.03,-0.04,0.01,-0.02,0.05,-0.06,0.02,-0.01',
+    '--series',
+    'eth:0.04,-0.05,0.02,-0.01,0.06,-0.08,0.03,-0.02',
+    '--series',
+    'sol:0.05,-0.06,0.02,-0.03,0.07,-0.1,0.04,-0.02',
+    '--compare',
+    'gaussian,clayton',
+  ]);
+
+  assert.equal(result.status, 0, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'model.correlation');
+  assert.equal(payload.data.copula.family, 't');
+  assert.equal(payload.data.metrics.labels.length, 3);
+  assert.ok(payload.data.metrics.pairwise.length >= 3);
+  assert.equal(typeof payload.data.stress.jointExtremeProbability, 'number');
+  assert.equal(Array.isArray(payload.data.stress.scenarioResults), true);
 });

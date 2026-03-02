@@ -99,6 +99,58 @@ function buildSportsResolvePlanRetryCommand(cliName, details) {
   return `${cliName} sports resolve plan --event-id ${eventId}`;
 }
 
+function buildLifecycleStatusCommand(cliName, details) {
+  const id = cleanToken(details && details.id, '<lifecycle-id>');
+  return `${cliName} lifecycle status --id ${id}`;
+}
+
+function buildLifecycleStartCommand(cliName, details) {
+  const configPath = cleanToken(details && details.configPath, '<config-file>');
+  return `${cliName} lifecycle start --config ${configPath}`;
+}
+
+function buildOddsRecordCommand(cliName, details) {
+  const competition = cleanToken(details && details.competition, '<competition>');
+  return `${cliName} odds record --competition ${competition} --interval 60 --max-samples 1`;
+}
+
+function buildOddsHistoryCommand(cliName, details) {
+  const eventId = cleanToken(details && details.eventId, '<event-id>');
+  return `${cliName} odds history --event-id ${eventId} --output json`;
+}
+
+function buildArbScanCommand(cliName) {
+  return `${cliName} arb scan --markets <market-a>,<market-b> --output json --iterations 1`;
+}
+
+function buildSimulateMcCommand(cliName) {
+  return `${cliName} simulate mc --help`;
+}
+
+function buildSimulateParticleFilterCommand(cliName) {
+  return `${cliName} simulate particle-filter --help`;
+}
+
+function buildSimulateAgentsCommand(cliName) {
+  return `${cliName} simulate agents --help`;
+}
+
+function buildModelScoreBrierCommand(cliName) {
+  return `${cliName} model score brier --help`;
+}
+
+function buildModelCalibrateCommand(cliName) {
+  return `${cliName} model calibrate --help`;
+}
+
+function buildModelCorrelationCommand(cliName) {
+  return `${cliName} model correlation --help`;
+}
+
+function buildModelDiagnoseCommand(cliName) {
+  return `${cliName} model diagnose --help`;
+}
+
 /**
  * Build deterministic Next-Best-Action recovery hints for JSON errors.
  * @param {{cliName?: string}} [options]
@@ -182,6 +234,12 @@ function createErrorRecoveryService(options = {}) {
           command: `${cliName} --output json schema`,
           retryable: true,
         };
+      case 'MCP_TOOL_UNAVAILABLE':
+        return {
+          action: 'Tool contract exists but this build does not yet include its executable handler',
+          command: `${cliName} --output json schema`,
+          retryable: true,
+        };
       case 'ERR_RISK_LIMIT':
       case 'RISK_PANIC_ACTIVE':
       case 'RISK_KILL_SWITCH_ACTIVE':
@@ -262,6 +320,103 @@ function createErrorRecoveryService(options = {}) {
         return {
           action: 'Wait for stable final status and retry resolve plan',
           command: buildSportsResolvePlanRetryCommand(cliName, details),
+          retryable: true,
+        };
+      case 'LIFECYCLE_EXISTS':
+        return {
+          action: 'Inspect existing lifecycle state before creating another run',
+          command: buildLifecycleStatusCommand(cliName, details),
+          retryable: true,
+        };
+      case 'CONFIG_FILE_NOT_FOUND':
+        return {
+          action: 'Create/fix lifecycle config file and retry start',
+          command: buildLifecycleStartCommand(cliName, details),
+          retryable: true,
+        };
+      case 'LIFECYCLE_NOT_FOUND':
+        return {
+          action: 'Verify lifecycle id and inspect currently tracked runs',
+          command: `${cliName} lifecycle status --id <lifecycle-id>`,
+          retryable: true,
+        };
+      case 'ODDS_RECORD_CONNECTOR_FAILED':
+      case 'ODDS_RECORD_FAILED':
+      case 'ODDS_RECORD_WRITE_FAILED':
+        return {
+          action: 'Run one bounded odds capture sample to isolate connector/storage errors',
+          command: buildOddsRecordCommand(cliName, details),
+          retryable: true,
+        };
+      case 'ODDS_HISTORY_READ_FAILED':
+      case 'ODDS_HISTORY_FAILED':
+        return {
+          action: 'Retry odds history read with explicit event id and JSON output',
+          command: buildOddsHistoryCommand(cliName, details),
+          retryable: true,
+        };
+      case 'ARB_SCAN_FAILED':
+      case 'ARB_SCAN_INVALID_OUTPUT':
+        return {
+          action: 'Run a bounded arb scan iteration for deterministic diagnostics',
+          command: buildArbScanCommand(cliName),
+          retryable: true,
+        };
+      case 'SIMULATE_MC_FAILED':
+      case 'SIMULATE_MC_INVALID_INPUT':
+        return {
+          action: 'Inspect Monte Carlo command flags and rerun with bounded parameters',
+          command: buildSimulateMcCommand(cliName),
+          retryable: true,
+        };
+      case 'SIMULATE_PARTICLE_FILTER_FAILED':
+      case 'SIMULATE_PARTICLE_FILTER_INVALID_INPUT':
+        return {
+          action: 'Inspect particle-filter command flags and input schema',
+          command: buildSimulateParticleFilterCommand(cliName),
+          retryable: true,
+        };
+      case 'SIMULATE_AGENTS_FAILED':
+      case 'SIMULATE_AGENTS_INVALID_INPUT':
+        return {
+          action: 'Inspect agents simulation command flags and rerun with deterministic seed',
+          command: buildSimulateAgentsCommand(cliName),
+          retryable: true,
+        };
+      case 'MODEL_SCORE_BRIER_FAILED':
+      case 'MODEL_SCORE_BRIER_INVALID_INPUT':
+        return {
+          action: 'Inspect Brier scoring command inputs and rerun in read-only mode',
+          command: buildModelScoreBrierCommand(cliName),
+          retryable: true,
+        };
+      case 'MODEL_CALIBRATE_FAILED':
+      case 'MODEL_CALIBRATE_INVALID_INPUT':
+      case 'MODEL_STORE_WRITE_FAILED':
+        return {
+          action: 'Inspect calibration flags and model artifact path before retrying',
+          command: buildModelCalibrateCommand(cliName),
+          retryable: true,
+        };
+      case 'MODEL_CORRELATION_FAILED':
+      case 'MODEL_CORRELATION_INVALID_INPUT':
+        return {
+          action: 'Inspect correlation/correlation-model flags and rerun with bounded sample size',
+          command: buildModelCorrelationCommand(cliName),
+          retryable: true,
+        };
+      case 'MODEL_DIAGNOSE_FAILED':
+      case 'MODEL_DIAGNOSE_INVALID_INPUT':
+      case 'MODEL_STORE_READ_FAILED':
+        return {
+          action: 'Inspect diagnose flags and model artifact references before retrying',
+          command: buildModelDiagnoseCommand(cliName),
+          retryable: true,
+        };
+      case 'MCP_FILE_ACCESS_BLOCKED':
+        return {
+          action: 'Use a workspace-relative file path when invoking tools via MCP',
+          command: `${cliName} help`,
           retryable: true,
         };
       case 'MISSING_REQUIRED_FLAG':
