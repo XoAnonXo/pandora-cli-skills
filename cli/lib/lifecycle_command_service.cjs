@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createHash } = require('crypto');
+const { assertMcpWorkspacePath } = require('./shared/mcp_path_guard.cjs');
 
 const LIFECYCLE_PHASES = [
   'DETECTED',
@@ -87,15 +88,6 @@ function writeJsonFileAtomic(filePath, payload) {
   }
 }
 
-function isMcpMode() {
-  return String(process.env.PANDORA_MCP_MODE || '').trim() === '1';
-}
-
-function isPathInside(baseDir, candidatePath) {
-  const relative = path.relative(baseDir, candidatePath);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
 function renderLifecycleTable(payload) {
   // eslint-disable-next-line no-console
   console.log(`Lifecycle: ${payload.id}`);
@@ -124,21 +116,10 @@ function createRunLifecycleCommand(deps) {
   const parseLifecycleFlags = requireDep(deps, 'parseLifecycleFlags');
 
   function assertMcpReadablePathAllowed(targetPath, flagName) {
-    if (!isMcpMode()) return;
-    const workspaceRoot = path.resolve(process.cwd());
-    const resolvedPath = path.resolve(targetPath);
-    if (!isPathInside(workspaceRoot, resolvedPath)) {
-      throw new CliError(
-        'MCP_FILE_ACCESS_BLOCKED',
-        `${flagName} must point to a file within the current workspace when running via MCP.`,
-        {
-          flag: flagName,
-          requestedPath: targetPath,
-          resolvedPath,
-          workspaceRoot,
-        },
-      );
-    }
+    assertMcpWorkspacePath(targetPath, {
+      flagName,
+      errorFactory: (code, message, details) => new CliError(code, message, details),
+    });
   }
 
   return async function runLifecycleCommand(args, context) {

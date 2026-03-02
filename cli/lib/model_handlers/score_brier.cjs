@@ -1,29 +1,13 @@
 const path = require('path');
-
-function isMcpMode() {
-  return String(process.env.PANDORA_MCP_MODE || '').trim() === '1';
-}
+const { isMcpMode, assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
 
 function ensureFileAccessAllowed(rawPath, CliError) {
   const target = String(rawPath || '').trim();
   if (!target) return null;
-  const resolved = path.resolve(target);
-  if (!isMcpMode()) return resolved;
-
-  const workspaceRoot = path.resolve(process.cwd());
-  if (resolved === workspaceRoot || resolved.startsWith(`${workspaceRoot}${path.sep}`)) {
-    return resolved;
-  }
-
-  throw new CliError(
-    'MCP_FILE_ACCESS_BLOCKED',
-    `MCP mode blocks model score brier file access outside workspace: ${resolved}`,
-    {
-      path: resolved,
-      workspaceRoot,
-      hints: ['Place forecast files under the active workspace when calling via MCP.'],
-    },
-  );
+  return assertMcpWorkspacePath(target, {
+    flagName: '--forecast-file',
+    errorFactory: (code, message, details) => new CliError(code, message, details),
+  });
 }
 
 function defaultMcpForecastFile() {

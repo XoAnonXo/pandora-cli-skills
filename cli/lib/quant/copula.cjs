@@ -1,15 +1,7 @@
 const { createRng } = require('./rng.cjs');
+const { createQuantError } = require('./errors.cjs');
 
 const COPULA_SCHEMA_VERSION = '1.0.0';
-
-function createQuantError(code, message, details) {
-  const error = new Error(message);
-  error.code = code;
-  if (details !== undefined) {
-    error.details = details;
-  }
-  return error;
-}
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));

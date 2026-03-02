@@ -1,11 +1,4 @@
-function createQuantError(code, message, details) {
-  const error = new Error(message);
-  error.code = code;
-  if (details !== undefined) {
-    error.details = details;
-  }
-  return error;
-}
+const { createQuantError } = require('./errors.cjs');
 
 function ensureNumericArray(values, name) {
   if (!Array.isArray(values) || values.length === 0) {
@@ -26,7 +19,13 @@ function ensureNumericArray(values, name) {
 
 function logSumExp(logValues) {
   ensureNumericArray(logValues, 'logValues');
-  const maxValue = Math.max(...logValues.map((value) => Number(value)));
+  let maxValue = Number(logValues[0]);
+  for (let i = 1; i < logValues.length; i += 1) {
+    const candidate = Number(logValues[i]);
+    if (candidate > maxValue) {
+      maxValue = candidate;
+    }
+  }
   let accumulator = 0;
   for (let i = 0; i < logValues.length; i += 1) {
     accumulator += Math.exp(Number(logValues[i]) - maxValue);

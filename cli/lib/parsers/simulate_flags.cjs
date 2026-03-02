@@ -1,4 +1,5 @@
 const path = require('path');
+const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -7,33 +8,11 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
-function isMcpMode() {
-  return String(process.env.PANDORA_MCP_MODE || '').trim() === '1';
-}
-
-function isPathInside(baseDir, candidatePath) {
-  const relative = path.relative(baseDir, candidatePath);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
 function assertMcpReadablePathAllowed(rawPath, CliError) {
-  if (!isMcpMode()) return;
-  const workspaceRoot = path.resolve(process.cwd());
-  const resolvedPath = path.resolve(String(rawPath || ''));
-  if (isPathInside(workspaceRoot, resolvedPath)) {
-    return;
-  }
-
-  throw new CliError(
-    'MCP_FILE_ACCESS_BLOCKED',
-    '--input must point to a file within the current workspace when running via MCP.',
-    {
-      flag: '--input',
-      requestedPath: rawPath,
-      resolvedPath,
-      workspaceRoot,
-    },
-  );
+  assertMcpWorkspacePath(rawPath, {
+    flagName: '--input',
+    errorFactory: (code, message, details) => new CliError(code, message, details),
+  });
 }
 
 function createParseSimulateMcFlags(deps) {

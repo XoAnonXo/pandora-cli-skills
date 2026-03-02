@@ -1,5 +1,5 @@
 const fs = require('fs');
-const path = require('path');
+const { assertMcpWorkspacePath } = require('./shared/mcp_path_guard.cjs');
 
 function createModelInputError(code, message, details = undefined) {
   const err = new Error(message);
@@ -10,31 +10,11 @@ function createModelInputError(code, message, details = undefined) {
   return err;
 }
 
-function isMcpMode() {
-  return String(process.env.PANDORA_MCP_MODE || '').trim() === '1';
-}
-
-function isPathInside(baseDir, candidatePath) {
-  const relative = path.relative(baseDir, candidatePath);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
 function assertMcpReadablePathAllowed(rawPath, flagName) {
-  if (!isMcpMode()) return;
-  const workspaceRoot = path.resolve(process.cwd());
-  const resolvedPath = path.resolve(String(rawPath || ''));
-  if (!isPathInside(workspaceRoot, resolvedPath)) {
-    throw createModelInputError(
-      'MCP_FILE_ACCESS_BLOCKED',
-      `${flagName} must point to a file within the current workspace when running via MCP.`,
-      {
-        flag: flagName,
-        requestedPath: rawPath,
-        resolvedPath,
-        workspaceRoot,
-      },
-    );
-  }
+  assertMcpWorkspacePath(rawPath, {
+    flagName,
+    errorFactory: createModelInputError,
+  });
 }
 
 function parseSportsModelInput(raw, sourceLabel = 'model input') {

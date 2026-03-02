@@ -1,13 +1,5 @@
 const { mean, variance } = require('./mc_stats.cjs');
-
-function createQuantError(code, message, details) {
-  const error = new Error(message);
-  error.code = code;
-  if (details !== undefined) {
-    error.details = details;
-  }
-  return error;
-}
+const { createQuantError } = require('./errors.cjs');
 
 function ensureRng(rng) {
   if (!rng || typeof rng.next !== 'function' || typeof rng.nextNormal !== 'function') {

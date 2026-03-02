@@ -385,6 +385,19 @@ function createErrorRecoveryService(options = {}) {
         };
       case 'MODEL_SCORE_BRIER_FAILED':
       case 'MODEL_SCORE_BRIER_INVALID_INPUT':
+      case 'BRIER_FAILED':
+      case 'BRIER_INVALID_INPUT':
+      case 'BRIER_INVALID_GROUP_BY':
+      case 'BRIER_INVALID_OUTCOME':
+      case 'BRIER_INVALID_RECORD':
+      case 'FORECAST_READ_FAILED':
+      case 'FORECAST_WRITE_FAILED':
+      case 'FORECAST_INVALID_RECORD':
+      case 'FORECAST_INVALID_PROBABILITY':
+      case 'FORECAST_INVALID_OUTCOME':
+      case 'FORECAST_INVALID_TIMESTAMP':
+      case 'FORECAST_STORE_UNAVAILABLE':
+      case 'FORECAST_PROBABILITY_UNAVAILABLE':
         return {
           action: 'Inspect Brier scoring command inputs and rerun in read-only mode',
           command: buildModelScoreBrierCommand(cliName),

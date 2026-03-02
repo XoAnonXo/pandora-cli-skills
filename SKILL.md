@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Canonical skill and operator guide for Pandora CLI including mirror, polymarket, resolve, and LP flows.
-version: 1.1.44
+version: 1.1.46
 ---
 
 # Pandora CLI & Skills
@@ -48,6 +48,7 @@ npm link
 - Phase 3 analytics command: `pandora portfolio`
 - Phase 3 monitoring command: `pandora watch`
 - Phase 3 watch alerts: `--alert-yes-*`, `--alert-net-liquidity-*`, `--fail-on-alert`
+- Phase 3 forecast scoring flags: `--track-brier`, `--brier-source`, `--brier-file`
 - Phase 4 commands:
   - `pandora history`
   - `pandora export`
@@ -61,6 +62,9 @@ npm link
   - `pandora resolve`
   - `pandora lp add|remove|positions`
   - `pandora stream prices|events`
+- Quant/model commands:
+  - `pandora simulate mc|particle-filter|agents`
+  - `pandora model calibrate|correlation|diagnose|score brier`
 - Fork runtime flags for transaction families:
   - `--fork`
   - `--fork-rpc-url <url>`
@@ -116,7 +120,7 @@ pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--b
 pandora [--output table|json] markets get [--id <id> ...] [--stdin]
 pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]
 pandora [--output table|json] lifecycle start --config <path>|status --id <id>|resolve --id <id> --confirm
-pandora arb scan --markets <csv> --output ndjson|json [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--iterations <n>] [--interval-ms <ms>]
+pandora arb scan --markets <csv> --output ndjson|json [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--iterations <n>] [--interval-ms <ms>]
 pandora [--output table|json] odds record --competition <id> --interval <sec> [--max-samples <n>] [--event-id <id>] [--venues pandora_amm,polymarket]
 pandora [--output table|json] odds history --event-id <id> --output csv|json [--limit <n>]
 pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
@@ -125,7 +129,7 @@ pandora [--output table|json] events list [--type all|liquidity|oracle-fee|claim
 pandora [--output table|json] events get --id <id> [--type all|liquidity|oracle-fee|claim]
 pandora [--output table|json] positions list [--wallet <address>] [--market-address <address>] [--chain-id <id>] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--where-json <json>]
 pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
-pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]
+pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
 pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand]
 pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
 pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
@@ -134,6 +138,8 @@ pandora [--output table|json] export --wallet <address> --format csv|json [--cha
 pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
 pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
 pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...
+pandora [--output table|json] simulate mc|particle-filter|agents ...
+pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...
 pandora [--output table|json] polymarket check|approve|preflight|trade ...
 pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
 pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
@@ -179,6 +185,18 @@ check [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [
 approve --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
 preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
 trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
+```
+
+Simulate/model subcommand detail:
+
+```text
+simulate mc [--trials <n>] [--horizon <n>] [--start-yes-pct <0-100>] [--entry-yes-pct <0-100>] [--position yes|no] [--stake-usdc <n>] [--drift-bps <n>] [--vol-bps <n>] [--confidence <50-100>] [--var-level <50-100>] [--seed <n>] [--antithetic] [--stratified]
+simulate particle-filter (--observations-json <json>|--input <path>|--stdin) [--particles <n>] [--process-noise <n>] [--observation-noise <n>] [--drift-bps <n>] [--initial-yes-pct <0-100>] [--initial-spread <n>] [--resample-threshold <0-1>] [--resample-method systematic|multinomial] [--credible-interval <50-100>] [--seed <n>]
+simulate agents [--n-informed <n>] [--n-noise <n>] [--n-mm <n>] [--n-steps <n>] [--seed <int>]
+model calibrate (--prices <csv>|--returns <csv>) [--dt <n>] [--jump-threshold-sigma <n>] [--min-jump-count <n>] [--model-id <id>] [--save-model <path>]
+model correlation --series <id:v1,v2,...> --series <id:v1,v2,...> [--copula t|gaussian|clayton|gumbel] [--compare <csv>] [--tail-alpha <n>] [--df <n>] [--joint-threshold-z <n>] [--scenario-shocks <csv>] [--model-id <id>] [--save-model <path>]
+model diagnose [--calibration-rmse <n>] [--drift-bps <n>] [--spread-bps <n>] [--depth-coverage <0..1>] [--informed-flow-ratio <0..1>] [--noise-ratio <0..1>] [--anomaly-rate <0..1>] [--manipulation-alerts <n>] [--tail-dependence <0..1>]
+model score brier [--source <name>] [--market-address <address>] [--competition <id>] [--event-id <id>] [--model-id <id>] [--group-by source|market|competition|model|none] [--window-days <n>] [--bucket-count <n>] [--forecast-file <path>] [--include-records] [--include-unresolved] [--limit <n>]
 ```
 
 ## Sports command matrix
@@ -471,6 +489,10 @@ Common structured error codes for automation:
 - `ODDS_*`: odds record/history storage and connector failures.
 - `ARB_*`: arb scan parsing/execution output-mode failures.
 - `CONFIG_*`: config read/parse failures (for example `CONFIG_FILE_NOT_FOUND`).
+- `SIMULATE_*`: simulate namespace failures (`SIMULATE_MC_FAILED`, `SIMULATE_MC_INVALID_INPUT`, `SIMULATE_PARTICLE_FILTER_FAILED`, `SIMULATE_PARTICLE_FILTER_INVALID_INPUT`, `SIMULATE_AGENTS_FAILED`, `SIMULATE_AGENTS_INVALID_INPUT`).
+- `MODEL_*`: model namespace failures (`MODEL_CALIBRATE_FAILED`, `MODEL_CALIBRATE_INVALID_INPUT`, `MODEL_CORRELATION_FAILED`, `MODEL_CORRELATION_INVALID_INPUT`, `MODEL_DIAGNOSE_FAILED`, `MODEL_DIAGNOSE_INVALID_INPUT`, `MODEL_SCORE_BRIER_FAILED`, `MODEL_SCORE_BRIER_INVALID_INPUT`).
+- `FORECAST_*`: forecast ledger read/write/normalization failures (`FORECAST_WRITE_FAILED`, `FORECAST_INVALID_RECORD`, `FORECAST_READ_FAILED`).
+- `BRIER_*`: brier scoring input/grouping failures (`BRIER_INVALID_INPUT`, `BRIER_INVALID_GROUP_BY`, `BRIER_FAILED`).
 - `MCP_FILE_ACCESS_BLOCKED`: MCP-mode file path denied outside workspace root.
 - `WEBHOOK_DELIVERY_FAILED`: webhook hard-fail when `--fail-on-webhook-error` is set.
 
@@ -553,6 +575,15 @@ Error envelope:
   - `lp positions`: `{ ok: true, command: "lp", data: { schemaVersion, generatedAt, action: "positions", mode: "read", wallet, count, items[] } }`
 - `polymarket`:
   - `check|preflight|approve|trade` all return `{ ok: true, command, data }` with `schemaVersion` and `generatedAt`; execute paths include `result`/`tx` blocks.
+- `simulate`:
+  - `simulate.mc`: `{ ok: true, command: "simulate.mc", data: { schemaVersion, generatedAt, inputs, summary, distribution, diagnostics[] } }`
+  - `simulate.particle-filter`: `{ ok: true, command: "simulate.particle-filter", data: { schemaVersion, generatedAt, inputs, summary, trajectory[], diagnostics[] } }`
+  - `simulate.agents`: `{ ok: true, command: "simulate.agents", data: { schemaVersion, generatedAt, parameters, convergenceError, spreadTrajectory[], volume, pnlByAgentType, finalState, runtimeBounds } }`
+- `model`:
+  - `model.calibrate`: `{ ok: true, command: "model.calibrate", data: { schemaVersion, generatedAt, action: "calibrate", model, diagnostics, persistence } }`
+  - `model.correlation`: `{ ok: true, command: "model.correlation", data: { schemaVersion, generatedAt, action: "correlation", copula, metrics, stress, comparisons, diagnostics, model, persistence } }`
+  - `model.diagnose`: `{ ok: true, command: "model.diagnose", data: { schemaVersion, generatedAt, inputs, components, aggregate, recommendations, flags, diagnostics[] } }`
+  - `model.score.brier`: `{ ok: true, command: "model.score.brier", data: { schemaVersion, generatedAt, action: "score.brier", filters, ledger, report, diagnostics[] } }`
 - `leaderboard`:
   - `{ ok: true, command: "leaderboard", data: { schemaVersion, generatedAt, indexerUrl, metric, limit, minTrades, count, items[], diagnostics[] } }`
 - `analyze`:

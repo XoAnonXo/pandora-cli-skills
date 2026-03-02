@@ -2,6 +2,8 @@ const { runAbmMarket } = require('../quant/abm_market.cjs');
 
 const SIMULATE_AGENTS_USAGE =
   'pandora [--output table|json] simulate agents [--n-informed <n>] [--n-noise <n>] [--n-mm <n>] [--n-steps <n>] [--seed <int>]';
+const MAX_SIMULATE_AGENTS = 1_000;
+const MAX_SIMULATE_STEPS = 10_000;
 
 class LocalCliError extends Error {
   constructor(code, message, details = null) {
@@ -86,6 +88,19 @@ function parseSimulateAgentsFlags(args, deps = {}) {
       continue;
     }
     throw new CliErrorCtor('UNKNOWN_FLAG', `Unknown flag for simulate agents: ${token}`);
+  }
+
+  if (options.n_informed !== undefined && options.n_informed > MAX_SIMULATE_AGENTS) {
+    throw new CliErrorCtor('INVALID_FLAG_VALUE', `--n-informed must be <= ${MAX_SIMULATE_AGENTS}.`);
+  }
+  if (options.n_noise !== undefined && options.n_noise > MAX_SIMULATE_AGENTS) {
+    throw new CliErrorCtor('INVALID_FLAG_VALUE', `--n-noise must be <= ${MAX_SIMULATE_AGENTS}.`);
+  }
+  if (options.n_mm !== undefined && options.n_mm > MAX_SIMULATE_AGENTS) {
+    throw new CliErrorCtor('INVALID_FLAG_VALUE', `--n-mm must be <= ${MAX_SIMULATE_AGENTS}.`);
+  }
+  if (options.n_steps !== undefined && options.n_steps > MAX_SIMULATE_STEPS) {
+    throw new CliErrorCtor('INVALID_FLAG_VALUE', `--n-steps must be <= ${MAX_SIMULATE_STEPS}.`);
   }
 
   return options;

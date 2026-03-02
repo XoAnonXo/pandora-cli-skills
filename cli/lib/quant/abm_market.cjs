@@ -1,16 +1,10 @@
 const { createRng } = require('./rng.cjs');
 const { mean, standardDeviation } = require('./mc_stats.cjs');
+const { createQuantError } = require('./errors.cjs');
 
 const ABM_SCHEMA_VERSION = '1.0.0';
-
-function createQuantError(code, message, details) {
-  const error = new Error(message);
-  error.code = code;
-  if (details !== undefined) {
-    error.details = details;
-  }
-  return error;
-}
+const MAX_ABM_AGENTS = 1_000;
+const MAX_ABM_STEPS = 10_000;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -26,6 +20,17 @@ function validatePositiveInteger(value, name) {
   return numeric;
 }
 
+function validateBoundedPositiveInteger(value, name, maxValue) {
+  const numeric = validatePositiveInteger(value, name);
+  if (numeric > maxValue) {
+    throw createQuantError('QUANT_INVALID_INPUT', `${name} must be <= ${maxValue}.`, {
+      [name]: value,
+      max: maxValue,
+    });
+  }
+  return numeric;
+}
+
 function validateFinite(value, name) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -36,9 +41,12 @@ function validateFinite(value, name) {
   return numeric;
 }
 
-function parseOptionalPositiveInteger(value, name) {
+function parseOptionalPositiveInteger(value, name, maxValue = null) {
   if (value === undefined || value === null || value === '') {
     return undefined;
+  }
+  if (Number.isFinite(Number(maxValue))) {
+    return validateBoundedPositiveInteger(value, name, maxValue);
   }
   return validatePositiveInteger(value, name);
 }
@@ -61,22 +69,44 @@ function normalizeAbmOptions(options = {}) {
   normalized.n_informed = parseOptionalPositiveInteger(
     options.n_informed !== undefined ? options.n_informed : options.nInformed,
     'n_informed',
+    MAX_ABM_AGENTS,
   );
-  normalized.n_noise = parseOptionalPositiveInteger(options.n_noise !== undefined ? options.n_noise : options.nNoise, 'n_noise');
+  normalized.n_noise = parseOptionalPositiveInteger(
+    options.n_noise !== undefined ? options.n_noise : options.nNoise,
+    'n_noise',
+    MAX_ABM_AGENTS,
+  );
   normalized.n_mm = parseOptionalPositiveInteger(
     options.n_mm !== undefined ? options.n_mm : options.nMm !== undefined ? options.nMm : options.nMarketMakers,
     'n_mm',
+    MAX_ABM_AGENTS,
   );
-  normalized.n_steps = parseOptionalPositiveInteger(options.n_steps !== undefined ? options.n_steps : options.nSteps, 'n_steps');
+  normalized.n_steps = parseOptionalPositiveInteger(
+    options.n_steps !== undefined ? options.n_steps : options.nSteps,
+    'n_steps',
+    MAX_ABM_STEPS,
+  );
   normalized.seed = parseOptionalInteger(options.seed, 'seed');
   return normalized;
 }
 
 function simulateAbmMarket(options = {}) {
-  const steps = validatePositiveInteger(options.steps === undefined ? 100 : options.steps, 'steps');
-  const nInformed = validatePositiveInteger(options.nInformed === undefined ? 20 : options.nInformed, 'nInformed');
-  const nNoise = validatePositiveInteger(options.nNoise === undefined ? 80 : options.nNoise, 'nNoise');
-  const nMarketMakers = validatePositiveInteger(options.nMarketMakers === undefined ? 10 : options.nMarketMakers, 'nMarketMakers');
+  const steps = validateBoundedPositiveInteger(options.steps === undefined ? 100 : options.steps, 'steps', MAX_ABM_STEPS);
+  const nInformed = validateBoundedPositiveInteger(
+    options.nInformed === undefined ? 20 : options.nInformed,
+    'nInformed',
+    MAX_ABM_AGENTS,
+  );
+  const nNoise = validateBoundedPositiveInteger(
+    options.nNoise === undefined ? 80 : options.nNoise,
+    'nNoise',
+    MAX_ABM_AGENTS,
+  );
+  const nMarketMakers = validateBoundedPositiveInteger(
+    options.nMarketMakers === undefined ? 10 : options.nMarketMakers,
+    'nMarketMakers',
+    MAX_ABM_AGENTS,
+  );
 
   const seed = options.seed === undefined ? 1 : options.seed;
   const initialPrice = clamp(validateFinite(options.initialPrice === undefined ? 0.5 : options.initialPrice, 'initialPrice'), 0.001, 0.999);

@@ -1,6 +1,6 @@
 const { clamp, round } = require('../shared/utils.cjs');
 
-const PROBABILITY_EPSILON = 1e-6;
+const PROBABILITY_EPSILON = 1e-9;
 
 function clampProbability01(value) {
   const numeric = Number(value);

@@ -1,13 +1,5 @@
 const UINT32_MAX_PLUS_ONE = 0x100000000;
-
-function createQuantError(code, message, details) {
-  const error = new Error(message);
-  error.code = code;
-  if (details !== undefined) {
-    error.details = details;
-  }
-  return error;
-}
+const { createQuantError } = require('./errors.cjs');
 
 function hashStringSeed(seed) {
   let hash = 0x811c9dc5;

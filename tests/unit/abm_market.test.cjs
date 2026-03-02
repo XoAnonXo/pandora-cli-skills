@@ -91,6 +91,32 @@ test('runAbmMarket responds to seed changes', () => {
   assert.notDeepEqual(snapshot(left), snapshot(right));
 });
 
+test('runAbmMarket enforces bounded step/agent limits', () => {
+  assert.throws(
+    () =>
+      runAbmMarket({
+        n_informed: 1001,
+        n_noise: 10,
+        n_mm: 2,
+        n_steps: 10,
+        seed: 1,
+      }),
+    /must be <= 1000/,
+  );
+
+  assert.throws(
+    () =>
+      runAbmMarket({
+        n_informed: 10,
+        n_noise: 10,
+        n_mm: 2,
+        n_steps: 10001,
+        seed: 1,
+      }),
+    /must be <= 10000/,
+  );
+});
+
 test('runAbmMarket includes runtime bound metadata', () => {
   const payload = runAbmMarket({
     n_informed: 6,
@@ -145,6 +171,26 @@ test('parseSimulateAgentsFlags rejects unknown flags', () => {
     (error) => {
       assert.equal(error instanceof TestCliError, true);
       assert.equal(error.code, 'UNKNOWN_FLAG');
+      return true;
+    },
+  );
+});
+
+test('parseSimulateAgentsFlags enforces bounded agent/step limits', () => {
+  assert.throws(
+    () => parseSimulateAgentsFlags(['--n-informed', '1001'], { CliError: TestCliError }),
+    (error) => {
+      assert.equal(error instanceof TestCliError, true);
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      return true;
+    },
+  );
+
+  assert.throws(
+    () => parseSimulateAgentsFlags(['--n-steps', '10001'], { CliError: TestCliError }),
+    (error) => {
+      assert.equal(error instanceof TestCliError, true);
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
       return true;
     },
   );

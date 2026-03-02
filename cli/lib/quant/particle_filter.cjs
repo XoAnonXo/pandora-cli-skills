@@ -5,17 +5,9 @@ const {
   effectiveSampleSize,
   resampleSystematic,
 } = require('./importance_sampling.cjs');
+const { createQuantError } = require('./errors.cjs');
 
 const PARTICLE_FILTER_SCHEMA_VERSION = '1.0.0';
-
-function createQuantError(code, message, details) {
-  const error = new Error(message);
-  error.code = code;
-  if (details !== undefined) {
-    error.details = details;
-  }
-  return error;
-}
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -107,7 +99,13 @@ function normalizeLogWeights(logWeights) {
     });
   }
 
-  const maxLogWeight = Math.max(...logWeights);
+  let maxLogWeight = Number(logWeights[0]);
+  for (let i = 1; i < logWeights.length; i += 1) {
+    const candidate = Number(logWeights[i]);
+    if (candidate > maxLogWeight) {
+      maxLogWeight = candidate;
+    }
+  }
   const shifted = logWeights.map((value) => Math.exp(value - maxLogWeight));
   return normalizeWeights(shifted);
 }
@@ -265,7 +263,15 @@ function runParticleFilter(options = {}) {
     };
 
   const minEss = essSeries.length ? Math.min(...essSeries) : particleCount;
-  const maxEss = essSeries.length ? Math.max(...essSeries) : particleCount;
+  let maxEss = particleCount;
+  if (essSeries.length) {
+    maxEss = essSeries[0];
+    for (let i = 1; i < essSeries.length; i += 1) {
+      if (essSeries[i] > maxEss) {
+        maxEss = essSeries[i];
+      }
+    }
+  }
   const meanEss = essSeries.length ? essSeries.reduce((acc, value) => acc + value, 0) / essSeries.length : particleCount;
 
   return {

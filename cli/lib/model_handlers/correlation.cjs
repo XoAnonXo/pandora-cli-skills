@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
+const { buildModelId, saveModelArtifact } = require('../shared/model_artifact.cjs');
 
 function average(values) {
   if (!Array.isArray(values) || values.length === 0) return 0;
@@ -186,64 +186,12 @@ function empiricalTailMetrics(left, right, alpha) {
   };
 }
 
-function saveModelArtifact(filePath, artifact) {
-  const absolutePath = path.resolve(filePath);
-  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-  const serialized = JSON.stringify(artifact, null, 2);
-  fs.writeFileSync(absolutePath, serialized, { mode: 0o600 });
-  try {
-    fs.chmodSync(absolutePath, 0o600);
-  } catch {
-    // best-effort hardening on platforms that ignore chmod
-  }
-  return {
-    saved: true,
-    path: absolutePath,
-    bytes: Buffer.byteLength(serialized, 'utf8'),
-  };
-}
-
-function isMcpMode() {
-  return String(process.env.PANDORA_MCP_MODE || '').trim() === '1';
-}
-
-function isPathInside(baseDir, candidatePath) {
-  const relative = path.relative(baseDir, candidatePath);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
 function assertMcpWritablePathAllowed(rawPath, CliError) {
-  if (!isMcpMode()) return;
-  const workspaceRoot = path.resolve(process.cwd());
-  const resolvedPath = path.resolve(String(rawPath || ''));
-  if (isPathInside(workspaceRoot, resolvedPath)) {
-    return;
-  }
-
-  throw new CliError(
-    'MCP_FILE_ACCESS_BLOCKED',
-    '--save-model must point to a file within the current workspace when running via MCP.',
-    {
-      flag: '--save-model',
-      requestedPath: rawPath,
-      resolvedPath,
-      workspaceRoot,
-    },
-  );
-}
-
-function buildModelId(prefix = 'model-copula') {
-  const now = new Date();
-  const y = String(now.getUTCFullYear());
-  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(now.getUTCDate()).padStart(2, '0');
-  const hh = String(now.getUTCHours()).padStart(2, '0');
-  const mm = String(now.getUTCMinutes()).padStart(2, '0');
-  const ss = String(now.getUTCSeconds()).padStart(2, '0');
-  const nonce = Math.floor(Math.random() * 1e6)
-    .toString(16)
-    .padStart(5, '0');
-  return `${prefix}-${y}${m}${d}-${hh}${mm}${ss}-${nonce}`;
+  assertMcpWorkspacePath(rawPath, {
+    flagName: '--save-model',
+    errorFactory: (code, message, details) => new CliError(code, message, details),
+    message: '--save-model must point to a file within the current workspace when running via MCP.',
+  });
 }
 
 function runCorrelationAnalysis(options) {
@@ -409,7 +357,7 @@ module.exports = async function handleModelCorrelation({ actionArgs, context, de
   const options = parseModelCorrelationFlags(actionArgs);
   const result = runCorrelationAnalysis(options);
   const timestamp = new Date().toISOString();
-  const modelId = options.modelId || buildModelId();
+  const modelId = options.modelId || buildModelId('model-copula');
 
   const artifact = {
     schemaVersion: '1.0.0',
