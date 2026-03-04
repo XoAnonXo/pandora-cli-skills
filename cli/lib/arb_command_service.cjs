@@ -14,7 +14,7 @@ const ARB_MARKET_FIELDS = [
 ];
 
 const ARB_USAGE =
-  'pandora arb scan --markets <csv> --output ndjson|json [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
+  'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -82,6 +82,46 @@ function buildMarketSnapshots(markets, orderedIds) {
       };
     })
     .filter((item) => item.market && Number.isFinite(item.yesPct));
+}
+
+function buildCrossVenueArbOpportunities(payload, options) {
+  const opportunities = Array.isArray(payload && payload.opportunities) ? payload.opportunities : [];
+  const minSpreadPct = Number.isFinite(options.minNetSpreadPct) ? Number(options.minNetSpreadPct) : 0;
+  const rows = [];
+  for (const item of opportunities) {
+    const legs = Array.isArray(item.legs) ? item.legs : [];
+    const pandoraLeg = legs.find((leg) => leg && leg.venue === 'pandora') || null;
+    const polyLeg = legs.find((leg) => leg && leg.venue === 'polymarket') || null;
+    if (!pandoraLeg || !polyLeg) continue;
+
+    const spreadYesPct = toFiniteNumber(item.spreadYesPct);
+    const spreadNoPct = toFiniteNumber(item.spreadNoPct);
+    const netSpreadPct = Math.max(spreadYesPct === null ? 0 : spreadYesPct, spreadNoPct === null ? 0 : spreadNoPct);
+    if (netSpreadPct < minSpreadPct) continue;
+
+    rows.push({
+      opportunityType: 'cross-venue',
+      pair: `${String(pandoraLeg.marketId || '')}|${String(polyLeg.marketId || '')}`,
+      groupId: item.groupId || null,
+      question: item.normalizedQuestion || pandoraLeg.question || polyLeg.question || null,
+      pandoraMarket: pandoraLeg.marketId || null,
+      polymarketMarket: polyLeg.marketId || null,
+      polymarketUrl: polyLeg.url || null,
+      pandoraYesPct: toFiniteNumber(pandoraLeg.yesPct),
+      polymarketYesPct: toFiniteNumber(polyLeg.yesPct),
+      spreadYesPct,
+      spreadNoPct,
+      netSpreadPct: roundNumber(netSpreadPct, 6),
+      confidenceScore: toFiniteNumber(item.confidenceScore),
+      riskFlags: Array.isArray(item.riskFlags) ? item.riskFlags : [],
+    });
+  }
+
+  rows.sort((left, right) => {
+    if (right.netSpreadPct !== left.netSpreadPct) return right.netSpreadPct - left.netSpreadPct;
+    return String(left.pair || '').localeCompare(String(right.pair || ''));
+  });
+  return rows.slice(0, Math.max(1, Number.isInteger(options.limit) ? options.limit : 20));
 }
 
 /**
@@ -263,9 +303,12 @@ function parseArbScanFlags(args, deps) {
 
   const options = {
     action,
+    source: 'pandora',
     markets: [],
     output: 'ndjson',
+    limit: 20,
     minNetSpreadPct: 0,
+    minTvlUsdc: 0,
     feePctPerLeg: 0,
     slippagePctPerLeg: 0,
     amountUsdc: 100,
@@ -283,13 +326,33 @@ function parseArbScanFlags(args, deps) {
       i += 1;
       continue;
     }
+    if (token === '--source') {
+      options.source = String(requireFlagValue(rest, i, '--source')).trim().toLowerCase();
+      i += 1;
+      continue;
+    }
     if (token === '--output') {
       options.output = String(requireFlagValue(rest, i, '--output')).trim().toLowerCase();
       i += 1;
       continue;
     }
+    if (token === '--limit') {
+      options.limit = parsePositiveInteger(requireFlagValue(rest, i, '--limit'), '--limit');
+      i += 1;
+      continue;
+    }
     if (token === '--min-net-spread-pct') {
       options.minNetSpreadPct = parseNumber(requireFlagValue(rest, i, '--min-net-spread-pct'), '--min-net-spread-pct');
+      i += 1;
+      continue;
+    }
+    if (token === '--min-spread-pct') {
+      options.minNetSpreadPct = parseNumber(requireFlagValue(rest, i, '--min-spread-pct'), '--min-spread-pct');
+      i += 1;
+      continue;
+    }
+    if (token === '--min-tvl') {
+      options.minTvlUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--min-tvl'), '--min-tvl');
       i += 1;
       continue;
     }
@@ -331,7 +394,11 @@ function parseArbScanFlags(args, deps) {
     throw new CliError('UNKNOWN_FLAG', `Unknown flag for arb scan: ${token}`);
   }
 
-  if (!Array.isArray(options.markets) || options.markets.length < 2) {
+  if (!['pandora', 'polymarket'].includes(options.source)) {
+    throw new CliError('INVALID_FLAG_VALUE', '--source supports pandora|polymarket.');
+  }
+
+  if (options.source !== 'polymarket' && (!Array.isArray(options.markets) || options.markets.length < 2)) {
     throw new CliError('MISSING_REQUIRED_FLAG', 'arb scan requires at least two markets via --markets <csv>.');
   }
 
@@ -355,19 +422,17 @@ function parseArbScanFlags(args, deps) {
     throw new CliError('INVALID_FLAG_VALUE', '--max-bundle-size must be an integer >= 3.');
   }
 
-  options.markets = Array.from(
-    new Set(
-      options.markets
-        .map((item) => String(item).trim())
-        .filter(Boolean),
-    ),
-  );
+  options.markets = Array.from(new Set(
+    (Array.isArray(options.markets) ? options.markets : [])
+      .map((item) => String(item).trim())
+      .filter(Boolean),
+  ));
 
-  if (options.markets.length < 2) {
+  if (options.source !== 'polymarket' && options.markets.length < 2) {
     throw new CliError('INVALID_ARGS', 'arb scan requires at least two distinct market ids.');
   }
 
-  if (options.combinatorial && options.markets.length < 3) {
+  if (options.source !== 'polymarket' && options.combinatorial && options.markets.length < 3) {
     throw new CliError('INVALID_ARGS', 'arb scan --combinatorial requires at least three distinct market ids.');
   }
 
@@ -404,6 +469,7 @@ function createRunArbCommand(deps) {
   const buildGraphqlGetQuery = requireDep(deps, 'buildGraphqlGetQuery');
   const graphqlRequest = requireDep(deps, 'graphqlRequest');
   const sleepMs = requireDep(deps, 'sleepMs');
+  const scanArbitrage = requireDep(deps, 'scanArbitrage');
 
   return async function runArbCommand(args, context) {
     const shared = parseIndexerSharedFlags(args);
@@ -455,34 +521,58 @@ function createRunArbCommand(deps) {
 
     while (iteration < maxIterations) {
       iteration += 1;
-      const markets = await fetchMarketsById(indexerUrl, options.markets, shared.timeoutMs, {
-        buildGraphqlGetQuery,
-        graphqlRequest,
-      });
-      const marketSnapshots = buildMarketSnapshots(markets, options.markets);
-      const pairwiseOpportunities = buildArbOpportunities({
-        marketSnapshots,
-        minNetSpreadPct: options.minNetSpreadPct,
-        feePctPerLeg: options.feePctPerLeg,
-        amountUsdc: options.amountUsdc,
-      });
-      const combinatorialOpportunities = options.combinatorial
-        ? buildCombinatorialArbOpportunities({
-            marketSnapshots,
-            minNetSpreadPct: options.minNetSpreadPct,
-            feePctPerLeg: options.feePctPerLeg,
-            slippagePctPerLeg: options.slippagePctPerLeg,
-            amountUsdc: options.amountUsdc,
-            maxBundleSize: options.maxBundleSize,
-          })
-        : [];
+      let pairwiseOpportunities = [];
+      let combinatorialOpportunities = [];
+      let opportunities = [];
+      if (options.source === 'polymarket') {
+        const crossVenuePayload = await scanArbitrage({
+          indexerUrl,
+          timeoutMs: shared.timeoutMs,
+          chainId: null,
+          venues: ['pandora', 'polymarket'],
+          limit: options.limit,
+          minSpreadPct: options.minNetSpreadPct,
+          minLiquidityUsd: options.minTvlUsdc,
+          maxCloseDiffHours: 24,
+          similarityThreshold: 0.86,
+          crossVenueOnly: true,
+          withRules: false,
+          includeSimilarity: false,
+          questionContains: null,
+        });
+        pairwiseOpportunities = buildCrossVenueArbOpportunities(crossVenuePayload, options);
+        combinatorialOpportunities = [];
+        opportunities = pairwiseOpportunities;
+      } else {
+        const markets = await fetchMarketsById(indexerUrl, options.markets, shared.timeoutMs, {
+          buildGraphqlGetQuery,
+          graphqlRequest,
+        });
+        const marketSnapshots = buildMarketSnapshots(markets, options.markets);
+        pairwiseOpportunities = buildArbOpportunities({
+          marketSnapshots,
+          minNetSpreadPct: options.minNetSpreadPct,
+          feePctPerLeg: options.feePctPerLeg,
+          amountUsdc: options.amountUsdc,
+        });
+        combinatorialOpportunities = options.combinatorial
+          ? buildCombinatorialArbOpportunities({
+              marketSnapshots,
+              minNetSpreadPct: options.minNetSpreadPct,
+              feePctPerLeg: options.feePctPerLeg,
+              slippagePctPerLeg: options.slippagePctPerLeg,
+              amountUsdc: options.amountUsdc,
+              maxBundleSize: options.maxBundleSize,
+            })
+          : [];
+        opportunities = [...pairwiseOpportunities, ...combinatorialOpportunities].sort((left, right) => {
+          if (right.netSpreadPct !== left.netSpreadPct) {
+            return right.netSpreadPct - left.netSpreadPct;
+          }
+          return String(left.pair || '').localeCompare(String(right.pair || ''));
+        });
+      }
       emittedCombinatorialCount += combinatorialOpportunities.length;
-      const opportunities = [...pairwiseOpportunities, ...combinatorialOpportunities].sort((left, right) => {
-        if (right.netSpreadPct !== left.netSpreadPct) {
-          return right.netSpreadPct - left.netSpreadPct;
-        }
-        return String(left.pair || '').localeCompare(String(right.pair || ''));
-      });
 
       if (options.output === 'ndjson') {
         for (const opportunity of opportunities) {
@@ -526,8 +616,11 @@ function createRunArbCommand(deps) {
         requestedIterations: options.iterations,
         intervalMs: options.intervalMs,
         filters: {
+          source: options.source,
           markets: options.markets,
+          limit: options.limit,
           minNetSpreadPct: options.minNetSpreadPct,
+          minTvlUsdc: options.minTvlUsdc,
           feePctPerLeg: options.feePctPerLeg,
           slippagePctPerLeg: options.slippagePctPerLeg,
           amountUsdc: options.amountUsdc,

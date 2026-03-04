@@ -4,11 +4,13 @@
  * @type {string}
  */
 const SCAN_USAGE =
-  'pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]';
+  'pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]';
 
 const SCAN_NOTES = [
   'scan always returns expanded market payloads with odds included.',
   '--with-odds is accepted for backward compatibility and is effectively a no-op.',
+  '--min-tvl applies a client-side filter against current TVL in USDC units.',
+  '--hedgeable keeps only markets that have a matched Polymarket leg (cross-venue similarity pass).',
   '--active|--resolved|--expiring-soon are client-side lifecycle filters over fetched indexer pages.',
   'scan is indexer-backed (no direct chain reads), so freshness follows indexer sync state.',
 ];
@@ -29,6 +31,7 @@ function createRunScanCommand(deps) {
     fetchMarketsListPage,
     buildMarketsEnrichmentContext,
     buildMarketsListPayload,
+    filterHedgeableMarkets,
     renderScanTable,
   } = deps;
 
@@ -57,7 +60,19 @@ function createRunScanCommand(deps) {
     const options = parseMarketsListFlags(shared.rest);
     options.withOdds = true;
 
-    const { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
+    let { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
+    if (options.hedgeable && typeof filterHedgeableMarkets === 'function') {
+      const filtered = await filterHedgeableMarkets({
+        indexerUrl,
+        timeoutMs: shared.timeoutMs,
+        options,
+        items,
+      });
+      items = Array.isArray(filtered && filtered.items) ? filtered.items : items;
+      if (typeof filtered.unfilteredCount === 'number') {
+        unfilteredCount = filtered.unfilteredCount;
+      }
+    }
     const enrichmentContext = await buildMarketsEnrichmentContext(indexerUrl, items, options, shared.timeoutMs);
     const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, {
       includeEnrichedItems: true,

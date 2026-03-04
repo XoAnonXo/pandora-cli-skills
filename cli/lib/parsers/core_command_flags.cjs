@@ -363,6 +363,8 @@ function createCoreCommandFlagParsers(deps) {
       expiringSoonHours: defaultExpiringSoonHours,
       expand: false,
       withOdds: false,
+      minTvlUsdc: null,
+      hedgeable: false,
     };
     let expiringSoonHoursExplicit = false;
 
@@ -422,6 +424,11 @@ function createCoreCommandFlagParsers(deps) {
         i += 1;
         continue;
       }
+      if (token === '--type') {
+        options.where.marketType = requireFlagValue(args, i, '--type');
+        i += 1;
+        continue;
+      }
 
       if (token === '--where-json') {
         options.where = mergeWhere(options.where, requireFlagValue(args, i, '--where-json'), '--where-json');
@@ -460,6 +467,15 @@ function createCoreCommandFlagParsers(deps) {
         options.withOdds = true;
         continue;
       }
+      if (token === '--min-tvl') {
+        options.minTvlUsdc = parsePositiveNumber(requireFlagValue(args, i, '--min-tvl'), '--min-tvl');
+        i += 1;
+        continue;
+      }
+      if (token === '--hedgeable') {
+        options.hedgeable = true;
+        continue;
+      }
 
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for markets list: ${token}`);
     }
@@ -476,6 +492,7 @@ function createCoreCommandFlagParsers(deps) {
       marketAddress: null,
       side: null,
       amountUsdc: null,
+      amountsUsdc: [],
       yesPct: null,
       slippageBps: 100,
     };
@@ -497,6 +514,12 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--amount-usdc' || token === '--amount') {
         options.amountUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+      if (token === '--amounts') {
+        const raw = parseCsvList(requireFlagValue(args, i, '--amounts'), '--amounts');
+        options.amountsUsdc = raw.map((value) => parsePositiveNumber(value, '--amounts'));
         i += 1;
         continue;
       }
@@ -525,8 +548,11 @@ function createCoreCommandFlagParsers(deps) {
     if (!options.side) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing side. Use --side yes|no.');
     }
-    if (options.amountUsdc === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount>.');
+    if (options.amountUsdc === null && (!Array.isArray(options.amountsUsdc) || !options.amountsUsdc.length)) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount> or --amounts <csv>.');
+    }
+    if (options.amountUsdc === null && Array.isArray(options.amountsUsdc) && options.amountsUsdc.length) {
+      options.amountUsdc = options.amountsUsdc[0];
     }
 
     return options;
@@ -700,6 +726,7 @@ function createCoreCommandFlagParsers(deps) {
       includeEvents: true,
       withLp: false,
       rpcUrl: null,
+      allChains: false,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -714,6 +741,11 @@ function createCoreCommandFlagParsers(deps) {
       if (token === '--chain-id') {
         options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
         i += 1;
+        continue;
+      }
+      if (token === '--all-chains') {
+        options.chainId = null;
+        options.allChains = true;
         continue;
       }
 

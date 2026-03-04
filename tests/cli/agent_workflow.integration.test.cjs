@@ -296,6 +296,6 @@ test('agent pipeline composes markets list -> markets get --stdin -> trade --dry
 
   const queries = mock.requests.map((request) => String(request && request.bodyJson && request.bodyJson.query ? request.bodyJson.query : ''));
   assert.equal(queries.filter((query) => query.includes('query marketssList')).length, 1);
-  assert.equal(queries.filter((query) => query.includes('query marketsGet')).length, 2);
+  assert.equal(queries.filter((query) => query.includes('query marketsGet')).length, 3);
   assert.equal(queries.filter((query) => query.includes('query liquidityEventssList')).length, 1);
 });

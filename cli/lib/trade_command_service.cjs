@@ -14,11 +14,14 @@ function requireDep(deps, name) {
  */
 function createRunTradeCommand(deps) {
   const CliError = requireDep(deps, 'CliError');
+  const includesHelpFlag = requireDep(deps, 'includesHelpFlag');
   const parseIndexerSharedFlags = requireDep(deps, 'parseIndexerSharedFlags');
   const emitSuccess = requireDep(deps, 'emitSuccess');
   const tradeHelpJsonPayload = requireDep(deps, 'tradeHelpJsonPayload');
+  const quoteHelpJsonPayload = requireDep(deps, 'quoteHelpJsonPayload');
   const printTradeHelpTable = requireDep(deps, 'printTradeHelpTable');
   const maybeLoadTradeEnv = requireDep(deps, 'maybeLoadTradeEnv');
+  const parseQuoteFlags = requireDep(deps, 'parseQuoteFlags');
   const parseTradeFlags = requireDep(deps, 'parseTradeFlags');
   const resolveIndexerUrl = requireDep(deps, 'resolveIndexerUrl');
   const buildQuotePayload = requireDep(deps, 'buildQuotePayload');
@@ -28,11 +31,31 @@ function createRunTradeCommand(deps) {
   const executeTradeOnchain = requireDep(deps, 'executeTradeOnchain');
   const resolveForkRuntime = requireDep(deps, 'resolveForkRuntime');
   const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
+  const renderQuoteTable = requireDep(deps, 'renderQuoteTable');
   const renderTradeTable = requireDep(deps, 'renderTradeTable');
   const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
 
   return async function runTradeCommand(args, context) {
     const shared = parseIndexerSharedFlags(args);
+    if (shared.rest[0] === 'quote') {
+      const quoteArgs = shared.rest.slice(1);
+      if (includesHelpFlag(quoteArgs)) {
+        if (context.outputMode === 'json') {
+          emitSuccess(context.outputMode, 'trade.quote.help', quoteHelpJsonPayload());
+        } else {
+          // eslint-disable-next-line no-console
+          console.log('Usage: pandora trade quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]');
+        }
+        return;
+      }
+      maybeLoadTradeEnv(shared);
+      const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
+      const quoteOptions = parseQuoteFlags(quoteArgs);
+      const payload = await buildQuotePayload(indexerUrl, quoteOptions, shared.timeoutMs);
+      emitSuccess(context.outputMode, 'trade.quote', payload, renderQuoteTable);
+      return;
+    }
+
     if (shared.rest.includes('--help') || shared.rest.includes('-h')) {
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'trade.help', tradeHelpJsonPayload());

@@ -99,13 +99,23 @@ test('trade command dry-run adds preview for fork runtime without changing base 
   const emissions = [];
   const runTradeCommand = createRunTradeCommand({
     CliError: TestCliError,
+    includesHelpFlag: () => false,
     parseIndexerSharedFlags: () => ({ rest: [], indexerUrl: null, timeoutMs: 5_000 }),
     emitSuccess: (mode, command, data) => {
       emissions.push({ mode, command, data });
     },
     tradeHelpJsonPayload: () => ({}),
+    quoteHelpJsonPayload: () => ({}),
     printTradeHelpTable: () => null,
     maybeLoadTradeEnv: () => null,
+    parseQuoteFlags: () => ({
+      marketAddress: TEST_MARKET,
+      side: 'yes',
+      amountUsdc: 10,
+      amountsUsdc: [10],
+      slippageBps: 100,
+      yesPct: null,
+    }),
     parseTradeFlags: () => ({
       marketAddress: TEST_MARKET,
       side: 'yes',
@@ -144,6 +154,7 @@ test('trade command dry-run adds preview for fork runtime without changing base 
       rpcUrl: 'http://127.0.0.1:8545',
     }),
     isSecureHttpUrlOrLocal: () => true,
+    renderQuoteTable: () => null,
     renderTradeTable: () => null,
   });
 

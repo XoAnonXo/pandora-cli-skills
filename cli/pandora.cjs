@@ -569,6 +569,10 @@ const MARKETS_LIST_FIELDS = [
   'marketCloseTimestamp',
   'totalVolume',
   'currentTvl',
+  'yesChance',
+  'reserveYes',
+  'reserveNo',
+  'feeTier',
   'createdAt',
 ];
 const POLLS_LIST_FIELDS = [
@@ -781,21 +785,22 @@ Usage:
   pandora [--output table|json] init-env [--force] [--dotenv-path <path>] [--example <path>]
   pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
   pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
-  pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]
+  pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
+  pandora [--output table|json] markets scan [markets list options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
   pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
   pandora [--output table|json] polls get --id <id>
   pandora [--output table|json] events list [--type all|liquidity|oracle-fee|claim] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-direction asc|desc] [--chain-id <id>] [--wallet <address>] [--market-address <address>] [--poll-address <address>] [--tx-hash <hash>]
   pandora [--output table|json] events get --id <id> [--type all|liquidity|oracle-fee|claim]
   pandora [--output table|json] positions list [--wallet <address>] [--market-address <address>] [--chain-id <id>] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--where-json <json>]
-  pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
+  pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
   pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
-  pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand]
+  pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand]
   pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan ...
   pandora [--output table|json] odds record|history ...
   pandora [--output table|json] lifecycle start|status|resolve ...
-  pandora arb scan --markets <csv> --output ndjson|json [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]
-  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
@@ -830,13 +835,13 @@ Examples:
   pandora portfolio --wallet 0x1234... --chain-id 1 --with-lp
   pandora watch --market-address 0xabc... --side yes --amount-usdc 10 --iterations 5 --interval-ms 2000
   pandora scan --active --limit 25 --chain-id 1
-  pandora quote --market-address 0xabc... --side yes --amount-usdc 50
+  pandora quote --market-address 0xabc... --side yes --amounts 25,50,75,100
   pandora trade --dry-run --market-address 0xabc... --side no --amount-usdc 25 --max-amount-usdc 50 --min-probability-pct 20
   pandora history --wallet 0x1234... --chain-id 1 --limit 50
   pandora export --wallet 0x1234... --format csv --year 2026 --out ./trades-2026.csv
   pandora arbitrage --chain-id 1 --limit 25 --venues pandora,polymarket --cross-venue-only --with-rules --include-similarity
   pandora lifecycle start --config ./configs/lifecycle.json
-  pandora arb scan --markets market-1,market-2 --output ndjson --iterations 1 --min-net-spread-pct 2
+  pandora arb scan --source polymarket --output json --iterations 1 --min-spread-pct 2 --min-tvl 50
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
   pandora mirror plan --source polymarket --polymarket-market-id 0xabc... --with-rules --include-similarity
   pandora claim --all --dry-run
@@ -883,11 +888,12 @@ function printQuoteHelpTable() {
 pandora quote - Estimate a YES/NO trade
 
 Usage:
-  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
 
 Notes:
   - If --yes-pct is omitted, quote attempts to derive odds from latest liquidity events on the indexer.
   - Output includes odds source and estimated shares/payout.
+  - --amounts emits a slippage/ROI sizing curve for multiple notional values.
 `);
 }
 
@@ -896,6 +902,7 @@ function printTradeHelpTable() {
 pandora trade - Execute a buy on a market
 
 Usage:
+  pandora [--output table|json] trade quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
 
 Notes:
@@ -904,6 +911,7 @@ Notes:
   - --max-amount-usdc and probability guard flags fail fast before execution.
   - --execute requires a quote by default unless --min-shares-out-raw or --allow-unquoted-execute is set.
   - Supports both PariMutuel and AMM market buy signatures.
+  - trade quote is read-only and returns full quote curve data.
 `);
 }
 
@@ -929,6 +937,7 @@ pandora markets - Query market entities
 
 Usage:
   pandora [--output table|json] markets list [options]
+  pandora [--output table|json] markets scan [options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
 `);
 }
@@ -938,7 +947,7 @@ function printMarketsListHelpTable() {
 pandora markets list - List markets
 
 Usage:
-  pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]
+  pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
 
 Notes:
   - Lifecycle filters are client-side post-filters on fetched results.
@@ -1032,14 +1041,14 @@ function commandHelpPayload(usage) {
 function quoteHelpJsonPayload() {
   return {
     usage:
-      'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
+      'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
   };
 }
 
 function tradeHelpJsonPayload() {
   return {
     usage:
-      'pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
+      'pandora [--output table|json] trade quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>] | pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
   };
 }
 
@@ -1062,7 +1071,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] init-env ...',
       'pandora [--output table|json] doctor ...',
       'pandora [--output table|json] setup ...',
-      'pandora [--output table|json] markets list|get ...',
+      'pandora [--output table|json] markets list|get|scan ...',
       'pandora [--output table|json] polls list|get ...',
       'pandora [--output table|json] events list|get ...',
       'pandora [--output table|json] positions list ...',
@@ -1072,9 +1081,9 @@ function helpJsonPayload() {
       'pandora [--output table|json] sports ...',
       'pandora [--output table|json] odds record|history ...',
       'pandora [--output table|json] lifecycle start|status|resolve ...',
-      'pandora arb scan --markets <csv> --output ndjson|json ...',
+      'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json ...',
       'pandora [--output table|json] quote ...',
-      'pandora [--output table|json] trade ...',
+      'pandora [--output table|json] trade quote|...',
       'pandora [--output table|json] history ...',
       'pandora [--output table|json] export ...',
       'pandora [--output table|json] arbitrage ...',
@@ -1684,27 +1693,37 @@ function renderScanTable(data) {
   }
 
   printTable(
-    ['ID', 'Type', 'Chain', 'Close', 'YES', 'NO', 'Source', 'Diagnostic'],
-    items.map((item) => [
-      short(item.id, 18),
-      item.marketType || '',
-      `${item.chainName || ''} (${item.chainId || ''})`,
-      formatTimestamp(item.marketCloseTimestamp),
-      formatOddsPercent(item.odds && item.odds.yesProbability),
-      formatOddsPercent(item.odds && item.odds.noProbability),
-      short((item.odds && item.odds.source) || '', 26),
-      short((item.odds && item.odds.diagnostic) || '', 40),
-    ]),
+    ['ID', 'Type', 'Question', 'YES', 'NO', 'Reserve YES', 'Reserve NO', 'Fee', 'Close', 'Category'],
+    items.map((item) => {
+      const liquidity = item && item.liquidity ? item.liquidity : buildMarketLiquidityMetrics(item || {});
+      const poll = item && item.poll && typeof item.poll === 'object' ? item.poll : null;
+      const category = poll && poll.category !== undefined ? poll.category : item.category;
+      return [
+        short(item.id, 18),
+        item.marketType || '',
+        short((poll && poll.question) || item.question || '', 44),
+        formatOddsPercent(item.odds && item.odds.yesProbability),
+        formatOddsPercent(item.odds && item.odds.noProbability),
+        liquidity && liquidity.reserveYes !== null ? liquidity.reserveYes : '',
+        liquidity && liquidity.reserveNo !== null ? liquidity.reserveNo : '',
+        liquidity && liquidity.feePct !== null ? `${liquidity.feePct}%` : '',
+        formatTimestamp(item.marketCloseTimestamp),
+        category === null || category === undefined ? '' : category,
+      ];
+    }),
   );
 }
 
 function renderQuoteTable(data) {
   const odds = data.odds || {};
   const estimate = data.estimate || null;
+  const liquidity = data.liquidity || null;
+  const parimutuel = data.parimutuel || null;
   printTable(
     ['Field', 'Value'],
     [
       ['marketAddress', data.marketAddress],
+      ['marketType', data.marketType || ''],
       ['side', data.side],
       ['amountUsdc', data.amountUsdc],
       ['oddsSource', odds.source || 'n/a'],
@@ -1715,9 +1734,42 @@ function renderQuoteTable(data) {
       ['minSharesOut', estimate ? estimate.minSharesOut : 'n/a'],
       ['potentialPayoutIfWin', estimate ? estimate.potentialPayoutIfWin : 'n/a'],
       ['potentialProfitIfWin', estimate ? estimate.potentialProfitIfWin : 'n/a'],
+      ['reserveYes', liquidity && liquidity.reserveYes !== null ? liquidity.reserveYes : 'n/a'],
+      ['reserveNo', liquidity && liquidity.reserveNo !== null ? liquidity.reserveNo : 'n/a'],
+      ['kValue', liquidity && liquidity.kValue !== null ? liquidity.kValue : 'n/a'],
       ['diagnostic', odds.diagnostic || ''],
     ],
   );
+
+  if (Array.isArray(data.curve) && data.curve.length > 1) {
+    console.log('');
+    printTable(
+      ['Amount USDC', 'Shares Out', 'Eff. Price', 'Slippage %', 'ROI if Win %'],
+      data.curve.map((row) => [
+        row.amountUsdc,
+        row.estimatedShares === null ? 'n/a' : row.estimatedShares,
+        row.effectivePrice === null ? 'n/a' : row.effectivePrice,
+        row.slippagePct === null ? 'n/a' : row.slippagePct,
+        row.roiIfWinPct === null ? 'n/a' : row.roiIfWinPct,
+      ]),
+    );
+  }
+
+  if (parimutuel) {
+    console.log('');
+    printTable(
+      ['Pari Field', 'Value'],
+      [
+        ['poolYes', parimutuel.poolYes],
+        ['poolNo', parimutuel.poolNo],
+        ['totalPool', parimutuel.totalPool],
+        ['sharePct', parimutuel.sharePct],
+        ['payoutIfWin', parimutuel.payoutIfWin],
+        ['profitIfWin', parimutuel.profitIfWin],
+        ['breakevenProbability', parimutuel.breakevenProbability],
+      ],
+    );
+  }
 }
 
 function renderTradeTable(data) {
@@ -3129,6 +3181,126 @@ function buildMarketExpansion(item) {
   };
 }
 
+function normalizeProbabilityLike(value) {
+  const numeric = toOptionalNumber(value);
+  if (!Number.isFinite(numeric)) return null;
+  if (numeric >= 0 && numeric <= 1) return numeric;
+  if (numeric >= 0 && numeric <= 100) return numeric / 100;
+  return null;
+}
+
+function deriveMarketReservePair(item) {
+  const reserveYesDirect = toOptionalNumber(item && (item.reserveYes ?? item.yesReserve ?? item.yesTokenAmount));
+  const reserveNoDirect = toOptionalNumber(item && (item.reserveNo ?? item.noReserve ?? item.noTokenAmount));
+
+  if (Number.isFinite(reserveYesDirect) && Number.isFinite(reserveNoDirect)) {
+    return {
+      reserveYes: reserveYesDirect,
+      reserveNo: reserveNoDirect,
+      estimated: false,
+      source: 'market:reserve-pair',
+    };
+  }
+
+  const yesProbability = normalizeProbabilityLike(item && (item.yesChance ?? item.yesPct ?? item.yesProbability));
+  if (Number.isFinite(reserveYesDirect) && Number.isFinite(yesProbability) && yesProbability > 0 && yesProbability < 1) {
+    const reserveNo = reserveYesDirect * (yesProbability / (1 - yesProbability));
+    return {
+      reserveYes: reserveYesDirect,
+      reserveNo,
+      estimated: true,
+      source: 'market:reserve-yes+yes-probability',
+    };
+  }
+
+  const currentTvl = toOptionalNumber(item && item.currentTvl);
+  if (Number.isFinite(currentTvl) && Number.isFinite(yesProbability) && yesProbability > 0 && yesProbability < 1) {
+    return {
+      reserveYes: currentTvl * (1 - yesProbability),
+      reserveNo: currentTvl * yesProbability,
+      estimated: true,
+      source: 'market:tvl+yes-probability',
+    };
+  }
+
+  return {
+    reserveYes: null,
+    reserveNo: null,
+    estimated: false,
+    source: 'market:unavailable',
+  };
+}
+
+function solveReservesForYesProbabilityFromK(kValue, yesProbability) {
+  if (!Number.isFinite(kValue) || kValue <= 0) return null;
+  if (!Number.isFinite(yesProbability) || yesProbability <= 0 || yesProbability >= 1) return null;
+  const ratio = yesProbability / (1 - yesProbability);
+  const reserveYes = Math.sqrt(kValue / ratio);
+  const reserveNo = Math.sqrt(kValue * ratio);
+  if (!Number.isFinite(reserveYes) || !Number.isFinite(reserveNo)) return null;
+  return { reserveYes, reserveNo };
+}
+
+function buildDepthFromReserves(reserveYes, reserveNo) {
+  if (!Number.isFinite(reserveYes) || !Number.isFinite(reserveNo) || reserveYes <= 0 || reserveNo <= 0) {
+    return null;
+  }
+  const total = reserveYes + reserveNo;
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const yesProbability = reserveNo / total;
+  const kValue = reserveYes * reserveNo;
+  const slippages = [0.01, 0.05, 0.10];
+  const depth = {};
+  for (const slippage of slippages) {
+    const upProb = Math.min(0.999999, yesProbability * (1 + slippage));
+    const downProb = Math.max(0.000001, yesProbability * (1 - slippage));
+    const up = solveReservesForYesProbabilityFromK(kValue, upProb);
+    const down = solveReservesForYesProbabilityFromK(kValue, downProb);
+    const buyYesUsdc = up ? Math.max(0, up.reserveNo - reserveNo) : null;
+    const buyNoUsdc = down ? Math.max(0, down.reserveYes - reserveYes) : null;
+    const minDepthUsdc = [buyYesUsdc, buyNoUsdc].filter((value) => Number.isFinite(value) && value > 0);
+    depth[String(Math.round(slippage * 100))] = {
+      buyYesUsdc: Number.isFinite(buyYesUsdc) ? round(buyYesUsdc, 6) : null,
+      buyNoUsdc: Number.isFinite(buyNoUsdc) ? round(buyNoUsdc, 6) : null,
+      minDepthUsdc: minDepthUsdc.length ? round(Math.min(...minDepthUsdc), 6) : null,
+    };
+  }
+  return depth;
+}
+
+function buildMarketLiquidityMetrics(item) {
+  const reservePair = deriveMarketReservePair(item || {});
+  const reserveYes = reservePair.reserveYes;
+  const reserveNo = reservePair.reserveNo;
+  const marketType = String(item && item.marketType ? item.marketType : '').toLowerCase();
+  const totalPool = Number.isFinite(reserveYes) && Number.isFinite(reserveNo) ? reserveYes + reserveNo : null;
+  const yesPrice =
+    Number.isFinite(totalPool) && totalPool > 0 && Number.isFinite(reserveNo)
+      ? reserveNo / totalPool
+      : normalizeProbabilityLike(item && (item.yesChance ?? item.yesPct ?? item.yesProbability));
+  const noPrice = Number.isFinite(yesPrice) ? (1 - yesPrice) : null;
+  const kValue = Number.isFinite(reserveYes) && Number.isFinite(reserveNo) ? reserveYes * reserveNo : null;
+  const depth = marketType === 'amm' ? buildDepthFromReserves(reserveYes, reserveNo) : null;
+  const feeTier = toOptionalNumber(item && item.feeTier);
+
+  return {
+    reserveYes: Number.isFinite(reserveYes) ? round(reserveYes, 6) : null,
+    reserveNo: Number.isFinite(reserveNo) ? round(reserveNo, 6) : null,
+    feeTier: Number.isFinite(feeTier) ? feeTier : null,
+    feePct: Number.isFinite(feeTier) ? round(feeTier / 10_000, 6) : null,
+    yesPrice: Number.isFinite(yesPrice) ? round(yesPrice, 6) : null,
+    noPrice: Number.isFinite(noPrice) ? round(noPrice, 6) : null,
+    kValue: Number.isFinite(kValue) ? round(kValue, 6) : null,
+    depth,
+    poolYes: marketType === 'pari' && Number.isFinite(reserveYes) ? round(reserveYes, 6) : null,
+    poolNo: marketType === 'pari' && Number.isFinite(reserveNo) ? round(reserveNo, 6) : null,
+    totalPool: marketType === 'pari' && Number.isFinite(totalPool) ? round(totalPool, 6) : null,
+    deadPool: Number.isFinite(reserveYes) && Number.isFinite(reserveNo) ? reserveYes <= 1 || reserveNo <= 1 : null,
+    estimated: reservePair.estimated,
+    reserveSource: reservePair.source,
+  };
+}
+
 function normalizeNumericLikeValue(value) {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : value;
@@ -3179,6 +3351,7 @@ function enrichMarketItem(item, options, enrichmentContext) {
       }
     }
     enriched.expanded = buildMarketExpansion(baseItem);
+    enriched.liquidity = buildMarketLiquidityMetrics(baseItem);
   }
 
   if (options.withOdds) {
@@ -3296,28 +3469,37 @@ function buildMarketsListPayload(indexerUrl, options, items, pageInfo, opts = {}
 
 function applyMarketLifecycleFilter(items, options) {
   if (!Array.isArray(items) || !items.length) return items;
-  if (!options || !MARKET_LIFECYCLE_FILTERS.has(options.lifecycle) || options.lifecycle === 'all') {
-    return items;
-  }
+  if (!options) return items;
 
   const nowEpochSeconds = Math.floor(Date.now() / 1000);
   const expiringCutoffEpochSeconds =
     nowEpochSeconds + parsePositiveInteger(options.expiringSoonHours, '--expiring-hours') * 60 * 60;
 
-  return items.filter((item) => {
-    const closeEpoch = toOptionalNumber(item && item.marketCloseTimestamp);
-    if (!Number.isFinite(closeEpoch)) return false;
+  const lifecycleFiltered = (!MARKET_LIFECYCLE_FILTERS.has(options.lifecycle) || options.lifecycle === 'all')
+    ? items
+    : items.filter((item) => {
+        const closeEpoch = toOptionalNumber(item && item.marketCloseTimestamp);
+        if (!Number.isFinite(closeEpoch)) return false;
 
-    if (options.lifecycle === 'active') {
-      return closeEpoch > nowEpochSeconds;
-    }
-    if (options.lifecycle === 'resolved') {
-      return closeEpoch <= nowEpochSeconds;
-    }
-    if (options.lifecycle === 'expiring-soon') {
-      return closeEpoch > nowEpochSeconds && closeEpoch <= expiringCutoffEpochSeconds;
-    }
-    return true;
+        if (options.lifecycle === 'active') {
+          return closeEpoch > nowEpochSeconds;
+        }
+        if (options.lifecycle === 'resolved') {
+          return closeEpoch <= nowEpochSeconds;
+        }
+        if (options.lifecycle === 'expiring-soon') {
+          return closeEpoch > nowEpochSeconds && closeEpoch <= expiringCutoffEpochSeconds;
+        }
+        return true;
+      });
+
+  if (options.minTvlUsdc === null || options.minTvlUsdc === undefined) {
+    return lifecycleFiltered;
+  }
+
+  return lifecycleFiltered.filter((item) => {
+    const tvl = toOptionalNumber(item && item.currentTvl);
+    return Number.isFinite(tvl) && tvl >= options.minTvlUsdc;
   });
 }
 
@@ -3327,6 +3509,57 @@ async function fetchMarketsListPage(indexerUrl, options, timeoutMs) {
   const page = normalizePageResult(data.marketss);
   const items = applyMarketLifecycleFilter(page.items, options);
   return { items, pageInfo: page.pageInfo, unfilteredCount: page.items.length };
+}
+
+async function filterHedgeableMarkets({ indexerUrl, timeoutMs, options, items }) {
+  const normalizedItems = Array.isArray(items) ? items.map((item) => normalizeMarketNumericFields(item)) : [];
+  if (!normalizedItems.length) {
+    return { items: normalizedItems, unfilteredCount: 0 };
+  }
+
+  let opportunityPayload = null;
+  try {
+    opportunityPayload = await scanArbitrage({
+      indexerUrl,
+      timeoutMs,
+      chainId: options && options.where && options.where.chainId !== undefined ? options.where.chainId : null,
+      venues: ['pandora', 'polymarket'],
+      limit: Math.max(normalizedItems.length * 4, 120),
+      minSpreadPct: 0,
+      minLiquidityUsd: 0,
+      maxCloseDiffHours: 24,
+      similarityThreshold: 0.86,
+      crossVenueOnly: true,
+      withRules: false,
+      includeSimilarity: false,
+      questionContains: null,
+    });
+  } catch {
+    return {
+      items: normalizedItems,
+      unfilteredCount: normalizedItems.length,
+    };
+  }
+
+  const matchedPandoraIds = new Set();
+  const opportunities = Array.isArray(opportunityPayload && opportunityPayload.opportunities)
+    ? opportunityPayload.opportunities
+    : [];
+  for (const opportunity of opportunities) {
+    const legs = Array.isArray(opportunity && opportunity.legs) ? opportunity.legs : [];
+    const hasPolymarket = legs.some((leg) => leg && leg.venue === 'polymarket');
+    if (!hasPolymarket) continue;
+    for (const leg of legs) {
+      if (leg && leg.venue === 'pandora' && leg.marketId) {
+        matchedPandoraIds.add(String(leg.marketId));
+      }
+    }
+  }
+
+  return {
+    items: normalizedItems.filter((item) => matchedPandoraIds.has(String(item && item.id))),
+    unfilteredCount: normalizedItems.length,
+  };
 }
 
 function maybeLoadTradeEnv(sharedFlags) {
@@ -3438,6 +3671,78 @@ function buildQuoteEstimate(odds, side, amountUsdc, slippageBps) {
   };
 }
 
+function buildQuoteEstimateCurve(odds, side, amountsUsdc, slippageBps) {
+  const amounts = Array.isArray(amountsUsdc) ? amountsUsdc : [];
+  const curve = [];
+  for (const amount of amounts) {
+    const estimate = buildQuoteEstimate(odds, side, amount, slippageBps);
+    if (!estimate) {
+      curve.push({
+        amountUsdc: amount,
+        estimatedShares: null,
+        effectivePrice: null,
+        slippagePct: null,
+        roiIfWinPct: null,
+      });
+      continue;
+    }
+    const effectivePrice = estimate.estimatedShares > 0 ? amount / estimate.estimatedShares : null;
+    const impliedPrice = Number.isFinite(estimate.pricePerShare) ? estimate.pricePerShare : null;
+    const slippagePct =
+      Number.isFinite(effectivePrice) && Number.isFinite(impliedPrice) && impliedPrice > 0
+        ? ((effectivePrice - impliedPrice) / impliedPrice) * 100
+        : null;
+    const roiIfWinPct =
+      Number.isFinite(estimate.potentialProfitIfWin) && amount > 0
+        ? (estimate.potentialProfitIfWin / amount) * 100
+        : null;
+    curve.push({
+      amountUsdc: round(amount, 6),
+      estimatedShares: estimate.estimatedShares,
+      effectivePrice: Number.isFinite(effectivePrice) ? round(effectivePrice, 6) : null,
+      slippagePct: Number.isFinite(slippagePct) ? round(slippagePct, 6) : null,
+      roiIfWinPct: Number.isFinite(roiIfWinPct) ? round(roiIfWinPct, 6) : null,
+      estimate,
+    });
+  }
+  return curve;
+}
+
+function buildParimutuelEstimate(liquidity, side, amountUsdc) {
+  const poolYes = toOptionalNumber(liquidity && liquidity.poolYes);
+  const poolNo = toOptionalNumber(liquidity && liquidity.poolNo);
+  if (!Number.isFinite(poolYes) || !Number.isFinite(poolNo) || amountUsdc <= 0) return null;
+  const totalBefore = poolYes + poolNo;
+  const selectedPoolBefore = side === 'yes' ? poolYes : poolNo;
+  const selectedPoolAfter = selectedPoolBefore + amountUsdc;
+  const totalAfter = totalBefore + amountUsdc;
+  if (selectedPoolAfter <= 0 || totalAfter <= 0) return null;
+  const sharePct = amountUsdc / selectedPoolAfter;
+  const payoutIfWin = sharePct * totalAfter;
+  const profitIfWin = payoutIfWin - amountUsdc;
+  const breakevenProbability = payoutIfWin > 0 ? amountUsdc / payoutIfWin : null;
+  return {
+    poolYes: round(poolYes, 6),
+    poolNo: round(poolNo, 6),
+    totalPool: round(totalBefore, 6),
+    selectedPoolAfter: round(selectedPoolAfter, 6),
+    sharePct: round(sharePct, 6),
+    payoutIfWin: round(payoutIfWin, 6),
+    profitIfWin: round(profitIfWin, 6),
+    breakevenProbability: Number.isFinite(breakevenProbability) ? round(breakevenProbability, 6) : null,
+  };
+}
+
+async function fetchMarketSnapshot(indexerUrl, marketAddress, timeoutMs) {
+  try {
+    const query = buildGraphqlGetQuery('markets', MARKETS_LIST_FIELDS);
+    const data = await graphqlRequest(indexerUrl, query, { id: marketAddress }, timeoutMs);
+    return normalizeMarketNumericFields(data && data.markets ? data.markets : null);
+  } catch {
+    return null;
+  }
+}
+
 async function fetchLatestLiquiditySnapshotForMarket(indexerUrl, marketAddress, timeoutMs) {
   const query = buildGraphqlListQuery(
     EVENT_SOURCES.liquidity.listQueryName,
@@ -3483,6 +3788,8 @@ async function resolveQuoteOdds(indexerUrl, options, timeoutMs) {
 }
 
 async function buildQuotePayload(indexerUrl, options, timeoutMs) {
+  const market = await fetchMarketSnapshot(indexerUrl, options.marketAddress, timeoutMs);
+  const liquidity = buildMarketLiquidityMetrics(market || {});
   let odds;
   try {
     odds = await resolveQuoteOdds(indexerUrl, options, timeoutMs);
@@ -3490,17 +3797,28 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
     odds = buildNullOdds(null, `Unable to fetch odds: ${formatErrorValue(err)}`);
   }
   const estimate = buildQuoteEstimate(odds, options.side, options.amountUsdc, options.slippageBps);
+  const amounts = Array.isArray(options.amountsUsdc) && options.amountsUsdc.length
+    ? options.amountsUsdc
+    : [options.amountUsdc];
+  const curve = buildQuoteEstimateCurve(odds, options.side, amounts, options.slippageBps);
+  const parimutuel = String(market && market.marketType ? market.marketType : '').toLowerCase() === 'pari'
+    ? buildParimutuelEstimate(liquidity, options.side, options.amountUsdc)
+    : null;
 
   return {
     generatedAt: new Date().toISOString(),
     indexerUrl,
     marketAddress: options.marketAddress,
+    marketType: market && market.marketType ? market.marketType : null,
     side: options.side,
     amountUsdc: options.amountUsdc,
     slippageBps: options.slippageBps,
     quoteAvailable: Boolean(estimate),
     odds,
     estimate,
+    curve,
+    liquidity,
+    parimutuel,
   };
 }
 
@@ -3844,6 +4162,8 @@ async function enrichMarketResolutionState(indexerUrl, marketItem, timeoutMs, pu
     marketState: onchain && onchain.marketState !== undefined ? onchain.marketState : indexerStatus,
     pollFinalized: onchain && onchain.pollFinalized !== null ? onchain.pollFinalized : indexerPollFinalized,
     pollAnswer: onchain ? onchain.pollAnswer : null,
+    question: pollItem && pollItem.question ? pollItem.question : null,
+    category: pollItem && pollItem.category !== undefined ? pollItem.category : null,
     finalizationEpoch,
     currentEpoch,
     epochsUntilFinalization,
@@ -3866,7 +4186,7 @@ async function runMarketsCommand(args, context) {
 
   if (!action || action === '--help' || action === '-h') {
     if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get ...'));
+      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get|scan ...'));
     } else {
       printMarketsHelpTable();
     }
@@ -3880,7 +4200,7 @@ async function runMarketsCommand(args, context) {
           context.outputMode,
           'markets.list.help',
           commandHelpPayload(
-            'pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]',
+            'pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]',
           ),
         );
       } else {
@@ -3890,13 +4210,25 @@ async function runMarketsCommand(args, context) {
     }
 
     const options = parseMarketsListFlags(actionArgs);
-    const { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
+    let { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
+    if (options.hedgeable) {
+      const filtered = await filterHedgeableMarkets({ indexerUrl, timeoutMs: shared.timeoutMs, options, items });
+      items = Array.isArray(filtered && filtered.items) ? filtered.items : items;
+      if (typeof filtered.unfilteredCount === 'number') {
+        unfilteredCount = filtered.unfilteredCount;
+      }
+    }
     const enrichmentContext =
       options.expand || options.withOdds
         ? await buildMarketsEnrichmentContext(indexerUrl, items, options, shared.timeoutMs)
         : null;
     const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, { enrichmentContext, unfilteredCount });
     emitSuccess(context.outputMode, 'markets.list', payload, renderMarketsListTable);
+    return;
+  }
+
+  if (action === 'scan') {
+    await runScanCommand(actionArgs, context);
     return;
   }
 
@@ -3941,7 +4273,9 @@ async function runMarketsCommand(args, context) {
         const item = normalizeMarketNumericFields(data.markets || null);
         if (!item) return { id, item: null };
         const resolution = await enrichMarketResolutionState(indexerUrl, item, shared.timeoutMs, publicClient);
-        return { id, item: resolution ? { ...item, ...resolution, resolution } : item };
+        const liquidity = buildMarketLiquidityMetrics(item);
+        const enrichedItem = resolution ? { ...item, ...resolution, resolution } : item;
+        return { id, item: { ...enrichedItem, liquidity } };
       }),
     );
 
@@ -3975,7 +4309,7 @@ async function runMarketsCommand(args, context) {
     return;
   }
 
-  throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get');
+  throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get|scan');
 }
 
 const runScanCommand = createRunScanCommand({
@@ -3989,6 +4323,7 @@ const runScanCommand = createRunScanCommand({
   fetchMarketsListPage,
   buildMarketsEnrichmentContext,
   buildMarketsListPayload,
+  filterHedgeableMarkets,
   renderScanTable,
 });
 
@@ -4786,11 +5121,14 @@ const parseSimulateParticleFilterFlagsFromModule = createParseSimulateParticleFi
 
 const runTradeCommandFromService = createRunTradeCommand({
   CliError,
+  includesHelpFlag,
   parseIndexerSharedFlags,
   emitSuccess,
   tradeHelpJsonPayload,
+  quoteHelpJsonPayload,
   printTradeHelpTable,
   maybeLoadTradeEnv,
+  parseQuoteFlags,
   parseTradeFlags: parseTradeFlagsFromModule,
   resolveIndexerUrl,
   buildQuotePayload,
@@ -4801,6 +5139,7 @@ const runTradeCommandFromService = createRunTradeCommand({
   resolveForkRuntime,
   isSecureHttpUrlOrLocal,
   assertLiveWriteAllowed,
+  renderQuoteTable,
   renderTradeTable,
 });
 
@@ -4951,6 +5290,7 @@ const runArbCommandFromService = createRunArbCommand({
   buildGraphqlGetQuery,
   graphqlRequest,
   sleepMs,
+  scanArbitrage,
 });
 const runOddsCommandFromService = createRunOddsCommand({
   parseIndexerSharedFlags,
@@ -4971,11 +5311,11 @@ async function runPortfolioCommand(args, context) {
     if (context.outputMode === 'json') {
       emitSuccess(context.outputMode, 'portfolio.help', {
         usage:
-          'pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
+          'pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
       });
     } else {
       console.log(
-        'Usage: pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
+        'Usage: pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
       );
     }
     return;
