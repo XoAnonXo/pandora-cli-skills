@@ -46,6 +46,27 @@ function buildCommandDescriptors() {
       emits: ['trade', 'trade.help'],
       dataSchema: '#/definitions/TradePayload',
     }),
+    lp: commandDescriptor({
+      summary: 'Run LP add/remove/positions workflows including batch remove.',
+      usage:
+        'pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
+      emits: ['lp', 'lp.help'],
+      dataSchema: '#/definitions/LpPayload',
+    }),
+    resolve: commandDescriptor({
+      summary: 'Dry-run or execute poll resolution.',
+      usage:
+        'pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
+      emits: ['resolve', 'resolve.help'],
+      dataSchema: '#/definitions/ResolvePayload',
+    }),
+    claim: commandDescriptor({
+      summary: 'Dry-run or execute winnings redemption for one market or all discovered markets.',
+      usage:
+        'pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]',
+      emits: ['claim', 'claim.help'],
+      dataSchema: '#/definitions/ClaimPayload',
+    }),
     watch: commandDescriptor({
       summary: 'Poll portfolio and/or market snapshots with optional alert thresholds.',
       usage:
@@ -264,6 +285,13 @@ function buildCommandDescriptors() {
       emits: ['sports.resolve.plan', 'sports.help'],
       dataSchema: '#/definitions/SportsResolvePlanPayload',
     }),
+    'mirror.browse': commandDescriptor({
+      summary: 'Browse Polymarket mirror candidates with optional sports tag filters.',
+      usage:
+        'pandora [--output table|json] mirror browse [--min-yes-pct <n>] [--max-yes-pct <n>] [--min-volume-24h <n>] [--closes-after <date>|--end-date-after <date|72h>] [--closes-before <date>|--end-date-before <date|72h>] [--question-contains <text>|--keyword <text>] [--slug <text>] [--category sports|crypto|politics|entertainment] [--exclude-sports] [--sort-by volume24h|liquidity|endDate] [--limit <n>] [--chain-id <id>] [--polymarket-tag-id <id>] [--polymarket-tag-ids <csv>] [--sport-tag-id <id>] [--sport-tag-ids <csv>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+      emits: ['mirror.browse', 'mirror.browse.help'],
+      dataSchema: '#/definitions/MirrorBrowsePayload',
+    }),
     'mirror.plan': commandDescriptor({
       summary: 'Generate mirror sizing/distribution plan from Polymarket source.',
       usage:
@@ -285,12 +313,47 @@ function buildCommandDescriptors() {
       emits: ['mirror.verify', 'mirror.verify.help'],
       dataSchema: '#/definitions/MirrorVerifyPayload',
     }),
+    'mirror.lp-explain': commandDescriptor({
+      summary: 'Explain complete-set LP mechanics and inventory split.',
+      usage:
+        'pandora [--output table|json] mirror lp-explain --liquidity-usdc <n> [--source-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>]',
+      emits: ['mirror.lp-explain', 'mirror.lp-explain.help'],
+      dataSchema: '#/definitions/GenericCommandData',
+    }),
+    'mirror.simulate': commandDescriptor({
+      summary: 'Run mirror LP economics simulation.',
+      usage:
+        'pandora [--output table|json] mirror simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--polymarket-yes-pct <0-100>]',
+      emits: ['mirror.simulate', 'mirror.simulate.help'],
+      dataSchema: '#/definitions/GenericCommandData',
+    }),
+    'mirror.go': commandDescriptor({
+      summary: 'Run mirror deploy + verify + optional sync workflow.',
+      usage:
+        'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--sources <url...>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]',
+      emits: ['mirror.go', 'mirror.go.help'],
+      dataSchema: '#/definitions/GenericCommandData',
+    }),
     'mirror.sync': commandDescriptor({
       summary: 'Run mirror sync loop or daemon lifecycle commands.',
       usage:
-        'pandora [--output table|json] mirror sync run|once|start|stop|status --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [sync flags]',
+        'pandora [--output table|json] mirror sync run|once|start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [sync flags]; stop selector: --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all; status selector: --pid-file <path>|--strategy-hash <hash>',
       emits: ['mirror.sync', 'mirror.sync.help', 'mirror.sync.start', 'mirror.sync.stop', 'mirror.sync.status'],
       dataSchema: '#/definitions/MirrorSyncPayload',
+    }),
+    'mirror.status': commandDescriptor({
+      summary: 'Inspect persisted mirror strategy state.',
+      usage:
+        'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash> [--with-live] [--trust-deploy] [--indexer-url <url>] [--timeout-ms <ms>]',
+      emits: ['mirror.status', 'mirror.status.help'],
+      dataSchema: '#/definitions/GenericCommandData',
+    }),
+    'mirror.close': commandDescriptor({
+      summary: 'Build or execute closeout workflow for one mirror pair or all.',
+      usage:
+        'pandora [--output table|json] mirror close --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]',
+      emits: ['mirror.close', 'mirror.close.help'],
+      dataSchema: '#/definitions/MirrorClosePayload',
     }),
     'mirror.hedge-calc': commandDescriptor({
       summary: 'Compute hedge direction/size from reserve imbalance and market odds.',
@@ -328,7 +391,7 @@ function buildCommandDescriptors() {
     schema: commandDescriptor({
       summary: 'Emit JSON envelope schema plus command descriptor map for agents.',
       usage: 'pandora [--output json] schema',
-      emits: ['schema'],
+      emits: ['schema', 'schema.help'],
       outputModes: ['json'],
       dataSchema: '#/definitions/SchemaCommandPayload',
       helpDataSchema: null,
@@ -582,6 +645,68 @@ function buildSchemaPayload() {
           generatedAt: { type: 'string', format: 'date-time' },
         },
       },
+      LpPayload: {
+        type: 'object',
+        properties: {
+          action: { type: 'string' },
+          mode: { type: 'string' },
+          runtime: { type: ['object', 'null'] },
+          status: { type: ['string', 'null'] },
+          marketAddress: { type: ['string', 'null'] },
+          wallet: { type: ['string', 'null'] },
+          count: { type: ['integer', 'null'] },
+          successCount: { type: ['integer', 'null'] },
+          failureCount: { type: ['integer', 'null'] },
+          txPlan: { type: ['object', 'null'] },
+          preflight: { type: ['object', 'null'] },
+          tx: { type: ['object', 'null'] },
+          items: { type: ['array', 'null'], items: { type: 'object' } },
+          diagnostics: { type: ['array', 'null'], items: { type: 'string' } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      ResolvePayload: {
+        type: 'object',
+        properties: {
+          mode: { enum: ['dry-run', 'execute'] },
+          status: { type: 'string' },
+          runtime: { type: ['object', 'null'] },
+          pollAddress: { type: ['string', 'null'] },
+          answer: { type: ['string', 'null'] },
+          reason: { type: ['string', 'null'] },
+          txPlan: { type: ['object', 'null'] },
+          precheck: { type: ['object', 'null'] },
+          tx: { type: ['object', 'null'] },
+          diagnostics: { type: ['array', 'null'], items: { type: 'string' } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      ClaimPayload: {
+        type: 'object',
+        properties: {
+          mode: { type: 'string' },
+          runtime: { type: ['object', 'null'] },
+          status: { type: ['string', 'null'] },
+          action: { type: ['string', 'null'] },
+          marketAddress: { type: ['string', 'null'] },
+          wallet: { type: ['string', 'null'] },
+          pollAddress: { type: ['string', 'null'] },
+          claimable: { type: ['boolean', 'null'] },
+          resolution: { type: ['object', 'null'] },
+          txPlan: { type: ['object', 'null'] },
+          preflight: { type: ['object', 'null'] },
+          tx: { type: ['object', 'null'] },
+          count: { type: ['integer', 'null'] },
+          successCount: { type: ['integer', 'null'] },
+          failureCount: { type: ['integer', 'null'] },
+          items: { type: ['array', 'null'], items: { type: 'object' } },
+          diagnostics: { type: ['array', 'null'], items: { type: 'string' } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
       WatchPayload: {
         type: 'object',
         properties: {
@@ -812,6 +937,19 @@ function buildSchemaPayload() {
           generatedAt: { type: 'string', format: 'date-time' },
         },
       },
+      MirrorBrowsePayload: {
+        type: 'object',
+        properties: {
+          source: { type: 'string' },
+          gammaApiError: { type: ['string', 'null'] },
+          filters: { type: 'object' },
+          count: { type: 'integer' },
+          items: { type: 'array', items: { type: 'object' } },
+          diagnostics: { type: 'array', items: { type: 'string' } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
       MirrorPlanPayload: {
         type: 'object',
         properties: {
@@ -879,6 +1017,21 @@ function buildSchemaPayload() {
           diagnostics: { type: 'array', items: { type: 'string' } },
           schemaVersion: { type: 'string' },
           stateSchemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      MirrorClosePayload: {
+        type: 'object',
+        properties: {
+          mode: { enum: ['dry-run', 'execute'] },
+          target: { type: 'object' },
+          pandoraMarketAddress: { type: ['string', 'null'] },
+          polymarketMarketId: { type: ['string', 'null'] },
+          polymarketSlug: { type: ['string', 'null'] },
+          steps: { type: 'array', items: { type: 'object' } },
+          summary: { type: 'object' },
+          diagnostics: { type: 'array', items: { type: 'string' } },
+          schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },
       },

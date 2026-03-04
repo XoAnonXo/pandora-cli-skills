@@ -14,6 +14,8 @@ function createRunResolveCommand(deps) {
   const includesHelpFlag = requireDep(deps, 'includesHelpFlag');
   const emitSuccess = requireDep(deps, 'emitSuccess');
   const commandHelpPayload = requireDep(deps, 'commandHelpPayload');
+  const parseIndexerSharedFlags = requireDep(deps, 'parseIndexerSharedFlags');
+  const maybeLoadTradeEnv = requireDep(deps, 'maybeLoadTradeEnv');
   const parseResolveFlags = requireDep(deps, 'parseResolveFlags');
   const runResolve = requireDep(deps, 'runResolve');
   const renderSingleEntityTable = requireDep(deps, 'renderSingleEntityTable');
@@ -21,24 +23,26 @@ function createRunResolveCommand(deps) {
   const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
 
   return async function runResolveCommand(args, context) {
-    if (includesHelpFlag(args)) {
+    const shared = parseIndexerSharedFlags(args);
+    if (includesHelpFlag(shared.rest)) {
       if (context.outputMode === 'json') {
         emitSuccess(
           context.outputMode,
           'resolve.help',
           commandHelpPayload(
-            'pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
+            'pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
           ),
         );
       } else {
         // eslint-disable-next-line no-console
         console.log(
-          'Usage: pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
+          'Usage: pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
         );
       }
       return;
     }
-    const options = parseResolveFlags(args);
+    maybeLoadTradeEnv(shared);
+    const options = parseResolveFlags(shared.rest);
     if (options.execute && assertLiveWriteAllowed) {
       await assertLiveWriteAllowed('resolve.execute', {
         runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',

@@ -1,6 +1,6 @@
 /**
  * Handle `mirror close` command execution.
- * Builds and emits a close plan payload for dry-run/operator workflows.
+ * Executes stop/withdraw/claim workflow for one market or all tracked mirrors.
  * @param {{shared: object, context: object, deps: object}} params
  * @returns {Promise<void>}
  */
@@ -10,13 +10,18 @@ module.exports = async function handleMirrorClose({ shared, context, deps }) {
     emitSuccess,
     commandHelpPayload,
     parseMirrorCloseFlags,
-    buildMirrorClosePlan,
+    maybeLoadTradeEnv,
+    runMirrorClose,
+    stopMirrorDaemon,
+    runLp,
+    runClaim,
+    assertLiveWriteAllowed,
     renderMirrorCloseTable,
   } = deps;
 
   if (includesHelpFlag(shared.rest)) {
     const usage =
-      'pandora [--output table|json] mirror close --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute';
+      'pandora [--output table|json] mirror close --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]';
     if (context.outputMode === 'json') {
       emitSuccess(context.outputMode, 'mirror.close.help', commandHelpPayload(usage));
     } else {
@@ -25,7 +30,23 @@ module.exports = async function handleMirrorClose({ shared, context, deps }) {
     return;
   }
 
+  maybeLoadTradeEnv(shared);
   const options = parseMirrorCloseFlags(shared.rest);
-  const payload = buildMirrorClosePlan(options);
+  if (!options.indexerUrl && shared.indexerUrl) {
+    options.indexerUrl = shared.indexerUrl;
+  }
+  if (Number.isFinite(shared.timeoutMs)) {
+    options.timeoutMs = shared.timeoutMs;
+  }
+  if (options.execute && typeof assertLiveWriteAllowed === 'function') {
+    await assertLiveWriteAllowed('mirror.close.execute', {
+      runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+    });
+  }
+  const payload = await runMirrorClose(options, {
+    stopMirrorDaemon,
+    runLp,
+    runClaim,
+  });
   emitSuccess(context.outputMode, 'mirror.close', payload, renderMirrorCloseTable);
 };

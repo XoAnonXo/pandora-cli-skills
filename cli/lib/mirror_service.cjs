@@ -270,7 +270,17 @@ async function deployMirror(options = {}) {
       : Number(planData.distributionHint && planData.distributionHint.distributionNo);
 
   const sources = normalizeSources(options.sources);
-  if (sources.length < 2) {
+  if (options.sourcesProvided && sources.length < 2) {
+    throw createServiceError(
+      'INVALID_FLAG_VALUE',
+      '--sources requires at least two non-empty URLs when explicitly provided.',
+      {
+        providedCount: Array.isArray(options.sources) ? options.sources.length : 0,
+        normalizedCount: sources.length,
+      },
+    );
+  }
+  if (!options.sourcesProvided && sources.length < 2) {
     diagnostics.push('Using fallback source URLs because explicit --sources were not provided.');
   }
 
@@ -395,6 +405,7 @@ async function browseMirrorMarkets(options = {}) {
     gammaUrl: options.polymarketGammaUrl,
     gammaMockUrl: options.polymarketGammaMockUrl,
     mockUrl: options.polymarketMockUrl,
+    polymarketTagIds: Array.isArray(options.polymarketTagIds) ? options.polymarketTagIds : [],
     timeoutMs: options.timeoutMs,
     minYesPct: options.minYesPct,
     maxYesPct: options.maxYesPct,
@@ -402,6 +413,11 @@ async function browseMirrorMarkets(options = {}) {
     closesAfter: options.closesAfter,
     closesBefore: options.closesBefore,
     questionContains: options.questionContains,
+    keyword: options.keyword,
+    slug: options.slug,
+    categories: Array.isArray(options.categories) ? options.categories : [],
+    excludeSports: Boolean(options.excludeSports),
+    sortBy: options.sortBy,
     limit: options.limit,
   });
 

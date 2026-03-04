@@ -7,6 +7,18 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
+function normalizeSources(entries) {
+  const values = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const parts = String(entry || '').split(/[\n,]/g);
+    for (const part of parts) {
+      const normalized = String(part || '').trim();
+      if (normalized) values.push(normalized);
+    }
+  }
+  return values;
+}
+
 /**
  * Creates the mirror go flags parser.
  * @param {object} deps
@@ -49,12 +61,14 @@ function createParseMirrorGoFlags(deps) {
       cooldownMs: 60_000,
       chainId: null,
       rpcUrl: null,
+      polymarketRpcUrl: null,
       privateKey: null,
       funder: null,
       usdc: null,
       oracle: null,
       factory: null,
       sources: [],
+      sourcesProvided: false,
       manifestFile: null,
       trustDeploy: false,
       forceGate: false,
@@ -200,6 +214,18 @@ function createParseMirrorGoFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--polymarket-rpc-url') {
+        const polymarketRpcUrl = requireFlagValue(args, i, '--polymarket-rpc-url');
+        if (!isSecureHttpUrlOrLocal(polymarketRpcUrl)) {
+          throw new CliError(
+            'INVALID_FLAG_VALUE',
+            '--polymarket-rpc-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
+          );
+        }
+        options.polymarketRpcUrl = polymarketRpcUrl;
+        i += 1;
+        continue;
+      }
       if (token === '--private-key') {
         options.privateKey = parsePrivateKeyFlag(requireFlagValue(args, i, '--private-key'), '--private-key');
         i += 1;
@@ -235,6 +261,7 @@ function createParseMirrorGoFlags(deps) {
         if (!entries.length) {
           throw new CliError('MISSING_FLAG_VALUE', 'Missing value for --sources');
         }
+        options.sourcesProvided = true;
         options.sources.push(...entries);
         i = j - 1;
         continue;
@@ -329,12 +356,21 @@ function createParseMirrorGoFlags(deps) {
       throw new CliError('INVALID_FLAG_VALUE', '--hedge-ratio must be <= 2.');
     }
     if (options.executeLive) {
-      if (options.maxOpenExposureUsdc === null) {
-        throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-open-exposure-usdc.');
+      const missing = [];
+      if (options.maxOpenExposureUsdc === null) missing.push('--max-open-exposure-usdc');
+      if (options.maxTradesPerDay === null) missing.push('--max-trades-per-day');
+      if (missing.length) {
+        throw new CliError(
+          'MISSING_REQUIRED_FLAG',
+          `Live mode requires companion risk flags: ${missing.join(', ')}.`,
+        );
       }
-      if (options.maxTradesPerDay === null) {
-        throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-trades-per-day.');
-      }
+    }
+    if (options.sourcesProvided && normalizeSources(options.sources).length < 2) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        '--sources requires at least two non-empty URLs when explicitly provided.',
+      );
     }
 
     return options;

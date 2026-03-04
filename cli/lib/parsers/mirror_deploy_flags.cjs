@@ -7,6 +7,18 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
+function normalizeSources(entries) {
+  const values = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const parts = String(entry || '').split(/[\n,]/g);
+    for (const part of parts) {
+      const normalized = String(part || '').trim();
+      if (normalized) values.push(normalized);
+    }
+  }
+  return values;
+}
+
 /**
  * Creates the mirror deploy flags parser.
  * @param {object} deps
@@ -36,6 +48,7 @@ function createParseMirrorDeployFlags(deps) {
       arbiter: null,
       category: 3,
       sources: [],
+      sourcesProvided: false,
       chainId: null,
       rpcUrl: null,
       privateKey: null,
@@ -123,6 +136,7 @@ function createParseMirrorDeployFlags(deps) {
         if (!entries.length) {
           throw new CliError('MISSING_FLAG_VALUE', 'Missing value for --sources');
         }
+        options.sourcesProvided = true;
         options.sources.push(...entries);
         i = j - 1;
         continue;
@@ -175,7 +189,14 @@ function createParseMirrorDeployFlags(deps) {
         continue;
       }
       if (token === '--polymarket-host') {
-        options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
+        const polymarketHost = requireFlagValue(args, i, '--polymarket-host');
+        if (!isSecureHttpUrlOrLocal(polymarketHost)) {
+          throw new CliError(
+            'INVALID_FLAG_VALUE',
+            '--polymarket-host must use https:// (or http://localhost/127.0.0.1 for local testing).',
+          );
+        }
+        options.polymarketHost = polymarketHost;
         i += 1;
         continue;
       }
@@ -240,6 +261,12 @@ function createParseMirrorDeployFlags(deps) {
       options.distributionYes + options.distributionNo !== 1_000_000_000
     ) {
       throw new CliError('INVALID_ARGS', '--distribution-yes + --distribution-no must equal 1000000000.');
+    }
+    if (options.sourcesProvided && normalizeSources(options.sources).length < 2) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        '--sources requires at least two non-empty URLs when explicitly provided.',
+      );
     }
 
     return options;

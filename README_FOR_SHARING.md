@@ -134,6 +134,7 @@ Prerequisite: Node.js `>=18`.
   - `pandora analyze --market-address <0x...> --provider <name>`
   - `pandora suggest --wallet <0x...> --risk low|medium|high --budget <amount>`
   - `pandora resolve`
+  - `pandora claim --market-address <address>|--all --dry-run|--execute`
 - `pandora lp add|remove|positions`
 
 ## Quant ABM baseline (current implementation)
@@ -179,6 +180,7 @@ Prerequisite: Node.js `>=18`.
 - Supported families:
   - `trade`
   - `resolve`
+  - `claim`
   - `lp`
   - `polymarket check|approve|preflight|trade`
 - `polymarket trade --execute` in fork mode is simulation-only unless `--polymarket-mock-url` is provided.
@@ -200,6 +202,7 @@ Mirror advanced flags (for operator tuning):
 - `--sync-interval-ms <ms>` on `mirror go` to control auto-sync tick cadence.
 - `--oracle <address>` / `--factory <address>` on `mirror deploy` and `mirror go` for explicit contract overrides.
 - `--polymarket-gamma-mock-url <url>` on `mirror browse|plan|verify|go|sync|status` for deterministic mock-source testing.
+- `--polymarket-tag-id <id>` / `--polymarket-tag-ids <csv>` on `mirror browse` (aliases: `--sport-tag-id`, `--sport-tag-ids`) to query sports-tagged Gamma events.
 - `--no-stream` on `mirror sync` to disable per-tick stdout line streaming in run mode.
 - `--pid-file <path>` on `mirror sync stop|status` for explicit daemon process selection.
 
@@ -219,7 +222,7 @@ Mirror advanced flags (for operator tuning):
 - `pandora export --wallet <0x...> --format csv --out ./trades.csv`
 - `pandora arbitrage --venues pandora,polymarket --min-spread-pct 2 --cross-venue-only --with-rules --include-similarity`
 - `pandora autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper`
-- `pandora mirror browse --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10`
+- `pandora mirror browse --polymarket-tag-id 82 --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10`
 - `pandora mirror plan --source polymarket --polymarket-market-id <id> --with-rules --include-similarity`
 - `pandora mirror go --polymarket-slug <slug> --liquidity-usdc 10 --paper`
 - `pandora mirror verify --pandora-market-address <0x...> --polymarket-market-id <id> --include-similarity`
@@ -331,7 +334,7 @@ Mirror advanced flags (for operator tuning):
   - `data.live` now includes additive position diagnostics: `polymarketPosition.{yesBalance,noBalance,openOrdersCount,estimatedValueUsd,diagnostics[]}` plus `netDeltaApprox` and `pnlApprox`.
   - if Polymarket credentials/endpoints are unavailable, `--with-live` remains non-fatal and returns diagnostics with null position fields.
 - `mirror close`:
-  - envelope is `ok=true`, `command="mirror.close"`, with `data.mode` and unwind `data.steps[]` scaffold.
+  - envelope is `ok=true`, `command="mirror.close"`, with `data.mode`, `data.target`, unwind `data.steps[]`, and `data.summary`.
 - `webhook test`:
   - envelope is `ok=true`, `command="webhook.test"`, with per-target delivery and retry metadata.
 - `leaderboard`:
@@ -356,8 +359,8 @@ Mirror advanced flags (for operator tuning):
 ## Additional JSON response shapes
 - `doctor`: `{ ok: true, command: "doctor", data: { schemaVersion, generatedAt, env, rpc, codeChecks, polymarket, summary } }`
 - `resolve`:
-  - dry-run: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "dry-run", txPlan } }`
-  - execute: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "execute", tx } }`
+  - dry-run: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "dry-run", runtime: { mode, chainId, rpcUrl }, txPlan, precheck?, diagnostics[] } }`
+  - execute: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "execute", runtime: { mode, chainId, rpcUrl }, tx, precheck, diagnostics[] } }`
 - `lp`:
   - add/remove: `{ ok: true, command: "lp", data: { schemaVersion, generatedAt, action: "add"|"remove", mode, txPlan, tx? } }`
   - positions: `{ ok: true, command: "lp", data: { schemaVersion, generatedAt, action: "positions", mode: "read", wallet, count, items } }`
@@ -366,7 +369,7 @@ Mirror advanced flags (for operator tuning):
 
 ### Resolve command
 - Usage:
-  - `pandora [--output table|json] resolve --poll-address <address> --answer yes|no --reason <text> --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]`
+  - `pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]`
 - Behavior:
   - `--dry-run` returns a deterministic execution plan.
   - `--execute` submits the resolution transaction with decoded revert diagnostics on failure.
@@ -374,7 +377,8 @@ Mirror advanced flags (for operator tuning):
 ### LP command
 - Usage:
   - `pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--deadline-seconds <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]`
-  - `pandora [--output table|json] lp remove --market-address <address> --lp-tokens <n> --dry-run|--execute [--deadline-seconds <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]`
+  - `pandora [--output table|json] lp remove --market-address <address> --lp-tokens <n>|--all --dry-run|--execute [--deadline-seconds <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]`
+  - `pandora [--output table|json] lp remove --all-markets [--wallet <address>] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]`
   - `pandora [--output table|json] lp positions --wallet <address> [--market-address <address>] [--chain-id <id>] [--indexer-url <url>] [--timeout-ms <ms>]`
 - Behavior:
   - `add/remove` use simulation-first transaction flow.
@@ -425,6 +429,7 @@ Mirror advanced flags (for operator tuning):
   - `pandora analyze`
   - `pandora suggest`
   - `pandora resolve`
+  - `pandora claim --market-address <address>|--all --dry-run|--execute`
   - `pandora lp add|remove|positions`
   - `pandora polls list|get`
   - `pandora events list|get`

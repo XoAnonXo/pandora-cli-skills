@@ -46,13 +46,14 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
             start:
               'pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [run flags]',
             stop:
-              'pandora [--output table|json] mirror sync stop --pid-file <path>|--strategy-hash <hash>',
+              'pandora [--output table|json] mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all',
             status:
               'pandora [--output table|json] mirror sync status --pid-file <path>|--strategy-hash <hash>',
           },
           liveHedgeEnv: [
             'POLYMARKET_PRIVATE_KEY',
             'POLYMARKET_FUNDER',
+            'POLYMARKET_RPC_URL',
             'POLYMARKET_API_KEY',
             'POLYMARKET_API_SECRET',
             'POLYMARKET_API_PASSPHRASE',
@@ -72,10 +73,10 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       console.log(
         `Usage: ${mirrorSyncUsage}`,
       );
-      console.log('Daemon stop: pandora mirror sync stop --pid-file <path>|--strategy-hash <hash>');
+      console.log('Daemon stop: pandora mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all');
       console.log('Daemon status: pandora mirror sync status --pid-file <path>|--strategy-hash <hash>');
       console.log(
-        'Live hedge env: POLYMARKET_PRIVATE_KEY, POLYMARKET_FUNDER, POLYMARKET_API_KEY, POLYMARKET_API_SECRET, POLYMARKET_API_PASSPHRASE, POLYMARKET_HOST.',
+        'Live hedge env: POLYMARKET_PRIVATE_KEY, POLYMARKET_FUNDER, POLYMARKET_RPC_URL, POLYMARKET_API_KEY, POLYMARKET_API_SECRET, POLYMARKET_API_PASSPHRASE, POLYMARKET_HOST.',
       );
       console.log('POLYMARKET_FUNDER must be your Polymarket proxy wallet (Gnosis Safe), not your EOA wallet address.');
       console.log('Polymarket CLOB collateral is Polygon USDC.e; ensure proxy wallet USDC.e balance and approvals are configured.');
@@ -216,7 +217,8 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
   if (options.executeLive) {
     try {
       polymarketPreflight = await runLivePolymarketPreflightForMirror({
-        rpcUrl: options.rpcUrl,
+        rpcUrl: options.polymarketRpcUrl || options.rpcUrl,
+        polymarketRpcUrl: options.polymarketRpcUrl,
         privateKey: options.privateKey,
         funder: options.funder,
       });

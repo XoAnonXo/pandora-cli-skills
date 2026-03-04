@@ -16,6 +16,9 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     buildMirrorPlan,
     deployMirror,
     resolveTrustedDeployPair,
+    findMirrorPair,
+    defaultMirrorManifestFile,
+    hasContractCodeAtAddress,
     verifyMirror,
     runLivePolymarketPreflightForMirror,
     runMirrorSync,
@@ -46,24 +49,12 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     console.error(`Warning: ${deprecatedForceGateWarning}`);
   }
 
+  const diagnostics = [];
+  if (deprecatedForceGateWarning) diagnostics.push(deprecatedForceGateWarning);
   let planPayload;
-  let deployPayload;
   try {
     planPayload = await buildMirrorPlan({
       ...options,
-      indexerUrl,
-      timeoutMs: shared.timeoutMs,
-    });
-    if (options.executeLive && typeof assertLiveWriteAllowed === 'function') {
-      await assertLiveWriteAllowed('mirror.go.deploy.execute', {
-        notionalUsdc: options.liquidityUsdc,
-        runtimeMode: 'live',
-      });
-    }
-    deployPayload = await deployMirror({
-      ...options,
-      planData: planPayload,
-      execute: options.executeLive,
       indexerUrl,
       timeoutMs: shared.timeoutMs,
     });
@@ -71,7 +62,6 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     throw coerceMirrorServiceError(err, 'MIRROR_GO_FAILED');
   }
 
-  const pandoraMarketAddress = deployPayload && deployPayload.pandora ? deployPayload.pandora.marketAddress : null;
   const sourceSelector = {
     polymarketMarketId:
       (planPayload && planPayload.sourceMarket && planPayload.sourceMarket.marketId) || options.polymarketMarketId || null,
@@ -79,17 +69,115 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
       (planPayload && planPayload.sourceMarket && planPayload.sourceMarket.slug) || options.polymarketSlug || null,
   };
 
+  let reusedManifestLookup = null;
+  if (
+    options.executeLive &&
+    typeof findMirrorPair === 'function' &&
+    (sourceSelector.polymarketMarketId || sourceSelector.polymarketSlug)
+  ) {
+    const manifestFilePath =
+      options.manifestFile || (typeof defaultMirrorManifestFile === 'function' ? defaultMirrorManifestFile() : null);
+    if (manifestFilePath) {
+      try {
+        const lookup = findMirrorPair(manifestFilePath, sourceSelector);
+        if (
+          lookup &&
+          lookup.pair &&
+          lookup.pair.trusted !== false &&
+          lookup.pair.pandoraMarketAddress
+        ) {
+          let allowReuse = true;
+          if (typeof hasContractCodeAtAddress === 'function') {
+            try {
+              const hasCode = await hasContractCodeAtAddress({
+                marketAddress: lookup.pair.pandoraMarketAddress,
+                chainId: options.chainId,
+                rpcUrl: options.rpcUrl,
+              });
+              if (!hasCode) {
+                allowReuse = false;
+                diagnostics.push(
+                  `Trusted mirror pair exists but has no bytecode at ${lookup.pair.pandoraMarketAddress}; continuing with fresh deploy.`,
+                );
+              }
+            } catch (err) {
+              diagnostics.push(
+                `On-chain deploy dedupe probe failed (${lookup.pair.pandoraMarketAddress}): ${err && err.message ? err.message : String(err)}. Conservatively reusing trusted pair to avoid duplicate spend.`,
+              );
+            }
+          }
+          if (allowReuse) {
+            reusedManifestLookup = lookup;
+            diagnostics.push(
+              `Trusted mirror pair already exists (${lookup.pair.pandoraMarketAddress}); deploy step skipped to prevent duplicate market creation.`,
+            );
+          }
+        }
+      } catch (err) {
+        diagnostics.push(`Mirror manifest lookup failed: ${err && err.message ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  let deployPayload;
+  try {
+    if (reusedManifestLookup) {
+      deployPayload = {
+        schemaVersion: '1.0.0',
+        generatedAt: new Date().toISOString(),
+        mode: 'execute',
+        dryRun: false,
+        sourceMarket: planPayload && planPayload.sourceMarket ? planPayload.sourceMarket : null,
+        planDigest: planPayload && planPayload.planDigest ? planPayload.planDigest : null,
+        pandora: {
+          marketAddress: reusedManifestLookup.pair.pandoraMarketAddress,
+          pollAddress: reusedManifestLookup.pair.pandoraPollAddress || null,
+        },
+        trustManifest: {
+          filePath: reusedManifestLookup.filePath,
+          pair: reusedManifestLookup.pair,
+        },
+        diagnostics: [
+          'Deploy skipped because trusted manifest already maps this source to an on-chain market.',
+        ],
+      };
+    } else {
+      if (options.executeLive && typeof assertLiveWriteAllowed === 'function') {
+        await assertLiveWriteAllowed('mirror.go.deploy.execute', {
+          notionalUsdc: options.liquidityUsdc,
+          runtimeMode: 'live',
+        });
+      }
+      deployPayload = await deployMirror({
+        ...options,
+        planData: planPayload,
+        execute: options.executeLive,
+        indexerUrl,
+        timeoutMs: shared.timeoutMs,
+      });
+    }
+  } catch (err) {
+    throw coerceMirrorServiceError(err, 'MIRROR_GO_FAILED');
+  }
+
+  const pandoraMarketAddress = deployPayload && deployPayload.pandora ? deployPayload.pandora.marketAddress : null;
+
   let verifyPayload = null;
   let syncPayload = null;
   let polymarketPreflight = null;
   let suggestedSyncCommand = null;
-  let trustManifest = deployPayload && deployPayload.trustManifest ? deployPayload.trustManifest : null;
+  let trustManifest =
+    (deployPayload && deployPayload.trustManifest ? deployPayload.trustManifest : null)
+    || (reusedManifestLookup
+      ? {
+          filePath: reusedManifestLookup.filePath,
+          pair: reusedManifestLookup.pair,
+        }
+      : null);
   let trustDeploy = Boolean(options.trustDeploy);
   if (!trustDeploy && trustManifest && trustManifest.pair) {
     trustDeploy = true;
   }
-  const diagnostics = [];
-  if (deprecatedForceGateWarning) diagnostics.push(deprecatedForceGateWarning);
 
   if (pandoraMarketAddress) {
     if (!trustManifest && (options.executeLive || options.trustDeploy)) {
@@ -127,6 +215,23 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         allowRuleMismatch: false,
       });
     } catch (err) {
+      if (options.executeLive) {
+        throw new CliError(
+          'MIRROR_GO_VERIFY_PENDING',
+          `Mirror market ${pandoraMarketAddress} is deployed, but verification failed (likely indexer/indexing lag). Do not rerun mirror go --execute-live; run mirror verify against this market address.`,
+          {
+            pandoraMarketAddress,
+            polymarketMarketId: sourceSelector.polymarketMarketId || null,
+            polymarketSlug: sourceSelector.polymarketSlug || null,
+            manifestFile:
+              (trustManifest && trustManifest.filePath)
+              || options.manifestFile
+              || (typeof defaultMirrorManifestFile === 'function' ? defaultMirrorManifestFile() : null),
+            reusedManifestPair: Boolean(reusedManifestLookup),
+            cause: err && err.message ? err.message : String(err),
+          },
+        );
+      }
       throw coerceMirrorServiceError(err, 'MIRROR_GO_VERIFY_FAILED');
     }
 
@@ -139,7 +244,8 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
       if (options.executeLive) {
         try {
           polymarketPreflight = await runLivePolymarketPreflightForMirror({
-            rpcUrl: options.rpcUrl,
+            rpcUrl: options.polymarketRpcUrl || options.rpcUrl,
+            polymarketRpcUrl: options.polymarketRpcUrl,
             privateKey: options.privateKey,
             funder: options.funder,
           });
@@ -173,6 +279,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         killSwitchFile: null,
         chainId: options.chainId,
         rpcUrl: options.rpcUrl,
+        polymarketRpcUrl: options.polymarketRpcUrl,
         privateKey: options.privateKey,
         funder: options.funder,
         usdc: options.usdc,
@@ -248,6 +355,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
           ? `--polymarket-slug ${sourceSelector.polymarketSlug}`
           : null,
         '--paper',
+        options.polymarketRpcUrl ? `--polymarket-rpc-url ${options.polymarketRpcUrl}` : null,
         `--drift-trigger-bps ${options.driftTriggerBps}`,
         `--hedge-trigger-usdc ${options.hedgeTriggerUsdc}`,
         options.forceGate

@@ -40,6 +40,7 @@ function createCommandRouter(deps = {}) {
     runAnalyzeCommand,
     runSuggestCommand,
     runResolveCommand,
+    runClaimCommand,
     runLpCommand,
     runRiskCommand,
     runModelCommand,
@@ -94,6 +95,7 @@ function createCommandRouter(deps = {}) {
   requireFn('runAnalyzeCommand', runAnalyzeCommand);
   requireFn('runSuggestCommand', runSuggestCommand);
   requireFn('runResolveCommand', runResolveCommand);
+  requireFn('runClaimCommand', runClaimCommand);
   requireFn('runLpCommand', runLpCommand);
   requireFn('runRiskCommand', runRiskCommand);
   requireFn('runModelCommand', runModelCommand);
@@ -189,6 +191,7 @@ function createCommandRouter(deps = {}) {
       analyze: async (handlerArgs, handlerContext) => runAnalyzeCommand(handlerArgs, handlerContext),
       suggest: async (handlerArgs, handlerContext) => runSuggestCommand(handlerArgs, handlerContext),
       resolve: async (handlerArgs, handlerContext) => runResolveCommand(handlerArgs, handlerContext),
+      claim: async (handlerArgs, handlerContext) => runClaimCommand(handlerArgs, handlerContext),
       lp: async (handlerArgs, handlerContext) => runLpCommand(handlerArgs, handlerContext),
       risk: async (handlerArgs, handlerContext) => runRiskCommand(handlerArgs, handlerContext),
       model: async (handlerArgs, handlerContext) => runModelCommand(handlerArgs, handlerContext),

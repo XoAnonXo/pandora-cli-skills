@@ -43,6 +43,24 @@ function buildMirrorDeployRetryCommand(cliName) {
   return `${cliName} mirror deploy --dry-run --plan-file <plan-file>`;
 }
 
+function buildMirrorVerifyRetryCommand(cliName, details) {
+  const pandoraMarketAddress = toAddressOrPlaceholder(details && details.pandoraMarketAddress);
+  const polymarketMarketId = cleanToken(details && details.polymarketMarketId, '');
+  const polymarketSlug = cleanToken(details && details.polymarketSlug, '');
+  const manifestFile = cleanToken(details && details.manifestFile, '');
+  const command = [
+    `${cliName} mirror verify`,
+    `--market-address ${pandoraMarketAddress}`,
+    polymarketMarketId ? `--polymarket-market-id ${polymarketMarketId}` : null,
+    !polymarketMarketId && polymarketSlug ? `--polymarket-slug ${polymarketSlug}` : null,
+    '--trust-deploy',
+    manifestFile ? `--manifest-file ${manifestFile}` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return command;
+}
+
 function buildMirrorSyncRetryCommand(cliName) {
   return `${cliName} mirror sync once --paper --pandora-market-address <address> --polymarket-market-id <id>`;
 }
@@ -197,11 +215,17 @@ function createErrorRecoveryService(options = {}) {
         };
       case 'MIRROR_DEPLOY_FAILED':
       case 'MIRROR_GO_FAILED':
-      case 'MIRROR_GO_VERIFY_FAILED':
       case 'MIRROR_GO_PREFLIGHT_FAILED':
         return {
           action: 'Re-run mirror deploy/verify in dry-run mode',
           command: buildMirrorDeployRetryCommand(cliName),
+          retryable: true,
+        };
+      case 'MIRROR_GO_VERIFY_FAILED':
+      case 'MIRROR_GO_VERIFY_PENDING':
+        return {
+          action: 'Retry verification against the existing deployed market (do not redeploy)',
+          command: buildMirrorVerifyRetryCommand(cliName, details),
           retryable: true,
         };
       case 'MIRROR_SYNC_FAILED':

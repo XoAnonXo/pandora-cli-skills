@@ -78,6 +78,7 @@ function createParseMirrorSyncFlags(deps) {
       manifestFile: null,
       chainId: null,
       rpcUrl: null,
+      polymarketRpcUrl: null,
       privateKey: null,
       funder: null,
       usdc: null,
@@ -256,6 +257,18 @@ function createParseMirrorSyncFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--polymarket-rpc-url') {
+        const polymarketRpcUrl = requireFlagValue(rest, i, '--polymarket-rpc-url');
+        if (!isSecureHttpUrlOrLocal(polymarketRpcUrl)) {
+          throw new CliError(
+            'INVALID_FLAG_VALUE',
+            '--polymarket-rpc-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
+          );
+        }
+        options.polymarketRpcUrl = polymarketRpcUrl;
+        i += 1;
+        continue;
+      }
       if (token === '--private-key') {
         options.privateKey = parsePrivateKeyFlag(requireFlagValue(rest, i, '--private-key'), '--private-key');
         i += 1;
@@ -356,11 +369,14 @@ function createParseMirrorSyncFlags(deps) {
     }
 
     if (options.executeLive) {
-      if (options.maxOpenExposureUsdc === null) {
-        throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-open-exposure-usdc.');
-      }
-      if (options.maxTradesPerDay === null) {
-        throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-trades-per-day.');
+      const missing = [];
+      if (options.maxOpenExposureUsdc === null) missing.push('--max-open-exposure-usdc');
+      if (options.maxTradesPerDay === null) missing.push('--max-trades-per-day');
+      if (missing.length) {
+        throw new CliError(
+          'MISSING_REQUIRED_FLAG',
+          `Live mode requires companion risk flags: ${missing.join(', ')}.`,
+        );
       }
     } else {
       if (options.maxOpenExposureUsdc === null) options.maxOpenExposureUsdc = Number.POSITIVE_INFINITY;
@@ -401,11 +417,14 @@ function createParseMirrorSyncFlags(deps) {
 function createParseMirrorSyncDaemonSelectorFlags(deps) {
   const CliError = requireDep(deps, 'CliError');
   const requireFlagValue = requireDep(deps, 'requireFlagValue');
+  const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
 
   return function parseMirrorSyncDaemonSelectorFlags(args, actionName) {
     const options = {
       pidFile: null,
       strategyHash: null,
+      marketAddress: null,
+      all: false,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -424,13 +443,28 @@ function createParseMirrorSyncDaemonSelectorFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--market-address') {
+        if (actionName !== 'stop') {
+          throw new CliError('INVALID_ARGS', '--market-address selector is only supported for mirror sync stop.');
+        }
+        options.marketAddress = parseAddressFlag(requireFlagValue(args, i, '--market-address'), '--market-address');
+        i += 1;
+        continue;
+      }
+      if (token === '--all') {
+        if (actionName !== 'stop') {
+          throw new CliError('INVALID_ARGS', '--all selector is only supported for mirror sync stop.');
+        }
+        options.all = true;
+        continue;
+      }
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror sync ${actionName}: ${token}`);
     }
 
-    if (!options.pidFile && !options.strategyHash) {
+    if (!options.pidFile && !options.strategyHash && !options.marketAddress && !options.all) {
       throw new CliError(
         'MISSING_REQUIRED_FLAG',
-        `mirror sync ${actionName} requires --pid-file <path> or --strategy-hash <hash>.`,
+        `mirror sync ${actionName} requires --pid-file <path>, --strategy-hash <hash>, --market-address <address>, or --all.`,
       );
     }
 

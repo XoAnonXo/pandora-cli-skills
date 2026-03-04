@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Canonical skill and operator guide for Pandora CLI including mirror, polymarket, resolve, and LP flows.
-version: 1.1.46
+version: 1.1.53
 ---
 
 # Pandora CLI & Skills
@@ -60,6 +60,7 @@ npm link
   - `pandora analyze`
   - `pandora suggest`
   - `pandora resolve`
+  - `pandora claim --market-address <address>|--all --dry-run|--execute`
   - `pandora lp add|remove|positions`
   - `pandora stream prices|events`
 - Quant/model commands:
@@ -133,6 +134,7 @@ pandora [--output table|json] watch [--wallet <address>] [--market-address <addr
 pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand]
 pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
 pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
+pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
 pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
 pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
 pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
@@ -145,8 +147,8 @@ pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-temp
 pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
 pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
 pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
-pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
-pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
+pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
 pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
 pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
 pandora [--output json] schema
@@ -168,7 +170,7 @@ simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-10
 go     --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--sources <url...>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]
 sync run|once|start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
 status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>]
-close  --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute
+close  --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
 ```
 
 Daemon selector detail:
@@ -317,7 +319,7 @@ pandora --output json history --wallet <0x...> --limit 50
 pandora --output json export --wallet <0x...> --format csv --out ./trades.csv
 pandora --output json arbitrage --venues pandora,polymarket --min-spread-pct 3 --cross-venue-only --with-rules --include-similarity
 pandora --output json autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper
-pandora --output json mirror browse --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10
+pandora --output json mirror browse --polymarket-tag-id 82 --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10
 pandora --output json mirror plan --source polymarket --polymarket-market-id <id> --with-rules --include-similarity
 pandora --output json mirror lp-explain --liquidity-usdc 10000 --source-yes-pct 58
 pandora --output json mirror hedge-calc --reserve-yes-usdc 8 --reserve-no-usdc 12 --excess-no-usdc 2 --polymarket-yes-pct 60
@@ -408,7 +410,7 @@ pandora --output json schema
 - `mirror status`: local mirror state inspection with optional live market diagnostics (`--with-live`).
   - `--with-live` uses the same `POLYMARKET_*` env keys for optional position visibility (YES/NO balances, open orders count, estimated value) and adds `netDeltaApprox` / `pnlApprox`.
   - missing credentials or unavailable position endpoints do not hard-fail status; diagnostics are returned with null position fields.
-- `mirror close`: deterministic unwind scaffold for LP withdrawal + hedge unwind flow.
+- `mirror close`: executes deterministic closeout workflow (stop daemon -> withdraw LP -> claim), with dependency-safe step gating.
 - `webhook test`: channel validation for generic, Telegram, and Discord payload delivery.
 - `leaderboard`: ranked user aggregates by profit/volume/win-rate.
   - invalid indexer aggregates are sanitized (win-rate capped to 0-100%) and emitted in diagnostics.
@@ -418,7 +420,7 @@ pandora --output json schema
 
 ### Resolve command
 - Usage:
-  - `pandora [--output table|json] resolve --poll-address <address> --answer yes|no --reason <text> --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]`
+  - `pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]`
 - Behavior:
   - `--dry-run` returns the call plan and decode-ready payload.
   - `--execute` submits on-chain resolution through configured oracle/operator path.
@@ -562,16 +564,17 @@ Error envelope:
   - `{ ok: true, command: "autopilot", data: { schemaVersion, generatedAt, strategyHash, mode, executeLive, stateFile, killSwitchFile, iterationsRequested, iterationsCompleted, stoppedReason?, parameters: { marketAddress, side, amountUsdc, triggerYesBelow?, triggerYesAbove?, intervalMs, cooldownMs, maxAmountUsdc?, maxOpenExposureUsdc, dailySpendCapUsdc, maxTradesPerDay }, state, actionCount, actions[], snapshots[], webhookReports[] } }`
 - `mirror browse`:
   - `{ ok: true, command: "mirror.browse", data: { schemaVersion, generatedAt, source, gammaApiError, filters, count, items[], diagnostics[] } }`
-  - each candidate row can include `existingMirror: { marketAddress, similarity } | null`.
+  - `filters` can include `polymarketTagIds[]` when using `--polymarket-tag-id|--polymarket-tag-ids` (or `--sport-tag-id|--sport-tag-ids` aliases).
+  - each candidate row can include `eventId`, `eventSlug`, `eventTitle`, and `existingMirror: { marketAddress, similarity } | null`.
 - `mirror go`:
   - `{ ok: true, command: "mirror.go", data: { schemaVersion, generatedAt, mode, plan, deploy, verify, sync, polymarketPreflight, suggestedSyncCommand, trustManifest, diagnostics[] } }`
   - `plan` is the same payload shape as `mirror.plan`; `deploy` is the same payload shape as `mirror.deploy`; `sync` is null unless `--auto-sync` is used.
 - close peers:
-  - `mirror close`: `{ ok: true, command: "mirror.close", data: { schemaVersion, generatedAt, mode, pandoraMarketAddress, polymarketMarketId?, polymarketSlug?, steps[], diagnostics[] } }`
+  - `mirror close`: `{ ok: true, command: "mirror.close", data: { schemaVersion, generatedAt, mode, target, pandoraMarketAddress, polymarketMarketId?, polymarketSlug?, steps[], summary, diagnostics[] } }`
   - `mirror sync start|status|stop`: `{ ok: true, command: "mirror.sync.start|mirror.sync.status|mirror.sync.stop", data: { strategyHash, pid?, pidFile, logFile?, alive, status, metadata? } }`
 - `resolve`:
-  - dry-run: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "dry-run", txPlan } }`
-  - execute: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "execute", tx } }`
+  - dry-run: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "dry-run", runtime: { mode, chainId, rpcUrl }, txPlan, precheck?, diagnostics[] } }`
+  - execute: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "execute", runtime: { mode, chainId, rpcUrl }, tx, precheck, diagnostics[] } }`
 - `lp`:
   - `lp add|remove`: `{ ok: true, command: "lp", data: { schemaVersion, generatedAt, action: "add"|"remove", mode, txPlan, tx? } }`
   - `lp positions`: `{ ok: true, command: "lp", data: { schemaVersion, generatedAt, action: "positions", mode: "read", wallet, count, items[] } }`

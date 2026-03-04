@@ -43,6 +43,7 @@ const {
   runPolymarketPreflight,
   POLYMARKET_OPS_SCHEMA_VERSION,
 } = require('../../cli/lib/polymarket_ops_service.cjs');
+const { formatDecodedContractError } = require('../../cli/lib/contract_error_decoder.cjs');
 const { runMirrorSync } = require('../../cli/lib/mirror_sync_service.cjs');
 const { createRunMirrorCommand } = require('../../cli/lib/mirror_command_service.cjs');
 const { resolveForkRuntime } = require('../../cli/lib/fork_runtime_service.cjs');
@@ -52,6 +53,7 @@ const { createParseWatchFlags } = require('../../cli/lib/parsers/watch_flags.cjs
 const { createParseAutopilotFlags } = require('../../cli/lib/parsers/autopilot_flags.cjs');
 const { createParseMirrorDeployFlags } = require('../../cli/lib/parsers/mirror_deploy_flags.cjs');
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
+const { createParseMirrorBrowseFlags } = require('../../cli/lib/parsers/mirror_remaining_flags.cjs');
 const { createParseLifecycleFlags } = require('../../cli/lib/parsers/lifecycle_flags.cjs');
 const { createParseOddsFlags } = require('../../cli/lib/parsers/odds_flags.cjs');
 const {
@@ -164,6 +166,19 @@ function parserIsSecureHttpUrlOrLocal(value) {
   return /^https:\/\//.test(value) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(value);
 }
 
+function parserParseDateLikeFlag(value, flagName) {
+  const text = String(value || '').trim();
+  if (/^-?\d+(\.\d+)?$/.test(text)) {
+    throw new ParserCliError('INVALID_FLAG_VALUE', `${flagName} must be an ISO date/time string.`);
+  }
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00Z` : text;
+  const parsed = Date.parse(normalized);
+  if (!Number.isFinite(parsed)) {
+    throw new ParserCliError('INVALID_FLAG_VALUE', `${flagName} must be an ISO date/time string.`);
+  }
+  return text;
+}
+
 function parserParseMirrorSyncGateSkipList(value, flagName) {
   const checks = String(value)
     .split(',')
@@ -258,6 +273,12 @@ test('evaluateMarket throws deterministic error without provider', async () => {
       return true;
     },
   );
+});
+
+test('contract error formatter maps known minimum-trade selector to actionable hint', () => {
+  const message = formatDecodedContractError({ data: '0x7e2d7787' });
+  assert.match(message, /trade too small/i);
+  assert.match(message, /--amount-usdc/i);
 });
 
 test('autopilot state helpers are deterministic', () => {
@@ -1027,6 +1048,267 @@ test('browsePolymarketMarkets filters mock payload deterministically', async () 
   }
 });
 
+test('browsePolymarketMarkets uses gamma events endpoint for tag-id sports discovery', async () => {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push(req.url || '/');
+    const parsed = new URL(req.url || '/', 'http://127.0.0.1');
+    const tagId = parsed.searchParams.get('tag_id');
+
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+
+    if (parsed.pathname !== '/events') {
+      res.end(JSON.stringify({ events: [] }));
+      return;
+    }
+
+    if (tagId === '82') {
+      res.end(
+        JSON.stringify({
+          events: [
+            {
+              id: 'evt-82',
+              slug: 'everton-v-burnley',
+              title: 'Everton vs Burnley',
+              markets: [
+                {
+                  condition_id: 'sports-c1',
+                  market_slug: 'everton-v-burnley-home',
+                  question: 'Will Everton beat Burnley?',
+                  end_date_iso: '2030-03-09T16:00:00Z',
+                  active: true,
+                  closed: false,
+                  volume24hr: 500000,
+                  tokens: [
+                    { outcome: 'Yes', price: '0.605', token_id: 'yes-sports-1' },
+                    { outcome: 'No', price: '0.395', token_id: 'no-sports-1' },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+
+    if (tagId === '100350') {
+      res.end(
+        JSON.stringify({
+          events: [
+            {
+              id: 'evt-100350',
+              slug: 'leeds-v-sunderland',
+              title: 'Leeds vs Sunderland',
+              markets: [
+                {
+                  // Duplicate condition id should be deduped across tag-id scans.
+                  condition_id: 'sports-c1',
+                  market_slug: 'duplicate-market-ignored',
+                  question: 'Duplicate row should be ignored',
+                  end_date_iso: '2030-03-09T16:00:00Z',
+                  active: true,
+                  closed: false,
+                  volume24hr: 1,
+                  tokens: [
+                    { outcome: 'Yes', price: '0.5', token_id: 'dup-yes' },
+                    { outcome: 'No', price: '0.5', token_id: 'dup-no' },
+                  ],
+                },
+                {
+                  condition_id: 'sports-c2',
+                  market_slug: 'leeds-v-sunderland-home',
+                  question: 'Will Leeds beat Sunderland?',
+                  end_date_iso: '2030-03-09T16:00:00Z',
+                  active: true,
+                  closed: false,
+                  volume24hr: 400000,
+                  tokens: [
+                    { outcome: 'Yes', price: '0.495', token_id: 'yes-sports-2' },
+                    { outcome: 'No', price: '0.505', token_id: 'no-sports-2' },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+
+    res.end(JSON.stringify({ events: [] }));
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const gammaUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const payload = await browsePolymarketMarkets({
+      gammaUrl,
+      polymarketTagIds: [82, 100350],
+      limit: 10,
+    });
+
+    assert.equal(payload.source, 'polymarket:gamma-events');
+    assert.deepEqual(payload.filters.polymarketTagIds, [82, 100350]);
+    assert.equal(payload.count, 2);
+    assert.equal(payload.items[0].eventSlug, 'everton-v-burnley');
+    assert.equal(payload.items[1].eventSlug, 'leeds-v-sunderland');
+    assert.equal(payload.items[0].eventTitle, 'Everton vs Burnley');
+    assert.equal(payload.items[0].eventId, 'evt-82');
+
+    const eventRequests = requests.filter((entry) => String(entry).startsWith('/events?'));
+    assert.equal(eventRequests.length, 2);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('browsePolymarketMarkets supports category/keyword/date filters with explicit sorting', async () => {
+  const nowMs = Date.now();
+  const toIso = (offsetHours) => new Date(nowMs + offsetHours * 60 * 60 * 1000).toISOString();
+
+  const server = http.createServer((req, res) => {
+    const parsed = new URL(req.url || '/', 'http://127.0.0.1');
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    if (parsed.pathname !== '/markets') {
+      res.end(JSON.stringify({ markets: [] }));
+      return;
+    }
+
+    res.end(
+      JSON.stringify({
+        markets: [
+          {
+            condition_id: 'm-sports',
+            market_slug: 'everton-v-burnley-home',
+            question: 'Will Everton beat Burnley?',
+            end_date_iso: toIso(12),
+            active: true,
+            closed: false,
+            volume24hr: 9000,
+            liquidity: 9000,
+            tags: [{ id: 82, slug: 'soccer' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.60', token_id: 'sports-yes' },
+              { outcome: 'No', price: '0.40', token_id: 'sports-no' },
+            ],
+          },
+          {
+            condition_id: 'm-crypto-high-vol',
+            market_slug: 'bitcoin-etf-approval-2026',
+            question: 'Will Bitcoin ETF approval happen in 2026?',
+            end_date_iso: toIso(24),
+            active: true,
+            closed: false,
+            volume24hr: 8000,
+            liquidity: 1000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.45', token_id: 'c1-yes' },
+              { outcome: 'No', price: '0.55', token_id: 'c1-no' },
+            ],
+          },
+          {
+            condition_id: 'm-crypto-high-liq',
+            market_slug: 'bitcoin-price-120k-2026',
+            question: 'Will bitcoin trade above 120k in 2026?',
+            end_date_iso: toIso(18),
+            active: true,
+            closed: false,
+            volume24hr: 2000,
+            liquidity: 7000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.55', token_id: 'c2-yes' },
+              { outcome: 'No', price: '0.45', token_id: 'c2-no' },
+            ],
+          },
+          {
+            condition_id: 'm-crypto-extreme',
+            market_slug: 'bitcoin-over-300k',
+            question: 'Will bitcoin exceed 300k?',
+            end_date_iso: toIso(10),
+            active: true,
+            closed: false,
+            volume24hr: 10000,
+            liquidity: 1000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.95', token_id: 'c3-yes' },
+              { outcome: 'No', price: '0.05', token_id: 'c3-no' },
+            ],
+          },
+          {
+            condition_id: 'm-crypto-far',
+            market_slug: 'bitcoin-long-dated',
+            question: 'Will bitcoin close above 200k by 2028?',
+            end_date_iso: toIso(120),
+            active: true,
+            closed: false,
+            volume24hr: 11000,
+            liquidity: 11000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.50', token_id: 'c4-yes' },
+              { outcome: 'No', price: '0.50', token_id: 'c4-no' },
+            ],
+          },
+        ],
+      }),
+    );
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const gammaUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const byVolume = await browsePolymarketMarkets({
+      gammaUrl,
+      minYesPct: 15,
+      maxYesPct: 85,
+      closesBefore: toIso(72),
+      keyword: 'bitcoin',
+      categories: ['crypto'],
+      excludeSports: true,
+      sortBy: 'volume24h',
+      limit: 10,
+    });
+
+    assert.equal(byVolume.count, 2);
+    assert.equal(byVolume.items[0].slug, 'bitcoin-etf-approval-2026');
+    assert.equal(byVolume.items[1].slug, 'bitcoin-price-120k-2026');
+    assert.ok(Array.isArray(byVolume.items[0].categories));
+    assert.ok(byVolume.items[0].categories.includes('crypto'));
+    assert.equal(byVolume.filters.excludeSports, true);
+    assert.deepEqual(byVolume.filters.categories, ['crypto']);
+    assert.equal(byVolume.filters.sortBy, 'volume24h');
+
+    const byLiquidity = await browsePolymarketMarkets({
+      gammaUrl,
+      minYesPct: 15,
+      maxYesPct: 85,
+      closesBefore: toIso(72),
+      keyword: 'bitcoin',
+      categories: ['crypto'],
+      excludeSports: true,
+      sortBy: 'liquidity',
+      limit: 10,
+    });
+
+    assert.equal(byLiquidity.count, 2);
+    assert.equal(byLiquidity.items[0].slug, 'bitcoin-price-120k-2026');
+    assert.equal(byLiquidity.items[1].slug, 'bitcoin-etf-approval-2026');
+    assert.equal(byLiquidity.filters.sortBy, 'liquidity');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('computeApprovalDiff deterministically marks missing allowance/operator checks', () => {
   const payload = computeApprovalDiff({
     ownerAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -1368,6 +1650,165 @@ test('runMirrorSync handles thrown hedgeFn errors without consuming idempotency'
   }
 });
 
+test('runMirrorSync run mode continues after transient tick verification failures', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-sync-tick-retry-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+
+  const verifyPayload = {
+    matchConfidence: 0.99,
+    gateResult: {
+      ok: true,
+      failedChecks: [],
+      checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+    },
+    sourceMarket: {
+      source: 'polymarket',
+      marketId: 'poly-cond-1',
+      yesPct: 60,
+      yesTokenId: 'yes-token',
+      noTokenId: 'no-token',
+    },
+    pandora: {
+      yesPct: 55,
+      reserveYes: 5,
+      reserveNo: 5,
+    },
+    expiry: { minTimeToExpirySec: 7200 },
+  };
+
+  let verifyCallCount = 0;
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'run',
+        iterations: 3,
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: false,
+        trustDeploy: false,
+        hedgeEnabled: false,
+        hedgeRatio: 1,
+        intervalMs: 1,
+        driftTriggerBps: 10000,
+        hedgeTriggerUsdc: 1000,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        polymarketHost: 'https://clob.polymarket.com',
+      },
+      {
+        verifyFn: async () => {
+          verifyCallCount += 1;
+          if (verifyCallCount === 2) {
+            const error = new Error('temporary indexer timeout');
+            error.code = 'INDEXER_TIMEOUT';
+            throw error;
+          }
+          return verifyPayload;
+        },
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        sleep: async () => {},
+      },
+    );
+
+    assert.equal(payload.iterationsCompleted, 3);
+    assert.equal(payload.snapshots.length, 3);
+    assert.equal(payload.diagnostics.length, 1);
+    assert.equal(payload.diagnostics[0].code, 'INDEXER_TIMEOUT');
+    assert.equal(payload.diagnostics[0].scope, 'tick');
+    assert.equal(payload.snapshots[1].action.status, 'error');
+    assert.equal(payload.snapshots[1].error.code, 'INDEXER_TIMEOUT');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync once mode still fails fast on tick errors', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-sync-once-fail-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+
+  const verifyPayload = {
+    matchConfidence: 0.99,
+    gateResult: {
+      ok: true,
+      failedChecks: [],
+      checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+    },
+    sourceMarket: {
+      source: 'polymarket',
+      marketId: 'poly-cond-1',
+      yesPct: 60,
+      yesTokenId: 'yes-token',
+      noTokenId: 'no-token',
+    },
+    pandora: {
+      yesPct: 55,
+      reserveYes: 5,
+      reserveNo: 5,
+    },
+    expiry: { minTimeToExpirySec: 7200 },
+  };
+
+  try {
+    await assert.rejects(
+      runMirrorSync(
+        {
+          mode: 'once',
+          indexerUrl: 'https://example.invalid/graphql',
+          timeoutMs: 1000,
+          pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          polymarketMarketId: 'poly-cond-1',
+          executeLive: false,
+          trustDeploy: false,
+          hedgeEnabled: false,
+          hedgeRatio: 1,
+          intervalMs: 1,
+          driftTriggerBps: 10000,
+          hedgeTriggerUsdc: 1000,
+          maxRebalanceUsdc: 25,
+          maxHedgeUsdc: 10,
+          maxOpenExposureUsdc: 100,
+          maxTradesPerDay: 10,
+          cooldownMs: 1000,
+          depthSlippageBps: 100,
+          stateFile,
+          killSwitchFile,
+          polymarketHost: 'https://clob.polymarket.com',
+        },
+        {
+          verifyFn: async () => verifyPayload,
+          depthFn: async () => {
+            const error = new Error('depth fetch unavailable');
+            error.code = 'DEPTH_FETCH_FAILED';
+            throw error;
+          },
+          sleep: async () => {},
+        },
+      ),
+      (error) => {
+        assert.equal(error.code, 'DEPTH_FETCH_FAILED');
+        return true;
+      },
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('runAutopilot does not consume budget/idempotency when executeFn throws', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-autopilot-failure-'));
   const stateFile = path.join(tempDir, 'autopilot-state.json');
@@ -1498,6 +1939,59 @@ test('createParseTradeFlags enforces secure --rpc-url and drops dead funder fiel
   );
 });
 
+test('createParseMirrorBrowseFlags parses relative end-date windows and new browse selectors', () => {
+  const parseMirrorBrowseFlags = createParseMirrorBrowseFlags(
+    buildParserDeps({
+      parseDateLikeFlag: parserParseDateLikeFlag,
+    }),
+  );
+
+  const startedAt = Date.now();
+  const options = parseMirrorBrowseFlags([
+    '--end-date-after',
+    '1h',
+    '--end-date-before',
+    '72h',
+    '--keyword',
+    'bitcoin',
+    '--slug',
+    'etf',
+    '--category',
+    'crypto,politics',
+    '--sort-by',
+    'liquidity',
+    '--limit',
+    '7',
+  ]);
+
+  assert.equal(options.keyword, 'bitcoin');
+  assert.equal(options.slug, 'etf');
+  assert.deepEqual(options.categories, ['crypto', 'politics']);
+  assert.equal(options.sortBy, 'liquidity');
+  assert.equal(options.limit, 7);
+  assert.ok(Number.isFinite(Date.parse(options.closesAfter)));
+  assert.ok(Number.isFinite(Date.parse(options.closesBefore)));
+  assert.ok(Date.parse(options.closesAfter) >= startedAt + 45 * 60 * 1000);
+  assert.ok(Date.parse(options.closesBefore) >= startedAt + 70 * 60 * 60 * 1000);
+});
+
+test('createParseMirrorBrowseFlags rejects contradictory sports filters', () => {
+  const parseMirrorBrowseFlags = createParseMirrorBrowseFlags(
+    buildParserDeps({
+      parseDateLikeFlag: parserParseDateLikeFlag,
+    }),
+  );
+
+  assert.throws(
+    () => parseMirrorBrowseFlags(['--category', 'sports', '--exclude-sports']),
+    (error) => {
+      assert.equal(error.code, 'INVALID_ARGS');
+      assert.match(error.message, /cannot be combined/i);
+      return true;
+    },
+  );
+});
+
 test('resolveForkRuntime supports attach-only fork mode with strict env/flag precedence', () => {
   const live = resolveForkRuntime(
     { chainId: 146 },
@@ -1609,6 +2103,41 @@ test('createParseMirrorDeployFlags enforces secure --rpc-url and drops dead allo
     (error) => {
       assert.equal(error.code, 'INVALID_FLAG_VALUE');
       assert.match(error.message, /https:\/\//i);
+      return true;
+    },
+  );
+});
+
+test('createParseMirrorDeployFlags rejects explicit empty or underspecified --sources early', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildParserDeps());
+
+  assert.throws(
+    () =>
+      parseMirrorDeployFlags([
+        '--plan-file',
+        '/tmp/plan.json',
+        '--dry-run',
+        '--sources',
+        '',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /at least two non-empty urls/i);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      parseMirrorDeployFlags([
+        '--plan-file',
+        '/tmp/plan.json',
+        '--dry-run',
+        '--sources',
+        'https://example.com/one',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
       return true;
     },
   );
@@ -1764,6 +2293,39 @@ test('createParseMirrorGoFlags treats bare --skip-gate as force gate mode', () =
 
   assert.equal(options.forceGate, true);
   assert.deepEqual(options.skipGateChecks, []);
+});
+
+test('createParseMirrorGoFlags rejects explicit empty or underspecified --sources early', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildParserDeps());
+
+  assert.throws(
+    () =>
+      parseMirrorGoFlags([
+        '--polymarket-market-id',
+        'poly-1',
+        '--sources',
+        '',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /at least two non-empty urls/i);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      parseMirrorGoFlags([
+        '--polymarket-market-id',
+        'poly-1',
+        '--sources',
+        'https://example.com/one',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      return true;
+    },
+  );
 });
 
 test('createParseLifecycleFlags validates start|status|resolve contracts', () => {
@@ -2046,7 +2608,7 @@ test('createRunMirrorCommand routes status through shared parser output', async 
   assert.equal(observed.emitted[0][1], 'mirror.status');
 });
 
-test('createRunMirrorCommand sync help reports run|once|start usage and daemon selectors', async () => {
+test('createRunMirrorCommand sync help reports full usage and daemon selectors', async () => {
   const observed = {
     emitted: [],
   };
@@ -2070,8 +2632,7 @@ test('createRunMirrorCommand sync help reports run|once|start usage and daemon s
   assert.equal(observed.emitted.length, 1);
   assert.equal(observed.emitted[0][1], 'mirror.sync.help');
   const payload = observed.emitted[0][2];
-  assert.match(payload.usage, /mirror sync run\|once\|start/);
-  assert.equal(/run\|once\|start\|stop\|status/.test(payload.usage), false);
+  assert.match(payload.usage, /mirror sync run\|once\|start\|stop\|status/);
   assert.match(payload.usage, /--telegram-chat-id <id>/);
   assert.match(payload.daemonLifecycle.stop, /--pid-file <path>\|--strategy-hash <hash>/);
   assert.match(payload.daemonLifecycle.status, /--pid-file <path>\|--strategy-hash <hash>/);
@@ -2092,6 +2653,7 @@ test('error recovery service returns hints for all mapped codes', () => {
     'POLYMARKET_CHECK_FAILED',
     'POLYMARKET_MARKET_RESOLUTION_FAILED',
     'MIRROR_DEPLOY_FAILED',
+    'MIRROR_GO_VERIFY_PENDING',
     'MIRROR_SYNC_FAILED',
     'LIFECYCLE_EXISTS',
     'LIFECYCLE_NOT_FOUND',

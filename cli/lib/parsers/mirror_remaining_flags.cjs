@@ -25,6 +25,71 @@ function createParseMirrorBrowseFlags(deps) {
   const parseDateLikeFlag = requireDep(deps, 'parseDateLikeFlag');
   const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
   const parseInteger = requireDep(deps, 'parseInteger');
+  const allowedSortBy = new Set(['volume24h', 'liquidity', 'endDate']);
+  const allowedCategories = new Set(['sports', 'crypto', 'politics', 'entertainment']);
+
+  function parseBrowseWindowValue(value, flagName) {
+    const text = String(value || '').trim();
+    const relativeMatch = /^([1-9]\d*)([smhdw])$/i.exec(text);
+    if (relativeMatch) {
+      const quantity = Number(relativeMatch[1]);
+      const unit = String(relativeMatch[2] || '').toLowerCase();
+      const unitMs = {
+        s: 1000,
+        m: 60 * 1000,
+        h: 60 * 60 * 1000,
+        d: 24 * 60 * 60 * 1000,
+        w: 7 * 24 * 60 * 60 * 1000,
+      };
+      const multiplier = unitMs[unit];
+      if (!multiplier) {
+        throw new CliError(
+          'INVALID_FLAG_VALUE',
+          `${flagName} relative window must use one of s|m|h|d|w (example: 72h). Received: "${text}"`,
+        );
+      }
+      return new Date(Date.now() + quantity * multiplier).toISOString();
+    }
+    return parseDateLikeFlag(text, flagName);
+  }
+
+  function parseSortBy(rawValue) {
+    const text = String(rawValue || '').trim().toLowerCase();
+    if (!text) {
+      throw new CliError('INVALID_FLAG_VALUE', '--sort-by requires a value: volume24h|liquidity|endDate.');
+    }
+    if (text === 'volume' || text === 'volume24h' || text === 'volume24husd') return 'volume24h';
+    if (text === 'liquidity' || text === 'liquidityusd') return 'liquidity';
+    if (text === 'enddate' || text === 'end-date' || text === 'close' || text === 'close-time' || text === 'closetimestamp') {
+      return 'endDate';
+    }
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      `--sort-by must be one of volume24h|liquidity|endDate. Received: "${rawValue}"`,
+    );
+  }
+
+  function parseCategoryList(rawValue, flagName) {
+    const values = String(rawValue || '')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+    if (!values.length) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `${flagName} must include at least one category: sports|crypto|politics|entertainment.`,
+      );
+    }
+    for (const value of values) {
+      if (!allowedCategories.has(value)) {
+        throw new CliError(
+          'INVALID_FLAG_VALUE',
+          `${flagName} contains unsupported category "${value}". Allowed: sports|crypto|politics|entertainment.`,
+        );
+      }
+    }
+    return Array.from(new Set(values));
+  }
 
   return function parseMirrorBrowseFlags(args) {
     const options = {
@@ -39,7 +104,17 @@ function createParseMirrorBrowseFlags(deps) {
       polymarketGammaUrl: null,
       polymarketGammaMockUrl: null,
       polymarketMockUrl: null,
+      polymarketTagIds: [],
+      categories: [],
+      excludeSports: false,
+      sortBy: 'volume24h',
+      keyword: null,
+      slug: null,
     };
+
+    function pushTagId(rawValue, flagName) {
+      options.polymarketTagIds.push(parsePositiveInteger(rawValue, flagName));
+    }
 
     for (let i = 0; i < args.length; i += 1) {
       const token = args[i];
@@ -58,13 +133,13 @@ function createParseMirrorBrowseFlags(deps) {
         i += 1;
         continue;
       }
-      if (token === '--closes-after') {
-        options.closesAfter = parseDateLikeFlag(requireFlagValue(args, i, '--closes-after'), '--closes-after');
+      if (token === '--closes-after' || token === '--end-date-after') {
+        options.closesAfter = parseBrowseWindowValue(requireFlagValue(args, i, token), token);
         i += 1;
         continue;
       }
-      if (token === '--closes-before') {
-        options.closesBefore = parseDateLikeFlag(requireFlagValue(args, i, '--closes-before'), '--closes-before');
+      if (token === '--closes-before' || token === '--end-date-before') {
+        options.closesBefore = parseBrowseWindowValue(requireFlagValue(args, i, token), token);
         i += 1;
         continue;
       }
@@ -73,9 +148,34 @@ function createParseMirrorBrowseFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--keyword') {
+        options.keyword = requireFlagValue(args, i, '--keyword');
+        i += 1;
+        continue;
+      }
+      if (token === '--slug') {
+        options.slug = requireFlagValue(args, i, '--slug');
+        i += 1;
+        continue;
+      }
       if (token === '--limit') {
         options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
         i += 1;
+        continue;
+      }
+      if (token === '--sort-by') {
+        options.sortBy = parseSortBy(requireFlagValue(args, i, '--sort-by'));
+        i += 1;
+        continue;
+      }
+      if (token === '--category') {
+        const parsed = parseCategoryList(requireFlagValue(args, i, '--category'), '--category');
+        options.categories = Array.from(new Set(options.categories.concat(parsed)));
+        i += 1;
+        continue;
+      }
+      if (token === '--exclude-sports') {
+        options.excludeSports = true;
         continue;
       }
       if (token === '--chain-id') {
@@ -98,11 +198,53 @@ function createParseMirrorBrowseFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--polymarket-tag-id' || token === '--sport-tag-id') {
+        pushTagId(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-tag-ids' || token === '--sport-tag-ids') {
+        const raw = requireFlagValue(args, i, token);
+        const values = String(raw)
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean);
+        if (!values.length) {
+          throw new CliError('INVALID_FLAG_VALUE', `${token} must include at least one positive integer tag id.`);
+        }
+        for (const value of values) {
+          pushTagId(value, token);
+        }
+        i += 1;
+        continue;
+      }
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror browse: ${token}`);
     }
 
     if (options.minYesPct !== null && options.maxYesPct !== null && options.minYesPct > options.maxYesPct) {
       throw new CliError('INVALID_ARGS', '--min-yes-pct cannot be greater than --max-yes-pct.');
+    }
+    if (
+      options.closesAfter &&
+      options.closesBefore &&
+      Number.isFinite(Date.parse(options.closesAfter)) &&
+      Number.isFinite(Date.parse(options.closesBefore)) &&
+      Date.parse(options.closesAfter) > Date.parse(options.closesBefore)
+    ) {
+      throw new CliError('INVALID_ARGS', '--closes-after/--end-date-after cannot be later than --closes-before/--end-date-before.');
+    }
+    if (options.excludeSports && options.categories.includes('sports')) {
+      throw new CliError('INVALID_ARGS', '--exclude-sports cannot be combined with --category sports.');
+    }
+
+    if (options.polymarketTagIds.length) {
+      options.polymarketTagIds = Array.from(new Set(options.polymarketTagIds));
+    }
+    if (options.categories.length) {
+      options.categories = Array.from(new Set(options.categories));
+    }
+    if (allowedSortBy.has(options.sortBy) !== true) {
+      throw new CliError('INVALID_FLAG_VALUE', `Unsupported --sort-by value: "${options.sortBy}"`);
     }
 
     return options;
@@ -343,15 +485,26 @@ function createParseMirrorStatusFlags(deps) {
 function createParseMirrorCloseFlags(deps) {
   const CliError = requireDep(deps, 'CliError');
   const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
+  const parsePrivateKeyFlag = requireDep(deps, 'parsePrivateKeyFlag');
   const requireFlagValue = requireDep(deps, 'requireFlagValue');
+  const parseInteger = requireDep(deps, 'parseInteger');
+  const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
+  const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
 
   return function parseMirrorCloseFlags(args) {
     const options = {
       pandoraMarketAddress: null,
       polymarketMarketId: null,
       polymarketSlug: null,
+      all: false,
       execute: false,
       dryRun: false,
+      chainId: null,
+      rpcUrl: null,
+      privateKey: null,
+      wallet: null,
+      indexerUrl: null,
+      timeoutMs: 12000,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -379,13 +532,57 @@ function createParseMirrorCloseFlags(deps) {
         options.execute = true;
         continue;
       }
+      if (token === '--all') {
+        options.all = true;
+        continue;
+      }
+      if (token === '--wallet') {
+        options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
+        i += 1;
+        continue;
+      }
+      if (token === '--chain-id') {
+        options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
+        i += 1;
+        continue;
+      }
+      if (token === '--rpc-url') {
+        const rpcUrl = requireFlagValue(args, i, '--rpc-url');
+        if (!isSecureHttpUrlOrLocal(rpcUrl)) {
+          throw new CliError(
+            'INVALID_FLAG_VALUE',
+            '--rpc-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
+          );
+        }
+        options.rpcUrl = rpcUrl;
+        i += 1;
+        continue;
+      }
+      if (token === '--private-key') {
+        options.privateKey = parsePrivateKeyFlag(requireFlagValue(args, i, '--private-key'), '--private-key');
+        i += 1;
+        continue;
+      }
+      if (token === '--indexer-url') {
+        options.indexerUrl = requireFlagValue(args, i, '--indexer-url');
+        i += 1;
+        continue;
+      }
+      if (token === '--timeout-ms') {
+        options.timeoutMs = parsePositiveInteger(requireFlagValue(args, i, '--timeout-ms'), '--timeout-ms');
+        i += 1;
+        continue;
+      }
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror close: ${token}`);
     }
 
-    if (!options.pandoraMarketAddress) {
+    if (options.all && (options.pandoraMarketAddress || options.polymarketMarketId || options.polymarketSlug)) {
+      throw new CliError('INVALID_ARGS', '--all cannot be combined with per-market mirror close selectors.');
+    }
+    if (!options.all && !options.pandoraMarketAddress) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing --pandora-market-address <address> (alias: --market-address).');
     }
-    if (!options.polymarketMarketId && !options.polymarketSlug) {
+    if (!options.all && !options.polymarketMarketId && !options.polymarketSlug) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'mirror close requires --polymarket-market-id <id> or --polymarket-slug <slug>.');
     }
     if (options.dryRun === options.execute) {

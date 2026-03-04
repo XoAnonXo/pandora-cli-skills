@@ -73,6 +73,16 @@ pandora --output json lifecycle status --id <lifecycle-id>
 pandora --output json lifecycle resolve --id <lifecycle-id> --confirm
 ```
 
+### Mega Analytics Page (Dune Panels)
+
+```bash
+# starts local page at http://127.0.0.1:8787
+npm run analytics:mega
+```
+
+- Panel registry source: `analytics/dune/panel_registry.json`
+- Dashboard creation script reuses this registry: `scripts/create_pandora_dashboard.js`
+
 ## Risk Controls
 
 - Inspect/engage panic lock:
@@ -115,6 +125,7 @@ pandora --output json lifecycle resolve --id <lifecycle-id> --confirm
 - `pandora lifecycle start|status|resolve`
 - `pandora quote`
 - `pandora trade`
+- `pandora claim --market-address <address>|--all --dry-run|--execute`
 - `pandora history`
 - `pandora export`
 - `pandora arbitrage`
@@ -122,6 +133,7 @@ pandora --output json lifecycle resolve --id <lifecycle-id> --confirm
 - `pandora odds record|history`
 - `pandora autopilot run|once`
 - `pandora mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close`
+  - `mirror browse` supports `--polymarket-tag-id|--polymarket-tag-ids` (aliases `--sport-tag-id|--sport-tag-ids`) for sports-tagged Gamma event discovery.
 - `pandora polymarket check|approve|preflight|trade`
 - `pandora resolve`
 - `pandora lp add|remove|positions`

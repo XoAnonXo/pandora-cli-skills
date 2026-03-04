@@ -68,7 +68,7 @@ function flagValueToStrings(value) {
  * @returns {string[]} CLI argv segment for flags.
  */
 function buildFlagArgv(flags) {
-  if (!flags || typeof flags !== 'object') return [];
+  if (!flags || typeof flags !== 'object' || Array.isArray(flags)) return [];
   const argv = [];
   for (const [rawName, rawValue] of Object.entries(flags)) {
     const name = normalizeFlagName(rawName);
@@ -229,6 +229,14 @@ const TOOL_DEFINITIONS = [
     name: 'trade',
     command: ['trade'],
     description: 'Dry-run or execute a Pandora trade.',
+    mutating: true,
+    safeFlags: ['--dry-run'],
+    executeFlags: ['--execute'],
+  },
+  {
+    name: 'claim',
+    command: ['claim'],
+    description: 'Dry-run or execute winnings redemption.',
     mutating: true,
     safeFlags: ['--dry-run'],
     executeFlags: ['--execute'],

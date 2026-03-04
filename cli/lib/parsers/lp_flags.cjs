@@ -42,6 +42,8 @@ function createParseLpFlags(deps) {
       wallet: null,
       amountUsdc: null,
       lpTokens: null,
+      lpAll: false,
+      allMarkets: false,
       chainId: null,
       dryRun: false,
       execute: false,
@@ -76,6 +78,14 @@ function createParseLpFlags(deps) {
       if (token === '--lp-tokens') {
         options.lpTokens = parsePositiveNumber(requireFlagValue(rest, i, '--lp-tokens'), '--lp-tokens');
         i += 1;
+        continue;
+      }
+      if (token === '--all') {
+        options.lpAll = true;
+        continue;
+      }
+      if (token === '--all-markets') {
+        options.allMarkets = true;
         continue;
       }
       if (token === '--chain-id') {
@@ -166,14 +176,30 @@ function createParseLpFlags(deps) {
       return options;
     }
 
-    if (!options.marketAddress) {
+    if (action === 'remove' && options.allMarkets && options.marketAddress) {
+      throw new CliError('INVALID_ARGS', '--all-markets cannot be combined with --market-address.');
+    }
+    if (action === 'remove' && options.allMarkets && options.lpTokens !== null) {
+      throw new CliError('INVALID_ARGS', '--all-markets cannot be combined with --lp-tokens.');
+    }
+    if (!options.marketAddress && !(action === 'remove' && options.allMarkets)) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market address. Use --market-address <address>.');
     }
     if (action === 'add' && options.amountUsdc === null) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing liquidity amount. Use --amount-usdc <amount>.');
     }
-    if (action === 'remove' && options.lpTokens === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing LP token amount. Use --lp-tokens <amount>.');
+    if (action === 'remove' && options.lpTokens === null && !options.lpAll) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing LP token amount. Use --lp-tokens <amount> or --all.');
+    }
+    if (action === 'remove' && options.lpTokens !== null && options.lpAll) {
+      throw new CliError('INVALID_ARGS', 'Use only one remove mode: --lp-tokens <amount> or --all.');
+    }
+    if (action !== 'remove' && options.allMarkets) {
+      throw new CliError('INVALID_ARGS', '--all-markets is only supported for lp remove.');
+    }
+    if (action === 'remove' && options.allMarkets) {
+      options.lpAll = true;
+      options.lpTokens = null;
     }
     if (options.dryRun === options.execute) {
       throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');

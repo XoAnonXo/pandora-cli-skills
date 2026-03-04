@@ -102,82 +102,143 @@ async function runMirrorSync(options, deps = {}) {
         break;
       }
 
-      resetDailyCountersIfNeeded(state, tickAt);
+      try {
+        resetDailyCountersIfNeeded(state, tickAt);
 
-      const verifyPayload =
-        iteration === 1 && startupVerifyPayload
-          ? startupVerifyPayload
-          : await verifyFn(buildVerifyRequest(options));
+        const verifyPayload =
+          iteration === 1 && startupVerifyPayload
+            ? startupVerifyPayload
+            : await verifyFn(buildVerifyRequest(options));
 
-      const snapshotMetrics = evaluateSnapshot(verifyPayload, options);
-      const plan = buildTickPlan({
-        snapshotMetrics,
-        state,
-        options,
-      });
-      const depth = await fetchDepthSnapshot({
-        depthFn,
-        verifyPayload,
-        options,
-      });
+        const snapshotMetrics = evaluateSnapshot(verifyPayload, options);
+        const plan = buildTickPlan({
+          snapshotMetrics,
+          state,
+          options,
+        });
+        const depth = await fetchDepthSnapshot({
+          depthFn,
+          verifyPayload,
+          options,
+        });
 
-      const gate = applyGateBypassPolicy(
-        evaluateStrictGates(
-          buildTickGateContext({
-            verifyPayload,
+        const gate = applyGateBypassPolicy(
+          evaluateStrictGates(
+            buildTickGateContext({
+              verifyPayload,
+              options,
+              state,
+              plan,
+              snapshotMetrics,
+              depth,
+              minimumTimeToCloseSec,
+            }),
+          ),
+          options,
+        );
+
+        const snapshot = buildTickSnapshot({
+          iteration,
+          tickAt,
+          verifyPayload,
+          options,
+          snapshotMetrics,
+          plan,
+          depth,
+          gate,
+        });
+
+        if (snapshotMetrics.driftTriggered || plan.hedgeTriggered) {
+          await processTriggeredAction({
             options,
             state,
+            snapshot,
             plan,
+            gate,
+            tickAt,
+            loadedFilePath: loaded.filePath,
+            rebalanceFn,
+            hedgeFn,
+            sendWebhook,
+            strategyHash: hash,
+            iteration,
+            actions,
+            webhookReports,
             snapshotMetrics,
+            verifyPayload,
             depth,
-            minimumTimeToCloseSec,
-          }),
-        ),
-        options,
-      );
+          });
+        }
 
-      const snapshot = buildTickSnapshot({
-        iteration,
-        tickAt,
-        verifyPayload,
-        options,
-        snapshotMetrics,
-        plan,
-        depth,
-        gate,
-      });
-
-      if (snapshotMetrics.driftTriggered || plan.hedgeTriggered) {
-        await processTriggeredAction({
-          options,
-          state,
-          snapshot,
-          plan,
-          gate,
-          tickAt,
+        await persistTickSnapshot({
           loadedFilePath: loaded.filePath,
-          rebalanceFn,
-          hedgeFn,
-          sendWebhook,
-          strategyHash: hash,
+          state,
+          tickAt,
+          snapshot,
+          snapshots,
+          onTick,
           iteration,
-          actions,
-          webhookReports,
-          snapshotMetrics,
-          verifyPayload,
-          depth,
         });
-      }
+      } catch (err) {
+        const errorCode = err && err.code ? String(err.code) : 'MIRROR_SYNC_TICK_FAILED';
+        const errorMessage = err && err.message ? err.message : String(err);
+        const errorDetails = err && err.details !== undefined ? err.details : null;
+        const timestamp = tickAt.toISOString();
 
-      await persistTickSnapshot({
-        loadedFilePath: loaded.filePath,
-        state,
-        tickAt,
-        snapshot,
-        snapshots,
-        onTick,
-        iteration,
-      });
+        const diagnostic = {
+          level: 'error',
+          scope: 'tick',
+          iteration,
+          timestamp,
+          code: errorCode,
+          message: errorMessage,
+          retryable: options.mode !== 'once',
+        };
+        if (errorDetails !== null) diagnostic.details = errorDetails;
+        diagnostics.push(diagnostic);
+
+        const snapshot = {
+          schemaVersion: MIRROR_SYNC_SCHEMA_VERSION,
+          timestamp,
+          iteration,
+          metrics: {
+            driftBps: null,
+            plannedRebalanceUsdc: 0,
+            plannedHedgeUsdc: 0,
+          },
+          strictGate: {
+            ok: false,
+            failedChecks: [],
+            checks: [],
+          },
+          action: {
+            status: 'error',
+            failedChecks: [],
+            forcedGateBypass: false,
+            errorCode,
+            errorMessage,
+          },
+          error: {
+            code: errorCode,
+            message: errorMessage,
+            details: errorDetails,
+          },
+        };
+
+        await persistTickSnapshot({
+          loadedFilePath: loaded.filePath,
+          state,
+          tickAt,
+          snapshot,
+          snapshots,
+          onTick,
+          iteration,
+        });
+
+        if (options.mode === 'once') {
+          throw err;
+        }
+      }
 
       if (shouldStop) break;
       if (iteration >= maxIterations) break;

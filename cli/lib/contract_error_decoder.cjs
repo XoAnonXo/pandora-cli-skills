@@ -35,6 +35,11 @@ const CONTRACT_ERROR_ABI = [
   },
 ];
 
+const REVERT_SELECTOR_HINTS = {
+  // Market-specific minimum-notional guard seen on some Pandora AMM deployments.
+  '0x7e2d7787': 'Trade too small for this market. Increase --amount-usdc and retry.',
+};
+
 function isHexData(value) {
   return /^0x[0-9a-fA-F]*$/.test(String(value || ''));
 }
@@ -126,6 +131,10 @@ function formatDecodedContractError(decoded) {
     return decoded.errorName;
   }
   if (decoded.data) {
+    const selector = String(decoded.data).slice(0, 10).toLowerCase();
+    if (REVERT_SELECTOR_HINTS[selector]) {
+      return `${REVERT_SELECTOR_HINTS[selector]} (selector ${selector})`;
+    }
     return `Contract reverted (${decoded.data})`;
   }
   return null;

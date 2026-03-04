@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.1.47",
+  "version": "1.1.53",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
@@ -29,6 +29,8 @@
     "init-env": "node cli/pandora.cjs init-env",
     "doctor": "node cli/pandora.cjs doctor",
     "setup": "node cli/pandora.cjs setup",
+    "analytics:mega": "node analytics/dune/mega/server.cjs",
+    "analytics:mega:export-static": "node analytics/dune/mega/export-static.cjs",
     "dry-run": "node cli/pandora.cjs launch --dry-run",
     "execute": "node cli/pandora.cjs launch --execute",
     "dry-run:clone": "node cli/pandora.cjs clone-bet --dry-run",
@@ -68,6 +70,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@polymarket/clob-client": "^5.2.4",
+    "playwright-core": "^1.58.2",
     "tsx": "^4.21.0",
     "viem": "^2.46.2",
     "ws": "^8.19.0"

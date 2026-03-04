@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const {
@@ -1090,6 +1091,9 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.commandDescriptors.quote.emits.includes('quote'));
   assert.ok(payload.data.commandDescriptors.trade);
   assert.equal(payload.data.commandDescriptors.trade.dataSchema, '#/definitions/TradePayload');
+  assert.ok(payload.data.commandDescriptors['mirror.browse']);
+  assert.equal(payload.data.commandDescriptors['mirror.browse'].dataSchema, '#/definitions/MirrorBrowsePayload');
+  assert.match(payload.data.commandDescriptors['mirror.browse'].usage, /--polymarket-tag-id/);
   assert.ok(payload.data.commandDescriptors['mirror.plan']);
   assert.equal(payload.data.commandDescriptors['mirror.plan'].dataSchema, '#/definitions/MirrorPlanPayload');
   assert.ok(payload.data.commandDescriptors['risk.show']);
@@ -1150,6 +1154,7 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions.ModelCorrelationPayload);
   assert.ok(payload.data.definitions.ModelDiagnosePayload);
   assert.ok(payload.data.definitions.ErrorRecoveryPayload);
+  assert.ok(payload.data.definitions.MirrorBrowsePayload);
 });
 
 test('schema command rejects unknown trailing flags', () => {
@@ -4825,6 +4830,24 @@ test('mirror browse rejects invalid calendar rollover dates', () => {
   assert.match(payload.error.message, /real calendar date/);
 });
 
+test('mirror browse rejects invalid tag id values', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'browse', '--polymarket-tag-id', '0']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /--polymarket-tag-id must be a positive integer/i);
+});
+
+test('mirror browse rejects empty tag-id csv values', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'browse', '--polymarket-tag-ids', ', ,']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /must include at least one positive integer tag id/i);
+});
+
 test('boolean flags with --key=false do not silently flip behavior', () => {
   const result = runCli(['--output', 'json', 'scan', '--active=false']);
   assert.equal(result.status, 1);
@@ -4921,6 +4944,203 @@ test('mirror browse returns candidate markets with existing mirror hint', async 
   } finally {
     await indexer.close();
     await polymarket.close();
+  }
+});
+
+test('mirror browse supports sports tag filters via gamma events endpoint', async () => {
+  const gamma = await startJsonHttpServer((request) => {
+    const parsed = new URL(request.url || '/', 'http://127.0.0.1');
+    if (parsed.pathname !== '/events') {
+      return { status: 404, body: { error: 'not found' } };
+    }
+
+    const tagId = parsed.searchParams.get('tag_id');
+    if (tagId !== '82') {
+      return { body: { events: [] } };
+    }
+
+    return {
+      body: {
+        events: [
+          {
+            id: 'evt-epl-1',
+            slug: 'everton-v-burnley',
+            title: 'Everton vs Burnley',
+            markets: [
+              {
+                condition_id: 'poly-epl-c1',
+                market_slug: 'everton-v-burnley-home',
+                question: 'Will Everton beat Burnley?',
+                end_date_iso: FIXED_MIRROR_CLOSE_ISO,
+                active: true,
+                closed: false,
+                volume24hr: 550000,
+                tokens: [
+                  { outcome: 'Yes', price: '0.605', token_id: 'poly-epl-yes-1' },
+                  { outcome: 'No', price: '0.395', token_id: 'poly-epl-no-1' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'browse',
+      '--skip-dotenv',
+      '--polymarket-gamma-url',
+      gamma.url,
+      '--polymarket-tag-id',
+      '82',
+      '--limit',
+      '5',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.browse');
+    assert.equal(payload.data.source, 'polymarket:gamma-events');
+    assert.deepEqual(payload.data.filters.polymarketTagIds, [82]);
+    assert.equal(payload.data.count, 1);
+    assert.equal(payload.data.items[0].eventSlug, 'everton-v-burnley');
+    assert.equal(payload.data.items[0].eventTitle, 'Everton vs Burnley');
+    assert.equal(payload.data.items[0].eventId, 'evt-epl-1');
+
+    const eventRequest = gamma.requests.find((entry) => String(entry.url || '').startsWith('/events?'));
+    assert.ok(eventRequest);
+    const parsed = new URL(eventRequest.url, 'http://127.0.0.1');
+    assert.equal(parsed.searchParams.get('tag_id'), '82');
+    assert.equal(parsed.searchParams.get('active'), 'true');
+    assert.equal(parsed.searchParams.get('closed'), 'false');
+  } finally {
+    await gamma.close();
+  }
+});
+
+test('mirror browse supports non-sports short-window filtering in one call', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const nowMs = Date.now();
+  const toIso = (offsetHours) => new Date(nowMs + offsetHours * 60 * 60 * 1000).toISOString();
+  const gamma = await startJsonHttpServer((request) => {
+    const parsed = new URL(request.url || '/', 'http://127.0.0.1');
+    if (parsed.pathname !== '/markets') {
+      return { status: 404, body: { error: 'not found' } };
+    }
+    return {
+      body: {
+        markets: [
+          {
+            condition_id: 's1',
+            market_slug: 'everton-v-burnley-home',
+            question: 'Will Everton beat Burnley?',
+            end_date_iso: toIso(24),
+            active: true,
+            closed: false,
+            volume24hr: 9000,
+            liquidity: 9000,
+            tags: [{ id: 82, slug: 'soccer' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.61', token_id: 's1-yes' },
+              { outcome: 'No', price: '0.39', token_id: 's1-no' },
+            ],
+          },
+          {
+            condition_id: 'c1',
+            market_slug: 'bitcoin-etf-approval-2026',
+            question: 'Will bitcoin ETF approval happen in 2026?',
+            end_date_iso: toIso(36),
+            active: true,
+            closed: false,
+            volume24hr: 8000,
+            liquidity: 1000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.45', token_id: 'c1-yes' },
+              { outcome: 'No', price: '0.55', token_id: 'c1-no' },
+            ],
+          },
+          {
+            condition_id: 'c2',
+            market_slug: 'bitcoin-price-120k-2026',
+            question: 'Will bitcoin trade above 120k in 2026?',
+            end_date_iso: toIso(18),
+            active: true,
+            closed: false,
+            volume24hr: 2000,
+            liquidity: 7000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.55', token_id: 'c2-yes' },
+              { outcome: 'No', price: '0.45', token_id: 'c2-no' },
+            ],
+          },
+          {
+            condition_id: 'x1',
+            market_slug: 'bitcoin-over-300k',
+            question: 'Will bitcoin exceed 300k?',
+            end_date_iso: toIso(12),
+            active: true,
+            closed: false,
+            volume24hr: 10000,
+            liquidity: 1000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.95', token_id: 'x1-yes' },
+              { outcome: 'No', price: '0.05', token_id: 'x1-no' },
+            ],
+          },
+        ],
+      },
+    };
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'browse',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-gamma-url',
+      gamma.url,
+      '--exclude-sports',
+      '--end-date-before',
+      '72h',
+      '--min-yes-pct',
+      '15',
+      '--max-yes-pct',
+      '85',
+      '--sort-by',
+      'volume24h',
+      '--keyword',
+      'bitcoin',
+      '--limit',
+      '10',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.browse');
+    assert.equal(payload.data.filters.excludeSports, true);
+    assert.equal(payload.data.filters.sortBy, 'volume24h');
+    assert.equal(payload.data.count, 2);
+    assert.equal(payload.data.items[0].slug, 'bitcoin-etf-approval-2026');
+    assert.equal(payload.data.items[1].slug, 'bitcoin-price-120k-2026');
+    assert.ok(Array.isArray(payload.data.items[0].categories));
+    assert.ok(payload.data.items[0].categories.includes('crypto'));
+  } finally {
+    await indexer.close();
+    await gamma.close();
   }
 });
 
@@ -5511,6 +5731,28 @@ test('resolve and lp commands are enabled', () => {
   assert.equal(lpPayload.command, 'lp');
   assert.equal(lpPayload.data.action, 'positions');
   assert.equal(lpPayload.data.wallet, ADDRESSES.wallet1.toLowerCase());
+});
+
+test('resolve accepts --dotenv-path and returns env-file errors instead of unknown-flag', () => {
+  const missingFile = path.join(os.tmpdir(), `pandora-missing-env-${Date.now()}.env`);
+  const result = runCli([
+    '--output',
+    'json',
+    'resolve',
+    '--dotenv-path',
+    missingFile,
+    '--poll-address',
+    '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    '--answer',
+    'yes',
+    '--reason',
+    'fixture',
+    '--dry-run',
+  ]);
+
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.error.code, 'ENV_FILE_NOT_FOUND');
 });
 
 test('launch enforces mode flag and dry-run reaches deterministic preflight', () => {

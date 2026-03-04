@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { createCommandRouter } = require('./lib/command_router.cjs');
@@ -33,6 +34,7 @@ const {
   createParsePolymarketTradeFlags,
 } = require('./lib/parsers/polymarket_flags.cjs');
 const { createParseResolveFlags } = require('./lib/parsers/resolve_flags.cjs');
+const { createParseClaimFlags } = require('./lib/parsers/claim_flags.cjs');
 const { createParseLpFlags } = require('./lib/parsers/lp_flags.cjs');
 const { createParseLifecycleFlags } = require('./lib/parsers/lifecycle_flags.cjs');
 const { createParseSportsFlags } = require('./lib/parsers/sports_flags.cjs');
@@ -53,6 +55,7 @@ const { createRunTradeCommand } = require('./lib/trade_command_service.cjs');
 const { createRunWatchCommand } = require('./lib/watch_command_service.cjs');
 const { createRunPolymarketCommand } = require('./lib/polymarket_command_service.cjs');
 const { createRunResolveCommand } = require('./lib/resolve_command_service.cjs');
+const { createRunClaimCommand } = require('./lib/claim_command_service.cjs');
 const { createRunLpCommand } = require('./lib/lp_command_service.cjs');
 const { createRunLifecycleCommand } = require('./lib/lifecycle_command_service.cjs');
 const { createRunArbCommand } = require('./lib/arb_command_service.cjs');
@@ -235,9 +238,9 @@ function mirrorDaemonStatus(...args) {
   return getMirrorDaemonService().daemonStatus(...args);
 }
 
-/** Proxy to mirror close plan builder. */
-function buildMirrorClosePlan(...args) {
-  return getMirrorCloseService().buildMirrorClosePlan(...args);
+/** Proxy to mirror close workflow service. */
+function runMirrorClose(...args) {
+  return getMirrorCloseService().runMirrorClose(...args);
 }
 
 /** Proxy to Polymarket position summary fetcher. */
@@ -288,6 +291,11 @@ function runLp(...args) {
 /** Proxy to LP position fetcher. */
 function runLpPositions(...args) {
   return getMarketAdminService().runLpPositions(...args);
+}
+
+/** Proxy to market claim helper. */
+function runClaim(...args) {
+  return getMarketAdminService().runClaim(...args);
 }
 
 /** Proxy to contract error decoder. */
@@ -513,7 +521,13 @@ function getDoctorServiceInstance() {
 }
 
 const ROOT = path.resolve(__dirname, '..');
-const DEFAULT_ENV_FILE = path.join(ROOT, 'scripts', '.env');
+const DEFAULT_ENV_FILE_PRIMARY = path.join(ROOT, 'scripts', '.env');
+const DEFAULT_ENV_FILE_FALLBACK = path.join(os.homedir(), '.pandora-cli.env');
+const DEFAULT_ENV_FILE = fs.existsSync(DEFAULT_ENV_FILE_FALLBACK)
+  ? DEFAULT_ENV_FILE_FALLBACK
+  : fs.existsSync(DEFAULT_ENV_FILE_PRIMARY)
+    ? DEFAULT_ENV_FILE_PRIMARY
+    : DEFAULT_ENV_FILE_FALLBACK;
 const DEFAULT_ENV_EXAMPLE = path.join(ROOT, 'scripts', '.env.example');
 const DEFAULT_INDEXER_URL = SHARED_DEFAULT_INDEXER_URL;
 let PACKAGE_VERSION = '0.0.0';
@@ -793,8 +807,9 @@ Usage:
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
   pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
   pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
-  pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
-  pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
+  pandora [--output table|json] claim --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
   pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
   pandora [--output table|json] simulate mc|particle-filter|agents ...
@@ -824,6 +839,7 @@ Examples:
   pandora arb scan --markets market-1,market-2 --output ndjson --iterations 1 --min-net-spread-pct 2
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
   pandora mirror plan --source polymarket --polymarket-market-id 0xabc... --with-rules --include-similarity
+  pandora claim --all --dry-run
   pandora mirror browse --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10
   pandora mirror verify --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --include-similarity
   pandora mirror lp-explain --liquidity-usdc 10000 --source-yes-pct 58
@@ -852,7 +868,7 @@ Examples:
 
 Notes:
   - launch/clone-bet forward unknown flags directly to underlying scripts.
-  - scripts/.env is loaded automatically for launch/clone-bet unless --skip-dotenv is used.
+  - Env auto-load default: ~/.pandora-cli.env when present; otherwise scripts/.env. Use --skip-dotenv to disable.
   - --output json is supported for all commands except launch/clone-bet.
   - Indexer URL resolution order: --indexer-url, PANDORA_INDEXER_URL, INDEXER_URL, default public indexer.
   - mirror status --with-live can enrich output with Polymarket position data when POLYMARKET_* credentials are set; missing endpoints/creds return diagnostics instead of hard failures.
@@ -1070,6 +1086,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] analyze ...',
       'pandora [--output table|json] suggest ...',
       'pandora [--output table|json] resolve ...',
+      'pandora [--output table|json] claim ...',
       'pandora [--output table|json] lp add|remove|positions ...',
       'pandora [--output table|json] risk show|panic ...',
       'pandora stream prices|events ...',
@@ -1431,6 +1448,7 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
     args.push('--chain-id', String(options.chainId));
   }
   if (options.rpcUrl) args.push('--rpc-url', options.rpcUrl);
+  if (options.polymarketRpcUrl) args.push('--polymarket-rpc-url', options.polymarketRpcUrl);
   if (options.funder) args.push('--funder', options.funder);
   if (options.usdc) args.push('--usdc', options.usdc);
   if (options.polymarketHost) args.push('--polymarket-host', options.polymarketHost);
@@ -2322,13 +2340,17 @@ function renderMirrorStatusTable(data) {
 }
 
 function renderMirrorCloseTable(data) {
+  const target = data && typeof data.target === 'object' && data.target ? data.target : {};
   printTable(
     ['Field', 'Value'],
     [
       ['mode', data.mode || ''],
-      ['pandoraMarketAddress', data.pandoraMarketAddress || ''],
-      ['polymarketMarketId', data.polymarketMarketId || ''],
-      ['polymarketSlug', data.polymarketSlug || ''],
+      ['all', target.all ? 'yes' : 'no'],
+      ['pandoraMarketAddress', target.pandoraMarketAddress || ''],
+      ['polymarketMarketId', target.polymarketMarketId || ''],
+      ['polymarketSlug', target.polymarketSlug || ''],
+      ['successCount', data.summary && data.summary.successCount !== undefined ? data.summary.successCount : ''],
+      ['failureCount', data.summary && data.summary.failureCount !== undefined ? data.summary.failureCount : ''],
     ],
   );
 
@@ -2338,8 +2360,12 @@ function renderMirrorCloseTable(data) {
 
   console.log('');
   printTable(
-    ['Step', 'Status', 'Description'],
-    data.steps.map((step) => [step.key || '', step.status || '', step.description || '']),
+    ['Step', 'Status', 'Error'],
+    data.steps.map((step) => [
+      step.step || '',
+      step.ok ? 'ok' : 'failed',
+      step.error && step.error.message ? step.error.message : '',
+    ]),
   );
 }
 
@@ -3549,6 +3575,34 @@ async function loadViemRuntime() {
   return { ...viem, ...accounts };
 }
 
+async function hasContractCodeAtAddress(options = {}) {
+  const marketAddress = String(options.marketAddress || '').trim();
+  if (!isValidAddress(marketAddress)) {
+    return false;
+  }
+  const parsedChainId = Number.parseInt(
+    options.chainId === null || options.chainId === undefined ? process.env.CHAIN_ID || '1' : String(options.chainId),
+    10,
+  );
+  const chainId = Number.isInteger(parsedChainId) && parsedChainId > 0 ? parsedChainId : 1;
+  const rpcUrl = options.rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[chainId] || null;
+  if (!rpcUrl) {
+    return false;
+  }
+
+  const { createPublicClient, getAddress, http } = await loadViemRuntime();
+  const chain = {
+    id: chainId,
+    name: `Chain ${chainId}`,
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: { default: { http: [rpcUrl] }, public: { http: [rpcUrl] } },
+  };
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  const normalizedAddress = typeof getAddress === 'function' ? getAddress(marketAddress) : marketAddress;
+  const code = await publicClient.getBytecode({ address: normalizedAddress });
+  return Boolean(code && code !== '0x' && code !== '0x0');
+}
+
 async function executeTradeOnchain(options) {
   const runtime = resolveTradeRuntimeConfig(options);
   const {
@@ -3730,6 +3784,74 @@ async function runQuoteCommand(args, context) {
   emitSuccess(context.outputMode, 'quote', payload, renderQuoteTable);
 }
 
+async function createReadOnlyPublicClient(chainId, rpcUrl) {
+  const selectedChainId = Number.isInteger(Number(chainId)) ? Number(chainId) : 1;
+  const selectedRpcUrl = String(rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[selectedChainId] || '').trim();
+  if (!isSecureHttpUrlOrLocal(selectedRpcUrl)) return null;
+  const { createPublicClient, http } = await loadViemRuntime();
+  return createPublicClient({
+    chain: {
+      id: selectedChainId,
+      name: `Chain ${selectedChainId}`,
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+      rpcUrls: { default: { http: [selectedRpcUrl] }, public: { http: [selectedRpcUrl] } },
+    },
+    transport: http(selectedRpcUrl),
+  });
+}
+
+async function enrichMarketResolutionState(indexerUrl, marketItem, timeoutMs, publicClient) {
+  const pollAddress = String(marketItem && marketItem.pollAddress ? marketItem.pollAddress : '').trim();
+  if (!pollAddress) return null;
+  let onchain = null;
+  if (publicClient) {
+    try {
+      onchain = await getMarketAdminService().readPollResolutionState(publicClient, pollAddress);
+    } catch {
+      onchain = null;
+    }
+  }
+
+  let pollItem = null;
+  try {
+    const pollQuery = buildGraphqlGetQuery('polls', POLLS_LIST_FIELDS);
+    const data = await graphqlRequest(indexerUrl, pollQuery, { id: pollAddress }, timeoutMs);
+    pollItem = data && data.polls ? data.polls : null;
+  } catch {
+    pollItem = null;
+  }
+
+  const indexerFinalizationEpoch =
+    pollItem && pollItem.deadlineEpoch !== undefined && pollItem.deadlineEpoch !== null
+      ? String(pollItem.deadlineEpoch)
+      : null;
+  const indexerStatus = pollItem && pollItem.status !== undefined && pollItem.status !== null
+    ? Number(pollItem.status)
+    : null;
+  const indexerPollFinalized = Number.isFinite(indexerStatus) ? indexerStatus >= 2 : null;
+
+  const finalizationEpoch =
+    (onchain && onchain.finalizationEpoch) || indexerFinalizationEpoch || null;
+  const currentEpoch = onchain && onchain.currentEpoch ? onchain.currentEpoch : null;
+  const epochsUntilFinalization =
+    onchain && onchain.epochsUntilFinalization !== undefined
+      ? onchain.epochsUntilFinalization
+      : (finalizationEpoch && currentEpoch && BigInt(finalizationEpoch) > BigInt(currentEpoch))
+        ? Number(BigInt(finalizationEpoch) - BigInt(currentEpoch))
+        : 0;
+
+  return {
+    marketState: onchain && onchain.marketState !== undefined ? onchain.marketState : indexerStatus,
+    pollFinalized: onchain && onchain.pollFinalized !== null ? onchain.pollFinalized : indexerPollFinalized,
+    pollAnswer: onchain ? onchain.pollAnswer : null,
+    finalizationEpoch,
+    currentEpoch,
+    epochsUntilFinalization,
+    claimable: onchain ? onchain.claimable : Boolean(indexerPollFinalized && epochsUntilFinalization <= 0),
+    operator: onchain ? onchain.operator : null,
+  };
+}
+
 async function runTradeCommand(args, context) {
   return runTradeCommandFromService(args, context);
 }
@@ -3812,10 +3934,14 @@ async function runMarketsCommand(args, context) {
     }
 
     const query = buildGraphqlGetQuery('markets', MARKETS_LIST_FIELDS);
+    const publicClient = await createReadOnlyPublicClient(1, process.env.RPC_URL || null);
     const responses = await Promise.all(
       ids.map(async (id) => {
         const data = await graphqlRequest(indexerUrl, query, { id }, shared.timeoutMs);
-        return { id, item: normalizeMarketNumericFields(data.markets || null) };
+        const item = normalizeMarketNumericFields(data.markets || null);
+        if (!item) return { id, item: null };
+        const resolution = await enrichMarketResolutionState(indexerUrl, item, shared.timeoutMs, publicClient);
+        return { id, item: resolution ? { ...item, ...resolution, resolution } : item };
       }),
     );
 
@@ -4515,6 +4641,7 @@ const parseMirrorSyncFlagsFromModule = createParseMirrorSyncFlags({
 const parseMirrorSyncDaemonSelectorFlagsFromModule = createParseMirrorSyncDaemonSelectorFlags({
   CliError,
   requireFlagValue,
+  parseAddressFlag,
 });
 const parseMirrorBrowseFlagsFromModule = createParseMirrorBrowseFlags({
   ...sharedParserDeps,
@@ -4557,6 +4684,15 @@ const parseResolveFlagsFromModule = createParseResolveFlags({
   parseAddressFlag,
   requireFlagValue,
   parseInteger,
+  isValidPrivateKey,
+  isSecureHttpUrlOrLocal,
+});
+const parseClaimFlagsFromModule = createParseClaimFlags({
+  CliError,
+  parseAddressFlag,
+  requireFlagValue,
+  parseInteger,
+  parsePositiveInteger,
   isValidPrivateKey,
   isSecureHttpUrlOrLocal,
 });
@@ -4717,8 +4853,23 @@ const runResolveCommandFromService = createRunResolveCommand({
   includesHelpFlag,
   emitSuccess,
   commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadTradeEnv,
   parseResolveFlags: parseResolveFlagsFromModule,
   runResolve,
+  renderSingleEntityTable,
+  CliError,
+  assertLiveWriteAllowed,
+});
+
+const runClaimCommandFromService = createRunClaimCommand({
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadTradeEnv,
+  parseClaimFlags: parseClaimFlagsFromModule,
+  runClaim,
   renderSingleEntityTable,
   CliError,
   assertLiveWriteAllowed,
@@ -4728,6 +4879,8 @@ const runLpCommandFromService = createRunLpCommand({
   includesHelpFlag,
   emitSuccess,
   commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadTradeEnv,
   parseLpFlags: parseLpFlagsFromModule,
   runLp,
   renderSingleEntityTable,
@@ -5263,7 +5416,9 @@ function coerceMirrorServiceError(err, fallbackCode = 'MIRROR_ERROR') {
 
 async function runLivePolymarketPreflightForMirror(options = {}) {
   const preflightOptions = {};
-  if (options.rpcUrl) preflightOptions.rpcUrl = options.rpcUrl;
+  const preflightRpcUrl =
+    options.polymarketRpcUrl || process.env.POLYMARKET_RPC_URL || options.rpcUrl || null;
+  if (preflightRpcUrl) preflightOptions.rpcUrl = preflightRpcUrl;
   if (options.privateKey) preflightOptions.privateKey = options.privateKey;
   if (options.funder) preflightOptions.funder = options.funder;
   else if (process.env.POLYMARKET_FUNDER) preflightOptions.funder = process.env.POLYMARKET_FUNDER;
@@ -5310,8 +5465,13 @@ const runMirrorCommand = createRunMirrorCommand({
   startMirrorDaemon,
   stopMirrorDaemon,
   mirrorDaemonStatus,
-  buildMirrorClosePlan,
+  runMirrorClose,
+  runLp,
+  runClaim,
   resolveTrustedDeployPair,
+  findMirrorPair,
+  defaultMirrorManifestFile,
+  hasContractCodeAtAddress,
   toMirrorStatusLivePayload,
   coerceMirrorServiceError,
   runLivePolymarketPreflightForMirror,
@@ -5604,6 +5764,10 @@ async function runResolveCommand(args, context) {
   return runResolveCommandFromService(args, context);
 }
 
+async function runClaimCommand(args, context) {
+  return runClaimCommandFromService(args, context);
+}
+
 async function runLpCommand(args, context) {
   return runLpCommandFromService(args, context);
 }
@@ -5781,6 +5945,7 @@ const dispatch = createCommandRouter({
   runAnalyzeCommand,
   runSuggestCommand,
   runResolveCommand,
+  runClaimCommand,
   runLpCommand,
   runRiskCommand,
   runModelCommand,

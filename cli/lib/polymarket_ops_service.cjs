@@ -6,6 +6,8 @@ const POLYMARKET_SIG_TYPE_EOA = 0;
 const POLYMARKET_SIG_TYPE_PROXY = 2;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const DEFAULT_ALLOWANCE_SUFFICIENT_FLOOR_RAW = 1n << 128n;
+const POLYGON_MIN_GAS_PRICE_WEI = 25n * 1_000_000_000n; // 25 gwei floor on Polygon
+const POLYGON_GAS_PRICE_MULTIPLIER_NUM = 2n;
 
 // Polygon mainnet addresses from official Polymarket CLOB contract config/docs.
 const POLYMARKET_POLYGON_DEFAULTS = {
@@ -227,6 +229,27 @@ async function createWalletClient(runtime, signerAddress, deps = {}) {
   const { createWalletClient, http, privateKeyToAccount } = await loadViemRuntime(deps);
   const account = privateKeyToAccount(runtime.privateKey);
   return createWalletClient({ account, transport: http(runtime.rpcUrl) });
+}
+
+async function resolveWriteGasOverrides(chainId, publicClient) {
+  if (chainId !== POLYGON_CHAIN_ID || !publicClient) {
+    return {};
+  }
+  let networkGasPrice = null;
+  try {
+    networkGasPrice = await publicClient.getGasPrice();
+  } catch {
+    networkGasPrice = null;
+  }
+  const normalizedNetworkGasPrice =
+    typeof networkGasPrice === 'bigint' && networkGasPrice > 0n ? networkGasPrice : null;
+  const baseFee = normalizedNetworkGasPrice !== null && normalizedNetworkGasPrice > POLYGON_MIN_GAS_PRICE_WEI
+    ? normalizedNetworkGasPrice
+    : POLYGON_MIN_GAS_PRICE_WEI;
+  return {
+    maxPriorityFeePerGas: baseFee,
+    maxFeePerGas: baseFee * POLYGON_GAS_PRICE_MULTIPLIER_NUM,
+  };
 }
 
 async function safeReadContract(publicClient, params) {
@@ -636,6 +659,10 @@ async function executeApprovePlan(runtime, signerAddress, txPlan, deps = {}) {
     throw createServiceError('RPC_CLIENT_UNAVAILABLE', 'Unable to initialize wallet/public clients for execute mode.');
   }
 
+  const chainIdResult = await safeGetChainId(publicClient);
+  const chainId = chainIdResult.ok ? Number(chainIdResult.value) : null;
+  const gasOverrides = await resolveWriteGasOverrides(chainId, publicClient);
+
   const receipts = [];
   for (const step of txPlan) {
     let hash;
@@ -645,6 +672,7 @@ async function executeApprovePlan(runtime, signerAddress, txPlan, deps = {}) {
         abi: ERC20_ABI,
         functionName: 'approve',
         args: [step.spender, runtime.allowanceTargetRaw],
+        ...gasOverrides,
       });
     } else {
       hash = await walletClient.writeContract({
@@ -652,6 +680,7 @@ async function executeApprovePlan(runtime, signerAddress, txPlan, deps = {}) {
         abi: CTF_ABI,
         functionName: 'setApprovalForAll',
         args: [step.spender, true],
+        ...gasOverrides,
       });
     }
 
