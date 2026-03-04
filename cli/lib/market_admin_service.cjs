@@ -153,6 +153,32 @@ const POLL_STATUS_READ_CANDIDATES = [
 ];
 
 const POLL_FINALIZED_READ_CANDIDATES = [
+  {
+    fn: 'getFinalizedStatus',
+    kind: 'status-answer-epoch',
+    abi: [
+      {
+        type: 'function',
+        name: 'getFinalizedStatus',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ type: 'uint8' }, { type: 'uint8' }, { type: 'uint32' }],
+      },
+    ],
+  },
+  {
+    fn: 'getFinalizedStatus',
+    kind: 'bool-answer-epoch',
+    abi: [
+      {
+        type: 'function',
+        name: 'getFinalizedStatus',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ type: 'bool' }, { type: 'uint8' }, { type: 'uint32' }],
+      },
+    ],
+  },
   { fn: 'getFinalizedStatus', abi: [{ type: 'function', name: 'getFinalizedStatus', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] }] },
   { fn: 'isFinalized', abi: [{ type: 'function', name: 'isFinalized', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] }] },
   { fn: 'finalized', abi: [{ type: 'function', name: 'finalized', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] }] },
@@ -176,6 +202,28 @@ const POLL_FINALIZATION_EPOCH_READ_CANDIDATES = [
   {
     fn: 'deadlineEpoch',
     abi: [{ type: 'function', name: 'deadlineEpoch', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+];
+
+const POLL_CURRENT_EPOCH_READ_CANDIDATES = [
+  {
+    fn: 'getCurrentEpoch',
+    abi: [{ type: 'function', name: 'getCurrentEpoch', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+  {
+    fn: 'currentEpoch',
+    abi: [{ type: 'function', name: 'currentEpoch', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+];
+
+const POLL_EPOCH_LENGTH_READ_CANDIDATES = [
+  {
+    fn: 'getEpochLength',
+    abi: [{ type: 'function', name: 'getEpochLength', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+  {
+    fn: 'epochLength',
+    abi: [{ type: 'function', name: 'epochLength', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
   },
 ];
 
@@ -380,12 +428,12 @@ async function tryReadContractAny(publicClient, address, candidates = []) {
         functionName: candidate.fn,
         args: [],
       });
-      return { ok: true, fn: candidate.fn, value };
+      return { ok: true, fn: candidate.fn, value, candidate };
     } catch {
       // continue
     }
   }
-  return { ok: false, fn: null, value: null };
+  return { ok: false, fn: null, value: null, candidate: null };
 }
 
 function normalizeOptionalBigInt(value) {
@@ -415,6 +463,14 @@ function normalizePollAnswer(value) {
   return String(asBig);
 }
 
+function deriveCurrentEpochFromTimestamp(timestamp, epochLengthSeconds = 300n) {
+  const ts = normalizeOptionalBigInt(timestamp);
+  if (ts === null) return null;
+  const epochLength = normalizeOptionalBigInt(epochLengthSeconds);
+  if (epochLength === null || epochLength <= 0n) return null;
+  return ts / epochLength;
+}
+
 async function readPollResolutionState(publicClient, pollAddress) {
   const statusRead = await tryReadContractAny(publicClient, pollAddress, POLL_STATUS_READ_CANDIDATES);
   const finalizedRead = await tryReadContractAny(publicClient, pollAddress, POLL_FINALIZED_READ_CANDIDATES);
@@ -425,14 +481,50 @@ async function readPollResolutionState(publicClient, pollAddress) {
     POLL_FINALIZATION_EPOCH_READ_CANDIDATES,
   );
   const operatorRead = await tryReadContractAny(publicClient, pollAddress, POLL_OPERATOR_READ_CANDIDATES);
-  const currentEpoch = await publicClient.getBlockNumber();
+  const currentEpochRead = await tryReadContractAny(publicClient, pollAddress, POLL_CURRENT_EPOCH_READ_CANDIDATES);
+  const epochLengthRead = await tryReadContractAny(publicClient, pollAddress, POLL_EPOCH_LENGTH_READ_CANDIDATES);
+
+  let currentEpoch = currentEpochRead.ok ? normalizeOptionalBigInt(currentEpochRead.value) : null;
+  if (currentEpoch === null) {
+    try {
+      const block = await publicClient.getBlock({ blockTag: 'latest' });
+      const epochLength = epochLengthRead.ok ? normalizeOptionalBigInt(epochLengthRead.value) : 300n;
+      currentEpoch = deriveCurrentEpochFromTimestamp(block && block.timestamp, epochLength === null ? 300n : epochLength);
+    } catch {
+      currentEpoch = null;
+    }
+  }
 
   const statusNumeric = statusRead.ok ? Number(statusRead.value) : null;
-  const finalizedBool = finalizedRead.ok ? Boolean(finalizedRead.value) : null;
-  const answer = answerRead.ok ? normalizePollAnswer(answerRead.value) : null;
-  const finalizationEpoch = finalizationEpochRead.ok ? normalizeOptionalBigInt(finalizationEpochRead.value) : null;
+  let finalizedBool = null;
+  let finalizedAnswer = null;
+  let finalizedEpoch = null;
+  if (finalizedRead.ok) {
+    const kind = finalizedRead.candidate && finalizedRead.candidate.kind ? finalizedRead.candidate.kind : null;
+    if (kind === 'status-answer-epoch' || kind === 'bool-answer-epoch') {
+      const tuple = Array.isArray(finalizedRead.value) ? finalizedRead.value : null;
+      if (tuple && tuple.length >= 3) {
+        if (kind === 'status-answer-epoch') {
+          const statusRaw = normalizeOptionalBigInt(tuple[0]);
+          finalizedBool = statusRaw === null ? null : statusRaw >= 2n;
+        } else {
+          finalizedBool = Boolean(tuple[0]);
+        }
+        finalizedAnswer = normalizePollAnswer(tuple[1]);
+        finalizedEpoch = normalizeOptionalBigInt(tuple[2]);
+      }
+    } else {
+      finalizedBool = Boolean(finalizedRead.value);
+    }
+  }
+  const answer = answerRead.ok ? normalizePollAnswer(answerRead.value) : finalizedAnswer;
+  const finalizationEpoch = finalizationEpochRead.ok ? normalizeOptionalBigInt(finalizationEpochRead.value) : finalizedEpoch;
   const epochsUntilFinalization =
-    finalizationEpoch === null ? null : finalizationEpoch > currentEpoch ? Number(finalizationEpoch - currentEpoch) : 0;
+    (finalizationEpoch === null || currentEpoch === null)
+      ? null
+      : finalizationEpoch > currentEpoch
+        ? Number(finalizationEpoch - currentEpoch)
+        : 0;
   const claimable =
     answer !== null &&
     ((finalizedBool === true) || (epochsUntilFinalization !== null && epochsUntilFinalization <= 0));
@@ -443,7 +535,7 @@ async function readPollResolutionState(publicClient, pollAddress) {
     pollFinalized: finalizedBool,
     pollAnswer: answer,
     finalizationEpoch: finalizationEpoch === null ? null : finalizationEpoch.toString(),
-    currentEpoch: currentEpoch.toString(),
+    currentEpoch: currentEpoch === null ? null : currentEpoch.toString(),
     epochsUntilFinalization,
     claimable,
     operator: operatorRead.ok ? normalizeOptionalAddress(operatorRead.value) : null,
@@ -452,6 +544,8 @@ async function readPollResolutionState(publicClient, pollAddress) {
       finalized: finalizedRead.fn,
       answer: answerRead.fn,
       finalizationEpoch: finalizationEpochRead.fn,
+      currentEpoch: currentEpochRead.fn,
+      epochLength: epochLengthRead.fn,
       operator: operatorRead.fn,
     },
   };
