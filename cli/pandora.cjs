@@ -804,7 +804,7 @@ Usage:
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
-  pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
+  pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
   pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...
   pandora [--output table|json] polymarket check|approve|preflight|trade ...
@@ -1881,6 +1881,7 @@ function renderPortfolioTable(data) {
     ['pnlProxy', data.summary.pnlProxy],
     ['totalDeposited', data.summary.totalDeposited === null ? '' : data.summary.totalDeposited],
     ['totalNetDelta', data.summary.totalNetDelta === null ? '' : data.summary.totalNetDelta],
+    ['totalPositionMarkValueUsdc', data.summary.totalPositionMarkValueUsdc === null ? '' : data.summary.totalPositionMarkValueUsdc],
     ['totalUnrealizedPnl', data.summary.totalUnrealizedPnl === null ? '' : data.summary.totalUnrealizedPnl],
     ['eventsIncluded', data.summary.eventsIncluded ? 'yes' : 'no'],
     ['lpIncluded', data.summary.lpIncluded ? 'yes' : 'no'],
@@ -1895,10 +1896,17 @@ function renderPortfolioTable(data) {
   if (Array.isArray(data.positions) && data.positions.length) {
     console.log('');
     printTable(
-      ['Market', 'Chain', 'Last Trade'],
+      ['Market', 'Question', 'Chain', 'Side', 'YES Bal', 'NO Bal', 'YES%', 'NO%', 'Mark (USDC)', 'Last Trade'],
       data.positions.map((item) => [
         short(item.marketAddress, 18),
+        short(item.question || '', 38),
         item.chainId,
+        item.positionSide || '',
+        item.yesBalance === null || item.yesBalance === undefined ? '' : item.yesBalance,
+        item.noBalance === null || item.noBalance === undefined ? '' : item.noBalance,
+        item.odds && item.odds.yesPct !== null && item.odds.yesPct !== undefined ? `${item.odds.yesPct}%` : '',
+        item.odds && item.odds.noPct !== null && item.odds.noPct !== undefined ? `${item.odds.noPct}%` : '',
+        item.markValueUsdc === null || item.markValueUsdc === undefined ? '' : item.markValueUsdc,
         formatTimestamp(item.lastTradeAt),
       ]),
     );
@@ -3189,37 +3197,97 @@ function normalizeProbabilityLike(value) {
   return null;
 }
 
+function maybeNormalizeReserveUnits(item, reserveYes, reserveNo) {
+  if (!Number.isFinite(reserveYes) || !Number.isFinite(reserveNo)) {
+    return {
+      reserveYes,
+      reserveNo,
+      scale: 1,
+      scaled: false,
+    };
+  }
+
+  const total = reserveYes + reserveNo;
+  const currentTvl = toOptionalNumber(item && item.currentTvl);
+  let scale = 1;
+
+  if (Number.isFinite(currentTvl) && currentTvl > 0) {
+    const ratio = total / currentTvl;
+    // Indexer payloads sometimes expose reserves in 1e6 units while TVL is already in USDC.
+    if (Number.isFinite(ratio) && ratio > 500_000 && ratio < 2_500_000) {
+      scale = 1_000_000;
+    }
+  } else {
+    const maxReserve = Math.max(reserveYes, reserveNo);
+    if (
+      maxReserve >= 1_000_000 &&
+      maxReserve <= 1_000_000_000_000 &&
+      Number.isInteger(reserveYes) &&
+      Number.isInteger(reserveNo) &&
+      reserveYes % 1_000_000 === 0 &&
+      reserveNo % 1_000_000 === 0
+    ) {
+      scale = 1_000_000;
+    }
+  }
+
+  if (scale === 1) {
+    return {
+      reserveYes,
+      reserveNo,
+      scale: 1,
+      scaled: false,
+    };
+  }
+
+  return {
+    reserveYes: reserveYes / scale,
+    reserveNo: reserveNo / scale,
+    scale,
+    scaled: true,
+  };
+}
+
 function deriveMarketReservePair(item) {
   const reserveYesDirect = toOptionalNumber(item && (item.reserveYes ?? item.yesReserve ?? item.yesTokenAmount));
   const reserveNoDirect = toOptionalNumber(item && (item.reserveNo ?? item.noReserve ?? item.noTokenAmount));
 
   if (Number.isFinite(reserveYesDirect) && Number.isFinite(reserveNoDirect)) {
+    const normalized = maybeNormalizeReserveUnits(item, reserveYesDirect, reserveNoDirect);
     return {
-      reserveYes: reserveYesDirect,
-      reserveNo: reserveNoDirect,
+      reserveYes: normalized.reserveYes,
+      reserveNo: normalized.reserveNo,
       estimated: false,
-      source: 'market:reserve-pair',
+      source: normalized.scaled ? `market:reserve-pair:scaled-1e${Math.round(Math.log10(normalized.scale))}` : 'market:reserve-pair',
     };
   }
 
   const yesProbability = normalizeProbabilityLike(item && (item.yesChance ?? item.yesPct ?? item.yesProbability));
   if (Number.isFinite(reserveYesDirect) && Number.isFinite(yesProbability) && yesProbability > 0 && yesProbability < 1) {
     const reserveNo = reserveYesDirect * (yesProbability / (1 - yesProbability));
+    const normalized = maybeNormalizeReserveUnits(item, reserveYesDirect, reserveNo);
     return {
-      reserveYes: reserveYesDirect,
-      reserveNo,
+      reserveYes: normalized.reserveYes,
+      reserveNo: normalized.reserveNo,
       estimated: true,
-      source: 'market:reserve-yes+yes-probability',
+      source: normalized.scaled
+        ? `market:reserve-yes+yes-probability:scaled-1e${Math.round(Math.log10(normalized.scale))}`
+        : 'market:reserve-yes+yes-probability',
     };
   }
 
   const currentTvl = toOptionalNumber(item && item.currentTvl);
   if (Number.isFinite(currentTvl) && Number.isFinite(yesProbability) && yesProbability > 0 && yesProbability < 1) {
+    const reserveYes = currentTvl * (1 - yesProbability);
+    const reserveNo = currentTvl * yesProbability;
+    const normalized = maybeNormalizeReserveUnits(item, reserveYes, reserveNo);
     return {
-      reserveYes: currentTvl * (1 - yesProbability),
-      reserveNo: currentTvl * yesProbability,
+      reserveYes: normalized.reserveYes,
+      reserveNo: normalized.reserveNo,
       estimated: true,
-      source: 'market:tvl+yes-probability',
+      source: normalized.scaled
+        ? `market:tvl+yes-probability:scaled-1e${Math.round(Math.log10(normalized.scale))}`
+        : 'market:tvl+yes-probability',
     };
   }
 
@@ -3413,6 +3481,12 @@ function buildMarketsListPayload(indexerUrl, options, items, pageInfo, opts = {}
     pageInfo,
     items: normalizedItems,
   };
+  const externalDiagnostics = Array.isArray(opts.externalDiagnostics)
+    ? opts.externalDiagnostics.map((line) => String(line || '').trim()).filter(Boolean)
+    : [];
+  if (externalDiagnostics.length) {
+    payload.diagnostics = Array.from(new Set(externalDiagnostics));
+  }
 
   if (
     typeof opts.unfilteredCount === 'number' &&
@@ -3514,7 +3588,7 @@ async function fetchMarketsListPage(indexerUrl, options, timeoutMs) {
 async function filterHedgeableMarkets({ indexerUrl, timeoutMs, options, items }) {
   const normalizedItems = Array.isArray(items) ? items.map((item) => normalizeMarketNumericFields(item)) : [];
   if (!normalizedItems.length) {
-    return { items: normalizedItems, unfilteredCount: 0 };
+    return { items: normalizedItems, unfilteredCount: 0, diagnostics: [] };
   }
 
   let opportunityPayload = null;
@@ -3528,7 +3602,8 @@ async function filterHedgeableMarkets({ indexerUrl, timeoutMs, options, items })
       minSpreadPct: 0,
       minLiquidityUsd: 0,
       maxCloseDiffHours: 24,
-      similarityThreshold: 0.86,
+      similarityThreshold: 0.35,
+      minTokenScore: 0.12,
       crossVenueOnly: true,
       withRules: false,
       includeSimilarity: false,
@@ -3538,6 +3613,9 @@ async function filterHedgeableMarkets({ indexerUrl, timeoutMs, options, items })
     return {
       items: normalizedItems,
       unfilteredCount: normalizedItems.length,
+      diagnostics: [
+        'Hedgeable filter degraded: cross-venue matcher unavailable, returning unfiltered market set.',
+      ],
     };
   }
 
@@ -3551,14 +3629,19 @@ async function filterHedgeableMarkets({ indexerUrl, timeoutMs, options, items })
     if (!hasPolymarket) continue;
     for (const leg of legs) {
       if (leg && leg.venue === 'pandora' && leg.marketId) {
-        matchedPandoraIds.add(String(leg.marketId));
+        const key = normalizeLookupKey(leg.marketId);
+        if (key) matchedPandoraIds.add(key);
       }
     }
   }
 
   return {
-    items: normalizedItems.filter((item) => matchedPandoraIds.has(String(item && item.id))),
+    items: normalizedItems.filter((item) => {
+      const key = normalizeLookupKey(item && item.id);
+      return key ? matchedPandoraIds.has(key) : false;
+    }),
     unfilteredCount: normalizedItems.length,
+    diagnostics: [],
   };
 }
 
@@ -3647,35 +3730,115 @@ function enforceTradeRiskGuards(options, quote) {
   }
 }
 
-function buildQuoteEstimate(odds, side, amountUsdc, slippageBps) {
+function buildAmmQuoteEstimateFromReserves(liquidity, side, amountUsdc) {
+  const reserveYes = toOptionalNumber(liquidity && liquidity.reserveYes);
+  const reserveNo = toOptionalNumber(liquidity && liquidity.reserveNo);
+  if (!Number.isFinite(reserveYes) || !Number.isFinite(reserveNo) || reserveYes <= 0 || reserveNo <= 0) {
+    return null;
+  }
+  if (!Number.isFinite(amountUsdc) || amountUsdc <= 0) {
+    return null;
+  }
+
+  const kValue = reserveYes * reserveNo;
+  if (!Number.isFinite(kValue) || kValue <= 0) return null;
+
+  const normalizedSide = String(side || '').toLowerCase();
+  const isYes = normalizedSide === 'yes';
+
+  let estimatedShares = null;
+  let spotPrice = null;
+  let impliedProbability = null;
+  if (isYes) {
+    // Binary AMM execution path is mint+swap:
+    // 1) deposit collateral => mint amount YES + amount NO
+    // 2) swap minted NO into pool for extra YES along x*y=k
+    const nextReserveNo = reserveNo + amountUsdc;
+    if (!Number.isFinite(nextReserveNo) || nextReserveNo <= 0) return null;
+    const nextReserveYes = kValue / nextReserveNo;
+    const swapOutputYes = reserveYes - nextReserveYes;
+    if (!Number.isFinite(swapOutputYes) || swapOutputYes < 0) return null;
+    estimatedShares = amountUsdc + swapOutputYes;
+    spotPrice = reserveNo / (reserveYes + reserveNo);
+    impliedProbability = reserveNo / (reserveYes + reserveNo);
+  } else {
+    // Binary AMM execution path is mint+swap:
+    // 1) deposit collateral => mint amount YES + amount NO
+    // 2) swap minted YES into pool for extra NO along x*y=k
+    const nextReserveYes = reserveYes + amountUsdc;
+    if (!Number.isFinite(nextReserveYes) || nextReserveYes <= 0) return null;
+    const nextReserveNo = kValue / nextReserveYes;
+    const swapOutputNo = reserveNo - nextReserveNo;
+    if (!Number.isFinite(swapOutputNo) || swapOutputNo < 0) return null;
+    estimatedShares = amountUsdc + swapOutputNo;
+    spotPrice = reserveYes / (reserveYes + reserveNo);
+    impliedProbability = reserveYes / (reserveYes + reserveNo);
+  }
+
+  if (!Number.isFinite(estimatedShares) || estimatedShares <= 0) return null;
+  const effectivePrice = amountUsdc / estimatedShares;
+  if (!Number.isFinite(effectivePrice) || effectivePrice <= 0) return null;
+
+  const slippagePct =
+    Number.isFinite(spotPrice) && spotPrice > 0
+      ? ((effectivePrice - spotPrice) / spotPrice) * 100
+      : null;
+
+  return {
+    impliedProbability,
+    pricePerShare: effectivePrice,
+    estimatedShares,
+    slippagePct,
+  };
+}
+
+function buildQuoteEstimate(odds, side, amountUsdc, slippageBps, marketContext = null) {
   const probability = side === 'yes' ? odds.yesProbability : odds.noProbability;
   if (!Number.isFinite(probability) || probability <= 0) {
     return null;
   }
 
-  const pricePerShare = probability;
-  const estimatedShares = amountUsdc / pricePerShare;
+  let estimateSource = 'probability-linear';
+  let impliedProbability = probability;
+  let pricePerShare = probability;
+  let estimatedShares = amountUsdc / pricePerShare;
+  let slippagePct = 0;
+
+  const marketType = String(marketContext && marketContext.marketType ? marketContext.marketType : '').toLowerCase();
+  if (marketType === 'amm') {
+    const ammEstimate = buildAmmQuoteEstimateFromReserves(marketContext && marketContext.liquidity, side, amountUsdc);
+    if (ammEstimate) {
+      estimateSource = 'amm-reserves';
+      impliedProbability = Number.isFinite(ammEstimate.impliedProbability) ? ammEstimate.impliedProbability : probability;
+      pricePerShare = Number.isFinite(ammEstimate.pricePerShare) ? ammEstimate.pricePerShare : pricePerShare;
+      estimatedShares = Number.isFinite(ammEstimate.estimatedShares) ? ammEstimate.estimatedShares : estimatedShares;
+      slippagePct = Number.isFinite(ammEstimate.slippagePct) ? ammEstimate.slippagePct : slippagePct;
+    }
+  }
+
   const slippageFactor = Math.max(0, (10_000 - slippageBps) / 10_000);
   const minSharesOut = estimatedShares * slippageFactor;
   const payoutIfWin = estimatedShares;
   const profitIfWin = payoutIfWin - amountUsdc;
 
   return {
-    impliedProbability: round(probability, 6),
+    estimateSource,
+    impliedProbability: round(impliedProbability, 6),
     pricePerShare: round(pricePerShare, 6),
     estimatedShares: round(estimatedShares, 6),
     minSharesOut: round(minSharesOut, 6),
     potentialPayoutIfWin: round(payoutIfWin, 6),
     potentialProfitIfWin: round(profitIfWin, 6),
+    slippagePct: round(slippagePct, 6),
     slippageBps,
   };
 }
 
-function buildQuoteEstimateCurve(odds, side, amountsUsdc, slippageBps) {
+function buildQuoteEstimateCurve(odds, side, amountsUsdc, slippageBps, marketContext = null) {
   const amounts = Array.isArray(amountsUsdc) ? amountsUsdc : [];
   const curve = [];
   for (const amount of amounts) {
-    const estimate = buildQuoteEstimate(odds, side, amount, slippageBps);
+    const estimate = buildQuoteEstimate(odds, side, amount, slippageBps, marketContext);
     if (!estimate) {
       curve.push({
         amountUsdc: amount,
@@ -3688,8 +3851,9 @@ function buildQuoteEstimateCurve(odds, side, amountsUsdc, slippageBps) {
     }
     const effectivePrice = estimate.estimatedShares > 0 ? amount / estimate.estimatedShares : null;
     const impliedPrice = Number.isFinite(estimate.pricePerShare) ? estimate.pricePerShare : null;
-    const slippagePct =
-      Number.isFinite(effectivePrice) && Number.isFinite(impliedPrice) && impliedPrice > 0
+    const slippagePct = Number.isFinite(estimate.slippagePct)
+      ? estimate.slippagePct
+      : Number.isFinite(effectivePrice) && Number.isFinite(impliedPrice) && impliedPrice > 0
         ? ((effectivePrice - impliedPrice) / impliedPrice) * 100
         : null;
     const roiIfWinPct =
@@ -3702,6 +3866,7 @@ function buildQuoteEstimateCurve(odds, side, amountsUsdc, slippageBps) {
       effectivePrice: Number.isFinite(effectivePrice) ? round(effectivePrice, 6) : null,
       slippagePct: Number.isFinite(slippagePct) ? round(slippagePct, 6) : null,
       roiIfWinPct: Number.isFinite(roiIfWinPct) ? round(roiIfWinPct, 6) : null,
+      estimateSource: estimate.estimateSource || null,
       estimate,
     });
   }
@@ -3790,18 +3955,20 @@ async function resolveQuoteOdds(indexerUrl, options, timeoutMs) {
 async function buildQuotePayload(indexerUrl, options, timeoutMs) {
   const market = await fetchMarketSnapshot(indexerUrl, options.marketAddress, timeoutMs);
   const liquidity = buildMarketLiquidityMetrics(market || {});
+  const marketType = String(market && market.marketType ? market.marketType : '').toLowerCase();
+  const marketContext = { marketType, liquidity };
   let odds;
   try {
     odds = await resolveQuoteOdds(indexerUrl, options, timeoutMs);
   } catch (err) {
     odds = buildNullOdds(null, `Unable to fetch odds: ${formatErrorValue(err)}`);
   }
-  const estimate = buildQuoteEstimate(odds, options.side, options.amountUsdc, options.slippageBps);
+  const estimate = buildQuoteEstimate(odds, options.side, options.amountUsdc, options.slippageBps, marketContext);
   const amounts = Array.isArray(options.amountsUsdc) && options.amountsUsdc.length
     ? options.amountsUsdc
     : [options.amountUsdc];
-  const curve = buildQuoteEstimateCurve(odds, options.side, amounts, options.slippageBps);
-  const parimutuel = String(market && market.marketType ? market.marketType : '').toLowerCase() === 'pari'
+  const curve = buildQuoteEstimateCurve(odds, options.side, amounts, options.slippageBps, marketContext);
+  const parimutuel = marketType === 'pari'
     ? buildParimutuelEstimate(liquidity, options.side, options.amountUsdc)
     : null;
 
@@ -4210,6 +4377,7 @@ async function runMarketsCommand(args, context) {
     }
 
     const options = parseMarketsListFlags(actionArgs);
+    let hedgeableDiagnostics = [];
     let { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
     if (options.hedgeable) {
       const filtered = await filterHedgeableMarkets({ indexerUrl, timeoutMs: shared.timeoutMs, options, items });
@@ -4217,12 +4385,19 @@ async function runMarketsCommand(args, context) {
       if (typeof filtered.unfilteredCount === 'number') {
         unfilteredCount = filtered.unfilteredCount;
       }
+      if (Array.isArray(filtered && filtered.diagnostics)) {
+        hedgeableDiagnostics = filtered.diagnostics;
+      }
     }
     const enrichmentContext =
       options.expand || options.withOdds
         ? await buildMarketsEnrichmentContext(indexerUrl, items, options, shared.timeoutMs)
         : null;
-    const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, { enrichmentContext, unfilteredCount });
+    const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, {
+      enrichmentContext,
+      unfilteredCount,
+      externalDiagnostics: hedgeableDiagnostics,
+    });
     emitSuccess(context.outputMode, 'markets.list', payload, renderMarketsListTable);
     return;
   }
@@ -4655,7 +4830,9 @@ async function fetchPortfolioPositions(indexerUrl, options, timeoutMs) {
     where.chainId = options.chainId;
   }
 
-  const query = buildGraphqlListQuery('marketUserss', 'marketUsersFilter', ['id', 'chainId', 'marketAddress', 'user', 'lastTradeAt']);
+  const baseFields = ['id', 'chainId', 'marketAddress', 'user', 'lastTradeAt'];
+  const extendedFields = [...baseFields, 'yesTokenAmount', 'noTokenAmount', 'yesBalance', 'noBalance'];
+  const query = buildGraphqlListQuery('marketUserss', 'marketUsersFilter', extendedFields);
   const variables = {
     where,
     orderBy: 'lastTradeAt',
@@ -4664,8 +4841,223 @@ async function fetchPortfolioPositions(indexerUrl, options, timeoutMs) {
     after: null,
     limit: options.limit,
   };
-  const data = await graphqlRequest(indexerUrl, query, variables, timeoutMs);
-  return normalizePageResult(data.marketUserss);
+  try {
+    const data = await graphqlRequest(indexerUrl, query, variables, timeoutMs);
+    return normalizePageResult(data.marketUserss);
+  } catch (error) {
+    const fallbackQuery = buildGraphqlListQuery('marketUserss', 'marketUsersFilter', baseFields);
+    const fallbackData = await graphqlRequest(indexerUrl, fallbackQuery, variables, timeoutMs);
+    return normalizePageResult(fallbackData.marketUserss);
+  }
+}
+
+function pickFiniteNumber(...values) {
+  for (const value of values) {
+    const numeric = toOptionalNumber(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return null;
+}
+
+function derivePositionSide(yesBalance, noBalance) {
+  const hasYes = Number.isFinite(yesBalance) && yesBalance > 0;
+  const hasNo = Number.isFinite(noBalance) && noBalance > 0;
+  if (hasYes && hasNo) return 'both';
+  if (hasYes) return 'yes';
+  if (hasNo) return 'no';
+  return null;
+}
+
+function computePositionMarkValue(yesBalance, noBalance, odds) {
+  const yesProbability = toOptionalNumber(odds && odds.yesProbability);
+  const noProbability = toOptionalNumber(odds && odds.noProbability);
+  if (!Number.isFinite(yesProbability) || !Number.isFinite(noProbability)) return null;
+
+  const yesAmount = Number.isFinite(yesBalance) ? yesBalance : 0;
+  const noAmount = Number.isFinite(noBalance) ? noBalance : 0;
+  if (!yesAmount && !noAmount) return null;
+  return round(yesAmount * yesProbability + noAmount * noProbability, 6);
+}
+
+function parseTokenAmountMaybeRaw(value) {
+  const numeric = toOptionalNumber(value);
+  if (!Number.isFinite(numeric)) return null;
+
+  const rawText = typeof value === 'string' ? value.trim() : '';
+  if (rawText.includes('.')) {
+    return round(numeric, 6);
+  }
+
+  if (Number.isInteger(numeric) && Math.abs(numeric) >= 1_000_000) {
+    return round(numeric / 1_000_000, 6);
+  }
+  return round(numeric, 6);
+}
+
+function normalizeTradeSide(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['yes', 'y', 'true', '1'].includes(normalized)) return 'yes';
+  if (['no', 'n', 'false', '0'].includes(normalized)) return 'no';
+  return null;
+}
+
+async function fetchPortfolioTradeBalanceMap(indexerUrl, options, timeoutMs) {
+  const where = { trader: options.wallet };
+  if (options.chainId !== null) {
+    where.chainId = options.chainId;
+  }
+  const query = buildGraphqlListQuery(
+    'tradess',
+    'tradesFilter',
+    ['id', 'marketAddress', 'side', 'tradeType', 'tokenAmount', 'tokenAmountOut'],
+  );
+  const variables = {
+    where,
+    orderBy: 'timestamp',
+    orderDirection: 'desc',
+    before: null,
+    after: null,
+    // Keep this bounded: larger values can trigger indexer INTERNAL_SERVER_ERROR.
+    limit: Math.min(Math.max((Number(options.limit) || 100) * 5, 100), 500),
+  };
+
+  let page;
+  try {
+    const data = await graphqlRequest(indexerUrl, query, variables, timeoutMs);
+    page = normalizePageResult(data.tradess);
+  } catch {
+    return { balancesByMarket: new Map(), diagnostics: [] };
+  }
+
+  const balancesByMarket = new Map();
+  for (const trade of page.items || []) {
+    const marketKey = normalizeLookupKey(trade && trade.marketAddress);
+    if (!marketKey) continue;
+    const side = normalizeTradeSide(trade && trade.side);
+    if (!side) continue;
+
+    const tradeType = String(trade && trade.tradeType ? trade.tradeType : '').toLowerCase();
+    const tokenAmount = parseTokenAmountMaybeRaw(trade && trade.tokenAmount);
+    const tokenAmountOut = parseTokenAmountMaybeRaw(trade && trade.tokenAmountOut);
+
+    let delta = null;
+    if (
+      tradeType.includes('sell') ||
+      tradeType.includes('remove') ||
+      tradeType.includes('burn') ||
+      tradeType.includes('redeem')
+    ) {
+      delta = tokenAmount !== null ? -tokenAmount : tokenAmountOut !== null ? -tokenAmountOut : null;
+    } else {
+      delta = tokenAmountOut !== null ? tokenAmountOut : tokenAmount;
+    }
+    if (!Number.isFinite(delta)) continue;
+
+    const entry = balancesByMarket.get(marketKey) || { yesBalance: 0, noBalance: 0 };
+    if (side === 'yes') {
+      entry.yesBalance = round(entry.yesBalance + delta, 6);
+    } else {
+      entry.noBalance = round(entry.noBalance + delta, 6);
+    }
+    balancesByMarket.set(marketKey, entry);
+  }
+
+  const diagnostics = [];
+  if (page && page.pageInfo && page.pageInfo.hasNextPage) {
+    diagnostics.push('Portfolio token balances use capped trade history; increase --limit for deeper reconstruction.');
+  }
+
+  return { balancesByMarket, diagnostics };
+}
+
+async function enrichPortfolioPositions(indexerUrl, positions, options, timeoutMs) {
+  if (!Array.isArray(positions) || !positions.length) {
+    return { items: [], diagnostics: [] };
+  }
+
+  const uniqueMarketAddresses = Array.from(
+    new Set(
+      positions
+        .map((item) => normalizeLookupKey(item && item.marketAddress))
+        .filter(Boolean),
+    ),
+  );
+
+  const marketsByAddress = new Map();
+  await Promise.all(
+    uniqueMarketAddresses.map(async (marketAddress) => {
+      const market = await fetchMarketSnapshot(indexerUrl, marketAddress, timeoutMs);
+      if (market) {
+        marketsByAddress.set(marketAddress, market);
+      }
+    }),
+  );
+
+  const marketItems = Array.from(marketsByAddress.values());
+  let pollsByKey = new Map();
+  try {
+    const pollDetails = await fetchPollDetailsMap(indexerUrl, marketItems, timeoutMs);
+    pollsByKey = pollDetails && pollDetails.pollsByKey ? pollDetails.pollsByKey : new Map();
+  } catch {
+    pollsByKey = new Map();
+  }
+
+  const tradeBalances = await fetchPortfolioTradeBalanceMap(indexerUrl, options, timeoutMs);
+  const tradeBalanceByMarket = tradeBalances.balancesByMarket;
+
+  const items = positions.map((position) => {
+    const marketKey = normalizeLookupKey(position && position.marketAddress);
+    const market = marketKey ? marketsByAddress.get(marketKey) : null;
+    const liquidity = market ? buildMarketLiquidityMetrics(market) : buildMarketLiquidityMetrics({});
+    let odds = market ? computeMarketOdds(market, null) : buildNullOdds(null, 'Market enrichment unavailable.');
+    if (
+      (!odds || !Number.isFinite(odds.yesProbability)) &&
+      Number.isFinite(liquidity && liquidity.yesPrice) &&
+      Number.isFinite(liquidity && liquidity.noPrice)
+    ) {
+      odds = normalizeOddsFromPair(liquidity.yesPrice, liquidity.noPrice, 'liquidity:reserve-metrics');
+    }
+    const poll = market
+      ? firstMappedValue(pollsByKey, [market.pollAddress, market.pollId, market.poll && market.poll.id])
+      : null;
+
+    const tradeBalance = marketKey ? tradeBalanceByMarket.get(marketKey) : null;
+    const yesBalance = pickFiniteNumber(
+      position && position.yesTokenAmount,
+      position && position.yesBalance,
+      tradeBalance && tradeBalance.yesBalance,
+    );
+    const noBalance = pickFiniteNumber(
+      position && position.noTokenAmount,
+      position && position.noBalance,
+      tradeBalance && tradeBalance.noBalance,
+    );
+    const markValueUsdc = computePositionMarkValue(yesBalance, noBalance, odds);
+
+    return {
+      ...position,
+      question: poll && poll.question ? poll.question : null,
+      marketType: market && market.marketType ? market.marketType : null,
+      odds: {
+        yesPct: odds && Number.isFinite(odds.yesPct) ? odds.yesPct : null,
+        noPct: odds && Number.isFinite(odds.noPct) ? odds.noPct : null,
+      },
+      liquidity: {
+        reserveYes: Number.isFinite(liquidity && liquidity.reserveYes) ? liquidity.reserveYes : null,
+        reserveNo: Number.isFinite(liquidity && liquidity.reserveNo) ? liquidity.reserveNo : null,
+        deadPool: liquidity && liquidity.deadPool === true,
+      },
+      yesBalance,
+      noBalance,
+      positionSide: derivePositionSide(yesBalance, noBalance),
+      markValueUsdc,
+    };
+  });
+
+  return {
+    items,
+    diagnostics: tradeBalances.diagnostics,
+  };
 }
 
 async function fetchPortfolioLiquidityEvents(indexerUrl, options, timeoutMs) {
@@ -4732,14 +5124,22 @@ async function collectPortfolioSnapshot(indexerUrl, options, timeoutMs) {
   }
 
   const positions = Array.isArray(positionsPage.items) ? positionsPage.items : [];
+  const enrichedPositionResult = await enrichPortfolioPositions(indexerUrl, positions, options, timeoutMs);
+  const enrichedPositions = Array.isArray(enrichedPositionResult && enrichedPositionResult.items)
+    ? enrichedPositionResult.items
+    : [];
+  const positionDiagnostics = Array.isArray(enrichedPositionResult && enrichedPositionResult.diagnostics)
+    ? enrichedPositionResult.diagnostics
+    : [];
   const liquidityEvents = Array.isArray(liquidityPage.items) ? liquidityPage.items : [];
   const claimEvents = Array.isArray(claimPage.items) ? claimPage.items : [];
   const lpPositions = Array.isArray(lpPayload && lpPayload.items) ? lpPayload.items : [];
   const lpDiagnostics = Array.isArray(lpPayload && lpPayload.diagnostics) ? lpPayload.diagnostics : [];
 
   return {
-    summary: summarizePortfolio(options, positions, liquidityEvents, claimEvents, lpPositions, lpDiagnostics),
-    positions,
+    summary: summarizePortfolio(options, enrichedPositions, liquidityEvents, claimEvents, lpPositions, lpDiagnostics),
+    positions: enrichedPositions,
+    rawPositions: positions,
     lpPositions,
     events: {
       liquidity: liquidityEvents,
@@ -4747,6 +5147,7 @@ async function collectPortfolioSnapshot(indexerUrl, options, timeoutMs) {
     },
     diagnostics: {
       lp: lpDiagnostics,
+      positions: positionDiagnostics,
     },
   };
 }
@@ -4814,6 +5215,13 @@ function summarizePortfolio(options, positions, liquidityEvents, claimEvents, lp
 
   const totalDeposited = options.includeEvents ? round(liquidityAdded, 6) : null;
   const totalNetDelta = options.includeEvents ? round(netLiquidity, 6) : null;
+  const totalPositionMarkValueUsdc = round(
+    positions.reduce((sum, position) => {
+      const value = Number(position && position.markValueUsdc);
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0),
+    6,
+  );
   let totalUnrealizedPnl = null;
 
   if (options.includeEvents && options.withLp) {
@@ -4840,6 +5248,7 @@ function summarizePortfolio(options, positions, liquidityEvents, claimEvents, lp
     pnlProxy: cashflowNet,
     totalDeposited,
     totalNetDelta,
+    totalPositionMarkValueUsdc,
     totalUnrealizedPnl,
     totalsPolicy: {
       eventDerivedTotalsWhenEventsDisabled: null,
@@ -5441,12 +5850,12 @@ async function runArbitrageCommand(args, context) {
         context.outputMode,
         'arbitrage.help',
         commandHelpPayload(
-          'pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
+          'pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
         ),
       );
     } else {
       console.log(
-        'Usage: pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
+        'Usage: pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
       );
     }
     return;

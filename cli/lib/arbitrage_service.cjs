@@ -8,6 +8,7 @@ const {
 const { toNumber, round } = require('./shared/utils.cjs');
 
 const ARBITRAGE_SCHEMA_VERSION = '1.1.0';
+const DEFAULT_MIN_TOKEN_SCORE = 0.12;
 
 function toUsdc(raw) {
   const numeric = toNumber(raw);
@@ -170,6 +171,9 @@ async function fetchPandoraLegs(options, diagnostics) {
 }
 
 function buildGroups(legs, options) {
+  const minTokenScore = Number.isFinite(options && options.minTokenScore)
+    ? Number(options.minTokenScore)
+    : DEFAULT_MIN_TOKEN_SCORE;
   const parent = new Map();
   const acceptedPairChecks = new Map();
   const makePairKey = (a, b) => [a, b].sort().join('|');
@@ -202,6 +206,7 @@ function buildGroups(legs, options) {
       if (options.crossVenueOnly && left.venue === right.venue) continue;
 
       const similarity = questionSimilarityBreakdown(left.question, right.question);
+      if (similarity.tokenScore < minTokenScore) continue;
       if (similarity.score < options.similarityThreshold) continue;
 
       let closeDiffHours = null;
@@ -587,6 +592,9 @@ async function scanArbitrage(options) {
         timeoutMs: options.timeoutMs,
         limit: Math.max(options.limit * 3, 100),
       });
+      if (Array.isArray(poly.diagnostics) && poly.diagnostics.length) {
+        diagnostics.push(...poly.diagnostics);
+      }
 
       const filtered = poly.items.filter((item) => {
         if (!item.question) return false;
@@ -627,6 +635,9 @@ async function scanArbitrage(options) {
         minLiquidityUsd: options.minLiquidityUsd,
         maxCloseDiffHours: options.maxCloseDiffHours,
         similarityThreshold: options.similarityThreshold,
+        minTokenScore: Number.isFinite(options.minTokenScore)
+          ? options.minTokenScore
+          : DEFAULT_MIN_TOKEN_SCORE,
         crossVenueOnly: options.crossVenueOnly,
         withRules: options.withRules,
         includeSimilarity: options.includeSimilarity,
@@ -694,6 +705,9 @@ async function scanArbitrage(options) {
       minLiquidityUsd: options.minLiquidityUsd,
       maxCloseDiffHours: options.maxCloseDiffHours,
       similarityThreshold: options.similarityThreshold,
+      minTokenScore: Number.isFinite(options.minTokenScore)
+        ? options.minTokenScore
+        : DEFAULT_MIN_TOKEN_SCORE,
       crossVenueOnly: options.crossVenueOnly,
       withRules: options.withRules,
       includeSimilarity: options.includeSimilarity,

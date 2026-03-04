@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Canonical skill and operator guide for Pandora CLI including mirror, polymarket, resolve, and LP flows.
-version: 1.1.55
+version: 1.1.57
 ---
 
 # Pandora CLI & Skills

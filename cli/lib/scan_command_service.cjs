@@ -58,8 +58,10 @@ function createRunScanCommand(deps) {
     const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
 
     const options = parseMarketsListFlags(shared.rest);
+    options.expand = true;
     options.withOdds = true;
 
+    let hedgeableDiagnostics = [];
     let { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
     if (options.hedgeable && typeof filterHedgeableMarkets === 'function') {
       const filtered = await filterHedgeableMarkets({
@@ -72,6 +74,9 @@ function createRunScanCommand(deps) {
       if (typeof filtered.unfilteredCount === 'number') {
         unfilteredCount = filtered.unfilteredCount;
       }
+      if (Array.isArray(filtered && filtered.diagnostics)) {
+        hedgeableDiagnostics = filtered.diagnostics;
+      }
     }
     const enrichmentContext = await buildMarketsEnrichmentContext(indexerUrl, items, options, shared.timeoutMs);
     const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, {
@@ -79,6 +84,7 @@ function createRunScanCommand(deps) {
       scanMode: true,
       enrichmentContext,
       unfilteredCount,
+      externalDiagnostics: hedgeableDiagnostics,
     });
 
     emitSuccess(context.outputMode, 'scan', payload, renderScanTable);

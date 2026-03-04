@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   parseArbScanFlags,
+  buildCrossVenueArbOpportunities,
   buildCombinatorialArbOpportunities,
 } = require('../../cli/lib/arb_command_service.cjs');
 const { buildCombinatorialBundleOpportunities } = require('../../cli/lib/arbitrage_service.cjs');
@@ -69,12 +70,46 @@ test('arb scan combinatorial flags parse with strict defaults', () => {
   assert.equal(parsed.combinatorial, false);
   assert.equal(parsed.slippagePctPerLeg, 0);
   assert.equal(parsed.maxBundleSize, 4);
+  assert.equal(parsed.similarityThreshold, 0.35);
+  assert.equal(parsed.minTokenScore, 0.12);
 });
 
 test('arb scan combinatorial mode enforces minimum market count', () => {
   assert.throws(
     () => parseFlags(['scan', '--markets', 'm1,m2', '--combinatorial']),
     (err) => err && err.code === 'INVALID_ARGS',
+  );
+});
+
+test('arb scan accepts cross-venue matching controls', () => {
+  const parsed = parseFlags([
+    'scan',
+    '--source',
+    'polymarket',
+    '--similarity-threshold',
+    '0.42',
+    '--min-token-score',
+    '0.2',
+    '--max-close-diff-hours',
+    '6',
+    '--question-contains',
+    'bitcoin',
+  ]);
+  assert.equal(parsed.source, 'polymarket');
+  assert.equal(parsed.similarityThreshold, 0.42);
+  assert.equal(parsed.minTokenScore, 0.2);
+  assert.equal(parsed.maxCloseDiffHours, 6);
+  assert.equal(parsed.questionContains, 'bitcoin');
+});
+
+test('arb scan rejects out-of-range similarity controls', () => {
+  assert.throws(
+    () => parseFlags(['scan', '--source', 'polymarket', '--similarity-threshold', '1.2']),
+    (err) => err && err.code === 'INVALID_FLAG_VALUE',
+  );
+  assert.throws(
+    () => parseFlags(['scan', '--source', 'polymarket', '--min-token-score', '-0.1']),
+    (err) => err && err.code === 'INVALID_FLAG_VALUE',
   );
 });
 
@@ -102,6 +137,52 @@ test('buildCombinatorialArbOpportunities applies fee + slippage to net edge', ()
   assert.equal(candidate.slippageImpactPct, 0.75);
   assert.equal(candidate.netSpreadPct, 22.75);
   assert.equal(candidate.profitUsdc, 22.75);
+});
+
+test('buildCrossVenueArbOpportunities enforces min-tvl and applies net spread impacts', () => {
+  const rows = buildCrossVenueArbOpportunities(
+    {
+      opportunities: [
+        {
+          groupId: 'g-low',
+          normalizedQuestion: 'low-liquidity sample',
+          spreadYesPct: 8,
+          spreadNoPct: 6,
+          legs: [
+            { venue: 'pandora', marketId: 'p-low', yesPct: 40, liquidityUsd: 40 },
+            { venue: 'polymarket', marketId: 'x-low', yesPct: 48, liquidityUsd: 45 },
+          ],
+        },
+        {
+          groupId: 'g-hi',
+          normalizedQuestion: 'high-liquidity sample',
+          spreadYesPct: 8,
+          spreadNoPct: 6,
+          confidenceScore: 0.9,
+          riskFlags: [],
+          legs: [
+            { venue: 'pandora', marketId: 'p-hi', yesPct: 40, liquidityUsd: 500 },
+            { venue: 'polymarket', marketId: 'x-hi', yesPct: 48, liquidityUsd: 700, url: 'https://polymarket.com/event/x-hi' },
+          ],
+        },
+      ],
+    },
+    {
+      minNetSpreadPct: 5,
+      minTvlUsdc: 100,
+      feePctPerLeg: 0.5,
+      slippagePctPerLeg: 0.25,
+      limit: 10,
+    },
+  );
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].pair, 'p-hi|x-hi');
+  assert.equal(rows[0].grossSpreadPct, 8);
+  assert.equal(rows[0].feeImpactPct, 1);
+  assert.equal(rows[0].slippageImpactPct, 0.5);
+  assert.equal(rows[0].netSpreadPct, 6.5);
+  assert.equal(rows[0].minLegLiquidityUsd, 500);
 });
 
 test('buildCombinatorialBundleOpportunities returns arbitrage_service bundle payload', () => {

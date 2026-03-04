@@ -14,7 +14,7 @@ const ARB_MARKET_FIELDS = [
 ];
 
 const ARB_USAGE =
-  'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
+  'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -87,6 +87,12 @@ function buildMarketSnapshots(markets, orderedIds) {
 function buildCrossVenueArbOpportunities(payload, options) {
   const opportunities = Array.isArray(payload && payload.opportunities) ? payload.opportunities : [];
   const minSpreadPct = Number.isFinite(options.minNetSpreadPct) ? Number(options.minNetSpreadPct) : 0;
+  const feePctPerLeg = Number.isFinite(options.feePctPerLeg) ? Number(options.feePctPerLeg) : 0;
+  const slippagePctPerLeg = Number.isFinite(options.slippagePctPerLeg) ? Number(options.slippagePctPerLeg) : 0;
+  const feeImpactPct = roundNumber(Math.max(0, feePctPerLeg) * 2, 6);
+  const slippageImpactPct = roundNumber(Math.max(0, slippagePctPerLeg) * 2, 6);
+  const totalImpactPct = roundNumber(feeImpactPct + slippageImpactPct, 6);
+  const minTvlUsdc = Number.isFinite(options.minTvlUsdc) ? Number(options.minTvlUsdc) : 0;
   const rows = [];
   for (const item of opportunities) {
     const legs = Array.isArray(item.legs) ? item.legs : [];
@@ -96,7 +102,21 @@ function buildCrossVenueArbOpportunities(payload, options) {
 
     const spreadYesPct = toFiniteNumber(item.spreadYesPct);
     const spreadNoPct = toFiniteNumber(item.spreadNoPct);
-    const netSpreadPct = Math.max(spreadYesPct === null ? 0 : spreadYesPct, spreadNoPct === null ? 0 : spreadNoPct);
+    const grossSpreadPct = Math.max(spreadYesPct === null ? 0 : spreadYesPct, spreadNoPct === null ? 0 : spreadNoPct);
+    const pandoraLiquidityUsd = toFiniteNumber(pandoraLeg.liquidityUsd);
+    const polymarketLiquidityUsd = toFiniteNumber(polyLeg.liquidityUsd);
+    const minLegLiquidityUsd =
+      pandoraLiquidityUsd !== null && polymarketLiquidityUsd !== null
+        ? Math.min(pandoraLiquidityUsd, polymarketLiquidityUsd)
+        : null;
+
+    if (minTvlUsdc > 0) {
+      if (minLegLiquidityUsd === null || minLegLiquidityUsd < minTvlUsdc) {
+        continue;
+      }
+    }
+
+    const netSpreadPct = grossSpreadPct - totalImpactPct;
     if (netSpreadPct < minSpreadPct) continue;
 
     rows.push({
@@ -109,8 +129,14 @@ function buildCrossVenueArbOpportunities(payload, options) {
       polymarketUrl: polyLeg.url || null,
       pandoraYesPct: toFiniteNumber(pandoraLeg.yesPct),
       polymarketYesPct: toFiniteNumber(polyLeg.yesPct),
+      pandoraLiquidityUsd,
+      polymarketLiquidityUsd,
+      minLegLiquidityUsd,
+      grossSpreadPct: roundNumber(grossSpreadPct, 6),
       spreadYesPct,
       spreadNoPct,
+      feeImpactPct,
+      slippageImpactPct,
       netSpreadPct: roundNumber(netSpreadPct, 6),
       confidenceScore: toFiniteNumber(item.confidenceScore),
       riskFlags: Array.isArray(item.riskFlags) ? item.riskFlags : [],
@@ -314,6 +340,10 @@ function parseArbScanFlags(args, deps) {
     amountUsdc: 100,
     combinatorial: false,
     maxBundleSize: 4,
+    similarityThreshold: 0.35,
+    minTokenScore: 0.12,
+    maxCloseDiffHours: 24,
+    questionContains: null,
     intervalMs: 5_000,
     iterations: null,
   };
@@ -380,6 +410,29 @@ function parseArbScanFlags(args, deps) {
       i += 1;
       continue;
     }
+    if (token === '--similarity-threshold') {
+      options.similarityThreshold = parseNumber(requireFlagValue(rest, i, '--similarity-threshold'), '--similarity-threshold');
+      i += 1;
+      continue;
+    }
+    if (token === '--min-token-score') {
+      options.minTokenScore = parseNumber(requireFlagValue(rest, i, '--min-token-score'), '--min-token-score');
+      i += 1;
+      continue;
+    }
+    if (token === '--max-close-diff-hours') {
+      options.maxCloseDiffHours = parsePositiveNumber(
+        requireFlagValue(rest, i, '--max-close-diff-hours'),
+        '--max-close-diff-hours',
+      );
+      i += 1;
+      continue;
+    }
+    if (token === '--question-contains') {
+      options.questionContains = String(requireFlagValue(rest, i, '--question-contains')).trim();
+      i += 1;
+      continue;
+    }
     if (token === '--interval-ms') {
       options.intervalMs = parsePositiveInteger(requireFlagValue(rest, i, '--interval-ms'), '--interval-ms');
       i += 1;
@@ -416,6 +469,12 @@ function parseArbScanFlags(args, deps) {
 
   if (options.slippagePctPerLeg < 0) {
     throw new CliError('INVALID_FLAG_VALUE', '--slippage-pct-per-leg must be >= 0.');
+  }
+  if (options.similarityThreshold < 0 || options.similarityThreshold > 1) {
+    throw new CliError('INVALID_FLAG_VALUE', '--similarity-threshold must be between 0 and 1.');
+  }
+  if (options.minTokenScore < 0 || options.minTokenScore > 1) {
+    throw new CliError('INVALID_FLAG_VALUE', '--min-token-score must be between 0 and 1.');
   }
 
   if (!Number.isInteger(options.maxBundleSize) || options.maxBundleSize < 3) {
@@ -530,15 +589,16 @@ function createRunArbCommand(deps) {
           timeoutMs: shared.timeoutMs,
           chainId: null,
           venues: ['pandora', 'polymarket'],
-          limit: options.limit,
+          limit: Math.max(options.limit * 4, 100),
           minSpreadPct: options.minNetSpreadPct,
           minLiquidityUsd: options.minTvlUsdc,
-          maxCloseDiffHours: 24,
-          similarityThreshold: 0.86,
+          maxCloseDiffHours: options.maxCloseDiffHours,
+          similarityThreshold: options.similarityThreshold,
+          minTokenScore: options.minTokenScore,
           crossVenueOnly: true,
           withRules: false,
           includeSimilarity: false,
-          questionContains: null,
+          questionContains: options.questionContains,
         });
         pairwiseOpportunities = buildCrossVenueArbOpportunities(crossVenuePayload, options);
         combinatorialOpportunities = [];
@@ -626,6 +686,10 @@ function createRunArbCommand(deps) {
           amountUsdc: options.amountUsdc,
           combinatorial: options.combinatorial,
           maxBundleSize: options.maxBundleSize,
+          similarityThreshold: options.similarityThreshold,
+          minTokenScore: options.minTokenScore,
+          maxCloseDiffHours: options.maxCloseDiffHours,
+          questionContains: options.questionContains,
         },
         opportunities: iterationSnapshots.flatMap((row) => row.opportunities),
         snapshots: iterationSnapshots,
@@ -645,6 +709,7 @@ function createRunArbCommand(deps) {
 module.exports = {
   ARB_USAGE,
   buildArbOpportunities,
+  buildCrossVenueArbOpportunities,
   buildCombinatorialArbOpportunities,
   createRunArbCommand,
   parseArbScanFlags,

@@ -1815,6 +1815,84 @@ test('quote derives odds and estimates from latest liquidity snapshot', async ()
   }
 });
 
+test('quote --amounts uses AMM reserve curve (non-linear slippage) when reserves are available', async () => {
+  const marketAddress = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '120000',
+        currentTvl: '768',
+        yesChance: '0.23828125',
+        reserveYes: '585000000',
+        reserveNo: '183000000',
+        createdAt: '1700000000',
+      },
+    ],
+    liquidityEvents: [
+      {
+        id: 'evt-liq-curve-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        provider: ADDRESSES.wallet1,
+        marketAddress,
+        pollAddress: marketAddress,
+        eventType: 'addLiquidity',
+        collateralAmount: '1000',
+        lpTokens: '500',
+        yesTokenAmount: '585000000',
+        noTokenAmount: '183000000',
+        yesTokensReturned: '0',
+        noTokensReturned: '0',
+        txHash: '0xtx-liq-curve-1',
+        timestamp: 1700000100,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'quote',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--market-address',
+      marketAddress,
+      '--side',
+      'yes',
+      '--amount-usdc',
+      '25',
+      '--amounts',
+      '25,50,75,150',
+    ]);
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'quote');
+    assert.equal(payload.data.estimate.estimateSource, 'amm-reserves');
+    assert.equal(Array.isArray(payload.data.curve), true);
+    assert.equal(payload.data.curve.length, 4);
+
+    const slippages = payload.data.curve.map((point) => point.slippagePct);
+    assert.ok(slippages.every((value) => typeof value === 'number'));
+    assert.ok(slippages[1] > slippages[0]);
+    assert.ok(slippages[2] > slippages[1]);
+    assert.ok(slippages[3] > slippages[2]);
+  } finally {
+    await indexer.close();
+  }
+});
+
 test('quote supports manual odds override via --yes-pct without indexer calls', () => {
   const result = runCli([
     '--output',
@@ -2281,6 +2359,86 @@ test('portfolio aggregates positions and event metrics for wallet', async () => 
     assert.equal(Array.isArray(payload.data.positions), true);
     assert.equal(Array.isArray(payload.data.events.liquidity), true);
     assert.equal(Array.isArray(payload.data.events.claims), true);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('portfolio enriches positions with question, odds, liquidity, and mark value fields', async () => {
+  const marketAddress = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '12345',
+        currentTvl: '4567',
+        yesChance: '0.625',
+        reserveYes: '625',
+        reserveNo: '375',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Will deterministic tests pass?',
+        status: 1,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpoll1',
+      },
+    ],
+    positions: [
+      {
+        id: 'pos-1',
+        chainId: 1,
+        marketAddress,
+        user: ADDRESSES.wallet1,
+        lastTradeAt: 1700000400,
+        yesTokenAmount: '15',
+        noTokenAmount: '5',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'portfolio',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--chain-id',
+      '1',
+    ]);
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'portfolio');
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(payload.data.summary, 'totalPositionMarkValueUsdc'),
+      true,
+    );
+    assert.equal(payload.data.positions.length, 1);
+    assert.equal(payload.data.positions[0].question, 'Will deterministic tests pass?');
+    assert.equal(payload.data.positions[0].positionSide, 'both');
+    assert.equal(payload.data.positions[0].odds.yesPct, 37.5);
+    assert.equal(payload.data.positions[0].liquidity.reserveYes, 625);
   } finally {
     await indexer.close();
   }

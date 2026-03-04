@@ -2,6 +2,7 @@ const { ClobClient, Chain } = require('@polymarket/clob-client');
 const { toNumber } = require('./shared/utils.cjs');
 
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
+const DEFAULT_POLYMARKET_GAMMA_HOST = 'https://gamma-api.polymarket.com';
 
 function toTimestampSeconds(value) {
   if (!value) return null;
@@ -53,6 +54,66 @@ function normalizeTokens(tokens) {
   };
 }
 
+function safeParseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildTokensFromGammaPayload(row) {
+  const outcomes = safeParseJsonArray(row && row.outcomes) || safeParseJsonArray(row && row.outcomeNames);
+  const prices = safeParseJsonArray(row && row.outcomePrices) || safeParseJsonArray(row && row.prices);
+  if (!Array.isArray(outcomes) || !Array.isArray(prices) || outcomes.length !== prices.length || !outcomes.length) {
+    return null;
+  }
+  const tokens = [];
+  for (let index = 0; index < outcomes.length; index += 1) {
+    tokens.push({
+      outcome: String(outcomes[index] || ''),
+      price: prices[index],
+    });
+  }
+  return tokens;
+}
+
+function mapGammaRow(row) {
+  const tokens =
+    (Array.isArray(row && row.tokens) ? row.tokens : null) ||
+    (Array.isArray(row && row.outcomePrices) && Array.isArray(row && row.outcomes)
+      ? row.outcomes.map((outcome, index) => ({ outcome, price: row.outcomePrices[index] }))
+      : null) ||
+    buildTokensFromGammaPayload(row);
+  const mapped = normalizeTokens(tokens || []);
+  const marketId = row && (row.conditionId || row.condition_id || row.id || row.questionID) ? String(
+    row.conditionId || row.condition_id || row.id || row.questionID,
+  ) : null;
+  const closeTimestamp = toTimestampSeconds(
+    row && (row.endDateIso || row.end_date_iso || row.endDate || row.game_start_time || row.closedTime),
+  );
+  return {
+    legId: `polymarket:${String(marketId || '')}`,
+    venue: 'polymarket',
+    marketId,
+    question: row && (row.question || row.title || row.description) ? String(row.question || row.title || row.description) : null,
+    closeTimestamp,
+    yesPct: mapped.yes,
+    noPct: mapped.no,
+    liquidityUsd: toNumber(row && (row.liquidityNum || row.liquidity || row.liquidityClob)),
+    volumeUsd: toNumber(row && (row.volumeNum || row.volume || row.volumeClob)),
+    url: row && (row.market_slug || row.slug) ? `https://polymarket.com/event/${String(row.market_slug || row.slug)}` : null,
+    oddsSource: 'polymarket:gamma-markets',
+    diagnostics: mapped.diagnostics,
+    rules: row && row.description ? String(row.description) : null,
+    sources: [],
+    pollStatus: null,
+  };
+}
+
 function mapPolymarketRow(row) {
   const mapped = normalizeTokens(row.tokens || []);
   const question = row.question || row.description || null;
@@ -101,41 +162,138 @@ async function fetchMockPolymarketMarkets(mockUrl, timeoutMs) {
   }
 }
 
-async function fetchPolymarketMarkets(options = {}) {
-  const host = options.host || DEFAULT_POLYMARKET_HOST;
+async function fetchJsonWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} from ${url}`);
+    }
+    return response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function normalizeGammaMarketRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  if (payload && Array.isArray(payload.markets)) return payload.markets;
+  return [];
+}
+
+async function fetchGammaPolymarketMarkets(options = {}) {
+  const gammaHostRaw =
+    options.gammaHost ||
+    process.env.POLYMARKET_GAMMA_HOST ||
+    DEFAULT_POLYMARKET_GAMMA_HOST;
+  const gammaHost = String(gammaHostRaw || '').replace(/\/+$/, '');
   const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 100;
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
 
+  const rows = [];
+  let offset = 0;
+  let loopCount = 0;
+  while (rows.length < limit && loopCount < 10) {
+    loopCount += 1;
+    const pageLimit = Math.min(200, Math.max(25, limit - rows.length));
+    const url =
+      `${gammaHost}/markets?active=true&closed=false&archived=false&order=volume` +
+      `&ascending=false&limit=${pageLimit}&offset=${offset}`;
+    const payload = await fetchJsonWithTimeout(url, timeoutMs);
+    const batch = normalizeGammaMarketRows(payload);
+    if (!batch.length) break;
+    rows.push(...batch);
+    if (batch.length < pageLimit) break;
+    offset += batch.length;
+  }
+
+  return {
+    host: gammaHost,
+    rows,
+  };
+}
+
+async function fetchClobPolymarketMarkets(options = {}) {
+  const host = options.host || DEFAULT_POLYMARKET_HOST;
+  const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 100;
+  const client = new ClobClient(host, Chain.POLYGON);
+  const rows = [];
+  let cursor;
+  let loops = 0;
+  while (rows.length < limit && loops < 8) {
+    loops += 1;
+    const page = cursor ? await client.getMarkets(cursor) : await client.getMarkets();
+    const data = Array.isArray(page && page.data) ? page.data : [];
+    rows.push(...data);
+    if (!page || !page.next_cursor || page.next_cursor === cursor) break;
+    cursor = page.next_cursor;
+  }
+  return { host, rows };
+}
+
+async function fetchPolymarketMarkets(options = {}) {
+  const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 100;
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const diagnostics = [];
   let rows = [];
+  let source = 'polymarket:clob';
+  let host = options.host || DEFAULT_POLYMARKET_HOST;
 
   if (options.mockUrl) {
     rows = await fetchMockPolymarketMarkets(options.mockUrl, timeoutMs);
+    source = 'polymarket:mock';
   } else {
-    const client = new ClobClient(host, Chain.POLYGON);
-    let cursor;
-    let loops = 0;
-    while (rows.length < limit && loops < 5) {
-      loops += 1;
-      const page = cursor ? await client.getMarkets(cursor) : await client.getMarkets();
-      const data = Array.isArray(page && page.data) ? page.data : [];
-      rows.push(...data);
-      if (!page || !page.next_cursor || page.next_cursor === cursor) {
-        break;
+    let gammaResult = null;
+    try {
+      const preferredGammaHost =
+        options.host && /gamma-api\.polymarket\.com/i.test(String(options.host))
+          ? options.host
+          : options.gammaHost;
+      gammaResult = await fetchGammaPolymarketMarkets({
+        gammaHost: preferredGammaHost,
+        timeoutMs,
+        limit,
+      });
+      if (Array.isArray(gammaResult.rows) && gammaResult.rows.length) {
+        rows = gammaResult.rows;
+        source = 'polymarket:gamma';
+        host = gammaResult.host;
       }
-      cursor = page.next_cursor;
+    } catch (err) {
+      diagnostics.push(`Gamma markets fetch failed: ${err && err.message ? err.message : String(err)}`);
+    }
+
+    if (!rows.length) {
+      const clob = await fetchClobPolymarketMarkets({
+        host: options.host,
+        timeoutMs,
+        limit,
+      });
+      rows = clob.rows;
+      source = 'polymarket:clob';
+      host = clob.host;
     }
   }
 
-  const mapped = rows.slice(0, limit).map(mapPolymarketRow);
+  const mapper = source === 'polymarket:gamma' ? mapGammaRow : mapPolymarketRow;
+  const mapped = rows.slice(0, limit).map(mapper);
   return {
     host,
-    source: options.mockUrl ? 'polymarket:mock' : 'polymarket:clob',
+    source,
     count: mapped.length,
     items: mapped,
+    diagnostics,
   };
 }
 
 module.exports = {
   DEFAULT_POLYMARKET_HOST,
+  DEFAULT_POLYMARKET_GAMMA_HOST,
   fetchPolymarketMarkets,
 };

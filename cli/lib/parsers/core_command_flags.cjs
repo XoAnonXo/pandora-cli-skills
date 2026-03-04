@@ -1153,6 +1153,7 @@ function createCoreCommandFlagParsers(deps) {
       minLiquidityUsd: 1000,
       maxCloseDiffHours: 24,
       similarityThreshold: 0.86,
+      minTokenScore: 0.12,
       crossVenueOnly: true,
       withRules: false,
       includeSimilarity: false,
@@ -1186,7 +1187,7 @@ function createCoreCommandFlagParsers(deps) {
         continue;
       }
       if (token === '--min-spread-pct') {
-        options.minSpreadPct = parsePositiveNumber(requireFlagValue(args, i, '--min-spread-pct'), '--min-spread-pct');
+        options.minSpreadPct = parseNumber(requireFlagValue(args, i, '--min-spread-pct'), '--min-spread-pct');
         i += 1;
         continue;
       }
@@ -1210,6 +1211,14 @@ function createCoreCommandFlagParsers(deps) {
         );
         if (options.similarityThreshold < 0 || options.similarityThreshold > 1) {
           throw new CliError('INVALID_FLAG_VALUE', '--similarity-threshold must be between 0 and 1.');
+        }
+        i += 1;
+        continue;
+      }
+      if (token === '--min-token-score') {
+        options.minTokenScore = parseNumber(requireFlagValue(args, i, '--min-token-score'), '--min-token-score');
+        if (options.minTokenScore < 0 || options.minTokenScore > 1) {
+          throw new CliError('INVALID_FLAG_VALUE', '--min-token-score must be between 0 and 1.');
         }
         i += 1;
         continue;
@@ -1247,6 +1256,10 @@ function createCoreCommandFlagParsers(deps) {
       }
 
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for arbitrage: ${token}`);
+    }
+
+    if (options.minSpreadPct < 0) {
+      throw new CliError('INVALID_FLAG_VALUE', '--min-spread-pct must be >= 0.');
     }
 
     return options;
