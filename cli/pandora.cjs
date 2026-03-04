@@ -3211,7 +3211,11 @@ function maybeNormalizeReserveUnits(item, reserveYes, reserveNo) {
   const currentTvl = toOptionalNumber(item && item.currentTvl);
   let scale = 1;
 
-  if (Number.isFinite(currentTvl) && currentTvl > 0) {
+  // Most indexer reserve fields are raw token units (USDC 6 decimals).
+  // Normalize integer reserve payloads to human USDC units.
+  if (Number.isInteger(reserveYes) && Number.isInteger(reserveNo) && Math.max(reserveYes, reserveNo) >= 1_000_000) {
+    scale = 1_000_000;
+  } else if (Number.isFinite(currentTvl) && currentTvl > 0) {
     const ratio = total / currentTvl;
     // Indexer payloads sometimes expose reserves in 1e6 units while TVL is already in USDC.
     if (Number.isFinite(ratio) && ratio > 500_000 && ratio < 2_500_000) {
