@@ -8,6 +8,7 @@ const SCAN_USAGE =
 
 const SCAN_NOTES = [
   'scan is the canonical enriched market discovery command; `markets scan` remains a backward-compatible alias.',
+  'Use `markets list` when you want the raw indexer browse view without forcing enriched payload semantics.',
   'scan always returns expanded market payloads with odds included.',
   '--with-odds is accepted for backward compatibility and is effectively a no-op.',
   '--min-tvl applies a client-side filter against current TVL in USDC units.',

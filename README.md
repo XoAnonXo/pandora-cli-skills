@@ -115,6 +115,9 @@ npm run analytics:mega
 ## Command Surface
 
 - `pandora markets list|get`
+- `pandora scan`
+  - `scan` is the canonical enriched discovery workflow.
+  - `markets scan` remains a backward-compatible alias.
 - `pandora sports books list`
 - `pandora sports events list|live`
 - `pandora sports odds snapshot|bulk`
@@ -128,8 +131,10 @@ npm run analytics:mega
 - `pandora claim --market-address <address>|--all --dry-run|--execute`
 - `pandora history`
 - `pandora export`
+- `pandora arb scan --output ndjson|json`
 - `pandora arbitrage`
-- `pandora arb scan --output ndjson`
+  - `arb scan` is the canonical arbitrage workflow.
+  - `arbitrage` remains a bounded one-shot compatibility wrapper.
 - `pandora odds record|history`
 - `pandora autopilot run|once`
 - `pandora mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close`

@@ -16,6 +16,12 @@ const ARB_MARKET_FIELDS = [
 const ARB_USAGE =
   'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
 
+const ARB_NOTES = [
+  'arb scan is the canonical arbitrage command for both streaming and bounded one-shot scans.',
+  '`pandora arbitrage` remains a backward-compatible one-shot convenience wrapper over the same cross-venue engine.',
+  'Use --output json --iterations 1 for bounded agent/MCP workflows; use --output ndjson for continuous scans.',
+];
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunArbCommand requires deps.${name}()`);
@@ -534,10 +540,18 @@ function createRunArbCommand(deps) {
     const shared = parseIndexerSharedFlags(args);
     if (!shared.rest.length || includesHelpFlag(shared.rest)) {
       if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'arb.help', commandHelpPayload(ARB_USAGE));
+        emitSuccess(context.outputMode, 'arb.help', commandHelpPayload(ARB_USAGE, ARB_NOTES));
       } else {
         // eslint-disable-next-line no-console
         console.log(`Usage: ${ARB_USAGE}`);
+        // eslint-disable-next-line no-console
+        console.log('');
+        // eslint-disable-next-line no-console
+        console.log('Notes:');
+        for (const note of ARB_NOTES) {
+          // eslint-disable-next-line no-console
+          console.log(`- ${note}`);
+        }
       }
       return;
     }

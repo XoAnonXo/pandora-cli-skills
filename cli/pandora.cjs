@@ -785,7 +785,7 @@ Usage:
   pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
   pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
   pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
-  pandora [--output table|json] markets scan [markets list options]
+  pandora [--output table|json] markets scan [scan options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
   pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
   pandora [--output table|json] polls get --id <id>
@@ -874,10 +874,12 @@ Notes:
   - launch/clone-bet forward unknown flags directly to underlying scripts.
   - Env auto-load default: ~/.pandora-cli.env when present; otherwise scripts/.env. Use --skip-dotenv to disable.
   - --output json is supported for all commands except launch/clone-bet.
+  - scan is the canonical enriched discovery command; markets scan remains a backward-compatible alias and markets list is the raw indexer browse surface.
   - Indexer URL resolution order: --indexer-url, PANDORA_INDEXER_URL, INDEXER_URL, default public indexer.
   - mirror status --with-live can enrich output with Polymarket position data when POLYMARKET_* credentials are set; missing endpoints/creds return diagnostics instead of hard failures.
   - watch is non-transactional monitoring; use quote/trade for execution workflows.
   - stream always emits NDJSON to stdout (one JSON object per line).
+  - arb scan is the canonical arbitrage command; arbitrage remains a bounded backward-compatible one-shot wrapper.
   - arb scan supports streaming NDJSON and bounded JSON (--output json --iterations 1) for agent workflows.
 `);
 }
@@ -1034,7 +1036,8 @@ Usage:
 }
 
 function commandHelpPayload(usage) {
-  return { usage };
+  const notes = Array.isArray(arguments[1]) ? arguments[1] : null;
+  return notes && notes.length ? { usage, notes } : { usage };
 }
 
 function quoteHelpJsonPayload() {
@@ -1108,6 +1111,10 @@ function helpJsonPayload() {
     globalFlags: {
       '--output': ['table', 'json'],
     },
+    notes: [
+      '`scan` is the canonical enriched market discovery flow; `markets scan` remains a backward-compatible alias and `markets list` is the raw indexer browse view.',
+      '`arb scan` is the canonical arbitrage flow; `arbitrage` remains a backward-compatible bounded one-shot wrapper.',
+    ],
   };
 }
 
@@ -5944,6 +5951,11 @@ async function runExportCommand(args, context) {
 
 async function runArbitrageCommand(args, context) {
   const shared = parseIndexerSharedFlags(args);
+  const arbitrageHelpNotes = [
+    '`arbitrage` is the backward-compatible one-shot wrapper for cross-venue spreads.',
+    'Use `arb scan --output json --iterations 1` for the canonical bounded arbitrage flow.',
+    'Use `arb scan --output ndjson` for streaming scans.',
+  ];
   if (includesHelpFlag(shared.rest)) {
     if (context.outputMode === 'json') {
       emitSuccess(
@@ -5951,12 +5963,18 @@ async function runArbitrageCommand(args, context) {
         'arbitrage.help',
         commandHelpPayload(
           'pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
+          arbitrageHelpNotes,
         ),
       );
     } else {
       console.log(
         'Usage: pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
       );
+      console.log('');
+      console.log('Notes:');
+      for (const note of arbitrageHelpNotes) {
+        console.log(`- ${note}`);
+      }
     }
     return;
   }

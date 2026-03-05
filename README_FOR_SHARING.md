@@ -101,6 +101,7 @@ Prerequisite: Node.js `>=18`.
 - Read-only indexer commands (GraphQL-backed):
   - `pandora markets list|get`
   - `pandora scan`
+    - `scan` is the canonical enriched discovery flow; `markets scan` remains an alias.
   - `pandora quote`
   - `pandora portfolio`
   - `pandora watch`
@@ -126,6 +127,7 @@ Prerequisite: Node.js `>=18`.
 - Phase 4 intelligence and automation:
   - `pandora history --wallet <0x...> --limit 50`
   - `pandora export --wallet <0x...> --format csv --year 2026 --out ./trades-2026.csv`
+  - `pandora arb scan --source polymarket --output json --iterations 1 --min-spread-pct 3`
   - `pandora arbitrage --venues pandora,polymarket --min-spread-pct 3`
   - `pandora autopilot run|once ...`
   - `pandora mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...`
@@ -220,6 +222,7 @@ Mirror advanced flags (for operator tuning):
 - `pandora watch --wallet <0x...> --iterations 3 --interval-ms 1000 --alert-net-liquidity-below -100`
 - `pandora history --wallet <0x...> --limit 50`
 - `pandora export --wallet <0x...> --format csv --out ./trades.csv`
+- `pandora arb scan --source polymarket --output json --iterations 1 --min-spread-pct 2 --min-tvl 50`
 - `pandora arbitrage --venues pandora,polymarket --min-spread-pct 2 --cross-venue-only --with-rules --include-similarity`
 - `pandora autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper`
 - `pandora mirror browse --polymarket-tag-id 82 --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10`
@@ -295,6 +298,7 @@ Mirror advanced flags (for operator tuning):
   - envelope is `ok=true`, `command="export"`, with `data.format`, `data.columns`, `data.count`, optional `data.outPath`, and materialized `data.content`.
 - `arbitrage`:
   - envelope is `ok=true`, `command="arbitrage"`, with `data.parameters`, `data.sources`, and `data.opportunities[]`.
+  - use `arb scan` as the canonical arbitrage interface; `arbitrage` is the compatibility one-shot wrapper.
   - agent-focused flags:
     - `--cross-venue-only` (default) prevents same-venue duplicate-market noise.
     - `--allow-same-venue` re-enables same-venue matching.

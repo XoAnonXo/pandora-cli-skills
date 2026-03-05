@@ -109,7 +109,7 @@ function buildCommandDescriptors() {
       dataSchema: '#/definitions/OddsHistoryPayload',
     }),
     'arb.scan': commandDescriptor({
-      summary: 'Scan selected market ids for net-profitable cross-market spreads.',
+      summary: 'Canonical arbitrage scan command for streaming or bounded spread detection.',
       usage:
         'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
       emits: ['arb.help', 'arb.scan'],
@@ -182,7 +182,7 @@ function buildCommandDescriptors() {
       dataSchema: '#/definitions/PagedEntityPayload',
     }),
     'markets.list': commandDescriptor({
-      summary: 'List Pandora markets with filters and pagination.',
+      summary: 'Raw Pandora market browse view with filters and pagination.',
       usage:
         'pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]',
       emits: ['markets.list', 'markets.list.help'],
