@@ -5192,27 +5192,28 @@ async function fetchPortfolioClaimEvents(indexerUrl, options, timeoutMs) {
 }
 
 async function collectPortfolioSnapshot(indexerUrl, options, timeoutMs) {
-  const positionsPage = await fetchPortfolioPositions(indexerUrl, options, timeoutMs);
-  let liquidityPage = { items: [] };
-  let claimPage = { items: [] };
-  let lpPayload = null;
+  const positionsPagePromise = fetchPortfolioPositions(indexerUrl, options, timeoutMs);
+  const eventsPromise = options.includeEvents
+    ? Promise.all([
+        fetchPortfolioLiquidityEvents(indexerUrl, options, timeoutMs),
+        fetchPortfolioClaimEvents(indexerUrl, options, timeoutMs),
+      ])
+    : Promise.resolve([{ items: [] }, { items: [] }]);
+  const lpPayloadPromise = options.withLp
+    ? runLpPositions({
+        wallet: options.wallet,
+        chainId: options.chainId,
+        rpcUrl: options.rpcUrl || null,
+        indexerUrl,
+        timeoutMs,
+      })
+    : Promise.resolve(null);
 
-  if (options.includeEvents) {
-    [liquidityPage, claimPage] = await Promise.all([
-      fetchPortfolioLiquidityEvents(indexerUrl, options, timeoutMs),
-      fetchPortfolioClaimEvents(indexerUrl, options, timeoutMs),
-    ]);
-  }
-
-  if (options.withLp) {
-    lpPayload = await runLpPositions({
-      wallet: options.wallet,
-      chainId: options.chainId,
-      rpcUrl: options.rpcUrl || null,
-      indexerUrl,
-      timeoutMs,
-    });
-  }
+  const [positionsPage, [liquidityPage, claimPage], lpPayload] = await Promise.all([
+    positionsPagePromise,
+    eventsPromise,
+    lpPayloadPromise,
+  ]);
 
   const positions = Array.isArray(positionsPage.items) ? positionsPage.items : [];
   const enrichedPositionResult = await enrichPortfolioPositions(indexerUrl, positions, options, timeoutMs);

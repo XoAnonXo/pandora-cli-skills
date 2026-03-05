@@ -1,6 +1,10 @@
 const { DEFAULT_INDEXER_URL, DEFAULT_RPC_BY_CHAIN_ID } = require('./shared/constants.cjs');
 const { isSecureHttpUrlOrLocal } = require('./shared/utils.cjs');
 const { resolveForkRuntime } = require('./fork_runtime_service.cjs');
+const { createIndexerClient } = require('./indexer_client.cjs');
+
+const READ_BATCH_CONCURRENCY = 4;
+const INDEXER_MARKET_FIELDS = ['id', 'pollAddress', 'chainId'];
 
 const ERC20_ABI = [
   {
@@ -655,6 +659,55 @@ async function fetchIndexerMarket(indexerUrl, marketAddress, timeoutMs) {
   return data.markets || null;
 }
 
+async function fetchIndexerMarketsMap(indexerUrl, marketAddresses, timeoutMs) {
+  const ids = Array.from(
+    new Set(
+      (marketAddresses || [])
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter((value) => /^0x[a-f0-9]{40}$/.test(value)),
+    ),
+  );
+  if (!ids.length) return new Map();
+
+  try {
+    const client = createIndexerClient(indexerUrl, timeoutMs);
+    const items = await client.getManyByIds({
+      queryName: 'markets',
+      fields: INDEXER_MARKET_FIELDS,
+      ids,
+    });
+    const map = new Map();
+    for (const id of ids) {
+      const item = items.get(id) || null;
+      map.set(id, item);
+      if (item && item.id) {
+        map.set(String(item.id).trim().toLowerCase(), item);
+      }
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+async function mapWithConcurrency(values, concurrency, iteratee) {
+  const items = Array.isArray(values) ? values : [];
+  const limit = Math.max(1, Math.min(items.length || 1, Number(concurrency) || 1));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await iteratee(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return results;
+}
+
 async function discoverLiquidityMarkets(indexerUrl, wallet, chainId, timeoutMs) {
   const query = `
     query($where: liquidityEventsFilter, $limit: Int) {
@@ -872,23 +925,23 @@ async function runLpPositions(options = {}) {
     }
   }
 
+  const marketRowsByAddress = await fetchIndexerMarketsMap(indexerUrl, markets, timeoutMs);
+
   const { formatUnits } = await loadViemRuntime();
-  const items = [];
-  for (const marketAddress of markets) {
+  const items = await mapWithConcurrency(markets, READ_BATCH_CONCURRENCY, async (marketAddress) => {
     const itemDiagnostics = [];
     try {
       await ensureContractCode(publicClient, marketAddress, 'Market');
     } catch (err) {
       itemDiagnostics.push(err.message || String(err));
-      items.push({
+      return {
         marketAddress,
         lpTokenDecimals: null,
         lpTokenBalanceRaw: null,
         lpTokenBalance: null,
         preview: null,
         diagnostics: itemDiagnostics,
-      });
-      continue;
+      };
     }
 
     const lpTokenDecimals = await readDecimals(publicClient, marketAddress, 18);
@@ -958,7 +1011,7 @@ async function runLpPositions(options = {}) {
           finalizesInEpochs: null,
         };
         try {
-          const marketRow = await fetchIndexerMarket(indexerUrl, marketAddress, timeoutMs);
+          const marketRow = marketRowsByAddress.get(marketAddress) || null;
           const pollAddress = marketRow && marketRow.pollAddress ? normalizeAddress(marketRow.pollAddress, 'pollAddress') : null;
           if (pollAddress) {
             const resolution = await readPollResolutionState(publicClient, pollAddress);
@@ -982,7 +1035,7 @@ async function runLpPositions(options = {}) {
       itemDiagnostics.push(`Outcome token balance read failed: ${err && err.message ? err.message : String(err)}`);
     }
 
-    items.push({
+    return {
       marketAddress,
       lpTokenDecimals,
       lpTokenBalanceRaw: lpTokenBalanceRaw === null ? null : lpTokenBalanceRaw.toString(),
@@ -991,8 +1044,8 @@ async function runLpPositions(options = {}) {
       preview,
       outcomeTokens,
       diagnostics: itemDiagnostics,
-    });
-  }
+    };
+  });
 
   return {
     schemaVersion,
@@ -1211,7 +1264,7 @@ async function runLpRemove(options = {}) {
     diagnostics: [],
   };
 
-  const runtime = await resolveRuntime(options, {
+  const runtime = options.resolvedRuntime || await resolveRuntime(options, {
     requirePrivateKey: options.execute,
     requireUsdc: false,
   });
@@ -1374,8 +1427,8 @@ async function runLpRemoveAllMarkets(options = {}) {
   }
   const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
   const markets = await discoverLiquidityMarkets(indexerUrl, wallet, options.chainId || runtime.chainId, timeoutMs);
-  const items = [];
-  for (const marketAddress of markets) {
+  const batchConcurrency = options.execute ? 1 : READ_BATCH_CONCURRENCY;
+  const items = await mapWithConcurrency(markets, batchConcurrency, async (marketAddress) => {
     try {
       const item = await runLpRemove({
         ...options,
@@ -1383,14 +1436,15 @@ async function runLpRemoveAllMarkets(options = {}) {
         lpAll: true,
         lpTokens: null,
         wallet,
+        resolvedRuntime: runtime,
       });
-      items.push({
+      return {
         marketAddress,
         ok: true,
         result: item,
-      });
+      };
     } catch (err) {
-      items.push({
+      return {
         marketAddress,
         ok: false,
         error: {
@@ -1398,9 +1452,9 @@ async function runLpRemoveAllMarkets(options = {}) {
           message: err && err.message ? err.message : String(err),
           details: err && err.details ? err.details : null,
         },
-      });
+      };
     }
-  }
+  });
 
   return {
     schemaVersion,
@@ -1453,13 +1507,15 @@ async function simulateRedeem(publicClient, account, marketAddress) {
 async function runClaimSingle(options = {}) {
   const schemaVersion = '1.0.0';
   const generatedAt = new Date().toISOString();
-  const runtime = await resolveRuntime(options, { requirePrivateKey: options.execute, requireUsdc: false });
-  const { publicClient, walletClient, account } = await createClients(runtime, options.execute);
+  const runtime = options.resolvedRuntime || await resolveRuntime(options, { requirePrivateKey: options.execute, requireUsdc: false });
+  const { publicClient, walletClient, account } = options.sharedClients || await createClients(runtime, options.execute);
   const marketAddress = normalizeAddress(options.marketAddress, '--market-address');
   await ensureContractCode(publicClient, marketAddress, 'Market');
 
   const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
-  const market = await fetchIndexerMarket(indexerUrl, marketAddress, normalizeTimeoutMs(options.timeoutMs));
+  const market = Object.prototype.hasOwnProperty.call(options, 'prefetchedMarket')
+    ? options.prefetchedMarket
+    : await fetchIndexerMarket(indexerUrl, marketAddress, normalizeTimeoutMs(options.timeoutMs));
   const pollAddress = market && market.pollAddress ? normalizeAddress(market.pollAddress, 'pollAddress') : null;
 
   let pollState = null;
@@ -1558,24 +1614,26 @@ async function runClaim(options = {}) {
   }
   const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
   const diagnostics = [];
-  let lpMarkets = [];
-  let userMarkets = [];
-  try {
-    lpMarkets = await discoverLiquidityMarkets(indexerUrl, wallet, options.chainId || runtime.chainId, timeoutMs);
-  } catch (err) {
-    diagnostics.push(`LP market discovery failed: ${err && err.message ? err.message : String(err)}`);
+  const [lpMarketsResult, userMarketsResult] = await Promise.allSettled([
+    discoverLiquidityMarkets(indexerUrl, wallet, options.chainId || runtime.chainId, timeoutMs),
+    discoverMarketUserMarkets(indexerUrl, wallet, options.chainId || runtime.chainId, timeoutMs),
+  ]);
+  const lpMarkets = lpMarketsResult.status === 'fulfilled' ? lpMarketsResult.value : [];
+  const userMarkets = userMarketsResult.status === 'fulfilled' ? userMarketsResult.value : [];
+  if (lpMarketsResult.status === 'rejected') {
+    diagnostics.push(`LP market discovery failed: ${lpMarketsResult.reason && lpMarketsResult.reason.message ? lpMarketsResult.reason.message : String(lpMarketsResult.reason)}`);
   }
-  try {
-    userMarkets = await discoverMarketUserMarkets(indexerUrl, wallet, options.chainId || runtime.chainId, timeoutMs);
-  } catch (err) {
-    diagnostics.push(`Position market discovery failed: ${err && err.message ? err.message : String(err)}`);
+  if (userMarketsResult.status === 'rejected') {
+    diagnostics.push(`Position market discovery failed: ${userMarketsResult.reason && userMarketsResult.reason.message ? userMarketsResult.reason.message : String(userMarketsResult.reason)}`);
   }
   const markets = Array.from(new Set([...lpMarkets, ...userMarkets]));
   if (!markets.length) {
     diagnostics.push('No candidate markets discovered for claim-all.');
   }
-  const items = [];
-  for (const marketAddress of markets) {
+  const prefetchedMarketsByAddress = await fetchIndexerMarketsMap(indexerUrl, markets, timeoutMs);
+  const sharedClients = await createClients(runtime, options.execute);
+  const batchConcurrency = options.execute ? 1 : READ_BATCH_CONCURRENCY;
+  const items = await mapWithConcurrency(markets, batchConcurrency, async (marketAddress) => {
     try {
       const item = await runClaimSingle({
         ...options,
@@ -1583,10 +1641,13 @@ async function runClaim(options = {}) {
         marketAddress,
         wallet,
         indexerUrl,
+        resolvedRuntime: runtime,
+        sharedClients,
+        prefetchedMarket: prefetchedMarketsByAddress.get(marketAddress) || null,
       });
-      items.push({ marketAddress, ok: true, result: item });
+      return { marketAddress, ok: true, result: item };
     } catch (err) {
-      items.push({
+      return {
         marketAddress,
         ok: false,
         error: {
@@ -1594,9 +1655,9 @@ async function runClaim(options = {}) {
           message: err && err.message ? err.message : String(err),
           details: err && err.details ? err.details : null,
         },
-      });
+      };
     }
-  }
+  });
   return {
     schemaVersion,
     generatedAt,
