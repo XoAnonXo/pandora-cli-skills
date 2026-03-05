@@ -45,6 +45,27 @@ function buildGraphqlGetQuery(queryName, fields) {
 }`;
 }
 
+function buildGraphqlBatchGetQuery(queryName, fields, aliases) {
+  const fieldList = fields.join('\n      ');
+  const variableList = aliases.map((entry) => `$${entry.varName}: String!`).join(', ');
+  const selections = aliases.map(
+    (entry) => `  ${entry.alias}: ${queryName}(id: $${entry.varName}) {
+    ${fieldList}
+  }`,
+  ).join('\n');
+  return `query BatchGet(${variableList}) {
+${selections}
+}`;
+}
+
+function chunkValues(values, chunkSize) {
+  const out = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    out.push(values.slice(index, index + chunkSize));
+  }
+  return out;
+}
+
 async function graphqlRequest(indexerUrl, query, variables, timeoutMs = DEFAULT_INDEXER_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -107,14 +128,36 @@ function createIndexerClient(indexerUrl, timeoutMs = DEFAULT_INDEXER_TIMEOUT_MS)
 
     async getManyByIds({ queryName, fields, ids }) {
       const unique = Array.from(new Set((ids || []).map((value) => String(value).trim()).filter(Boolean)));
-      const query = buildGraphqlGetQuery(queryName, fields);
       const out = new Map();
-      await Promise.all(
-        unique.map(async (id) => {
-          const data = await graphqlRequest(indexerUrl, query, { id }, timeoutMs);
-          out.set(id, data[queryName] || null);
-        }),
-      );
+      const chunks = chunkValues(unique, 25);
+
+      for (const chunk of chunks) {
+        const aliases = chunk.map((id, index) => ({
+          id,
+          alias: `item${index}`,
+          varName: `id${index}`,
+        }));
+        const variables = Object.fromEntries(aliases.map((entry) => [entry.varName, entry.id]));
+        const batchQuery = buildGraphqlBatchGetQuery(queryName, fields, aliases);
+
+        try {
+          const data = await graphqlRequest(indexerUrl, batchQuery, variables, timeoutMs);
+          for (const entry of aliases) {
+            out.set(entry.id, data[entry.alias] || null);
+          }
+          continue;
+        } catch {
+          // Fall back to single-entity fetches for this chunk so one bad batch does not lose the whole call.
+        }
+
+        const query = buildGraphqlGetQuery(queryName, fields);
+        await Promise.all(
+          chunk.map(async (id) => {
+            const data = await graphqlRequest(indexerUrl, query, { id }, timeoutMs);
+            out.set(id, data[queryName] || null);
+          }),
+        );
+      }
       return out;
     },
 
@@ -127,6 +170,7 @@ module.exports = {
   IndexerClientError,
   buildGraphqlListQuery,
   buildGraphqlGetQuery,
+  buildGraphqlBatchGetQuery,
   graphqlRequest,
   normalizePageResult,
   createIndexerClient,

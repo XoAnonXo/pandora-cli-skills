@@ -174,11 +174,25 @@ function buildCommandDescriptors() {
       dataSchema: '#/definitions/StreamTickPayload',
       helpDataSchema: '#/definitions/CommandHelpPayload',
     }),
+    scan: commandDescriptor({
+      summary: 'Canonical enriched market discovery view with odds and lifecycle filters.',
+      usage:
+        'pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]',
+      emits: ['scan', 'scan.help'],
+      dataSchema: '#/definitions/PagedEntityPayload',
+    }),
     'markets.list': commandDescriptor({
       summary: 'List Pandora markets with filters and pagination.',
       usage:
         'pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]',
       emits: ['markets.list', 'markets.list.help'],
+      dataSchema: '#/definitions/PagedEntityPayload',
+    }),
+    'markets.scan': commandDescriptor({
+      summary: 'Backward-compatible alias of `scan`.',
+      usage:
+        'pandora [--output table|json] markets scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]',
+      emits: ['scan', 'scan.help'],
       dataSchema: '#/definitions/PagedEntityPayload',
     }),
     'markets.get': commandDescriptor({

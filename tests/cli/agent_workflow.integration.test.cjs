@@ -151,6 +151,20 @@ function buildPage(items) {
   };
 }
 
+function resolveBatchEntitySelections(query, variables, fieldName, resolver) {
+  const pattern = new RegExp(`([A-Za-z0-9_]+)\\s*:\\s*${fieldName}\\(id:\\s*\\$([A-Za-z0-9_]+)\\)`, 'g');
+  const matches = Array.from(String(query || '').matchAll(pattern));
+  if (!matches.length) return null;
+
+  const data = {};
+  for (const match of matches) {
+    const alias = match[1];
+    const variableName = match[2];
+    data[alias] = resolver(variables ? variables[variableName] : undefined);
+  }
+  return data;
+}
+
 async function startMockIndexerServer() {
   const marketsById = new Map(FIXTURE_MARKETS.map((row) => [row.id, row]));
 
@@ -171,13 +185,24 @@ async function startMockIndexerServer() {
       };
     }
 
-    if (query.includes('query marketsGet')) {
+    if (query.includes('query marketsGet') && Object.prototype.hasOwnProperty.call(variables, 'id')) {
       const id = String(variables.id || '').trim();
       return {
         body: {
           data: {
             markets: marketsById.get(id) || null,
           },
+        },
+      };
+    }
+
+    const batchMarkets = resolveBatchEntitySelections(query, variables, 'markets', (id) =>
+      marketsById.get(String(id || '').trim()) || null,
+    );
+    if (batchMarkets) {
+      return {
+        body: {
+          data: batchMarkets,
         },
       };
     }
@@ -296,6 +321,6 @@ test('agent pipeline composes markets list -> markets get --stdin -> trade --dry
 
   const queries = mock.requests.map((request) => String(request && request.bodyJson && request.bodyJson.query ? request.bodyJson.query : ''));
   assert.equal(queries.filter((query) => query.includes('query marketssList')).length, 1);
-  assert.equal(queries.filter((query) => query.includes('query marketsGet')).length, 3);
+  assert.equal(queries.filter((query) => query.includes('markets(id:')).length, 2);
   assert.equal(queries.filter((query) => query.includes('query liquidityEventssList')).length, 1);
 });

@@ -12,6 +12,18 @@ function close(server) {
   return new Promise((resolve) => server.close(resolve));
 }
 
+function resolveBatchPollSelections(query, variables, pollById) {
+  const aliasRegex = /(\w+)\s*:\s*polls\s*\(\s*id\s*:\s*\$(\w+)\s*\)/g;
+  const data = {};
+  let match = aliasRegex.exec(query);
+  while (match) {
+    const [, alias, variableName] = match;
+    data[alias] = pollById[String(variables[variableName] || '')] || null;
+    match = aliasRegex.exec(query);
+  }
+  return data;
+}
+
 test('browseMirrorMarkets preloads Pandora candidates once and scores each source market locally', async () => {
   const indexerRequests = {
     marketss: 0,
@@ -89,11 +101,20 @@ test('browseMirrorMarkets preloads Pandora candidates once and scores each sourc
         },
       };
 
+      if (Object.prototype.hasOwnProperty.call(variables, 'id')) {
+        res.end(
+          JSON.stringify({
+            data: {
+              polls: pollById[String(variables.id || '')] || null,
+            },
+          }),
+        );
+        return;
+      }
+
       res.end(
         JSON.stringify({
-          data: {
-            polls: pollById[String(variables.id || '')] || null,
-          },
+          data: resolveBatchPollSelections(query, variables, pollById),
         }),
       );
       return;
@@ -169,7 +190,7 @@ test('browseMirrorMarkets preloads Pandora candidates once and scores each sourc
     assert.equal(payload.count, 3);
     assert.equal(payload.schemaVersion, '1.0.0');
     assert.equal(indexerRequests.marketss, 1);
-    assert.equal(indexerRequests.polls, 2);
+    assert.equal(indexerRequests.polls, 1);
 
     const first = payload.items.find((item) => item.slug === 'team-a-market');
     const second = payload.items.find((item) => item.slug === 'team-b-market');

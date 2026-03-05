@@ -106,6 +106,9 @@ const getSportsCreationService = createLazyModuleLoader('./lib/sports_creation_s
 const getPandoraDeployService = createLazyModuleLoader('./lib/pandora_deploy_service.cjs');
 const getVenueConnectorFactoryService = createLazyModuleLoader('./lib/venue_connector_factory.cjs');
 const getOddsHistoryService = createLazyModuleLoader('./lib/odds_history_service.cjs');
+const getIndexerClientService = createLazyModuleLoader('./lib/indexer_client.cjs');
+const getPolymarketAdapter = createLazyModuleLoader('./lib/polymarket_adapter.cjs');
+const getSimilarityService = createLazyModuleLoader('./lib/similarity_service.cjs');
 
 /** Proxy to history service fetch. */
 function fetchHistory(...args) {
@@ -115,6 +118,21 @@ function fetchHistory(...args) {
 /** Proxy to export payload builder. */
 function buildExportPayload(...args) {
   return getExportService().buildExportPayload(...args);
+}
+
+/** Proxy to shared indexer client factory. */
+function createIndexerClient(...args) {
+  return getIndexerClientService().createIndexerClient(...args);
+}
+
+/** Proxy to Polymarket market discovery adapter. */
+function fetchPolymarketMarkets(...args) {
+  return getPolymarketAdapter().fetchPolymarketMarkets(...args);
+}
+
+/** Proxy to shared similarity scoring. */
+function questionSimilarityBreakdown(...args) {
+  return getSimilarityService().questionSimilarityBreakdown(...args);
 }
 
 /** Proxy to arbitrage scanner. */
@@ -2831,30 +2849,33 @@ async function fetchPollDetailsMap(indexerUrl, items, timeoutMs) {
     return { pollsByKey: new Map(), diagnostic: null };
   }
 
-  const query = buildGraphqlGetQuery('polls', POLLS_LIST_FIELDS);
+  const client = createIndexerClient(indexerUrl, timeoutMs);
   const pollsByKey = new Map();
-  const failures = [];
-  await Promise.all(
-    Array.from(pollIdSet).map(async (pollId) => {
-      try {
-        const data = await graphqlRequest(indexerUrl, query, { id: pollId }, timeoutMs);
-        const poll = data.polls;
-        if (!poll || typeof poll !== 'object') return;
+  const diagnostic = null;
+  let fetchedPolls;
+  try {
+    fetchedPolls = await client.getManyByIds({
+      queryName: 'polls',
+      fields: POLLS_LIST_FIELDS,
+      ids: Array.from(pollIdSet),
+    });
+  } catch (err) {
+    return {
+      pollsByKey,
+      diagnostic: `Poll expansion unavailable: ${formatErrorValue(err)}`,
+    };
+  }
 
-        const keys = new Set([pollId, poll.id, poll.pollAddress, poll.address, poll.marketAddress]);
-        for (const keyCandidate of keys) {
-          const key = normalizeLookupKey(keyCandidate);
-          if (key) pollsByKey.set(key, poll);
-        }
-      } catch (err) {
-        failures.push(`poll=${pollId}: ${formatErrorValue(err)}`);
-      }
-    }),
-  );
+  for (const pollId of pollIdSet) {
+    const poll = fetchedPolls.get(pollId);
+    if (!poll || typeof poll !== 'object') continue;
+    const keys = new Set([pollId, poll.id, poll.pollAddress, poll.address, poll.marketAddress]);
+    for (const keyCandidate of keys) {
+      const key = normalizeLookupKey(keyCandidate);
+      if (key) pollsByKey.set(key, poll);
+    }
+  }
 
-  const diagnostic = failures.length
-    ? `Poll expansion fallback degraded for ${failures.length} poll lookup(s).`
-    : null;
   return { pollsByKey, diagnostic };
 }
 
@@ -2908,24 +2929,35 @@ async function buildMarketsEnrichmentContext(indexerUrl, items, options, timeout
     diagnostics: [],
   };
 
+  const tasks = [];
   if (options.expand) {
-    try {
-      const pollContext = await fetchPollDetailsMap(indexerUrl, items, timeoutMs);
-      context.pollsByKey = pollContext.pollsByKey;
-      if (pollContext.diagnostic) context.diagnostics.push(pollContext.diagnostic);
-    } catch (err) {
-      context.diagnostics.push(`Poll expansion unavailable: ${formatErrorValue(err)}`);
-    }
+    tasks.push(
+      fetchPollDetailsMap(indexerUrl, items, timeoutMs)
+        .then((pollContext) => {
+          context.pollsByKey = pollContext.pollsByKey;
+          if (pollContext.diagnostic) context.diagnostics.push(pollContext.diagnostic);
+        })
+        .catch((err) => {
+          context.diagnostics.push(`Poll expansion unavailable: ${formatErrorValue(err)}`);
+        }),
+    );
   }
 
   if (options.withOdds) {
-    try {
-      const oddsContext = await fetchLiquidityOddsIndex(indexerUrl, options, timeoutMs);
-      context.liquidityOddsByMarket = oddsContext.byMarket;
-      context.liquidityOddsByPoll = oddsContext.byPoll;
-    } catch (err) {
-      context.diagnostics.push(`Odds enrichment fallback unavailable: ${formatErrorValue(err)}`);
-    }
+    tasks.push(
+      fetchLiquidityOddsIndex(indexerUrl, options, timeoutMs)
+        .then((oddsContext) => {
+          context.liquidityOddsByMarket = oddsContext.byMarket;
+          context.liquidityOddsByPoll = oddsContext.byPoll;
+        })
+        .catch((err) => {
+          context.diagnostics.push(`Odds enrichment fallback unavailable: ${formatErrorValue(err)}`);
+        }),
+    );
+  }
+
+  if (tasks.length) {
+    await Promise.all(tasks);
   }
 
   return context;
@@ -3570,54 +3602,110 @@ async function fetchMarketsListPage(indexerUrl, options, timeoutMs) {
   return { items, pageInfo: page.pageInfo, unfilteredCount: page.items.length };
 }
 
+function buildHedgeablePandoraCandidates(items, pollsByKey) {
+  return (Array.isArray(items) ? items : []).map((item) => {
+    const poll = firstMappedValue(
+      pollsByKey,
+      [item && item.pollAddress, item && item.pollId, item && item.poll && item.poll.id],
+    );
+    return {
+      key: normalizeLookupKey(item && item.id),
+      question: String(item && item.question ? item.question : poll && poll.question ? poll.question : '').trim() || null,
+      closeTimestamp: toOptionalNumber(item && item.marketCloseTimestamp),
+    };
+  }).filter((item) => item.key && item.question);
+}
+
+function findBestHedgeablePolymarketMatch(candidate, polymarketItems) {
+  const maxCloseDiffHours = 24;
+  let best = null;
+  for (const item of polymarketItems) {
+    if (!item || !item.question) continue;
+    const similarity = questionSimilarityBreakdown(candidate.question, item.question);
+    if (similarity.tokenScore < 0.12 || similarity.score < 0.35) continue;
+
+    let closeDiffHours = null;
+    const leftClose = toOptionalNumber(candidate.closeTimestamp);
+    const rightClose = toOptionalNumber(item.closeTimestamp);
+    if (Number.isFinite(leftClose) && Number.isFinite(rightClose)) {
+      closeDiffHours = Math.abs(leftClose - rightClose) / 3600;
+      if (closeDiffHours > maxCloseDiffHours) continue;
+    }
+
+    const summary = {
+      marketId: item.marketId || null,
+      similarity,
+      closeDiffHours,
+    };
+    if (
+      !best ||
+      summary.similarity.score > best.similarity.score ||
+      (
+        summary.similarity.score === best.similarity.score &&
+        Number.isFinite(summary.closeDiffHours) &&
+        (!Number.isFinite(best.closeDiffHours) || summary.closeDiffHours < best.closeDiffHours)
+      )
+    ) {
+      best = summary;
+    }
+  }
+  return best;
+}
+
 async function filterHedgeableMarkets({ indexerUrl, timeoutMs, options, items }) {
   const normalizedItems = Array.isArray(items) ? items.map((item) => normalizeMarketNumericFields(item)) : [];
   if (!normalizedItems.length) {
     return { items: normalizedItems, unfilteredCount: 0, diagnostics: [] };
   }
 
-  let opportunityPayload = null;
+  const diagnostics = [];
+  const pollContext = await fetchPollDetailsMap(indexerUrl, normalizedItems, timeoutMs);
+  if (pollContext.diagnostic) diagnostics.push(pollContext.diagnostic);
+  const pandoraCandidates = buildHedgeablePandoraCandidates(normalizedItems, pollContext.pollsByKey);
+  if (!pandoraCandidates.length) {
+    return {
+      items: [],
+      unfilteredCount: normalizedItems.length,
+      diagnostics: diagnostics.length
+        ? diagnostics
+        : ['Hedgeable filter skipped: no candidate questions available for the current page.'],
+    };
+  }
+
+  let polymarketPayload;
   try {
-    opportunityPayload = await scanArbitrage({
-      indexerUrl,
+    polymarketPayload = await fetchPolymarketMarkets({
       timeoutMs,
-      chainId: options && options.where && options.where.chainId !== undefined ? options.where.chainId : null,
-      venues: ['pandora', 'polymarket'],
-      limit: Math.max(normalizedItems.length * 4, 120),
-      minSpreadPct: 0,
-      minLiquidityUsd: 0,
-      maxCloseDiffHours: 24,
-      similarityThreshold: 0.35,
-      minTokenScore: 0.12,
-      crossVenueOnly: true,
-      withRules: false,
-      includeSimilarity: false,
-      questionContains: null,
+      limit: Math.max(pandoraCandidates.length * 4, 100),
     });
-  } catch {
+  } catch (err) {
     return {
       items: normalizedItems,
       unfilteredCount: normalizedItems.length,
       diagnostics: [
-        'Hedgeable filter degraded: cross-venue matcher unavailable, returning unfiltered market set.',
+        ...diagnostics,
+        `Hedgeable filter degraded: Polymarket matcher unavailable (${formatErrorValue(err)}); returning unfiltered market set.`,
       ],
     };
   }
 
   const matchedPandoraIds = new Set();
-  const opportunities = Array.isArray(opportunityPayload && opportunityPayload.opportunities)
-    ? opportunityPayload.opportunities
+  const polymarketItems = Array.isArray(polymarketPayload && polymarketPayload.items)
+    ? polymarketPayload.items
     : [];
-  for (const opportunity of opportunities) {
-    const legs = Array.isArray(opportunity && opportunity.legs) ? opportunity.legs : [];
-    const hasPolymarket = legs.some((leg) => leg && leg.venue === 'polymarket');
-    if (!hasPolymarket) continue;
-    for (const leg of legs) {
-      if (leg && leg.venue === 'pandora' && leg.marketId) {
-        const key = normalizeLookupKey(leg.marketId);
-        if (key) matchedPandoraIds.add(key);
-      }
+  if (Array.isArray(polymarketPayload && polymarketPayload.diagnostics) && polymarketPayload.diagnostics.length) {
+    diagnostics.push(...polymarketPayload.diagnostics);
+  }
+
+  for (const candidate of pandoraCandidates) {
+    const bestMatch = findBestHedgeablePolymarketMatch(candidate, polymarketItems);
+    if (bestMatch) {
+      matchedPandoraIds.add(candidate.key);
     }
+  }
+
+  if (!matchedPandoraIds.size) {
+    diagnostics.push('Hedgeable filter found no cross-venue matches for the current page.');
   }
 
   return {
@@ -3626,7 +3714,7 @@ async function filterHedgeableMarkets({ indexerUrl, timeoutMs, options, items })
       return key ? matchedPandoraIds.has(key) : false;
     }),
     unfilteredCount: normalizedItems.length,
-    diagnostics: [],
+    diagnostics: Array.from(new Set(diagnostics)),
   };
 }
 
@@ -3883,14 +3971,37 @@ function buildParimutuelEstimate(liquidity, side, amountUsdc) {
   };
 }
 
-async function fetchMarketSnapshot(indexerUrl, marketAddress, timeoutMs) {
+async function fetchMarketSnapshotMap(indexerUrl, marketAddresses, timeoutMs) {
+  const uniqueIds = Array.from(new Set((marketAddresses || []).map((value) => String(value || '').trim()).filter(Boolean)));
+  const out = new Map();
+  if (!uniqueIds.length) return out;
+
+  const client = createIndexerClient(indexerUrl, timeoutMs);
+  let fetchedMarkets;
   try {
-    const query = buildGraphqlGetQuery('markets', MARKETS_LIST_FIELDS);
-    const data = await graphqlRequest(indexerUrl, query, { id: marketAddress }, timeoutMs);
-    return normalizeMarketNumericFields(data && data.markets ? data.markets : null);
+    fetchedMarkets = await client.getManyByIds({
+      queryName: 'markets',
+      fields: MARKETS_LIST_FIELDS,
+      ids: uniqueIds,
+    });
   } catch {
-    return null;
+    return out;
   }
+
+  for (const marketId of uniqueIds) {
+    const item = fetchedMarkets.get(marketId);
+    if (!item || typeof item !== 'object') continue;
+    const normalized = normalizeMarketNumericFields(item);
+    out.set(marketId, normalized);
+    const normalizedKey = normalizeLookupKey(marketId);
+    if (normalizedKey) out.set(normalizedKey, normalized);
+  }
+  return out;
+}
+
+async function fetchMarketSnapshot(indexerUrl, marketAddress, timeoutMs) {
+  const fetched = await fetchMarketSnapshotMap(indexerUrl, [marketAddress], timeoutMs);
+  return fetched.get(String(marketAddress || '').trim()) || fetched.get(normalizeLookupKey(marketAddress)) || null;
 }
 
 async function fetchLatestLiquiditySnapshotForMarket(indexerUrl, marketAddress, timeoutMs) {
@@ -4425,12 +4536,11 @@ async function runMarketsCommand(args, context) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market id. Use --id <id> or --stdin.');
     }
 
-    const query = buildGraphqlGetQuery('markets', MARKETS_LIST_FIELDS);
     const publicClient = await createReadOnlyPublicClient(1, process.env.RPC_URL || null);
+    const marketMap = await fetchMarketSnapshotMap(indexerUrl, ids, shared.timeoutMs);
     const responses = await Promise.all(
       ids.map(async (id) => {
-        const data = await graphqlRequest(indexerUrl, query, { id }, shared.timeoutMs);
-        const item = normalizeMarketNumericFields(data.markets || null);
+        const item = marketMap.get(id) || marketMap.get(normalizeLookupKey(id)) || null;
         if (!item) return { id, item: null };
         const resolution = await enrichMarketResolutionState(indexerUrl, item, shared.timeoutMs, publicClient);
         const liquidity = buildMarketLiquidityMetrics(item);
@@ -4972,17 +5082,9 @@ async function enrichPortfolioPositions(indexerUrl, positions, options, timeoutM
     ),
   );
 
-  const marketsByAddress = new Map();
-  await Promise.all(
-    uniqueMarketAddresses.map(async (marketAddress) => {
-      const market = await fetchMarketSnapshot(indexerUrl, marketAddress, timeoutMs);
-      if (market) {
-        marketsByAddress.set(marketAddress, market);
-      }
-    }),
-  );
+  const marketsByAddress = await fetchMarketSnapshotMap(indexerUrl, uniqueMarketAddresses, timeoutMs);
 
-  const marketItems = Array.from(marketsByAddress.values());
+  const marketItems = Array.from(new Set(marketsByAddress.values()));
   let pollsByKey = new Map();
   try {
     const pollDetails = await fetchPollDetailsMap(indexerUrl, marketItems, timeoutMs);
@@ -6449,38 +6551,40 @@ async function runSuggestCommand(args, context) {
   let history;
   let arbitrage;
   try {
-    history = await fetchHistory({
-      wallet: options.wallet,
-      chainId: null,
-      marketAddress: null,
-      side: 'both',
-      status: 'all',
-      limit: 250,
-      after: null,
-      before: null,
-      orderBy: 'timestamp',
-      orderDirection: 'desc',
-      includeSeed: false,
-      indexerUrl,
-      timeoutMs: shared.timeoutMs,
-    });
-    arbitrage = await scanArbitrage({
-      indexerUrl,
-      timeoutMs: shared.timeoutMs,
-      chainId: null,
-      venues: options.includeVenues,
-      limit: Math.max(options.count * 3, 10),
-      minSpreadPct: 3,
-      minLiquidityUsd: 1000,
-      maxCloseDiffHours: 24,
-      similarityThreshold: 0.86,
-      crossVenueOnly: true,
-      withRules: false,
-      includeSimilarity: false,
-      questionContains: null,
-      polymarketHost: null,
-      polymarketMockUrl: null,
-    });
+    [history, arbitrage] = await Promise.all([
+      fetchHistory({
+        wallet: options.wallet,
+        chainId: null,
+        marketAddress: null,
+        side: 'both',
+        status: 'all',
+        limit: 250,
+        after: null,
+        before: null,
+        orderBy: 'timestamp',
+        orderDirection: 'desc',
+        includeSeed: false,
+        indexerUrl,
+        timeoutMs: shared.timeoutMs,
+      }),
+      scanArbitrage({
+        indexerUrl,
+        timeoutMs: shared.timeoutMs,
+        chainId: null,
+        venues: options.includeVenues,
+        limit: Math.max(options.count * 3, 10),
+        minSpreadPct: 3,
+        minLiquidityUsd: 1000,
+        maxCloseDiffHours: 24,
+        similarityThreshold: 0.86,
+        crossVenueOnly: true,
+        withRules: false,
+        includeSimilarity: false,
+        questionContains: null,
+        polymarketHost: null,
+        polymarketMockUrl: null,
+      }),
+    ]);
   } catch (err) {
     if (err && err.code) {
       throw new CliError(err.code, err.message || 'suggest failed.', err.details);

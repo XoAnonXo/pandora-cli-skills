@@ -397,6 +397,20 @@ function asPage(items) {
   };
 }
 
+function resolveBatchEntitySelections(query, variables, fieldName, resolver) {
+  const pattern = new RegExp(`([A-Za-z0-9_]+)\\s*:\\s*${fieldName}\\(id:\\s*\\$([A-Za-z0-9_]+)\\)`, 'g');
+  const matches = Array.from(String(query || '').matchAll(pattern));
+  if (!matches.length) return null;
+
+  const data = {};
+  for (const match of matches) {
+    const alias = match[1];
+    const variableName = match[2];
+    data[alias] = resolver(variables ? variables[variableName] : undefined);
+  }
+  return data;
+}
+
 async function startIndexerMockServer(overrides = {}) {
   const fixtures = {
     markets: [
@@ -576,9 +590,16 @@ async function startIndexerMockServer(overrides = {}) {
       return { body: { data: { marketss: asPage(items) } } };
     }
 
-    if (query.includes('markets(id:')) {
+    if (query.includes('markets(id:') && Object.prototype.hasOwnProperty.call(variables, 'id')) {
       const item = fixtures.markets.find((entry) => entry.id === variables.id) || null;
       return { body: { data: { markets: item } } };
+    }
+
+    const batchMarkets = resolveBatchEntitySelections(query, variables, 'markets', (id) =>
+      fixtures.markets.find((entry) => entry.id === id) || null,
+    );
+    if (batchMarkets) {
+      return { body: { data: batchMarkets } };
     }
 
     if (query.includes('pollss(')) {
@@ -586,11 +607,19 @@ async function startIndexerMockServer(overrides = {}) {
       return { body: { data: { pollss: asPage(items) } } };
     }
 
-    if (query.includes('polls(id:')) {
+    if (query.includes('polls(id:') && Object.prototype.hasOwnProperty.call(variables, 'id')) {
       const item =
         fixtures.polls.find((entry) => entry.id === variables.id) ||
         (variables.id === fixtures.markets[0].pollAddress ? fixtures.polls[0] : null);
       return { body: { data: { polls: item } } };
+    }
+
+    const batchPolls = resolveBatchEntitySelections(query, variables, 'polls', (id) =>
+      fixtures.polls.find((entry) => entry.id === id) ||
+      (id === fixtures.markets[0].pollAddress ? fixtures.polls[0] : null),
+    );
+    if (batchPolls) {
+      return { body: { data: batchPolls } };
     }
 
     if (query.includes('liquidityEventss(')) {
@@ -757,8 +786,15 @@ async function startPhaseOneIndexerMockServer() {
       data.marketss = asPage(items);
     }
 
-    if (query.includes('markets(id:')) {
+    if (query.includes('markets(id:') && Object.prototype.hasOwnProperty.call(variables, 'id')) {
       data.markets = fixtures.markets.find((entry) => entry.id === variables.id) || null;
+    }
+
+    const batchMarkets = resolveBatchEntitySelections(query, variables, 'markets', (id) =>
+      fixtures.markets.find((entry) => entry.id === id) || null,
+    );
+    if (batchMarkets) {
+      Object.assign(data, batchMarkets);
     }
 
     if (query.includes('pollss(')) {
@@ -766,8 +802,15 @@ async function startPhaseOneIndexerMockServer() {
       data.pollss = asPage(items);
     }
 
-    if (query.includes('polls(id:')) {
+    if (query.includes('polls(id:') && Object.prototype.hasOwnProperty.call(variables, 'id')) {
       data.polls = fixtures.polls.find((entry) => entry.id === variables.id) || null;
+    }
+
+    const batchPolls = resolveBatchEntitySelections(query, variables, 'polls', (id) =>
+      fixtures.polls.find((entry) => entry.id === id) || null,
+    );
+    if (batchPolls) {
+      Object.assign(data, batchPolls);
     }
 
     if (query.includes('marketUserss(')) {
@@ -845,7 +888,7 @@ async function startLifecycleIndexerMockServer() {
       return { body: { data: { marketss: asPage(items) } } };
     }
 
-    if (query.includes('markets(id:')) {
+    if (query.includes('markets(id:') && Object.prototype.hasOwnProperty.call(variables, 'id')) {
       const item = fixtures.markets.find((entry) => entry.id === variables.id) || null;
       return { body: { data: { markets: item } } };
     }
@@ -912,7 +955,7 @@ async function startAnalyzeIndexerMockServer() {
     const query = String((bodyJson && bodyJson.query) || '');
     const variables = (bodyJson && bodyJson.variables) || {};
 
-    if (query.includes('markets(id:')) {
+    if (query.includes('markets(id:') && Object.prototype.hasOwnProperty.call(variables, 'id')) {
       return {
         body: {
           data: {
@@ -922,7 +965,14 @@ async function startAnalyzeIndexerMockServer() {
       };
     }
 
-    if (query.includes('polls(id:')) {
+    const batchMarkets = resolveBatchEntitySelections(query, variables, 'markets', (id) =>
+      id === fixtures.market.id ? fixtures.market : null,
+    );
+    if (batchMarkets) {
+      return { body: { data: batchMarkets } };
+    }
+
+    if (query.includes('polls(id:') && Object.prototype.hasOwnProperty.call(variables, 'id')) {
       return {
         body: {
           data: {
@@ -930,6 +980,13 @@ async function startAnalyzeIndexerMockServer() {
           },
         },
       };
+    }
+
+    const batchPolls = resolveBatchEntitySelections(query, variables, 'polls', (id) =>
+      id === fixtures.poll.id ? fixtures.poll : null,
+    );
+    if (batchPolls) {
+      return { body: { data: batchPolls } };
     }
 
     if (query.includes('liquidityEventss(')) {
@@ -1089,6 +1146,10 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.commandDescriptors.quote);
   assert.equal(payload.data.commandDescriptors.quote.dataSchema, '#/definitions/QuotePayload');
   assert.ok(payload.data.commandDescriptors.quote.emits.includes('quote'));
+  assert.ok(payload.data.commandDescriptors.scan);
+  assert.equal(payload.data.commandDescriptors.scan.dataSchema, '#/definitions/PagedEntityPayload');
+  assert.ok(payload.data.commandDescriptors['markets.scan']);
+  assert.equal(payload.data.commandDescriptors['markets.scan'].dataSchema, '#/definitions/PagedEntityPayload');
   assert.ok(payload.data.commandDescriptors.trade);
   assert.equal(payload.data.commandDescriptors.trade.dataSchema, '#/definitions/TradePayload');
   assert.ok(payload.data.commandDescriptors['mirror.browse']);
@@ -1775,6 +1836,147 @@ test('scan returns deterministic json contract for market candidates', async () 
     assertOddsShape(first.odds);
   } finally {
     await indexer.close();
+  }
+});
+
+test('markets list --hedgeable matches against the current page without a second Pandora market crawl', async () => {
+  const indexer = await startJsonHttpServer(({ bodyJson }) => {
+    const query = String((bodyJson && bodyJson.query) || '');
+    const variables = (bodyJson && bodyJson.variables) || {};
+    const fixtures = {
+      markets: [
+        {
+          id: 'market-hedgeable-1',
+          chainId: 1,
+          chainName: 'ethereum',
+          pollAddress: 'poll-hedgeable-1',
+          creator: ADDRESSES.wallet1,
+          marketType: 'amm',
+          marketCloseTimestamp: '1893456000',
+          totalVolume: '12345',
+          currentTvl: '4567',
+          createdAt: '1700000000',
+        },
+        {
+          id: 'market-hedgeable-2',
+          chainId: 1,
+          chainName: 'ethereum',
+          pollAddress: 'poll-hedgeable-2',
+          creator: ADDRESSES.wallet1,
+          marketType: 'amm',
+          marketCloseTimestamp: '1893463200',
+          totalVolume: '9876',
+          currentTvl: '3210',
+          createdAt: '1700000001',
+        },
+      ],
+      polls: [
+        {
+          id: 'poll-hedgeable-1',
+          question: 'Will Arsenal beat Chelsea?',
+          status: 0,
+          category: 3,
+          deadlineEpoch: 1893456000,
+        },
+        {
+          id: 'poll-hedgeable-2',
+          question: 'Will bitcoin close above 150k?',
+          status: 0,
+          category: 3,
+          deadlineEpoch: 1893463200,
+        },
+      ],
+    };
+    const data = {};
+
+    if (query.includes('marketss(')) {
+      data.marketss = asPage(applyListControls(fixtures.markets, variables));
+    }
+
+    const batchPolls = resolveBatchEntitySelections(query, variables, 'polls', (id) =>
+      fixtures.polls.find((entry) => entry.id === id) || null,
+    );
+    if (batchPolls) {
+      Object.assign(data, batchPolls);
+    }
+
+    if (query.includes('polls(id:') && Object.prototype.hasOwnProperty.call(variables, 'id')) {
+      data.polls = fixtures.polls.find((entry) => entry.id === variables.id) || null;
+    }
+
+    if (Object.keys(data).length) {
+      return { body: { data } };
+    }
+
+    return {
+      status: 400,
+      body: {
+        errors: [{ message: 'Unsupported hedgeable query in mock indexer' }],
+      },
+    };
+  });
+
+  const gamma = await startJsonHttpServer(() => ({
+    body: [
+      {
+        conditionId: 'poly-hedgeable-1',
+        question: 'Will Arsenal beat Chelsea?',
+        endDateIso: '2030-01-01T00:00:00Z',
+        tokens: [
+          { outcome: 'Yes', price: 0.61 },
+          { outcome: 'No', price: 0.39 },
+        ],
+      },
+      {
+        conditionId: 'poly-hedgeable-2',
+        question: 'Will Real Madrid win La Liga?',
+        endDateIso: '2030-01-01T02:00:00Z',
+        tokens: [
+          { outcome: 'Yes', price: 0.55 },
+          { outcome: 'No', price: 0.45 },
+        ],
+      },
+    ],
+  }));
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'list',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--limit',
+      '5',
+      '--hedgeable',
+    ], {
+      env: {
+        POLYMARKET_GAMMA_HOST: gamma.url,
+      },
+    });
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0);
+
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'markets.list');
+    assert.equal(payload.data.count, 1);
+    assert.equal(payload.data.items[0].id, 'market-hedgeable-1');
+
+    const marketListRequests = indexer.requests.filter((request) =>
+      String(request.bodyJson && request.bodyJson.query || '').includes('marketss('),
+    );
+    assert.equal(marketListRequests.length, 1);
+
+    const pollLookupRequests = indexer.requests.filter((request) =>
+      String(request.bodyJson && request.bodyJson.query || '').includes('polls(id:'),
+    );
+    assert.equal(pollLookupRequests.length, 1);
+  } finally {
+    await Promise.all([indexer.close(), gamma.close()]);
   }
 });
 
