@@ -5,7 +5,9 @@ const {
   DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC,
   detectTradeMarketType,
   buildTradeBuyCall,
+  buildTradeSellCall,
   resolveTradeBuyCall,
+  resolveTradeSellCall,
 } = require('../../cli/lib/trade_market_type_service.cjs');
 
 const MARKET = '0x1111111111111111111111111111111111111111';
@@ -83,6 +85,37 @@ test('buildTradeBuyCall uses 4-arg deadline buy for amm', () => {
   assert.equal(call.ammDeadlineEpoch, String(nowEpochSec + DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC));
 });
 
+test('buildTradeSellCall rejects parimutuel sell paths', () => {
+  assert.throws(
+    () =>
+      buildTradeSellCall({
+        marketType: 'parimutuel',
+        side: 'yes',
+        amountRaw: 10n,
+        minAmountOutRaw: 0n,
+      }),
+    (error) => {
+      assert.equal(error.code, 'UNSUPPORTED_MARKET_TRADE_INTERFACE');
+      return true;
+    },
+  );
+});
+
+test('buildTradeSellCall uses 4-arg deadline sell for amm', () => {
+  const nowEpochSec = 1_700_000_000;
+  const call = buildTradeSellCall({
+    marketType: 'amm',
+    side: 'yes',
+    amountRaw: 25n,
+    minAmountOutRaw: 7n,
+    nowEpochSec,
+  });
+
+  assert.equal(call.signature, 'sell(bool,uint112,uint256,uint256)');
+  assert.deepEqual(call.args, [true, 25n, 7n, BigInt(nowEpochSec + DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC)]);
+  assert.equal(call.ammDeadlineEpoch, String(nowEpochSec + DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC));
+});
+
 test('resolveTradeBuyCall composes detection and call creation', async () => {
   const publicClient = {
     async readContract(request) {
@@ -106,4 +139,29 @@ test('resolveTradeBuyCall composes detection and call creation', async () => {
   assert.equal(call.detectedBy, 'tradingFee');
   assert.equal(call.signature, 'buy(bool,uint256,uint256,uint256)');
   assert.deepEqual(call.args, [true, 9n, 1n, 1005n]);
+});
+
+test('resolveTradeSellCall composes detection and sell call creation', async () => {
+  const publicClient = {
+    async readContract(request) {
+      if (request.functionName === 'curveFlattener') throw new Error('not pari');
+      if (request.functionName === 'tradingFee') return 500n;
+      throw new Error('unexpected');
+    },
+  };
+
+  const call = await resolveTradeSellCall({
+    publicClient,
+    marketAddress: MARKET,
+    side: 'no',
+    amountRaw: 11n,
+    minAmountOutRaw: 2n,
+    nowEpochSec: 2000,
+    ammDeadlineOffsetSec: 9,
+  });
+
+  assert.equal(call.marketType, 'amm');
+  assert.equal(call.detectedBy, 'tradingFee');
+  assert.equal(call.signature, 'sell(bool,uint112,uint256,uint256)');
+  assert.deepEqual(call.args, [false, 11n, 2n, 2009n]);
 });

@@ -64,6 +64,8 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
               'Set this to your Polymarket proxy wallet (Gnosis Safe) address, not your EOA wallet address.',
             collateral:
               'Polymarket CLOB settles against Polygon USDC.e collateral. Ensure USDC.e balance/allowances are configured on the proxy wallet.',
+            inventoryRecycle:
+              'Sync can recycle tracked hedge inventory by selling the opposite token when runtime depth proves the sell path is safe; otherwise it falls back to buy-side hedging.',
           },
           staleCacheFallback:
             'When Polymarket is unreachable, mirror commands reuse cached snapshots from ~/.pandora/polymarket. Live mode blocks cached sources.',
@@ -80,6 +82,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       );
       console.log('POLYMARKET_FUNDER must be your Polymarket proxy wallet (Gnosis Safe), not your EOA wallet address.');
       console.log('Polymarket CLOB collateral is Polygon USDC.e; ensure proxy wallet USDC.e balance and approvals are configured.');
+      console.log('Hedge inventory can be recycled with sell-side orders only when runtime depth proves the sell path is safe; otherwise sync keeps buy-side hedging.');
       console.log(
         'Polymarket outage fallback: cached snapshots under ~/.pandora/polymarket are reused; live mode blocks cached sources.',
       );

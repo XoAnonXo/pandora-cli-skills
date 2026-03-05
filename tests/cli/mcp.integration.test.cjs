@@ -5,6 +5,7 @@ const path = require('path');
 
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
+const { createMcpToolRegistry } = require('../../cli/lib/mcp_tool_registry.cjs');
 
 const { CLI_PATH, REPO_ROOT, createTempDir, removeDir } = require('../helpers/cli_runner.cjs');
 
@@ -49,6 +50,7 @@ test('mcp tools/list exposes command tools and excludes unsupported launch/clone
     assert.ok(toolNames.includes('odds.history'));
     assert.ok(toolNames.includes('odds.record'));
     assert.ok(toolNames.includes('arb.scan'));
+    assert.ok(toolNames.includes('sell'));
     assert.ok(toolNames.includes('simulate.mc'));
     assert.ok(toolNames.includes('simulate.particle-filter'));
     assert.ok(toolNames.includes('simulate.agents'));
@@ -64,6 +66,59 @@ test('mcp tools/list exposes command tools and excludes unsupported launch/clone
     assert.ok(!toolNames.includes('launch'));
     assert.ok(!toolNames.includes('clone-bet'));
   });
+});
+
+test('mcp tools/list exposes typed per-tool schemas and canonical metadata', async () => {
+  await withMcpClient(async (client) => {
+    const list = await client.listTools();
+    const tools = Array.isArray(list && list.tools) ? list.tools : [];
+    const byName = new Map(tools.map((tool) => [String(tool.name), tool]));
+
+    const trade = byName.get('trade');
+    assert.ok(trade);
+    assert.equal(trade.inputSchema.type, 'object');
+    assert.equal(
+      trade.inputSchema.properties['market-address'].type,
+      'string',
+    );
+    assert.deepEqual(
+      trade.inputSchema.properties.side.enum,
+      ['yes', 'no'],
+    );
+    assert.equal(trade.inputSchema.properties.intent.type, 'object');
+    assert.equal(trade.inputSchema.xPandora.canonicalTool, 'trade');
+    assert.equal(trade.inputSchema.xPandora.aliasOf, null);
+    assert.equal(trade.inputSchema.xPandora.preferred, true);
+
+    const sell = byName.get('sell');
+    assert.ok(sell);
+    assert.equal(sell.inputSchema.properties.shares.type, 'number');
+    assert.equal(Array.isArray(sell.inputSchema.anyOf), true);
+    assert.equal(sell.inputSchema.xPandora.canonicalTool, 'sell');
+    assert.equal(sell.inputSchema.xPandora.preferred, true);
+
+    const arbScan = byName.get('arb.scan');
+    assert.ok(arbScan);
+    assert.equal(arbScan.inputSchema.xPandora.canonicalTool, 'arb.scan');
+    assert.equal(arbScan.inputSchema.xPandora.preferred, true);
+
+    const arbitrage = byName.get('arbitrage');
+    assert.ok(arbitrage);
+    assert.equal(arbitrage.inputSchema.xPandora.aliasOf, 'arb.scan');
+    assert.equal(arbitrage.inputSchema.xPandora.canonicalTool, 'arb.scan');
+    assert.equal(arbitrage.inputSchema.xPandora.preferred, false);
+  });
+
+  const localTools = createMcpToolRegistry().listTools();
+  const localByName = new Map(localTools.map((tool) => [String(tool.name), tool]));
+  assert.equal(localByName.get('trade').xPandora.canonicalTool, 'trade');
+  assert.equal(localByName.get('trade').xPandora.aliasOf, null);
+  assert.equal(localByName.get('trade').xPandora.preferred, true);
+  assert.equal(localByName.get('arb.scan').xPandora.canonicalTool, 'arb.scan');
+  assert.equal(localByName.get('arb.scan').xPandora.preferred, true);
+  assert.equal(localByName.get('arbitrage').xPandora.aliasOf, 'arb.scan');
+  assert.equal(localByName.get('arbitrage').xPandora.canonicalTool, 'arb.scan');
+  assert.equal(localByName.get('arbitrage').xPandora.preferred, false);
 });
 
 test('mcp tools/call returns structured success envelope for read-only commands', async () => {
@@ -86,12 +141,10 @@ test('mcp write tools require explicit execute intent', async () => {
     const call = await client.callTool({
       name: 'trade',
       arguments: {
-        flags: {
-          'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-          side: 'yes',
-          'amount-usdc': 10,
-          execute: true,
-        },
+        'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        side: 'yes',
+        'amount-usdc': 10,
+        execute: true,
       },
     });
     const envelope = extractStructuredEnvelope(call);
@@ -107,9 +160,7 @@ test('mcp mutating tools without mode flags require execute intent', async () =>
     const call = await client.callTool({
       name: 'webhook.test',
       arguments: {
-        flags: {
-          'webhook-url': 'https://example.com/hook',
-        },
+        'webhook-url': 'https://example.com/hook',
       },
     });
     const envelope = extractStructuredEnvelope(call);
@@ -125,9 +176,7 @@ test('mcp lifecycle.start requires explicit execute intent', async () => {
     const call = await client.callTool({
       name: 'lifecycle.start',
       arguments: {
-        flags: {
-          config: '/tmp/lifecycle.json',
-        },
+        config: '/tmp/lifecycle.json',
       },
     });
     const envelope = extractStructuredEnvelope(call);
@@ -143,11 +192,9 @@ test('mcp execute-flag detection does not misread flag values as execute flags',
     const call = await client.callTool({
       name: 'resolve',
       arguments: {
-        flags: {
-          'poll-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-          answer: 'yes',
-          reason: '--execute',
-        },
+        'poll-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        answer: 'yes',
+        reason: '--execute',
       },
     });
     const envelope = extractStructuredEnvelope(call);
@@ -163,6 +210,24 @@ test('mcp long-running modes are blocked with actionable error', async () => {
     const call = await client.callTool({
       name: 'watch',
       arguments: {
+        'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        side: 'yes',
+        'amount-usdc': 5,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_LONG_RUNNING_MODE_BLOCKED');
+    assert.equal(call.isError, true);
+  });
+});
+
+test('mcp still accepts legacy nested flags payloads for backward compatibility', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'quote',
+      arguments: {
         flags: {
           'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
           side: 'yes',
@@ -171,10 +236,7 @@ test('mcp long-running modes are blocked with actionable error', async () => {
       },
     });
     const envelope = extractStructuredEnvelope(call);
-
-    assert.equal(envelope.ok, false);
-    assert.equal(envelope.error.code, 'MCP_LONG_RUNNING_MODE_BLOCKED');
-    assert.equal(call.isError, true);
+    assert.equal(envelope.command, 'quote');
   });
 });
 

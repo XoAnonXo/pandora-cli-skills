@@ -2,6 +2,8 @@
  * @typedef {string|number|boolean|null|undefined|Array<string|number|boolean>} FlagInputValue
  */
 
+const { buildMcpToolDefinitions } = require('./agent_contract_registry.cjs');
+
 /**
  * @typedef {{[flagName: string]: FlagInputValue}} ToolFlags
  */
@@ -23,7 +25,8 @@
  * @typedef {{
  *   positionals?: Array<string|number|boolean>,
  *   flags?: ToolFlags,
- *   intent?: { execute?: boolean }
+ *   intent?: { execute?: boolean },
+ *   [key: string]: unknown
  * }} ToolInvocationArgs
  */
 
@@ -111,356 +114,78 @@ function providedFlagSet(flags) {
 }
 
 /**
+ * Return the top-level MCP input keys that map to CLI flags for a definition.
+ *
+ * @param {ToolDefinition & {inputSchema?: object}} definition
+ * @returns {string[]}
+ */
+function getTopLevelFlagNames(definition) {
+  const properties = definition && definition.inputSchema && definition.inputSchema.properties;
+  if (!properties || typeof properties !== 'object') return [];
+  return Object.keys(properties).filter((name) => name !== 'intent');
+}
+
+/**
+ * Merge supported top-level MCP input fields with legacy `flags` payloads.
+ * Top-level fields win so the typed schema is authoritative, but the older
+ * nested `flags` shape remains accepted for backward compatibility.
+ *
+ * @param {ToolDefinition & {inputSchema?: object}} definition
+ * @param {ToolInvocationArgs} args
+ * @returns {ToolFlags}
+ */
+function extractInvocationFlags(definition, args) {
+  const merged = {};
+  const legacyFlags = args && args.flags && typeof args.flags === 'object' && !Array.isArray(args.flags)
+    ? args.flags
+    : null;
+
+  if (legacyFlags) {
+    Object.assign(merged, legacyFlags);
+  }
+
+  for (const flagName of getTopLevelFlagNames(definition)) {
+    if (Object.prototype.hasOwnProperty.call(args, flagName) && args[flagName] !== undefined) {
+      merged[flagName] = args[flagName];
+    }
+  }
+
+  return merged;
+}
+
+/**
  * Convert a tool definition to MCP descriptor format.
  *
  * @param {ToolDefinition} definition Tool registration definition.
  * @returns {{name: string, description: string, inputSchema: object}} MCP tool descriptor.
  */
 function toToolDescriptor(definition) {
+  const xPandora = {
+    canonicalTool: definition.canonicalTool || definition.aliasOf || definition.name,
+    aliasOf: definition.aliasOf || null,
+    preferred: definition.preferred !== false,
+    mutating: Boolean(definition.mutating),
+    longRunningBlocked: Boolean(definition.longRunningBlocked),
+  };
+  const inputSchema = definition.inputSchema || {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  };
+
   return {
     name: definition.name,
     description: definition.description,
     inputSchema: {
-      type: 'object',
-      properties: {
-        positionals: {
-          type: 'array',
-          description: 'Additional positional arguments appended after the command tokens.',
-          items: { type: 'string' },
-        },
-        flags: {
-          type: 'object',
-          description: 'CLI flags map (keys may include or omit leading --).',
-          additionalProperties: {
-            anyOf: [
-              { type: 'string' },
-              { type: 'number' },
-              { type: 'integer' },
-              { type: 'boolean' },
-              {
-                type: 'array',
-                items: {
-                  anyOf: [
-                    { type: 'string' },
-                    { type: 'number' },
-                    { type: 'integer' },
-                    { type: 'boolean' },
-                  ],
-                },
-              },
-            ],
-          },
-        },
-        intent: {
-          type: 'object',
-          properties: {
-            execute: {
-              type: 'boolean',
-              description: 'Required true for live write/mutating actions.',
-            },
-          },
-          additionalProperties: false,
-        },
-      },
-      additionalProperties: false,
+      ...inputSchema,
+      xPandora,
     },
+    xPandora,
   };
 }
 
 /** @type {ToolDefinition[]} */
-const TOOL_DEFINITIONS = [
-  { name: 'help', command: ['help'], description: 'Show top-level command help.' },
-  { name: 'version', command: ['version'], description: 'Return the installed CLI version.' },
-  { name: 'schema', command: ['schema'], description: 'Return official Pandora JSON envelope schema.' },
-
-  { name: 'markets.list', command: ['markets', 'list'], description: 'List Pandora markets with filters.' },
-  { name: 'markets.get', command: ['markets', 'get'], description: 'Get one or more markets by id.' },
-  { name: 'scan', command: ['scan'], description: 'Scan markets with lifecycle filters.' },
-  { name: 'sports.books.list', command: ['sports', 'books', 'list'], description: 'List sportsbook provider health and configured book priorities.' },
-  { name: 'sports.events.list', command: ['sports', 'events', 'list'], description: 'List normalized soccer events from sportsbook providers.' },
-  { name: 'sports.events.live', command: ['sports', 'events', 'live'], description: 'List currently-live soccer events from sportsbook providers.' },
-  { name: 'sports.odds.snapshot', command: ['sports', 'odds', 'snapshot'], description: 'Get normalized event odds snapshot and consensus.' },
-  { name: 'sports.consensus', command: ['sports', 'consensus'], description: 'Compute majority-book trimmed-median consensus for one event.' },
-  { name: 'sports.create.plan', command: ['sports', 'create', 'plan'], description: 'Build conservative market creation plan from sportsbook consensus.' },
-  {
-    name: 'sports.create.run',
-    command: ['sports', 'create', 'run'],
-    description: 'Execute or dry-run sports market creation.',
-    mutating: true,
-    safeFlags: ['--dry-run', '--paper'],
-    executeFlags: ['--execute'],
-  },
-  {
-    name: 'sports.sync.once',
-    command: ['sports', 'sync', 'once'],
-    description: 'Run one sports sync evaluation tick.',
-    mutating: true,
-    safeFlags: ['--paper', '--dry-run'],
-    executeFlags: ['--execute-live', '--execute'],
-  },
-  {
-    name: 'sports.sync.run',
-    command: ['sports', 'sync', 'run'],
-    description: 'Continuous sports sync loop (blocked in MCP v1).',
-    longRunningBlocked: true,
-    mutating: true,
-    safeFlags: ['--paper', '--dry-run'],
-    executeFlags: ['--execute-live', '--execute'],
-  },
-  {
-    name: 'sports.sync.start',
-    command: ['sports', 'sync', 'start'],
-    description: 'Start detached sports sync runtime (blocked in MCP v1).',
-    longRunningBlocked: true,
-    mutating: true,
-    safeFlags: ['--paper', '--dry-run'],
-    executeFlags: ['--execute-live', '--execute'],
-  },
-  {
-    name: 'sports.sync.stop',
-    command: ['sports', 'sync', 'stop'],
-    description: 'Stop sports sync runtime.',
-    mutating: true,
-  },
-  { name: 'sports.sync.status', command: ['sports', 'sync', 'status'], description: 'Inspect sports sync runtime status.' },
-  { name: 'sports.resolve.plan', command: ['sports', 'resolve', 'plan'], description: 'Build manual-final resolution recommendation.' },
-  { name: 'quote', command: ['quote'], description: 'Build YES/NO quote estimates.' },
-  {
-    name: 'trade',
-    command: ['trade'],
-    description: 'Dry-run or execute a Pandora trade.',
-    mutating: true,
-    safeFlags: ['--dry-run'],
-    executeFlags: ['--execute'],
-  },
-  {
-    name: 'claim',
-    command: ['claim'],
-    description: 'Dry-run or execute winnings redemption.',
-    mutating: true,
-    safeFlags: ['--dry-run'],
-    executeFlags: ['--execute'],
-  },
-  { name: 'polls.list', command: ['polls', 'list'], description: 'List poll entities.' },
-  { name: 'polls.get', command: ['polls', 'get'], description: 'Get one poll by id.' },
-  { name: 'events.list', command: ['events', 'list'], description: 'List event entities.' },
-  { name: 'events.get', command: ['events', 'get'], description: 'Get one event by id.' },
-  { name: 'positions.list', command: ['positions', 'list'], description: 'List wallet positions.' },
-  { name: 'portfolio', command: ['portfolio'], description: 'Build portfolio snapshot.' },
-  { name: 'odds.history', command: ['odds', 'history'], description: 'Read stored venue odds history for one event.' },
-  {
-    name: 'odds.record',
-    command: ['odds', 'record'],
-    description: 'Record venue odds snapshots into local history storage.',
-    longRunningBlocked: true,
-    mutating: true,
-  },
-  {
-    name: 'arb.scan',
-    command: ['arb', 'scan', '--output', 'json', '--iterations', '1'],
-    description: 'Run one bounded arb scan iteration and return a structured payload.',
-  },
-  {
-    name: 'simulate.mc',
-    command: ['simulate', 'mc'],
-    description: 'Run bounded Monte Carlo simulations with risk metrics.',
-  },
-  {
-    name: 'simulate.particle-filter',
-    command: ['simulate', 'particle-filter'],
-    description: 'Run bounded particle-filter simulations with ESS diagnostics.',
-  },
-  {
-    name: 'simulate.agents',
-    command: ['simulate', 'agents'],
-    description: 'Run bounded agent-based market simulations.',
-  },
-  {
-    name: 'model.score.brier',
-    command: ['model', 'score', 'brier'],
-    description: 'Score forecast calibration with Brier metrics.',
-  },
-  {
-    name: 'model.calibrate',
-    command: ['model', 'calibrate'],
-    description: 'Calibrate jump-diffusion parameters from historical inputs.',
-  },
-  {
-    name: 'model.correlation',
-    command: ['model', 'correlation'],
-    description: 'Estimate dependency and tail metrics with copula methods.',
-  },
-  {
-    name: 'model.diagnose',
-    command: ['model', 'diagnose'],
-    description: 'Diagnose market/model signal quality for execution gating.',
-  },
-  { name: 'lifecycle.status', command: ['lifecycle', 'status'], description: 'Inspect lifecycle state by id.' },
-  {
-    name: 'lifecycle.start',
-    command: ['lifecycle', 'start'],
-    description: 'Create lifecycle state from a config file.',
-    mutating: true,
-  },
-  {
-    name: 'lifecycle.resolve',
-    command: ['lifecycle', 'resolve'],
-    description: 'Mark lifecycle as resolved (requires --confirm).',
-    mutating: true,
-  },
-  {
-    name: 'watch',
-    command: ['watch'],
-    description: 'Run watch snapshots (blocked in MCP v1 because it is long-running).',
-    longRunningBlocked: true,
-  },
-  { name: 'history', command: ['history'], description: 'Query historical trades.' },
-  { name: 'export', command: ['export'], description: 'Export historical rows to csv/json.' },
-  { name: 'arbitrage', command: ['arbitrage'], description: 'Find arbitrage opportunities.' },
-  {
-    name: 'autopilot.once',
-    command: ['autopilot', 'once'],
-    description: 'Run one guarded autopilot iteration.',
-    mutating: true,
-    safeFlags: ['--paper'],
-    executeFlags: ['--execute-live'],
-  },
-  {
-    name: 'autopilot.run',
-    command: ['autopilot', 'run'],
-    description: 'Start continuous autopilot loop (blocked in MCP v1).',
-    longRunningBlocked: true,
-    mutating: true,
-    safeFlags: ['--paper'],
-    executeFlags: ['--execute-live'],
-  },
-
-  { name: 'mirror.browse', command: ['mirror', 'browse'], description: 'Browse candidate Polymarket mirrors.' },
-  { name: 'mirror.plan', command: ['mirror', 'plan'], description: 'Build mirror sizing/deploy plan.' },
-  {
-    name: 'mirror.deploy',
-    command: ['mirror', 'deploy'],
-    description: 'Dry-run or execute mirror deployment.',
-    mutating: true,
-    safeFlags: ['--dry-run'],
-    executeFlags: ['--execute'],
-  },
-  { name: 'mirror.verify', command: ['mirror', 'verify'], description: 'Verify Pandora/Polymarket mirror pair.' },
-  { name: 'mirror.lp-explain', command: ['mirror', 'lp-explain'], description: 'Explain LP economics from odds.' },
-  { name: 'mirror.hedge-calc', command: ['mirror', 'hedge-calc'], description: 'Compute hedge sizing and legs.' },
-  { name: 'mirror.simulate', command: ['mirror', 'simulate'], description: 'Simulate LP PnL scenarios.' },
-  {
-    name: 'mirror.go',
-    command: ['mirror', 'go'],
-    description: 'Plan/deploy/verify/go orchestration.',
-    mutating: true,
-    safeFlags: ['--paper'],
-    executeFlags: ['--execute-live'],
-  },
-  {
-    name: 'mirror.sync.once',
-    command: ['mirror', 'sync', 'once'],
-    description: 'Execute one mirror sync tick.',
-    mutating: true,
-    safeFlags: ['--paper'],
-    executeFlags: ['--execute-live'],
-  },
-  {
-    name: 'mirror.sync.run',
-    command: ['mirror', 'sync', 'run'],
-    description: 'Continuous mirror sync loop (blocked in MCP v1).',
-    longRunningBlocked: true,
-    mutating: true,
-    safeFlags: ['--paper'],
-    executeFlags: ['--execute-live'],
-  },
-  {
-    name: 'mirror.sync.start',
-    command: ['mirror', 'sync', 'start'],
-    description: 'Start detached mirror sync daemon (blocked in MCP v1).',
-    longRunningBlocked: true,
-    mutating: true,
-    safeFlags: ['--paper'],
-    executeFlags: ['--execute-live'],
-  },
-  {
-    name: 'mirror.sync.stop',
-    command: ['mirror', 'sync', 'stop'],
-    description: 'Stop mirror sync daemon.',
-    mutating: true,
-  },
-  { name: 'mirror.sync.status', command: ['mirror', 'sync', 'status'], description: 'Inspect mirror sync daemon status.' },
-  { name: 'mirror.status', command: ['mirror', 'status'], description: 'Read mirror state/status payload.' },
-  {
-    name: 'mirror.close',
-    command: ['mirror', 'close'],
-    description: 'Build/execute close plan for a mirror pair.',
-    mutating: true,
-    safeFlags: ['--dry-run'],
-    executeFlags: ['--execute'],
-  },
-
-  { name: 'polymarket.check', command: ['polymarket', 'check'], description: 'Run Polymarket auth/allowance checks.' },
-  {
-    name: 'polymarket.approve',
-    command: ['polymarket', 'approve'],
-    description: 'Dry-run or execute Polymarket approvals.',
-    mutating: true,
-    safeFlags: ['--dry-run'],
-    executeFlags: ['--execute'],
-  },
-  { name: 'polymarket.preflight', command: ['polymarket', 'preflight'], description: 'Run Polymarket trade preflight checks.' },
-  {
-    name: 'polymarket.trade',
-    command: ['polymarket', 'trade'],
-    description: 'Dry-run or execute Polymarket trade.',
-    mutating: true,
-    safeFlags: ['--dry-run'],
-    executeFlags: ['--execute'],
-  },
-
-  {
-    name: 'webhook.test',
-    command: ['webhook', 'test'],
-    description: 'Send webhook/notification test payload.',
-    mutating: true,
-  },
-  { name: 'leaderboard', command: ['leaderboard'], description: 'Compute leaderboard from history.' },
-  { name: 'analyze', command: ['analyze'], description: 'Run strategy analysis provider.' },
-  { name: 'suggest', command: ['suggest'], description: 'Produce trade suggestions from risk profile.' },
-  { name: 'risk.show', command: ['risk', 'show'], description: 'Inspect current risk panic/guardrail state.' },
-  {
-    name: 'risk.panic',
-    command: ['risk', 'panic'],
-    description: 'Engage or clear global risk panic lock.',
-    mutating: true,
-  },
-  {
-    name: 'resolve',
-    command: ['resolve'],
-    description: 'Dry-run or execute poll resolution.',
-    mutating: true,
-    safeFlags: ['--dry-run'],
-    executeFlags: ['--execute'],
-  },
-  {
-    name: 'lp.add',
-    command: ['lp', 'add'],
-    description: 'Dry-run or execute LP add.',
-    mutating: true,
-    safeFlags: ['--dry-run'],
-    executeFlags: ['--execute'],
-  },
-  {
-    name: 'lp.remove',
-    command: ['lp', 'remove'],
-    description: 'Dry-run or execute LP remove.',
-    mutating: true,
-    safeFlags: ['--dry-run'],
-    executeFlags: ['--execute'],
-  },
-  { name: 'lp.positions', command: ['lp', 'positions'], description: 'Read LP positions for wallet.' },
-];
+const TOOL_DEFINITIONS = buildMcpToolDefinitions();
 
 /**
  * Registry for MCP-exposed Pandora tools with execution guardrails.
@@ -540,13 +265,14 @@ function createMcpToolRegistry() {
     const positionals = Array.isArray(args.positionals)
       ? args.positionals.map((value) => String(value))
       : [];
-    const flagArgv = buildFlagArgv(args.flags);
+    const invocationFlags = extractInvocationFlags(definition, args);
+    const flagArgv = buildFlagArgv(invocationFlags);
     const argv = [...definition.command, ...positionals, ...flagArgv];
 
     if (definition.mutating) {
       const safeFlags = Array.isArray(definition.safeFlags) ? definition.safeFlags : [];
       const executeFlags = Array.isArray(definition.executeFlags) ? definition.executeFlags : [];
-      const flagSet = providedFlagSet(args.flags);
+      const flagSet = providedFlagSet(invocationFlags);
       const hasSafe = safeFlags.some((flag) => flagSet.has(flag));
       const hasExecute = executeFlags.some((flag) => flagSet.has(flag));
       const executeIntent = Boolean(args && args.intent && args.intent.execute === true);

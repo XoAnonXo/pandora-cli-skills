@@ -12,6 +12,7 @@ const {
   runCliAsync,
   startJsonHttpServer,
 } = require('../helpers/cli_runner.cjs');
+const { createMcpToolRegistry } = require('../../cli/lib/mcp_tool_registry.cjs');
 
 const ADDRESSES = {
   oracle: '0x1111111111111111111111111111111111111111',
@@ -1141,17 +1142,21 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions && payload.data.definitions.SuccessEnvelope);
   assert.ok(payload.data.definitions && payload.data.definitions.ErrorEnvelope);
 
-  assert.equal(payload.data.commandDescriptorVersion, '1.0.0');
+  assert.equal(payload.data.commandDescriptorVersion, '1.1.0');
   assert.ok(payload.data.commandDescriptors);
   assert.ok(payload.data.commandDescriptors.quote);
   assert.equal(payload.data.commandDescriptors.quote.dataSchema, '#/definitions/QuotePayload');
   assert.ok(payload.data.commandDescriptors.quote.emits.includes('quote'));
   assert.ok(payload.data.commandDescriptors.scan);
   assert.equal(payload.data.commandDescriptors.scan.dataSchema, '#/definitions/PagedEntityPayload');
+  assert.ok(payload.data.commandDescriptors.stream);
+  assert.equal(payload.data.commandDescriptors.stream.dataSchema, '#/definitions/StreamTickPayload');
   assert.ok(payload.data.commandDescriptors['markets.scan']);
   assert.equal(payload.data.commandDescriptors['markets.scan'].dataSchema, '#/definitions/PagedEntityPayload');
   assert.ok(payload.data.commandDescriptors.trade);
   assert.equal(payload.data.commandDescriptors.trade.dataSchema, '#/definitions/TradePayload');
+  assert.ok(payload.data.commandDescriptors.sell);
+  assert.equal(payload.data.commandDescriptors.sell.dataSchema, '#/definitions/TradePayload');
   assert.ok(payload.data.commandDescriptors['mirror.browse']);
   assert.equal(payload.data.commandDescriptors['mirror.browse'].dataSchema, '#/definitions/MirrorBrowsePayload');
   assert.match(payload.data.commandDescriptors['mirror.browse'].usage, /--polymarket-tag-id/);
@@ -1196,7 +1201,11 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.deepEqual(payload.data.commandDescriptors.schema.outputModes, ['json']);
   assert.ok(payload.data.commandDescriptors.mcp);
   assert.deepEqual(payload.data.commandDescriptors.mcp.outputModes, ['table']);
-  assert.equal(payload.data.descriptorScope, 'curated-core');
+  assert.ok(payload.data.commandDescriptors.launch);
+  assert.deepEqual(payload.data.commandDescriptors.launch.outputModes, ['table']);
+  assert.ok(payload.data.commandDescriptors['clone-bet']);
+  assert.deepEqual(payload.data.commandDescriptors['clone-bet'].outputModes, ['table']);
+  assert.equal(payload.data.descriptorScope, 'exhaustive-agent-surface');
   assert.ok(payload.data.definitions.QuotePayload);
   assert.ok(payload.data.definitions.TradePayload);
   assert.ok(payload.data.definitions.MirrorPlanPayload);
@@ -1216,6 +1225,91 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions.ModelDiagnosePayload);
   assert.ok(payload.data.definitions.ErrorRecoveryPayload);
   assert.ok(payload.data.definitions.MirrorBrowsePayload);
+  assert.ok(payload.data.definitions.VersionPayload);
+  assert.ok(payload.data.definitions.InitEnvPayload);
+  assert.ok(payload.data.definitions.DoctorPayload);
+  assert.ok(payload.data.definitions.SetupPayload);
+  assert.ok(payload.data.definitions.HistoryPayload);
+  assert.ok(payload.data.definitions.ArbitragePayload);
+  assert.ok(payload.data.definitions.PolymarketPayload);
+  assert.ok(payload.data.definitions.WebhookPayload);
+  assert.ok(payload.data.definitions.AnalyzePayload);
+  assert.ok(payload.data.definitions.SuggestPayload);
+  assert.ok(payload.data.definitions.OddsHelpPayload);
+  assert.ok(payload.data.definitions.MirrorStatusHelpPayload);
+});
+
+test('schema command covers every MCP tool and exposes canonical metadata', () => {
+  const result = runCli(['--output', 'json', 'schema']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  const descriptors = payload.data.commandDescriptors;
+  const mcpTools = createMcpToolRegistry().listTools();
+
+  for (const tool of mcpTools) {
+    const descriptor = descriptors[tool.name];
+    assert.ok(descriptor, `missing schema descriptor for MCP tool ${tool.name}`);
+    assert.equal(descriptor.mcpExposed, true, `expected ${tool.name} to be MCP-exposed`);
+    assert.equal(descriptor.canonicalTool, tool.xPandora.canonicalTool, `canonicalTool mismatch for ${tool.name}`);
+    assert.equal(descriptor.aliasOf, tool.xPandora.aliasOf, `aliasOf mismatch for ${tool.name}`);
+    assert.equal(descriptor.preferred, tool.xPandora.preferred, `preferred mismatch for ${tool.name}`);
+    assert.equal(descriptor.mcpMutating, tool.xPandora.mutating, `mutating mismatch for ${tool.name}`);
+    assert.equal(descriptor.mcpLongRunningBlocked, tool.xPandora.longRunningBlocked, `longRunning mismatch for ${tool.name}`);
+    assert.equal(typeof descriptor.inputSchema, 'object', `missing inputSchema for ${tool.name}`);
+  }
+
+  assert.ok(descriptors['events.list']);
+  assert.ok(descriptors['events.get']);
+  assert.ok(descriptors['positions.list']);
+  assert.ok(descriptors.history);
+  assert.ok(descriptors.arbitrage);
+  assert.ok(descriptors['polymarket.trade']);
+  assert.ok(descriptors['webhook.test']);
+  assert.ok(descriptors.launch);
+  assert.ok(descriptors['clone-bet']);
+  assert.equal(descriptors.arbitrage.aliasOf, 'arb.scan');
+  assert.equal(descriptors.arbitrage.canonicalTool, 'arb.scan');
+  assert.equal(descriptors.arbitrage.preferred, false);
+  assert.equal(descriptors['arb.scan'].canonicalTool, 'arb.scan');
+  assert.equal(descriptors['arb.scan'].preferred, true);
+});
+
+test('schema help definitions match representative emitted help payloads', () => {
+  const schemaResult = runCli(['--output', 'json', 'schema']);
+  assert.equal(schemaResult.status, 0);
+  const schemaPayload = parseJsonOutput(schemaResult);
+  const descriptors = schemaPayload.data.commandDescriptors;
+
+  const oddsHelp = parseJsonOutput(runCli(['--output', 'json', 'odds', 'record', '--help']));
+  assert.equal(oddsHelp.command, 'odds.help');
+  assert.equal(descriptors.odds.helpDataSchema, '#/definitions/OddsHelpPayload');
+  assert.equal(typeof oddsHelp.data.historyUsage, 'string');
+
+  const mirrorStatusHelp = parseJsonOutput(runCli(['--output', 'json', 'mirror', 'status', '--help']));
+  assert.equal(mirrorStatusHelp.command, 'mirror.status.help');
+  assert.equal(descriptors['mirror.status'].helpDataSchema, '#/definitions/MirrorStatusHelpPayload');
+  assert.ok(Array.isArray(mirrorStatusHelp.data.polymarketEnv));
+  assert.equal(typeof mirrorStatusHelp.data.notes, 'object');
+
+  const tradeQuoteHelp = parseJsonOutput(runCli(['--output', 'json', 'trade', 'quote', '--help']));
+  assert.equal(tradeQuoteHelp.command, 'trade.quote.help');
+  assert.ok(descriptors.trade.emits.includes('trade.quote.help'));
+
+  const sellHelp = parseJsonOutput(runCli(['--output', 'json', 'sell', '--help']));
+  assert.equal(sellHelp.command, 'sell.help');
+  assert.ok(descriptors.sell.emits.includes('sell.help'));
+
+  const sellQuoteHelp = parseJsonOutput(runCli(['--output', 'json', 'sell', 'quote', '--help']));
+  assert.equal(sellQuoteHelp.command, 'sell.quote.help');
+  assert.ok(descriptors.sell.emits.includes('sell.quote.help'));
+
+  const simulateAgentsHelp = parseJsonOutput(runCli(['--output', 'json', 'simulate', 'agents', '--help']));
+  assert.equal(simulateAgentsHelp.command, 'simulate.agents.help');
+  assert.ok(descriptors['simulate.agents'].emits.includes('simulate.agents.help'));
+
+  const lifecycleStartHelp = parseJsonOutput(runCli(['--output', 'json', 'lifecycle', 'start', '--help']));
+  assert.equal(lifecycleStartHelp.command, 'lifecycle.start.help');
+  assert.ok(descriptors['lifecycle.start'].emits.includes('lifecycle.start.help'));
 });
 
 test('schema command rejects unknown trailing flags', () => {
@@ -2123,7 +2217,7 @@ test('quote supports manual odds override via --yes-pct without indexer calls', 
 test('quote --help prints command help without parser errors', () => {
   const result = runCli(['quote', '--help']);
   assert.equal(result.status, 0);
-  assert.match(result.output, /pandora quote - Estimate a YES\/NO trade/);
+  assert.match(result.output, /pandora quote - Estimate a YES\/NO buy or sell/);
   assert.doesNotMatch(result.output, /Unknown flag for quote/);
 });
 

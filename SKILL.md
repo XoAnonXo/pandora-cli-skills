@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Canonical skill and operator guide for Pandora CLI including mirror, polymarket, resolve, and LP flows.
-version: 1.1.60
+version: 1.1.61
 ---
 
 # Pandora CLI & Skills
@@ -43,7 +43,7 @@ npm link
 - Guided setup command: `pandora setup`
 - Phase 1 discovery command: `pandora scan`
 - Phase 1 lifecycle filters: `pandora markets list --active|--resolved|--expiring-soon`
-- Phase 2 trading commands: `pandora quote`, `pandora trade`
+- Phase 2 trading commands: `pandora quote`, `pandora trade`, `pandora sell`
 - Phase 2 risk guardrails: `--max-amount-usdc`, `--min-probability-pct`, `--max-probability-pct`
 - Phase 3 analytics command: `pandora portfolio`
 - Phase 3 monitoring command: `pandora watch`
@@ -143,8 +143,9 @@ pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--
 pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
 pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand]
 pandora [--output table|json] markets scan [scan flags]  # backward-compatible alias of scan
-pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
 pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
+pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
 pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
 pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
 pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
@@ -174,12 +175,12 @@ Mirror subcommand detail:
 ```text
 browse --min-yes-pct <n> --max-yes-pct <n> --min-volume-24h <n> [--closes-after <date>] [--closes-before <date>] [--question-contains <text>] [--limit <n>] [--chain-id <id>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 plan   --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
-deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--min-close-lead-seconds <n>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
+deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <0-100>] [--distribution-no-pct <0-100>] [--rules <text>] [--sources <url...>] [--min-close-lead-seconds <n>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 verify --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--trust-deploy] [--manifest-file <path>] [--include-similarity] [--with-rules] [--allow-rule-mismatch] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 lp-explain --liquidity-usdc <n> [--source-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>]
 hedge-calc [--reserve-yes-usdc <n> --reserve-no-usdc <n>] [--excess-yes-usdc <n>] [--excess-no-usdc <n>] [--polymarket-yes-pct <0-100>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--volume-scenarios <csv>] [--pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>]
 simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--polymarket-yes-pct <0-100>]
-go     --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--sources <url...>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]
+go     --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes-pct <0-100>] [--distribution-no-pct <0-100>] [--sources <url...>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]
 sync run|once|start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
 status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>]
 close  --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
@@ -366,19 +367,23 @@ pandora --output json schema
 
 ## Phase 2 JSON contracts
 - `quote`:
-  - envelope is `ok=true`, `command="quote"`, with `data.marketAddress`, `data.side`, `data.amountUsdc`, `data.odds`, `data.quoteAvailable`, and `data.estimate` (or `null`).
+  - envelope is `ok=true`, `command="quote"`, with `data.marketAddress`, `data.side`, `data.mode`, either `data.amountUsdc` (buy) or `data.amount` (sell), plus `data.odds`, `data.quoteAvailable`, and `data.estimate` (or `null`).
 - `trade --dry-run`:
   - envelope is `ok=true`, `command="trade"`, with `data.mode="dry-run"`, `data.quote`, `data.selectedProbabilityPct`, `data.riskGuards`, and `data.executionPlan.steps`.
 - `trade --execute`:
   - envelope is `ok=true`, `command="trade"`, with tx metadata (`approveTxHash` optional, `buyTxHash` required on success) plus `selectedProbabilityPct` and `riskGuards`.
+- `sell --dry-run|--execute`:
+  - envelope is `ok=true`, `command="sell"`, with `data.action="sell"`, sell-aware quote/tx metadata, and `minAmountOutRaw` instead of buy-side minimum-share semantics.
 
 ## Phase 2 limitations
 - `trade` auto-detects market type and uses the correct buy signature:
   - PariMutuel: `buy(bool,uint256,uint256)`
   - AMM: `buy(bool,uint256,uint256,uint256)` (deadline-aware)
+- `sell` is AMM-only and uses `sell(bool,uint112,uint256,uint256)`.
 - `--min-shares-out-raw` is the explicit slippage guard input for on-chain execution.
 - If indexer odds are unavailable, `quote` still returns structured output with `quoteAvailable=false`.
 - `trade --execute` blocks unquoted execution by default unless `--min-shares-out-raw` or `--allow-unquoted-execute` is provided.
+- `sell --execute` blocks unquoted execution by default unless `--min-amount-out-raw` or `--allow-unquoted-execute` is provided.
 
 ## Phase 3 JSON contracts
 - `portfolio`:
@@ -479,7 +484,7 @@ Mode aliases:
 Common compatibility aliases:
 - `--env-file` = `--dotenv-path`
 - `--no-env-file` = `--skip-dotenv`
-- `--amount` = `--amount-usdc` (trade/watch/autopilot paths)
+- `--amount` = `--amount-usdc` on buy-side trade/watch/autopilot paths, and share input on `sell`.
 - `--market-id` = `--condition-id` (polymarket trade)
 - `--force-gate` = `--skip-gate` (deprecated; use `--skip-gate`)
 
@@ -487,6 +492,7 @@ Common compatibility aliases:
 - Distribution inputs use parts-per-billion (ppb):
   - `--distribution-yes 580000000` means YES seed weight = `58%`.
   - `--distribution-no 420000000` means NO seed weight = `42%`.
+  - `--distribution-yes-pct 58 --distribution-no-pct 42` is the percentage alias form on supported deploy/create paths.
   - Constraint: `distributionYes + distributionNo = 1_000_000_000`.
 
 ## Error code guide

@@ -489,10 +489,13 @@ function createCoreCommandFlagParsers(deps) {
 
   function parseQuoteFlags(args) {
     const options = {
+      mode: 'buy',
       marketAddress: null,
       side: null,
       amountUsdc: null,
       amountsUsdc: [],
+      amount: null,
+      amounts: [],
       yesPct: null,
       slippageBps: 100,
     };
@@ -512,14 +515,38 @@ function createCoreCommandFlagParsers(deps) {
         continue;
       }
 
+      if (token === '--mode') {
+        const mode = requireFlagValue(args, i, '--mode').toLowerCase();
+        if (mode !== 'buy' && mode !== 'sell') {
+          throw new CliError('INVALID_FLAG_VALUE', '--mode must be buy|sell.');
+        }
+        options.mode = mode;
+        i += 1;
+        continue;
+      }
+
       if (token === '--amount-usdc' || token === '--amount') {
-        options.amountUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        const parsedAmount = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        if (token === '--amount-usdc') {
+          options.amountUsdc = parsedAmount;
+        } else {
+          options.amount = parsedAmount;
+        }
+        i += 1;
+        continue;
+      }
+      if (token === '--shares') {
+        options.amount = parsePositiveNumber(requireFlagValue(args, i, '--shares'), '--shares');
         i += 1;
         continue;
       }
       if (token === '--amounts') {
         const raw = parseCsvList(requireFlagValue(args, i, '--amounts'), '--amounts');
-        options.amountsUsdc = raw.map((value) => parsePositiveNumber(value, '--amounts'));
+        if (options.mode === 'sell') {
+          options.amounts = raw.map((value) => parsePositiveNumber(value, '--amounts'));
+        } else {
+          options.amountsUsdc = raw.map((value) => parsePositiveNumber(value, '--amounts'));
+        }
         i += 1;
         continue;
       }
@@ -548,11 +575,32 @@ function createCoreCommandFlagParsers(deps) {
     if (!options.side) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing side. Use --side yes|no.');
     }
-    if (options.amountUsdc === null && (!Array.isArray(options.amountsUsdc) || !options.amountsUsdc.length)) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount> or --amounts <csv>.');
-    }
-    if (options.amountUsdc === null && Array.isArray(options.amountsUsdc) && options.amountsUsdc.length) {
-      options.amountUsdc = options.amountsUsdc[0];
+    if (options.mode === 'buy') {
+      if (options.amountUsdc === null && options.amount !== null) {
+        options.amountUsdc = options.amount;
+      }
+      if (!options.amountsUsdc.length && options.amounts.length) {
+        options.amountsUsdc = [...options.amounts];
+      }
+      if (options.amountUsdc === null && (!Array.isArray(options.amountsUsdc) || !options.amountsUsdc.length)) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount> or --amounts <csv>.');
+      }
+      if (options.amountUsdc === null && Array.isArray(options.amountsUsdc) && options.amountsUsdc.length) {
+        options.amountUsdc = options.amountsUsdc[0];
+      }
+    } else {
+      if (options.amount === null && options.amountUsdc !== null) {
+        options.amount = options.amountUsdc;
+      }
+      if (!options.amounts.length && options.amountsUsdc.length) {
+        options.amounts = [...options.amountsUsdc];
+      }
+      if (options.amount === null && (!Array.isArray(options.amounts) || !options.amounts.length)) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing token amount. Use --shares <amount> or --amounts <csv>.');
+      }
+      if (options.amount === null && Array.isArray(options.amounts) && options.amounts.length) {
+        options.amount = options.amounts[0];
+      }
     }
 
     return options;

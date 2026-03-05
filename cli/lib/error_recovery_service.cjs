@@ -27,6 +27,11 @@ function toPositiveNumberOrPlaceholder(value, placeholder = '<amount>') {
 function buildTradeRetryCommand(cliName, details) {
   const marketAddress = toAddressOrPlaceholder(details && details.marketAddress);
   const side = toSideOrPlaceholder(details && details.side);
+  const mode = cleanToken(details && details.mode, '').toLowerCase();
+  if (mode === 'sell') {
+    const amount = toPositiveNumberOrPlaceholder(details && (details.amount || details.amountShares), '<shares>');
+    return `${cliName} sell --dry-run --market-address ${marketAddress} --side ${side} --shares ${amount}`;
+  }
   const amountUsdc = toPositiveNumberOrPlaceholder(details && details.amountUsdc);
   return `${cliName} trade --dry-run --market-address ${marketAddress} --side ${side} --amount-usdc ${amountUsdc}`;
 }

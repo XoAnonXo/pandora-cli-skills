@@ -243,7 +243,10 @@ function buildSportsCreatePlan(input = {}) {
       distributionYes,
       distributionNo,
       feeTier: Number(options.feeTier || 3000),
-      maxImbalance: Number(options.maxImbalance || 10000),
+      maxImbalance:
+        options.maxImbalance === null || options.maxImbalance === undefined
+          ? 16_777_215
+          : Number(options.maxImbalance),
       curveFlattener: Number(options.curveFlattener || 7),
       curveOffset: Number(options.curveOffset || 30000),
       chainId: options.chainId || null,

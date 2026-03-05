@@ -251,12 +251,12 @@ async function deployMirror(options = {}) {
   }
 
   const diagnostics = [];
-  const sourceRulesText =
-    String(
+  const sourceRulesText = String(
+    options.rules ||
       (planData.rules && (planData.rules.proposedPandoraRules || planData.rules.sourceRules)) ||
-        (planData.sourceMarket && planData.sourceMarket.description) ||
-        '',
-    ).trim();
+      (planData.sourceMarket && planData.sourceMarket.description) ||
+      '',
+  ).trim();
 
   const question = String(planData.sourceMarket && planData.sourceMarket.question ? planData.sourceMarket.question : '').trim();
   const targetTimestamp = Number(planData.sourceMarket && planData.sourceMarket.closeTimestamp);
@@ -311,7 +311,7 @@ async function deployMirror(options = {}) {
       distributionYes,
       distributionNo,
       feeTier: options.feeTier || 3000,
-      maxImbalance: options.maxImbalance || 10_000,
+      maxImbalance: options.maxImbalance === null || options.maxImbalance === undefined ? 16_777_215 : Number(options.maxImbalance),
       arbiter: options.arbiter,
       category: options.category,
     });

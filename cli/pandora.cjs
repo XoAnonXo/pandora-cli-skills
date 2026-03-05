@@ -8,7 +8,7 @@ const { createCommandRouter } = require('./lib/command_router.cjs');
 const { createCliOutputService } = require('./lib/cli_output_service.cjs');
 const { createErrorRecoveryService } = require('./lib/error_recovery_service.cjs');
 const { createCoreCommandFlagParsers } = require('./lib/parsers/core_command_flags.cjs');
-const { resolveTradeBuyCall } = require('./lib/trade_market_type_service.cjs');
+const { resolveTradeBuyCall, resolveTradeSellCall } = require('./lib/trade_market_type_service.cjs');
 const {
   DEFAULT_INDEXER_URL: SHARED_DEFAULT_INDEXER_URL,
   DEFAULT_RPC_BY_CHAIN_ID,
@@ -615,6 +615,23 @@ const ERC20_ABI = [
     ],
     outputs: [{ type: 'uint256' }],
   },
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'owner', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+];
+const OUTCOME_TOKEN_REF_ABI = [
+  { type: 'function', name: 'yesToken', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'noToken', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'yesTokenAddress', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'noTokenAddress', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+];
+const AMM_SELL_QUOTE_ABI = [
+  { type: 'function', name: 'calcSellYes', stateMutability: 'view', inputs: [{ type: 'uint112' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'calcSellNo', stateMutability: 'view', inputs: [{ type: 'uint112' }], outputs: [{ type: 'uint256' }] },
 ];
 const MARKET_DIRECT_ODDS_FIELDS = [
   { yesField: 'yesPct', noField: 'noPct', source: 'direct:yesPct/noPct' },
@@ -799,8 +816,9 @@ Usage:
   pandora [--output table|json] odds record|history ...
   pandora [--output table|json] lifecycle start|status|resolve ...
   pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]
-  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
+  pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
   pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
@@ -836,6 +854,7 @@ Examples:
   pandora scan --active --limit 25 --chain-id 1
   pandora quote --market-address 0xabc... --side yes --amounts 25,50,75,100
   pandora trade --dry-run --market-address 0xabc... --side no --amount-usdc 25 --max-amount-usdc 50 --min-probability-pct 20
+  pandora sell --dry-run --market-address 0xabc... --side no --shares 40
   pandora history --wallet 0x1234... --chain-id 1 --limit 50
   pandora export --wallet 0x1234... --format csv --year 2026 --out ./trades-2026.csv
   pandora arbitrage --chain-id 1 --limit 25 --venues pandora,polymarket --cross-venue-only --with-rules --include-similarity
@@ -877,7 +896,7 @@ Notes:
   - scan is the canonical enriched discovery command; markets scan remains a backward-compatible alias and markets list is the raw indexer browse surface.
   - Indexer URL resolution order: --indexer-url, PANDORA_INDEXER_URL, INDEXER_URL, default public indexer.
   - mirror status --with-live can enrich output with Polymarket position data when POLYMARKET_* credentials are set; missing endpoints/creds return diagnostics instead of hard failures.
-  - watch is non-transactional monitoring; use quote/trade for execution workflows.
+  - watch is non-transactional monitoring; use quote/trade/sell for execution workflows.
   - stream always emits NDJSON to stdout (one JSON object per line).
   - arb scan is the canonical arbitrage command; arbitrage remains a bounded backward-compatible one-shot wrapper.
   - arb scan supports streaming NDJSON and bounded JSON (--output json --iterations 1) for agent workflows.
@@ -886,15 +905,16 @@ Notes:
 
 function printQuoteHelpTable() {
   console.log(`
-pandora quote - Estimate a YES/NO trade
+pandora quote - Estimate a YES/NO buy or sell
 
 Usage:
-  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
 
 Notes:
+  - Buy mode uses USDC notional input; sell mode uses outcome-token share input.
   - If --yes-pct is omitted, quote attempts to derive odds from latest liquidity events on the indexer.
-  - Output includes odds source and estimated shares/payout.
-  - --amounts emits a slippage/ROI sizing curve for multiple notional values.
+  - Sell mode prefers on-chain calcSell* views when RPC is available and falls back to reserve inversion.
+  - --amounts emits a sizing curve in the active mode units.
 `);
 }
 
@@ -903,7 +923,7 @@ function printTradeHelpTable() {
 pandora trade - Execute a buy on a market
 
 Usage:
-  pandora [--output table|json] trade quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] trade quote --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
 
 Notes:
@@ -912,7 +932,23 @@ Notes:
   - --max-amount-usdc and probability guard flags fail fast before execution.
   - --execute requires a quote by default unless --min-shares-out-raw or --allow-unquoted-execute is set.
   - Supports both PariMutuel and AMM market buy signatures.
-  - trade quote is read-only and returns full quote curve data.
+  - trade quote is read-only and returns full quote curve data for buy or sell analysis.
+  - Use pandora sell for AMM sell execution.
+`);
+}
+
+function printSellHelpTable() {
+  console.log(`
+pandora sell - Execute an AMM sell on a market
+
+Usage:
+  pandora [--output table|json] sell quote --market-address <address> --side yes|no --shares <amount>|--amount <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
+
+Notes:
+  - Sell is AMM-only. PariMutuel markets do not expose a sell() interface.
+  - --execute performs outcome-token allowance check, optional token approve, then calls market sell().
+  - Sell quote prefers on-chain calcSell* views when RPC is available and falls back to reserve inversion.
 `);
 }
 
@@ -1040,17 +1076,26 @@ function commandHelpPayload(usage) {
   return notes && notes.length ? { usage, notes } : { usage };
 }
 
-function quoteHelpJsonPayload() {
+function quoteHelpJsonPayload(defaultMode = 'buy') {
   return {
     usage:
-      'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
+      defaultMode === 'sell'
+        ? 'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --mode sell --shares <amount>|--amount <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]'
+        : 'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
   };
 }
 
 function tradeHelpJsonPayload() {
   return {
     usage:
-      'pandora [--output table|json] trade quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>] | pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
+      'pandora [--output table|json] trade quote --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>] | pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
+  };
+}
+
+function sellHelpJsonPayload() {
+  return {
+    usage:
+      'pandora [--output table|json] sell quote --market-address <address> --side yes|no --shares <amount>|--amount <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>] | pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
   };
 }
 
@@ -1086,6 +1131,7 @@ function helpJsonPayload() {
       'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json ...',
       'pandora [--output table|json] quote ...',
       'pandora [--output table|json] trade quote|...',
+      'pandora [--output table|json] sell quote|...',
       'pandora [--output table|json] history ...',
       'pandora [--output table|json] export ...',
       'pandora [--output table|json] arbitrage ...',
@@ -1725,21 +1771,28 @@ function renderQuoteTable(data) {
   const estimate = data.estimate || null;
   const liquidity = data.liquidity || null;
   const parimutuel = data.parimutuel || null;
+  const quoteMode = String(data && data.mode ? data.mode : 'buy').toLowerCase();
   printTable(
     ['Field', 'Value'],
     [
       ['marketAddress', data.marketAddress],
       ['marketType', data.marketType || ''],
+      ['mode', quoteMode],
       ['side', data.side],
-      ['amountUsdc', data.amountUsdc],
+      ['amountUsdc', quoteMode === 'sell' ? 'n/a' : data.amountUsdc],
+      ['sharesIn', quoteMode === 'sell' ? data.amount : 'n/a'],
       ['oddsSource', odds.source || 'n/a'],
       ['yesPct', odds.yesPct === null || odds.yesPct === undefined ? 'n/a' : `${odds.yesPct}%`],
       ['noPct', odds.noPct === null || odds.noPct === undefined ? 'n/a' : `${odds.noPct}%`],
       ['quoteAvailable', data.quoteAvailable ? 'yes' : 'no'],
-      ['estimatedShares', estimate ? estimate.estimatedShares : 'n/a'],
-      ['minSharesOut', estimate ? estimate.minSharesOut : 'n/a'],
-      ['potentialPayoutIfWin', estimate ? estimate.potentialPayoutIfWin : 'n/a'],
-      ['potentialProfitIfWin', estimate ? estimate.potentialProfitIfWin : 'n/a'],
+      ['estimatedShares', quoteMode === 'sell' ? 'n/a' : estimate ? estimate.estimatedShares : 'n/a'],
+      ['minSharesOut', quoteMode === 'sell' ? 'n/a' : estimate ? estimate.minSharesOut : 'n/a'],
+      ['estimatedUsdcOut', quoteMode === 'sell' && estimate ? estimate.estimatedUsdcOut : 'n/a'],
+      ['minAmountOut', quoteMode === 'sell' && estimate ? estimate.minAmountOut : 'n/a'],
+      ['grossUsdcOut', quoteMode === 'sell' && estimate ? estimate.grossUsdcOut : 'n/a'],
+      ['feeAmount', quoteMode === 'sell' && estimate ? estimate.feeAmount : 'n/a'],
+      ['potentialPayoutIfWin', quoteMode === 'sell' ? 'n/a' : estimate ? estimate.potentialPayoutIfWin : 'n/a'],
+      ['potentialProfitIfWin', quoteMode === 'sell' ? 'n/a' : estimate ? estimate.potentialProfitIfWin : 'n/a'],
       ['reserveYes', liquidity && liquidity.reserveYes !== null ? liquidity.reserveYes : 'n/a'],
       ['reserveNo', liquidity && liquidity.reserveNo !== null ? liquidity.reserveNo : 'n/a'],
       ['kValue', liquidity && liquidity.kValue !== null ? liquidity.kValue : 'n/a'],
@@ -1749,16 +1802,28 @@ function renderQuoteTable(data) {
 
   if (Array.isArray(data.curve) && data.curve.length > 1) {
     console.log('');
-    printTable(
-      ['Amount USDC', 'Shares Out', 'Eff. Price', 'Slippage %', 'ROI if Win %'],
-      data.curve.map((row) => [
-        row.amountUsdc,
-        row.estimatedShares === null ? 'n/a' : row.estimatedShares,
-        row.effectivePrice === null ? 'n/a' : row.effectivePrice,
-        row.slippagePct === null ? 'n/a' : row.slippagePct,
-        row.roiIfWinPct === null ? 'n/a' : row.roiIfWinPct,
-      ]),
-    );
+    if (quoteMode === 'sell') {
+      printTable(
+        ['Shares In', 'USDC Out', 'Eff. Price', 'Slippage %'],
+        data.curve.map((row) => [
+          row.amount === null || row.amount === undefined ? 'n/a' : row.amount,
+          row.estimatedUsdcOut === null || row.estimatedUsdcOut === undefined ? 'n/a' : row.estimatedUsdcOut,
+          row.effectivePrice === null ? 'n/a' : row.effectivePrice,
+          row.slippagePct === null ? 'n/a' : row.slippagePct,
+        ]),
+      );
+    } else {
+      printTable(
+        ['Amount USDC', 'Shares Out', 'Eff. Price', 'Slippage %', 'ROI if Win %'],
+        data.curve.map((row) => [
+          row.amountUsdc,
+          row.estimatedShares === null ? 'n/a' : row.estimatedShares,
+          row.effectivePrice === null ? 'n/a' : row.effectivePrice,
+          row.slippagePct === null ? 'n/a' : row.slippagePct,
+          row.roiIfWinPct === null ? 'n/a' : row.roiIfWinPct,
+        ]),
+      );
+    }
   }
 
   if (parimutuel) {
@@ -1782,9 +1847,11 @@ function renderTradeTable(data) {
   const riskGuards = data.riskGuards || {};
   const rows = [
     ['mode', data.mode],
+    ['action', data.action || 'buy'],
     ['marketAddress', data.marketAddress],
     ['side', data.side],
-    ['amountUsdc', data.amountUsdc],
+    ['amountUsdc', data.amountUsdc === null || data.amountUsdc === undefined ? '' : data.amountUsdc],
+    ['shares', data.amount === null || data.amount === undefined ? '' : data.amount],
     [
       'selectedProbabilityPct',
       data.selectedProbabilityPct === null || data.selectedProbabilityPct === undefined
@@ -1804,14 +1871,23 @@ function renderTradeTable(data) {
     ],
     ['quoteAvailable', data.quote && data.quote.quoteAvailable ? 'yes' : 'no'],
     ['account', data.account || ''],
+    ['approvalAsset', data.approvalAsset || ''],
     ['approveTxHash', data.approveTxHash || ''],
     ['approveTxUrl', data.approveTxUrl || ''],
     ['approveGasEstimate', data.approveGasEstimate || ''],
     ['approveStatus', data.approveStatus || ''],
+    ['tradeTxHash', data.tradeTxHash || ''],
+    ['tradeTxUrl', data.tradeTxUrl || ''],
+    ['tradeGasEstimate', data.tradeGasEstimate || ''],
+    ['tradeStatus', data.tradeStatus || ''],
     ['buyTxHash', data.buyTxHash || ''],
     ['buyTxUrl', data.buyTxUrl || ''],
     ['buyGasEstimate', data.buyGasEstimate || ''],
     ['buyStatus', data.buyStatus || ''],
+    ['sellTxHash', data.sellTxHash || ''],
+    ['sellTxUrl', data.sellTxUrl || ''],
+    ['sellGasEstimate', data.sellGasEstimate || ''],
+    ['sellStatus', data.sellStatus || ''],
     ['finalStatus', data.finalStatus || ''],
     ['status', data.status || ''],
   ];
@@ -3765,7 +3841,7 @@ function buildTradeRiskGuardConfig(options) {
 }
 
 function enforceTradeRiskGuards(options, quote) {
-  if (options.maxAmountUsdc !== null && options.amountUsdc > options.maxAmountUsdc) {
+  if (options.maxAmountUsdc !== null && options.amountUsdc !== null && options.amountUsdc > options.maxAmountUsdc) {
     throw new CliError(
       'TRADE_RISK_GUARD',
       `Trade amount ${options.amountUsdc} exceeds --max-amount-usdc ${options.maxAmountUsdc}.`,
@@ -3800,17 +3876,19 @@ function enforceTradeRiskGuards(options, quote) {
   if (
     options.execute &&
     !quote.quoteAvailable &&
-    options.minSharesOutRaw === null &&
+    ((options.mode === 'sell' && options.minAmountOutRaw === null) || (options.mode !== 'sell' && options.minSharesOutRaw === null)) &&
     !options.allowUnquotedExecute
   ) {
     throw new CliError(
       'TRADE_RISK_GUARD',
-      'Execute mode requires a quote by default. Provide --yes-pct, or set --min-shares-out-raw, or pass --allow-unquoted-execute.',
+      options.mode === 'sell'
+        ? 'Execute mode requires a quote by default. Provide --yes-pct, or set --min-amount-out-raw, or pass --allow-unquoted-execute.'
+        : 'Execute mode requires a quote by default. Provide --yes-pct, or set --min-shares-out-raw, or pass --allow-unquoted-execute.',
     );
   }
 }
 
-function buildAmmQuoteEstimateFromReserves(liquidity, side, amountUsdc) {
+function computeAmmBuySharesFromReserves(liquidity, side, amountUsdc) {
   const reserveYes = toOptionalNumber(liquidity && liquidity.reserveYes);
   const reserveNo = toOptionalNumber(liquidity && liquidity.reserveNo);
   if (!Number.isFinite(reserveYes) || !Number.isFinite(reserveNo) || reserveYes <= 0 || reserveNo <= 0) {
@@ -3826,7 +3904,7 @@ function buildAmmQuoteEstimateFromReserves(liquidity, side, amountUsdc) {
   const normalizedSide = String(side || '').toLowerCase();
   const isYes = normalizedSide === 'yes';
 
-  let estimatedShares = null;
+  let sharesOut = null;
   let spotPrice = null;
   let impliedProbability = null;
   if (isYes) {
@@ -3838,7 +3916,7 @@ function buildAmmQuoteEstimateFromReserves(liquidity, side, amountUsdc) {
     const nextReserveYes = kValue / nextReserveNo;
     const swapOutputYes = reserveYes - nextReserveYes;
     if (!Number.isFinite(swapOutputYes) || swapOutputYes < 0) return null;
-    estimatedShares = amountUsdc + swapOutputYes;
+    sharesOut = amountUsdc + swapOutputYes;
     spotPrice = reserveNo / (reserveYes + reserveNo);
     impliedProbability = reserveNo / (reserveYes + reserveNo);
   } else {
@@ -3850,13 +3928,13 @@ function buildAmmQuoteEstimateFromReserves(liquidity, side, amountUsdc) {
     const nextReserveNo = kValue / nextReserveYes;
     const swapOutputNo = reserveNo - nextReserveNo;
     if (!Number.isFinite(swapOutputNo) || swapOutputNo < 0) return null;
-    estimatedShares = amountUsdc + swapOutputNo;
+    sharesOut = amountUsdc + swapOutputNo;
     spotPrice = reserveYes / (reserveYes + reserveNo);
     impliedProbability = reserveYes / (reserveYes + reserveNo);
   }
 
-  if (!Number.isFinite(estimatedShares) || estimatedShares <= 0) return null;
-  const effectivePrice = amountUsdc / estimatedShares;
+  if (!Number.isFinite(sharesOut) || sharesOut <= 0) return null;
+  const effectivePrice = amountUsdc / sharesOut;
   if (!Number.isFinite(effectivePrice) || effectivePrice <= 0) return null;
 
   const slippagePct =
@@ -3867,17 +3945,127 @@ function buildAmmQuoteEstimateFromReserves(liquidity, side, amountUsdc) {
   return {
     impliedProbability,
     pricePerShare: effectivePrice,
-    estimatedShares,
+    estimatedShares: sharesOut,
     slippagePct,
+    spotPrice,
   };
 }
 
-function buildQuoteEstimate(odds, side, amountUsdc, slippageBps, marketContext = null) {
-  const probability = side === 'yes' ? odds.yesProbability : odds.noProbability;
-  if (!Number.isFinite(probability) || probability <= 0) {
+function solveAmmCollateralForShares(liquidity, side, shareAmount) {
+  const targetShares = toOptionalNumber(shareAmount);
+  if (!Number.isFinite(targetShares) || targetShares <= 0) return null;
+
+  let lower = 0;
+  let upper = Math.max(1, targetShares);
+  let upperEstimate = computeAmmBuySharesFromReserves(liquidity, side, upper);
+  let iterations = 0;
+  while (
+    (!upperEstimate || !Number.isFinite(upperEstimate.estimatedShares) || upperEstimate.estimatedShares < targetShares) &&
+    iterations < 40
+  ) {
+    upper *= 2;
+    upperEstimate = computeAmmBuySharesFromReserves(liquidity, side, upper);
+    iterations += 1;
+  }
+  if (!upperEstimate || !Number.isFinite(upperEstimate.estimatedShares) || upperEstimate.estimatedShares < targetShares) {
     return null;
   }
 
+  for (let i = 0; i < 80; i += 1) {
+    const midpoint = (lower + upper) / 2;
+    const estimate = computeAmmBuySharesFromReserves(liquidity, side, midpoint);
+    if (!estimate || !Number.isFinite(estimate.estimatedShares)) {
+      return null;
+    }
+    if (estimate.estimatedShares >= targetShares) {
+      upper = midpoint;
+    } else {
+      lower = midpoint;
+    }
+  }
+  return upper;
+}
+
+function buildAmmSellEstimateFromReserves(liquidity, side, shareAmount) {
+  const sharesIn = toOptionalNumber(shareAmount);
+  if (!Number.isFinite(sharesIn) || sharesIn <= 0) return null;
+
+  const grossUsdcOut = solveAmmCollateralForShares(liquidity, side, sharesIn);
+  if (!Number.isFinite(grossUsdcOut) || grossUsdcOut <= 0) {
+    return null;
+  }
+
+  const reserveYes = toOptionalNumber(liquidity && liquidity.reserveYes);
+  const reserveNo = toOptionalNumber(liquidity && liquidity.reserveNo);
+  const normalizedSide = String(side || '').toLowerCase();
+  const isYes = normalizedSide === 'yes';
+  const spotPrice =
+    Number.isFinite(reserveYes) && Number.isFinite(reserveNo) && reserveYes > 0 && reserveNo > 0
+      ? (isYes ? reserveNo / (reserveYes + reserveNo) : reserveYes / (reserveYes + reserveNo))
+      : null;
+  const impliedProbability = spotPrice;
+  const feePct = toOptionalNumber(liquidity && liquidity.feePct);
+  const feeFraction = Number.isFinite(feePct) && feePct > 0 ? feePct / 100 : 0;
+  const feeAmount = grossUsdcOut * feeFraction;
+  const estimatedUsdcOut = Math.max(0, grossUsdcOut - feeAmount);
+  const effectivePrice = estimatedUsdcOut / sharesIn;
+  const slippagePct =
+    Number.isFinite(spotPrice) && spotPrice > 0
+      ? ((spotPrice - effectivePrice) / spotPrice) * 100
+      : null;
+
+  return {
+    impliedProbability,
+    pricePerShare: effectivePrice,
+    estimatedUsdcOut,
+    grossUsdcOut,
+    feeAmount,
+    feePct,
+    slippagePct,
+    netDeltaChange: -sharesIn,
+    spotPrice,
+  };
+}
+
+function buildQuoteEstimate(odds, side, inputAmount, slippageBps, marketContext = null, quoteMode = 'buy', explicitEstimate = null) {
+  const probability = side === 'yes' ? odds.yesProbability : odds.noProbability;
+  const normalizedMode = String(quoteMode || 'buy').toLowerCase();
+  if (normalizedMode !== 'sell' && (!Number.isFinite(probability) || probability <= 0)) {
+    return null;
+  }
+
+  if (normalizedMode === 'sell') {
+    let sellEstimate = explicitEstimate;
+    if (!sellEstimate) {
+      const marketType = String(marketContext && marketContext.marketType ? marketContext.marketType : '').toLowerCase();
+      if (marketType === 'amm') {
+        sellEstimate = buildAmmSellEstimateFromReserves(marketContext && marketContext.liquidity, side, inputAmount);
+      }
+    }
+    if (!sellEstimate || !Number.isFinite(sellEstimate.estimatedUsdcOut) || sellEstimate.estimatedUsdcOut <= 0) {
+      return null;
+    }
+    const slippageFactor = Math.max(0, (10_000 - slippageBps) / 10_000);
+    return {
+      estimateSource: sellEstimate.estimateSource || 'amm-reserves-inverse',
+      impliedProbability: Number.isFinite(sellEstimate.impliedProbability) ? round(sellEstimate.impliedProbability, 6) : null,
+      pricePerShare: Number.isFinite(sellEstimate.pricePerShare) ? round(sellEstimate.pricePerShare, 6) : null,
+      estimatedShares: null,
+      estimatedUsdcOut: round(sellEstimate.estimatedUsdcOut, 6),
+      grossUsdcOut: Number.isFinite(sellEstimate.grossUsdcOut) ? round(sellEstimate.grossUsdcOut, 6) : round(sellEstimate.estimatedUsdcOut, 6),
+      minAmountOut: round(sellEstimate.estimatedUsdcOut * slippageFactor, 6),
+      feeAmount: Number.isFinite(sellEstimate.feeAmount) ? round(sellEstimate.feeAmount, 6) : null,
+      feePct: Number.isFinite(sellEstimate.feePct) ? round(sellEstimate.feePct, 6) : null,
+      potentialPayoutIfWin: null,
+      potentialProfitIfWin: null,
+      slippagePct: Number.isFinite(sellEstimate.slippagePct) ? round(sellEstimate.slippagePct, 6) : null,
+      priceImpactPct: Number.isFinite(sellEstimate.slippagePct) ? round(sellEstimate.slippagePct, 6) : null,
+      slippageBps,
+      netDeltaChange: Number.isFinite(sellEstimate.netDeltaChange) ? round(sellEstimate.netDeltaChange, 6) : null,
+    };
+  }
+
+  const amountUsdc = inputAmount;
   let estimateSource = 'probability-linear';
   let impliedProbability = probability;
   let pricePerShare = probability;
@@ -3886,7 +4074,7 @@ function buildQuoteEstimate(odds, side, amountUsdc, slippageBps, marketContext =
 
   const marketType = String(marketContext && marketContext.marketType ? marketContext.marketType : '').toLowerCase();
   if (marketType === 'amm') {
-    const ammEstimate = buildAmmQuoteEstimateFromReserves(marketContext && marketContext.liquidity, side, amountUsdc);
+    const ammEstimate = computeAmmBuySharesFromReserves(marketContext && marketContext.liquidity, side, amountUsdc);
     if (ammEstimate) {
       estimateSource = 'amm-reserves';
       impliedProbability = Number.isFinite(ammEstimate.impliedProbability) ? ammEstimate.impliedProbability : probability;
@@ -3911,38 +4099,51 @@ function buildQuoteEstimate(odds, side, amountUsdc, slippageBps, marketContext =
     potentialProfitIfWin: round(profitIfWin, 6),
     slippagePct: round(slippagePct, 6),
     slippageBps,
+    netDeltaChange: round(estimatedShares, 6),
   };
 }
 
-function buildQuoteEstimateCurve(odds, side, amountsUsdc, slippageBps, marketContext = null) {
+function buildQuoteEstimateCurve(odds, side, amountsUsdc, slippageBps, marketContext = null, quoteMode = 'buy', explicitSellEstimates = null) {
   const amounts = Array.isArray(amountsUsdc) ? amountsUsdc : [];
   const curve = [];
   for (const amount of amounts) {
-    const estimate = buildQuoteEstimate(odds, side, amount, slippageBps, marketContext);
+    const explicitEstimate = explicitSellEstimates instanceof Map ? explicitSellEstimates.get(String(amount)) || explicitSellEstimates.get(amount) : null;
+    const estimate = buildQuoteEstimate(odds, side, amount, slippageBps, marketContext, quoteMode, explicitEstimate);
     if (!estimate) {
       curve.push({
-        amountUsdc: amount,
+        amountUsdc: quoteMode === 'sell' ? null : amount,
+        amount: quoteMode === 'sell' ? amount : null,
         estimatedShares: null,
         effectivePrice: null,
         slippagePct: null,
         roiIfWinPct: null,
+        estimatedUsdcOut: null,
       });
       continue;
     }
-    const effectivePrice = estimate.estimatedShares > 0 ? amount / estimate.estimatedShares : null;
+    const effectivePrice =
+      quoteMode === 'sell'
+        ? (Number.isFinite(estimate.estimatedUsdcOut) && amount > 0 ? estimate.estimatedUsdcOut / amount : null)
+        : (estimate.estimatedShares > 0 ? amount / estimate.estimatedShares : null);
     const impliedPrice = Number.isFinite(estimate.pricePerShare) ? estimate.pricePerShare : null;
     const slippagePct = Number.isFinite(estimate.slippagePct)
       ? estimate.slippagePct
       : Number.isFinite(effectivePrice) && Number.isFinite(impliedPrice) && impliedPrice > 0
-        ? ((effectivePrice - impliedPrice) / impliedPrice) * 100
+        ? (quoteMode === 'sell'
+          ? ((impliedPrice - effectivePrice) / impliedPrice) * 100
+          : ((effectivePrice - impliedPrice) / impliedPrice) * 100)
         : null;
     const roiIfWinPct =
-      Number.isFinite(estimate.potentialProfitIfWin) && amount > 0
-        ? (estimate.potentialProfitIfWin / amount) * 100
-        : null;
+      quoteMode === 'sell'
+        ? null
+        : (Number.isFinite(estimate.potentialProfitIfWin) && amount > 0
+          ? (estimate.potentialProfitIfWin / amount) * 100
+          : null);
     curve.push({
-      amountUsdc: round(amount, 6),
+      amountUsdc: quoteMode === 'sell' ? null : round(amount, 6),
+      amount: quoteMode === 'sell' ? round(amount, 6) : null,
       estimatedShares: estimate.estimatedShares,
+      estimatedUsdcOut: Number.isFinite(estimate.estimatedUsdcOut) ? estimate.estimatedUsdcOut : null,
       effectivePrice: Number.isFinite(effectivePrice) ? round(effectivePrice, 6) : null,
       slippagePct: Number.isFinite(slippagePct) ? round(slippagePct, 6) : null,
       roiIfWinPct: Number.isFinite(roiIfWinPct) ? round(roiIfWinPct, 6) : null,
@@ -4055,23 +4256,104 @@ async function resolveQuoteOdds(indexerUrl, options, timeoutMs) {
   return odds;
 }
 
+async function maybeReadAmmSellEstimateFromContract(options) {
+  const marketAddress = String(options && options.marketAddress ? options.marketAddress : '').trim();
+  const side = String(options && options.side ? options.side : '').trim().toLowerCase();
+  const amount = toOptionalNumber(options && options.amount);
+  if (!isValidAddress(marketAddress) || (side !== 'yes' && side !== 'no') || !Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+
+  let publicClient;
+  try {
+    publicClient = await createReadOnlyPublicClient(options && options.chainId, options && options.rpcUrl);
+  } catch {
+    publicClient = null;
+  }
+  if (!publicClient) return null;
+
+  try {
+    const { parseUnits, formatUnits } = await loadViemRuntime();
+    const functionName = side === 'yes' ? 'calcSellYes' : 'calcSellNo';
+    const amountRaw = parseUnits(String(amount), 18);
+    const amountOutRaw = await publicClient.readContract({
+      address: marketAddress,
+      abi: AMM_SELL_QUOTE_ABI,
+      functionName,
+      args: [amountRaw],
+    });
+    const estimatedUsdcOut = Number(formatUnits(amountOutRaw, 6));
+    if (!Number.isFinite(estimatedUsdcOut) || estimatedUsdcOut <= 0) {
+      return null;
+    }
+    return {
+      estimateSource: 'amm-contract-view',
+      estimatedUsdcOut,
+      grossUsdcOut: estimatedUsdcOut,
+      feeAmount: null,
+      feePct: null,
+      pricePerShare: estimatedUsdcOut / amount,
+      netDeltaChange: -amount,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function buildQuotePayload(indexerUrl, options, timeoutMs) {
   const market = await fetchMarketSnapshot(indexerUrl, options.marketAddress, timeoutMs);
   const liquidity = buildMarketLiquidityMetrics(market || {});
   const marketType = String(market && market.marketType ? market.marketType : '').toLowerCase();
   const marketContext = { marketType, liquidity };
+  const quoteMode = String(options && options.mode ? options.mode : 'buy').toLowerCase();
   let odds;
   try {
     odds = await resolveQuoteOdds(indexerUrl, options, timeoutMs);
   } catch (err) {
     odds = buildNullOdds(null, `Unable to fetch odds: ${formatErrorValue(err)}`);
   }
-  const estimate = buildQuoteEstimate(odds, options.side, options.amountUsdc, options.slippageBps, marketContext);
-  const amounts = Array.isArray(options.amountsUsdc) && options.amountsUsdc.length
-    ? options.amountsUsdc
-    : [options.amountUsdc];
-  const curve = buildQuoteEstimateCurve(odds, options.side, amounts, options.slippageBps, marketContext);
-  const parimutuel = marketType === 'pari'
+  const amountInput = quoteMode === 'sell' ? options.amount : options.amountUsdc;
+  const amounts = quoteMode === 'sell'
+    ? (Array.isArray(options.amounts) && options.amounts.length ? options.amounts : [options.amount])
+    : (Array.isArray(options.amountsUsdc) && options.amountsUsdc.length ? options.amountsUsdc : [options.amountUsdc]);
+  const explicitSellEstimates = new Map();
+  if (quoteMode === 'sell' && marketType === 'amm') {
+    for (const amount of amounts) {
+      const estimate = await maybeReadAmmSellEstimateFromContract({
+        marketAddress: options.marketAddress,
+        side: options.side,
+        amount,
+        chainId: options.chainId,
+        rpcUrl: options.rpcUrl,
+      });
+      if (estimate) {
+        const probability = options.side === 'yes' ? odds.yesProbability : odds.noProbability;
+        if (Number.isFinite(probability) && !Number.isFinite(estimate.impliedProbability)) {
+          estimate.impliedProbability = probability;
+        }
+        explicitSellEstimates.set(String(amount), estimate);
+      }
+    }
+  }
+  const estimate = buildQuoteEstimate(
+    odds,
+    options.side,
+    amountInput,
+    options.slippageBps,
+    marketContext,
+    quoteMode,
+    quoteMode === 'sell' ? explicitSellEstimates.get(String(amountInput)) || null : null,
+  );
+  const curve = buildQuoteEstimateCurve(
+    odds,
+    options.side,
+    amounts,
+    options.slippageBps,
+    marketContext,
+    quoteMode,
+    explicitSellEstimates,
+  );
+  const parimutuel = quoteMode !== 'sell' && marketType === 'pari'
     ? buildParimutuelEstimate(liquidity, options.side, options.amountUsdc)
     : null;
 
@@ -4080,8 +4362,10 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
     indexerUrl,
     marketAddress: options.marketAddress,
     marketType: market && market.marketType ? market.marketType : null,
+    mode: quoteMode,
     side: options.side,
     amountUsdc: options.amountUsdc,
+    amount: options.amount,
     slippageBps: options.slippageBps,
     quoteAvailable: Boolean(estimate),
     odds,
@@ -4196,6 +4480,7 @@ async function executeTradeOnchain(options) {
   const {
     createPublicClient,
     createWalletClient,
+    formatUnits,
     http,
     parseUnits,
     privateKeyToAccount,
@@ -4217,8 +4502,13 @@ async function executeTradeOnchain(options) {
     );
   }
 
-  const amountRaw = parseUnits(String(options.amountUsdc), 6);
+  const tradeMode = String(options && options.mode ? options.mode : 'buy').toLowerCase();
+  const isSell = tradeMode === 'sell';
+  const amountRaw = isSell
+    ? parseUnits(String(options.amount), 18)
+    : parseUnits(String(options.amountUsdc), 6);
   const minSharesOutRaw = options.minSharesOutRaw === null ? 0n : options.minSharesOutRaw;
+  const minAmountOutRaw = options.minAmountOutRaw === null ? 0n : options.minAmountOutRaw;
   const explorerBase = 'https://etherscan.io/tx/';
   const toExplorerUrl = (hash) => (hash ? `${explorerBase}${hash}` : null);
   const decodeTradeError = async (error, code, fallbackMessage, details = {}) => {
@@ -4233,15 +4523,25 @@ async function executeTradeOnchain(options) {
     });
   };
 
-  let buyCall;
+  let tradeCall;
   try {
-    buyCall = await resolveTradeBuyCall({
-      publicClient,
-      marketAddress: options.marketAddress,
-      side: options.side,
-      amountRaw,
-      minSharesOutRaw,
-    });
+    if (isSell) {
+      tradeCall = await resolveTradeSellCall({
+        publicClient,
+        marketAddress: options.marketAddress,
+        side: options.side,
+        amountRaw,
+        minAmountOutRaw,
+      });
+    } else {
+      tradeCall = await resolveTradeBuyCall({
+        publicClient,
+        marketAddress: options.marketAddress,
+        side: options.side,
+        amountRaw,
+        minSharesOutRaw,
+      });
+    }
   } catch (error) {
     if (error && error.code) {
       throw new CliError(
@@ -4252,21 +4552,65 @@ async function executeTradeOnchain(options) {
     }
     await decodeTradeError(error, 'TRADE_MARKET_TYPE_RESOLUTION_FAILED', 'Unable to resolve market trade interface.', {
       stage: 'market-type-resolve',
+      mode: tradeMode,
     });
+  }
+
+  const approvalAsset = isSell
+    ? await readOutcomeTokenAddressForSide(publicClient, options.marketAddress, options.side)
+    : runtime.usdcAddress;
+  if (!approvalAsset) {
+    throw new CliError(
+      'OUTCOME_TOKEN_ADDRESS_UNAVAILABLE',
+      `Unable to resolve ${options.side.toUpperCase()} outcome token address for sell execution.`,
+      {
+        marketAddress: options.marketAddress,
+        side: options.side,
+      },
+    );
+  }
+
+  if (isSell) {
+    let tokenBalance;
+    try {
+      tokenBalance = await publicClient.readContract({
+        address: approvalAsset,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [account.address],
+      });
+    } catch (error) {
+      await decodeTradeError(error, 'OUTCOME_TOKEN_BALANCE_READ_FAILED', 'Failed to read outcome token balance.', {
+        stage: 'balance-read',
+        tokenAddress: approvalAsset,
+      });
+    }
+    if (tokenBalance < amountRaw) {
+      throw new CliError(
+        'INSUFFICIENT_OUTCOME_TOKEN_BALANCE',
+        `Wallet outcome token balance is insufficient for sell amount (${formatUnits(amountRaw, 18)} required).`,
+        {
+          side: options.side,
+          tokenAddress: approvalAsset,
+          balanceRaw: tokenBalance.toString(),
+          requiredRaw: amountRaw.toString(),
+        },
+      );
+    }
   }
 
   let allowance;
   try {
     allowance = await publicClient.readContract({
-      address: runtime.usdcAddress,
+      address: approvalAsset,
       abi: ERC20_ABI,
       functionName: 'allowance',
       args: [account.address, options.marketAddress],
     });
   } catch (error) {
-    await decodeTradeError(error, 'ALLOWANCE_READ_FAILED', 'Failed to read USDC allowance.', {
+    await decodeTradeError(error, 'ALLOWANCE_READ_FAILED', `Failed to read ${isSell ? 'outcome token' : 'USDC'} allowance.`, {
       stage: 'allowance-read',
-      usdc: runtime.usdcAddress,
+      approvalAsset,
     });
   }
 
@@ -4278,7 +4622,7 @@ async function executeTradeOnchain(options) {
     try {
       approveSimulation = await publicClient.simulateContract({
         account,
-        address: runtime.usdcAddress,
+        address: approvalAsset,
         abi: ERC20_ABI,
         functionName: 'approve',
         args: [options.marketAddress, amountRaw],
@@ -4286,10 +4630,11 @@ async function executeTradeOnchain(options) {
       approveGasEstimate =
         approveSimulation && approveSimulation.request && approveSimulation.request.gas
           ? approveSimulation.request.gas.toString()
-          : null;
+        : null;
     } catch (error) {
-      await decodeTradeError(error, 'APPROVE_SIMULATION_FAILED', 'USDC approve simulation failed.', {
+      await decodeTradeError(error, 'APPROVE_SIMULATION_FAILED', `${isSell ? 'Outcome token' : 'USDC'} approve simulation failed.`, {
         stage: 'approve-simulate',
+        approvalAsset,
       });
     }
     try {
@@ -4297,61 +4642,66 @@ async function executeTradeOnchain(options) {
       const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
       approveStatus = approveReceipt && approveReceipt.status ? approveReceipt.status : null;
     } catch (error) {
-      await decodeTradeError(error, 'APPROVE_EXECUTION_FAILED', 'USDC approve transaction failed.', {
+      await decodeTradeError(error, 'APPROVE_EXECUTION_FAILED', `${isSell ? 'Outcome token' : 'USDC'} approve transaction failed.`, {
         stage: 'approve-execute',
         approveTxHash,
+        approvalAsset,
       });
     }
   }
 
-  let buyTxHash = null;
-  let buyGasEstimate = null;
-  let buyStatus = null;
+  let tradeTxHash = null;
+  let tradeGasEstimate = null;
+  let tradeStatus = null;
   try {
-    const buySimulation = await publicClient.simulateContract({
+    const tradeSimulation = await publicClient.simulateContract({
       account,
       address: options.marketAddress,
-      abi: buyCall.abi,
-      functionName: buyCall.functionName,
-      args: buyCall.args,
+      abi: tradeCall.abi,
+      functionName: tradeCall.functionName,
+      args: tradeCall.args,
     });
-    buyGasEstimate =
-      buySimulation && buySimulation.request && buySimulation.request.gas
-        ? buySimulation.request.gas.toString()
+    tradeGasEstimate =
+      tradeSimulation && tradeSimulation.request && tradeSimulation.request.gas
+        ? tradeSimulation.request.gas.toString()
         : null;
-    buyTxHash = await walletClient.writeContract(buySimulation.request);
-    const buyReceipt = await publicClient.waitForTransactionReceipt({ hash: buyTxHash });
-    buyStatus = buyReceipt && buyReceipt.status ? buyReceipt.status : null;
+    tradeTxHash = await walletClient.writeContract(tradeSimulation.request);
+    const tradeReceipt = await publicClient.waitForTransactionReceipt({ hash: tradeTxHash });
+    tradeStatus = tradeReceipt && tradeReceipt.status ? tradeReceipt.status : null;
   } catch (error) {
-    await decodeTradeError(error, 'TRADE_EXECUTION_FAILED', 'Buy transaction failed.', {
-      stage: 'buy',
-      buyTxHash,
-      marketType: buyCall ? buyCall.marketType : null,
-      buySignature: buyCall ? buyCall.signature : null,
-      ammDeadlineEpoch: buyCall && buyCall.ammDeadlineEpoch ? buyCall.ammDeadlineEpoch : null,
+    await decodeTradeError(error, 'TRADE_EXECUTION_FAILED', `${isSell ? 'Sell' : 'Buy'} transaction failed.`, {
+      stage: isSell ? 'sell' : 'buy',
+      tradeTxHash,
+      marketType: tradeCall ? tradeCall.marketType : null,
+      tradeSignature: tradeCall ? tradeCall.signature : null,
+      ammDeadlineEpoch: tradeCall && tradeCall.ammDeadlineEpoch ? tradeCall.ammDeadlineEpoch : null,
+      mode: tradeMode,
     });
   }
 
   return {
+    action: isSell ? 'sell' : 'buy',
     mode: runtime.mode,
     chainId: runtime.chainId,
     rpcUrl: runtime.rpcUrl,
     account: account.address,
     usdc: runtime.usdcAddress,
-    marketType: buyCall.marketType,
-    buySignature: buyCall.signature,
-    ammDeadlineEpoch: buyCall.ammDeadlineEpoch,
+    approvalAsset,
+    marketType: tradeCall.marketType,
+    tradeSignature: tradeCall.signature,
+    ammDeadlineEpoch: tradeCall.ammDeadlineEpoch,
     amountRaw: amountRaw.toString(),
     minSharesOutRaw: minSharesOutRaw.toString(),
+    minAmountOutRaw: minAmountOutRaw.toString(),
     approveTxHash,
     approveTxUrl: toExplorerUrl(approveTxHash),
     approveGasEstimate,
     approveStatus,
-    buyTxHash,
-    buyTxUrl: toExplorerUrl(buyTxHash),
-    buyGasEstimate,
-    buyStatus,
-    status: buyStatus || 'confirmed',
+    tradeTxHash,
+    tradeTxUrl: toExplorerUrl(tradeTxHash),
+    tradeGasEstimate,
+    tradeStatus,
+    status: tradeStatus || 'confirmed',
   };
 }
 
@@ -4386,6 +4736,31 @@ async function createReadOnlyPublicClient(chainId, rpcUrl) {
     },
     transport: http(selectedRpcUrl),
   });
+}
+
+function isLikelyAddress(value) {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(value || ''));
+}
+
+async function readOutcomeTokenAddressForSide(publicClient, marketAddress, side) {
+  const candidates = String(side || '').toLowerCase() === 'yes'
+    ? ['yesToken', 'yesTokenAddress']
+    : ['noToken', 'noTokenAddress'];
+  for (const functionName of candidates) {
+    try {
+      const address = await publicClient.readContract({
+        address: marketAddress,
+        abi: OUTCOME_TOKEN_REF_ABI,
+        functionName,
+      });
+      if (isLikelyAddress(address)) {
+        return String(address);
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
 }
 
 async function enrichMarketResolutionState(indexerUrl, marketItem, timeoutMs, publicClient) {
@@ -4444,6 +4819,10 @@ async function enrichMarketResolutionState(indexerUrl, marketItem, timeoutMs, pu
 
 async function runTradeCommand(args, context) {
   return runTradeCommandFromService(args, context);
+}
+
+async function runSellCommand(args, context) {
+  return runSellCommandFromService(args, context);
 }
 
 async function runMarketsCommand(args, context) {
@@ -5641,8 +6020,35 @@ const runTradeCommandFromService = createLazyFactoryRunner('./lib/trade_command_
   parseIndexerSharedFlags,
   emitSuccess,
   tradeHelpJsonPayload,
+  sellHelpJsonPayload,
   quoteHelpJsonPayload,
   printTradeHelpTable,
+  printSellHelpTable,
+  maybeLoadTradeEnv,
+  parseQuoteFlags,
+  parseTradeFlags: parseTradeFlagsFromModule,
+  resolveIndexerUrl,
+  buildQuotePayload,
+  enforceTradeRiskGuards,
+  getSelectedOutcomeProbabilityPct,
+  buildTradeRiskGuardConfig,
+  executeTradeOnchain,
+  resolveForkRuntime,
+  isSecureHttpUrlOrLocal,
+  assertLiveWriteAllowed,
+  renderQuoteTable,
+  renderTradeTable,
+}));
+const runSellCommandFromService = createLazyFactoryRunner('./lib/trade_command_service.cjs', 'createRunSellCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  parseIndexerSharedFlags,
+  emitSuccess,
+  tradeHelpJsonPayload,
+  sellHelpJsonPayload,
+  quoteHelpJsonPayload,
+  printTradeHelpTable,
+  printSellHelpTable,
   maybeLoadTradeEnv,
   parseQuoteFlags,
   parseTradeFlags: parseTradeFlagsFromModule,
@@ -6798,6 +7204,7 @@ const dispatch = createCommandRouter({
   runOddsCommand,
   runQuoteCommand,
   runTradeCommand,
+  runSellCommand,
   runPollsCommand,
   runEventsCommand,
   runPositionsCommand,

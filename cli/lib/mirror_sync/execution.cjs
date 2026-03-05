@@ -2,6 +2,92 @@ const { saveState, pruneIdempotencyKeys } = require('../mirror_state_store.cjs')
 const { readTradingCredsFromEnv } = require('../polymarket_trade_adapter.cjs');
 const { toNumber, round } = require('../shared/utils.cjs');
 
+function getSellDepthEntry(depth, tokenSide) {
+  if (!depth || typeof depth !== 'object') return null;
+  if (tokenSide === 'yes') {
+    return depth.sellYesDepth || depth.yesSellDepth || null;
+  }
+  if (tokenSide === 'no') {
+    return depth.sellNoDepth || depth.noSellDepth || null;
+  }
+  return null;
+}
+
+function buildHedgeExecutionPlan(params) {
+  const { options, plan, state, verifyPayload, depth } = params;
+  const amountUsdc = round(Math.max(0, toNumber(plan && plan.plannedHedgeUsdc) || 0), 6) || 0;
+  if (amountUsdc <= 0) {
+    return {
+      enabled: false,
+      tokenId: null,
+      tokenSide: null,
+      side: null,
+      amountUsdc: 0,
+      stateDeltaUsdc: 0,
+      hedgeDepth: null,
+      inventoryUsdcAvailable: 0,
+      executionMode: 'none',
+      recycleEligible: false,
+      liveSellAllowed: false,
+      recycleReason: 'no-hedge-required',
+    };
+  }
+
+  const sourceMarket = verifyPayload && verifyPayload.sourceMarket ? verifyPayload.sourceMarket : {};
+  const currentHedgeUsdc = round(toNumber(state && state.currentHedgeUsdc) || 0, 6) || 0;
+  const wantsMoreYesExposure = (toNumber(plan && plan.gapUsdc) || 0) >= 0;
+  const defaultTokenSide = wantsMoreYesExposure ? 'yes' : 'no';
+  const defaultStateDeltaUsdc = wantsMoreYesExposure ? amountUsdc : -amountUsdc;
+  const sellTokenSide = wantsMoreYesExposure ? 'no' : 'yes';
+  const inventoryUsdcAvailable = round(
+    Math.max(0, wantsMoreYesExposure ? -currentHedgeUsdc : currentHedgeUsdc),
+    6,
+  ) || 0;
+  const recycleEligible = inventoryUsdcAvailable >= amountUsdc && amountUsdc > 0;
+  const liveSellDepth = getSellDepthEntry(depth, sellTokenSide);
+  const liveSellDepthUsd = toNumber(liveSellDepth && liveSellDepth.depthUsd);
+  const liveSellAllowed = liveSellDepthUsd !== null && liveSellDepthUsd >= amountUsdc;
+
+  let side = 'buy';
+  let tokenSide = defaultTokenSide;
+  let stateDeltaUsdc = defaultStateDeltaUsdc;
+  let executionMode = 'buy';
+  let hedgeDepth = tokenSide === 'yes' ? depth && depth.yesDepth : depth && depth.noDepth;
+  let recycleReason = recycleEligible ? 'sell-depth-unavailable' : 'insufficient-managed-inventory';
+
+  if (recycleEligible && options.executeLive && liveSellAllowed) {
+    side = 'sell';
+    tokenSide = sellTokenSide;
+    stateDeltaUsdc = defaultStateDeltaUsdc;
+    executionMode = 'sell-inventory';
+    hedgeDepth = liveSellDepth;
+    recycleReason = 'inventory-recycled';
+  } else if (recycleEligible && !options.executeLive) {
+    side = 'sell';
+    tokenSide = sellTokenSide;
+    stateDeltaUsdc = defaultStateDeltaUsdc;
+    executionMode = 'sell-inventory';
+    hedgeDepth = liveSellDepth;
+    recycleReason = 'inventory-recycled-paper';
+  }
+
+  const tokenId = tokenSide === 'yes' ? sourceMarket.yesTokenId : sourceMarket.noTokenId;
+  return {
+    enabled: true,
+    tokenId,
+    tokenSide,
+    side,
+    amountUsdc,
+    stateDeltaUsdc,
+    hedgeDepth,
+    inventoryUsdcAvailable,
+    executionMode,
+    recycleEligible,
+    liveSellAllowed,
+    recycleReason,
+  };
+}
+
 function buildIdempotencyKey(options, snapshot, nowMs) {
   const bucketSize = Math.max(1_000, Number(options.cooldownMs) || 60_000);
   const bucket = Math.floor(nowMs / bucketSize);
@@ -17,6 +103,8 @@ function buildIdempotencyKey(options, snapshot, nowMs) {
     metrics.hedgeTriggered ? 'hedge' : 'no-hedge',
     actionPlan.rebalanceSide || 'rebalance:none',
     actionPlan.hedgeTokenSide || 'hedge:none',
+    actionPlan.hedgeOrderSide || 'hedge-order:none',
+    actionPlan.hedgeExecutionMode || 'hedge-mode:none',
     String(rebalanceUsdc),
     String(hedgeUsdc),
     String(bucket),
@@ -121,9 +209,16 @@ async function executeHedgeLeg(params) {
   const { options, action, plan, verifyPayload, depth, hedgeFn, state } = params;
   if (!(plan.hedgeTriggered && plan.plannedHedgeUsdc > 0)) return 0;
 
-  const hedgeSide = 'buy';
-  const tokenId = plan.gapUsdc >= 0 ? verifyPayload.sourceMarket.yesTokenId : verifyPayload.sourceMarket.noTokenId;
-  const hedgeDepth = plan.gapUsdc >= 0 ? depth.yesDepth : depth.noDepth;
+  const executionPlan = buildHedgeExecutionPlan({
+    options,
+    plan,
+    state,
+    verifyPayload,
+    depth,
+  });
+  const tokenId = executionPlan.tokenId;
+  const hedgeSide = executionPlan.side;
+  const hedgeDepth = executionPlan.hedgeDepth;
 
   if (options.executeLive) {
     const envCreds = readTradingCredsFromEnv();
@@ -143,7 +238,7 @@ async function executeHedgeLeg(params) {
           mockUrl: options.polymarketMockUrl,
           tokenId,
           side: hedgeSide,
-          amountUsd: plan.plannedHedgeUsdc,
+          amountUsd: executionPlan.amountUsdc,
           privateKey: options.privateKey || envCreds.privateKey,
           funder: options.funder || envCreds.funder,
           apiKey: envCreds.apiKey,
@@ -156,34 +251,47 @@ async function executeHedgeLeg(params) {
     }
     action.hedge = {
       tokenId,
+      tokenSide: executionPlan.tokenSide,
       side: hedgeSide,
-      amountUsdc: plan.plannedHedgeUsdc,
+      amountUsdc: executionPlan.amountUsdc,
+      stateDeltaUsdc: executionPlan.stateDeltaUsdc,
+      inventoryUsdcAvailable: executionPlan.inventoryUsdcAvailable,
+      recycleEligible: executionPlan.recycleEligible,
+      liveSellAllowed: executionPlan.liveSellAllowed,
+      recycleReason: executionPlan.recycleReason,
+      executionMode: executionPlan.executionMode,
       result: hedgeResult,
     };
   } else {
     action.hedge = {
       tokenId,
+      tokenSide: executionPlan.tokenSide,
       side: hedgeSide,
-      amountUsdc: plan.plannedHedgeUsdc,
+      amountUsdc: executionPlan.amountUsdc,
+      stateDeltaUsdc: executionPlan.stateDeltaUsdc,
+      inventoryUsdcAvailable: executionPlan.inventoryUsdcAvailable,
+      recycleEligible: executionPlan.recycleEligible,
+      liveSellAllowed: executionPlan.liveSellAllowed,
+      recycleReason: executionPlan.recycleReason,
+      executionMode: executionPlan.executionMode,
       result: { status: 'simulated' },
     };
   }
 
   const hedgeResultOk = !options.executeLive || (action.hedge && action.hedge.result && action.hedge.result.ok !== false);
   if (hedgeResultOk) {
-    const direction = plan.gapUsdc >= 0 ? 1 : -1;
     state.currentHedgeUsdc =
-      round((toNumber(state.currentHedgeUsdc) || 0) + direction * plan.plannedHedgeUsdc, 6) || 0;
+      round((toNumber(state.currentHedgeUsdc) || 0) + executionPlan.stateDeltaUsdc, 6) || 0;
     state.cumulativeHedgeNotionalUsdc =
-      round((toNumber(state.cumulativeHedgeNotionalUsdc) || 0) + plan.plannedHedgeUsdc, 6) || 0;
+      round((toNumber(state.cumulativeHedgeNotionalUsdc) || 0) + executionPlan.amountUsdc, 6) || 0;
     const slippageRatio =
       hedgeDepth && hedgeDepth.midPrice !== null && hedgeDepth.worstPrice !== null && hedgeDepth.midPrice > 0
         ? Math.max(0, Math.abs(hedgeDepth.worstPrice - hedgeDepth.midPrice) / hedgeDepth.midPrice)
         : 0;
-    const hedgeCostApprox = plan.plannedHedgeUsdc * slippageRatio;
+    const hedgeCostApprox = executionPlan.amountUsdc * slippageRatio;
     state.cumulativeHedgeCostApproxUsdc =
       round((toNumber(state.cumulativeHedgeCostApproxUsdc) || 0) + hedgeCostApprox, 6) || 0;
-    return plan.plannedHedgeUsdc;
+    return executionPlan.amountUsdc;
   }
 
   action.status = 'failed';
@@ -244,6 +352,27 @@ async function processTriggeredAction(params) {
     verifyPayload,
     depth,
   } = params;
+
+  if (snapshot && snapshot.actionPlan && plan.hedgeTriggered && plan.plannedHedgeUsdc > 0) {
+    const hedgeExecutionPlan = buildHedgeExecutionPlan({
+      options,
+      plan,
+      state,
+      verifyPayload,
+      depth,
+    });
+    snapshot.actionPlan = {
+      ...snapshot.actionPlan,
+      hedgeTokenSide: hedgeExecutionPlan.tokenSide,
+      hedgeOrderSide: hedgeExecutionPlan.side,
+      hedgeExecutionMode: hedgeExecutionPlan.executionMode,
+      hedgeStateDeltaUsdc: hedgeExecutionPlan.stateDeltaUsdc,
+      hedgeInventoryUsdcAvailable: hedgeExecutionPlan.inventoryUsdcAvailable,
+      hedgeRecycleEligible: hedgeExecutionPlan.recycleEligible,
+      hedgeLiveSellAllowed: hedgeExecutionPlan.liveSellAllowed,
+      hedgeRecycleReason: hedgeExecutionPlan.recycleReason,
+    };
+  }
 
   const idempotencyKey = buildIdempotencyKey(options, snapshot, tickAt.getTime());
   if ((state.idempotencyKeys || []).includes(idempotencyKey)) {
@@ -321,6 +450,7 @@ async function processTriggeredAction(params) {
 }
 
 module.exports = {
+  buildHedgeExecutionPlan,
   buildIdempotencyKey,
   buildExecutableAction,
   normalizeExecutionFailure,

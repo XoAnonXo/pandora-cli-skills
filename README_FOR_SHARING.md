@@ -118,8 +118,10 @@ Prerequisite: Node.js `>=18`.
 - `pandora stream events` (reactive event feed in NDJSON)
 - Phase 2 trading helpers:
   - `pandora quote --market-address <0x...> --side yes|no --amount-usdc <amount>`
+  - `pandora quote --market-address <0x...> --side yes|no --mode sell --shares <amount>`
   - `pandora trade --dry-run --market-address <0x...> --side yes|no --amount-usdc <amount> [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>]`
   - `pandora trade --execute ...` performs allowance check, conditional USDC approve, then `buy`.
+  - `pandora sell --dry-run|--execute --market-address <0x...> --side yes|no --shares <amount> [--min-amount-out-raw <uint>]`
 - Phase 3 wallet analytics:
   - `pandora portfolio --wallet <0x...> [--chain-id <id>] [--limit <n>] [--include-events|--no-events]`
   - `pandora watch --wallet <0x...> --iterations 10 --interval-ms 5000`
@@ -181,6 +183,7 @@ Prerequisite: Node.js `>=18`.
 ### Fork runtime support
 - Supported families:
   - `trade`
+  - `sell`
   - `resolve`
   - `claim`
   - `lp`
@@ -203,6 +206,9 @@ Prerequisite: Node.js `>=18`.
 Mirror advanced flags (for operator tuning):
 - `--sync-interval-ms <ms>` on `mirror go` to control auto-sync tick cadence.
 - `--oracle <address>` / `--factory <address>` on `mirror deploy` and `mirror go` for explicit contract overrides.
+- `--rules "<text>"` on `mirror deploy` for direct rules override without a plan file.
+- `--distribution-yes-pct <0-100>` / `--distribution-no-pct <0-100>` on `mirror deploy|go` as percentage alternatives to raw 1e9 part hints.
+- `--max-imbalance <n>` now accepts the full uint24 range, including `0` for "no guard".
 - `--polymarket-gamma-mock-url <url>` on `mirror browse|plan|verify|go|sync|status` for deterministic mock-source testing.
 - `--polymarket-tag-id <id>` / `--polymarket-tag-ids <csv>` on `mirror browse` (aliases: `--sport-tag-id`, `--sport-tag-ids`) to query sports-tagged Gamma events.
 - `--no-stream` on `mirror sync` to disable per-tick stdout line streaming in run mode.
@@ -261,19 +267,23 @@ Mirror advanced flags (for operator tuning):
 
 ## Phase 2 JSON contracts
 - `quote`:
-  - envelope is `ok=true`, `command="quote"`, with `data.marketAddress`, `data.side`, `data.amountUsdc`, `data.odds`, `data.quoteAvailable`, and `data.estimate` (or `null` when unavailable).
+  - envelope is `ok=true`, `command="quote"`, with `data.marketAddress`, `data.side`, `data.mode`, either `data.amountUsdc` (buy) or `data.amount` (sell), plus `data.odds`, `data.quoteAvailable`, and `data.estimate` (or `null` when unavailable).
 - `trade --dry-run`:
   - envelope is `ok=true`, `command="trade"`, with `data.mode="dry-run"`, `data.quote`, `data.selectedProbabilityPct`, `data.riskGuards`, and `data.executionPlan.steps`.
 - `trade --execute`:
   - envelope is `ok=true`, `command="trade"`, with tx metadata (`approveTxHash` optional, `buyTxHash` required on success) plus `selectedProbabilityPct` and `riskGuards`.
+- `sell --dry-run|--execute`:
+  - envelope is `ok=true`, `command="sell"`, with `data.action="sell"`, sell-aware quote/tx metadata, and `minAmountOutRaw` instead of buy-side minimum-share semantics.
 
 ## Phase 2 limitations
 - `trade` auto-detects market type and uses the correct buy signature:
   - PariMutuel: `buy(bool,uint256,uint256)`
   - AMM: `buy(bool,uint256,uint256,uint256)` (deadline-aware)
+- `sell` is AMM-only and uses `sell(bool,uint112,uint256,uint256)`.
 - `minSharesOut` protection defaults to raw `0` unless explicitly set with `--min-shares-out-raw`.
 - If indexer odds are unavailable, `quote` still returns a structured payload with `quoteAvailable=false`.
 - `trade --execute` blocks unquoted execution by default unless `--min-shares-out-raw` or `--allow-unquoted-execute` is provided.
+- `sell --execute` blocks unquoted execution by default unless `--min-amount-out-raw` or `--allow-unquoted-execute` is provided.
 
 ## Phase 3 JSON contracts
 - `portfolio`:

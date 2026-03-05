@@ -1,5 +1,8 @@
 const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
 
+const MAX_UINT24 = 16_777_215;
+const DISTRIBUTION_SCALE = 1_000_000_000;
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseMirrorDeployFlags requires deps.${name}()`);
@@ -17,6 +20,63 @@ function normalizeSources(entries) {
     }
   }
   return values;
+}
+
+function preserveExplicitZero(value) {
+  // Keep explicit zero truthy so downstream `value || default` fallbacks do not overwrite it.
+  return value === 0 ? Object(0) : value;
+}
+
+function parseUint24Like(value, flagName, CliError, parseInteger) {
+  const parsed = parseInteger(value, flagName);
+  if (parsed < 0 || parsed > MAX_UINT24) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be an integer between 0 and ${MAX_UINT24}.`);
+  }
+  return preserveExplicitZero(parsed);
+}
+
+function parseDistributionUnits(value, flagName, CliError, parseInteger) {
+  const parsed = parseInteger(value, flagName);
+  if (parsed < 0 || parsed > DISTRIBUTION_SCALE) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be an integer between 0 and ${DISTRIBUTION_SCALE}.`);
+  }
+  return parsed;
+}
+
+function parseDistributionPercent(value, flagName, CliError) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be between 0 and 100.`);
+  }
+  return parsed;
+}
+
+function finalizeDistribution(options, CliError) {
+  const hasRaw = options.distributionYes !== null || options.distributionNo !== null;
+  const hasPct = options.distributionYesPct !== null || options.distributionNoPct !== null;
+
+  if (hasRaw && hasPct) {
+    throw new CliError(
+      'INVALID_ARGS',
+      'Use either raw distribution flags (--distribution-yes/--distribution-no) or percentage flags (--distribution-yes-pct/--distribution-no-pct), not both.',
+    );
+  }
+
+  if (hasPct) {
+    const hasYesPct = options.distributionYesPct !== null;
+    const hasNoPct = options.distributionNoPct !== null;
+    if (hasYesPct && hasNoPct) {
+      const total = options.distributionYesPct + options.distributionNoPct;
+      if (Math.abs(total - 100) > 1e-9) {
+        throw new CliError('INVALID_ARGS', '--distribution-yes-pct + --distribution-no-pct must equal 100.');
+      }
+    }
+
+    const yesPct = hasYesPct ? options.distributionYesPct : 100 - options.distributionNoPct;
+    const distributionYes = Math.round(yesPct * (DISTRIBUTION_SCALE / 100));
+    options.distributionYes = distributionYes;
+    options.distributionNo = DISTRIBUTION_SCALE - distributionYes;
+  }
 }
 
 /**
@@ -44,7 +104,7 @@ function createParseMirrorDeployFlags(deps) {
       marketType: 'amm',
       liquidityUsdc: null,
       feeTier: 3000,
-      maxImbalance: 10_000,
+      maxImbalance: MAX_UINT24,
       arbiter: null,
       category: 3,
       sources: [],
@@ -57,6 +117,9 @@ function createParseMirrorDeployFlags(deps) {
       usdc: null,
       distributionYes: null,
       distributionNo: null,
+      distributionYesPct: null,
+      distributionNoPct: null,
+      rules: null,
       polymarketHost: null,
       polymarketGammaUrl: null,
       polymarketGammaMockUrl: null,
@@ -106,7 +169,12 @@ function createParseMirrorDeployFlags(deps) {
         continue;
       }
       if (token === '--max-imbalance') {
-        options.maxImbalance = parsePositiveInteger(requireFlagValue(args, i, '--max-imbalance'), '--max-imbalance');
+        options.maxImbalance = parseUint24Like(
+          requireFlagValue(args, i, '--max-imbalance'),
+          '--max-imbalance',
+          CliError,
+          parseInteger,
+        );
         i += 1;
         continue;
       }
@@ -178,13 +246,46 @@ function createParseMirrorDeployFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--rules') {
+        options.rules = requireFlagValue(args, i, '--rules');
+        i += 1;
+        continue;
+      }
       if (token === '--distribution-yes') {
-        options.distributionYes = parsePositiveInteger(requireFlagValue(args, i, '--distribution-yes'), '--distribution-yes');
+        options.distributionYes = parseDistributionUnits(
+          requireFlagValue(args, i, '--distribution-yes'),
+          '--distribution-yes',
+          CliError,
+          parseInteger,
+        );
         i += 1;
         continue;
       }
       if (token === '--distribution-no') {
-        options.distributionNo = parsePositiveInteger(requireFlagValue(args, i, '--distribution-no'), '--distribution-no');
+        options.distributionNo = parseDistributionUnits(
+          requireFlagValue(args, i, '--distribution-no'),
+          '--distribution-no',
+          CliError,
+          parseInteger,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--distribution-yes-pct') {
+        options.distributionYesPct = parseDistributionPercent(
+          requireFlagValue(args, i, '--distribution-yes-pct'),
+          '--distribution-yes-pct',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--distribution-no-pct') {
+        options.distributionNoPct = parseDistributionPercent(
+          requireFlagValue(args, i, '--distribution-no-pct'),
+          '--distribution-no-pct',
+          CliError,
+        );
         i += 1;
         continue;
       }
@@ -249,6 +350,7 @@ function createParseMirrorDeployFlags(deps) {
         `--fee-tier must be between ${MIN_AMM_FEE_TIER} and ${MAX_AMM_FEE_TIER} (max 5%).`,
       );
     }
+    finalizeDistribution(options, CliError);
     if (
       (options.distributionYes === null && options.distributionNo !== null) ||
       (options.distributionYes !== null && options.distributionNo === null)

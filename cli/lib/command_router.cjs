@@ -24,6 +24,7 @@ function createCommandRouter(deps = {}) {
     runOddsCommand,
     runQuoteCommand,
     runTradeCommand,
+    runSellCommand,
     runPollsCommand,
     runEventsCommand,
     runPositionsCommand,
@@ -79,6 +80,7 @@ function createCommandRouter(deps = {}) {
   requireFn('runOddsCommand', runOddsCommand);
   requireFn('runQuoteCommand', runQuoteCommand);
   requireFn('runTradeCommand', runTradeCommand);
+  requireFn('runSellCommand', runSellCommand);
   requireFn('runPollsCommand', runPollsCommand);
   requireFn('runEventsCommand', runEventsCommand);
   requireFn('runPositionsCommand', runPositionsCommand);
@@ -175,6 +177,7 @@ function createCommandRouter(deps = {}) {
       odds: async (handlerArgs, handlerContext) => runOddsCommand(handlerArgs, handlerContext),
       quote: async (handlerArgs, handlerContext) => runQuoteCommand(handlerArgs, handlerContext),
       trade: async (handlerArgs, handlerContext) => runTradeCommand(handlerArgs, handlerContext),
+      sell: async (handlerArgs, handlerContext) => runSellCommand(handlerArgs, handlerContext),
       polls: async (handlerArgs, handlerContext) => runPollsCommand(handlerArgs, handlerContext),
       events: async (handlerArgs, handlerContext) => runEventsCommand(handlerArgs, handlerContext),
       positions: async (handlerArgs, handlerContext) => runPositionsCommand(handlerArgs, handlerContext),

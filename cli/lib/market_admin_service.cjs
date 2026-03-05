@@ -467,6 +467,94 @@ function normalizePollAnswer(value) {
   return String(asBig);
 }
 
+function deriveOutcomePositionSide(yesRaw, noRaw) {
+  const hasYes = typeof yesRaw === 'bigint' && yesRaw > 0n;
+  const hasNo = typeof noRaw === 'bigint' && noRaw > 0n;
+  if (hasYes && hasNo) return 'both';
+  if (hasYes) return 'yes';
+  if (hasNo) return 'no';
+  return 'flat';
+}
+
+function buildOutcomeTokenVisibility(params) {
+  const {
+    refs,
+    yesRaw,
+    noRaw,
+    yesDecimals,
+    noDecimals,
+    resolution,
+    formatUnits,
+  } = params;
+
+  const normalizedYesRaw = typeof yesRaw === 'bigint' ? yesRaw : 0n;
+  const normalizedNoRaw = typeof noRaw === 'bigint' ? noRaw : 0n;
+  const yesBalance = formatUnits(normalizedYesRaw, yesDecimals);
+  const noBalance = formatUnits(normalizedNoRaw, noDecimals);
+  const positionSide = deriveOutcomePositionSide(normalizedYesRaw, normalizedNoRaw);
+  const claimableOutcome =
+    resolution && resolution.claimable && (resolution.pollAnswer === 'yes' || resolution.pollAnswer === 'no')
+      ? resolution.pollAnswer
+      : null;
+  const claimableRaw =
+    claimableOutcome === 'yes'
+      ? normalizedYesRaw
+      : claimableOutcome === 'no'
+        ? normalizedNoRaw
+        : null;
+  const claimableAmount = claimableRaw === null
+    ? null
+    : claimableOutcome === 'yes'
+      ? yesBalance
+      : noBalance;
+
+  return {
+    source: refs.source,
+    yesToken: refs.yesToken,
+    noToken: refs.noToken,
+    yesBalanceRaw: normalizedYesRaw.toString(),
+    noBalanceRaw: normalizedNoRaw.toString(),
+    yesBalance,
+    noBalance,
+    claimableUsdc: claimableAmount,
+    marketResolved: resolution ? resolution.pollFinalized : null,
+    finalizesInEpochs: resolution ? resolution.epochsUntilFinalization : null,
+    hasInventory: positionSide !== 'flat',
+    positionSide,
+    claimable: resolution ? Boolean(resolution.claimable) : null,
+    claimableOutcome,
+    claimableAmountRaw: claimableRaw === null ? null : claimableRaw.toString(),
+    claimableAmount,
+    hasClaimableInventory: claimableRaw === null ? (resolution ? false : null) : claimableRaw > 0n,
+    resolution: resolution
+      ? {
+          ...(resolution.pollAddress ? { pollAddress: resolution.pollAddress } : {}),
+          marketState: resolution.marketState,
+          pollFinalized: resolution.pollFinalized,
+          pollAnswer: resolution.pollAnswer,
+          finalizationEpoch: resolution.finalizationEpoch,
+          currentEpoch: resolution.currentEpoch,
+          epochsUntilFinalization: resolution.epochsUntilFinalization,
+          claimable: resolution.claimable,
+          operator: resolution.operator,
+          readSources: resolution.readSources,
+        }
+      : null,
+    yes: {
+      token: refs.yesToken,
+      decimals: yesDecimals,
+      balanceRaw: normalizedYesRaw.toString(),
+      balance: yesBalance,
+    },
+    no: {
+      token: refs.noToken,
+      decimals: noDecimals,
+      balanceRaw: normalizedNoRaw.toString(),
+      balance: noBalance,
+    },
+  };
+}
+
 function deriveCurrentEpochFromTimestamp(timestamp, epochLengthSeconds = 300n) {
   const ts = normalizeOptionalBigInt(timestamp);
   if (ts === null) return null;
@@ -998,38 +1086,25 @@ async function runLpPositions(options = {}) {
             args: [wallet],
           }),
         ]);
-        outcomeTokens = {
-          source: refs.source,
-          yesToken: refs.yesToken,
-          noToken: refs.noToken,
-          yesBalanceRaw: yesRaw.toString(),
-          noBalanceRaw: noRaw.toString(),
-          yesBalance: formatUnits(yesRaw, yesDecimals),
-          noBalance: formatUnits(noRaw, noDecimals),
-          claimableUsdc: null,
-          marketResolved: null,
-          finalizesInEpochs: null,
-        };
+        let resolution = null;
         try {
           const marketRow = marketRowsByAddress.get(marketAddress) || null;
           const pollAddress = marketRow && marketRow.pollAddress ? normalizeAddress(marketRow.pollAddress, 'pollAddress') : null;
           if (pollAddress) {
-            const resolution = await readPollResolutionState(publicClient, pollAddress);
-            outcomeTokens.marketResolved = resolution.pollFinalized;
-            outcomeTokens.finalizesInEpochs = resolution.epochsUntilFinalization;
-            if (resolution.claimable) {
-              if (resolution.pollAnswer === 'yes') {
-                outcomeTokens.claimableUsdc = outcomeTokens.yesBalance;
-              } else if (resolution.pollAnswer === 'no') {
-                outcomeTokens.claimableUsdc = outcomeTokens.noBalance;
-              } else {
-                outcomeTokens.claimableUsdc = null;
-              }
-            }
+            resolution = await readPollResolutionState(publicClient, pollAddress);
           }
         } catch {
           // best effort only
         }
+        outcomeTokens = buildOutcomeTokenVisibility({
+          refs,
+          yesRaw,
+          noRaw,
+          yesDecimals,
+          noDecimals,
+          resolution,
+          formatUnits,
+        });
       }
     } catch (err) {
       itemDiagnostics.push(`Outcome token balance read failed: ${err && err.message ? err.message : String(err)}`);
@@ -1685,4 +1760,5 @@ module.exports = {
   runLpPositions,
   runClaim,
   readPollResolutionState,
+  buildOutcomeTokenVisibility,
 };

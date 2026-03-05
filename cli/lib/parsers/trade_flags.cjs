@@ -5,6 +5,14 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
+function parseTradeMode(value, CliError, flagName = '--mode') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized !== 'buy' && normalized !== 'sell') {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be buy|sell.`);
+  }
+  return normalized;
+}
+
 /**
  * Creates the trade flags parser.
  * @param {object} deps
@@ -25,14 +33,17 @@ function createParseTradeFlags(deps) {
 
   return function parseTradeFlags(args) {
     const options = {
+      mode: 'buy',
       marketAddress: null,
       side: null,
       amountUsdc: null,
+      amount: null,
       yesPct: null,
       slippageBps: 100,
       dryRun: false,
       execute: false,
       minSharesOutRaw: null,
+      minAmountOutRaw: null,
       maxAmountUsdc: null,
       minProbabilityPct: null,
       maxProbabilityPct: null,
@@ -61,8 +72,25 @@ function createParseTradeFlags(deps) {
         continue;
       }
 
+      if (token === '--mode') {
+        options.mode = parseTradeMode(requireFlagValue(args, i, '--mode'), CliError);
+        i += 1;
+        continue;
+      }
+
       if (token === '--amount-usdc' || token === '--amount') {
-        options.amountUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        const parsedAmount = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        if (token === '--amount-usdc') {
+          options.amountUsdc = parsedAmount;
+        } else {
+          options.amount = parsedAmount;
+        }
+        i += 1;
+        continue;
+      }
+
+      if (token === '--shares') {
+        options.amount = parsePositiveNumber(requireFlagValue(args, i, '--shares'), '--shares');
         i += 1;
         continue;
       }
@@ -94,6 +122,12 @@ function createParseTradeFlags(deps) {
 
       if (token === '--min-shares-out-raw') {
         options.minSharesOutRaw = parseBigIntString(requireFlagValue(args, i, '--min-shares-out-raw'), '--min-shares-out-raw');
+        i += 1;
+        continue;
+      }
+
+      if (token === '--min-amount-out-raw') {
+        options.minAmountOutRaw = parseBigIntString(requireFlagValue(args, i, '--min-amount-out-raw'), '--min-amount-out-raw');
         i += 1;
         continue;
       }
@@ -191,8 +225,20 @@ function createParseTradeFlags(deps) {
     if (!options.side) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing side. Use --side yes|no.');
     }
-    if (options.amountUsdc === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount>.');
+    if (options.mode === 'buy') {
+      if (options.amountUsdc === null && options.amount !== null) {
+        options.amountUsdc = options.amount;
+      }
+      if (options.amountUsdc === null) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount>.');
+      }
+    } else if (options.mode === 'sell') {
+      if (options.amount === null && options.amountUsdc !== null) {
+        options.amount = options.amountUsdc;
+      }
+      if (options.amount === null) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing token amount for sell. Use --shares <amount> or --amount <amount>.');
+      }
     }
     if (options.dryRun === options.execute) {
       throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');

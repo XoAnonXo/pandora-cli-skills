@@ -27,6 +27,21 @@ const PREDICTION_AMM_BUY_ABI = [
   },
 ];
 
+const PREDICTION_AMM_SELL_ABI = [
+  {
+    name: 'sell',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'isYes', type: 'bool' },
+      { name: 'amount', type: 'uint112' },
+      { name: 'minAmountOut', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+    outputs: [{ name: 'amountOut', type: 'uint256' }],
+  },
+];
+
 const PARI_MUTUEL_MARKER_ABI = [
   {
     type: 'function',
@@ -165,6 +180,49 @@ function buildTradeBuyCall(input) {
 }
 
 /**
+ * Builds the market-specific sell call shape.
+ * @param {{
+ *   marketType: 'parimutuel'|'amm',
+ *   side: 'yes'|'no',
+ *   amountRaw: bigint,
+ *   minAmountOutRaw: bigint,
+ *   nowEpochSec?: number,
+ *   ammDeadlineOffsetSec?: number,
+ * }} input
+ * @returns {{marketType:'amm', abi: object[], functionName: 'sell', args: (boolean|bigint)[], signature: string, ammDeadlineEpoch?: string}}
+ */
+function buildTradeSellCall(input) {
+  const marketType = String(input.marketType || '').toLowerCase();
+  const isYes = String(input.side || '').toLowerCase() === 'yes';
+  const amountRaw = input.amountRaw;
+  const minAmountOutRaw = input.minAmountOutRaw;
+
+  if (marketType === 'parimutuel') {
+    throw createTradeTypeError(
+      'UNSUPPORTED_MARKET_TRADE_INTERFACE',
+      'Parimutuel markets do not expose a sell() trade interface.',
+      { marketType },
+    );
+  }
+
+  if (marketType === 'amm') {
+    const nowEpochSec = toEpochSeconds(input.nowEpochSec, Math.trunc(Date.now() / 1000));
+    const offsetSec = toEpochSeconds(input.ammDeadlineOffsetSec, DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC);
+    const deadlineEpoch = BigInt(nowEpochSec + Math.max(1, offsetSec));
+    return {
+      marketType: 'amm',
+      abi: PREDICTION_AMM_SELL_ABI,
+      functionName: 'sell',
+      args: [isYes, amountRaw, minAmountOutRaw, deadlineEpoch],
+      signature: 'sell(bool,uint112,uint256,uint256)',
+      ammDeadlineEpoch: deadlineEpoch.toString(),
+    };
+  }
+
+  throw createTradeTypeError('UNSUPPORTED_MARKET_TYPE', `Unsupported market type for trade execution: ${marketType}`);
+}
+
+/**
  * Resolves market type then constructs the correct buy call descriptor.
  * @param {{
  *   publicClient: { readContract: Function },
@@ -193,11 +251,43 @@ async function resolveTradeBuyCall(input) {
   };
 }
 
+/**
+ * Resolves market type then constructs the correct sell call descriptor.
+ * @param {{
+ *   publicClient: { readContract: Function },
+ *   marketAddress: `0x${string}`,
+ *   side: 'yes'|'no',
+ *   amountRaw: bigint,
+ *   minAmountOutRaw: bigint,
+ *   nowEpochSec?: number,
+ *   ammDeadlineOffsetSec?: number,
+ * }} input
+ * @returns {Promise<{marketType:'amm', detectedBy:string, abi: object[], functionName: 'sell', args: (boolean|bigint)[], signature: string, ammDeadlineEpoch?: string}>}
+ */
+async function resolveTradeSellCall(input) {
+  const detected = await detectTradeMarketType(input.publicClient, input.marketAddress);
+  const call = buildTradeSellCall({
+    marketType: detected.marketType,
+    side: input.side,
+    amountRaw: input.amountRaw,
+    minAmountOutRaw: input.minAmountOutRaw,
+    nowEpochSec: input.nowEpochSec,
+    ammDeadlineOffsetSec: input.ammDeadlineOffsetSec,
+  });
+  return {
+    ...call,
+    detectedBy: detected.detectedBy,
+  };
+}
+
 module.exports = {
   PARI_MUTUEL_BUY_ABI,
   PREDICTION_AMM_BUY_ABI,
+  PREDICTION_AMM_SELL_ABI,
   DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC,
   detectTradeMarketType,
   buildTradeBuyCall,
+  buildTradeSellCall,
   resolveTradeBuyCall,
+  resolveTradeSellCall,
 };

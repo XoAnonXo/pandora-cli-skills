@@ -2,424 +2,7 @@
  * Implements the `schema` command to output standard JSON interfaces for Agent ingestion.
  */
 
-const COMMAND_HELP_SCHEMA_REF = '#/definitions/CommandHelpPayload';
-const GENERIC_DATA_SCHEMA_REF = '#/definitions/GenericCommandData';
-
-function commandDescriptor({
-  summary,
-  usage,
-  emits,
-  dataSchema = GENERIC_DATA_SCHEMA_REF,
-  helpDataSchema = COMMAND_HELP_SCHEMA_REF,
-  outputModes = ['table', 'json'],
-}) {
-  return {
-    summary,
-    usage,
-    emits,
-    outputModes,
-    dataSchema,
-    helpDataSchema,
-  };
-}
-
-function buildCommandDescriptors() {
-  return {
-    help: commandDescriptor({
-      summary: 'Display top-level usage and global flag metadata.',
-      usage: 'pandora [--output table|json] help',
-      emits: ['help'],
-      dataSchema: '#/definitions/HelpPayload',
-      helpDataSchema: null,
-    }),
-    quote: commandDescriptor({
-      summary: 'Estimate a YES/NO quote from current market conditions.',
-      usage:
-        'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
-      emits: ['quote', 'quote.help'],
-      dataSchema: '#/definitions/QuotePayload',
-    }),
-    trade: commandDescriptor({
-      summary: 'Execute or dry-run a buy flow with optional risk constraints.',
-      usage:
-        'pandora [--output table|json] trade quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>] | pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
-      emits: ['trade', 'trade.help'],
-      dataSchema: '#/definitions/TradePayload',
-    }),
-    lp: commandDescriptor({
-      summary: 'Run LP add/remove/positions workflows including batch remove.',
-      usage:
-        'pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
-      emits: ['lp', 'lp.help'],
-      dataSchema: '#/definitions/LpPayload',
-    }),
-    resolve: commandDescriptor({
-      summary: 'Dry-run or execute poll resolution.',
-      usage:
-        'pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
-      emits: ['resolve', 'resolve.help'],
-      dataSchema: '#/definitions/ResolvePayload',
-    }),
-    claim: commandDescriptor({
-      summary: 'Dry-run or execute winnings redemption for one market or all discovered markets.',
-      usage:
-        'pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]',
-      emits: ['claim', 'claim.help'],
-      dataSchema: '#/definitions/ClaimPayload',
-    }),
-    watch: commandDescriptor({
-      summary: 'Poll portfolio and/or market snapshots with optional alert thresholds.',
-      usage:
-        'pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]',
-      emits: ['watch', 'watch.help'],
-      dataSchema: '#/definitions/WatchPayload',
-    }),
-    portfolio: commandDescriptor({
-      summary: 'Build portfolio snapshot across positions/LP/events.',
-      usage:
-        'pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
-      emits: ['portfolio', 'portfolio.help'],
-      dataSchema: '#/definitions/PortfolioPayload',
-    }),
-    export: commandDescriptor({
-      summary: 'Export deterministic history rows as csv/json.',
-      usage:
-        'pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]',
-      emits: ['export', 'export.help'],
-      dataSchema: '#/definitions/ExportPayload',
-    }),
-    lifecycle: commandDescriptor({
-      summary: 'Manage file-based lifecycle state for detect->resolve workflow.',
-      usage:
-        'pandora [--output table|json] lifecycle start --config <file> | status --id <id> | resolve --id <id> --confirm',
-      emits: ['lifecycle.help', 'lifecycle.start', 'lifecycle.status', 'lifecycle.resolve'],
-      dataSchema: '#/definitions/LifecyclePayload',
-    }),
-    'odds.record': commandDescriptor({
-      summary: 'Record venue odds snapshots into local history storage.',
-      usage:
-        'pandora [--output table|json] odds record --competition <id> --interval <sec> [--max-samples <n>] [--event-id <id>] [--venues pandora_amm,polymarket] [--indexer-url <url>] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>]',
-      emits: ['odds.record', 'odds.help'],
-      dataSchema: '#/definitions/OddsRecordPayload',
-    }),
-    'odds.history': commandDescriptor({
-      summary: 'Read stored venue odds history for one event.',
-      usage: 'pandora [--output table|json] odds history --event-id <id> --output csv|json [--limit <n>]',
-      emits: ['odds.history', 'odds.help'],
-      dataSchema: '#/definitions/OddsHistoryPayload',
-    }),
-    'arb.scan': commandDescriptor({
-      summary: 'Canonical arbitrage scan command for streaming or bounded spread detection.',
-      usage:
-        'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
-      emits: ['arb.help', 'arb.scan'],
-      outputModes: ['table', 'json'],
-      dataSchema: '#/definitions/ArbScanPayload',
-    }),
-    'simulate.mc': commandDescriptor({
-      summary: 'Run desk-grade Monte Carlo simulation with CI and VaR/ES risk outputs.',
-      usage:
-        'pandora [--output table|json] simulate mc [--trials <n>] [--horizon <n>] [--start-yes-pct <0-100>] [--entry-yes-pct <0-100>] [--position yes|no] [--stake-usdc <n>] [--drift-bps <n>] [--vol-bps <n>] [--confidence <50-100>] [--var-level <50-100>] [--seed <n>] [--antithetic] [--stratified]',
-      emits: ['simulate.mc', 'simulate.help', 'simulate.mc.help'],
-      dataSchema: '#/definitions/SimulateMcPayload',
-    }),
-    'simulate.particle-filter': commandDescriptor({
-      summary: 'Run sequential Monte Carlo filtering with ESS diagnostics and credible intervals.',
-      usage:
-        'pandora [--output table|json] simulate particle-filter (--observations-json <json>|--input <path>|--stdin) [--particles <n>] [--process-noise <n>] [--observation-noise <n>] [--drift-bps <n>] [--initial-yes-pct <0-100>] [--initial-spread <n>] [--resample-threshold <0-1>] [--resample-method systematic|multinomial] [--credible-interval <50-100>] [--seed <n>]',
-      emits: ['simulate.particle-filter', 'simulate.help', 'simulate.particle-filter.help'],
-      dataSchema: '#/definitions/SimulateParticleFilterPayload',
-    }),
-    'simulate.agents': commandDescriptor({
-      summary: 'Run deterministic agent-based market simulation with ABM diagnostics.',
-      usage:
-        'pandora [--output table|json] simulate agents [--n-informed <n>] [--n-noise <n>] [--n-mm <n>] [--n-steps <n>] [--seed <int>]',
-      emits: ['simulate.agents', 'simulate.help'],
-      dataSchema: '#/definitions/SimulateAgentsPayload',
-    }),
-    'model.score.brier': commandDescriptor({
-      summary: 'Score forecast calibration via Brier metrics.',
-      usage:
-        'pandora [--output table|json] model score brier [--source <name>] [--market-address <address>] [--competition <id>] [--event-id <id>] [--model-id <id>] [--group-by source|market|competition|model|none] [--window-days <n>] [--bucket-count <n>] [--forecast-file <path>] [--include-records] [--include-unresolved] [--limit <n>]',
-      emits: ['model.score.brier', 'model.help'],
-      dataSchema: '#/definitions/ModelScoreBrierPayload',
-    }),
-    'model.calibrate': commandDescriptor({
-      summary: 'Calibrate jump-diffusion parameters from historical price/return inputs.',
-      usage:
-        'pandora [--output table|json] model calibrate (--prices <csv>|--returns <csv>) [--dt <n>] [--jump-threshold-sigma <n>] [--min-jump-count <n>] [--model-id <id>] [--save-model <path>]',
-      emits: ['model.calibrate', 'model.help'],
-      dataSchema: '#/definitions/ModelCalibratePayload',
-    }),
-    'model.correlation': commandDescriptor({
-      summary: 'Estimate dependency structure and tail dependence via copula methods.',
-      usage:
-        'pandora [--output table|json] model correlation --series <id:v1,v2,...> --series <id:v1,v2,...> [--copula t|gaussian|clayton|gumbel] [--compare <csv>] [--tail-alpha <n>] [--df <n>] [--joint-threshold-z <n>] [--scenario-shocks <csv>] [--model-id <id>] [--save-model <path>]',
-      emits: ['model.correlation', 'model.help'],
-      dataSchema: '#/definitions/ModelCorrelationPayload',
-    }),
-    'model.diagnose': commandDescriptor({
-      summary: 'Diagnose market/model informativeness with machine-readable gating flags.',
-      usage:
-        'pandora [--output table|json] model diagnose [--calibration-rmse <n>] [--drift-bps <n>] [--spread-bps <n>] [--depth-coverage <0..1>] [--informed-flow-ratio <0..1>] [--noise-ratio <0..1>] [--anomaly-rate <0..1>] [--manipulation-alerts <n>] [--tail-dependence <0..1>]',
-      emits: ['model.diagnose', 'model.help'],
-      dataSchema: '#/definitions/ModelDiagnosePayload',
-    }),
-    stream: commandDescriptor({
-      summary: 'Emit NDJSON stream ticks for prices or events.',
-      usage:
-        'pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]',
-      emits: ['stream.help'],
-      outputModes: ['table', 'json'],
-      dataSchema: '#/definitions/StreamTickPayload',
-      helpDataSchema: '#/definitions/CommandHelpPayload',
-    }),
-    scan: commandDescriptor({
-      summary: 'Canonical enriched market discovery view with odds and lifecycle filters.',
-      usage:
-        'pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]',
-      emits: ['scan', 'scan.help'],
-      dataSchema: '#/definitions/PagedEntityPayload',
-    }),
-    'markets.list': commandDescriptor({
-      summary: 'Raw Pandora market browse view with filters and pagination.',
-      usage:
-        'pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]',
-      emits: ['markets.list', 'markets.list.help'],
-      dataSchema: '#/definitions/PagedEntityPayload',
-    }),
-    'markets.scan': commandDescriptor({
-      summary: 'Backward-compatible alias of `scan`.',
-      usage:
-        'pandora [--output table|json] markets scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]',
-      emits: ['scan', 'scan.help'],
-      dataSchema: '#/definitions/PagedEntityPayload',
-    }),
-    'markets.get': commandDescriptor({
-      summary: 'Get one or many markets by id.',
-      usage: 'pandora [--output table|json] markets get [--id <id> ...] [--stdin]',
-      emits: ['markets.get', 'markets.get.help'],
-      dataSchema: '#/definitions/EntityCollectionPayload',
-    }),
-    'sports.books.list': commandDescriptor({
-      summary: 'List sportsbook provider health and configured book priorities.',
-      usage:
-        'pandora [--output table|json] sports books list [--provider primary|backup|auto] [--book-priority <csv>] [--timeout-ms <ms>]',
-      emits: ['sports.books.list', 'sports.help'],
-      dataSchema: '#/definitions/SportsBooksPayload',
-    }),
-    'sports.events.list': commandDescriptor({
-      summary: 'List normalized soccer events from sportsbook providers.',
-      usage:
-        'pandora [--output table|json] sports events list [--provider primary|backup|auto] [--competition <id|slug>] [--kickoff-after <iso>] [--kickoff-before <iso>] [--limit <n>] [--timeout-ms <ms>]',
-      emits: ['sports.events.list', 'sports.help'],
-      dataSchema: '#/definitions/SportsEventsPayload',
-    }),
-    'sports.events.live': commandDescriptor({
-      summary: 'List currently-live soccer events from sportsbook providers.',
-      usage:
-        'pandora [--output table|json] sports events live [--provider primary|backup|auto] [--competition <id|slug>] [--limit <n>] [--timeout-ms <ms>]',
-      emits: ['sports.events.live', 'sports.help'],
-      dataSchema: '#/definitions/SportsEventsPayload',
-    }),
-    'sports.odds.snapshot': commandDescriptor({
-      summary: 'Fetch event odds snapshot and consensus context.',
-      usage:
-        'pandora [--output table|json] sports odds snapshot --event-id <id> [--provider primary|backup|auto] [--book-priority <csv>] [--trim-percent <n>] [--min-tier1-books <n>] [--min-total-books <n>]',
-      emits: ['sports.odds.snapshot', 'sports.help'],
-      dataSchema: '#/definitions/SportsOddsPayload',
-    }),
-    'sports.consensus': commandDescriptor({
-      summary: 'Compute majority-book trimmed-median consensus.',
-      usage:
-        'pandora [--output table|json] sports consensus --event-id <id>|--checks-json <json> [--provider primary|backup|auto] [--book-priority <csv>] [--trim-percent <n>] [--min-tier1-books <n>] [--min-total-books <n>]',
-      emits: ['sports.consensus', 'sports.help'],
-      dataSchema: '#/definitions/SportsConsensusPayload',
-    }),
-    'sports.create.plan': commandDescriptor({
-      summary: 'Build conservative market creation plan from sportsbook consensus.',
-      usage:
-        'pandora [--output table|json] sports create plan --event-id <id> [--market-type amm|parimutuel] [--selection home|away|draw] [--creation-window-open-min <n>] [--creation-window-close-min <n>] [--book-priority <csv>]',
-      emits: ['sports.create.plan', 'sports.help'],
-      dataSchema: '#/definitions/SportsCreatePayload',
-    }),
-    'sports.create.run': commandDescriptor({
-      summary: 'Execute or dry-run sports market creation.',
-      usage:
-        'pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
-      emits: ['sports.create.run', 'sports.help'],
-      dataSchema: '#/definitions/SportsCreatePayload',
-    }),
-    'sports.sync': commandDescriptor({
-      summary: 'Run sports sync once/run and runtime lifecycle actions.',
-      usage:
-        'pandora [--output table|json] sports sync once|run|start|stop|status [--event-id <id>] [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]',
-      emits: ['sports.sync.once', 'sports.sync.run', 'sports.sync.start', 'sports.sync.stop', 'sports.sync.status', 'sports.help'],
-      dataSchema: '#/definitions/SportsSyncPayload',
-    }),
-    'sports.sync.once': commandDescriptor({
-      summary: 'Run one bounded sports sync iteration.',
-      usage:
-        'pandora [--output table|json] sports sync once --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]',
-      emits: ['sports.sync.once', 'sports.help'],
-      dataSchema: '#/definitions/SportsSyncPayload',
-    }),
-    'sports.sync.run': commandDescriptor({
-      summary: 'Run continuous sports sync loop.',
-      usage:
-        'pandora [--output table|json] sports sync run --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]',
-      emits: ['sports.sync.run', 'sports.help'],
-      dataSchema: '#/definitions/SportsSyncPayload',
-    }),
-    'sports.sync.start': commandDescriptor({
-      summary: 'Start detached sports sync runtime.',
-      usage:
-        'pandora [--output table|json] sports sync start --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]',
-      emits: ['sports.sync.start', 'sports.help'],
-      dataSchema: '#/definitions/SportsSyncPayload',
-    }),
-    'sports.sync.stop': commandDescriptor({
-      summary: 'Stop detached sports sync runtime.',
-      usage:
-        'pandora [--output table|json] sports sync stop [--state-file <path>]',
-      emits: ['sports.sync.stop', 'sports.help'],
-      dataSchema: '#/definitions/SportsSyncPayload',
-    }),
-    'sports.sync.status': commandDescriptor({
-      summary: 'Inspect detached sports sync runtime status.',
-      usage:
-        'pandora [--output table|json] sports sync status [--state-file <path>]',
-      emits: ['sports.sync.status', 'sports.help'],
-      dataSchema: '#/definitions/SportsSyncPayload',
-    }),
-    'sports.resolve.plan': commandDescriptor({
-      summary: 'Build manual-final resolution recommendation.',
-      usage:
-        'pandora [--output table|json] sports resolve plan --event-id <id>|--checks-json <json>|--checks-file <path> [--poll-address <address>] [--settle-delay-ms <ms>] [--consecutive-checks-required <n>] [--now <iso>|--now-ms <ms>] [--reason <text>]',
-      emits: ['sports.resolve.plan', 'sports.help'],
-      dataSchema: '#/definitions/SportsResolvePlanPayload',
-    }),
-    'mirror.browse': commandDescriptor({
-      summary: 'Browse Polymarket mirror candidates with optional sports tag filters.',
-      usage:
-        'pandora [--output table|json] mirror browse [--min-yes-pct <n>] [--max-yes-pct <n>] [--min-volume-24h <n>] [--closes-after <date>|--end-date-after <date|72h>] [--closes-before <date>|--end-date-before <date|72h>] [--question-contains <text>|--keyword <text>] [--slug <text>] [--category sports|crypto|politics|entertainment] [--exclude-sports] [--sort-by volume24h|liquidity|endDate] [--limit <n>] [--chain-id <id>] [--polymarket-tag-id <id>] [--polymarket-tag-ids <csv>] [--sport-tag-id <id>] [--sport-tag-ids <csv>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
-      emits: ['mirror.browse', 'mirror.browse.help'],
-      dataSchema: '#/definitions/MirrorBrowsePayload',
-    }),
-    'mirror.plan': commandDescriptor({
-      summary: 'Generate mirror sizing/distribution plan from Polymarket source.',
-      usage:
-        'pandora [--output table|json] mirror plan --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
-      emits: ['mirror.plan', 'mirror.plan.help'],
-      dataSchema: '#/definitions/MirrorPlanPayload',
-    }),
-    'mirror.deploy': commandDescriptor({
-      summary: 'Deploy a mirror market from plan/selector in dry-run or execute mode.',
-      usage:
-        'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]',
-      emits: ['mirror.deploy', 'mirror.deploy.help'],
-      dataSchema: '#/definitions/MirrorDeployPayload',
-    }),
-    'mirror.verify': commandDescriptor({
-      summary: 'Verify a Pandora market against a Polymarket source pair.',
-      usage:
-        'pandora [--output table|json] mirror verify --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--trust-deploy] [--manifest-file <path>] [--include-similarity] [--with-rules] [--allow-rule-mismatch] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
-      emits: ['mirror.verify', 'mirror.verify.help'],
-      dataSchema: '#/definitions/MirrorVerifyPayload',
-    }),
-    'mirror.lp-explain': commandDescriptor({
-      summary: 'Explain complete-set LP mechanics and inventory split.',
-      usage:
-        'pandora [--output table|json] mirror lp-explain --liquidity-usdc <n> [--source-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>]',
-      emits: ['mirror.lp-explain', 'mirror.lp-explain.help'],
-      dataSchema: '#/definitions/GenericCommandData',
-    }),
-    'mirror.simulate': commandDescriptor({
-      summary: 'Run mirror LP economics simulation.',
-      usage:
-        'pandora [--output table|json] mirror simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--polymarket-yes-pct <0-100>]',
-      emits: ['mirror.simulate', 'mirror.simulate.help'],
-      dataSchema: '#/definitions/GenericCommandData',
-    }),
-    'mirror.go': commandDescriptor({
-      summary: 'Run mirror deploy + verify + optional sync workflow.',
-      usage:
-        'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--sources <url...>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]',
-      emits: ['mirror.go', 'mirror.go.help'],
-      dataSchema: '#/definitions/GenericCommandData',
-    }),
-    'mirror.sync': commandDescriptor({
-      summary: 'Run mirror sync loop or daemon lifecycle commands.',
-      usage:
-        'pandora [--output table|json] mirror sync run|once|start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [sync flags]; stop selector: --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all; status selector: --pid-file <path>|--strategy-hash <hash>',
-      emits: ['mirror.sync', 'mirror.sync.help', 'mirror.sync.start', 'mirror.sync.stop', 'mirror.sync.status'],
-      dataSchema: '#/definitions/MirrorSyncPayload',
-    }),
-    'mirror.status': commandDescriptor({
-      summary: 'Inspect persisted mirror strategy state.',
-      usage:
-        'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash> [--with-live] [--trust-deploy] [--indexer-url <url>] [--timeout-ms <ms>]',
-      emits: ['mirror.status', 'mirror.status.help'],
-      dataSchema: '#/definitions/GenericCommandData',
-    }),
-    'mirror.close': commandDescriptor({
-      summary: 'Build or execute closeout workflow for one mirror pair or all.',
-      usage:
-        'pandora [--output table|json] mirror close --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]',
-      emits: ['mirror.close', 'mirror.close.help'],
-      dataSchema: '#/definitions/MirrorClosePayload',
-    }),
-    'mirror.hedge-calc': commandDescriptor({
-      summary: 'Compute hedge direction/size from reserve imbalance and market odds.',
-      usage:
-        'pandora [--output table|json] mirror hedge-calc [--reserve-yes-usdc <n> --reserve-no-usdc <n>] [--excess-yes-usdc <n>] [--excess-no-usdc <n>] [--polymarket-yes-pct <0-100>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--volume-scenarios <csv>] [--pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>]',
-      emits: ['mirror.hedge-calc', 'mirror.hedge-calc.help'],
-      dataSchema: '#/definitions/MirrorHedgeCalcPayload',
-    }),
-    autopilot: commandDescriptor({
-      summary: 'Run guarded polling/triggered trade automation.',
-      usage:
-        'pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
-      emits: ['autopilot', 'autopilot.help'],
-      dataSchema: '#/definitions/AutopilotPayload',
-    }),
-    'risk.show': commandDescriptor({
-      summary: 'Inspect persisted risk guardrail + panic state.',
-      usage: 'pandora [--output table|json] risk show [--risk-file <path>]',
-      emits: ['risk.show', 'risk.show.help'],
-      dataSchema: '#/definitions/RiskPayload',
-    }),
-    'risk.panic': commandDescriptor({
-      summary: 'Engage or clear risk panic lock for all live writes.',
-      usage:
-        'pandora [--output table|json] risk panic [--risk-file <path>] [--reason <text> --actor <id>] | [--clear --actor <id>]',
-      emits: ['risk.panic', 'risk.panic.help'],
-      dataSchema: '#/definitions/RiskPayload',
-    }),
-    leaderboard: commandDescriptor({
-      summary: 'Compute wallet rankings from historical trade outcomes.',
-      usage: 'pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]',
-      emits: ['leaderboard', 'leaderboard.help'],
-      dataSchema: '#/definitions/LeaderboardPayload',
-    }),
-    schema: commandDescriptor({
-      summary: 'Emit JSON envelope schema plus command descriptor map for agents.',
-      usage: 'pandora [--output json] schema',
-      emits: ['schema', 'schema.help'],
-      outputModes: ['json'],
-      dataSchema: '#/definitions/SchemaCommandPayload',
-      helpDataSchema: null,
-    }),
-    mcp: commandDescriptor({
-      summary: 'Run Pandora MCP server over stdio transport.',
-      usage: 'pandora mcp',
-      emits: ['mcp.help'],
-      outputModes: ['table'],
-      dataSchema: '#/definitions/McpHelpPayload',
-      helpDataSchema: null,
-    }),
-  };
-}
+const { buildCommandDescriptors } = require('./agent_contract_registry.cjs');
 
 function buildSchemaPayload() {
   const commandDescriptors = buildCommandDescriptors();
@@ -433,8 +16,8 @@ function buildSchemaPayload() {
       { $ref: '#/definitions/SuccessEnvelope' },
       { $ref: '#/definitions/ErrorEnvelope' },
     ],
-    commandDescriptorVersion: '1.0.0',
-    descriptorScope: 'curated-core',
+    commandDescriptorVersion: '1.1.0',
+    descriptorScope: 'exhaustive-agent-surface',
     commandDescriptors,
     definitions: {
       SuccessEnvelope: {
@@ -481,10 +64,24 @@ function buildSchemaPayload() {
         type: 'object',
         properties: {
           usage: { type: 'string' },
-          notes: { type: 'array', items: { type: 'string' } },
+          notes: {
+            oneOf: [
+              {
+                type: 'array',
+                items: {
+                  oneOf: [
+                    { type: 'string' },
+                    { type: 'object' },
+                  ],
+                },
+              },
+              { type: 'object' },
+            ],
+          },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },
+        additionalProperties: true,
       },
       CommandHelpPayload: {
         type: 'object',
@@ -496,13 +93,101 @@ function buildSchemaPayload() {
               { type: 'array', items: { type: 'string' } },
             ],
           },
+          notes: {
+            oneOf: [
+              {
+                type: 'array',
+                items: {
+                  oneOf: [
+                    { type: 'string' },
+                    { type: 'object' },
+                  ],
+                },
+              },
+              { type: 'object' },
+            ],
+          },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },
+        additionalProperties: true,
+      },
+      OddsHelpPayload: {
+        allOf: [
+          { $ref: '#/definitions/CommandHelpPayload' },
+          {
+            type: 'object',
+            properties: {
+              historyUsage: { type: 'string' },
+            },
+            additionalProperties: true,
+          },
+        ],
+      },
+      MirrorStatusHelpPayload: {
+        allOf: [
+          { $ref: '#/definitions/CommandHelpPayload' },
+          {
+            type: 'object',
+            properties: {
+              polymarketEnv: {
+                oneOf: [
+                  { type: 'string' },
+                  { type: 'array', items: { type: 'string' } },
+                ],
+              },
+            },
+            additionalProperties: true,
+          },
+        ],
       },
       GenericCommandData: {
         type: 'object',
         description: 'Fallback schema for command payloads without a dedicated descriptor.',
+      },
+      VersionPayload: {
+        type: 'object',
+        properties: {
+          version: { type: 'string' },
+          packageName: { type: ['string', 'null'] },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
+      },
+      InitEnvPayload: {
+        type: 'object',
+        properties: {
+          targetPath: { type: ['string', 'null'] },
+          examplePath: { type: ['string', 'null'] },
+          force: { type: ['boolean', 'null'] },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
+      },
+      DoctorPayload: {
+        type: 'object',
+        properties: {
+          report: { type: 'object' },
+          checks: { type: 'object' },
+          diagnostics: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'object' }] } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
+      },
+      SetupPayload: {
+        type: 'object',
+        properties: {
+          action: { type: ['string', 'null'] },
+          envFile: { type: ['string', 'null'] },
+          doctor: { type: ['object', 'null'] },
+          diagnostics: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'object' }] } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
       },
       SportsBooksPayload: {
         type: 'object',
@@ -626,38 +311,77 @@ function buildSchemaPayload() {
       },
       QuotePayload: {
         type: 'object',
-        required: ['marketAddress', 'side', 'amountUsdc'],
+        required: ['marketAddress', 'side', 'mode'],
         properties: {
+          indexerUrl: { type: ['string', 'null'] },
           marketAddress: { type: 'string' },
+          marketType: { type: ['string', 'null'] },
+          mode: { enum: ['buy', 'sell'] },
           side: { enum: ['yes', 'no'] },
-          amountUsdc: { type: 'number' },
-          quote: { type: 'object' },
+          amountUsdc: { type: ['number', 'null'] },
+          amount: { type: ['number', 'null'] },
+          slippageBps: { type: ['integer', 'null'] },
+          quoteAvailable: { type: ['boolean', 'null'] },
           odds: { type: 'object' },
-          diagnostics: { type: 'array', items: { type: 'string' } },
+          estimate: { type: ['object', 'null'] },
+          curve: { type: 'array', items: { type: 'object' } },
+          liquidity: { type: ['object', 'null'] },
+          parimutuel: { type: ['object', 'null'] },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },
+        additionalProperties: true,
       },
       TradePayload: {
         type: 'object',
-        required: ['mode', 'marketAddress', 'side', 'amountUsdc'],
+        required: ['mode', 'marketAddress', 'side'],
         properties: {
           mode: { enum: ['dry-run', 'execute'] },
+          action: { enum: ['buy', 'sell'] },
           status: { type: 'string' },
+          runtime: { type: ['object', 'null'] },
+          chainId: { type: ['integer', 'null'] },
           marketAddress: { type: 'string' },
           marketType: { type: ['string', 'null'] },
+          tradeSignature: { type: ['string', 'null'] },
           buySignature: { type: ['string', 'null'] },
+          sellSignature: { type: ['string', 'null'] },
           ammDeadlineEpoch: { type: ['string', 'null'] },
           side: { enum: ['yes', 'no'] },
-          amountUsdc: { type: 'number' },
+          amountUsdc: { type: ['number', 'null'] },
+          amount: { type: ['number', 'null'] },
+          amountRaw: { type: ['string', 'null'] },
+          minSharesOutRaw: { type: ['string', 'null'] },
+          minAmountOutRaw: { type: ['string', 'null'] },
+          selectedProbabilityPct: { type: ['number', 'null'] },
           quote: { type: 'object' },
           executionPlan: { type: 'object' },
           riskGuards: { type: 'object' },
+          preview: { type: ['object', 'null'] },
+          account: { type: ['string', 'null'] },
+          usdc: { type: ['string', 'null'] },
+          approvalAsset: { type: ['string', 'null'] },
+          tradeTxHash: { type: ['string', 'null'] },
+          tradeTxUrl: { type: ['string', 'null'] },
+          tradeGasEstimate: { type: ['string', 'null'] },
+          tradeStatus: { type: ['string', 'null'] },
           buyTxHash: { type: ['string', 'null'] },
+          buyTxUrl: { type: ['string', 'null'] },
+          buyGasEstimate: { type: ['string', 'null'] },
+          buyStatus: { type: ['string', 'null'] },
+          sellTxHash: { type: ['string', 'null'] },
+          sellTxUrl: { type: ['string', 'null'] },
+          sellGasEstimate: { type: ['string', 'null'] },
+          sellStatus: { type: ['string', 'null'] },
           approveTxHash: { type: ['string', 'null'] },
+          approveTxUrl: { type: ['string', 'null'] },
+          approveGasEstimate: { type: ['string', 'null'] },
+          approveStatus: { type: ['string', 'null'] },
+          finalStatus: { type: ['string', 'null'] },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },
+        additionalProperties: true,
       },
       LpPayload: {
         type: 'object',
@@ -750,6 +474,18 @@ function buildSchemaPayload() {
           generatedAt: { type: 'string', format: 'date-time' },
         },
       },
+      HistoryPayload: {
+        type: 'object',
+        properties: {
+          wallet: { type: ['string', 'null'] },
+          count: { type: ['integer', 'null'] },
+          items: { type: ['array', 'null'], items: { type: 'object' } },
+          pagination: { type: ['object', 'null'] },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
+      },
       ExportPayload: {
         type: 'object',
         properties: {
@@ -786,6 +522,18 @@ function buildSchemaPayload() {
           generatedAt: { type: 'string', format: 'date-time' },
         },
       },
+      ArbitragePayload: {
+        type: 'object',
+        properties: {
+          parameters: { type: 'object' },
+          count: { type: ['integer', 'null'] },
+          opportunities: { type: ['array', 'null'], items: { type: 'object' } },
+          diagnostics: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'object' }] } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
+      },
       OddsRecordPayload: {
         type: 'object',
         properties: {
@@ -802,6 +550,54 @@ function buildSchemaPayload() {
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },
+      },
+      PolymarketPayload: {
+        type: 'object',
+        properties: {
+          runtime: { type: ['object', 'null'] },
+          approvals: { type: ['object', 'null'] },
+          tx: { type: ['object', 'null'] },
+          mode: { type: ['string', 'null'] },
+          diagnostics: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'object' }] } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
+      },
+      WebhookPayload: {
+        type: 'object',
+        properties: {
+          count: { type: ['integer', 'null'] },
+          failureCount: { type: ['integer', 'null'] },
+          deliveries: { type: ['array', 'null'], items: { type: 'object' } },
+          diagnostics: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'object' }] } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
+      },
+      AnalyzePayload: {
+        type: 'object',
+        properties: {
+          provider: { type: ['string', 'null'] },
+          result: { type: ['object', 'null'] },
+          diagnostics: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'object' }] } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
+      },
+      SuggestPayload: {
+        type: 'object',
+        properties: {
+          wallet: { type: ['string', 'null'] },
+          risk: { type: ['string', 'null'] },
+          items: { type: ['array', 'null'], items: { type: 'object' } },
+          diagnostics: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'object' }] } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: true,
       },
       OddsHistoryPayload: {
         type: 'object',
@@ -1118,6 +914,13 @@ function buildSchemaPayload() {
                 outputModes: { type: 'array', items: { enum: ['table', 'json'] } },
                 dataSchema: { type: 'string' },
                 helpDataSchema: { type: ['string', 'null'] },
+                inputSchema: { type: ['object', 'null'] },
+                mcpExposed: { type: 'boolean' },
+                aliasOf: { type: ['string', 'null'] },
+                canonicalTool: { type: ['string', 'null'] },
+                preferred: { type: 'boolean' },
+                mcpMutating: { type: 'boolean' },
+                mcpLongRunningBlocked: { type: 'boolean' },
               },
             },
           },

@@ -46,6 +46,11 @@ pandora --output json trade --dry-run \
   --market-address 0x... --side yes --amount-usdc 10 \
   --fork --fork-rpc-url http://127.0.0.1:8545
 
+# Dry-run a sell quote / exit path
+pandora --output json sell --dry-run \
+  --market-address 0x... --side no --shares 25 \
+  --fork --fork-rpc-url http://127.0.0.1:8545
+
 # NDJSON stream
 pandora stream prices --indexer-url https://pandoraindexer.up.railway.app/ --interval-ms 1000
 ```
@@ -72,16 +77,6 @@ pandora --output json lifecycle start --config ./configs/lifecycle.json
 pandora --output json lifecycle status --id <lifecycle-id>
 pandora --output json lifecycle resolve --id <lifecycle-id> --confirm
 ```
-
-### Mega Analytics Page (Dune Panels)
-
-```bash
-# starts local page at http://127.0.0.1:8787
-npm run analytics:mega
-```
-
-- Panel registry source: `analytics/dune/panel_registry.json`
-- Dashboard creation script reuses this registry: `scripts/create_pandora_dashboard.js`
 
 ## Risk Controls
 
@@ -128,6 +123,7 @@ npm run analytics:mega
 - `pandora lifecycle start|status|resolve`
 - `pandora quote`
 - `pandora trade`
+- `pandora sell`
 - `pandora claim --market-address <address>|--all --dry-run|--execute`
 - `pandora history`
 - `pandora export`

@@ -275,10 +275,10 @@ test('evaluateMarket throws deterministic error without provider', async () => {
   );
 });
 
-test('contract error formatter maps known minimum-trade selector to actionable hint', () => {
+test('contract error formatter maps known trade-size selector to actionable hint', () => {
   const message = formatDecodedContractError({ data: '0x7e2d7787' });
-  assert.match(message, /trade too small/i);
-  assert.match(message, /--amount-usdc/i);
+  assert.match(message, /trade too large/i);
+  assert.match(message, /--max-imbalance/i);
 });
 
 test('autopilot state helpers are deterministic', () => {
@@ -1937,6 +1937,33 @@ test('createParseTradeFlags enforces secure --rpc-url and drops dead funder fiel
       return true;
     },
   );
+});
+
+test('createParseTradeFlags supports sell mode with share-based inputs', () => {
+  const parseTradeFlags = createParseTradeFlags(
+    buildParserDeps({
+      parseBigIntString: (value) => value,
+    }),
+  );
+
+  const options = parseTradeFlags([
+    '--market-address',
+    TEST_MARKET,
+    '--side',
+    'no',
+    '--mode',
+    'sell',
+    '--shares',
+    '12.5',
+    '--dry-run',
+    '--min-amount-out-raw',
+    '42',
+  ]);
+
+  assert.equal(options.mode, 'sell');
+  assert.equal(options.amount, 12.5);
+  assert.equal(options.amountUsdc, null);
+  assert.equal(options.minAmountOutRaw, '42');
 });
 
 test('createParseMirrorBrowseFlags parses relative end-date windows and new browse selectors', () => {
