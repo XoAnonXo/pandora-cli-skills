@@ -7,6 +7,7 @@ const SCAN_USAGE =
   'pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]';
 
 const SCAN_NOTES = [
+  'scan is a top-level alias for `markets scan`; prefer `markets scan` in docs and scripts.',
   'scan always returns expanded market payloads with odds included.',
   '--with-odds is accepted for backward compatibility and is effectively a no-op.',
   '--min-tvl applies a client-side filter against current TVL in USDC units.',

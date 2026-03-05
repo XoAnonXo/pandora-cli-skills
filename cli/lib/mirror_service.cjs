@@ -3,7 +3,13 @@ const path = require('path');
 const crypto = require('crypto');
 const { computeLiquidityRecommendation, computeDistributionHint, normalizeProbability } = require('./mirror_sizing_service.cjs');
 const { resolvePolymarketMarket, fetchDepthForMarket, browsePolymarketMarkets } = require('./polymarket_trade_adapter.cjs');
-const { findBestPandoraMatch, fetchPandoraMarketContext, verifyMirrorPair, hashRules } = require('./mirror_verify_service.cjs');
+const {
+  findBestPandoraMatch,
+  fetchPandoraMarketContext,
+  verifyMirrorPair,
+  hashRules,
+  preloadPandoraMatchCandidates,
+} = require('./mirror_verify_service.cjs');
 const { deployPandoraAmmMarket } = require('./pandora_deploy_service.cjs');
 const { defaultManifestFile, upsertPair } = require('./mirror_manifest_store.cjs');
 const { round } = require('./shared/utils.cjs');
@@ -421,27 +427,45 @@ async function browseMirrorMarkets(options = {}) {
     limit: options.limit,
   });
 
+  let preloadedPandoraCandidates = null;
+  let preloadDuplicateCheckError = null;
+  if (options.indexerUrl) {
+    try {
+      preloadedPandoraCandidates = await preloadPandoraMatchCandidates({
+        indexerUrl: options.indexerUrl,
+        timeoutMs: options.timeoutMs,
+        chainId: options.chainId,
+        limit: 100,
+      });
+    } catch (err) {
+      preloadDuplicateCheckError = err;
+    }
+  }
+
   const items = [];
   for (const entry of polymarket.items || []) {
     let existingMirror = null;
     if (options.indexerUrl) {
-      try {
-        const match = await findBestPandoraMatch({
-          indexerUrl: options.indexerUrl,
-          timeoutMs: options.timeoutMs,
-          chainId: options.chainId,
-          sourceQuestion: entry.question,
-          limit: 100,
-        });
-        if (match.best && match.best.similarity && Number(match.best.similarity.score) >= 0.86) {
-          existingMirror = {
-            marketAddress: match.best.marketAddress,
-            similarity: match.best.similarity.score,
-          };
+      if (preloadDuplicateCheckError) {
+        diagnostics.push(
+          `Duplicate-check skipped for "${entry.slug || entry.marketId || entry.question || 'market'}": ${preloadDuplicateCheckError && preloadDuplicateCheckError.message ? preloadDuplicateCheckError.message : String(preloadDuplicateCheckError)}`,
+        );
+      } else {
+        try {
+          const match = await findBestPandoraMatch({
+            sourceQuestion: entry.question,
+            candidateSet: preloadedPandoraCandidates,
+          });
+          if (match.best && match.best.similarity && Number(match.best.similarity.score) >= 0.86) {
+            existingMirror = {
+              marketAddress: match.best.marketAddress,
+              similarity: match.best.similarity.score,
+            };
+          }
+          diagnostics.push(...(match.diagnostics || []));
+        } catch (err) {
+          diagnostics.push(`Duplicate-check skipped for "${entry.slug || entry.marketId || entry.question || 'market'}": ${err && err.message ? err.message : String(err)}`);
         }
-        diagnostics.push(...(match.diagnostics || []));
-      } catch (err) {
-        diagnostics.push(`Duplicate-check skipped for "${entry.slug || entry.marketId || entry.question || 'market'}": ${err && err.message ? err.message : String(err)}`);
       }
     }
 

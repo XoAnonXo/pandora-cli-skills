@@ -1,5 +1,3 @@
-const { createRng } = require('./rng.cjs');
-const { mean, standardDeviation } = require('./mc_stats.cjs');
 const { createQuantError } = require('./errors.cjs');
 
 const ABM_SCHEMA_VERSION = '1.0.0';
@@ -8,6 +6,67 @@ const MAX_ABM_STEPS = 10_000;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function createRng(seed) {
+  let state = Number.isInteger(seed) ? seed >>> 0 : 1;
+
+  function next() {
+    state += 0x6d2b79f5;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  let spare = null;
+  function nextNormal(meanValue = 0, stdDev = 1) {
+    if (spare !== null) {
+      const value = spare;
+      spare = null;
+      return meanValue + value * stdDev;
+    }
+
+    let u1 = next();
+    let u2 = next();
+    if (u1 <= Number.EPSILON) u1 = Number.EPSILON;
+    if (u2 <= Number.EPSILON) u2 = Number.EPSILON;
+
+    const radius = Math.sqrt(-2 * Math.log(u1));
+    const theta = 2 * Math.PI * u2;
+    const z0 = radius * Math.cos(theta);
+    const z1 = radius * Math.sin(theta);
+    spare = z1;
+    return meanValue + z0 * stdDev;
+  }
+
+  return {
+    next,
+    nextNormal,
+  };
+}
+
+function mean(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return 0;
+  }
+  let total = 0;
+  for (const value of values) {
+    total += value;
+  }
+  return total / values.length;
+}
+
+function standardDeviation(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return 0;
+  }
+  const average = mean(values);
+  let variance = 0;
+  for (const value of values) {
+    const delta = value - average;
+    variance += delta * delta;
+  }
+  return Math.sqrt(variance / values.length);
 }
 
 function validatePositiveInteger(value, name) {

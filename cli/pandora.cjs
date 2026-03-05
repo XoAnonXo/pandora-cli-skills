@@ -7,62 +7,7 @@ const { spawnSync } = require('child_process');
 const { createCommandRouter } = require('./lib/command_router.cjs');
 const { createCliOutputService } = require('./lib/cli_output_service.cjs');
 const { createErrorRecoveryService } = require('./lib/error_recovery_service.cjs');
-const { createRunScanCommand } = require('./lib/scan_command_service.cjs');
-const { createRunMirrorCommand } = require('./lib/mirror_command_service.cjs');
-const { createParseTradeFlags } = require('./lib/parsers/trade_flags.cjs');
-const { createParseWatchFlags } = require('./lib/parsers/watch_flags.cjs');
-const { createParseAutopilotFlags } = require('./lib/parsers/autopilot_flags.cjs');
-const { createParseMirrorPlanFlags } = require('./lib/parsers/mirror_plan_flags.cjs');
-const { createParseMirrorHedgeCalcFlags } = require('./lib/parsers/mirror_hedge_calc_flags.cjs');
-const { createParseMirrorDeployFlags } = require('./lib/parsers/mirror_deploy_flags.cjs');
-const { createParseMirrorGoFlags } = require('./lib/parsers/mirror_go_flags.cjs');
-const {
-  createParseMirrorSyncFlags,
-  createParseMirrorSyncDaemonSelectorFlags,
-} = require('./lib/parsers/mirror_sync_flags.cjs');
-const {
-  createParseMirrorBrowseFlags,
-  createParseMirrorVerifyFlags,
-  createParseMirrorStatusFlags,
-  createParseMirrorCloseFlags,
-  createParseMirrorLpExplainFlags,
-  createParseMirrorSimulateFlags,
-} = require('./lib/parsers/mirror_remaining_flags.cjs');
-const {
-  createParsePolymarketSharedFlags,
-  createParsePolymarketApproveFlags,
-  createParsePolymarketTradeFlags,
-} = require('./lib/parsers/polymarket_flags.cjs');
-const { createParseResolveFlags } = require('./lib/parsers/resolve_flags.cjs');
-const { createParseClaimFlags } = require('./lib/parsers/claim_flags.cjs');
-const { createParseLpFlags } = require('./lib/parsers/lp_flags.cjs');
-const { createParseLifecycleFlags } = require('./lib/parsers/lifecycle_flags.cjs');
-const { createParseSportsFlags } = require('./lib/parsers/sports_flags.cjs');
-const { createParseOddsFlags } = require('./lib/parsers/odds_flags.cjs');
-const { createParseRiskShowFlags, createParseRiskPanicFlags } = require('./lib/parsers/risk_flags.cjs');
-const {
-  createParseModelCalibrateFlags,
-  createParseModelCorrelationFlags,
-  createParseModelDiagnoseFlags,
-  createParseModelScoreBrierFlags,
-} = require('./lib/parsers/model_flags.cjs');
-const {
-  createParseSimulateMcFlags,
-  createParseSimulateParticleFilterFlags,
-} = require('./lib/parsers/simulate_flags.cjs');
 const { createCoreCommandFlagParsers } = require('./lib/parsers/core_command_flags.cjs');
-const { createRunTradeCommand } = require('./lib/trade_command_service.cjs');
-const { createRunWatchCommand } = require('./lib/watch_command_service.cjs');
-const { createRunPolymarketCommand } = require('./lib/polymarket_command_service.cjs');
-const { createRunResolveCommand } = require('./lib/resolve_command_service.cjs');
-const { createRunClaimCommand } = require('./lib/claim_command_service.cjs');
-const { createRunLpCommand } = require('./lib/lp_command_service.cjs');
-const { createRunLifecycleCommand } = require('./lib/lifecycle_command_service.cjs');
-const { createRunArbCommand } = require('./lib/arb_command_service.cjs');
-const { createRunOddsCommand } = require('./lib/odds_command_service.cjs');
-const { createRunSportsCommand } = require('./lib/sports_command_service.cjs');
-const { createRunRiskCommand } = require('./lib/risk_command_service.cjs');
-const { createRunModelCommand } = require('./lib/model_command_service.cjs');
 const { resolveTradeBuyCall } = require('./lib/trade_market_type_service.cjs');
 const {
   DEFAULT_INDEXER_URL: SHARED_DEFAULT_INDEXER_URL,
@@ -83,6 +28,42 @@ function createLazyModuleLoader(modulePath) {
       cached = require(modulePath);
     }
     return cached;
+  };
+}
+
+/**
+ * Lazily creates and memoizes a factory product from a CommonJS module export.
+ * @param {string} modulePath
+ * @param {string} exportName
+ * @param {() => object} buildDeps
+ * @returns {() => any}
+ */
+function createLazyFactoryValue(modulePath, exportName, buildDeps) {
+  let cached = null;
+  return function getFactoryValue() {
+    if (!cached) {
+      const mod = require(modulePath);
+      const factory = mod && mod[exportName];
+      if (typeof factory !== 'function') {
+        throw new Error(`Expected ${exportName} to be a function from ${modulePath}.`);
+      }
+      cached = factory(buildDeps());
+    }
+    return cached;
+  };
+}
+
+/**
+ * Lazily creates a factory product and forwards calls to it.
+ * @param {string} modulePath
+ * @param {string} exportName
+ * @param {() => object} buildDeps
+ * @returns {(...args: any[]) => any}
+ */
+function createLazyFactoryRunner(modulePath, exportName, buildDeps) {
+  const getFactoryValue = createLazyFactoryValue(modulePath, exportName, buildDeps);
+  return function runLazyFactoryProduct(...args) {
+    return getFactoryValue()(...args);
   };
 }
 
@@ -4491,7 +4472,7 @@ async function runMarketsCommand(args, context) {
   throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get|scan');
 }
 
-const runScanCommand = createRunScanCommand({
+const runScanCommand = createLazyFactoryRunner('./lib/scan_command_service.cjs', 'createRunScanCommand', () => ({
   parseIndexerSharedFlags,
   includesHelpFlag,
   emitSuccess,
@@ -4504,7 +4485,7 @@ const runScanCommand = createRunScanCommand({
   buildMarketsListPayload,
   filterHedgeableMarkets,
   renderScanTable,
-});
+}));
 
 async function runPollsCommand(args, context) {
   const shared = parseIndexerSharedFlags(args);
@@ -4699,10 +4680,15 @@ async function runEventsCommand(args, context) {
     const options = parseEventsListFlags(actionArgs);
     const types = options.type === 'all' ? ['liquidity', 'oracle-fee', 'claim'] : [options.type];
 
+    const pagesByType = await Promise.all(
+      types.map(async (type) => ({
+        type,
+        page: await fetchEventsByType(indexerUrl, type, options, shared.timeoutMs),
+      })),
+    );
     const all = [];
     const pageInfoBySource = {};
-    for (const type of types) {
-      const page = await fetchEventsByType(indexerUrl, type, options, shared.timeoutMs);
+    for (const { type, page } of pagesByType) {
       all.push(...page.items);
       pageInfoBySource[type] = page.pageInfo;
     }
@@ -4752,11 +4738,10 @@ async function runEventsCommand(args, context) {
     const options = parseEventsGetFlags(actionArgs);
     const types = options.type === 'all' ? ['liquidity', 'oracle-fee', 'claim'] : [options.type];
 
-    let found = null;
-    for (const type of types) {
-      found = await fetchEventByType(indexerUrl, type, options.id, shared.timeoutMs);
-      if (found) break;
-    }
+    const foundByType = await Promise.all(
+      types.map((type) => fetchEventByType(indexerUrl, type, options.id, shared.timeoutMs)),
+    );
+    const found = foundByType.find(Boolean) || null;
 
     if (!found) {
       throw new CliError('NOT_FOUND', `Event not found for id: ${options.id}`);
@@ -5358,67 +5343,71 @@ const sharedParserDeps = {
   isSecureHttpUrlOrLocal,
 };
 
-const parseTradeFlagsFromModule = createParseTradeFlags({
+const parseTradeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/trade_flags.cjs', 'createParseTradeFlags', () => ({
   ...sharedParserDeps,
   parseBigIntString,
-});
-const parseWatchFlagsFromModule = createParseWatchFlags(sharedParserDeps);
-const parseAutopilotFlagsFromModule = createParseAutopilotFlags({
+}));
+const parseWatchFlagsFromModule = createLazyFactoryRunner('./lib/parsers/watch_flags.cjs', 'createParseWatchFlags', () => sharedParserDeps);
+const parseAutopilotFlagsFromModule = createLazyFactoryRunner('./lib/parsers/autopilot_flags.cjs', 'createParseAutopilotFlags', () => ({
   ...sharedParserDeps,
   defaultAutopilotStateFile,
   defaultAutopilotKillSwitchFile,
-});
-const parseMirrorPlanFlagsFromModule = createParseMirrorPlanFlags(sharedParserDeps);
-const parseMirrorHedgeCalcFlagsFromModule = createParseMirrorHedgeCalcFlags({
+}));
+const parseMirrorPlanFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_plan_flags.cjs', 'createParseMirrorPlanFlags', () => sharedParserDeps);
+const parseMirrorHedgeCalcFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_hedge_calc_flags.cjs', 'createParseMirrorHedgeCalcFlags', () => ({
   ...sharedParserDeps,
   parseCsvNumberList,
-});
-const parseMirrorDeployFlagsFromModule = createParseMirrorDeployFlags(sharedParserDeps);
-const parseMirrorGoFlagsFromModule = createParseMirrorGoFlags({
+}));
+const parseMirrorDeployFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_deploy_flags.cjs', 'createParseMirrorDeployFlags', () => sharedParserDeps);
+const parseMirrorGoFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_go_flags.cjs', 'createParseMirrorGoFlags', () => ({
   ...sharedParserDeps,
   parseMirrorSyncGateSkipList,
   mergeMirrorSyncGateSkipLists,
-});
-const parseMirrorSyncFlagsFromModule = createParseMirrorSyncFlags({
+}));
+const parseMirrorSyncFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_sync_flags.cjs', 'createParseMirrorSyncFlags', () => ({
   ...sharedParserDeps,
   defaultMirrorStateFile,
   defaultMirrorKillSwitchFile,
   parseMirrorSyncGateSkipList,
   mergeMirrorSyncGateSkipLists,
-});
-const parseMirrorSyncDaemonSelectorFlagsFromModule = createParseMirrorSyncDaemonSelectorFlags({
-  CliError,
-  requireFlagValue,
-  parseAddressFlag,
-});
-const parseMirrorBrowseFlagsFromModule = createParseMirrorBrowseFlags({
+}));
+const parseMirrorSyncDaemonSelectorFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/mirror_sync_flags.cjs',
+  'createParseMirrorSyncDaemonSelectorFlags',
+  () => ({
+    CliError,
+    requireFlagValue,
+    parseAddressFlag,
+  }),
+);
+const parseMirrorBrowseFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorBrowseFlags', () => ({
   ...sharedParserDeps,
   parseDateLikeFlag,
-});
-const parseMirrorVerifyFlagsFromModule = createParseMirrorVerifyFlags(sharedParserDeps);
-const parseMirrorStatusFlagsFromModule = createParseMirrorStatusFlags({
+}));
+const parseMirrorVerifyFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorVerifyFlags', () => sharedParserDeps);
+const parseMirrorStatusFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorStatusFlags', () => ({
   ...sharedParserDeps,
   defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
-});
-const parseMirrorCloseFlagsFromModule = createParseMirrorCloseFlags(sharedParserDeps);
-const parseMirrorLpExplainFlagsFromModule = createParseMirrorLpExplainFlags(sharedParserDeps);
-const parseMirrorSimulateFlagsFromModule = createParseMirrorSimulateFlags({
+}));
+const parseMirrorCloseFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorCloseFlags', () => sharedParserDeps);
+const parseMirrorLpExplainFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorLpExplainFlags', () => sharedParserDeps);
+const parseMirrorSimulateFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorSimulateFlags', () => ({
   ...sharedParserDeps,
   parseCsvNumberList,
-});
-const parsePolymarketSharedFlagsFromModule = createParsePolymarketSharedFlags({
+}));
+const parsePolymarketSharedFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketSharedFlags', () => ({
   CliError,
   requireFlagValue,
   parseAddressFlag,
   parseInteger,
   isValidPrivateKey,
   isSecureHttpUrlOrLocal,
-});
-const parsePolymarketApproveFlagsFromModule = createParsePolymarketApproveFlags({
+}));
+const parsePolymarketApproveFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketApproveFlags', () => ({
   CliError,
   parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
-});
-const parsePolymarketTradeFlagsFromModule = createParsePolymarketTradeFlags({
+}));
+const parsePolymarketTradeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketTradeFlags', () => ({
   CliError,
   requireFlagValue,
   parsePositiveNumber,
@@ -5426,16 +5415,16 @@ const parsePolymarketTradeFlagsFromModule = createParsePolymarketTradeFlags({
   parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
   isSecureHttpUrlOrLocal,
   defaultTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
-});
-const parseResolveFlagsFromModule = createParseResolveFlags({
+}));
+const parseResolveFlagsFromModule = createLazyFactoryRunner('./lib/parsers/resolve_flags.cjs', 'createParseResolveFlags', () => ({
   CliError,
   parseAddressFlag,
   requireFlagValue,
   parseInteger,
   isValidPrivateKey,
   isSecureHttpUrlOrLocal,
-});
-const parseClaimFlagsFromModule = createParseClaimFlags({
+}));
+const parseClaimFlagsFromModule = createLazyFactoryRunner('./lib/parsers/claim_flags.cjs', 'createParseClaimFlags', () => ({
   CliError,
   parseAddressFlag,
   requireFlagValue,
@@ -5443,8 +5432,8 @@ const parseClaimFlagsFromModule = createParseClaimFlags({
   parsePositiveInteger,
   isValidPrivateKey,
   isSecureHttpUrlOrLocal,
-});
-const parseLpFlagsFromModule = createParseLpFlags({
+}));
+const parseLpFlagsFromModule = createLazyFactoryRunner('./lib/parsers/lp_flags.cjs', 'createParseLpFlags', () => ({
   CliError,
   parseAddressFlag,
   requireFlagValue,
@@ -5454,12 +5443,12 @@ const parseLpFlagsFromModule = createParseLpFlags({
   isValidPrivateKey,
   isSecureHttpUrlOrLocal,
   defaultTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
-});
-const parseLifecycleFlagsFromModule = createParseLifecycleFlags({
+}));
+const parseLifecycleFlagsFromModule = createLazyFactoryRunner('./lib/parsers/lifecycle_flags.cjs', 'createParseLifecycleFlags', () => ({
   CliError,
   requireFlagValue,
-});
-const parseSportsFlagsFromModule = createParseSportsFlags({
+}));
+const parseSportsFlagsFromModule = createLazyFactoryRunner('./lib/parsers/sports_flags.cjs', 'createParseSportsFlags', () => ({
   CliError,
   requireFlagValue,
   parsePositiveInteger,
@@ -5471,48 +5460,48 @@ const parseSportsFlagsFromModule = createParseSportsFlags({
   parseCsvList,
   parseDateLikeFlag,
   isSecureHttpUrlOrLocal,
-});
-const parseOddsFlagsFromModule = createParseOddsFlags({
+}));
+const parseOddsFlagsFromModule = createLazyFactoryRunner('./lib/parsers/odds_flags.cjs', 'createParseOddsFlags', () => ({
   CliError,
   requireFlagValue,
   parsePositiveInteger,
   parseCsvList,
   isSecureHttpUrlOrLocal,
-});
-const parseRiskShowFlagsFromModule = createParseRiskShowFlags({
+}));
+const parseRiskShowFlagsFromModule = createLazyFactoryRunner('./lib/parsers/risk_flags.cjs', 'createParseRiskShowFlags', () => ({
   CliError,
   requireFlagValue,
-});
-const parseRiskPanicFlagsFromModule = createParseRiskPanicFlags({
+}));
+const parseRiskPanicFlagsFromModule = createLazyFactoryRunner('./lib/parsers/risk_flags.cjs', 'createParseRiskPanicFlags', () => ({
   CliError,
   requireFlagValue,
-});
-const parseModelCalibrateFlagsFromModule = createParseModelCalibrateFlags({
+}));
+const parseModelCalibrateFlagsFromModule = createLazyFactoryRunner('./lib/parsers/model_flags.cjs', 'createParseModelCalibrateFlags', () => ({
   CliError,
   requireFlagValue,
   parseNumber,
   parsePositiveNumber,
   parsePositiveInteger,
   parseCsvList,
-});
-const parseModelCorrelationFlagsFromModule = createParseModelCorrelationFlags({
+}));
+const parseModelCorrelationFlagsFromModule = createLazyFactoryRunner('./lib/parsers/model_flags.cjs', 'createParseModelCorrelationFlags', () => ({
   CliError,
   requireFlagValue,
   parseNumber,
   parsePositiveNumber,
   parseCsvList,
-});
-const parseModelDiagnoseFlagsFromModule = createParseModelDiagnoseFlags({
+}));
+const parseModelDiagnoseFlagsFromModule = createLazyFactoryRunner('./lib/parsers/model_flags.cjs', 'createParseModelDiagnoseFlags', () => ({
   CliError,
   requireFlagValue,
   parseNumber,
-});
-const parseModelScoreBrierFlagsFromModule = createParseModelScoreBrierFlags({
+}));
+const parseModelScoreBrierFlagsFromModule = createLazyFactoryRunner('./lib/parsers/model_flags.cjs', 'createParseModelScoreBrierFlags', () => ({
   CliError,
   requireFlagValue,
   parsePositiveInteger,
-});
-const parseSimulateMcFlagsFromModule = createParseSimulateMcFlags({
+}));
+const parseSimulateMcFlagsFromModule = createLazyFactoryRunner('./lib/parsers/simulate_flags.cjs', 'createParseSimulateMcFlags', () => ({
   CliError,
   requireFlagValue,
   parsePositiveInteger,
@@ -5521,18 +5510,22 @@ const parseSimulateMcFlagsFromModule = createParseSimulateMcFlags({
   parseNumber,
   parseOutcomeSide,
   parseNonNegativeInteger,
-});
-const parseSimulateParticleFilterFlagsFromModule = createParseSimulateParticleFilterFlags({
-  CliError,
-  requireFlagValue,
-  parsePositiveInteger,
-  parsePositiveNumber,
-  parseProbabilityPercent,
-  parseNumber,
-  parseNonNegativeInteger,
-});
+}));
+const parseSimulateParticleFilterFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/simulate_flags.cjs',
+  'createParseSimulateParticleFilterFlags',
+  () => ({
+    CliError,
+    requireFlagValue,
+    parsePositiveInteger,
+    parsePositiveNumber,
+    parseProbabilityPercent,
+    parseNumber,
+    parseNonNegativeInteger,
+  }),
+);
 
-const runTradeCommandFromService = createRunTradeCommand({
+const runTradeCommandFromService = createLazyFactoryRunner('./lib/trade_command_service.cjs', 'createRunTradeCommand', () => ({
   CliError,
   includesHelpFlag,
   parseIndexerSharedFlags,
@@ -5554,9 +5547,9 @@ const runTradeCommandFromService = createRunTradeCommand({
   assertLiveWriteAllowed,
   renderQuoteTable,
   renderTradeTable,
-});
+}));
 
-const runWatchCommandFromService = createRunWatchCommand({
+const runWatchCommandFromService = createLazyFactoryRunner('./lib/watch_command_service.cjs', 'createRunWatchCommand', () => ({
   CliError,
   parseIndexerSharedFlags,
   emitSuccess,
@@ -5574,9 +5567,9 @@ const runWatchCommandFromService = createRunWatchCommand({
   defaultForecastFile,
   sleepMs,
   renderWatchTable,
-});
+}));
 
-const runPolymarketCommandFromService = createRunPolymarketCommand({
+const runPolymarketCommandFromService = createLazyFactoryRunner('./lib/polymarket_command_service.cjs', 'createRunPolymarketCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
@@ -5599,9 +5592,9 @@ const runPolymarketCommandFromService = createRunPolymarketCommand({
   renderSingleEntityTable,
   assertLiveWriteAllowed,
   defaultEnvFile: DEFAULT_ENV_FILE,
-});
+}));
 
-const runResolveCommandFromService = createRunResolveCommand({
+const runResolveCommandFromService = createLazyFactoryRunner('./lib/resolve_command_service.cjs', 'createRunResolveCommand', () => ({
   includesHelpFlag,
   emitSuccess,
   commandHelpPayload,
@@ -5612,9 +5605,9 @@ const runResolveCommandFromService = createRunResolveCommand({
   renderSingleEntityTable,
   CliError,
   assertLiveWriteAllowed,
-});
+}));
 
-const runClaimCommandFromService = createRunClaimCommand({
+const runClaimCommandFromService = createLazyFactoryRunner('./lib/claim_command_service.cjs', 'createRunClaimCommand', () => ({
   includesHelpFlag,
   emitSuccess,
   commandHelpPayload,
@@ -5625,9 +5618,9 @@ const runClaimCommandFromService = createRunClaimCommand({
   renderSingleEntityTable,
   CliError,
   assertLiveWriteAllowed,
-});
+}));
 
-const runLpCommandFromService = createRunLpCommand({
+const runLpCommandFromService = createLazyFactoryRunner('./lib/lp_command_service.cjs', 'createRunLpCommand', () => ({
   includesHelpFlag,
   emitSuccess,
   commandHelpPayload,
@@ -5638,8 +5631,8 @@ const runLpCommandFromService = createRunLpCommand({
   renderSingleEntityTable,
   CliError,
   assertLiveWriteAllowed,
-});
-const runSportsCommandFromService = createRunSportsCommand({
+}));
+const runSportsCommandFromService = createLazyFactoryRunner('./lib/sports_command_service.cjs', 'createRunSportsCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
@@ -5654,8 +5647,8 @@ const runSportsCommandFromService = createRunSportsCommand({
   buildSportsCreatePlan,
   deployPandoraAmmMarket,
   assertLiveWriteAllowed,
-});
-const runRiskCommandFromService = createRunRiskCommand({
+}));
+const runRiskCommandFromService = createLazyFactoryRunner('./lib/risk_command_service.cjs', 'createRunRiskCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
@@ -5666,8 +5659,8 @@ const runRiskCommandFromService = createRunRiskCommand({
   setPanic: setRiskPanic,
   clearPanic: clearRiskPanic,
   renderRiskTable,
-});
-const runModelCommandFromService = createRunModelCommand({
+}));
+const runModelCommandFromService = createLazyFactoryRunner('./lib/model_command_service.cjs', 'createRunModelCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
@@ -5679,15 +5672,15 @@ const runModelCommandFromService = createRunModelCommand({
   readForecastRecords,
   defaultForecastFile,
   computeBrierReport,
-});
-const runLifecycleCommandFromService = createRunLifecycleCommand({
+}));
+const runLifecycleCommandFromService = createLazyFactoryRunner('./lib/lifecycle_command_service.cjs', 'createRunLifecycleCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
   commandHelpPayload,
   parseLifecycleFlags: parseLifecycleFlagsFromModule,
-});
-const runArbCommandFromService = createRunArbCommand({
+}));
+const runArbCommandFromService = createLazyFactoryRunner('./lib/arb_command_service.cjs', 'createRunArbCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
@@ -5704,8 +5697,8 @@ const runArbCommandFromService = createRunArbCommand({
   graphqlRequest,
   sleepMs,
   scanArbitrage,
-});
-const runOddsCommandFromService = createRunOddsCommand({
+}));
+const runOddsCommandFromService = createLazyFactoryRunner('./lib/odds_command_service.cjs', 'createRunOddsCommand', () => ({
   parseIndexerSharedFlags,
   includesHelpFlag,
   maybeLoadIndexerEnv,
@@ -5716,7 +5709,7 @@ const runOddsCommandFromService = createRunOddsCommand({
   sleepMs,
   emitSuccess,
   renderSingleEntityTable,
-});
+}));
 
 async function runPortfolioCommand(args, context) {
   const shared = parseIndexerSharedFlags(args);
@@ -6186,7 +6179,7 @@ async function runLivePolymarketPreflightForMirror(options = {}) {
   }
 }
 
-const runMirrorCommand = createRunMirrorCommand({
+const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.cjs', 'createRunMirrorCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
@@ -6251,7 +6244,7 @@ const runMirrorCommand = createRunMirrorCommand({
   renderMirrorStatusTable,
   renderMirrorCloseTable,
   cliPath: __filename,
-});
+}));
 
 
 async function runPolymarketCommand(args, context) {
