@@ -72,6 +72,18 @@ Prerequisite: Node.js `>=18`.
   - `pandora --output json risk panic --clear`
   - semantic note: `max_daily_loss_usd` and `max_open_markets` are enforced as daily live-notional / daily operation counters in current implementation.
 
+## Mirror operator guidance
+- `mirror plan` computes a sports-aware suggested `targetTimestamp`; mirror deploy/go do not use a generic `+1h` buffer. Use `--target-timestamp <unix|iso>` only when you intentionally want to override the suggested close time.
+- Fresh `mirror deploy` / `mirror go` runs require at least two independent public resolution URLs from different hosts in `--sources`.
+- Polymarket, Gamma, and CLOB URLs are discovery inputs only and are not valid `--sources`.
+- Poll category ids: `Politics=0`, `Sports=1`, `Finance=2`, `Crypto=3`, `Culture=4`, `Technology=5`, `Science=6`, `Entertainment=7`, `Health=8`, `Environment=9`, `Other=10`.
+- Validation is exact-payload:
+  - run `pandora --output json agent market validate --question "<final question>" --rules "<final rules>" --target-timestamp <unix-seconds> --sources <url1> <url2>`
+  - rerun CLI mirror execute with `--validation-ticket <ticket>`
+  - rerun MCP execute/live with `agentPreflight = { validationTicket, validationDecision: "PASS", validationSummary }`
+- `sports create run` does not expose a CLI `--validation-ticket`; agent-controlled execute paths use `agentPreflight` / `PANDORA_AGENT_PREFLIGHT`.
+- In the packaged sports/mirror examples, use `--category Sports` (or `--category 1`) for the on-chain `PollCategory.Sports` enum.
+
 ## New CLI capabilities
 - Global machine-readable output:
   - `pandora --output json doctor`
@@ -207,6 +219,8 @@ Mirror advanced flags (for operator tuning):
 - `--sync-interval-ms <ms>` on `mirror go` to control auto-sync tick cadence.
 - `--oracle <address>` / `--factory <address>` on `mirror deploy` and `mirror go` for explicit contract overrides.
 - `--rules "<text>"` on `mirror deploy` for direct rules override without a plan file.
+- `--target-timestamp <unix|iso>` on `mirror deploy|go` for explicit close-time override when the suggested sports-safe target is not sufficient.
+- `--validation-ticket <ticket>` on `mirror deploy|go` for CLI execute reruns after `agent market validate`.
 - `--distribution-yes-pct <0-100>` / `--distribution-no-pct <0-100>` on `mirror deploy|go` as percentage alternatives to raw 1e9 part hints.
 - `--max-imbalance <n>` now accepts the full uint24 range, including `0` for "no guard".
 - `--polymarket-gamma-mock-url <url>` on `mirror browse|plan|verify|go|sync|status` for deterministic mock-source testing.

@@ -78,6 +78,14 @@ pandora --output json lifecycle status --id <lifecycle-id>
 pandora --output json lifecycle resolve --id <lifecycle-id> --confirm
 ```
 
+### Mirror Operator Notes
+
+- `mirror plan` computes a sports-aware suggested `targetTimestamp`; do not assume a generic `+1h` close buffer. Use `--target-timestamp <unix|iso>` only when you intentionally want to override the suggested close time.
+- Fresh `mirror deploy` / `mirror go` runs need at least two independent public resolution URLs from different hosts in `--sources`. Polymarket, Gamma, and CLOB URLs are source-market discovery inputs and are not valid resolution sources.
+- Validation is payload-exact: run `pandora --output json agent market validate ...` on the final `question`, `rules`, `sources`, and `targetTimestamp` before execute mode. CLI mirror execute reruns use `--validation-ticket`; MCP execute/live reruns use `agentPreflight`.
+- For sports deploy/create flows, `--category Sports` (or `--category 1`) maps to the on-chain `PollCategory.Sports` enum.
+- Poll category ids: `Politics=0`, `Sports=1`, `Finance=2`, `Crypto=3`, `Culture=4`, `Technology=5`, `Science=6`, `Entertainment=7`, `Health=8`, `Environment=9`, `Other=10`.
+
 ## Risk Controls
 
 - Inspect/engage panic lock:

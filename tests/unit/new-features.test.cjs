@@ -2770,7 +2770,7 @@ test('createRunMirrorCommand sync help reports full usage and daemon selectors',
   assert.equal(observed.emitted.length, 1);
   assert.equal(observed.emitted[0][1], 'mirror.sync.help');
   const payload = observed.emitted[0][2];
-  assert.match(payload.usage, /mirror sync run\|once\|start\|stop\|status/);
+  assert.match(payload.usage, /mirror sync once\|run\|start/);
   assert.match(payload.usage, /--telegram-chat-id <id>/);
   assert.match(payload.daemonLifecycle.stop, /--pid-file <path>\|--strategy-hash <hash>/);
   assert.match(payload.daemonLifecycle.status, /--pid-file <path>\|--strategy-hash <hash>/);

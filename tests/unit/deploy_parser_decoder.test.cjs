@@ -6,6 +6,7 @@ const { formatDecodedContractError } = require('../../cli/lib/contract_error_dec
 const { createParseMirrorDeployFlags } = require('../../cli/lib/parsers/mirror_deploy_flags.cjs');
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
 const { createParseSportsFlags } = require('../../cli/lib/parsers/sports_flags.cjs');
+const { parsePollCategory } = require('../../cli/lib/shared/poll_categories.cjs');
 
 class TestCliError extends Error {
   constructor(code, message) {
@@ -428,6 +429,97 @@ test('sports parser defaults maxImbalance to max uint24 and accepts percentage d
   assert.equal(Boolean(explicitZero.options.maxImbalance), true);
   assert.equal(explicitZero.options.distributionYes, 635_000_000);
   assert.equal(explicitZero.options.distributionNo, 365_000_000);
+});
+
+test('poll category helper and creation parsers accept canonical names alongside numeric ids', () => {
+  assert.equal(parsePollCategory('Politics', { flagName: '--category' }), 0);
+  assert.equal(parsePollCategory('technology', { flagName: '--category' }), 5);
+  assert.equal(parsePollCategory('10', { flagName: '--category' }), 10);
+
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildMirrorParserDeps());
+  const deploy = parseMirrorDeployFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--dry-run',
+    '--category',
+    'Health',
+  ]);
+  assert.equal(deploy.category, 8);
+
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildMirrorParserDeps());
+  const go = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--category',
+    '0',
+  ]);
+  assert.equal(go.category, 0);
+
+  const parseSportsFlags = createParseSportsFlags(buildSportsParserDeps());
+  const sports = parseSportsFlags([
+    'create',
+    'plan',
+    '--event-id',
+    'evt-1',
+    '--category',
+    'Environment',
+  ]);
+  assert.equal(sports.options.category, 9);
+});
+
+test('sports-oriented creation parsers default category to PollCategory.Sports', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildMirrorParserDeps());
+  const deploy = parseMirrorDeployFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--dry-run',
+  ]);
+  assert.equal(deploy.category, 1);
+
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildMirrorParserDeps());
+  const go = parseMirrorGoFlags(['--polymarket-market-id', 'poly-1']);
+  assert.equal(go.category, 1);
+
+  const parseSportsFlags = createParseSportsFlags(buildSportsParserDeps());
+  const sports = parseSportsFlags(['create', 'plan', '--event-id', 'evt-1']);
+  assert.equal(sports.options.category, 1);
+});
+
+test('creation parsers reject unsupported poll category values with enum guidance', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildMirrorParserDeps());
+  assert.throws(
+    () =>
+      parseMirrorDeployFlags([
+        '--polymarket-market-id',
+        'poly-1',
+        '--dry-run',
+        '--category',
+        'Gaming',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /Politics\|Sports\|Finance\|Crypto\|Culture\|Technology\|Science\|Entertainment\|Health\|Environment\|Other/);
+      return true;
+    },
+  );
+
+  const parseSportsFlags = createParseSportsFlags(buildSportsParserDeps());
+  assert.throws(
+    () =>
+      parseSportsFlags([
+        'create',
+        'plan',
+        '--event-id',
+        'evt-1',
+        '--category',
+        '11',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /integer between 0 and 10/i);
+      return true;
+    },
+  );
 });
 
 test('deployPandoraAmmMarket rejects overlong rules before any transaction simulation', async () => {

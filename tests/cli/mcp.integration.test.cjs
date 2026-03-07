@@ -189,6 +189,67 @@ test('mcp execute-mode market creation requires agentPreflight', async () => {
   });
 });
 
+test('mcp rejects invalid typed values before CLI parser execution', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'mirror.deploy',
+      arguments: {
+        'polymarket-market-id': '0x-market',
+        'dry-run': true,
+        category: 'Gaming',
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_INVALID_ARGUMENTS');
+    assert.match(envelope.error.message, /category/i);
+    assert.equal(call.isError, true);
+  });
+});
+
+test('mcp rejects mutually-exclusive mirror argument combinations at the tool boundary', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'mirror.deploy',
+      arguments: {
+        'polymarket-market-id': '0x-market',
+        'dry-run': true,
+        execute: true,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_INVALID_ARGUMENTS');
+    assert.match(envelope.error.message, /exclusive argument combination|mutually-exclusive/i);
+    assert.equal(call.isError, true);
+  });
+});
+
+test('mcp agentPreflight payload must satisfy the published nested schema', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'mirror.deploy',
+      arguments: {
+        'polymarket-market-id': '0x-market',
+        execute: true,
+        intent: { execute: true },
+        agentPreflight: {
+          validationTicket: 'market-validate:abc123',
+          validationDecision: 'PASS',
+        },
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_INVALID_ARGUMENTS');
+    assert.match(envelope.error.message, /agentPreflight/i);
+    assert.equal(call.isError, true);
+  });
+});
+
 test('mcp agent.market.validate returns structured prompt payload', async () => {
   await withMcpClient(async (client) => {
     const call = await client.callTool({
@@ -279,7 +340,7 @@ test('mcp long-running modes are blocked with actionable error', async () => {
   });
 });
 
-test('mcp still accepts legacy nested flags payloads for backward compatibility', async () => {
+test('mcp rejects legacy nested flags payloads by default', async () => {
   await withMcpClient(async (client) => {
     const call = await client.callTool({
       name: 'quote',
@@ -292,7 +353,9 @@ test('mcp still accepts legacy nested flags payloads for backward compatibility'
       },
     });
     const envelope = extractStructuredEnvelope(call);
-    assert.equal(envelope.command, 'quote');
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_LEGACY_FLAGS_UNSUPPORTED');
+    assert.equal(call.isError, true);
   });
 });
 
@@ -301,11 +364,9 @@ test('mcp blocks odds.record because it is long-running/unbounded', async () => 
     const call = await client.callTool({
       name: 'odds.record',
       arguments: {
-        flags: {
-          competition: 'soccer_epl',
-          interval: 60,
-          'max-samples': 1000,
-        },
+        competition: 'soccer_epl',
+        interval: 60,
+        'max-samples': 1000,
       },
     });
     const envelope = extractStructuredEnvelope(call);
@@ -320,11 +381,9 @@ test('mcp simulate.mc executes bounded simulation and returns structured payload
     const call = await client.callTool({
       name: 'simulate.mc',
       arguments: {
-        flags: {
-          trials: 500,
-          horizon: 16,
-          seed: 17,
-        },
+        trials: 500,
+        horizon: 16,
+        seed: 17,
       },
     });
     const envelope = extractStructuredEnvelope(call);
@@ -343,10 +402,8 @@ test('mcp model.score.brier executes and returns structured payload', async () =
     const call = await client.callTool({
       name: 'model.score.brier',
       arguments: {
-        flags: {
-          'group-by': 'source',
-          'bucket-count': 5,
-        },
+        'group-by': 'source',
+        'bucket-count': 5,
       },
     });
     const envelope = extractStructuredEnvelope(call);
@@ -368,9 +425,7 @@ test('mcp simulate.particle-filter blocks reading input files outside workspace'
       const call = await client.callTool({
         name: 'simulate.particle-filter',
         arguments: {
-          flags: {
-            input: inputPath,
-          },
+          input: inputPath,
         },
       });
       const envelope = extractStructuredEnvelope(call);
@@ -392,10 +447,8 @@ test('mcp model.calibrate blocks --save-model paths outside workspace', async ()
       const call = await client.callTool({
         name: 'model.calibrate',
         arguments: {
-          flags: {
-            returns: '0.01,0.02,-0.01,0.03,-0.02',
-            'save-model': modelPath,
-          },
+          returns: '0.01,0.02,-0.01,0.03,-0.02',
+          'save-model': modelPath,
         },
       });
       const envelope = extractStructuredEnvelope(call);
@@ -418,9 +471,7 @@ test('mcp lifecycle.start blocks reading config outside workspace', async () => 
       const call = await client.callTool({
         name: 'lifecycle.start',
         arguments: {
-          flags: {
-            config: configPath,
-          },
+          config: configPath,
           intent: {
             execute: true,
           },
@@ -446,10 +497,8 @@ test('mcp sports.create.plan blocks reading model files outside workspace', asyn
       const call = await client.callTool({
         name: 'sports.create.plan',
         arguments: {
-          flags: {
-            'event-id': 'evt-1',
-            'model-file': modelPath,
-          },
+          'event-id': 'evt-1',
+          'model-file': modelPath,
         },
       });
       const envelope = extractStructuredEnvelope(call);
@@ -472,10 +521,8 @@ test('mcp mirror.deploy blocks reading plan files outside workspace', async () =
       const call = await client.callTool({
         name: 'mirror.deploy',
         arguments: {
-          flags: {
-            'plan-file': planPath,
-            'dry-run': true,
-          },
+          'plan-file': planPath,
+          'dry-run': true,
         },
       });
       const envelope = extractStructuredEnvelope(call);
@@ -493,10 +540,9 @@ test('mcp mirror.plan rejects insecure gamma override urls', async () => {
     const call = await client.callTool({
       name: 'mirror.plan',
       arguments: {
-        flags: {
-          'polymarket-market-id': 'poly-1',
-          'polymarket-gamma-url': 'http://example.com/gamma',
-        },
+        source: 'polymarket',
+        'polymarket-market-id': 'poly-1',
+        'polymarket-gamma-url': 'http://example.com/gamma',
       },
     });
     const envelope = extractStructuredEnvelope(call);
@@ -511,9 +557,7 @@ test('mcp risk.panic requires explicit execute intent', async () => {
     const call = await client.callTool({
       name: 'risk.panic',
       arguments: {
-        flags: {
-          reason: 'incident',
-        },
+        reason: 'incident',
       },
     });
     const envelope = extractStructuredEnvelope(call);
@@ -530,9 +574,7 @@ test('mcp panic lock blocks live write tools until cleared', async () => {
       const engage = await client.callTool({
         name: 'risk.panic',
         arguments: {
-          flags: {
-            reason: 'incident',
-          },
+          reason: 'incident',
           intent: {
             execute: true,
           },
@@ -546,12 +588,10 @@ test('mcp panic lock blocks live write tools until cleared', async () => {
       const blocked = await client.callTool({
         name: 'resolve',
         arguments: {
-          flags: {
-            'poll-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            answer: 'yes',
-            reason: 'mcp resolve',
-            execute: true,
-          },
+          'poll-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          answer: 'yes',
+          reason: 'mcp resolve',
+          execute: true,
           intent: {
             execute: true,
           },
@@ -564,9 +604,7 @@ test('mcp panic lock blocks live write tools until cleared', async () => {
       const clear = await client.callTool({
         name: 'risk.panic',
         arguments: {
-          flags: {
-            clear: true,
-          },
+          clear: true,
           intent: {
             execute: true,
           },

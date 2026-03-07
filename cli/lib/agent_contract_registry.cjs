@@ -4,6 +4,7 @@ const HELP_PAYLOAD_SCHEMA_REF = '#/definitions/HelpPayload';
 const MCP_HELP_SCHEMA_REF = '#/definitions/McpHelpPayload';
 const ODDS_HELP_SCHEMA_REF = '#/definitions/OddsHelpPayload';
 const MIRROR_STATUS_HELP_SCHEMA_REF = '#/definitions/MirrorStatusHelpPayload';
+const { POLL_CATEGORY_NAME_LIST } = require('./shared/poll_categories.cjs');
 
 function stringSchema(description, extras = {}) {
   return { type: 'string', ...(description ? { description } : {}), ...extras };
@@ -71,7 +72,13 @@ function buildIntentSchema() {
   };
 }
 
-function buildInputSchema({ flagProperties = null, requiredFlags = [], includeIntent = false, anyOf = null } = {}) {
+function buildInputSchema({
+  flagProperties = null,
+  requiredFlags = [],
+  includeIntent = false,
+  anyOf = null,
+  oneOf = null,
+} = {}) {
   const schema = {
     type: 'object',
     properties: {},
@@ -95,7 +102,137 @@ function buildInputSchema({ flagProperties = null, requiredFlags = [], includeIn
       .map((requiredSet) => ({ required: [...requiredSet] }));
   }
 
+  if (Array.isArray(oneOf) && oneOf.length) {
+    schema.oneOf = oneOf
+      .filter((branch) => branch && typeof branch === 'object')
+      .map((branch) => ({ ...branch }));
+  }
+
   return schema;
+}
+
+function escapeRegex(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildCaseInsensitiveEnumPattern(values) {
+  const options = (Array.isArray(values) ? values : [])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .map((value) =>
+      value
+        .split('')
+        .map((char) => {
+          if (/[a-z]/i.test(char)) {
+            return `[${char.toLowerCase()}${char.toUpperCase()}]`;
+          }
+          return escapeRegex(char);
+        })
+        .join(''),
+    );
+  return `^(?:${options.join('|')})$`;
+}
+
+function buildRequiredSetCombinations(...groups) {
+  const normalizedGroups = groups
+    .filter((group) => Array.isArray(group) && group.length)
+    .map((group) =>
+      group
+        .filter((entry) => Array.isArray(entry) && entry.length)
+        .map((entry) => Array.from(new Set(entry.map((value) => String(value || '').trim()).filter(Boolean)))),
+    )
+    .filter((group) => group.length);
+  if (!normalizedGroups.length) return [];
+
+  let combos = [[]];
+  for (const group of normalizedGroups) {
+    const nextCombos = [];
+    for (const base of combos) {
+      for (const entry of group) {
+        nextCombos.push(Array.from(new Set([...base, ...entry])));
+      }
+    }
+    combos = nextCombos;
+  }
+  return combos;
+}
+
+function buildExclusivePresenceBranches(...groups) {
+  const normalizedGroups = groups
+    .filter((group) => Array.isArray(group) && group.length)
+    .map((group) =>
+      group
+        .filter((entry) => Array.isArray(entry))
+        .map((entry) => Array.from(new Set(entry.map((value) => String(value || '').trim()).filter(Boolean)))),
+    )
+    .filter((group) => group.length);
+
+  if (!normalizedGroups.length) return [];
+
+  let combos = [[]];
+  for (let groupIndex = 0; groupIndex < normalizedGroups.length; groupIndex += 1) {
+    const group = normalizedGroups[groupIndex];
+    const nextCombos = [];
+    for (const combo of combos) {
+      for (let optionIndex = 0; optionIndex < group.length; optionIndex += 1) {
+        nextCombos.push([
+          ...combo,
+          {
+            groupIndex,
+            optionIndex,
+            required: group[optionIndex],
+          },
+        ]);
+      }
+    }
+    combos = nextCombos;
+  }
+
+  return combos.map((combo) => {
+    const required = Array.from(new Set(combo.flatMap((selection) => selection.required)));
+    const forbidden = [];
+    const chosenFields = new Set(required);
+    for (const selection of combo) {
+      const group = normalizedGroups[selection.groupIndex];
+      for (let optionIndex = 0; optionIndex < group.length; optionIndex += 1) {
+        if (optionIndex === selection.optionIndex) continue;
+        const entry = group[optionIndex];
+        if (!entry.length) continue;
+        forbidden.push({ required: [...entry] });
+        for (const field of entry) {
+          if (!chosenFields.has(field)) {
+            forbidden.push({ required: [field] });
+          }
+        }
+      }
+    }
+    return {
+      ...(required.length ? { required } : {}),
+      ...(forbidden.length ? { not: { anyOf: forbidden } } : {}),
+    };
+  });
+}
+
+function buildPollCategorySchema(description = 'Category id or canonical category name.') {
+  const categoryNames = [...POLL_CATEGORY_NAME_LIST];
+  return {
+    description,
+    anyOf: [
+      integerSchema('Category id.', { minimum: 0 }),
+      {
+        type: 'string',
+        enum: categoryNames,
+        description: 'Canonical category name.',
+        examples: categoryNames,
+      },
+      {
+        type: 'string',
+        pattern: buildCaseInsensitiveEnumPattern(categoryNames),
+        description: 'Case-insensitive category name accepted by the CLI.',
+        examples: categoryNames,
+      },
+    ],
+  };
 }
 
 function commandContract(options) {
@@ -128,6 +265,50 @@ const commonFlags = {
   executeLive: booleanSchema('Execute live continuous workflow.'),
   provider: enumSchema(['primary', 'backup', 'auto'], 'Sports provider selection.'),
 };
+
+const mirrorPandoraSelectorAnyOf = [['pandora-market-address'], ['market-address']];
+const mirrorPolymarketSelectorAnyOf = [['polymarket-market-id'], ['polymarket-slug']];
+const mirrorPandoraPolymarketSelectorAnyOf = buildRequiredSetCombinations(
+  mirrorPandoraSelectorAnyOf,
+  mirrorPolymarketSelectorAnyOf,
+);
+const mirrorOptionalModeChoices = [[], ['paper'], ['dry-run'], ['execute-live'], ['execute']];
+const mirrorSelectorAndModeAnyOf = buildRequiredSetCombinations(
+  [['plan-file'], ['polymarket-market-id'], ['polymarket-slug']],
+  [['dry-run'], ['execute']],
+);
+const mirrorCloseSelectorAnyOf = [['all'], ...mirrorPandoraPolymarketSelectorAnyOf];
+const mirrorCloseSelectorAndModeAnyOf = buildRequiredSetCombinations(
+  mirrorCloseSelectorAnyOf,
+  [['dry-run'], ['execute']],
+);
+const mirrorStatusLookupAnyOf = [['state-file'], ['strategy-hash']];
+const mirrorSyncStopSelectorAnyOf = [['pid-file'], ['strategy-hash'], ['market-address'], ['all']];
+const mirrorSyncStatusSelectorAnyOf = [['pid-file'], ['strategy-hash']];
+const mirrorVerifySelectorOneOf = buildExclusivePresenceBranches(
+  mirrorPandoraSelectorAnyOf,
+  mirrorPolymarketSelectorAnyOf,
+);
+const mirrorDeploySelectorAndModeOneOf = buildExclusivePresenceBranches(
+  [['plan-file'], ['polymarket-market-id'], ['polymarket-slug']],
+  [['dry-run'], ['execute']],
+);
+const mirrorGoSelectorAndModeOneOf = buildExclusivePresenceBranches(
+  mirrorPolymarketSelectorAnyOf,
+  mirrorOptionalModeChoices,
+);
+const mirrorSyncSelectorAndOptionalModeOneOf = buildExclusivePresenceBranches(
+  mirrorPandoraSelectorAnyOf,
+  mirrorPolymarketSelectorAnyOf,
+  mirrorOptionalModeChoices,
+);
+const mirrorCloseSelectorAndModeOneOf = buildExclusivePresenceBranches(
+  mirrorCloseSelectorAnyOf,
+  [['dry-run'], ['execute']],
+);
+const mirrorStatusLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupAnyOf);
+const mirrorSyncStopSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStopSelectorAnyOf);
+const mirrorSyncStatusSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStatusSelectorAnyOf);
 
 const commandContracts = [
   commandContract({
@@ -1255,7 +1436,7 @@ const commandContracts = [
     name: 'sports.create.plan',
     summary: 'Build conservative market creation plan from sportsbook consensus.',
     usage:
-      'pandora [--output table|json] sports create plan --event-id <id> [--market-type amm|parimutuel] [--selection home|away|draw] [--creation-window-open-min <n>] [--creation-window-close-min <n>] [--book-priority <csv>] [--model-file <path>|--model-stdin]',
+      'pandora [--output table|json] sports create plan --event-id <id> [--market-type amm|parimutuel] [--selection home|away|draw] [--creation-window-open-min <n>] [--creation-window-close-min <n>] [--category <id|name>] [--book-priority <csv>] [--model-file <path>|--model-stdin]',
     emits: ['sports.create.plan', 'sports.help'],
     dataSchema: '#/definitions/SportsCreatePayload',
     mcpExposed: true,
@@ -1269,6 +1450,7 @@ const commandContracts = [
           selection: enumSchema(['home', 'away', 'draw'], 'Outcome selection.'),
           'creation-window-open-min': integerSchema('Creation window open minutes before kickoff.', { minimum: 0 }),
           'creation-window-close-min': integerSchema('Creation window close minutes before kickoff.', { minimum: 0 }),
+          category: buildPollCategorySchema('Category id or canonical category name.'),
           'book-priority': stringSchema('Comma-delimited bookmaker priority list.'),
           'model-file': stringSchema('Path to BYOM probability JSON.'),
           'model-stdin': booleanSchema('Read BYOM probability JSON from stdin.'),
@@ -1282,7 +1464,7 @@ const commandContracts = [
     name: 'sports.create.run',
     summary: 'Execute or dry-run sports market creation.',
     usage:
-      'pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
+      'pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
     emits: ['sports.create.run', 'sports.help'],
     dataSchema: '#/definitions/SportsCreatePayload',
     mcpExposed: true,
@@ -1303,6 +1485,7 @@ const commandContracts = [
         flagProperties: {
           'event-id': commonFlags.eventId,
           'market-type': enumSchema(['amm', 'parimutuel'], 'Market type.'),
+          category: buildPollCategorySchema('Category id or canonical category name.'),
           'dry-run': booleanSchema('Run dry-run mode.'),
           paper: booleanSchema('Run in paper mode.'),
           execute: booleanSchema('Execute live creation.'),
@@ -1916,6 +2099,8 @@ const commandContracts = [
           'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
           'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
         },
+        requiredFlags: ['source'],
+        anyOf: mirrorPolymarketSelectorAnyOf,
       }),
       preferred: true,
     },
@@ -1924,7 +2109,7 @@ const commandContracts = [
     name: 'mirror.deploy',
     summary: 'Deploy a mirror market from selector or plan in dry-run or execute mode.',
     usage:
-      'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]',
+      'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]',
     emits: ['mirror.deploy', 'mirror.deploy.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
@@ -1953,7 +2138,7 @@ const commandContracts = [
           'fee-tier': integerSchema('Fee tier in hundredths of a bip.', { minimum: 500, maximum: 50000 }),
           'max-imbalance': numberSchema('Maximum imbalance ratio.', { minimum: 0 }),
           arbiter: stringSchema('Arbiter address.'),
-          category: integerSchema('Category id.'),
+          category: buildPollCategorySchema('Category id or canonical category name.'),
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
@@ -1979,6 +2164,8 @@ const commandContracts = [
           'min-close-lead-seconds': integerSchema('Minimum close lead time in seconds.', { minimum: 0 }),
           agentPreflight: buildAgentPreflightSchema('Agent validation attestation for execute mode.'),
         },
+        anyOf: mirrorSelectorAndModeAnyOf,
+        oneOf: mirrorDeploySelectorAndModeOneOf,
       }),
       preferred: true,
       mutating: true,
@@ -2014,6 +2201,8 @@ const commandContracts = [
           'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
           'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
         },
+        anyOf: mirrorPandoraPolymarketSelectorAnyOf,
+        oneOf: mirrorVerifySelectorOneOf,
       }),
       preferred: true,
     },
@@ -2099,7 +2288,7 @@ const commandContracts = [
     name: 'mirror.go',
     summary: 'Run mirror deploy, verify, and optional sync workflow.',
     usage:
-      'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--polymarket-rpc-url <url>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--dotenv-path <path>] [--rpc-url <url>] [--private-key <hex>]',
+      'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]',
     emits: ['mirror.go', 'mirror.go.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
@@ -2125,7 +2314,8 @@ const commandContracts = [
           'fee-tier': integerSchema('Fee tier in hundredths of a bip.', { minimum: 500, maximum: 50000 }),
           'max-imbalance': numberSchema('Maximum imbalance ratio.', { minimum: 0 }),
           arbiter: stringSchema('Arbiter address.'),
-          category: integerSchema('Category id.'),
+          category: buildPollCategorySchema('Category id or canonical category name.'),
+          'chain-id': commonFlags.chainId,
           paper: commonFlags.paper,
           'dry-run': commonFlags.dryRun,
           'execute-live': booleanSchema('Execute live workflow.'),
@@ -2133,9 +2323,26 @@ const commandContracts = [
           'auto-sync': booleanSchema('Start sync automatically after deploy.'),
           'sync-once': booleanSchema('Run one sync tick after deploy.'),
           'sync-interval-ms': integerSchema('Sync interval in milliseconds.', { minimum: 1 }),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC.', { minimum: 0 }),
+          'hedge-ratio': numberSchema('Desired hedge ratio.', { minimum: 0 }),
+          'no-hedge': booleanSchema('Disable source hedge leg.'),
+          'max-rebalance-usdc': numberSchema('Maximum rebalance notional in USDC.', { minimum: 0 }),
+          'max-hedge-usdc': numberSchema('Maximum hedge notional in USDC.', { minimum: 0 }),
           'max-open-exposure-usdc': numberSchema('Maximum open exposure in USDC.', { minimum: 0 }),
           'max-trades-per-day': integerSchema('Maximum daily trade count.', { minimum: 0 }),
+          'cooldown-ms': integerSchema('Idempotency cooldown in milliseconds.', { minimum: 1 }),
           'polymarket-rpc-url': stringSchema('Polygon RPC URL for Polymarket preflight.'),
+          'rpc-url': commonFlags.rpcUrl,
+          'private-key': commonFlags.privateKey,
+          funder: stringSchema('Polymarket proxy/safe address.'),
+          usdc: stringSchema('USDC token address override.'),
+          oracle: stringSchema('Oracle address override.'),
+          factory: stringSchema('Factory address override.'),
+          'distribution-yes': numberSchema('Initial YES distribution parts.', { minimum: 0 }),
+          'distribution-no': numberSchema('Initial NO distribution parts.', { minimum: 0 }),
+          'distribution-yes-pct': numberSchema('Initial YES distribution percent.', { minimum: 0, maximum: 100 }),
+          'distribution-no-pct': numberSchema('Initial NO distribution percent.', { minimum: 0, maximum: 100 }),
           sources: flexibleArraySchema(stringSchema(), 'Independent public source URL list.'),
           'validation-ticket': stringSchema('Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).'),
           'target-timestamp': {
@@ -2146,11 +2353,26 @@ const commandContracts = [
             ],
           },
           'manifest-file': stringSchema('Mirror manifest path.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
+          'skip-gate': {
+            description: 'Skip all mirror sync gates (boolean) or provide a comma-delimited named skip list.',
+            anyOf: [
+              booleanSchema('Skip all mirror sync gates.'),
+              stringSchema('Comma-delimited gate skip list.'),
+            ],
+          },
+          'polymarket-host': stringSchema('Polymarket host override.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
+          'with-rules': booleanSchema('Include rule payloads and copy diagnostics.'),
+          'include-similarity': booleanSchema('Include similarity diagnostics.'),
+          'min-close-lead-seconds': integerSchema('Minimum lead time before targetTimestamp when Pandora trading closes.', { minimum: 1 }),
           'dotenv-path': stringSchema('Env file path.'),
-          'rpc-url': commonFlags.rpcUrl,
-          'private-key': commonFlags.privateKey,
           agentPreflight: buildAgentPreflightSchema('Agent validation attestation for execute or execute-live mode.'),
         },
+        anyOf: mirrorPolymarketSelectorAnyOf,
+        oneOf: mirrorGoSelectorAndModeOneOf,
       }),
       preferred: true,
       mutating: true,
@@ -2170,7 +2392,7 @@ const commandContracts = [
     name: 'mirror.sync.once',
     summary: 'Execute one mirror sync tick.',
     usage:
-      'pandora [--output table|json] mirror sync once --state-file <path>|--strategy-hash <hash> [--paper|--execute-live] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--polymarket-rpc-url <url>]',
+      'pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.once', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
@@ -2180,26 +2402,67 @@ const commandContracts = [
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
+          'pandora-market-address': commonFlags.marketAddress,
+          'market-address': commonFlags.marketAddress,
+          'polymarket-market-id': stringSchema('Polymarket market id.'),
+          'polymarket-slug': stringSchema('Polymarket slug.'),
           'state-file': commonFlags.stateFile,
-          'strategy-hash': stringSchema('Mirror strategy hash.'),
           paper: commonFlags.paper,
+          'dry-run': commonFlags.dryRun,
           'execute-live': booleanSchema('Execute live sync actions.'),
+          execute: commonFlags.execute,
+          'interval-ms': integerSchema('Sync interval in milliseconds.', { minimum: 1000 }),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC.', { minimum: 0 }),
+          'hedge-ratio': numberSchema('Desired hedge ratio.', { minimum: 0 }),
+          'no-hedge': booleanSchema('Disable source hedge leg.'),
+          'max-rebalance-usdc': numberSchema('Maximum rebalance notional in USDC.', { minimum: 0 }),
+          'max-hedge-usdc': numberSchema('Maximum hedge notional in USDC.', { minimum: 0 }),
           'max-open-exposure-usdc': numberSchema('Maximum open exposure in USDC.', { minimum: 0 }),
           'max-trades-per-day': integerSchema('Maximum daily trade count.', { minimum: 0 }),
+          'cooldown-ms': integerSchema('Idempotency cooldown in milliseconds.', { minimum: 1 }),
+          'depth-slippage-bps': integerSchema('Depth slippage in basis points.', { minimum: 1, maximum: 10000 }),
+          'min-time-to-close-sec': integerSchema('Minimum time-to-close in seconds.', { minimum: 60 }),
+          iterations: integerSchema('Maximum tick iterations before exit.', { minimum: 1 }),
+          'kill-switch-file': stringSchema('Kill-switch file path.'),
+          'chain-id': commonFlags.chainId,
+          'rpc-url': commonFlags.rpcUrl,
+          'private-key': commonFlags.privateKey,
+          funder: stringSchema('Polymarket proxy/safe address.'),
+          usdc: stringSchema('USDC token address override.'),
           'polymarket-rpc-url': stringSchema('Polygon RPC URL for Polymarket preflight.'),
+          'polymarket-host': stringSchema('Polymarket host override.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
+          'skip-gate': {
+            description: 'Skip all mirror sync gates (boolean) or provide a comma-delimited named skip list.',
+            anyOf: [
+              booleanSchema('Skip all mirror sync gates.'),
+              stringSchema('Comma-delimited gate skip list.'),
+            ],
+          },
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'webhook-url': stringSchema('Webhook target URL.'),
+          'telegram-bot-token': stringSchema('Telegram bot token.'),
+          'telegram-chat-id': stringSchema('Telegram chat id.'),
+          'discord-webhook-url': stringSchema('Discord webhook URL.'),
         },
+        anyOf: mirrorPandoraPolymarketSelectorAnyOf,
+        oneOf: mirrorSyncSelectorAndOptionalModeOneOf,
       }),
       preferred: true,
       mutating: true,
-      safeFlags: ['--paper'],
-      executeFlags: ['--execute-live'],
+      safeFlags: ['--paper', '--dry-run'],
+      executeFlags: ['--execute-live', '--execute'],
     },
   }),
   commandContract({
     name: 'mirror.sync.run',
     summary: 'Run continuous mirror sync loop.',
     usage:
-      'pandora [--output table|json] mirror sync run --state-file <path>|--strategy-hash <hash> [--paper|--execute-live] [--interval-ms <ms>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--polymarket-rpc-url <url>]',
+      'pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.run', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
@@ -2209,28 +2472,71 @@ const commandContracts = [
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
+          'pandora-market-address': commonFlags.marketAddress,
+          'market-address': commonFlags.marketAddress,
+          'polymarket-market-id': stringSchema('Polymarket market id.'),
+          'polymarket-slug': stringSchema('Polymarket slug.'),
           'state-file': commonFlags.stateFile,
-          'strategy-hash': stringSchema('Mirror strategy hash.'),
           paper: commonFlags.paper,
+          'dry-run': commonFlags.dryRun,
           'execute-live': booleanSchema('Execute live sync actions.'),
+          execute: commonFlags.execute,
           'interval-ms': integerSchema('Sync interval in milliseconds.', { minimum: 1 }),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC.', { minimum: 0 }),
+          'hedge-ratio': numberSchema('Desired hedge ratio.', { minimum: 0 }),
+          'no-hedge': booleanSchema('Disable source hedge leg.'),
+          'max-rebalance-usdc': numberSchema('Maximum rebalance notional in USDC.', { minimum: 0 }),
+          'max-hedge-usdc': numberSchema('Maximum hedge notional in USDC.', { minimum: 0 }),
           'max-open-exposure-usdc': numberSchema('Maximum open exposure in USDC.', { minimum: 0 }),
           'max-trades-per-day': integerSchema('Maximum daily trade count.', { minimum: 0 }),
+          'cooldown-ms': integerSchema('Idempotency cooldown in milliseconds.', { minimum: 1 }),
+          'depth-slippage-bps': integerSchema('Depth slippage in basis points.', { minimum: 1, maximum: 10000 }),
+          'min-time-to-close-sec': integerSchema('Minimum time-to-close in seconds.', { minimum: 60 }),
+          iterations: integerSchema('Maximum tick iterations before exit.', { minimum: 1 }),
+          stream: booleanSchema('Emit streaming tick lines.'),
+          'no-stream': booleanSchema('Disable streaming tick lines.'),
+          daemon: booleanSchema('Request daemonized run mode.'),
+          'kill-switch-file': stringSchema('Kill-switch file path.'),
+          'chain-id': commonFlags.chainId,
+          'rpc-url': commonFlags.rpcUrl,
+          'private-key': commonFlags.privateKey,
+          funder: stringSchema('Polymarket proxy/safe address.'),
+          usdc: stringSchema('USDC token address override.'),
           'polymarket-rpc-url': stringSchema('Polygon RPC URL for Polymarket preflight.'),
+          'polymarket-host': stringSchema('Polymarket host override.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
+          'skip-gate': {
+            description: 'Skip all mirror sync gates (boolean) or provide a comma-delimited named skip list.',
+            anyOf: [
+              booleanSchema('Skip all mirror sync gates.'),
+              stringSchema('Comma-delimited gate skip list.'),
+            ],
+          },
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'webhook-url': stringSchema('Webhook target URL.'),
+          'telegram-bot-token': stringSchema('Telegram bot token.'),
+          'telegram-chat-id': stringSchema('Telegram chat id.'),
+          'discord-webhook-url': stringSchema('Discord webhook URL.'),
         },
+        anyOf: mirrorPandoraPolymarketSelectorAnyOf,
+        oneOf: mirrorSyncSelectorAndOptionalModeOneOf,
       }),
       preferred: true,
       longRunningBlocked: true,
       mutating: true,
-      safeFlags: ['--paper'],
-      executeFlags: ['--execute-live'],
+      safeFlags: ['--paper', '--dry-run'],
+      executeFlags: ['--execute-live', '--execute'],
     },
   }),
   commandContract({
     name: 'mirror.sync.start',
     summary: 'Start detached mirror sync daemon.',
     usage:
-      'pandora [--output table|json] mirror sync start --state-file <path>|--strategy-hash <hash> [--paper|--execute-live] [--interval-ms <ms>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--polymarket-rpc-url <url>]',
+      'pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.start', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
@@ -2240,27 +2546,67 @@ const commandContracts = [
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
+          'pandora-market-address': commonFlags.marketAddress,
+          'market-address': commonFlags.marketAddress,
+          'polymarket-market-id': stringSchema('Polymarket market id.'),
+          'polymarket-slug': stringSchema('Polymarket slug.'),
           'state-file': commonFlags.stateFile,
-          'strategy-hash': stringSchema('Mirror strategy hash.'),
           paper: commonFlags.paper,
+          'dry-run': commonFlags.dryRun,
           'execute-live': booleanSchema('Execute live sync actions.'),
+          execute: commonFlags.execute,
           'interval-ms': integerSchema('Sync interval in milliseconds.', { minimum: 1 }),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC.', { minimum: 0 }),
+          'hedge-ratio': numberSchema('Desired hedge ratio.', { minimum: 0 }),
+          'no-hedge': booleanSchema('Disable source hedge leg.'),
+          'max-rebalance-usdc': numberSchema('Maximum rebalance notional in USDC.', { minimum: 0 }),
+          'max-hedge-usdc': numberSchema('Maximum hedge notional in USDC.', { minimum: 0 }),
           'max-open-exposure-usdc': numberSchema('Maximum open exposure in USDC.', { minimum: 0 }),
           'max-trades-per-day': integerSchema('Maximum daily trade count.', { minimum: 0 }),
+          'cooldown-ms': integerSchema('Idempotency cooldown in milliseconds.', { minimum: 1 }),
+          'depth-slippage-bps': integerSchema('Depth slippage in basis points.', { minimum: 1, maximum: 10000 }),
+          'min-time-to-close-sec': integerSchema('Minimum time-to-close in seconds.', { minimum: 60 }),
+          iterations: integerSchema('Maximum tick iterations before exit.', { minimum: 1 }),
+          'kill-switch-file': stringSchema('Kill-switch file path.'),
+          'chain-id': commonFlags.chainId,
+          'rpc-url': commonFlags.rpcUrl,
+          'private-key': commonFlags.privateKey,
+          funder: stringSchema('Polymarket proxy/safe address.'),
+          usdc: stringSchema('USDC token address override.'),
           'polymarket-rpc-url': stringSchema('Polygon RPC URL for Polymarket preflight.'),
+          'polymarket-host': stringSchema('Polymarket host override.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
+          'skip-gate': {
+            description: 'Skip all mirror sync gates (boolean) or provide a comma-delimited named skip list.',
+            anyOf: [
+              booleanSchema('Skip all mirror sync gates.'),
+              stringSchema('Comma-delimited gate skip list.'),
+            ],
+          },
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'webhook-url': stringSchema('Webhook target URL.'),
+          'telegram-bot-token': stringSchema('Telegram bot token.'),
+          'telegram-chat-id': stringSchema('Telegram chat id.'),
+          'discord-webhook-url': stringSchema('Discord webhook URL.'),
         },
+        anyOf: mirrorPandoraPolymarketSelectorAnyOf,
+        oneOf: mirrorSyncSelectorAndOptionalModeOneOf,
       }),
       preferred: true,
       longRunningBlocked: true,
       mutating: true,
-      safeFlags: ['--paper'],
-      executeFlags: ['--execute-live'],
+      safeFlags: ['--paper', '--dry-run'],
+      executeFlags: ['--execute-live', '--execute'],
     },
   }),
   commandContract({
     name: 'mirror.sync.stop',
     summary: 'Stop detached mirror sync daemon.',
-    usage: 'pandora [--output table|json] mirror sync stop [--state-file <path>] [--strategy-hash <hash>] [--all]',
+    usage: 'pandora [--output table|json] mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all',
     emits: ['mirror.sync.stop', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
@@ -2270,10 +2616,13 @@ const commandContracts = [
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
-          'state-file': commonFlags.stateFile,
+          'pid-file': stringSchema('Mirror daemon pid file path.'),
           'strategy-hash': stringSchema('Mirror strategy hash.'),
+          'market-address': commonFlags.marketAddress,
           all: booleanSchema('Stop all mirror sync daemons.'),
         },
+        anyOf: mirrorSyncStopSelectorAnyOf,
+        oneOf: mirrorSyncStopSelectorOneOf,
       }),
       preferred: true,
       mutating: true,
@@ -2282,7 +2631,7 @@ const commandContracts = [
   commandContract({
     name: 'mirror.sync.status',
     summary: 'Inspect detached mirror sync daemon status.',
-    usage: 'pandora [--output table|json] mirror sync status [--state-file <path>] [--strategy-hash <hash>]',
+    usage: 'pandora [--output table|json] mirror sync status --pid-file <path>|--strategy-hash <hash>',
     emits: ['mirror.sync.status', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
@@ -2291,9 +2640,11 @@ const commandContracts = [
       description: 'Inspect mirror sync daemon status.',
       inputSchema: buildInputSchema({
         flagProperties: {
-          'state-file': commonFlags.stateFile,
+          'pid-file': stringSchema('Mirror daemon pid file path.'),
           'strategy-hash': stringSchema('Mirror strategy hash.'),
         },
+        anyOf: mirrorSyncStatusSelectorAnyOf,
+        oneOf: mirrorSyncStatusSelectorOneOf,
       }),
       preferred: true,
     },
@@ -2321,7 +2672,17 @@ const commandContracts = [
           'polymarket-slug': stringSchema('Polymarket slug.'),
           'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
           'manifest-file': stringSchema('Mirror manifest path.'),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC.', { minimum: 0 }),
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+          'polymarket-host': stringSchema('Polymarket host override.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
         },
+        anyOf: mirrorStatusLookupAnyOf,
+        oneOf: mirrorStatusLookupOneOf,
       }),
       preferred: true,
     },
@@ -2330,7 +2691,7 @@ const commandContracts = [
     name: 'mirror.close',
     summary: 'Build or execute close plan for a mirror pair.',
     usage:
-      'pandora [--output table|json] mirror close --state-file <path>|--strategy-hash <hash>|--market-address <address>|--all --dry-run|--execute [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv]',
+      'pandora [--output table|json] mirror close --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]',
     emits: ['mirror.close', 'mirror.close.help'],
     dataSchema: '#/definitions/MirrorClosePayload',
     mcpExposed: true,
@@ -2340,17 +2701,22 @@ const commandContracts = [
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
-          'state-file': commonFlags.stateFile,
-          'strategy-hash': stringSchema('Mirror strategy hash.'),
+          'pandora-market-address': commonFlags.marketAddress,
           'market-address': commonFlags.marketAddress,
+          'polymarket-market-id': stringSchema('Polymarket market id.'),
+          'polymarket-slug': stringSchema('Polymarket slug.'),
           all: booleanSchema('Close all discovered mirror positions.'),
           'dry-run': booleanSchema('Run dry-run mode.'),
           execute: booleanSchema('Execute live closeout steps.'),
+          wallet: commonFlags.wallet,
+          'chain-id': commonFlags.chainId,
+          'rpc-url': commonFlags.rpcUrl,
+          'private-key': commonFlags.privateKey,
           'indexer-url': commonFlags.indexerUrl,
           'timeout-ms': commonFlags.timeoutMs,
-          'dotenv-path': stringSchema('Env file path.'),
-          'skip-dotenv': booleanSchema('Skip env loading.'),
         },
+        anyOf: mirrorCloseSelectorAndModeAnyOf,
+        oneOf: mirrorCloseSelectorAndModeOneOf,
       }),
       preferred: true,
       mutating: true,
@@ -2596,7 +2962,7 @@ const commandContracts = [
   commandContract({
     name: 'risk',
     summary: 'Risk command family help and routing entrypoint.',
-    usage: 'pandora [--output table|json] risk show|panic [--on|--off]',
+    usage: 'pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]',
     emits: ['risk.help'],
     dataSchema: '#/definitions/RiskPayload',
   }),
@@ -2617,7 +2983,7 @@ const commandContracts = [
   commandContract({
     name: 'risk.panic',
     summary: 'Engage or clear the global risk panic lock.',
-    usage: 'pandora [--output table|json] risk panic [--on|--off]',
+    usage: 'pandora [--output table|json] risk panic [--clear] [--reason <text>] [--actor <id>]',
     emits: ['risk.panic', 'risk.panic.help', 'risk.help'],
     dataSchema: '#/definitions/RiskPayload',
     mcpExposed: true,
@@ -2627,9 +2993,11 @@ const commandContracts = [
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
-          on: booleanSchema('Enable panic mode.'),
-          off: booleanSchema('Disable panic mode.'),
+          clear: booleanSchema('Clear the panic lock.'),
+          reason: stringSchema('Reason for engaging panic mode. Required unless clear=true.'),
+          actor: stringSchema('Operator or agent identifier recorded with the panic action.'),
         },
+        anyOf: [['clear'], ['reason']],
       }),
       preferred: true,
       mutating: true,

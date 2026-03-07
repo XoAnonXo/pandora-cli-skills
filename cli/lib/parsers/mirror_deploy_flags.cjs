@@ -1,4 +1,5 @@
 const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
+const { parsePollCategoryFlag, DEFAULT_SPORTS_POLL_CATEGORY } = require('../shared/poll_categories.cjs');
 const { normalizeMirrorPathForMcp, parseMirrorTargetTimestamp, validateMirrorUrl } = require('./mirror_parser_guard.cjs');
 
 const MAX_UINT24 = 16_777_215;
@@ -107,7 +108,7 @@ function createParseMirrorDeployFlags(deps) {
       feeTier: 3000,
       maxImbalance: MAX_UINT24,
       arbiter: null,
-      category: 3,
+      category: DEFAULT_SPORTS_POLL_CATEGORY,
       sources: [],
       sourcesProvided: false,
       chainId: null,
@@ -187,7 +188,7 @@ function createParseMirrorDeployFlags(deps) {
         continue;
       }
       if (token === '--category') {
-        options.category = parseInteger(requireFlagValue(args, i, '--category'), '--category');
+        options.category = parsePollCategoryFlag(requireFlagValue(args, i, '--category'), '--category', CliError);
         i += 1;
         continue;
       }

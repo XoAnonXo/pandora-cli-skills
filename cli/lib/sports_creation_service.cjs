@@ -1,5 +1,6 @@
 const { computeSportsConsensus } = require('./sports_consensus_service.cjs');
 const { getCreationWindowStatus, planResolveWindow } = require('./sports_timing_service.cjs');
+const { DEFAULT_SPORTS_POLL_CATEGORY } = require('./shared/poll_categories.cjs');
 
 const PPB_TOTAL = 1_000_000_000;
 
@@ -255,7 +256,7 @@ function buildSportsCreatePlan(input = {}) {
       oracle: options.oracle || null,
       factory: options.factory || null,
       arbiter: options.arbiter || null,
-      category: Number.isInteger(options.category) ? options.category : 3,
+      category: Number.isInteger(options.category) ? options.category : DEFAULT_SPORTS_POLL_CATEGORY,
       minCloseLeadSeconds: Number(options.minCloseLeadSeconds || 5400),
     },
     mechanics,

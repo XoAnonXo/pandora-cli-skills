@@ -37,6 +37,19 @@ const { buildMcpToolDefinitions } = require('./agent_contract_registry.cjs');
  * }} ToolInvocationArgs
  */
 
+function createInvocationError(code, message, details = undefined) {
+  const error = new Error(message);
+  error.code = code;
+  if (details !== undefined) {
+    error.details = details;
+  }
+  return error;
+}
+
+function legacyNestedFlagsAllowed() {
+  return process.env.PANDORA_MCP_ALLOW_LEGACY_FLAGS === '1';
+}
+
 /**
  * Normalize a flag token to a CLI-prefixed name.
  * Leaves existing `--foo`/`-f` tokens unchanged and prefixes bare names.
@@ -148,6 +161,347 @@ function getControlInputNames(definition) {
     : [];
 }
 
+function getAllowedTopLevelInputNames(definition) {
+  return new Set([
+    ...getTopLevelFlagNames(definition),
+    ...getControlInputNames(definition),
+    'intent',
+    'flags',
+    'positionals',
+  ]);
+}
+
+function normalizeLegacyFlagKey(name) {
+  const normalized = normalizeFlagName(name);
+  if (!normalized) return '';
+  return normalized.replace(/^--/, '');
+}
+
+function listUnknownTopLevelInputs(definition, args) {
+  const allowed = getAllowedTopLevelInputNames(definition);
+  return Object.keys(args || {}).filter((name) => !allowed.has(name));
+}
+
+function listUnknownLegacyFlagInputs(definition, flags) {
+  const allowed = new Set(getTopLevelFlagNames(definition));
+  return Object.keys(flags || {}).filter((name) => !allowed.has(normalizeLegacyFlagKey(name)));
+}
+
+function hasMeaningfulValue(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'boolean') return value;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function hasProvidedInput(args, name) {
+  if (!args || typeof args !== 'object') return false;
+  if (Object.prototype.hasOwnProperty.call(args, name) && hasMeaningfulValue(args[name])) {
+    return true;
+  }
+  const flags = args.flags;
+  if (!flags || typeof flags !== 'object' || Array.isArray(flags)) return false;
+  for (const [rawName, rawValue] of Object.entries(flags)) {
+    if (normalizeLegacyFlagKey(rawName) === name && hasMeaningfulValue(rawValue)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function formatValidationPath(path) {
+  return path && path.length ? path.join('.') : 'arguments';
+}
+
+function buildSchemaValidationError(toolName, path, reason, details = undefined) {
+  return createInvocationError(
+    'MCP_INVALID_ARGUMENTS',
+    `${toolName}: ${formatValidationPath(path)} ${reason}`,
+    {
+      toolName,
+      path: formatValidationPath(path),
+      ...(details && typeof details === 'object' ? details : {}),
+    },
+  );
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function schemaMatchesValue(toolName, schema, value, path) {
+  try {
+    validateSchemaValue(toolName, schema, value, path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validateSchemaValue(toolName, schema, value, path = []) {
+  if (!schema || typeof schema !== 'object') {
+    return;
+  }
+
+  if (Array.isArray(schema.anyOf) && schema.anyOf.length) {
+    const anyOfMatch = schema.anyOf.some((branch) => schemaMatchesValue(toolName, branch, value, path));
+    if (!anyOfMatch) {
+      throw buildSchemaValidationError(toolName, path, 'does not satisfy any supported input shape.');
+    }
+  }
+
+  if (Array.isArray(schema.oneOf) && schema.oneOf.length) {
+    const oneOfMatches = schema.oneOf.filter((branch) => schemaMatchesValue(toolName, branch, value, path)).length;
+    if (oneOfMatches !== 1) {
+      throw buildSchemaValidationError(
+        toolName,
+        path,
+        oneOfMatches === 0
+          ? 'does not satisfy any required exclusive argument combination.'
+          : 'matches multiple mutually-exclusive argument combinations.',
+      );
+    }
+  }
+
+  if (schema.not && schemaMatchesValue(toolName, schema.not, value, path)) {
+    throw buildSchemaValidationError(toolName, path, 'violates a forbidden argument combination.');
+  }
+
+  if (Array.isArray(schema.required) && schema.required.length) {
+    if (!isPlainObject(value)) {
+      throw buildSchemaValidationError(toolName, path, 'must be an object.');
+    }
+    const missing = schema.required.filter((name) => !hasMeaningfulValue(value[name]));
+    if (missing.length) {
+      throw buildSchemaValidationError(toolName, path, `is missing required fields: ${missing.join(', ')}`, {
+        missingArguments: missing,
+      });
+    }
+  }
+
+  if (Array.isArray(schema.enum) && schema.enum.length) {
+    const matched = schema.enum.some((candidate) => candidate === value);
+    if (!matched) {
+      throw buildSchemaValidationError(toolName, path, `must be one of: ${schema.enum.join(', ')}`);
+    }
+  }
+
+  if (schema.type) {
+    switch (schema.type) {
+      case 'string':
+        if (typeof value !== 'string') {
+          throw buildSchemaValidationError(toolName, path, 'must be a string.');
+        }
+        break;
+      case 'boolean':
+        if (typeof value !== 'boolean') {
+          throw buildSchemaValidationError(toolName, path, 'must be a boolean.');
+        }
+        break;
+      case 'number':
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+          throw buildSchemaValidationError(toolName, path, 'must be a finite number.');
+        }
+        break;
+      case 'integer':
+        if (typeof value !== 'number' || !Number.isInteger(value)) {
+          throw buildSchemaValidationError(toolName, path, 'must be an integer.');
+        }
+        break;
+      case 'array':
+        if (!Array.isArray(value)) {
+          throw buildSchemaValidationError(toolName, path, 'must be an array.');
+        }
+        break;
+      case 'object':
+        if (!isPlainObject(value)) {
+          throw buildSchemaValidationError(toolName, path, 'must be an object.');
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (typeof schema.minimum === 'number') {
+    if (typeof value !== 'number' || value < schema.minimum) {
+      throw buildSchemaValidationError(toolName, path, `must be >= ${schema.minimum}.`);
+    }
+  }
+
+  if (typeof schema.maximum === 'number') {
+    if (typeof value !== 'number' || value > schema.maximum) {
+      throw buildSchemaValidationError(toolName, path, `must be <= ${schema.maximum}.`);
+    }
+  }
+
+  if (schema.pattern) {
+    if (typeof value !== 'string') {
+      throw buildSchemaValidationError(toolName, path, 'must be a string matching the required pattern.');
+    }
+    const regex = new RegExp(schema.pattern);
+    if (!regex.test(value)) {
+      throw buildSchemaValidationError(toolName, path, 'does not match the required format.');
+    }
+  }
+
+  if (schema.type === 'array' && schema.items) {
+    value.forEach((item, index) => {
+      validateSchemaValue(toolName, schema.items, item, [...path, String(index)]);
+    });
+  }
+
+  if (isPlainObject(value)) {
+    const properties = isPlainObject(schema.properties) ? schema.properties : null;
+    if (schema.additionalProperties === false && properties) {
+      const unknownKeys = Object.keys(value).filter((key) => !Object.prototype.hasOwnProperty.call(properties, key));
+      if (unknownKeys.length) {
+        throw buildSchemaValidationError(toolName, path, `contains unknown fields: ${unknownKeys.join(', ')}`, {
+          unknownArguments: unknownKeys,
+        });
+      }
+    }
+
+    if (properties) {
+      for (const [key, propertySchema] of Object.entries(properties)) {
+        if (Object.prototype.hasOwnProperty.call(value, key) && value[key] !== undefined) {
+          validateSchemaValue(toolName, propertySchema, value[key], [...path, key]);
+        }
+      }
+    }
+  }
+}
+
+function buildNormalizedSchemaArgs(definition, args) {
+  const normalized = {};
+  const legacyFlags = legacyNestedFlagsAllowed()
+    && args
+    && args.flags
+    && typeof args.flags === 'object'
+    && !Array.isArray(args.flags)
+    ? args.flags
+    : null;
+
+  for (const flagName of getTopLevelFlagNames(definition)) {
+    let value;
+    let hasValue = false;
+    if (Object.prototype.hasOwnProperty.call(args, flagName) && args[flagName] !== undefined) {
+      value = args[flagName];
+      hasValue = true;
+    } else if (legacyFlags) {
+      for (const [rawName, rawValue] of Object.entries(legacyFlags)) {
+        if (normalizeLegacyFlagKey(rawName) === flagName && rawValue !== undefined) {
+          value = rawValue;
+          hasValue = true;
+          break;
+        }
+      }
+    }
+    if (hasValue) {
+      normalized[flagName] = value;
+    }
+  }
+
+  for (const inputName of getControlInputNames(definition)) {
+    if (Object.prototype.hasOwnProperty.call(args, inputName) && args[inputName] !== undefined) {
+      normalized[inputName] = args[inputName];
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(args, 'intent') && args.intent !== undefined) {
+    normalized.intent = args.intent;
+  }
+
+  return normalized;
+}
+
+function validateInvocationArgs(definition, args) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    throw createInvocationError('MCP_INVALID_ARGUMENTS', 'Tool arguments must be a JSON object.');
+  }
+
+  const unknownTopLevelInputs = listUnknownTopLevelInputs(definition, args);
+  if (unknownTopLevelInputs.length) {
+    throw createInvocationError(
+      'MCP_UNKNOWN_ARGUMENTS',
+      `Unknown MCP arguments for ${definition.name}: ${unknownTopLevelInputs.join(', ')}`,
+      {
+        toolName: definition.name,
+        unknownArguments: unknownTopLevelInputs,
+        allowedArguments: Array.from(getAllowedTopLevelInputNames(definition)).sort(),
+      },
+    );
+  }
+
+  if (Object.prototype.hasOwnProperty.call(args, 'positionals')) {
+    const positionals = args.positionals;
+    if (!Array.isArray(positionals)) {
+      throw createInvocationError('MCP_INVALID_ARGUMENTS', 'positionals must be an array when provided.');
+    }
+    if (positionals.length) {
+      throw createInvocationError(
+        'MCP_POSITIONALS_NOT_SUPPORTED',
+        `${definition.name} does not accept positional MCP arguments. Use named top-level tool inputs only.`,
+        {
+          toolName: definition.name,
+          positionals,
+        },
+      );
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(args, 'flags')) {
+    if (!legacyNestedFlagsAllowed()) {
+      throw createInvocationError(
+        'MCP_LEGACY_FLAGS_UNSUPPORTED',
+        `${definition.name} no longer accepts nested flags. Use the typed top-level MCP inputs from the published inputSchema.`,
+        {
+          toolName: definition.name,
+          allowedArguments: getTopLevelFlagNames(definition).sort(),
+        },
+      );
+    }
+    const flags = args.flags;
+    if (!flags || typeof flags !== 'object' || Array.isArray(flags)) {
+      throw createInvocationError('MCP_INVALID_ARGUMENTS', 'flags must be an object when provided.');
+    }
+    const unknownLegacyFlags = listUnknownLegacyFlagInputs(definition, flags);
+    if (unknownLegacyFlags.length) {
+      throw createInvocationError(
+        'MCP_UNKNOWN_ARGUMENTS',
+        `Unknown legacy MCP flags for ${definition.name}: ${unknownLegacyFlags.join(', ')}`,
+        {
+          toolName: definition.name,
+          unknownArguments: unknownLegacyFlags,
+          allowedArguments: getTopLevelFlagNames(definition).sort(),
+        },
+      );
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(args, 'intent')) {
+    const intent = args.intent;
+    if (!intent || typeof intent !== 'object' || Array.isArray(intent)) {
+      throw createInvocationError('MCP_INVALID_ARGUMENTS', 'intent must be an object when provided.');
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(intent, 'execute')
+      && intent.execute !== undefined
+      && typeof intent.execute !== 'boolean'
+    ) {
+      throw createInvocationError('MCP_INVALID_ARGUMENTS', 'intent.execute must be a boolean when provided.');
+    }
+  }
+
+  const schema = definition && definition.inputSchema && typeof definition.inputSchema === 'object'
+    ? definition.inputSchema
+    : null;
+  if (!schema) return;
+
+  const normalizedArgs = buildNormalizedSchemaArgs(definition, args);
+  validateSchemaValue(definition.name, schema, normalizedArgs, []);
+}
+
 /**
  * Merge supported top-level MCP input fields with legacy `flags` payloads.
  * Top-level fields win so the typed schema is authoritative, but the older
@@ -159,7 +513,11 @@ function getControlInputNames(definition) {
  */
 function extractInvocationFlags(definition, args) {
   const merged = {};
-  const legacyFlags = args && args.flags && typeof args.flags === 'object' && !Array.isArray(args.flags)
+  const legacyFlags = legacyNestedFlagsAllowed()
+    && args
+    && args.flags
+    && typeof args.flags === 'object'
+    && !Array.isArray(args.flags)
     ? args.flags
     : null;
 
@@ -229,6 +587,8 @@ function toToolDescriptor(definition) {
     mutating: Boolean(definition.mutating),
     longRunningBlocked: Boolean(definition.longRunningBlocked),
     controlInputNames: Array.isArray(definition.controlInputNames) ? [...definition.controlInputNames] : [],
+    safeFlags: Array.isArray(definition.safeFlags) ? [...definition.safeFlags] : [],
+    executeFlags: Array.isArray(definition.executeFlags) ? [...definition.executeFlags] : [],
     agentWorkflow: definition.agentWorkflow || null,
   };
   const inputSchema = definition.inputSchema || {
@@ -327,6 +687,8 @@ function createMcpToolRegistry() {
       };
       throw blocked;
     }
+
+    validateInvocationArgs(definition, args);
 
     const positionals = Array.isArray(args.positionals)
       ? args.positionals.map((value) => String(value))

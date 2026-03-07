@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Canonical skill and operator guide for Pandora CLI including mirror, polymarket, resolve, and LP flows.
-version: 1.1.66
+version: 1.1.67
 ---
 
 # Pandora CLI & Skills
@@ -14,11 +14,15 @@ Use this skill to launch Parimutuel or AMM markets with explicit market paramete
 ## Safety & Resolution Rules (enforced)
 - At least **2 public source URLs** are required (`http/https` only).
 - `--rules` must include explicit **Yes/No** outcomes and edge-case handling (cancel/postpone/abandoned/unresolved cases).
-- `--target-timestamp` uses a `+1h` buffer by default (`--target-timestamp-offset-hours` to override).
+- `mirror plan|deploy|go` do **not** assume a generic `+1h` buffer. They use a sports-aware suggested `targetTimestamp`; use explicit `--target-timestamp <unix|iso>` only when intentionally overriding that suggestion.
+- `mirror deploy|go` require at least **2 independent public resolution URLs from different hosts** in `--sources`. Polymarket / Gamma / CLOB URLs are discovery inputs only and are not valid `--sources`.
+- Manual `launch` / `clone-bet` still expose `--target-timestamp-offset-hours`; that legacy script flag is not the mirror timing model.
 - `deadline` must be in the future (12h+ window strongly recommended).
 - `distribution-yes + distribution-no = 1_000_000_000`.
 - `--liquidity` minimum is **10 USDC**.
 - `--arbiter` cannot be zero-address.
+- Poll category ids:
+  - `Politics=0`, `Sports=1`, `Finance=2`, `Crypto=3`, `Culture=4`, `Technology=5`, `Science=6`, `Entertainment=7`, `Health=8`, `Environment=9`, `Other=10`
 
 ## Setup
 ```bash
@@ -78,8 +82,10 @@ npm link
   - `error.recovery = { action, command, retryable }`
 - Agent/MCP market creation policy:
   - Agent-drafted manual markets should start with `agent market autocomplete` when rules, sources, or timing still need to be generated/refined.
-  - Execute/live MCP calls for `sports create run`, `mirror deploy`, and `mirror go` require a PASS attestation from `agent market validate`.
-  - Dry-run outputs for those flows include the exact validation ticket that must be echoed back via `agentPreflight` on the execute call.
+  - `agent market validate` must run on the exact final payload (`question`, `rules`, `sources`, `targetTimestamp`) before agent-controlled execute mode for `sports create run`, `mirror deploy`, or `mirror go`.
+  - `mirror deploy --dry-run` and `mirror go --paper|--dry-run` return the exact mirror payload plus the required validation ticket for that payload.
+  - CLI mirror execute reruns pass `--validation-ticket <ticket>`. MCP execute/live reruns pass `agentPreflight = { validationTicket, validationDecision: "PASS", validationSummary }`.
+  - `sports create run` has no CLI `--validation-ticket` flag; agent-controlled execute paths use `agentPreflight` / `PANDORA_AGENT_PREFLIGHT`.
 - Doctor checks:
   - env presence + format validation
   - RPC reachability and chain id match
@@ -180,18 +186,25 @@ pandora clone-bet [--dotenv-path <path>] [--skip-dotenv] [script args...]
 Mirror subcommand detail:
 
 ```text
-browse --min-yes-pct <n> --max-yes-pct <n> --min-volume-24h <n> [--closes-after <date>] [--closes-before <date>] [--question-contains <text>] [--limit <n>] [--chain-id <id>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
-plan   --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
-deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <0-100>] [--distribution-no-pct <0-100>] [--rules <text>] [--sources <url...>] [--min-close-lead-seconds <n>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
+browse --min-yes-pct <n> --max-yes-pct <n> --min-volume-24h <n> [--closes-after <date>|--end-date-after <date|72h>] [--closes-before <date>|--end-date-before <date|72h>] [--question-contains <text>|--keyword <text>] [--slug <text>] [--category sports|crypto|politics|entertainment] [--exclude-sports] [--sort-by volume24h|liquidity|endDate] [--limit <n>] [--chain-id <id>] [--polymarket-tag-id <id>] [--polymarket-tag-ids <csv>] [--sport-tag-id <id>] [--sport-tag-ids <csv>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
+plan   --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
+deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <0-100>] [--distribution-no-pct <0-100>] [--rules <text>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--min-close-lead-seconds <n>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 verify --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--trust-deploy] [--manifest-file <path>] [--include-similarity] [--with-rules] [--allow-rule-mismatch] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 lp-explain --liquidity-usdc <n> [--source-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>]
 hedge-calc [--reserve-yes-usdc <n> --reserve-no-usdc <n>] [--excess-yes-usdc <n>] [--excess-no-usdc <n>] [--polymarket-yes-pct <0-100>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--volume-scenarios <csv>] [--pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>]
 simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--polymarket-yes-pct <0-100>]
-go     --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes-pct <0-100>] [--distribution-no-pct <0-100>] [--sources <url...>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]
+go     --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]
 sync run|once|start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
 status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>]
 close  --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
 ```
+
+Mirror operator rules:
+
+- `mirror plan` computes a sports-aware suggested `targetTimestamp`. Keep that value unless you have a better close-time estimate; use `--target-timestamp <unix|iso>` only for explicit overrides.
+- `mirror deploy` / `mirror go` require `--sources` with at least two independent public resolution URLs from different hosts. Do not pass Polymarket, Gamma, or CLOB URLs there.
+- For a fresh deployment, run `mirror deploy --dry-run` or `mirror go --paper|--dry-run` first, validate the exact final payload with `agent market validate`, then rerun execute with `--validation-ticket` on CLI or `agentPreflight` over MCP.
+- `--category` on deploy/create/go accepts either the enum id or canonical name. For sports flows, use `Sports` (or `1`) for `PollCategory.Sports`.
 
 Daemon selector detail:
 
@@ -317,7 +330,7 @@ pandora trade --dry-run --market-address <0x...> --side no --amount-usdc 25 --ma
 pandora portfolio --wallet <0x...> --chain-id 1
 pandora watch --wallet <0x...> --iterations 5 --interval-ms 2000 --alert-net-liquidity-below -100
 
-pandora polls list --status 1 --category 3
+pandora polls list --status 1 --category Sports
 pandora polls get --id <poll-id>
 
 pandora events list --type all --wallet <0x...> --limit 25
@@ -472,14 +485,20 @@ pandora --output json schema
 ## Mirror workflow guide
 1. Plan:
    - `pandora mirror plan --source polymarket --polymarket-slug <slug> --with-rules --include-similarity`
-2. Deploy:
-   - `pandora mirror deploy --polymarket-slug <slug> --liquidity-usdc 10 --dry-run|--execute`
-3. Verify:
+2. Prepare operator inputs:
+   - choose at least two independent public resolution URLs from different hosts for `--sources`
+   - keep the plan's suggested `targetTimestamp`, or set `--target-timestamp <unix|iso>` explicitly if you need to override it
+3. Validate the exact final payload:
+   - `pandora --output json agent market validate --question "<final question>" --rules "<final rules>" --target-timestamp <unix-seconds> --sources <url1> <url2>`
+4. Deploy:
+   - `pandora mirror deploy --polymarket-slug <slug> --liquidity-usdc 10 --sources <url1> <url2> --dry-run`
+   - rerun execute with `--validation-ticket <ticket>` after validation passes
+5. Verify:
    - `pandora mirror verify --market-address <pandora-market> --polymarket-slug <slug> --include-similarity --with-rules`
-4. Run sync:
+6. Run sync:
    - `pandora mirror sync run --market-address <pandora-market> --polymarket-slug <slug> --paper`
    - live: `--execute-live --max-open-exposure-usdc <n> --max-trades-per-day <n>`
-5. Inspect status:
+7. Inspect status:
    - `pandora mirror status --state-file <path> --with-live`
 
 Mode aliases:
@@ -653,7 +672,7 @@ pandora clone-bet \
   --target-timestamp 1772323200 \
   --target-timestamp-offset-hours 1 \
   --arbiter 0x0D7B957C47Da86c2968dc52111D633D42cb7a5F7 \
-  --category 3 \
+  --category Sports \
   --liquidity 10 \
   --curve-flattener 7 \
   --curve-offset 30000 \
@@ -663,6 +682,7 @@ pandora clone-bet \
 
 For live execution, replace `--dry-run` with `--execute`.
 If `pandora` is not linked yet, use `node cli/pandora.cjs clone-bet ...`.
+In this example, `--category Sports` maps to `PollCategory.Sports` (`1`).
 
 Default arbiter (whitelisted): `0x0D7B957C47Da86c2968dc52111D633D42cb7a5F7`
 
@@ -676,12 +696,13 @@ pandora launch \
   --sources "https://coinmarketcap.com/currencies/bitcoin/" "https://www.coingecko.com/en/coins/bitcoin" \
   --target-timestamp 1798675200 \
   --target-timestamp-offset-hours 1 \
-  --category 3 \
+  --category Sports \
   --liquidity 100 \
   --fee-tier 3000 \
   --distribution-yes 600000000 \
   --distribution-no 400000000
 ```
+In this example, `--category Sports` maps to `PollCategory.Sports` (`1`).
 
 If `pandora` is not linked yet, use `node cli/pandora.cjs launch ...`.
 

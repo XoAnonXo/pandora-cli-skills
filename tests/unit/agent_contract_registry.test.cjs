@@ -85,3 +85,54 @@ test('shared agent contract registry declares every emitted help command', () =>
     assert.ok(declaredHelps.has(helpCommand), `missing emitted help contract for ${helpCommand}`);
   }
 });
+
+test('mirror and sports create schemas expose category names and required selector invariants', () => {
+  const descriptors = buildCommandDescriptors();
+
+  const mirrorDeploy = descriptors['mirror.deploy'];
+  assert.ok(mirrorDeploy);
+  assert.deepEqual(
+    mirrorDeploy.inputSchema.properties.category.anyOf[1].enum,
+    ['Politics', 'Sports', 'Finance', 'Crypto', 'Culture', 'Technology', 'Science', 'Entertainment', 'Health', 'Environment', 'Other'],
+  );
+  assert.ok(
+    mirrorDeploy.inputSchema.anyOf.some((branch) => Array.isArray(branch.required) && branch.required.includes('plan-file') && branch.required.includes('dry-run')),
+    'mirror.deploy should require a selector plus mode branch',
+  );
+  assert.ok(
+    Array.isArray(mirrorDeploy.inputSchema.oneOf)
+      && mirrorDeploy.inputSchema.oneOf.some((branch) =>
+        Array.isArray(branch.required)
+          && branch.required.includes('plan-file')
+          && branch.required.includes('dry-run')
+          && branch.not
+          && Array.isArray(branch.not.anyOf),
+      ),
+    'mirror.deploy should encode exclusive selector/mode branches',
+  );
+
+  const mirrorClose = descriptors['mirror.close'];
+  assert.ok(
+    mirrorClose.inputSchema.anyOf.some((branch) => Array.isArray(branch.required) && branch.required.includes('all') && branch.required.includes('execute')),
+    'mirror.close should allow all+execute branch',
+  );
+  assert.ok(
+    mirrorClose.inputSchema.anyOf.some((branch) => Array.isArray(branch.required) && branch.required.includes('pandora-market-address') && branch.required.includes('polymarket-market-id') && branch.required.includes('dry-run')),
+    'mirror.close should allow paired selector dry-run branch',
+  );
+  assert.ok(
+    Array.isArray(mirrorClose.inputSchema.oneOf)
+      && mirrorClose.inputSchema.oneOf.some((branch) =>
+        Array.isArray(branch.required)
+          && branch.required.includes('all')
+          && branch.required.includes('execute')
+          && branch.not
+          && Array.isArray(branch.not.anyOf),
+      ),
+    'mirror.close should encode exclusive selector/mode branches',
+  );
+
+  const sportsCreatePlan = descriptors['sports.create.plan'];
+  assert.ok(sportsCreatePlan);
+  assert.equal(sportsCreatePlan.inputSchema.properties.category.anyOf[1].enum[1], 'Sports');
+});

@@ -10,11 +10,13 @@ import {
   type Address,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import pollCategoryUtils from '../cli/lib/shared/poll_categories.cjs';
 
 const DEFAULT_ARBITER = '0x0D7B957C47Da86c2968dc52111D633D42cb7a5F7';
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const MIN_SOURCE_COUNT = 2;
 const MIN_DEADLINE_WINDOW_SECONDS = 12 * 60 * 60;
+const { POLL_CATEGORY_ENUM_TEXT, parsePollCategory } = pollCategoryUtils;
 
 type ParsedArgs = Record<string, string | string[]>;
 
@@ -92,6 +94,15 @@ const toNumber = (value: string, fallback: number): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return parsed;
+};
+
+const parseCategoryArg = (value: string, fallback: number): number => {
+  try {
+    return parsePollCategory(value || String(fallback), { flagName: '--category' });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 };
 
 const ERC20_ABI = [
@@ -186,6 +197,7 @@ Required:
 
 Common options:
   --market-type amm|parimutuel
+  --category <id|name> (${POLL_CATEGORY_ENUM_TEXT})
   --liquidity <usdc>
   --fee-tier <bps>
   --distribution-yes <parts-per-billion>
@@ -206,7 +218,7 @@ const args = {
   targetTimestamp: arg('target-timestamp') || arg('deadline-epoch'),
   targetTimestampOffsetHours: arg('target-timestamp-offset-hours', '1'),
   arbiter: (arg('arbiter', DEFAULT_ARBITER) as Address),
-  category: toInt(arg('category', '0'), 0),
+  category: parseCategoryArg(arg('category', '0'), 0),
   marketType,
   liquidity: arg('liquidity', '0'),
   distributionYes: arg('distribution-yes', '500000000'),

@@ -130,7 +130,7 @@ function buildGoOptions(overrides = {}) {
     liquidityUsdc: 100,
     feeTier: 3000,
     maxImbalance: 10_000,
-    category: 3,
+    category: 1,
     arbiter: null,
     paper: false,
     executeLive: true,

@@ -1,3 +1,5 @@
+const { parsePollCategoryFlag, DEFAULT_SPORTS_POLL_CATEGORY } = require('../shared/poll_categories.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseSportsFlags requires deps.${name}()`);
@@ -175,7 +177,7 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     oracle: null,
     factory: null,
     arbiter: null,
-    category: 3,
+    category: DEFAULT_SPORTS_POLL_CATEGORY,
     stateFile: null,
     checksJson: null,
     checksFile: null,
@@ -472,7 +474,7 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       continue;
     }
     if (token === '--category') {
-      options.category = parsePositiveInteger(requireFlagValue(args, i, '--category'), '--category');
+      options.category = parsePollCategoryFlag(requireFlagValue(args, i, '--category'), '--category', CliError);
       i += 1;
       continue;
     }
