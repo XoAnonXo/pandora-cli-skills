@@ -1,3 +1,5 @@
+const { createAsyncOperationBridge } = require('../shared/operation_bridge.cjs');
+
 /**
  * Handle `mirror sync` command execution (`run|once|start|stop|status`).
  * Orchestrates sync runtime, daemon lifecycle, and structured output emission.
@@ -33,6 +35,41 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     renderMirrorSyncTable,
     cliPath,
   } = deps;
+  const requestedAction = shared.rest[0];
+  const commandName =
+    requestedAction === 'status' || requestedAction === 'stop'
+      ? `mirror.sync.${requestedAction}`
+      : requestedAction === 'start'
+        ? 'mirror.sync.start'
+        : 'mirror.sync';
+  const operation = createAsyncOperationBridge(
+    {
+      operationId: context && context.operationId ? context.operationId : null,
+      operationContext: context && context.operationContext ? context.operationContext : null,
+      operationHooks:
+        (context && context.operationHooks)
+        || (deps && deps.operationHooks)
+        || null,
+      operation:
+        (context && context.operation)
+        || (deps && deps.operation)
+        || null,
+    },
+    {
+      command: commandName,
+    },
+  );
+
+  function finalizePayload(payload) {
+    const withOperation = operation.attach(payload);
+    if (!operation.diagnostics.length || !withOperation || typeof withOperation !== 'object' || Array.isArray(withOperation)) {
+      return withOperation;
+    }
+    return {
+      ...withOperation,
+      diagnostics: (Array.isArray(withOperation.diagnostics) ? withOperation.diagnostics : []).concat(operation.diagnostics),
+    };
+  }
 
   if (includesHelpFlag(shared.rest)) {
     if (context.outputMode === 'json') {
@@ -93,25 +130,53 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
   const syncAction = shared.rest[0];
   if (syncAction === 'stop') {
     const selector = parseMirrorSyncDaemonSelectorFlags(shared.rest.slice(1), 'stop');
+    await operation.ensure({
+      phase: 'mirror.sync.stop.requested',
+      strategyHash: selector.strategyHash || null,
+    });
     let payload;
     try {
       payload = await stopMirrorDaemon(selector);
     } catch (err) {
-      throw coerceMirrorServiceError(err, 'MIRROR_SYNC_DAEMON_STOP_FAILED');
+      const mirrorError = coerceMirrorServiceError(err, 'MIRROR_SYNC_DAEMON_STOP_FAILED');
+      await operation.fail(mirrorError, {
+        phase: 'mirror.sync.stop.failed',
+      });
+      throw mirrorError;
     }
-    emitSuccess(context.outputMode, 'mirror.sync.stop', payload, renderMirrorSyncDaemonTable);
+    operation.setOperationId(payload && (payload.operationId || payload.strategyHash || selector.strategyHash || null));
+    await operation.update(payload && payload.status ? payload.status : 'stopped', {
+      phase: 'mirror.sync.stop.complete',
+      found: payload && payload.found,
+      alive: payload && payload.alive,
+    });
+    emitSuccess(context.outputMode, 'mirror.sync.stop', finalizePayload(payload), renderMirrorSyncDaemonTable);
     return;
   }
 
   if (syncAction === 'status') {
     const selector = parseMirrorSyncDaemonSelectorFlags(shared.rest.slice(1), 'status');
+    await operation.ensure({
+      phase: 'mirror.sync.status.requested',
+      strategyHash: selector.strategyHash || null,
+    });
     let payload;
     try {
       payload = mirrorDaemonStatus(selector);
     } catch (err) {
-      throw coerceMirrorServiceError(err, 'MIRROR_SYNC_DAEMON_STATUS_FAILED');
+      const mirrorError = coerceMirrorServiceError(err, 'MIRROR_SYNC_DAEMON_STATUS_FAILED');
+      await operation.fail(mirrorError, {
+        phase: 'mirror.sync.status.failed',
+      });
+      throw mirrorError;
     }
-    emitSuccess(context.outputMode, 'mirror.sync.status', payload, renderMirrorSyncDaemonTable);
+    operation.setOperationId(payload && (payload.operationId || payload.strategyHash || selector.strategyHash || null));
+    await operation.update(payload && payload.status ? payload.status : 'unknown', {
+      phase: 'mirror.sync.status.complete',
+      found: payload && payload.found,
+      alive: payload && payload.alive,
+    });
+    emitSuccess(context.outputMode, 'mirror.sync.status', finalizePayload(payload), renderMirrorSyncDaemonTable);
     return;
   }
 
@@ -145,6 +210,24 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
   if (options.daemon) {
     const strategy = buildMirrorSyncStrategy(options);
     const strategyHash = mirrorStrategyHash(strategy);
+    if (operation.hasCreateHook || operation.getOperationId()) {
+      const ensuredOperationId = await operation.ensure({
+        phase: isStartAction ? 'mirror.sync.start.requested' : 'mirror.sync.run.requested',
+        strategyHash,
+      });
+      if (!ensuredOperationId) {
+        operation.setOperationId(strategyHash);
+      }
+    } else {
+      operation.setOperationId(strategyHash);
+    }
+    await operation.checkpoint(isStartAction ? 'mirror.sync.start.requested' : 'mirror.sync.run.requested', {
+      executeLive: Boolean(options.executeLive),
+      pandoraMarketAddress: options.pandoraMarketAddress || null,
+      polymarketMarketId: options.polymarketMarketId || null,
+      polymarketSlug: options.polymarketSlug || null,
+      strategyHash,
+    });
     const daemonCliArgs = buildMirrorSyncDaemonCliArgs(
       {
         ...options,
@@ -181,11 +264,17 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
         polymarketSlug: options.polymarketSlug,
       });
     } catch (err) {
-      throw coerceMirrorServiceError(err, 'MIRROR_SYNC_DAEMON_START_FAILED');
+      const mirrorError = coerceMirrorServiceError(err, 'MIRROR_SYNC_DAEMON_START_FAILED');
+      await operation.fail(mirrorError, {
+        phase: isStartAction ? 'mirror.sync.start.failed' : 'mirror.sync.run.failed',
+        strategyHash,
+      });
+      throw mirrorError;
     }
 
     const daemonPayload = {
       ...payload,
+      operationId: payload.operationId || operation.getOperationId() || payload.strategyHash || null,
       found: true,
       alive: Boolean(payload.pidAlive),
       status: payload.status || (payload.pidAlive ? 'running' : 'unknown'),
@@ -197,11 +286,17 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       const existingDiagnostics = Array.isArray(daemonPayload.diagnostics) ? daemonPayload.diagnostics : [];
       daemonPayload.diagnostics = [...existingDiagnostics, deprecatedForceGateWarning];
     }
+    await operation.update(daemonPayload.status, {
+      phase: isStartAction ? 'mirror.sync.start.complete' : 'mirror.sync.run.complete',
+      strategyHash: daemonPayload.strategyHash || strategyHash,
+      pid: daemonPayload.pid || null,
+      alive: daemonPayload.alive,
+    });
 
     emitSuccess(
       context.outputMode,
       isStartAction ? 'mirror.sync.start' : 'mirror.sync',
-      daemonPayload,
+      finalizePayload(daemonPayload),
       renderMirrorSyncDaemonTable,
     );
     return;
@@ -232,6 +327,13 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
 
   let payload;
   try {
+    await operation.checkpoint('mirror.sync.execution.requested', {
+      mode: options.mode,
+      executeLive: Boolean(options.executeLive),
+      pandoraMarketAddress: options.pandoraMarketAddress || null,
+      polymarketMarketId: options.polymarketMarketId || null,
+      polymarketSlug: options.polymarketSlug || null,
+    });
     payload = await runMirrorSync(
       {
         ...options,
@@ -293,9 +395,21 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       },
     );
   } catch (err) {
-    throw coerceMirrorServiceError(err, 'MIRROR_SYNC_FAILED');
+    const mirrorError = coerceMirrorServiceError(err, 'MIRROR_SYNC_FAILED');
+    await operation.fail(mirrorError, {
+      phase: 'mirror.sync.execution.failed',
+      mode: options.mode,
+    });
+    throw mirrorError;
   }
 
+  operation.setOperationId(payload && (payload.operationId || payload.strategyHash || null));
+  await operation.complete({
+    phase: 'mirror.sync.execution.complete',
+    mode: payload && payload.mode ? payload.mode : options.mode,
+    strategyHash: payload && payload.strategyHash ? payload.strategyHash : null,
+    actionCount: payload && Number.isFinite(payload.actionCount) ? payload.actionCount : null,
+  });
   if (trustManifest) {
     payload.trustManifest = trustManifest;
   }
@@ -307,5 +421,5 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     payload.diagnostics = [...existingDiagnostics, deprecatedForceGateWarning];
   }
 
-  emitSuccess(context.outputMode, 'mirror.sync', payload, renderMirrorSyncTable);
+  emitSuccess(context.outputMode, 'mirror.sync', finalizePayload(payload), renderMirrorSyncTable);
 };

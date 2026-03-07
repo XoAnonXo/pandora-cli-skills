@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { isMcpMode } = require('./shared/mcp_path_guard.cjs');
 
 const AUTOPILOT_SCHEMA_VERSION = '1.0.0';
 
@@ -13,6 +14,9 @@ function expandHome(filePath) {
 }
 
 function defaultKillSwitchFile() {
+  if (isMcpMode()) {
+    return path.resolve(process.cwd(), '.pandora', 'autopilot', 'STOP');
+  }
   return path.join(os.homedir(), '.pandora', 'autopilot', 'STOP');
 }
 
@@ -24,6 +28,9 @@ function strategyHash(params) {
 
 function defaultStateFile(params) {
   const hash = strategyHash(params);
+  if (isMcpMode()) {
+    return path.resolve(process.cwd(), '.pandora', 'autopilot', `${hash}.json`);
+  }
   return path.join(os.homedir(), '.pandora', 'autopilot', `${hash}.json`);
 }
 

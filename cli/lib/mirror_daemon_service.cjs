@@ -308,6 +308,7 @@ async function stopDaemon(options = {}) {
 
   return {
     schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
+    operationId: updated.strategyHash || null,
     strategyHash: updated.strategyHash || null,
     pidFile,
     pid,
@@ -326,11 +327,12 @@ function daemonStatus(options = {}) {
   const metadata = readJsonFile(pidFile);
 
   if (!metadata) {
-    return {
-      schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
-      found: false,
-      pidFile,
-      strategyHash: options.strategyHash ? normalizeStrategyHash(options.strategyHash) : null,
+      return {
+        schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
+        found: false,
+        pidFile,
+        operationId: options.strategyHash ? normalizeStrategyHash(options.strategyHash) : null,
+        strategyHash: options.strategyHash ? normalizeStrategyHash(options.strategyHash) : null,
       pid: null,
       alive: false,
       status: 'not-found',
@@ -348,11 +350,12 @@ function daemonStatus(options = {}) {
   };
   writeJsonFile(pidFile, updated);
 
-  return {
-    schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
-    found: true,
-    pidFile,
-    strategyHash: updated.strategyHash || null,
+    return {
+      schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
+      found: true,
+      pidFile,
+      operationId: updated.strategyHash || null,
+      strategyHash: updated.strategyHash || null,
     pid,
     alive,
     status: updated.status,

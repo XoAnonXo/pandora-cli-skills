@@ -2,10 +2,272 @@
  * Implements the `schema` command to output standard JSON interfaces for Agent ingestion.
  */
 
-const { buildCommandDescriptors } = require('./agent_contract_registry.cjs');
+const {
+  buildCommandDescriptors,
+  COMMAND_DESCRIPTOR_VERSION,
+} = require('./agent_contract_registry.cjs');
+
+function getJsonSchemaPrimitiveType(value) {
+  if (Array.isArray(value)) return 'array';
+  if (value === null) return 'null';
+  if (value && typeof value === 'object') return 'object';
+  if (typeof value === 'string') return 'string';
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'number') return 'number';
+  return null;
+}
+
+function sortUniqueStrings(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .filter((value) => typeof value === 'string' && value.trim())
+        .map((value) => value.trim()),
+    ),
+  ).sort();
+}
+
+function sortObjectKeys(record) {
+  const source = record && typeof record === 'object' ? record : {};
+  const sorted = {};
+  for (const key of Object.keys(source).sort((left, right) => left.localeCompare(right))) {
+    sorted[key] = source[key];
+  }
+  return sorted;
+}
+
+function stringArraySchema(enumValues = null) {
+  if (Array.isArray(enumValues) && enumValues.length) {
+    return { type: 'array', items: { type: 'string', enum: enumValues } };
+  }
+  return { type: 'array', items: { type: 'string' } };
+}
+
+const DESCRIPTOR_FIELD_SCHEMA_OVERRIDES = Object.freeze({
+  summary: { type: 'string' },
+  usage: { type: 'string' },
+  emits: stringArraySchema(),
+  outputModes: stringArraySchema(['json', 'table']),
+  dataSchema: { type: ['string', 'null'] },
+  helpDataSchema: { type: ['string', 'null'] },
+  inputSchema: { type: ['object', 'null'], additionalProperties: true },
+  mcpExposed: { type: 'boolean' },
+  aliasOf: { type: ['string', 'null'] },
+  canonicalTool: { type: ['string', 'null'] },
+  preferred: { type: 'boolean' },
+  mcpMutating: { type: 'boolean' },
+  mcpLongRunningBlocked: { type: 'boolean' },
+  controlInputNames: stringArraySchema(),
+  safeFlags: stringArraySchema(),
+  executeFlags: stringArraySchema(),
+  executeIntentRequired: { type: 'boolean' },
+  executeIntentRequiredForLiveMode: { type: 'boolean' },
+  canonicalCommandTokens: { type: ['array', 'null'], items: { type: 'string' } },
+  canonicalUsage: { type: ['string', 'null'] },
+  agentWorkflow: { oneOf: [{ type: 'object', additionalProperties: true }, { type: 'null' }] },
+  riskLevel: { enum: ['low', 'medium', 'high', 'critical'] },
+  idempotency: { enum: ['idempotent', 'conditional', 'non-idempotent'] },
+  expectedLatencyMs: { type: 'number', minimum: 0 },
+  requiresSecrets: { type: 'boolean' },
+  recommendedPreflightTool: { type: ['string', 'null'] },
+  safeEquivalent: { type: ['string', 'null'] },
+  externalDependencies: stringArraySchema(),
+  canRunConcurrent: { type: 'boolean' },
+  returnsOperationId: { type: 'boolean' },
+  returnsRuntimeHandle: { type: 'boolean' },
+  jobCapable: { type: 'boolean' },
+  supportsRemote: { type: 'boolean' },
+  remoteEligible: { type: 'boolean' },
+  remoteTransportActive: { type: 'boolean' },
+  supportsWebhook: { type: 'boolean' },
+  policyScopes: stringArraySchema(),
+});
+
+const CAPABILITIES_COMMAND_DIGEST_PROPERTIES = Object.freeze({
+  summary: { type: ['string', 'null'] },
+  outputModes: stringArraySchema(['json', 'table']),
+  dataSchema: { type: ['string', 'null'] },
+  helpDataSchema: { type: ['string', 'null'] },
+  mcpExposed: { type: 'boolean' },
+  aliasOf: { type: ['string', 'null'] },
+  canonicalTool: { type: ['string', 'null'] },
+  canonicalCommandTokens: { type: ['array', 'null'], items: { type: 'string' } },
+  preferred: { type: 'boolean' },
+  controlInputNames: stringArraySchema(),
+  safeFlags: stringArraySchema(),
+  executeFlags: stringArraySchema(),
+  executeIntentRequired: { type: 'boolean' },
+  executeIntentRequiredForLiveMode: { type: 'boolean' },
+  requiredInputs: stringArraySchema(),
+  mcpMutating: { type: 'boolean' },
+  mcpLongRunningBlocked: { type: 'boolean' },
+  riskLevel: { enum: ['low', 'medium', 'high', 'critical', null] },
+  idempotency: { enum: ['idempotent', 'conditional', 'non-idempotent', null] },
+  expectedLatencyMs: { type: ['number', 'null'], minimum: 0 },
+  requiresSecrets: { type: 'boolean' },
+  recommendedPreflightTool: { type: ['string', 'null'] },
+  safeEquivalent: { type: ['string', 'null'] },
+  externalDependencies: stringArraySchema(),
+  canRunConcurrent: { type: 'boolean' },
+  returnsOperationId: { type: 'boolean' },
+  returnsRuntimeHandle: { type: 'boolean' },
+  jobCapable: { type: 'boolean' },
+  supportsRemote: { type: 'boolean' },
+  remoteEligible: { type: 'boolean' },
+  remoteTransportActive: { type: 'boolean' },
+  remotePlanned: { type: 'boolean' },
+  supportsWebhook: { type: 'boolean' },
+  policyScopes: stringArraySchema(),
+  emits: stringArraySchema(),
+});
+
+function inferArrayItemsSchema(values) {
+  const items = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    if (!Array.isArray(value)) continue;
+    items.push(...value);
+  }
+
+  const itemTypes = sortUniqueStrings(items.map(getJsonSchemaPrimitiveType).filter(Boolean));
+  if (!itemTypes.length) {
+    return {};
+  }
+
+  if (itemTypes.length === 1) {
+    if (itemTypes[0] === 'string') {
+      const enumValues = sortUniqueStrings(items);
+      return enumValues.length > 0 && enumValues.length <= 12
+        ? { type: 'string', enum: enumValues }
+        : { type: 'string' };
+    }
+    if (itemTypes[0] === 'object') {
+      return { type: 'object', additionalProperties: true };
+    }
+    return { type: itemTypes[0] };
+  }
+
+  return {
+    oneOf: itemTypes.map((type) => {
+      if (type === 'object') {
+        return { type: 'object', additionalProperties: true };
+      }
+      return { type };
+    }),
+  };
+}
+
+function inferDescriptorFieldSchema(values) {
+  const fieldTypes = sortUniqueStrings((Array.isArray(values) ? values : []).map(getJsonSchemaPrimitiveType).filter(Boolean));
+  if (!fieldTypes.length) {
+    return {};
+  }
+
+  if (fieldTypes.length === 1) {
+    if (fieldTypes[0] === 'array') {
+      return {
+        type: 'array',
+        items: inferArrayItemsSchema(values),
+      };
+    }
+    if (fieldTypes[0] === 'object') {
+      return { type: 'object', additionalProperties: true };
+    }
+    return { type: fieldTypes[0] };
+  }
+
+  if (fieldTypes.length === 2 && fieldTypes.includes('null')) {
+    const nonNullType = fieldTypes.find((type) => type !== 'null');
+    if (nonNullType === 'object') {
+      return { type: ['object', 'null'], additionalProperties: true };
+    }
+    if (nonNullType === 'array') {
+      return {
+        type: ['array', 'null'],
+        items: inferArrayItemsSchema(values),
+      };
+    }
+    return { type: [nonNullType, 'null'] };
+  }
+
+  return {
+    oneOf: fieldTypes.map((type) => {
+      if (type === 'array') {
+        return { type: 'array', items: inferArrayItemsSchema(values) };
+      }
+      if (type === 'object') {
+        return { type: 'object', additionalProperties: true };
+      }
+      return { type };
+    }),
+  };
+}
+
+function hasDescriptorSignal(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === 'object') return Object.keys(value).length > 0;
+  return false;
+}
+
+function buildCommandDescriptorMetadata(commandDescriptors) {
+  const descriptorList = Object.values(commandDescriptors || {});
+  const fieldNames = sortUniqueStrings(descriptorList.flatMap((descriptor) => Object.keys(descriptor || {})));
+  const requiredFields = fieldNames.filter((fieldName) =>
+    descriptorList.every((descriptor) => Object.prototype.hasOwnProperty.call(descriptor || {}, fieldName)),
+  );
+
+  const counts = {};
+  const capabilities = {};
+  for (const fieldName of fieldNames) {
+    const presentCount = descriptorList.filter((descriptor) =>
+      Object.prototype.hasOwnProperty.call(descriptor || {}, fieldName),
+    ).length;
+    counts[fieldName] = presentCount;
+    capabilities[fieldName] = presentCount > 0;
+  }
+
+  const properties = {};
+  for (const fieldName of fieldNames) {
+    properties[fieldName] =
+      DESCRIPTOR_FIELD_SCHEMA_OVERRIDES[fieldName]
+      || inferDescriptorFieldSchema(descriptorList.map((descriptor) => descriptor[fieldName]));
+  }
+
+  return {
+    source: 'agent_contract_registry.buildCommandDescriptors',
+    totalCommands: descriptorList.length,
+    fieldNames,
+    requiredFields,
+    capabilities: Object.freeze(capabilities),
+    counts,
+    descriptorValueSchema: {
+      type: 'object',
+      required: requiredFields,
+      properties,
+      additionalProperties: false,
+    },
+  };
+}
+
+function buildSchemaHelpPayload() {
+  const commandDescriptorMetadata = buildCommandDescriptorMetadata(sortObjectKeys(buildCommandDescriptors()));
+  return {
+    usage: 'pandora --output json schema',
+    notes: [
+      'Command descriptors and descriptor metadata are derived from the shared agent contract registry.',
+    ],
+    commandCount: commandDescriptorMetadata.totalCommands,
+    descriptorFields: commandDescriptorMetadata.fieldNames,
+    capabilities: commandDescriptorMetadata.capabilities,
+  };
+}
 
 function buildSchemaPayload() {
-  const commandDescriptors = buildCommandDescriptors();
+  const commandDescriptors = sortObjectKeys(buildCommandDescriptors());
+  const commandDescriptorMetadata = buildCommandDescriptorMetadata(commandDescriptors);
   return {
     $schema: 'http://json-schema.org/draft-07/schema#',
     title: 'PandoraCliEnvelope',
@@ -16,9 +278,11 @@ function buildSchemaPayload() {
       { $ref: '#/definitions/SuccessEnvelope' },
       { $ref: '#/definitions/ErrorEnvelope' },
     ],
-    commandDescriptorVersion: '1.2.0',
-    descriptorScope: 'exhaustive-agent-surface',
+    commandDescriptorVersion: COMMAND_DESCRIPTOR_VERSION,
+    descriptorScope: 'command-surface',
     commandDescriptors,
+    commandDescriptorMetadata,
+    capabilities: commandDescriptorMetadata.capabilities,
     definitions: {
       SuccessEnvelope: {
         type: 'object',
@@ -107,10 +371,50 @@ function buildSchemaPayload() {
               { type: 'object' },
             ],
           },
+          commandCount: { type: 'integer' },
+          descriptorFields: { type: 'array', items: { type: 'string' } },
+          capabilities: { $ref: '#/definitions/SchemaDescriptorCapabilities' },
+          modeRouting: {
+            type: 'object',
+            properties: {
+              jsonOnly: { type: 'array', items: { type: 'string' } },
+              stdioOnly: { type: 'array', items: { type: 'string' } },
+              scriptNative: { type: 'array', items: { type: 'string' } },
+            },
+            additionalProperties: false,
+          },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },
         additionalProperties: true,
+      },
+      CapabilitiesHelpPayload: {
+        allOf: [
+          { $ref: '#/definitions/CommandHelpPayload' },
+          {
+            type: 'object',
+            required: ['commandDescriptorVersion'],
+            properties: {
+              commandDescriptorVersion: { type: 'string' },
+            },
+            additionalProperties: true,
+          },
+        ],
+      },
+      SchemaHelpPayload: {
+        allOf: [
+          { $ref: '#/definitions/CommandHelpPayload' },
+          {
+            type: 'object',
+            required: ['commandCount', 'descriptorFields', 'capabilities'],
+            properties: {
+              commandCount: { type: 'integer' },
+              descriptorFields: { type: 'array', items: { type: 'string' } },
+              capabilities: { $ref: '#/definitions/SchemaDescriptorCapabilities' },
+            },
+            additionalProperties: true,
+          },
+        ],
       },
       OddsHelpPayload: {
         allOf: [
@@ -141,9 +445,290 @@ function buildSchemaPayload() {
           },
         ],
       },
+      SchemaDescriptorCapabilities: {
+        type: 'object',
+        properties: Object.fromEntries(
+          commandDescriptorMetadata.fieldNames.map((fieldName) => [fieldName, { type: 'boolean' }]),
+        ),
+        required: [...commandDescriptorMetadata.fieldNames],
+        additionalProperties: false,
+      },
+      CommandDescriptorMetadata: {
+        type: 'object',
+        required: [
+          'source',
+          'totalCommands',
+          'fieldNames',
+          'requiredFields',
+          'capabilities',
+          'counts',
+          'descriptorValueSchema',
+        ],
+        properties: {
+          source: { type: 'string' },
+          totalCommands: { type: 'integer' },
+          fieldNames: { type: 'array', items: { type: 'string' } },
+          requiredFields: { type: 'array', items: { type: 'string' } },
+          capabilities: { $ref: '#/definitions/SchemaDescriptorCapabilities' },
+          counts: {
+            type: 'object',
+            properties: Object.fromEntries(
+              commandDescriptorMetadata.fieldNames.map((fieldName) => [fieldName, { type: 'integer' }]),
+            ),
+            required: [...commandDescriptorMetadata.fieldNames],
+            additionalProperties: false,
+          },
+          descriptorValueSchema: {
+            type: 'object',
+            required: ['type', 'required', 'properties', 'additionalProperties'],
+            properties: {
+              type: { const: 'object' },
+              required: { type: 'array', items: { type: 'string' } },
+              properties: { type: 'object', additionalProperties: true },
+              additionalProperties: { const: false },
+            },
+            additionalProperties: false,
+          },
+        },
+        additionalProperties: false,
+      },
       GenericCommandData: {
         type: 'object',
         description: 'Fallback schema for command payloads without a dedicated descriptor.',
+      },
+      CapabilitiesPayload: {
+        type: 'object',
+        required: [
+          'schemaVersion',
+          'generatedAt',
+          'title',
+          'description',
+          'source',
+          'commandDescriptorVersion',
+          'summary',
+          'transports',
+          'roadmapSignals',
+          'policyProfiles',
+          'operationProtocol',
+          'versionCompatibility',
+          'outputModeMatrix',
+          'topLevelCommands',
+          'namespaces',
+          'canonicalTools',
+          'commandDigests',
+          'registryDigest',
+        ],
+        properties: {
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          source: { type: 'string' },
+          commandDescriptorVersion: { type: 'string' },
+          summary: {
+            type: 'object',
+            required: [
+              'totalCommands',
+              'topLevelCommands',
+              'aliases',
+              'mcpExposedCommands',
+              'mcpMutatingCommands',
+              'mcpLongRunningBlockedCommands',
+              'jsonOnlyCommands',
+              'tableOnlyCommands',
+              'tableAndJsonCommands',
+            ],
+            properties: {
+              totalCommands: { type: 'integer' },
+              topLevelCommands: { type: 'integer' },
+              aliases: { type: 'integer' },
+              mcpExposedCommands: { type: 'integer' },
+              mcpMutatingCommands: { type: 'integer' },
+              mcpLongRunningBlockedCommands: { type: 'integer' },
+              jsonOnlyCommands: { type: 'integer' },
+              tableOnlyCommands: { type: 'integer' },
+              tableAndJsonCommands: { type: 'integer' },
+            },
+            additionalProperties: false,
+          },
+          transports: {
+            type: 'object',
+            required: ['cliJson', 'mcpStdio', 'mcpStreamableHttp', 'sdk'],
+            properties: {
+              cliJson: { $ref: '#/definitions/CapabilitiesTransport' },
+              mcpStdio: { $ref: '#/definitions/CapabilitiesTransport' },
+              mcpStreamableHttp: { $ref: '#/definitions/CapabilitiesTransport' },
+              sdk: { $ref: '#/definitions/CapabilitiesTransport' },
+            },
+            additionalProperties: false,
+          },
+          roadmapSignals: {
+            type: 'object',
+            required: [
+              'remoteEligibleCommands',
+              'jobCapableCommands',
+              'secretBearingCommands',
+              'operationReadyCommands',
+              'notes',
+            ],
+            properties: {
+              remoteEligibleCommands: { type: 'integer' },
+              jobCapableCommands: { type: 'integer' },
+              secretBearingCommands: { type: 'integer' },
+              operationReadyCommands: { type: 'integer' },
+              notes: { type: 'array', items: { type: 'string' } },
+            },
+            additionalProperties: false,
+          },
+          policyProfiles: {
+            type: 'object',
+            required: ['policyPacks', 'signerProfiles'],
+            properties: {
+              policyPacks: { $ref: '#/definitions/CapabilitiesPolicyProfileSection' },
+              signerProfiles: { $ref: '#/definitions/CapabilitiesSignerProfileSection' },
+            },
+            additionalProperties: false,
+          },
+          operationProtocol: {
+            type: 'object',
+            required: ['supported', 'status', 'notes', 'operationReadyCommands', 'jobCapableCommands'],
+            properties: {
+              supported: { type: 'boolean' },
+              status: { enum: ['planned', 'partial'] },
+              notes: { type: 'array', items: { type: 'string' } },
+              operationReadyCommands: { type: 'array', items: { type: 'string' } },
+              jobCapableCommands: { type: 'array', items: { type: 'string' } },
+            },
+            additionalProperties: false,
+          },
+          versionCompatibility: {
+            type: 'object',
+            required: [
+              'commandDescriptorVersion',
+              'schemaCommand',
+              'capabilitiesCommand',
+              'mcpTransport',
+              'notes',
+            ],
+            properties: {
+              commandDescriptorVersion: { type: 'string' },
+              schemaCommand: { type: 'string' },
+              capabilitiesCommand: { type: 'string' },
+              mcpTransport: { type: 'string' },
+              notes: { type: 'array', items: { type: 'string' } },
+            },
+            additionalProperties: false,
+          },
+          outputModeMatrix: {
+            type: 'object',
+            required: ['jsonOnly', 'tableOnly', 'tableAndJson'],
+            properties: {
+              jsonOnly: { type: 'array', items: { type: 'string' } },
+              tableOnly: { type: 'array', items: { type: 'string' } },
+              tableAndJson: { type: 'array', items: { type: 'string' } },
+            },
+            additionalProperties: false,
+          },
+          topLevelCommands: {
+            type: 'object',
+            additionalProperties: {
+              type: 'object',
+              required: ['summary', 'usage', 'outputModes', 'childCommands', 'mcpExposed', 'canonicalTool', 'aliasOf', 'preferred'],
+              properties: {
+                summary: { type: ['string', 'null'] },
+                usage: { type: ['string', 'null'] },
+                outputModes: stringArraySchema(['json', 'table']),
+                childCommands: { type: 'array', items: { type: 'string' } },
+                mcpExposed: { type: 'boolean' },
+                canonicalTool: { type: ['string', 'null'] },
+                aliasOf: { type: ['string', 'null'] },
+                preferred: { type: 'boolean' },
+              },
+              additionalProperties: false,
+            },
+          },
+          namespaces: {
+            type: 'object',
+            additionalProperties: {
+              type: 'object',
+              required: ['summary', 'usage', 'outputModes', 'commands', 'mcpExposedCommands'],
+              properties: {
+                summary: { type: ['string', 'null'] },
+                usage: { type: ['string', 'null'] },
+                outputModes: stringArraySchema(['json', 'table']),
+                commands: { type: 'array', items: { type: 'string' } },
+                mcpExposedCommands: { type: 'array', items: { type: 'string' } },
+              },
+              additionalProperties: false,
+            },
+          },
+          canonicalTools: {
+            type: 'object',
+            additionalProperties: {
+              type: 'object',
+              required: ['preferredCommand', 'commands'],
+              properties: {
+                preferredCommand: { type: 'string' },
+                commands: { type: 'array', items: { type: 'string' } },
+              },
+              additionalProperties: false,
+            },
+          },
+          commandDigests: {
+            type: 'object',
+            additionalProperties: {
+              type: 'object',
+              required: Object.keys(CAPABILITIES_COMMAND_DIGEST_PROPERTIES),
+              properties: CAPABILITIES_COMMAND_DIGEST_PROPERTIES,
+              additionalProperties: false,
+            },
+          },
+          registryDigest: {
+            type: 'object',
+            required: ['descriptorHash', 'commandDigestHash', 'canonicalHash', 'topLevelHash', 'namespaceHash'],
+            properties: {
+              descriptorHash: { type: 'string' },
+              commandDigestHash: { type: 'string' },
+              canonicalHash: { type: 'string' },
+              topLevelHash: { type: 'string' },
+              namespaceHash: { type: 'string' },
+            },
+            additionalProperties: false,
+          },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesTransport: {
+        type: 'object',
+        required: ['supported', 'status', 'notes'],
+        properties: {
+          supported: { type: 'boolean' },
+          status: { enum: ['active', 'inactive', 'planned'] },
+          notes: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesPolicyProfileSection: {
+        type: 'object',
+        required: ['supported', 'status', 'notes', 'commandsWithPolicyScopes'],
+        properties: {
+          supported: { type: 'boolean' },
+          status: { enum: ['active', 'planned'] },
+          notes: { type: 'array', items: { type: 'string' } },
+          commandsWithPolicyScopes: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesSignerProfileSection: {
+        type: 'object',
+        required: ['supported', 'status', 'notes', 'commandsRequiringSecrets'],
+        properties: {
+          supported: { type: 'boolean' },
+          status: { enum: ['active', 'planned'] },
+          notes: { type: 'array', items: { type: 'string' } },
+          commandsRequiringSecrets: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
       },
       AgentValidationAttestation: {
         type: 'object',
@@ -291,10 +876,11 @@ function buildSchemaPayload() {
           status: { type: 'string' },
           found: { type: ['boolean', 'null'] },
           alive: { type: 'boolean' },
-          pid: { type: ['number', 'null'] },
-          pidFile: { type: ['string', 'null'] },
-          strategyHash: { type: ['string', 'null'] },
-          metadata: { type: ['object', 'null'] },
+            pid: { type: ['number', 'null'] },
+            pidFile: { type: ['string', 'null'] },
+            strategyHash: { type: ['string', 'null'] },
+            operationId: { type: ['string', 'null'] },
+            metadata: { type: ['object', 'null'] },
           cadence: { type: ['object', 'null'] },
           autoPause: { type: ['object', 'null'] },
           diagnostics: { type: 'array', items: { type: 'object' } },
@@ -859,10 +1445,11 @@ function buildSchemaPayload() {
           iterationsRequested: { type: ['integer', 'null'] },
           iterationsCompleted: { type: 'integer' },
           stoppedReason: { type: ['string', 'null'] },
-          pid: { type: ['integer', 'null'] },
-          pidFile: { type: ['string', 'null'] },
-          logFile: { type: ['string', 'null'] },
-          alive: { type: ['boolean', 'null'] },
+            pid: { type: ['integer', 'null'] },
+            pidFile: { type: ['string', 'null'] },
+            logFile: { type: ['string', 'null'] },
+            operationId: { type: ['string', 'null'] },
+            alive: { type: ['boolean', 'null'] },
           status: { type: ['string', 'null'] },
           metadata: { type: ['object', 'null'] },
           diagnostics: { type: 'array', items: { type: 'string' } },
@@ -933,42 +1520,86 @@ function buildSchemaPayload() {
           generatedAt: { type: 'string', format: 'date-time' },
         },
       },
+      OperationPayload: {
+        type: 'object',
+        properties: {
+          operationId: { type: 'string' },
+          operationHash: { type: ['string', 'null'] },
+          tool: { type: ['string', 'null'] },
+          action: { type: ['string', 'null'] },
+          command: { type: ['string', 'null'] },
+          summary: { type: ['string', 'null'] },
+          status: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          policyPack: { type: ['string', 'null'] },
+          profile: { type: ['string', 'null'] },
+          environment: { type: ['string', 'null'] },
+          mode: { type: ['string', 'null'] },
+          scope: { type: ['string', 'null'] },
+          cancelable: { type: 'boolean' },
+          closable: { type: 'boolean' },
+          input: { type: 'object' },
+          normalizedInput: { type: 'object' },
+          checkpoints: { type: 'array', items: { type: 'object' } },
+          metadata: { type: 'object' },
+          result: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          recovery: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          error: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          validatedAt: { type: ['string', 'null'], format: 'date-time' },
+          queuedAt: { type: ['string', 'null'], format: 'date-time' },
+          startedAt: { type: ['string', 'null'], format: 'date-time' },
+          completedAt: { type: ['string', 'null'], format: 'date-time' },
+          failedAt: { type: ['string', 'null'], format: 'date-time' },
+          canceledAt: { type: ['string', 'null'], format: 'date-time' },
+          closedAt: { type: ['string', 'null'], format: 'date-time' },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      OperationListPayload: {
+        type: 'object',
+        properties: {
+          items: { type: 'array', items: { $ref: '#/definitions/OperationPayload' } },
+          count: { type: 'integer' },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
       SchemaCommandPayload: {
         type: 'object',
-        required: ['$schema', 'title', 'oneOf', 'definitions', 'commandDescriptors'],
+        required: [
+          '$schema',
+          'title',
+          'description',
+          'type',
+          'oneOf',
+          'commandDescriptorVersion',
+          'descriptorScope',
+          'commandDescriptors',
+          'commandDescriptorMetadata',
+          'capabilities',
+          'definitions',
+        ],
         properties: {
           $schema: { type: 'string' },
           title: { type: 'string' },
           description: { type: 'string' },
+          type: { const: 'object' },
           oneOf: { type: 'array', items: { type: 'object' } },
           commandDescriptorVersion: { type: 'string' },
-          descriptorScope: { type: 'string' },
+          descriptorScope: { enum: ['command-surface'] },
           commandDescriptors: {
             type: 'object',
-            additionalProperties: {
-              type: 'object',
-              required: ['summary', 'usage', 'emits', 'outputModes', 'dataSchema'],
-              properties: {
-                summary: { type: 'string' },
-                usage: { type: 'string' },
-                emits: { type: 'array', items: { type: 'string' } },
-                outputModes: { type: 'array', items: { enum: ['table', 'json'] } },
-                dataSchema: { type: 'string' },
-                helpDataSchema: { type: ['string', 'null'] },
-                inputSchema: { type: ['object', 'null'] },
-                mcpExposed: { type: 'boolean' },
-                aliasOf: { type: ['string', 'null'] },
-                canonicalTool: { type: ['string', 'null'] },
-                preferred: { type: 'boolean' },
-                mcpMutating: { type: 'boolean' },
-                mcpLongRunningBlocked: { type: 'boolean' },
-              },
-            },
+            additionalProperties: commandDescriptorMetadata.descriptorValueSchema,
           },
+          commandDescriptorMetadata: { $ref: '#/definitions/CommandDescriptorMetadata' },
+          capabilities: { $ref: '#/definitions/SchemaDescriptorCapabilities' },
           definitions: { type: 'object' },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },
+        additionalProperties: false,
       },
     },
   };
@@ -984,9 +1615,7 @@ function createRunSchemaCommand(deps) {
   function runSchemaCommand(args, context) {
     if (Array.isArray(args) && (args.includes('--help') || args.includes('-h'))) {
       if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'schema.help', {
-          usage: 'pandora --output json schema',
-        });
+        emitSuccess(context.outputMode, 'schema.help', buildSchemaHelpPayload());
       } else {
         // eslint-disable-next-line no-console
         console.log('Usage: pandora --output json schema');

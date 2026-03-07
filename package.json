@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.1.67",
+  "version": "1.1.68",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
@@ -15,6 +15,7 @@
     "references/checklist.md",
     "references/contracts.md",
     "references/creation-script.md",
+    "docs/skills/**",
     "tsconfig.json",
     "SKILL.md",
     "README.md",

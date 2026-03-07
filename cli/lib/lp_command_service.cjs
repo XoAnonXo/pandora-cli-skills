@@ -5,6 +5,102 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
+function normalizeOperationToken(value, options = {}) {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return options.preserveCase ? trimmed : trimmed.toLowerCase();
+}
+
+function encodeOperationIdPart(value, options = {}) {
+  const normalized = normalizeOperationToken(value, options);
+  return normalized ? encodeURIComponent(normalized) : null;
+}
+
+function normalizeOperationChainId(value) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    return null;
+  }
+  return numeric;
+}
+
+function inferOperationStatus(payload, defaultStatus) {
+  if (payload && payload.mode === 'dry-run') {
+    return 'planned';
+  }
+  const successCount = Number.isInteger(payload && payload.successCount) ? payload.successCount : null;
+  const failureCount = Number.isInteger(payload && payload.failureCount) ? payload.failureCount : null;
+  if (successCount === null || failureCount === null) {
+    return defaultStatus;
+  }
+  if (failureCount === 0) {
+    return successCount > 0 ? 'completed' : 'no-op';
+  }
+  return successCount > 0 ? 'partial' : 'failed';
+}
+
+function buildLpOperationContext(options = {}, payload = {}) {
+  const action = payload && payload.action ? payload.action : options.action;
+  const allMarkets = action === 'remove-all-markets' || Boolean(options.allMarkets);
+  if (!allMarkets) {
+    return null;
+  }
+
+  const wallet = normalizeOperationToken(payload.wallet || options.wallet);
+  if (!wallet) {
+    return null;
+  }
+
+  const chainId = normalizeOperationChainId(
+    payload && payload.runtime && payload.runtime.chainId !== undefined
+      ? payload.runtime.chainId
+      : options.chainId,
+  );
+  const mode = payload && payload.mode ? payload.mode : (options.execute ? 'execute' : 'dry-run');
+
+  return {
+    protocol: 'shared-operation/v1',
+    command: 'lp',
+    mode,
+    status: inferOperationStatus(payload, mode === 'execute' ? 'submitted' : 'planned'),
+    operationId: [
+      'lp-remove-all-markets',
+      chainId === null ? null : String(chainId),
+      encodeOperationIdPart(wallet),
+    ].filter(Boolean).join(':'),
+    runtimeHandle: {
+      type: 'lp-remove-all-markets',
+      chainId,
+      wallet,
+      allMarkets: true,
+    },
+    target: {
+      action: 'remove-all-markets',
+      allMarkets: true,
+      wallet,
+    },
+  };
+}
+
+async function maybeDecorateOperationPayload(decorateOperationPayload, payload, operationContext) {
+  if (typeof decorateOperationPayload !== 'function' || !payload || !operationContext) {
+    return payload;
+  }
+  try {
+    const nextPayload = await decorateOperationPayload(payload, operationContext);
+    return nextPayload === undefined ? payload : nextPayload;
+  } catch (error) {
+    const diagnostic = `Operation decoration failed: ${error && error.message ? error.message : String(error)}`;
+    return Array.isArray(payload.diagnostics)
+      ? {
+          ...payload,
+          diagnostics: payload.diagnostics.concat(diagnostic),
+        }
+      : payload;
+  }
+}
+
 /**
  * Creates the `lp` command runner.
  * @param {object} deps
@@ -21,6 +117,8 @@ function createRunLpCommand(deps) {
   const renderSingleEntityTable = requireDep(deps, 'renderSingleEntityTable');
   const CliError = requireDep(deps, 'CliError');
   const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
+  const decorateOperationPayload =
+    typeof deps.decorateOperationPayload === 'function' ? deps.decorateOperationPayload : null;
 
   return async function runLpCommand(args, context) {
     if (includesHelpFlag(args)) {
@@ -64,10 +162,16 @@ function createRunLpCommand(deps) {
       }
       throw err;
     }
+    payload = await maybeDecorateOperationPayload(
+      decorateOperationPayload,
+      payload,
+      buildLpOperationContext(options, payload),
+    );
     emitSuccess(context.outputMode, 'lp', payload, renderSingleEntityTable);
   };
 }
 
 module.exports = {
+  buildLpOperationContext,
   createRunLpCommand,
 };

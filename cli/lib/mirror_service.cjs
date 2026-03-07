@@ -13,6 +13,7 @@ const {
 const { buildRequiredAgentMarketValidation } = require('./agent_market_prompt_service.cjs');
 const { deployPandoraAmmMarket } = require('./pandora_deploy_service.cjs');
 const { defaultManifestFile, upsertPair } = require('./mirror_manifest_store.cjs');
+const { createAsyncOperationBridge } = require('./shared/operation_bridge.cjs');
 const { isMcpMode } = require('./shared/mcp_path_guard.cjs');
 const { round } = require('./shared/utils.cjs');
 
@@ -723,208 +724,255 @@ function resolveDeployPlanInput(options = {}) {
 }
 
 async function deployMirror(options = {}) {
-  let planData = options.planData || resolveDeployPlanInput(options);
-  if (!planData) {
-    planData = await buildMirrorPlan(options);
-  }
-
-  const diagnostics = [];
-  const question = String(planData.sourceMarket && planData.sourceMarket.question ? planData.sourceMarket.question : '').trim();
-  const minCloseLeadSeconds = Number.isFinite(Number(options.minCloseLeadSeconds))
-    ? Number(options.minCloseLeadSeconds)
-    : Number(planData.timing && planData.timing.minCloseLeadSeconds);
-  const effectiveTiming = planData.timing && typeof planData.timing === 'object'
-    ? {
-        ...planData.timing,
-        ...(Number.isFinite(Number(minCloseLeadSeconds))
-          ? { minCloseLeadSeconds: Number(minCloseLeadSeconds) }
-          : {}),
-      }
-    : buildMirrorTimingData(planData.sourceMarket || {}, minCloseLeadSeconds);
-  const suggestedTargetTimestamp = parseMirrorTargetTimestampInput(
-    effectiveTiming && effectiveTiming.suggestedTargetTimestamp,
+  const operation = createAsyncOperationBridge(
+    {
+      ...options,
+      operationId: options.operationId || (options.planData && options.planData.operationId) || null,
+    },
+    {
+      command: 'mirror.deploy',
+    },
   );
-  const fallbackTargetTimestamp = parseMirrorTargetTimestampInput(
-    planData.sourceMarket && planData.sourceMarket.closeTimestamp,
-  );
-  const explicitTargetTimestamp = parseMirrorTargetTimestampInput(options.targetTimestamp);
-  const targetTimestamp = explicitTargetTimestamp || suggestedTargetTimestamp || fallbackTargetTimestamp;
-  const refreshedRuleTemplate = buildRuleTemplate({
-    ...(planData.sourceMarket || {}),
-    description:
-      (planData.rules && (planData.rules.sourceRules || planData.rules.proposedPandoraRules))
-      || (planData.sourceMarket && planData.sourceMarket.description)
-      || '',
-  });
-  let sourceRulesText = String(
-    options.rules ||
-      (planData.rules && (planData.rules.proposedPandoraRules || planData.rules.sourceRules)) ||
-      (planData.sourceMarket && planData.sourceMarket.description) ||
-      '',
-  ).trim();
-  if (!options.rules && !hasPandoraBinaryRules(sourceRulesText) && hasPandoraBinaryRules(refreshedRuleTemplate.rulesText)) {
-    sourceRulesText = refreshedRuleTemplate.rulesText;
-    diagnostics.push('Upgraded non-binary source rules to Pandora YES/NO format during deploy.');
-  }
-  assertPandoraBinaryRules(sourceRulesText, {
-    question,
-    sourceRules: planData.rules && planData.rules.sourceRules ? planData.rules.sourceRules : null,
-    suggestedRules: refreshedRuleTemplate.rulesText,
-  });
-  diagnostics.push(...refreshedRuleTemplate.diagnostics);
-  if (explicitTargetTimestamp && suggestedTargetTimestamp && explicitTargetTimestamp < suggestedTargetTimestamp) {
-    diagnostics.push(
-      `Explicit --target-timestamp (${explicitTargetTimestamp}) is earlier than the suggested sports-safe target (${suggestedTargetTimestamp}). Trading may close before overtime or late completion.`,
-    );
-  } else if (!explicitTargetTimestamp && suggestedTargetTimestamp && suggestedTargetTimestamp !== fallbackTargetTimestamp) {
-    diagnostics.push(
-      `Using suggested targetTimestamp ${suggestedTargetTimestamp} instead of raw source timestamp ${fallbackTargetTimestamp}.`,
-    );
-  }
-  diagnostics.push(...(Array.isArray(effectiveTiming && effectiveTiming.warnings) ? effectiveTiming.warnings : []));
-  if (effectiveTiming && effectiveTiming.reason) diagnostics.push(effectiveTiming.reason);
 
-  const liquidityUsdc =
-    options.liquidityUsdc !== null && options.liquidityUsdc !== undefined
-      ? Number(options.liquidityUsdc)
-      : Number(planData.liquidityRecommendation && planData.liquidityRecommendation.liquidityUsdc);
-
-  const distributionYes =
-    options.distributionYes !== null && options.distributionYes !== undefined
-      ? Number(options.distributionYes)
-      : Number(planData.distributionHint && planData.distributionHint.distributionYes);
-  const distributionNo =
-    options.distributionNo !== null && options.distributionNo !== undefined
-      ? Number(options.distributionNo)
-      : Number(planData.distributionHint && planData.distributionHint.distributionNo);
-
-  const sources = assertIndependentMirrorSources(options.sources);
-  const validationGate = assertMirrorValidationTicket({
-    execute: Boolean(options.execute),
-    question,
-    rules: sourceRulesText,
-    sources,
-    targetTimestamp,
-    validationTicket: options.validationTicket,
-  });
-
-  let deployPayload;
   try {
-    deployPayload = await deployPandoraAmmMarket({
+    await operation.ensure({
+      phase: 'mirror.deploy.start',
       execute: Boolean(options.execute),
-      chainId: options.chainId,
-      rpcUrl: options.rpcUrl,
-      privateKey: options.privateKey,
-      oracle: options.oracle,
-      factory: options.factory,
-      usdc: options.usdc,
+      planFile: options.planFile || null,
+    });
+
+    let planData = options.planData || resolveDeployPlanInput(options);
+    if (!planData) {
+      planData = await buildMirrorPlan(options);
+    }
+    operation.setOperationId(planData && planData.operationId ? planData.operationId : null);
+    await operation.checkpoint('mirror.deploy.plan.ready', {
+      execute: Boolean(options.execute),
+      planDigest: planData && planData.planDigest ? planData.planDigest : null,
+      sourceMarketId: planData && planData.sourceMarket && planData.sourceMarket.marketId
+        ? planData.sourceMarket.marketId
+        : null,
+    });
+
+    const diagnostics = [];
+    const question = String(planData.sourceMarket && planData.sourceMarket.question ? planData.sourceMarket.question : '').trim();
+    const minCloseLeadSeconds = Number.isFinite(Number(options.minCloseLeadSeconds))
+      ? Number(options.minCloseLeadSeconds)
+      : Number(planData.timing && planData.timing.minCloseLeadSeconds);
+    const effectiveTiming = planData.timing && typeof planData.timing === 'object'
+      ? {
+          ...planData.timing,
+          ...(Number.isFinite(Number(minCloseLeadSeconds))
+            ? { minCloseLeadSeconds: Number(minCloseLeadSeconds) }
+            : {}),
+        }
+      : buildMirrorTimingData(planData.sourceMarket || {}, minCloseLeadSeconds);
+    const suggestedTargetTimestamp = parseMirrorTargetTimestampInput(
+      effectiveTiming && effectiveTiming.suggestedTargetTimestamp,
+    );
+    const fallbackTargetTimestamp = parseMirrorTargetTimestampInput(
+      planData.sourceMarket && planData.sourceMarket.closeTimestamp,
+    );
+    const explicitTargetTimestamp = parseMirrorTargetTimestampInput(options.targetTimestamp);
+    const targetTimestamp = explicitTargetTimestamp || suggestedTargetTimestamp || fallbackTargetTimestamp;
+    const refreshedRuleTemplate = buildRuleTemplate({
+      ...(planData.sourceMarket || {}),
+      description:
+        (planData.rules && (planData.rules.sourceRules || planData.rules.proposedPandoraRules))
+        || (planData.sourceMarket && planData.sourceMarket.description)
+        || '',
+    });
+    let sourceRulesText = String(
+      options.rules ||
+        (planData.rules && (planData.rules.proposedPandoraRules || planData.rules.sourceRules)) ||
+        (planData.sourceMarket && planData.sourceMarket.description) ||
+        '',
+    ).trim();
+    if (!options.rules && !hasPandoraBinaryRules(sourceRulesText) && hasPandoraBinaryRules(refreshedRuleTemplate.rulesText)) {
+      sourceRulesText = refreshedRuleTemplate.rulesText;
+      diagnostics.push('Upgraded non-binary source rules to Pandora YES/NO format during deploy.');
+    }
+    assertPandoraBinaryRules(sourceRulesText, {
+      question,
+      sourceRules: planData.rules && planData.rules.sourceRules ? planData.rules.sourceRules : null,
+      suggestedRules: refreshedRuleTemplate.rulesText,
+    });
+    diagnostics.push(...refreshedRuleTemplate.diagnostics);
+    if (explicitTargetTimestamp && suggestedTargetTimestamp && explicitTargetTimestamp < suggestedTargetTimestamp) {
+      diagnostics.push(
+        `Explicit --target-timestamp (${explicitTargetTimestamp}) is earlier than the suggested sports-safe target (${suggestedTargetTimestamp}). Trading may close before overtime or late completion.`,
+      );
+    } else if (!explicitTargetTimestamp && suggestedTargetTimestamp && suggestedTargetTimestamp !== fallbackTargetTimestamp) {
+      diagnostics.push(
+        `Using suggested targetTimestamp ${suggestedTargetTimestamp} instead of raw source timestamp ${fallbackTargetTimestamp}.`,
+      );
+    }
+    diagnostics.push(...(Array.isArray(effectiveTiming && effectiveTiming.warnings) ? effectiveTiming.warnings : []));
+    if (effectiveTiming && effectiveTiming.reason) diagnostics.push(effectiveTiming.reason);
+
+    const liquidityUsdc =
+      options.liquidityUsdc !== null && options.liquidityUsdc !== undefined
+        ? Number(options.liquidityUsdc)
+        : Number(planData.liquidityRecommendation && planData.liquidityRecommendation.liquidityUsdc);
+
+    const distributionYes =
+      options.distributionYes !== null && options.distributionYes !== undefined
+        ? Number(options.distributionYes)
+        : Number(planData.distributionHint && planData.distributionHint.distributionYes);
+    const distributionNo =
+      options.distributionNo !== null && options.distributionNo !== undefined
+        ? Number(options.distributionNo)
+        : Number(planData.distributionHint && planData.distributionHint.distributionNo);
+
+    const sources = assertIndependentMirrorSources(options.sources);
+    const validationGate = assertMirrorValidationTicket({
+      execute: Boolean(options.execute),
       question,
       rules: sourceRulesText,
       sources,
       targetTimestamp,
-      minCloseLeadSeconds: Number.isFinite(Number(minCloseLeadSeconds))
-        ? Number(minCloseLeadSeconds)
-        : DEFAULT_MIRROR_MIN_CLOSE_LEAD_SECONDS,
-      liquidityUsdc,
-      distributionYes,
-      distributionNo,
-      feeTier: options.feeTier || 3000,
-      maxImbalance: options.maxImbalance === null || options.maxImbalance === undefined ? 16_777_215 : Number(options.maxImbalance),
-      arbiter: options.arbiter,
-      category: options.category,
+      validationTicket: options.validationTicket,
     });
-  } catch (err) {
-    throw createServiceError(
-      err && err.code ? err.code : 'MIRROR_DEPLOY_FAILED',
-      err && err.message ? err.message : String(err),
-      err && err.details ? err.details : undefined,
-    );
-  }
+    await operation.checkpoint('mirror.deploy.validation.ready', {
+      execute: Boolean(options.execute),
+      targetTimestamp,
+      requiredValidation:
+        validationGate && validationGate.requiredValidation ? validationGate.requiredValidation.ticket : null,
+    });
 
-  let trustManifest = null;
-  if (options.execute && deployPayload.pandora && deployPayload.pandora.marketAddress) {
-    const manifestFile = options.manifestFile || defaultManifestFile();
+    let deployPayload;
     try {
-      const manifestUpdate = upsertPair(manifestFile, {
-        trusted: true,
-        pandoraMarketAddress: deployPayload.pandora.marketAddress,
-        pandoraPollAddress: deployPayload.pandora.pollAddress,
-        polymarketMarketId: planData.sourceMarket && planData.sourceMarket.marketId ? String(planData.sourceMarket.marketId) : options.polymarketMarketId || null,
-        polymarketSlug: planData.sourceMarket && planData.sourceMarket.slug ? String(planData.sourceMarket.slug) : options.polymarketSlug || null,
-        sourceQuestion: planData.sourceMarket && planData.sourceMarket.question ? planData.sourceMarket.question : null,
-        sourceRuleHash: hashRules(sourceRulesText),
+      deployPayload = await deployPandoraAmmMarket({
+        execute: Boolean(options.execute),
+        chainId: options.chainId,
+        rpcUrl: options.rpcUrl,
+        privateKey: options.privateKey,
+        oracle: options.oracle,
+        factory: options.factory,
+        usdc: options.usdc,
+        question,
+        rules: sourceRulesText,
+        sources,
+        targetTimestamp,
+        minCloseLeadSeconds: Number.isFinite(Number(minCloseLeadSeconds))
+          ? Number(minCloseLeadSeconds)
+          : DEFAULT_MIRROR_MIN_CLOSE_LEAD_SECONDS,
+        liquidityUsdc,
+        distributionYes,
+        distributionNo,
+        feeTier: options.feeTier || 3000,
+        maxImbalance: options.maxImbalance === null || options.maxImbalance === undefined ? 16_777_215 : Number(options.maxImbalance),
+        arbiter: options.arbiter,
+        category: options.category,
       });
-      trustManifest = {
-        filePath: manifestUpdate.filePath,
-        pair: manifestUpdate.pair,
-      };
     } catch (err) {
       throw createServiceError(
-        'MIRROR_MANIFEST_WRITE_FAILED',
-        `Failed to persist mirror trust manifest: ${err && err.message ? err.message : String(err)}`,
+        err && err.code ? err.code : 'MIRROR_DEPLOY_FAILED',
+        err && err.message ? err.message : String(err),
+        err && err.details ? err.details : undefined,
       );
     }
-  }
+    await operation.checkpoint('mirror.deploy.execution.complete', {
+      mode: deployPayload.mode,
+      marketAddress: deployPayload && deployPayload.pandora ? deployPayload.pandora.marketAddress || null : null,
+      txHash: deployPayload && deployPayload.tx ? deployPayload.tx.hash || null : null,
+    });
 
-  const postDeployChecks = {
-    seedOddsMatch: null,
-    yesPctSource: planData.sourceMarket && Number.isFinite(Number(planData.sourceMarket.yesPct))
-      ? Number(planData.sourceMarket.yesPct)
-      : null,
-    yesPctPandora: null,
-    diffPct: null,
-    blockedLiveSync: false,
-    code: null,
-    message: null,
-  };
-
-  if (deployPayload.pandora && deployPayload.pandora.marketAddress && options.indexerUrl) {
-    try {
-      const pandoraMarket = await fetchPandoraMarketContext({
-        indexerUrl: options.indexerUrl,
-        timeoutMs: options.timeoutMs,
-        marketAddress: deployPayload.pandora.marketAddress,
-      });
-      postDeployChecks.yesPctPandora = pandoraMarket.yesPct;
-
-      if (postDeployChecks.yesPctSource !== null && postDeployChecks.yesPctPandora !== null) {
-        const diff = Math.abs(postDeployChecks.yesPctSource - postDeployChecks.yesPctPandora);
-        postDeployChecks.diffPct = round(diff, 6);
-        postDeployChecks.seedOddsMatch = diff <= 2;
-
-        if (!postDeployChecks.seedOddsMatch) {
-          postDeployChecks.blockedLiveSync = true;
-          postDeployChecks.code = 'SEED_ODDS_MISMATCH';
-          postDeployChecks.message = `Seed odds mismatch exceeds ±2% (${postDeployChecks.diffPct}%).`;
-        }
+    let trustManifest = null;
+    if (options.execute && deployPayload.pandora && deployPayload.pandora.marketAddress) {
+      const manifestFile = options.manifestFile || defaultManifestFile();
+      try {
+        const manifestUpdate = upsertPair(manifestFile, {
+          trusted: true,
+          pandoraMarketAddress: deployPayload.pandora.marketAddress,
+          pandoraPollAddress: deployPayload.pandora.pollAddress,
+          polymarketMarketId: planData.sourceMarket && planData.sourceMarket.marketId ? String(planData.sourceMarket.marketId) : options.polymarketMarketId || null,
+          polymarketSlug: planData.sourceMarket && planData.sourceMarket.slug ? String(planData.sourceMarket.slug) : options.polymarketSlug || null,
+          sourceQuestion: planData.sourceMarket && planData.sourceMarket.question ? planData.sourceMarket.question : null,
+          sourceRuleHash: hashRules(sourceRulesText),
+        });
+        trustManifest = {
+          filePath: manifestUpdate.filePath,
+          pair: manifestUpdate.pair,
+        };
+      } catch (err) {
+        throw createServiceError(
+          'MIRROR_MANIFEST_WRITE_FAILED',
+          `Failed to persist mirror trust manifest: ${err && err.message ? err.message : String(err)}`,
+        );
       }
-    } catch (err) {
-      diagnostics.push(`Post-deploy seed check unavailable: ${err && err.message ? err.message : String(err)}`);
     }
-  } else {
-    diagnostics.push('Post-deploy seed check skipped (market address or indexer URL unavailable).');
-  }
 
-  return {
-    schemaVersion: MIRROR_DEPLOY_SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
-    planDigest: planData.planDigest || buildPlanDigest(planData),
-    deploymentArgs: deployPayload.deploymentArgs,
-    timing: {
-      ...(effectiveTiming || {}),
-      selectedTargetTimestamp: targetTimestamp,
-      selectedTargetTimestampIso: formatTimestampIso(targetTimestamp),
-      overrideApplied: Boolean(explicitTargetTimestamp),
-    },
-    dryRun: deployPayload.mode === 'dry-run',
-    requiredValidation: deployPayload.requiredValidation || validationGate.requiredValidation || null,
-    agentValidation: deployPayload.agentValidation || validationGate.agentValidation || null,
-    tx: deployPayload.tx,
-    pandora: deployPayload.pandora,
-    postDeployChecks,
-    trustManifest,
-    diagnostics: diagnostics.concat(deployPayload.diagnostics || []),
-  };
+    const postDeployChecks = {
+      seedOddsMatch: null,
+      yesPctSource: planData.sourceMarket && Number.isFinite(Number(planData.sourceMarket.yesPct))
+        ? Number(planData.sourceMarket.yesPct)
+        : null,
+      yesPctPandora: null,
+      diffPct: null,
+      blockedLiveSync: false,
+      code: null,
+      message: null,
+    };
+
+    if (deployPayload.pandora && deployPayload.pandora.marketAddress && options.indexerUrl) {
+      try {
+        const pandoraMarket = await fetchPandoraMarketContext({
+          indexerUrl: options.indexerUrl,
+          timeoutMs: options.timeoutMs,
+          marketAddress: deployPayload.pandora.marketAddress,
+        });
+        postDeployChecks.yesPctPandora = pandoraMarket.yesPct;
+
+        if (postDeployChecks.yesPctSource !== null && postDeployChecks.yesPctPandora !== null) {
+          const diff = Math.abs(postDeployChecks.yesPctSource - postDeployChecks.yesPctPandora);
+          postDeployChecks.diffPct = round(diff, 6);
+          postDeployChecks.seedOddsMatch = diff <= 2;
+
+          if (!postDeployChecks.seedOddsMatch) {
+            postDeployChecks.blockedLiveSync = true;
+            postDeployChecks.code = 'SEED_ODDS_MISMATCH';
+            postDeployChecks.message = `Seed odds mismatch exceeds ±2% (${postDeployChecks.diffPct}%).`;
+          }
+        }
+      } catch (err) {
+        diagnostics.push(`Post-deploy seed check unavailable: ${err && err.message ? err.message : String(err)}`);
+      }
+    } else {
+      diagnostics.push('Post-deploy seed check skipped (market address or indexer URL unavailable).');
+    }
+    await operation.complete({
+      dryRun: deployPayload.mode === 'dry-run',
+      marketAddress: deployPayload && deployPayload.pandora ? deployPayload.pandora.marketAddress || null : null,
+      blockedLiveSync: Boolean(postDeployChecks.blockedLiveSync),
+    });
+
+    return operation.attach({
+      schemaVersion: MIRROR_DEPLOY_SCHEMA_VERSION,
+      generatedAt: new Date().toISOString(),
+      planDigest: planData.planDigest || buildPlanDigest(planData),
+      deploymentArgs: deployPayload.deploymentArgs,
+      timing: {
+        ...(effectiveTiming || {}),
+        selectedTargetTimestamp: targetTimestamp,
+        selectedTargetTimestampIso: formatTimestampIso(targetTimestamp),
+        overrideApplied: Boolean(explicitTargetTimestamp),
+      },
+      dryRun: deployPayload.mode === 'dry-run',
+      requiredValidation: deployPayload.requiredValidation || validationGate.requiredValidation || null,
+      agentValidation: deployPayload.agentValidation || validationGate.agentValidation || null,
+      tx: deployPayload.tx,
+      pandora: deployPayload.pandora,
+      postDeployChecks,
+      trustManifest,
+      diagnostics: diagnostics.concat(deployPayload.diagnostics || [], operation.diagnostics),
+    });
+  } catch (error) {
+    await operation.fail(error, {
+      command: 'mirror.deploy',
+    });
+    throw error;
+  }
 }
 
 async function verifyMirror(options = {}) {

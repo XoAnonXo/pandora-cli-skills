@@ -1,5 +1,5 @@
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 /**
  * Normalize unknown error-ish values into a loggable message string.
@@ -138,32 +138,18 @@ function createCommandExecutorService(options = {}) {
   const defaultTimeoutMs = Number.isFinite(options.defaultTimeoutMs) ? Math.max(1_000, Math.trunc(options.defaultTimeoutMs)) : 60_000;
   const baseEnv = options.env && typeof options.env === 'object' ? options.env : process.env;
 
-  /**
-   * Execute the CLI synchronously and parse the envelope from process output.
-   * @param {string[]} commandArgs
-   * @param {{timeoutMs?: number, env?: object}} [runtime]
-   * @returns {ExecuteJsonCommandResult}
-   */
-  function executeJsonCommand(commandArgs, runtime = {}) {
-    const timeoutMs = Number.isFinite(runtime.timeoutMs)
-      ? Math.max(1_000, Math.trunc(runtime.timeoutMs))
-      : defaultTimeoutMs;
-    const env = runtime.env && typeof runtime.env === 'object' ? runtime.env : baseEnv;
-    const childEnv = {
+  function buildChildEnv(env) {
+    return {
       ...env,
-      // Mark child CLI invocations as MCP-controlled to enable stricter file/path safety guards.
       PANDORA_MCP_MODE: '1',
     };
-    const argv = ['--output', 'json', ...commandArgs];
+  }
 
-    const result = spawnSync(process.execPath, [cliPath, ...argv], {
-      encoding: 'utf8',
-      env: childEnv,
-      timeout: timeoutMs,
-      killSignal: 'SIGKILL',
-      maxBuffer: 10 * 1024 * 1024,
-    });
+  function buildArgv(commandArgs) {
+    return ['--output', 'json', ...commandArgs];
+  }
 
+  function parseExecutionResult(commandArgs, result, timeoutMs) {
     if (result.error && result.error.code === 'ETIMEDOUT') {
       return {
         ok: false,
@@ -224,6 +210,28 @@ function createCommandExecutorService(options = {}) {
       };
     }
 
+    if (typeof result.status === 'number' && result.status !== 0 && envelope.ok === true) {
+      return {
+        ok: false,
+        exitCode: result.status,
+        stdout: result.stdout || '',
+        stderr: result.stderr || '',
+        envelope: {
+          ok: false,
+          error: {
+            code: 'COMMAND_NONZERO_EXIT',
+            message: `CLI command exited with status ${result.status} after emitting a success envelope.`,
+            details: {
+              commandArgs,
+              exitCode: result.status,
+              signal: result.signal || null,
+              parsedEnvelope: envelope,
+            },
+          },
+        },
+      };
+    }
+
     return {
       ok: envelope && envelope.ok === true,
       exitCode: typeof result.status === 'number' ? result.status : 1,
@@ -233,8 +241,140 @@ function createCommandExecutorService(options = {}) {
     };
   }
 
+  /**
+   * Execute the CLI synchronously and parse the envelope from process output.
+   * @param {string[]} commandArgs
+   * @param {{timeoutMs?: number, env?: object}} [runtime]
+   * @returns {ExecuteJsonCommandResult}
+   */
+  function executeJsonCommand(commandArgs, runtime = {}) {
+    const timeoutMs = Number.isFinite(runtime.timeoutMs)
+      ? Math.max(1_000, Math.trunc(runtime.timeoutMs))
+      : defaultTimeoutMs;
+    const env = runtime.env && typeof runtime.env === 'object' ? runtime.env : baseEnv;
+    const childEnv = buildChildEnv(env);
+    const argv = buildArgv(commandArgs);
+
+    const result = spawnSync(process.execPath, [cliPath, ...argv], {
+      encoding: 'utf8',
+      env: childEnv,
+      timeout: timeoutMs,
+      killSignal: 'SIGKILL',
+      maxBuffer: 10 * 1024 * 1024,
+    });
+
+    return parseExecutionResult(commandArgs, result, timeoutMs);
+  }
+
+  /**
+   * Execute the CLI asynchronously and parse the envelope from process output.
+   * Intended for long-lived servers where blocking the event loop is unacceptable.
+   *
+   * @param {string[]} commandArgs
+   * @param {{timeoutMs?: number, env?: object}} [runtime]
+   * @returns {Promise<ExecuteJsonCommandResult>}
+   */
+  async function executeJsonCommandAsync(commandArgs, runtime = {}) {
+    const timeoutMs = Number.isFinite(runtime.timeoutMs)
+      ? Math.max(1_000, Math.trunc(runtime.timeoutMs))
+      : defaultTimeoutMs;
+    const env = runtime.env && typeof runtime.env === 'object' ? runtime.env : baseEnv;
+    const childEnv = buildChildEnv(env);
+    const argv = buildArgv(commandArgs);
+
+    return new Promise((resolve) => {
+      const child = spawn(process.execPath, [cliPath, ...argv], {
+        env: childEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+      let timedOut = false;
+      let overflowError = null;
+      const maxBytes = 10 * 1024 * 1024;
+
+      function finalize(result) {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve(parseExecutionResult(commandArgs, result, timeoutMs));
+      }
+
+      function appendChunk(target, chunk) {
+        const next = target + String(chunk || '');
+        if (Buffer.byteLength(next, 'utf8') > maxBytes) {
+          overflowError = new Error('CLI command output exceeded maxBuffer.');
+          overflowError.code = 'MAXBUFFER';
+          child.kill('SIGKILL');
+          return target;
+        }
+        return next;
+      }
+
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, timeoutMs);
+      timer.unref?.();
+
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => {
+        stdout = appendChunk(stdout, chunk);
+      });
+      child.stderr.on('data', (chunk) => {
+        stderr = appendChunk(stderr, chunk);
+      });
+
+      child.on('error', (error) => {
+        finalize({
+          status: 1,
+          signal: null,
+          stdout,
+          stderr,
+          error,
+        });
+      });
+
+      child.on('close', (code, signal) => {
+        if (timedOut) {
+          const timeoutError = new Error(`Command timed out after ${timeoutMs}ms.`);
+          timeoutError.code = 'ETIMEDOUT';
+          finalize({
+            status: code,
+            signal,
+            stdout,
+            stderr,
+            error: timeoutError,
+          });
+          return;
+        }
+        if (overflowError) {
+          finalize({
+            status: code,
+            signal,
+            stdout,
+            stderr,
+            error: overflowError,
+          });
+          return;
+        }
+        finalize({
+          status: code,
+          signal,
+          stdout,
+          stderr,
+          error: null,
+        });
+      });
+    });
+  }
+
   return {
     executeJsonCommand,
+    executeJsonCommandAsync,
     coerceErrorMessage,
   };
 }

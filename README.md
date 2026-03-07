@@ -1,6 +1,6 @@
 # Pandora CLI & Skills
 
-Production CLI for Pandora prediction markets with mirror + hedge tooling and agent-native interfaces.
+Production CLI for Pandora prediction markets with mirror tooling, sports consensus, on-chain trading, analytics, and agent-native interfaces.
 
 ## Install
 
@@ -9,170 +9,74 @@ npm i -g pandora-cli-skills
 pandora --help
 ```
 
-Or run without installing:
+Or without installing:
 
 ```bash
 npx pandora-cli-skills@latest --help
 ```
 
-## Agent-Native Features
+Node.js `>=18` required.
 
-- `pandora --output json schema`
-  - emits machine-readable envelope schema + command descriptors.
-- `pandora mcp`
-  - runs an MCP server over stdio (`tools/list`, `tools/call`) for direct agent tool execution.
-- JSON errors include optional next-best-action recovery hints:
-  - `error.recovery = { action, command, retryable }`.
-- Attach-only fork runtime for on-chain command families:
-  - `--fork`, `--fork-rpc-url`, `--fork-chain-id`.
-- Event-driven streaming:
-  - `pandora stream prices|events` emits NDJSON lines on stdout.
-- MCP tool surface includes risk/lifecycle/odds command families in addition to core read/trade flows.
+## Documentation map
+- [`SKILL.md`](./SKILL.md)
+  - root overview and routing index
+- [`docs/skills/capabilities.md`](./docs/skills/capabilities.md)
+  - capability map, canonical paths, and PollCategory mapping
+- [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
+  - human-oriented command and flag reference; use capabilities/schema for machine authority
+- [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md)
+  - mirror deploy/go safety, timing, validation, sync, and closeout guidance
+- [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
+  - schema, MCP, JSON envelopes, recovery hints, fork runtime, and error codes
+- [`docs/skills/legacy-launchers.md`](./docs/skills/legacy-launchers.md)
+  - `launch` / `clone-bet` legacy script wrappers
 
 ## Quickstart
 
 ```bash
-# schema for typed consumers (Pydantic/Zod/etc.)
+# compact capability digest for agents
+pandora --output json capabilities
+
+# schema for typed consumers
 pandora --output json schema
 
 # MCP server mode
 pandora mcp
 
-# Read-only market discovery
-pandora --output json markets list --active --limit 10
+# read-only discovery
+pandora --output json scan --limit 10
 
-# Dry-run trade with fork runtime
+# buy-side dry-run
 pandora --output json trade --dry-run \
-  --market-address 0x... --side yes --amount-usdc 10 \
-  --fork --fork-rpc-url http://127.0.0.1:8545
+  --market-address 0x... --side yes --amount-usdc 10
 
-# Dry-run a sell quote / exit path
+# sell-side dry-run
 pandora --output json sell --dry-run \
-  --market-address 0x... --side no --shares 25 \
-  --fork --fork-rpc-url http://127.0.0.1:8545
+  --market-address 0x... --side no --shares 25
 
-# NDJSON stream
-pandora stream prices --indexer-url https://pandoraindexer.up.railway.app/ --interval-ms 1000
+# inspect persisted mutable-operation records
+pandora --output json operations list --status planned,queued,running --limit 20
 ```
 
-### Sports Quickstart
+## Mirror safety summary
+- `mirror plan|deploy|go` use a sports-aware suggested `targetTimestamp`; they do not assume a generic `+1h` buffer.
+- Use `--target-timestamp <unix|iso>` only when you intentionally need to override the suggested close time.
+- Fresh `mirror deploy` / `mirror go` runs require at least two independent public resolution URLs from different hosts in `--sources`.
+- Polymarket, Gamma, and CLOB URLs are discovery inputs only and are not valid `--sources`.
+- Validation is exact-payload: validate the final `question`, `rules`, `sources`, and `targetTimestamp` before execute mode.
+- CLI mirror execute reruns use `--validation-ticket`; MCP execute/live reruns use `agentPreflight`.
 
-```bash
-# list upcoming soccer events
-pandora --output json sports events list --competition <id-or-slug> --limit 5
+## PollCategory mapping
+- `Politics=0`
+- `Sports=1`
+- `Finance=2`
+- `Crypto=3`
+- `Culture=4`
+- `Technology=5`
+- `Science=6`
+- `Entertainment=7`
+- `Health=8`
+- `Environment=9`
+- `Other=10`
 
-# compute trimmed-median consensus for one event
-pandora --output json sports consensus --event-id <event-id> --trim-percent 20
-
-# build conservative create + resolve plans
-pandora --output json sports create plan --event-id <event-id> --selection home
-pandora --output json sports resolve plan --event-id <event-id> --poll-address <0x...>
-```
-
-### Lifecycle Quickstart
-
-```bash
-# lifecycle config must be JSON object (not YAML in current release)
-pandora --output json lifecycle start --config ./configs/lifecycle.json
-pandora --output json lifecycle status --id <lifecycle-id>
-pandora --output json lifecycle resolve --id <lifecycle-id> --confirm
-```
-
-### Mirror Operator Notes
-
-- `mirror plan` computes a sports-aware suggested `targetTimestamp`; do not assume a generic `+1h` close buffer. Use `--target-timestamp <unix|iso>` only when you intentionally want to override the suggested close time.
-- Fresh `mirror deploy` / `mirror go` runs need at least two independent public resolution URLs from different hosts in `--sources`. Polymarket, Gamma, and CLOB URLs are source-market discovery inputs and are not valid resolution sources.
-- Validation is payload-exact: run `pandora --output json agent market validate ...` on the final `question`, `rules`, `sources`, and `targetTimestamp` before execute mode. CLI mirror execute reruns use `--validation-ticket`; MCP execute/live reruns use `agentPreflight`.
-- For sports deploy/create flows, `--category Sports` (or `--category 1`) maps to the on-chain `PollCategory.Sports` enum.
-- Poll category ids: `Politics=0`, `Sports=1`, `Finance=2`, `Crypto=3`, `Culture=4`, `Technology=5`, `Science=6`, `Entertainment=7`, `Health=8`, `Environment=9`, `Other=10`.
-
-## Risk Controls
-
-- Inspect/engage panic lock:
-  - `pandora --output json risk show`
-  - `pandora --output json risk panic --reason "incident"`
-  - `pandora --output json risk panic --clear`
-- Current guardrail semantics:
-  - `max_position_usd` guards per-operation notional.
-  - `max_daily_loss_usd` currently maps to daily live notional cap (`counters.liveNotionalUsdc`).
-  - `max_open_markets` currently maps to daily live operation cap (`counters.liveOps`).
-- All risk state and panic files are persisted with hardened permissions under `~/.pandora/`.
-
-## Fork Mode Notes
-
-- Runtime marker is included in payloads: `data.runtime.mode = "fork" | "live"`.
-- Fork RPC precedence:
-  1. `--fork-rpc-url`
-  2. `FORK_RPC_URL` (when `--fork` is set)
-  3. command default live RPC path
-- `polymarket trade --execute` in fork mode is simulation-only unless `--polymarket-mock-url` is provided.
-
-## Streaming Contract
-
-`pandora stream prices|events` outputs NDJSON only (one JSON object per line), for example:
-
-```json
-{"type":"stream.tick","channel":"prices","seq":1,"ts":"2026-03-01T12:00:00.000Z","source":{"transport":"polling"},"data":{"id":"market-1","yesPct":58.12}}
-```
-
-## Command Surface
-
-- `pandora markets list|get`
-- `pandora scan`
-  - `scan` is the canonical enriched discovery workflow.
-  - `markets scan` remains a backward-compatible alias.
-- `pandora sports books list`
-- `pandora sports events list|live`
-- `pandora sports odds snapshot|bulk`
-- `pandora sports consensus`
-- `pandora sports create plan|run`
-- `pandora sports sync once|run|start|stop|status`
-- `pandora sports resolve plan`
-- `pandora lifecycle start|status|resolve`
-- `pandora quote`
-- `pandora trade`
-- `pandora sell`
-- `pandora claim --market-address <address>|--all --dry-run|--execute`
-- `pandora history`
-- `pandora export`
-- `pandora arb scan --output ndjson|json`
-- `pandora arbitrage`
-  - `arb scan` is the canonical arbitrage workflow.
-  - `arbitrage` remains a bounded one-shot compatibility wrapper.
-- `pandora odds record|history`
-- `pandora autopilot run|once`
-- `pandora mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close`
-  - `mirror browse` supports `--polymarket-tag-id|--polymarket-tag-ids` (aliases `--sport-tag-id|--sport-tag-ids`) for sports-tagged Gamma event discovery.
-- `pandora polymarket check|approve|preflight|trade`
-- `pandora resolve`
-- `pandora lp add|remove|positions`
-- `pandora risk show|panic`
-- `pandora stream prices|events`
-- `pandora schema`
-- `pandora mcp`
-
-## Quant ABM Baseline (Module Contract)
-
-- Deterministic ABM engine: `cli/lib/quant/abm_market.cjs`.
-- Simulate-agents handler module: `cli/lib/simulate_handlers/agents.cjs`.
-- Supported handler flags:
-  - `--n-informed` or `--n_informed`
-  - `--n-noise` or `--n_noise`
-  - `--n-mm` or `--n_mm`
-  - `--n-steps` or `--n_steps`
-  - `--seed`
-- ABM payload fields include:
-  - `convergenceError`
-  - `spreadTrajectory[]`
-  - `volume` (`total`, `averagePerStep`, `byAgentType`)
-  - `pnlByAgentType`
-  - `runtimeBounds` (`complexity`, `estimatedAgentDecisions`, `estimatedWorkUnits`)
-- Runtime bound metadata is documented as `O(n_steps * (n_informed + n_noise))`.
-- Unit coverage for this baseline is in `tests/unit/abm_market.test.cjs`.
-
-## Docs
-
-- Full command contract and workflows: [`SKILL.md`](./SKILL.md)
-- Operator + package documentation: [`README_FOR_SHARING.md`](./README_FOR_SHARING.md)
-
-Node.js `>=18` required.
+For sports mirror deploy/go flows, use `--category Sports` or `--category 1`.

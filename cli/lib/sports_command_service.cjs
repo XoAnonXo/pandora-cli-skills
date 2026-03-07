@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { loadSportsModelInput } = require('./sports_model_input_service.cjs');
+const { isMcpMode } = require('./shared/mcp_path_guard.cjs');
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -19,6 +20,9 @@ const BULK_ODDS_TTL_GT_1H_MS = 60_000;
 const BULK_ODDS_TTL_LIVE_OR_NEAR_MS = 30_000;
 
 function defaultStateFile() {
+  if (isMcpMode()) {
+    return path.resolve(process.cwd(), '.pandora', 'sports', 'sports_sync_state.json');
+  }
   const home = process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
   return path.join(home, '.pandora', 'sports_sync_state.json');
 }

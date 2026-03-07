@@ -2,7 +2,7 @@
  * @typedef {string|number|boolean|null|undefined|Array<string|number|boolean>} FlagInputValue
  */
 
-const { buildMcpToolDefinitions } = require('./agent_contract_registry.cjs');
+const { buildCommandDescriptors, buildMcpToolDefinitions } = require('./agent_contract_registry.cjs');
 
 /**
  * @typedef {{[flagName: string]: FlagInputValue}} ToolFlags
@@ -578,18 +578,125 @@ function buildInvocationEnv(controlInputs) {
  * @param {ToolDefinition} definition Tool registration definition.
  * @returns {{name: string, description: string, inputSchema: object}} MCP tool descriptor.
  */
-function toToolDescriptor(definition) {
+function toToolDescriptor(definition, options = {}) {
+  const descriptor = COMMAND_DESCRIPTORS[definition.name] || null;
+  const canonicalTool = definition.canonicalTool || definition.aliasOf || definition.name;
+  const safeFlags = Array.isArray(definition.safeFlags) ? [...definition.safeFlags] : [];
+  const executeFlags = Array.isArray(definition.executeFlags) ? [...definition.executeFlags] : [];
+  const executeIntentRequired = Boolean(definition.mutating && safeFlags.length === 0);
+  const executeIntentRequiredForLiveMode = Boolean(definition.mutating && executeFlags.length > 0);
+  const agentPreflightRequiredForExecuteMode = Boolean(
+    definition.agentWorkflow
+    && definition.agentWorkflow.executeRequiresValidation,
+  );
+  const remoteTransportActive = Boolean(options.remoteTransportActive);
   const xPandora = {
-    canonicalTool: definition.canonicalTool || definition.aliasOf || definition.name,
+    name: definition.name,
+    registryName: definition.name,
+    command: Array.isArray(definition.command) ? [...definition.command] : [],
+    summary: descriptor ? descriptor.summary : null,
+    usage: descriptor ? descriptor.usage : null,
+    emits: descriptor && Array.isArray(descriptor.emits) ? [...descriptor.emits] : [],
+    outputModes: descriptor && Array.isArray(descriptor.outputModes) ? [...descriptor.outputModes] : [],
+    dataSchema: descriptor ? descriptor.dataSchema || null : null,
+    helpDataSchema: descriptor ? descriptor.helpDataSchema || null : null,
+    mcpExposed: descriptor ? Boolean(descriptor.mcpExposed) : true,
+    canonicalTool,
+    canonicalName: canonicalTool,
+    canonicalCommandTokens:
+      descriptor && Array.isArray(descriptor.canonicalCommandTokens)
+        ? [...descriptor.canonicalCommandTokens]
+        : Array.isArray(definition.command)
+          ? [...definition.command]
+          : [],
+    canonicalUsage: descriptor ? descriptor.canonicalUsage || descriptor.usage || null : null,
     aliasOf: definition.aliasOf || null,
-    preferred: definition.preferred !== false,
+    preferred: descriptor ? Boolean(descriptor.preferred) : definition.preferred !== false,
+    isCanonical: definition.name === canonicalTool,
     compatibilityAlias: Boolean(definition.aliasOf),
     mutating: Boolean(definition.mutating),
+    mcpMutating: descriptor ? Boolean(descriptor.mcpMutating) : Boolean(definition.mutating),
     longRunningBlocked: Boolean(definition.longRunningBlocked),
+    mcpLongRunningBlocked: descriptor
+      ? Boolean(descriptor.mcpLongRunningBlocked)
+      : Boolean(definition.longRunningBlocked),
+    placeholderBlocked: Boolean(definition.placeholderBlocked),
     controlInputNames: Array.isArray(definition.controlInputNames) ? [...definition.controlInputNames] : [],
-    safeFlags: Array.isArray(definition.safeFlags) ? [...definition.safeFlags] : [],
-    executeFlags: Array.isArray(definition.executeFlags) ? [...definition.executeFlags] : [],
+    safeFlags,
+    executeFlags,
     agentWorkflow: definition.agentWorkflow || null,
+    riskLevel: descriptor ? descriptor.riskLevel || null : null,
+    idempotency: descriptor ? descriptor.idempotency || null : null,
+    expectedLatencyMs: descriptor ? descriptor.expectedLatencyMs || null : null,
+    requiresSecrets: descriptor ? Boolean(descriptor.requiresSecrets) : false,
+    recommendedPreflightTool: descriptor ? descriptor.recommendedPreflightTool || null : null,
+    safeEquivalent: descriptor ? descriptor.safeEquivalent || null : null,
+    externalDependencies:
+      descriptor && Array.isArray(descriptor.externalDependencies)
+        ? [...descriptor.externalDependencies]
+        : [],
+      canRunConcurrent: descriptor ? Boolean(descriptor.canRunConcurrent) : false,
+      returnsOperationId: descriptor ? Boolean(descriptor.returnsOperationId) : false,
+      returnsRuntimeHandle: descriptor ? Boolean(descriptor.returnsRuntimeHandle) : false,
+      jobCapable: descriptor ? Boolean(descriptor.jobCapable) : false,
+      supportsRemote: descriptor ? Boolean(descriptor.supportsRemote) : false,
+      remoteEligible: descriptor ? Boolean(descriptor.remoteEligible) : false,
+      remoteTransportActive: Boolean(remoteTransportActive),
+      supportsWebhook: descriptor ? Boolean(descriptor.supportsWebhook) : false,
+      executeIntentRequired,
+      executeIntentRequiredForLiveMode,
+      agentPreflightRequired: Boolean(agentPreflightRequiredForExecuteMode && executeIntentRequired),
+      agentPreflightRequiredForExecuteMode,
+      policyScopes:
+        descriptor && Array.isArray(descriptor.policyScopes)
+          ? [...descriptor.policyScopes]
+          : [],
+      metadataProvenance: {
+        runtimeEnforced: [
+        'mutating',
+        'mcpMutating',
+        'longRunningBlocked',
+        'mcpLongRunningBlocked',
+          'placeholderBlocked',
+          'controlInputNames',
+          'safeFlags',
+          'executeFlags',
+          ...(executeIntentRequired ? ['executeIntentRequired'] : []),
+          ...(executeIntentRequiredForLiveMode ? ['executeIntentRequiredForLiveMode'] : []),
+          ...(agentPreflightRequiredForExecuteMode && executeIntentRequired ? ['agentPreflightRequired'] : []),
+          ...(agentPreflightRequiredForExecuteMode ? ['agentPreflightRequiredForExecuteMode'] : []),
+        ],
+        descriptorDerived: [
+        'summary',
+        'usage',
+        'emits',
+        'outputModes',
+        'dataSchema',
+        'helpDataSchema',
+        'canonicalTool',
+        'canonicalCommandTokens',
+        'canonicalUsage',
+        'aliasOf',
+        'preferred',
+        'riskLevel',
+        'idempotency',
+        'expectedLatencyMs',
+        'requiresSecrets',
+        'recommendedPreflightTool',
+        'safeEquivalent',
+        'externalDependencies',
+          'canRunConcurrent',
+          'returnsOperationId',
+          'returnsRuntimeHandle',
+          'jobCapable',
+          'supportsRemote',
+          'remoteEligible',
+          'remoteTransportActive',
+          'supportsWebhook',
+          'policyScopes',
+          'agentWorkflow',
+        ],
+      },
   };
   const inputSchema = definition.inputSchema || {
     type: 'object',
@@ -600,7 +707,7 @@ function toToolDescriptor(definition) {
   return {
     name: definition.name,
     description: definition.aliasOf
-      ? `${definition.description} Compatibility alias for ${xPandora.canonicalTool}; prefer ${xPandora.canonicalTool}.`
+      ? `${definition.description} Compatibility alias for ${xPandora.canonicalTool}; prefer ${xPandora.canonicalTool} (${xPandora.canonicalCommandTokens.join(' ')}).`
       : definition.description,
     inputSchema: {
       ...inputSchema,
@@ -612,6 +719,7 @@ function toToolDescriptor(definition) {
 
 /** @type {ToolDefinition[]} */
 const TOOL_DEFINITIONS = buildMcpToolDefinitions();
+const COMMAND_DESCRIPTORS = buildCommandDescriptors();
 
 /**
  * Registry for MCP-exposed Pandora tools with execution guardrails.
@@ -622,7 +730,9 @@ const TOOL_DEFINITIONS = buildMcpToolDefinitions();
  *   hasTool: (toolName: string) => boolean
  * }} MCP tool registry API.
  */
-function createMcpToolRegistry() {
+function createMcpToolRegistry(options = {}) {
+  const remoteTransportActive = Boolean(options.remoteTransportActive);
+  const remoteOnly = Boolean(options.remoteOnly);
   const byName = new Map(TOOL_DEFINITIONS.map((definition) => [definition.name, definition]));
 
   /**
@@ -631,7 +741,19 @@ function createMcpToolRegistry() {
    * @returns {object[]} Tool descriptors.
    */
   function listTools() {
-    return TOOL_DEFINITIONS.map((definition) => toToolDescriptor(definition));
+    return TOOL_DEFINITIONS
+      .filter((definition) => {
+        if (!remoteOnly) return true;
+        const descriptor = COMMAND_DESCRIPTORS[definition.name] || null;
+        return Boolean(descriptor && descriptor.remoteEligible);
+      })
+      .map((definition) => toToolDescriptor(definition, { remoteTransportActive }));
+  }
+
+  function describeTool(toolName) {
+    const definition = byName.get(String(toolName || '').trim());
+    if (!definition) return null;
+    return toToolDescriptor(definition, { remoteTransportActive });
   }
 
   /**
@@ -659,6 +781,19 @@ function createMcpToolRegistry() {
       const missing = new Error(`Unknown MCP tool: ${toolName}`);
       missing.code = 'UNKNOWN_TOOL';
       throw missing;
+    }
+
+    if (remoteOnly) {
+      const descriptor = COMMAND_DESCRIPTORS[definition.name] || null;
+      if (!descriptor || !descriptor.remoteEligible) {
+        const unavailable = new Error(`${toolName} is not enabled for remote MCP transport in this build.`);
+        unavailable.code = 'MCP_REMOTE_TOOL_UNAVAILABLE';
+        unavailable.details = {
+          toolName: definition.name,
+          hints: ['Use the local CLI or stdio MCP transport for this tool.'],
+        };
+        throw unavailable;
+      }
     }
 
     if (definition.placeholderBlocked) {
@@ -703,10 +838,26 @@ function createMcpToolRegistry() {
       const safeFlags = Array.isArray(definition.safeFlags) ? definition.safeFlags : [];
       const executeFlags = Array.isArray(definition.executeFlags) ? definition.executeFlags : [];
       const flagSet = providedFlagSet(invocationFlags);
+      const modeFlags = [...safeFlags, ...executeFlags].filter((flag) => flagSet.has(flag));
       const hasSafe = safeFlags.some((flag) => flagSet.has(flag));
       const hasExecute = executeFlags.some((flag) => flagSet.has(flag));
       const executeIntent = Boolean(args && args.intent && args.intent.execute === true);
       const hasModeFlags = safeFlags.length > 0 || executeFlags.length > 0;
+
+      if (modeFlags.length > 1) {
+        const err = new Error(
+          `${toolName} received multiple mutually-exclusive execution mode flags: ${modeFlags.join(', ')}`,
+        );
+        err.code = 'MCP_MUTUALLY_EXCLUSIVE_MODE_FLAGS';
+        err.details = {
+          toolName: definition.name,
+          modeFlags,
+          safeFlags,
+          executeFlags,
+          hints: ['Provide exactly one execution mode flag, or omit mode flags and rely on intent.execute.'],
+        };
+        throw err;
+      }
 
       if (!hasModeFlags && !executeIntent) {
         const err = new Error(`${toolName} requires intent.execute=true for mutating operations.`);
@@ -780,6 +931,7 @@ function createMcpToolRegistry() {
 
   return {
     listTools,
+    describeTool,
     prepareInvocation,
     hasTool: (toolName) => byName.has(String(toolName || '').trim()),
   };

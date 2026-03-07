@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -12,7 +13,9 @@ const {
   runCliAsync,
   startJsonHttpServer,
 } = require('../helpers/cli_runner.cjs');
+const { assertSchemaValid } = require('../helpers/json_schema_assert.cjs');
 const { createMcpToolRegistry } = require('../../cli/lib/mcp_tool_registry.cjs');
+const { upsertOperation, createOperationStateStore } = require('../../cli/lib/operation_state_store.cjs');
 
 const ADDRESSES = {
   oracle: '0x1111111111111111111111111111111111111111',
@@ -53,6 +56,10 @@ function parseNdjsonOutput(output) {
     .map((line) => line.trim())
     .filter(Boolean);
   return text.map((line) => JSON.parse(line));
+}
+
+function stableJsonHash(value) {
+  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
 function buildValidEnv(rpcUrl, overrides = {}) {
@@ -1167,7 +1174,7 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions && payload.data.definitions.SuccessEnvelope);
   assert.ok(payload.data.definitions && payload.data.definitions.ErrorEnvelope);
 
-  assert.equal(payload.data.commandDescriptorVersion, '1.2.0');
+  assert.equal(payload.data.commandDescriptorVersion, '1.3.0');
   assert.ok(payload.data.commandDescriptors);
   assert.ok(payload.data.commandDescriptors.quote);
   assert.equal(payload.data.commandDescriptors.quote.dataSchema, '#/definitions/QuotePayload');
@@ -1230,7 +1237,12 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.deepEqual(payload.data.commandDescriptors.launch.outputModes, ['table']);
   assert.ok(payload.data.commandDescriptors['clone-bet']);
   assert.deepEqual(payload.data.commandDescriptors['clone-bet'].outputModes, ['table']);
-  assert.equal(payload.data.descriptorScope, 'exhaustive-agent-surface');
+  assert.equal(payload.data.descriptorScope, 'command-surface');
+  assert.equal(payload.data.commandDescriptorMetadata.capabilities.supportsRemote, true);
+  assert.equal(
+    payload.data.commandDescriptorMetadata.counts.supportsRemote,
+    Object.keys(payload.data.commandDescriptors).length,
+  );
   assert.ok(payload.data.definitions.QuotePayload);
   assert.ok(payload.data.definitions.TradePayload);
   assert.ok(payload.data.definitions.MirrorPlanPayload);
@@ -1270,6 +1282,7 @@ test('schema command covers every MCP tool and exposes canonical metadata', () =
   const payload = parseJsonOutput(result);
   const descriptors = payload.data.commandDescriptors;
   const mcpTools = createMcpToolRegistry().listTools();
+  const mcpToolNames = new Set(mcpTools.map((tool) => tool.name));
 
   for (const tool of mcpTools) {
     const descriptor = descriptors[tool.name];
@@ -1280,7 +1293,23 @@ test('schema command covers every MCP tool and exposes canonical metadata', () =
     assert.equal(descriptor.preferred, tool.xPandora.preferred, `preferred mismatch for ${tool.name}`);
     assert.equal(descriptor.mcpMutating, tool.xPandora.mutating, `mutating mismatch for ${tool.name}`);
     assert.equal(descriptor.mcpLongRunningBlocked, tool.xPandora.longRunningBlocked, `longRunning mismatch for ${tool.name}`);
+    assert.deepEqual(
+      descriptor.controlInputNames,
+      tool.xPandora.controlInputNames,
+      `controlInputNames mismatch for ${tool.name}`,
+    );
+    assert.deepEqual(
+      descriptor.agentWorkflow,
+      tool.xPandora.agentWorkflow,
+      `agentWorkflow mismatch for ${tool.name}`,
+    );
     assert.equal(typeof descriptor.inputSchema, 'object', `missing inputSchema for ${tool.name}`);
+  }
+
+  for (const [commandName, descriptor] of Object.entries(descriptors)) {
+    if (descriptor.mcpExposed) {
+      assert.ok(mcpToolNames.has(commandName), `schema marks ${commandName} as MCP-exposed but MCP tools/list is missing it`);
+    }
   }
 
   assert.ok(descriptors['events.list']);
@@ -1299,22 +1328,55 @@ test('schema command covers every MCP tool and exposes canonical metadata', () =
   assert.equal(descriptors['arb.scan'].preferred, true);
 });
 
+test('schema command preserves normalized MCP metadata defaults for primary and alias tools', () => {
+  const result = runCli(['--output', 'json', 'schema']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  const descriptors = payload.data.commandDescriptors;
+
+  assert.equal(descriptors.help.canonicalTool, 'help');
+  assert.equal(descriptors.help.aliasOf, null);
+  assert.equal(descriptors.help.preferred, true);
+  assert.equal(descriptors.help.mcpExposed, true);
+  assert.equal(descriptors.help.mcpMutating, false);
+  assert.equal(descriptors.help.mcpLongRunningBlocked, false);
+  assert.deepEqual(descriptors.help.controlInputNames, []);
+  assert.equal(descriptors.help.agentWorkflow, null);
+
+  assert.equal(descriptors.arbitrage.canonicalTool, 'arb.scan');
+  assert.equal(descriptors.arbitrage.aliasOf, 'arb.scan');
+  assert.equal(descriptors.arbitrage.preferred, false);
+  assert.equal(descriptors.arbitrage.mcpExposed, true);
+  assert.equal(descriptors.arbitrage.mcpMutating, false);
+  assert.equal(descriptors.arbitrage.mcpLongRunningBlocked, false);
+  assert.deepEqual(descriptors.arbitrage.controlInputNames, []);
+  assert.equal(descriptors.arbitrage.agentWorkflow, null);
+});
+
 test('schema help definitions match representative emitted help payloads', () => {
   const schemaResult = runCli(['--output', 'json', 'schema']);
   assert.equal(schemaResult.status, 0);
   const schemaPayload = parseJsonOutput(schemaResult);
+  const schemaDocument = schemaPayload.data;
   const descriptors = schemaPayload.data.commandDescriptors;
 
   const oddsHelp = parseJsonOutput(runCli(['--output', 'json', 'odds', 'record', '--help']));
   assert.equal(oddsHelp.command, 'odds.help');
   assert.equal(descriptors.odds.helpDataSchema, '#/definitions/OddsHelpPayload');
   assert.equal(typeof oddsHelp.data.historyUsage, 'string');
+  assertSchemaValid(schemaDocument, { $ref: descriptors.odds.helpDataSchema }, oddsHelp.data, 'odds.help');
 
   const mirrorStatusHelp = parseJsonOutput(runCli(['--output', 'json', 'mirror', 'status', '--help']));
   assert.equal(mirrorStatusHelp.command, 'mirror.status.help');
   assert.equal(descriptors['mirror.status'].helpDataSchema, '#/definitions/MirrorStatusHelpPayload');
   assert.ok(Array.isArray(mirrorStatusHelp.data.polymarketEnv));
   assert.equal(typeof mirrorStatusHelp.data.notes, 'object');
+  assertSchemaValid(
+    schemaDocument,
+    { $ref: descriptors['mirror.status'].helpDataSchema },
+    mirrorStatusHelp.data,
+    'mirror.status.help',
+  );
 
   const tradeQuoteHelp = parseJsonOutput(runCli(['--output', 'json', 'trade', 'quote', '--help']));
   assert.equal(tradeQuoteHelp.command, 'trade.quote.help');
@@ -1335,10 +1397,185 @@ test('schema help definitions match representative emitted help payloads', () =>
   const lifecycleStartHelp = parseJsonOutput(runCli(['--output', 'json', 'lifecycle', 'start', '--help']));
   assert.equal(lifecycleStartHelp.command, 'lifecycle.start.help');
   assert.ok(descriptors['lifecycle.start'].emits.includes('lifecycle.start.help'));
+
+  const capabilitiesHelp = parseJsonOutput(runCli(['--output', 'json', 'capabilities', '--help']));
+  assert.equal(capabilitiesHelp.command, 'capabilities.help');
+  assert.equal(descriptors.capabilities.helpDataSchema, '#/definitions/CapabilitiesHelpPayload');
+  assertSchemaValid(
+    schemaDocument,
+    { $ref: descriptors.capabilities.helpDataSchema },
+    capabilitiesHelp.data,
+    'capabilities.help',
+  );
+
+  const schemaHelp = parseJsonOutput(runCli(['--output', 'json', 'schema', '--help']));
+  assert.equal(schemaHelp.command, 'schema.help');
+  assert.equal(descriptors.schema.helpDataSchema, '#/definitions/SchemaHelpPayload');
+  assertSchemaValid(
+    schemaDocument,
+    { $ref: descriptors.schema.helpDataSchema },
+    schemaHelp.data,
+    'schema.help',
+  );
+});
+
+test('every declared help payload validates against its published help schema', () => {
+  const schemaEnvelope = parseJsonOutput(runCli(['--output', 'json', 'schema']));
+  const schemaDocument = schemaEnvelope.data;
+  const descriptors = schemaDocument.commandDescriptors;
+
+  for (const [commandName, descriptor] of Object.entries(descriptors)) {
+    if (!descriptor.helpDataSchema || !Array.isArray(descriptor.outputModes) || !descriptor.outputModes.includes('json')) {
+      continue;
+    }
+    if (!Array.isArray(descriptor.canonicalCommandTokens) || descriptor.canonicalCommandTokens.length === 0) {
+      continue;
+    }
+
+    const result = runCli(['--output', 'json', ...descriptor.canonicalCommandTokens, '--help']);
+    assert.equal(result.status, 0, `expected --help to succeed for ${commandName}: ${result.output || result.stderr}`);
+    const payload = parseJsonOutput(result);
+    assertSchemaValid(
+      schemaDocument,
+      { $ref: descriptor.helpDataSchema },
+      payload.data,
+      `${commandName}.help`,
+    );
+  }
+});
+
+test('schema and capabilities payloads validate against published definitions', () => {
+  const schemaResult = runCli(['--output', 'json', 'schema']);
+  assert.equal(schemaResult.status, 0);
+  const schemaEnvelope = parseJsonOutput(schemaResult);
+  const schemaDocument = schemaEnvelope.data;
+
+  const capabilitiesResult = runCli(['--output', 'json', 'capabilities']);
+  assert.equal(capabilitiesResult.status, 0);
+  const capabilitiesEnvelope = parseJsonOutput(capabilitiesResult);
+
+  assertSchemaValid(
+    schemaDocument,
+    { $ref: '#/definitions/SchemaCommandPayload' },
+    schemaDocument,
+    'schema',
+  );
+  assertSchemaValid(
+    schemaDocument,
+    { $ref: '#/definitions/CapabilitiesPayload' },
+    capabilitiesEnvelope.data,
+    'capabilities',
+  );
 });
 
 test('schema command rejects unknown trailing flags', () => {
   const result = runCli(['--output', 'json', 'schema', '--bad-flag']);
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_ARGS');
+});
+
+test('capabilities command requires --output json mode', () => {
+  const result = runCli(['capabilities']);
+  assert.equal(result.status, 1);
+  assert.match(result.output, /\[INVALID_USAGE\]/);
+  assert.match(result.output, /only supported in --output json mode/i);
+});
+
+test('capabilities --help succeeds in table mode', () => {
+  const result = runCli(['capabilities', '--help']);
+  assert.equal(result.status, 0);
+  assert.match(String(result.stdout || ''), /Usage:\s+pandora --output json capabilities/);
+});
+
+  test('capabilities command returns a derived command-contract digest', () => {
+  const schemaResult = runCli(['--output', 'json', 'schema']);
+  assert.equal(schemaResult.status, 0);
+  const schemaPayload = parseJsonOutput(schemaResult);
+  const result = runCli(['--output', 'json', 'capabilities']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  const capabilityBytes = Buffer.byteLength(result.stdout || '', 'utf8');
+  const schemaBytes = Buffer.byteLength(schemaResult.stdout || '', 'utf8');
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'capabilities');
+
+  assert.equal(payload.data.title, 'PandoraCliCapabilities');
+  assert.equal(payload.data.source, 'agent_contract_registry');
+  assert.equal(payload.data.commandDescriptorVersion, schemaPayload.data.commandDescriptorVersion);
+  assert.ok(payload.data.summary.totalCommands > 0);
+  assert.ok(payload.data.summary.mcpExposedCommands > 0);
+  assert.ok(payload.data.outputModeMatrix.jsonOnly.includes('schema'));
+  assert.ok(payload.data.outputModeMatrix.tableOnly.includes('mcp'));
+  assert.ok(payload.data.outputModeMatrix.tableAndJson.includes('quote'));
+  assert.ok(payload.data.topLevelCommands.markets);
+  assert.ok(payload.data.topLevelCommands.markets.childCommands.includes('markets.list'));
+  assert.ok(payload.data.namespaces.mirror.commands.includes('mirror.plan'));
+  assert.ok(payload.data.namespaces.agent.mcpExposedCommands.includes('agent.market.validate'));
+    assert.ok(payload.data.canonicalTools['arb.scan'].commands.includes('arbitrage'));
+    assert.equal(payload.data.canonicalTools['arb.scan'].preferredCommand, 'arb.scan');
+    assert.ok(payload.data.commandDigests.quote);
+    assert.equal(Object.keys(payload.data.commandDigests).length, Object.keys(schemaPayload.data.commandDescriptors).length);
+    assert.equal(payload.data.commandDigests.quote.summary.length > 0, true);
+    assert.deepEqual(payload.data.commandDigests.trade.canonicalCommandTokens, ['trade']);
+  assert.ok(payload.data.commandDigests.trade.emits.includes('trade'));
+  assert.deepEqual(payload.data.commandDigests.trade.safeFlags, ['--dry-run']);
+  assert.deepEqual(payload.data.commandDigests.trade.executeFlags, ['--execute']);
+  assert.equal(payload.data.commandDigests.trade.executeIntentRequired, false);
+  assert.equal(payload.data.commandDigests.trade.executeIntentRequiredForLiveMode, true);
+  assert.deepEqual(payload.data.commandDigests.trade.requiredInputs, ['amount-usdc', 'market-address', 'side']);
+  assert.equal(payload.data.commandDigests.trade.remoteEligible, true);
+  assert.equal(payload.data.commandDigests.trade.safeEquivalent, 'quote');
+  assert.equal(payload.data.commandDigests.trade.recommendedPreflightTool, 'quote');
+  assert.equal(payload.data.commandDigests.capabilities.supportsRemote, true);
+  assert.equal(payload.data.commandDigests.capabilities.remoteEligible, true);
+  assert.equal(payload.data.commandDigests.capabilities.remoteTransportActive, false);
+  assert.equal(payload.data.transports.mcpStreamableHttp.supported, true);
+  assert.equal(payload.data.transports.mcpStreamableHttp.status, 'inactive');
+  assert.ok(
+    payload.data.transports.mcpStreamableHttp.notes.some((note) => /inactive/i.test(note) && /pandora mcp http/i.test(note)),
+  );
+  assert.ok(
+    payload.data.versionCompatibility.notes.some((note) => /inactive/i.test(note) && /streamable http/i.test(note)),
+  );
+  assert.ok(payload.data.roadmapSignals.remoteEligibleCommands > 0);
+  assert.ok(payload.data.commandDigests['mirror.sync.start'].externalDependencies.includes('wallet-secrets'));
+  assert.ok(payload.data.commandDigests['mirror.sync.start'].externalDependencies.includes('notification-secrets'));
+  assert.equal(payload.data.commandDigests.trade.remotePlanned, true);
+  assert.equal(payload.data.commandDigests['mirror.sync.start'].returnsOperationId, true);
+  assert.equal(payload.data.commandDigests['mirror.sync.start'].returnsRuntimeHandle, true);
+  assert.equal(payload.data.commandDigests['mirror.sync.stop'].returnsRuntimeHandle, true);
+  assert.equal(payload.data.commandDigests.help.canRunConcurrent, true);
+  assert.equal(payload.data.registryDigest.descriptorHash.length, 64);
+  assert.equal(payload.data.registryDigest.descriptorHash, stableJsonHash(schemaPayload.data.commandDescriptors));
+  assert.equal(payload.data.registryDigest.commandDigestHash.length, 64);
+  assert.equal(payload.data.registryDigest.commandDigestHash, stableJsonHash(payload.data.commandDigests));
+  assert.equal(payload.data.registryDigest.canonicalHash, stableJsonHash(payload.data.canonicalTools));
+  assert.equal(payload.data.registryDigest.topLevelHash, stableJsonHash(payload.data.topLevelCommands));
+  assert.equal(payload.data.registryDigest.namespaceHash, stableJsonHash(payload.data.namespaces));
+  assert.equal(payload.data.summary.totalCommands, Object.keys(schemaPayload.data.commandDescriptors).length);
+  assert.ok(capabilityBytes < schemaBytes * 0.5, `capabilities should stay materially smaller than schema (${capabilityBytes} vs ${schemaBytes})`);
+  assert.ok(capabilityBytes < 250000, `capabilities payload should stay compact (${capabilityBytes} bytes)`);
+  });
+
+  test('json help payload includes output-mode routing notes', () => {
+    const result = runCli(['--output', 'json', 'help']);
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.ok(Array.isArray(payload.data.notes));
+  assert.deepEqual(payload.data.modeRouting, {
+    jsonOnly: ['capabilities', 'schema'],
+    stdioOnly: ['mcp'],
+    scriptNative: ['launch', 'clone-bet'],
+  });
+  assert.ok(payload.data.notes.some((note) => /json-only/i.test(note) && /capabilities/i.test(note) && /schema/i.test(note)));
+  assert.ok(payload.data.notes.some((note) => /mcp/i.test(note) && /stdio server mode/i.test(note)));
+  });
+
+test('capabilities command rejects unknown trailing flags', () => {
+  const result = runCli(['--output', 'json', 'capabilities', '--bad-flag']);
   assert.equal(result.status, 1);
   const payload = parseJsonOutput(result);
   assert.equal(payload.ok, false);
@@ -1421,6 +1658,75 @@ test('risk panic blocks live writes before onchain execution', () => {
     assert.equal(payload.error.code, 'RISK_PANIC_ACTIVE');
   } finally {
     removeDir(tempHome);
+  }
+});
+
+test('operations list/get/cancel/close manage durable operation records in json envelopes', () => {
+  const tempDir = createTempDir('pandora-operations-cli-');
+  try {
+    const operationDir = path.join(tempDir, 'operations');
+    const created = upsertOperation(
+      operationDir,
+      {
+        command: 'mirror.deploy',
+        request: { marketAddress: ADDRESSES.mirrorMarket, execute: false },
+        summary: 'Mirror deploy test',
+        status: 'planned',
+      },
+      { now: '2026-03-07T10:00:00.000Z' },
+    );
+    const env = { HOME: tempDir, PANDORA_OPERATION_DIR: operationDir };
+
+    const listResult = runCli(['--output', 'json', 'operations', 'list', '--status', 'planned'], { env });
+    assert.equal(listResult.status, 0);
+    const listPayload = parseJsonOutput(listResult);
+    assert.equal(listPayload.command, 'operations.list');
+    assert.equal(listPayload.data.count, 1);
+    assert.equal(listPayload.data.items[0].operationId, created.operation.operationId);
+
+    const getResult = runCli(['--output', 'json', 'operations', 'get', '--id', created.operation.operationId], { env });
+    assert.equal(getResult.status, 0);
+    const getPayload = parseJsonOutput(getResult);
+    assert.equal(getPayload.command, 'operations.get');
+    assert.equal(getPayload.data.operationId, created.operation.operationId);
+
+    const cancelResult = runCli(['--output', 'json', 'operations', 'cancel', '--id', created.operation.operationId, '--reason', 'stop'], { env });
+    assert.equal(cancelResult.status, 0);
+    const cancelPayload = parseJsonOutput(cancelResult);
+    assert.equal(cancelPayload.command, 'operations.cancel');
+    assert.equal(cancelPayload.data.status, 'canceled');
+
+    const closeResult = runCli(['--output', 'json', 'operations', 'close', '--id', created.operation.operationId], { env });
+    assert.equal(closeResult.status, 0);
+    const closePayload = parseJsonOutput(closeResult);
+    assert.equal(closePayload.command, 'operations.close');
+    assert.equal(closePayload.data.status, 'closed');
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('mirror close dry-run decorates payloads with a durable operation record', () => {
+  const tempDir = createTempDir('pandora-mirror-close-operation-');
+  try {
+    const operationDir = path.join(tempDir, 'operations');
+    const env = {
+      HOME: tempDir,
+      PANDORA_OPERATION_DIR: operationDir,
+    };
+    const result = runCli(['--output', 'json', 'mirror', 'close', '--all', '--dry-run'], { env });
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'mirror.close');
+    assert.match(payload.data.operationId, /^mirror-close/);
+
+    const store = createOperationStateStore({ rootDir: operationDir });
+    const lookup = store.get(payload.data.operationId);
+    assert.equal(lookup.found, true);
+    assert.equal(lookup.operation.command, 'mirror.close');
+    assert.equal(lookup.operation.status, 'planned');
+  } finally {
+    removeDir(tempDir);
   }
 });
 

@@ -4,6 +4,9 @@ const HELP_PAYLOAD_SCHEMA_REF = '#/definitions/HelpPayload';
 const MCP_HELP_SCHEMA_REF = '#/definitions/McpHelpPayload';
 const ODDS_HELP_SCHEMA_REF = '#/definitions/OddsHelpPayload';
 const MIRROR_STATUS_HELP_SCHEMA_REF = '#/definitions/MirrorStatusHelpPayload';
+const SCHEMA_HELP_SCHEMA_REF = '#/definitions/SchemaHelpPayload';
+const CAPABILITIES_HELP_SCHEMA_REF = '#/definitions/CapabilitiesHelpPayload';
+const COMMAND_DESCRIPTOR_VERSION = '1.3.0';
 const { POLL_CATEGORY_NAME_LIST } = require('./shared/poll_categories.cjs');
 
 function stringSchema(description, extras = {}) {
@@ -242,8 +245,383 @@ function commandContract(options) {
     helpDataSchema: COMMAND_HELP_SCHEMA_REF,
     emits: [],
     mcpExposed: false,
+    agentPlatform: null,
     ...options,
   };
+}
+
+const DEFAULT_AGENT_PLATFORM_METADATA = Object.freeze({
+  riskLevel: 'low',
+  idempotency: 'idempotent',
+  expectedLatencyMs: 750,
+  requiresSecrets: false,
+  recommendedPreflightTool: null,
+  safeEquivalent: null,
+  externalDependencies: Object.freeze([]),
+  canRunConcurrent: true,
+  returnsOperationId: false,
+  returnsRuntimeHandle: false,
+  jobCapable: false,
+  supportsRemote: false,
+  remoteEligible: false,
+  supportsWebhook: false,
+  policyScopes: Object.freeze([]),
+});
+
+const AGENT_PLATFORM_NON_REMOTE_COMMANDS = new Set(['launch', 'clone-bet', 'mcp']);
+const AGENT_PLATFORM_CRITICAL_RISK_COMMANDS = new Set(['risk.panic']);
+const AGENT_PLATFORM_FAST_LOCAL_COMMANDS = new Set(['help', 'version', 'schema']);
+const AGENT_PLATFORM_LOCAL_DAEMON_CONTROL_COMMANDS = new Set([
+  'sports.sync.stop',
+  'sports.sync.status',
+  'mirror.sync.stop',
+  'mirror.sync.status',
+]);
+const AGENT_PLATFORM_FILESYSTEM_WRITE_COMMANDS = new Set([
+  'init-env',
+  'setup',
+  'export',
+  'odds.record',
+  'model.calibrate',
+  'model.correlation',
+]);
+
+function mergeUniqueStringList(...lists) {
+  return Array.from(
+    new Set(
+      lists.flatMap((list) =>
+        Array.isArray(list)
+          ? list.map((entry) => String(entry || '').trim()).filter(Boolean)
+          : [],
+      ),
+    ),
+  );
+}
+
+function commandMatchesPrefix(commandName, prefix) {
+  return commandName === prefix || commandName.startsWith(`${prefix}.`);
+}
+
+function usageMentionsFlag(contract, flagName) {
+  if (!contract || typeof contract.usage !== 'string') return false;
+  const normalizedFlag = String(flagName || '').startsWith('--') ? String(flagName || '') : `--${flagName}`;
+  const escapedFlag = escapeRegex(normalizedFlag);
+  return new RegExp(`(^|[^A-Za-z0-9-])${escapedFlag}(?=$|[^A-Za-z0-9-])`).test(contract.usage);
+}
+
+function hasInputProperty(contract, propertyName) {
+  const inputSchema = contract && contract.mcp && contract.mcp.inputSchema;
+  return Boolean(
+    inputSchema
+      && inputSchema.properties
+      && Object.prototype.hasOwnProperty.call(inputSchema.properties, propertyName),
+  );
+}
+
+function commandHasFlag(contract, flagName) {
+  const normalizedName = String(flagName || '').replace(/^--/, '');
+  return hasInputProperty(contract, normalizedName) || usageMentionsFlag(contract, normalizedName);
+}
+
+function commandHasAnyFlag(contract, ...flagNames) {
+  return flagNames.some((flagName) => commandHasFlag(contract, flagName));
+}
+
+function isMutatingContract(contract) {
+  if (contract && contract.mcp && contract.mcp.mutating) return true;
+  return commandHasFlag(contract, 'execute');
+}
+
+function writesFilesystemContract(contract) {
+  if (!contract || !contract.name) return false;
+  if (AGENT_PLATFORM_FILESYSTEM_WRITE_COMMANDS.has(contract.name)) return true;
+  if (commandHasAnyFlag(contract, 'out', 'save-model', 'save-forecast')) return true;
+  if (contract.name === 'watch' && commandHasFlag(contract, 'brier-file')) return true;
+  return false;
+}
+
+function hasSafeModeContract(contract) {
+  return Boolean(
+    (contract && contract.mcp && Array.isArray(contract.mcp.safeFlags) && contract.mcp.safeFlags.length)
+      || commandHasFlag(contract, 'dry-run'),
+  );
+}
+
+function inferRequiresSecrets(contract, isMutating) {
+  if (commandHasFlag(contract, 'private-key')) return true;
+  if (contract.name === 'launch' || contract.name === 'clone-bet') return true;
+  if (commandHasAnyFlag(contract, 'webhook-secret', 'telegram-bot-token', 'discord-webhook-url')) return true;
+  return Boolean(isMutating && commandHasAnyFlag(contract, 'dotenv-path', 'skip-dotenv'));
+}
+
+function inferJobCapable(contract) {
+  if (!contract || !contract.name) return false;
+  return Boolean(
+    (contract.mcp && contract.mcp.longRunningBlocked)
+      || /^(watch|stream)$/.test(contract.name)
+      || /\.(run|start)$/.test(contract.name)
+      || contract.name === 'mirror.go',
+  );
+}
+
+function inferSupportsWebhook(contract) {
+  return Boolean(
+    commandMatchesPrefix(contract.name, 'webhook')
+      || commandHasAnyFlag(contract, 'webhook-url', 'telegram-bot-token', 'discord-webhook-url'),
+  );
+}
+
+function inferRemoteEligible(contract, jobCapable) {
+  if (!contract || AGENT_PLATFORM_NON_REMOTE_COMMANDS.has(contract.name)) return false;
+  return Boolean(jobCapable || contract.mcpExposed);
+}
+
+function inferExternalDependencies(contract, requiresSecrets, supportsWebhook) {
+  const dependencies = [];
+  const isLocalDaemonControlCommand = AGENT_PLATFORM_LOCAL_DAEMON_CONTROL_COMMANDS.has(contract.name);
+  const isMirrorStatusCommand = contract.name === 'mirror.status';
+
+  if (
+    commandHasAnyFlag(
+      contract,
+      'dotenv-path',
+      'example',
+      'state-file',
+      'plan-file',
+      'pid-file',
+      'risk-file',
+      'brier-file',
+      'out',
+    )
+    || contract.name === 'init-env'
+  ) {
+    dependencies.push('filesystem');
+  }
+
+  if (requiresSecrets) {
+    if (commandHasFlag(contract, 'private-key')) {
+      dependencies.push('wallet-secrets');
+    }
+    if (
+      commandMatchesPrefix(contract.name, 'webhook')
+      || commandHasAnyFlag(contract, 'webhook-secret', 'telegram-bot-token', 'discord-webhook-url')
+    ) {
+      dependencies.push('notification-secrets');
+    }
+  }
+
+  if (
+    commandHasAnyFlag(contract, 'indexer-url', 'indexer-ws-url')
+    || [
+      'scan',
+      'markets',
+      'polls',
+      'events',
+      'positions',
+      'portfolio',
+      'history',
+      'export',
+      'watch',
+      'stream',
+      'odds',
+      'arb',
+      'arbitrage',
+      'leaderboard',
+    ].some((prefix) => commandMatchesPrefix(contract.name, prefix))
+  ) {
+    dependencies.push('indexer-api');
+  }
+
+  if (
+    commandHasAnyFlag(contract, 'rpc-url', 'fork-rpc-url')
+    || [
+      'doctor',
+      'setup',
+      'launch',
+      'clone-bet',
+      'trade',
+      'sell',
+      'lp',
+      'resolve',
+      'claim',
+      'lifecycle',
+      'mirror',
+      'polymarket',
+    ].some((prefix) => commandMatchesPrefix(contract.name, prefix))
+  ) {
+    if (!isLocalDaemonControlCommand && !isMirrorStatusCommand) {
+      dependencies.push('chain-rpc');
+    }
+  }
+
+  if (commandMatchesPrefix(contract.name, 'sports')) {
+    if (!isLocalDaemonControlCommand) {
+      dependencies.push('sports-data-provider');
+    }
+  }
+
+  if (
+    commandMatchesPrefix(contract.name, 'mirror')
+    || commandMatchesPrefix(contract.name, 'polymarket')
+    || contract.name === 'clone-bet'
+  ) {
+    if (!isLocalDaemonControlCommand) {
+      dependencies.push('polymarket-api');
+    }
+  }
+
+  if (contract.name === 'mcp') {
+    dependencies.push('stdio-transport');
+  }
+
+  if (supportsWebhook) {
+    dependencies.push('webhook-endpoint');
+  }
+
+  return mergeUniqueStringList(dependencies);
+}
+
+function inferRiskLevel(contract, isMutating, requiresSecrets, jobCapable) {
+  if (AGENT_PLATFORM_CRITICAL_RISK_COMMANDS.has(contract.name)) return 'critical';
+  if (requiresSecrets && !isMutating) return 'medium';
+  if (
+    isMutating
+    && (
+      requiresSecrets
+      || commandMatchesPrefix(contract.name, 'mirror')
+      || commandMatchesPrefix(contract.name, 'polymarket')
+      || commandMatchesPrefix(contract.name, 'lifecycle')
+    )
+  ) {
+    return 'high';
+  }
+  if (isMutating || jobCapable) return 'medium';
+  return 'low';
+}
+
+function inferIdempotency(contract, isMutating) {
+  if (!isMutating) {
+    return writesFilesystemContract(contract) ? 'conditional' : 'idempotent';
+  }
+  return hasSafeModeContract(contract) ? 'conditional' : 'non-idempotent';
+}
+
+function inferExpectedLatencyMs(contract, isMutating, jobCapable, externalDependencies) {
+  if (AGENT_PLATFORM_FAST_LOCAL_COMMANDS.has(contract.name)) return 150;
+  if (jobCapable) return 60000;
+  if (
+    isMutating
+    && externalDependencies.length
+    && externalDependencies.every((dependency) => ['filesystem', 'wallet-secrets'].includes(dependency))
+  ) {
+    return 1000;
+  }
+  if (isMutating) return 15000;
+  if (
+    externalDependencies.some((dependency) =>
+      ['chain-rpc', 'indexer-api', 'sports-data-provider', 'polymarket-api', 'webhook-endpoint'].includes(dependency),
+    )
+  ) {
+    return 5000;
+  }
+  if (externalDependencies.includes('filesystem')) return 1000;
+  return DEFAULT_AGENT_PLATFORM_METADATA.expectedLatencyMs;
+}
+
+function inferSafeEquivalent(contract, isMutating) {
+  if (contract.name === 'polymarket.trade' || contract.name === 'polymarket.approve') {
+    return 'polymarket.preflight';
+  }
+  if (contract.name === 'trade' || contract.name === 'sell') {
+    return 'quote';
+  }
+  if (!isMutating || hasSafeModeContract(contract)) return null;
+  return null;
+}
+
+function inferRecommendedPreflightTool(contract, safeEquivalent, externalDependencies, requiresSecrets) {
+  const requiredTools = contract.agentWorkflow && Array.isArray(contract.agentWorkflow.requiredTools)
+    ? contract.agentWorkflow.requiredTools
+    : [];
+  if (requiredTools.length) return requiredTools[0];
+  if (contract.name === 'doctor') return null;
+  if (contract.name === 'polymarket.trade' || contract.name === 'polymarket.approve') {
+    return 'polymarket.preflight';
+  }
+  if (safeEquivalent && safeEquivalent !== contract.name) return safeEquivalent;
+  if (hasSafeModeContract(contract)) return null;
+  return null;
+}
+
+function inferPolicyScopes(contract, metadata) {
+  const rootScope = String(contract && contract.name ? contract.name : 'command').split('.')[0];
+  const actionScope = metadata.jobCapable ? 'run' : metadata.idempotency === 'idempotent' ? 'read' : 'write';
+  const scopes = [`${rootScope}:${actionScope}`];
+
+  if (metadata.requiresSecrets) scopes.push('secrets:use');
+  if (metadata.externalDependencies.includes('chain-rpc')) scopes.push('network:rpc');
+  if (metadata.externalDependencies.includes('indexer-api')) scopes.push('network:indexer');
+  if (metadata.externalDependencies.includes('sports-data-provider')) scopes.push('network:sports');
+  if (metadata.externalDependencies.includes('polymarket-api')) scopes.push('network:polymarket');
+  if (metadata.jobCapable) scopes.push('jobs:run');
+  if (metadata.supportsWebhook) scopes.push('webhooks:use');
+
+  return mergeUniqueStringList(scopes);
+}
+
+function resolveAgentPlatformMetadata(contract) {
+  const isMutating = isMutatingContract(contract);
+  const requiresSecrets = inferRequiresSecrets(contract, isMutating);
+  const jobCapable = inferJobCapable(contract);
+  const supportsWebhook = inferSupportsWebhook(contract);
+  const remoteEligible = inferRemoteEligible(contract, jobCapable);
+  const externalDependencies = inferExternalDependencies(contract, requiresSecrets, supportsWebhook);
+  const safeEquivalent = inferSafeEquivalent(contract, isMutating);
+  const writesFilesystem = writesFilesystemContract(contract);
+
+  const inferredMetadata = {
+    riskLevel: inferRiskLevel(contract, isMutating, requiresSecrets, jobCapable),
+    idempotency: inferIdempotency(contract, isMutating),
+    expectedLatencyMs: inferExpectedLatencyMs(contract, isMutating, jobCapable, externalDependencies),
+    requiresSecrets,
+    recommendedPreflightTool: inferRecommendedPreflightTool(
+      contract,
+      safeEquivalent,
+      externalDependencies,
+      requiresSecrets,
+    ),
+    safeEquivalent,
+    externalDependencies,
+    canRunConcurrent: !isMutating && !jobCapable && !writesFilesystem && contract.name !== 'mcp',
+    returnsOperationId: false,
+    returnsRuntimeHandle: false,
+    jobCapable,
+    supportsRemote: remoteEligible,
+    remoteEligible,
+    supportsWebhook,
+    policyScopes: [],
+  };
+
+  const overrideMetadata = contract && contract.agentPlatform && typeof contract.agentPlatform === 'object'
+    ? contract.agentPlatform
+    : null;
+
+  const metadata = {
+    ...DEFAULT_AGENT_PLATFORM_METADATA,
+    ...inferredMetadata,
+    ...(overrideMetadata || {}),
+  };
+
+  metadata.externalDependencies = mergeUniqueStringList(
+    inferredMetadata.externalDependencies,
+    overrideMetadata && overrideMetadata.externalDependencies,
+  );
+  metadata.policyScopes = mergeUniqueStringList(
+    inferPolicyScopes(contract, metadata),
+    overrideMetadata && overrideMetadata.policyScopes,
+  );
+
+  return metadata;
 }
 
 const commonFlags = {
@@ -363,13 +741,36 @@ const commandContracts = [
     dataSchema: '#/definitions/SetupPayload',
   }),
   commandContract({
+    name: 'capabilities',
+    summary: 'Return a compact runtime capability digest for agents.',
+    usage: 'pandora [--output json] capabilities',
+    emits: ['capabilities', 'capabilities.help'],
+    outputModes: ['json'],
+    dataSchema: '#/definitions/CapabilitiesPayload',
+    helpDataSchema: CAPABILITIES_HELP_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['capabilities'],
+      description: 'Return runtime capability metadata derived from the Pandora agent contract registry.',
+      inputSchema: buildInputSchema(),
+      preferred: true,
+    },
+      agentPlatform: {
+        expectedLatencyMs: 250,
+        safeEquivalent: null,
+        externalDependencies: [],
+        supportsRemote: true,
+        policyScopes: ['contracts:read'],
+      },
+  }),
+  commandContract({
     name: 'schema',
     summary: 'Emit JSON envelope schema plus command descriptor map for agents.',
     usage: 'pandora [--output json] schema',
     emits: ['schema', 'schema.help'],
     outputModes: ['json'],
     dataSchema: '#/definitions/SchemaCommandPayload',
-    helpDataSchema: null,
+    helpDataSchema: SCHEMA_HELP_SCHEMA_REF,
     mcpExposed: true,
     mcp: {
       command: ['schema'],
@@ -1571,15 +1972,15 @@ const commandContracts = [
       executeFlags: ['--execute-live', '--execute'],
     },
   }),
-  commandContract({
-    name: 'sports.sync.start',
+    commandContract({
+      name: 'sports.sync.start',
     summary: 'Start detached sports sync runtime.',
     usage:
       'pandora [--output table|json] sports sync start --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]',
     emits: ['sports.sync.start', 'sports.help'],
     dataSchema: '#/definitions/SportsSyncPayload',
     mcpExposed: true,
-    mcp: {
+      mcp: {
       command: ['sports', 'sync', 'start'],
       description: 'Start detached sports sync runtime (blocked in MCP v1).',
       inputSchema: buildInputSchema({
@@ -1598,43 +1999,59 @@ const commandContracts = [
       longRunningBlocked: true,
       mutating: true,
       safeFlags: ['--paper', '--dry-run'],
-      executeFlags: ['--execute-live', '--execute'],
-    },
-  }),
-  commandContract({
-    name: 'sports.sync.stop',
+        executeFlags: ['--execute-live', '--execute'],
+      },
+      agentPlatform: {
+        returnsOperationId: true,
+        returnsRuntimeHandle: true,
+      },
+    }),
+    commandContract({
+      name: 'sports.sync.stop',
     summary: 'Stop detached sports sync runtime.',
     usage: 'pandora [--output table|json] sports sync stop [--state-file <path>]',
     emits: ['sports.sync.stop', 'sports.help'],
     dataSchema: '#/definitions/SportsSyncPayload',
     mcpExposed: true,
-    mcp: {
+      mcp: {
       command: ['sports', 'sync', 'stop'],
       description: 'Stop sports sync runtime.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: { 'state-file': commonFlags.stateFile },
       }),
-      preferred: true,
-      mutating: true,
-    },
-  }),
-  commandContract({
-    name: 'sports.sync.status',
+        preferred: true,
+        mutating: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem'],
+        expectedLatencyMs: 1000,
+        returnsOperationId: true,
+        returnsRuntimeHandle: true,
+      },
+    }),
+    commandContract({
+      name: 'sports.sync.status',
     summary: 'Inspect detached sports sync runtime status.',
     usage: 'pandora [--output table|json] sports sync status [--state-file <path>]',
     emits: ['sports.sync.status', 'sports.help'],
     dataSchema: '#/definitions/SportsSyncPayload',
     mcpExposed: true,
-    mcp: {
+      mcp: {
       command: ['sports', 'sync', 'status'],
       description: 'Inspect sports sync runtime status.',
-      inputSchema: buildInputSchema({
-        flagProperties: { 'state-file': commonFlags.stateFile },
-      }),
-      preferred: true,
-    },
-  }),
+        inputSchema: buildInputSchema({
+          flagProperties: { 'state-file': commonFlags.stateFile },
+        }),
+        preferred: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem'],
+        expectedLatencyMs: 1000,
+        returnsOperationId: true,
+        returnsRuntimeHandle: true,
+      },
+    }),
   commandContract({
     name: 'sports.resolve.plan',
     summary: 'Build manual-final resolution recommendation.',
@@ -2532,15 +2949,15 @@ const commandContracts = [
       executeFlags: ['--execute-live', '--execute'],
     },
   }),
-  commandContract({
-    name: 'mirror.sync.start',
+    commandContract({
+      name: 'mirror.sync.start',
     summary: 'Start detached mirror sync daemon.',
     usage:
       'pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.start', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
-    mcp: {
+      mcp: {
       command: ['mirror', 'sync', 'start'],
       description: 'Start detached mirror sync daemon (blocked in MCP v1).',
       inputSchema: buildInputSchema({
@@ -2600,17 +3017,21 @@ const commandContracts = [
       longRunningBlocked: true,
       mutating: true,
       safeFlags: ['--paper', '--dry-run'],
-      executeFlags: ['--execute-live', '--execute'],
-    },
-  }),
-  commandContract({
-    name: 'mirror.sync.stop',
+        executeFlags: ['--execute-live', '--execute'],
+      },
+      agentPlatform: {
+        returnsOperationId: true,
+        returnsRuntimeHandle: true,
+      },
+    }),
+    commandContract({
+      name: 'mirror.sync.stop',
     summary: 'Stop detached mirror sync daemon.',
     usage: 'pandora [--output table|json] mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all',
     emits: ['mirror.sync.stop', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
-    mcp: {
+      mcp: {
       command: ['mirror', 'sync', 'stop'],
       description: 'Stop mirror sync daemon.',
       inputSchema: buildInputSchema({
@@ -2624,18 +3045,25 @@ const commandContracts = [
         anyOf: mirrorSyncStopSelectorAnyOf,
         oneOf: mirrorSyncStopSelectorOneOf,
       }),
-      preferred: true,
-      mutating: true,
-    },
-  }),
-  commandContract({
-    name: 'mirror.sync.status',
+        preferred: true,
+        mutating: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem'],
+        expectedLatencyMs: 1000,
+        riskLevel: 'medium',
+        returnsOperationId: true,
+        returnsRuntimeHandle: true,
+      },
+    }),
+    commandContract({
+      name: 'mirror.sync.status',
     summary: 'Inspect detached mirror sync daemon status.',
     usage: 'pandora [--output table|json] mirror sync status --pid-file <path>|--strategy-hash <hash>',
     emits: ['mirror.sync.status', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
-    mcp: {
+      mcp: {
       command: ['mirror', 'sync', 'status'],
       description: 'Inspect mirror sync daemon status.',
       inputSchema: buildInputSchema({
@@ -2645,12 +3073,18 @@ const commandContracts = [
         },
         anyOf: mirrorSyncStatusSelectorAnyOf,
         oneOf: mirrorSyncStatusSelectorOneOf,
-      }),
-      preferred: true,
-    },
-  }),
-  commandContract({
-    name: 'mirror.status',
+        }),
+        preferred: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem'],
+        expectedLatencyMs: 1000,
+        returnsOperationId: true,
+        returnsRuntimeHandle: true,
+      },
+    }),
+    commandContract({
+      name: 'mirror.status',
     summary: 'Read mirror state/status payload with optional live diagnostics.',
     usage:
       'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>]',
@@ -2658,7 +3092,7 @@ const commandContracts = [
     dataSchema: '#/definitions/MirrorSyncPayload',
     helpDataSchema: MIRROR_STATUS_HELP_SCHEMA_REF,
     mcpExposed: true,
-    mcp: {
+      mcp: {
       command: ['mirror', 'status'],
       description: 'Read mirror state/status payload.',
       inputSchema: buildInputSchema({
@@ -2683,10 +3117,14 @@ const commandContracts = [
         },
         anyOf: mirrorStatusLookupAnyOf,
         oneOf: mirrorStatusLookupOneOf,
-      }),
-      preferred: true,
-    },
-  }),
+          }),
+        preferred: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem', 'polymarket-api'],
+        expectedLatencyMs: 1500,
+      },
+    }),
   commandContract({
     name: 'mirror.close',
     summary: 'Build or execute close plan for a mirror pair.',
@@ -2785,15 +3223,15 @@ const commandContracts = [
       executeFlags: ['--execute'],
     },
   }),
-  commandContract({
-    name: 'polymarket.preflight',
+    commandContract({
+      name: 'polymarket.preflight',
     summary: 'Run Polymarket trade preflight checks.',
     usage:
       'pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]',
     emits: ['polymarket.preflight', 'polymarket.preflight.help', 'polymarket.help'],
     dataSchema: '#/definitions/PolymarketPayload',
     mcpExposed: true,
-    mcp: {
+      mcp: {
       command: ['polymarket', 'preflight'],
       description: 'Run Polymarket trade preflight checks.',
       inputSchema: buildInputSchema({
@@ -2805,10 +3243,13 @@ const commandContracts = [
           funder: stringSchema('Polymarket proxy wallet.'),
           'rpc-url': commonFlags.rpcUrl,
         },
-      }),
-      preferred: true,
-    },
-  }),
+        }),
+        preferred: true,
+      },
+      agentPlatform: {
+        riskLevel: 'medium',
+      },
+    }),
   commandContract({
     name: 'polymarket.trade',
     summary: 'Dry-run or execute a Polymarket trade.',
@@ -2960,6 +3401,129 @@ const commandContracts = [
     },
   }),
   commandContract({
+    name: 'operations',
+    summary: 'Inspect and control durable operation records for mutable workflows.',
+    usage: 'pandora [--output table|json] operations get|list|cancel|close [flags]',
+    emits: ['operations.help'],
+    dataSchema: '#/definitions/CommandHelpPayload',
+  }),
+  commandContract({
+    name: 'operations.get',
+    summary: 'Return a single operation record including lifecycle and checkpoints.',
+    usage: 'pandora [--output table|json] operations get --id <operation-id>',
+    emits: ['operations.get', 'operations.get.help', 'operations.help'],
+    dataSchema: '#/definitions/OperationPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['operations', 'get'],
+      description: 'Inspect a single Pandora operation record.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Operation id to inspect.'),
+        },
+        requiredFlags: ['id'],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 200,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['operations:read'],
+    },
+  }),
+  commandContract({
+    name: 'operations.list',
+    summary: 'List operation records, optionally filtered by status or tool.',
+    usage: 'pandora [--output table|json] operations list [--status <csv>] [--tool <name>] [--limit <n>]',
+    emits: ['operations.list', 'operations.list.help', 'operations.help'],
+    dataSchema: '#/definitions/OperationListPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['operations', 'list'],
+      description: 'List Pandora operation records by status/tool filters.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          status: stringSchema('Optional comma-delimited operation statuses to include.'),
+          statuses: stringArraySchema('Optional operation statuses to include.'),
+          tool: stringSchema('Optional tool/command family filter.'),
+          limit: integerSchema('Maximum result count.', { minimum: 1 }),
+        },
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 250,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['operations:read'],
+    },
+  }),
+  commandContract({
+    name: 'operations.cancel',
+    summary: 'Request cancellation of a cancelable operation.',
+    usage: 'pandora [--output table|json] operations cancel --id <operation-id> [--reason <text>]',
+    emits: ['operations.cancel', 'operations.cancel.help', 'operations.help'],
+    dataSchema: '#/definitions/OperationPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['operations', 'cancel'],
+      description: 'Cancel a cancelable Pandora operation.',
+      inputSchema: buildInputSchema({
+        includeIntent: true,
+        flagProperties: {
+          id: stringSchema('Operation id to cancel.'),
+          reason: stringSchema('Optional operator reason for the cancellation request.'),
+        },
+        requiredFlags: ['id'],
+      }),
+      preferred: true,
+      mutating: true,
+    },
+    agentPlatform: {
+      riskLevel: 'medium',
+      idempotency: 'conditional',
+      expectedLatencyMs: 400,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['operations:write'],
+    },
+  }),
+  commandContract({
+    name: 'operations.close',
+    summary: 'Close a terminal operation record after follow-up is complete.',
+    usage: 'pandora [--output table|json] operations close --id <operation-id> [--reason <text>]',
+    emits: ['operations.close', 'operations.close.help', 'operations.help'],
+    dataSchema: '#/definitions/OperationPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['operations', 'close'],
+      description: 'Close a terminal Pandora operation record.',
+      inputSchema: buildInputSchema({
+        includeIntent: true,
+        flagProperties: {
+          id: stringSchema('Operation id to close.'),
+          reason: stringSchema('Optional operator reason for closing the operation record.'),
+        },
+        requiredFlags: ['id'],
+      }),
+      preferred: true,
+      mutating: true,
+    },
+    agentPlatform: {
+      riskLevel: 'medium',
+      idempotency: 'conditional',
+      expectedLatencyMs: 400,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['operations:write'],
+    },
+  }),
+  commandContract({
     name: 'risk',
     summary: 'Risk command family help and routing entrypoint.',
     usage: 'pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]',
@@ -3006,9 +3570,21 @@ const commandContracts = [
 ];
 
 function buildCommandDescriptors() {
+  const contractByName = new Map(commandContracts.map((contract) => [contract.name, contract]));
   const descriptors = {};
   for (const contract of commandContracts) {
     const canonicalTool = contract.canonicalTool || contract.aliasOf || (contract.mcpExposed ? contract.name : null);
+    const canonicalContract = canonicalTool ? contractByName.get(canonicalTool) || null : null;
+    const agentPlatform = resolveAgentPlatformMetadata(contract);
+    const safeFlags =
+      contract.mcp && Array.isArray(contract.mcp.safeFlags)
+        ? [...contract.mcp.safeFlags]
+        : [];
+    const executeFlags =
+      contract.mcp && Array.isArray(contract.mcp.executeFlags)
+        ? [...contract.mcp.executeFlags]
+        : [];
+    const mcpMutating = Boolean(contract.mcp && contract.mcp.mutating);
     descriptors[contract.name] = {
       summary: contract.summary,
       usage: contract.usage,
@@ -3021,13 +3597,23 @@ function buildCommandDescriptors() {
       aliasOf: contract.aliasOf || null,
       canonicalTool,
       preferred: contract.mcp && contract.mcp.preferred === false ? false : Boolean(canonicalTool ? contract.name === canonicalTool : contract.aliasOf ? false : contract.mcpExposed),
-      mcpMutating: Boolean(contract.mcp && contract.mcp.mutating),
+      mcpMutating,
       mcpLongRunningBlocked: Boolean(contract.mcp && contract.mcp.longRunningBlocked),
       controlInputNames:
         contract.mcp && Array.isArray(contract.mcp.controlInputNames)
           ? [...contract.mcp.controlInputNames]
           : [],
+      safeFlags,
+      executeFlags,
+      executeIntentRequired: Boolean(mcpMutating && safeFlags.length === 0),
+      executeIntentRequiredForLiveMode: Boolean(mcpMutating && executeFlags.length > 0),
+      canonicalCommandTokens:
+        canonicalContract && typeof canonicalContract.name === 'string'
+          ? canonicalContract.name.split('.')
+          : null,
+      canonicalUsage: canonicalContract && canonicalContract.usage ? canonicalContract.usage : null,
       agentWorkflow: contract.agentWorkflow || null,
+      ...agentPlatform,
     };
   }
   return descriptors;
@@ -3036,31 +3622,38 @@ function buildCommandDescriptors() {
 function buildMcpToolDefinitions() {
   return commandContracts
     .filter((contract) => contract.mcpExposed && contract.mcp)
-    .map((contract) => ({
-      name: contract.name,
-      command: contract.mcp.command,
-      description: contract.mcp.description,
-      inputSchema: contract.mcp.inputSchema,
-      mutating: Boolean(contract.mcp.mutating),
-      safeFlags: Array.isArray(contract.mcp.safeFlags) ? contract.mcp.safeFlags : undefined,
-      executeFlags: Array.isArray(contract.mcp.executeFlags) ? contract.mcp.executeFlags : undefined,
-      longRunningBlocked: Boolean(contract.mcp.longRunningBlocked),
-      placeholderBlocked: Boolean(contract.mcp.placeholderBlocked),
-      aliasOf: contract.aliasOf || null,
-      canonicalTool: contract.canonicalTool || contract.aliasOf || contract.name,
-      preferred: contract.mcp.preferred !== false,
-      controlInputNames: Array.isArray(contract.mcp.controlInputNames) ? [...contract.mcp.controlInputNames] : undefined,
-      agentWorkflow: contract.agentWorkflow || null,
-    }));
+    .map((contract) => {
+      const agentPlatform = resolveAgentPlatformMetadata(contract);
+      return {
+        name: contract.name,
+        command: contract.mcp.command,
+        description: contract.mcp.description,
+        inputSchema: contract.mcp.inputSchema,
+        mutating: Boolean(contract.mcp.mutating),
+        safeFlags: Array.isArray(contract.mcp.safeFlags) ? [...contract.mcp.safeFlags] : [],
+        executeFlags: Array.isArray(contract.mcp.executeFlags) ? [...contract.mcp.executeFlags] : [],
+        longRunningBlocked: Boolean(contract.mcp.longRunningBlocked),
+        placeholderBlocked: Boolean(contract.mcp.placeholderBlocked),
+        aliasOf: contract.aliasOf || null,
+        canonicalTool: contract.canonicalTool || contract.aliasOf || contract.name,
+        preferred: contract.mcp.preferred !== false,
+        controlInputNames: Array.isArray(contract.mcp.controlInputNames) ? [...contract.mcp.controlInputNames] : [],
+        agentWorkflow: contract.agentWorkflow || null,
+        ...agentPlatform,
+      };
+    });
 }
 
 module.exports = {
+  COMMAND_DESCRIPTOR_VERSION,
   COMMAND_HELP_SCHEMA_REF,
   GENERIC_DATA_SCHEMA_REF,
   HELP_PAYLOAD_SCHEMA_REF,
   MCP_HELP_SCHEMA_REF,
   ODDS_HELP_SCHEMA_REF,
   MIRROR_STATUS_HELP_SCHEMA_REF,
+  SCHEMA_HELP_SCHEMA_REF,
+  CAPABILITIES_HELP_SCHEMA_REF,
   buildCommandDescriptors,
   buildMcpToolDefinitions,
 };

@@ -45,10 +45,12 @@ function createCommandRouter(deps = {}) {
     runClaimCommand,
     runLpCommand,
     runRiskCommand,
+    runOperationsCommand,
     runModelCommand,
     runMcpCommand,
     runStreamCommand,
     runSimulateCommand,
+    runCapabilitiesCommand,
     runScriptCommand,
   } = deps;
 
@@ -102,10 +104,12 @@ function createCommandRouter(deps = {}) {
   requireFn('runClaimCommand', runClaimCommand);
   requireFn('runLpCommand', runLpCommand);
   requireFn('runRiskCommand', runRiskCommand);
+  requireFn('runOperationsCommand', runOperationsCommand);
   requireFn('runModelCommand', runModelCommand);
   requireFn('runMcpCommand', runMcpCommand);
   requireFn('runStreamCommand', runStreamCommand);
   requireFn('runSimulateCommand', runSimulateCommand);
+  requireFn('runCapabilitiesCommand', runCapabilitiesCommand);
   requireFn('runSchemaCommand', deps.runSchemaCommand);
   requireFn('runScriptCommand', runScriptCommand);
 
@@ -200,6 +204,7 @@ function createCommandRouter(deps = {}) {
       claim: async (handlerArgs, handlerContext) => runClaimCommand(handlerArgs, handlerContext),
       lp: async (handlerArgs, handlerContext) => runLpCommand(handlerArgs, handlerContext),
       risk: async (handlerArgs, handlerContext) => runRiskCommand(handlerArgs, handlerContext),
+      operations: async (handlerArgs, handlerContext) => runOperationsCommand(handlerArgs, handlerContext),
       model: async (handlerArgs, handlerContext) => runModelCommand(handlerArgs, handlerContext),
       mcp: async (handlerArgs, handlerContext) => {
         if (handlerContext.outputMode === 'json') {
@@ -212,6 +217,7 @@ function createCommandRouter(deps = {}) {
       },
       stream: async (handlerArgs, handlerContext) => runStreamCommand(handlerArgs, handlerContext),
       simulate: async (handlerArgs, handlerContext) => runSimulateCommand(handlerArgs, handlerContext),
+      capabilities: async (handlerArgs, handlerContext) => runCapabilitiesCommand(handlerArgs, handlerContext),
       schema: async (handlerArgs, handlerContext) => deps.runSchemaCommand(handlerArgs, handlerContext),
       launch: async (handlerArgs, handlerContext) => {
         if (handlerContext.outputMode === 'json') {

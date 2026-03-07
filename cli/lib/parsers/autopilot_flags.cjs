@@ -1,3 +1,6 @@
+const path = require('path');
+const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseAutopilotFlags requires deps.${name}()`);
@@ -22,6 +25,14 @@ function createParseAutopilotFlags(deps) {
   const parseWebhookFlagIntoOptions = requireDep(deps, 'parseWebhookFlagIntoOptions');
   const defaultAutopilotStateFile = requireDep(deps, 'defaultAutopilotStateFile');
   const defaultAutopilotKillSwitchFile = requireDep(deps, 'defaultAutopilotKillSwitchFile');
+
+  function resolveMcpWorkspacePath(rawPath, flagName) {
+    assertMcpWorkspacePath(rawPath, {
+      flagName,
+      errorFactory: (code, message, details) => new CliError(code, message, details),
+    });
+    return path.resolve(String(rawPath || ''));
+  }
 
   return function parseAutopilotFlags(args) {
     const mode = args[0];
@@ -165,12 +176,15 @@ function createParseAutopilotFlags(deps) {
         continue;
       }
       if (token === '--state-file') {
-        options.stateFile = requireFlagValue(rest, i, '--state-file');
+        options.stateFile = resolveMcpWorkspacePath(requireFlagValue(rest, i, '--state-file'), '--state-file');
         i += 1;
         continue;
       }
       if (token === '--kill-switch-file') {
-        options.killSwitchFile = requireFlagValue(rest, i, '--kill-switch-file');
+        options.killSwitchFile = resolveMcpWorkspacePath(
+          requireFlagValue(rest, i, '--kill-switch-file'),
+          '--kill-switch-file',
+        );
         i += 1;
         continue;
       }

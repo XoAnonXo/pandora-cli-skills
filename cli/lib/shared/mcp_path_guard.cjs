@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 
 function isMcpMode() {
@@ -7,6 +8,36 @@ function isMcpMode() {
 function isPathInside(baseDir, candidatePath) {
   const relative = path.relative(baseDir, candidatePath);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function realpathIfExists(candidatePath) {
+  try {
+    return fs.realpathSync.native(candidatePath);
+  } catch (error) {
+    return null;
+  }
+}
+
+function resolveWorkspaceConstrainedPath(rawPath, workspaceRoot) {
+  const resolvedPath = path.resolve(String(rawPath || ''));
+  const canonicalWorkspaceRoot = realpathIfExists(workspaceRoot) || workspaceRoot;
+  let cursor = resolvedPath;
+  const pendingSegments = [];
+
+  while (!fs.existsSync(cursor)) {
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    pendingSegments.unshift(path.basename(cursor));
+    cursor = parent;
+  }
+
+  const canonicalExistingPath = realpathIfExists(cursor) || cursor;
+  const canonicalResolvedPath = path.resolve(canonicalExistingPath, ...pendingSegments);
+  return {
+    resolvedPath,
+    canonicalWorkspaceRoot,
+    canonicalResolvedPath,
+  };
 }
 
 function createDefaultError(code, message, details) {
@@ -19,13 +50,14 @@ function createDefaultError(code, message, details) {
 }
 
 function assertMcpWorkspacePath(rawPath, options = {}) {
-  const resolvedPath = path.resolve(String(rawPath || ''));
   const workspaceRoot = path.resolve(options.workspaceRoot || process.cwd());
+  const { resolvedPath, canonicalWorkspaceRoot, canonicalResolvedPath } =
+    resolveWorkspaceConstrainedPath(rawPath, workspaceRoot);
   if (!isMcpMode()) {
-    return resolvedPath;
+    return canonicalResolvedPath;
   }
-  if (isPathInside(workspaceRoot, resolvedPath)) {
-    return resolvedPath;
+  if (isPathInside(canonicalWorkspaceRoot, canonicalResolvedPath)) {
+    return canonicalResolvedPath;
   }
 
   const flagName = options.flagName || '--path';
@@ -34,7 +66,8 @@ function assertMcpWorkspacePath(rawPath, options = {}) {
     flag: flagName,
     requestedPath: rawPath,
     resolvedPath,
-    workspaceRoot,
+    canonicalResolvedPath,
+    workspaceRoot: canonicalWorkspaceRoot,
   };
   const errorFactory = typeof options.errorFactory === 'function' ? options.errorFactory : createDefaultError;
   throw errorFactory('MCP_FILE_ACCESS_BLOCKED', message, details);
@@ -43,5 +76,6 @@ function assertMcpWorkspacePath(rawPath, options = {}) {
 module.exports = {
   isMcpMode,
   isPathInside,
+  resolveWorkspaceConstrainedPath,
   assertMcpWorkspacePath,
 };

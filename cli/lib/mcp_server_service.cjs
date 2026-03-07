@@ -1,52 +1,8 @@
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
-const {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-  McpError,
-  ErrorCode,
-} = require('@modelcontextprotocol/sdk/types.js');
 
-const { createMcpToolRegistry } = require('./mcp_tool_registry.cjs');
-const { createCommandExecutorService } = require('./command_executor_service.cjs');
-
-function coerceErrorMessage(value) {
-  if (typeof value === 'string') return value;
-  if (value && typeof value.message === 'string') return value.message;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function asCliErrorEnvelope(error) {
-  const code = error && error.code ? String(error.code) : 'MCP_TOOL_FAILED';
-  const envelope = {
-    ok: false,
-    error: {
-      code,
-      message: coerceErrorMessage(error),
-    },
-  };
-  if (error && error.details !== undefined) {
-    envelope.error.details = error.details;
-  }
-  return envelope;
-}
-
-function asToolResult(envelope) {
-  return {
-    content: [
-      {
-        type: 'text',
-        text: JSON.stringify(envelope, null, 2),
-      },
-    ],
-    structuredContent: envelope,
-    isError: envelope && envelope.ok === false,
-  };
-}
+const { createMcpProtocolService } = require('./mcp_protocol_service.cjs');
+const { createRunMcpHttpGateway } = require('./mcp_http_gateway_service.cjs');
 
 /**
  * Create the MCP stdio server runner for `pandora mcp`.
@@ -58,23 +14,33 @@ function createRunMcpServer(options = {}) {
     typeof options.packageVersion === 'string' && options.packageVersion.trim()
       ? options.packageVersion.trim()
       : '0.0.0';
-  const registry = createMcpToolRegistry();
-  const executor = createCommandExecutorService({
+  const protocolOptions = {
+    packageVersion,
     cliPath: options.cliPath,
-    defaultTimeoutMs: 60_000,
+    asyncExecution: true,
+  };
+  const protocol = createMcpProtocolService(protocolOptions);
+  const httpGateway = createRunMcpHttpGateway({
+    packageVersion,
+    cliPath: options.cliPath,
+    protocolOptions,
   });
 
   async function runMcpServer(args, context) {
     const mcpArgs = Array.isArray(args) ? args : [];
-    if (mcpArgs.includes('--help') || mcpArgs.includes('-h')) {
+    const isHttpGateway = mcpArgs[0] === 'http';
+    const wantsHelp = mcpArgs.includes('--help') || mcpArgs.includes('-h');
+    if (wantsHelp) {
       if (context && context.outputMode === 'json') {
         const usageEnvelope = {
           ok: true,
           command: 'mcp.help',
           data: {
-            usage: 'pandora mcp',
+            usage: 'pandora mcp | pandora mcp http [--host <host>] [--port <port>] [--public-base-url <url>] [--auth-token <token>|--auth-token-file <path>] [--auth-scopes <csv>]',
             notes: [
-              'Runs an MCP stdio server.',
+              'pandora mcp runs an MCP stdio server.',
+              'pandora mcp http runs a remote streamable HTTP MCP gateway.',
+              'If no auth token is provided, the gateway generates one and stores it in ~/.pandora/mcp-http/auth-token.',
               'Do not pass --output json to this command in normal MCP operation.',
             ],
           },
@@ -84,8 +50,17 @@ function createRunMcpServer(options = {}) {
         // eslint-disable-next-line no-console
         console.log('Usage: pandora mcp');
         // eslint-disable-next-line no-console
-        console.log('Runs Pandora as an MCP stdio server.');
+        console.log('       pandora mcp http [--host <host>] [--port <port>] [--public-base-url <url>] [--auth-token <token>|--auth-token-file <path>] [--auth-scopes <csv>]');
+        // eslint-disable-next-line no-console
+        console.log('Runs Pandora as an MCP stdio server or remote streamable HTTP gateway.');
+        // eslint-disable-next-line no-console
+        console.log('If no auth token is provided, the HTTP gateway generates one and stores it in ~/.pandora/mcp-http/auth-token.');
       }
+      return;
+    }
+
+    if (isHttpGateway) {
+      await httpGateway.runMcpHttpGateway(mcpArgs.slice(1), context);
       return;
     }
 
@@ -93,41 +68,7 @@ function createRunMcpServer(options = {}) {
       throw new Error('pandora mcp must be run without --output json because MCP uses raw stdio transport.');
     }
 
-    const server = new Server(
-      {
-        name: 'pandora-cli-skills',
-        version: packageVersion,
-      },
-      {
-        capabilities: {
-          tools: { listChanged: false },
-        },
-      },
-    );
-
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: registry.listTools(),
-    }));
-
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      try {
-        const params = request && request.params ? request.params : {};
-        const toolName = String(params.name || '').trim();
-        if (!toolName) {
-          throw new McpError(ErrorCode.InvalidParams, 'tools/call requires params.name.');
-        }
-
-        const toolArgs = params.arguments && typeof params.arguments === 'object' ? params.arguments : {};
-        const invocation = registry.prepareInvocation(toolName, toolArgs);
-        const execution = executor.executeJsonCommand(invocation.argv, {
-          env: invocation.env,
-        });
-        return asToolResult(execution.envelope);
-      } catch (err) {
-        if (err instanceof McpError) throw err;
-        return asToolResult(asCliErrorEnvelope(err));
-      }
-    });
+    const server = protocol.createServer();
 
     const transport = new StdioServerTransport(process.stdin, process.stdout);
     await server.connect(transport);

@@ -41,6 +41,7 @@ function collectEmittedHelpCommands() {
 test('shared agent contract registry covers all MCP tools with canonical metadata', () => {
   const descriptors = buildCommandDescriptors();
   const mcpTools = buildMcpToolDefinitions();
+  const mcpToolNames = new Set(mcpTools.map((tool) => tool.name));
 
   for (const tool of mcpTools) {
     const descriptor = descriptors[tool.name];
@@ -66,6 +67,12 @@ test('shared agent contract registry covers all MCP tools with canonical metadat
       `agentWorkflow mismatch for ${tool.name}`,
     );
     assert.equal(typeof descriptor.inputSchema, 'object', `missing inputSchema for ${tool.name}`);
+  }
+
+  for (const [commandName, descriptor] of Object.entries(descriptors)) {
+    if (descriptor.mcpExposed) {
+      assert.ok(mcpToolNames.has(commandName), `descriptor marked ${commandName} as MCP-exposed but no MCP tool exists`);
+    }
   }
 });
 
@@ -136,3 +143,142 @@ test('mirror and sports create schemas expose category names and required select
   assert.ok(sportsCreatePlan);
   assert.equal(sportsCreatePlan.inputSchema.properties.category.anyOf[1].enum[1], 'Sports');
 });
+
+test('shared agent contract registry normalizes MCP metadata defaults and alias metadata', () => {
+  const descriptors = buildCommandDescriptors();
+  const mcpDefinitions = new Map(buildMcpToolDefinitions().map((definition) => [definition.name, definition]));
+
+  const helpDefinition = mcpDefinitions.get('help');
+  assert.ok(helpDefinition);
+  assert.equal(helpDefinition.aliasOf, null);
+  assert.equal(helpDefinition.canonicalTool, 'help');
+  assert.equal(helpDefinition.preferred, true);
+  assert.equal(helpDefinition.mutating, false);
+  assert.equal(helpDefinition.longRunningBlocked, false);
+  assert.equal(helpDefinition.placeholderBlocked, false);
+  assert.deepEqual(helpDefinition.safeFlags, []);
+  assert.deepEqual(helpDefinition.executeFlags, []);
+  assert.deepEqual(helpDefinition.controlInputNames, []);
+  assert.equal(helpDefinition.agentWorkflow, null);
+
+  const helpDescriptor = descriptors.help;
+  assert.ok(helpDescriptor);
+  assert.equal(helpDescriptor.aliasOf, null);
+  assert.equal(helpDescriptor.canonicalTool, 'help');
+  assert.equal(helpDescriptor.preferred, true);
+  assert.equal(helpDescriptor.mcpMutating, false);
+  assert.equal(helpDescriptor.mcpLongRunningBlocked, false);
+  assert.deepEqual(helpDescriptor.controlInputNames, []);
+  assert.equal(helpDescriptor.agentWorkflow, null);
+
+  const aliasDefinition = mcpDefinitions.get('arbitrage');
+  assert.ok(aliasDefinition);
+  assert.equal(aliasDefinition.aliasOf, 'arb.scan');
+  assert.equal(aliasDefinition.canonicalTool, 'arb.scan');
+  assert.equal(aliasDefinition.preferred, false);
+  assert.equal(aliasDefinition.mutating, false);
+  assert.equal(aliasDefinition.longRunningBlocked, false);
+  assert.equal(aliasDefinition.placeholderBlocked, false);
+  assert.deepEqual(aliasDefinition.safeFlags, []);
+  assert.deepEqual(aliasDefinition.executeFlags, []);
+  assert.deepEqual(aliasDefinition.controlInputNames, []);
+  assert.equal(aliasDefinition.agentWorkflow, null);
+
+  const aliasDescriptor = descriptors.arbitrage;
+  assert.ok(aliasDescriptor);
+  assert.equal(aliasDescriptor.aliasOf, 'arb.scan');
+  assert.equal(aliasDescriptor.canonicalTool, 'arb.scan');
+  assert.equal(aliasDescriptor.preferred, false);
+  assert.equal(aliasDescriptor.mcpMutating, false);
+  assert.equal(aliasDescriptor.mcpLongRunningBlocked, false);
+  assert.deepEqual(aliasDescriptor.controlInputNames, []);
+  assert.equal(aliasDescriptor.agentWorkflow, null);
+
+  const mirrorDeployDefinition = mcpDefinitions.get('mirror.deploy');
+  assert.ok(mirrorDeployDefinition);
+  assert.deepEqual(mirrorDeployDefinition.controlInputNames, ['agentPreflight']);
+  assert.equal(typeof mirrorDeployDefinition.agentWorkflow, 'object');
+
+  const mirrorDeployDescriptor = descriptors['mirror.deploy'];
+  assert.ok(mirrorDeployDescriptor);
+  assert.deepEqual(mirrorDeployDescriptor.controlInputNames, ['agentPreflight']);
+  assert.deepEqual(mirrorDeployDescriptor.agentWorkflow, mirrorDeployDefinition.agentWorkflow);
+
+  const tradeDefinition = mcpDefinitions.get('trade');
+  assert.ok(tradeDefinition);
+  assert.deepEqual(tradeDefinition.safeFlags, ['--dry-run']);
+  assert.deepEqual(tradeDefinition.executeFlags, ['--execute']);
+
+    const tradeDescriptor = descriptors.trade;
+    assert.ok(tradeDescriptor);
+    assert.equal(tradeDescriptor.safeEquivalent, 'quote');
+    assert.equal(tradeDescriptor.recommendedPreflightTool, 'quote');
+    assert.equal(tradeDescriptor.returnsRuntimeHandle, false);
+    assert.equal(tradeDescriptor.supportsRemote, true);
+    assert.equal(tradeDescriptor.remoteEligible, true);
+    assert.deepEqual(tradeDescriptor.safeFlags, ['--dry-run']);
+    assert.deepEqual(tradeDescriptor.executeFlags, ['--execute']);
+    assert.equal(tradeDescriptor.executeIntentRequired, false);
+    assert.equal(tradeDescriptor.executeIntentRequiredForLiveMode, true);
+
+    const mirrorSyncRunDefinition = mcpDefinitions.get('mirror.sync.run');
+  assert.ok(mirrorSyncRunDefinition);
+  assert.equal(mirrorSyncRunDefinition.longRunningBlocked, true);
+  assert.deepEqual(mirrorSyncRunDefinition.safeFlags, ['--paper', '--dry-run']);
+  assert.deepEqual(mirrorSyncRunDefinition.executeFlags, ['--execute-live', '--execute']);
+
+    const lifecycleStartDefinition = mcpDefinitions.get('lifecycle.start');
+    assert.ok(lifecycleStartDefinition);
+    assert.equal(lifecycleStartDefinition.mutating, true);
+    assert.deepEqual(lifecycleStartDefinition.safeFlags, []);
+    assert.deepEqual(lifecycleStartDefinition.executeFlags, []);
+
+    const mirrorSyncStartDescriptor = descriptors['mirror.sync.start'];
+    assert.ok(mirrorSyncStartDescriptor);
+    assert.equal(mirrorSyncStartDescriptor.returnsOperationId, true);
+    assert.equal(mirrorSyncStartDescriptor.returnsRuntimeHandle, true);
+    assert.ok(mirrorSyncStartDescriptor.externalDependencies.includes('wallet-secrets'));
+    assert.ok(mirrorSyncStartDescriptor.externalDependencies.includes('notification-secrets'));
+
+    const sportsSyncStartDescriptor = descriptors['sports.sync.start'];
+    assert.ok(sportsSyncStartDescriptor);
+    assert.equal(sportsSyncStartDescriptor.returnsOperationId, true);
+    assert.equal(sportsSyncStartDescriptor.returnsRuntimeHandle, true);
+
+    const mirrorSyncStopDescriptor = descriptors['mirror.sync.stop'];
+    assert.deepEqual(mirrorSyncStopDescriptor.externalDependencies, ['filesystem']);
+    assert.equal(mirrorSyncStopDescriptor.riskLevel, 'medium');
+    assert.equal(mirrorSyncStopDescriptor.returnsOperationId, true);
+    assert.equal(mirrorSyncStopDescriptor.returnsRuntimeHandle, true);
+
+    const sportsSyncStopDescriptor = descriptors['sports.sync.stop'];
+    assert.deepEqual(sportsSyncStopDescriptor.externalDependencies, ['filesystem']);
+    assert.equal(sportsSyncStopDescriptor.returnsOperationId, true);
+    assert.equal(sportsSyncStopDescriptor.returnsRuntimeHandle, true);
+
+    const mirrorStatusDescriptor = descriptors['mirror.status'];
+    assert.deepEqual(mirrorStatusDescriptor.externalDependencies, ['filesystem', 'indexer-api', 'polymarket-api']);
+    assert.equal(mirrorStatusDescriptor.recommendedPreflightTool, null);
+
+    const polymarketPreflightDescriptor = descriptors['polymarket.preflight'];
+    assert.equal(polymarketPreflightDescriptor.riskLevel, 'medium');
+
+    const doctorDescriptor = descriptors.doctor;
+    assert.equal(doctorDescriptor.recommendedPreflightTool, null);
+
+    const capabilitiesDescriptor = descriptors.capabilities;
+    assert.equal(capabilitiesDescriptor.safeEquivalent, null);
+    assert.equal(capabilitiesDescriptor.supportsRemote, true);
+    assert.equal(capabilitiesDescriptor.remoteEligible, true);
+    assert.equal(capabilitiesDescriptor.executeIntentRequired, false);
+    assert.equal(capabilitiesDescriptor.executeIntentRequiredForLiveMode, false);
+
+    const webhookTestDescriptor = descriptors['webhook.test'];
+    assert.deepEqual(webhookTestDescriptor.externalDependencies, ['notification-secrets', 'webhook-endpoint']);
+
+    assert.deepEqual(descriptors['arb.scan'].canonicalCommandTokens, ['arb', 'scan']);
+    assert.deepEqual(descriptors.capabilities.canonicalCommandTokens, ['capabilities']);
+
+    assert.equal(descriptors.schema.helpDataSchema, '#/definitions/SchemaHelpPayload');
+    assert.equal(descriptors.capabilities.helpDataSchema, '#/definitions/CapabilitiesHelpPayload');
+  });

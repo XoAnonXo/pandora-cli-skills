@@ -1,4 +1,6 @@
+const path = require('path');
 const { parsePollCategoryFlag, DEFAULT_SPORTS_POLL_CATEGORY } = require('../shared/poll_categories.cjs');
+const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -131,6 +133,14 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     parseDateLikeFlag,
     isSecureHttpUrlOrLocal,
   } = deps;
+
+  function resolveMcpWorkspacePath(rawPath, flagName) {
+    assertMcpWorkspacePath(rawPath, {
+      flagName,
+      errorFactory: (code, message, details) => new CliError(code, message, details),
+    });
+    return path.resolve(String(rawPath || ''));
+  }
 
   const options = {
     provider: 'auto',
@@ -479,7 +489,7 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       continue;
     }
     if (token === '--state-file') {
-      options.stateFile = requireFlagValue(args, i, '--state-file');
+      options.stateFile = resolveMcpWorkspacePath(requireFlagValue(args, i, '--state-file'), '--state-file');
       i += 1;
       continue;
     }
@@ -489,7 +499,7 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       continue;
     }
     if (token === '--checks-file') {
-      options.checksFile = requireFlagValue(args, i, '--checks-file');
+      options.checksFile = resolveMcpWorkspacePath(requireFlagValue(args, i, '--checks-file'), '--checks-file');
       i += 1;
       continue;
     }

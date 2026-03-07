@@ -88,14 +88,21 @@ const getMirrorManifestStore = createLazyModuleLoader('./lib/mirror_manifest_sto
 const getAutopilotStateStore = createLazyModuleLoader('./lib/autopilot_state_store.cjs');
 const getMirrorStateStore = createLazyModuleLoader('./lib/mirror_state_store.cjs');
 const getRiskStateStore = createLazyModuleLoader('./lib/risk_state_store.cjs');
+const getOperationStateStore = createLazyModuleLoader('./lib/operation_state_store.cjs');
+const getOperationServiceModule = createLazyModuleLoader('./lib/operation_service.cjs');
 const getRiskGuardService = createLazyModuleLoader('./lib/risk_guard_service.cjs');
+const getOperationEventBusModule = createLazyModuleLoader('./lib/operation_event_bus.cjs');
+const getOperationWebhookServiceModule = createLazyModuleLoader('./lib/operation_webhook_service.cjs');
 const getForecastStore = createLazyModuleLoader('./lib/forecast_store.cjs');
 const getBrierScoreService = createLazyModuleLoader('./lib/brier_score_service.cjs');
 const getSchemaCommandService = createLazyModuleLoader('./lib/schema_command_service.cjs');
+const getCapabilitiesCommandService = createLazyModuleLoader('./lib/capabilities_command_service.cjs');
 const getAgentCommandService = createLazyModuleLoader('./lib/agent_command_service.cjs');
 const getMcpServerService = createLazyModuleLoader('./lib/mcp_server_service.cjs');
 const getStreamCommandService = createLazyModuleLoader('./lib/stream_command_service.cjs');
 const getSimulateCommandService = createLazyModuleLoader('./lib/simulate_command_service.cjs');
+const getOperationsCommandService = createLazyModuleLoader('./lib/operations_command_service.cjs');
+const getOperationsFlagsModule = createLazyModuleLoader('./lib/parsers/operations_flags.cjs');
 const getForkRuntimeService = createLazyModuleLoader('./lib/fork_runtime_service.cjs');
 const getDoctorService = createLazyModuleLoader('./lib/doctor_service.cjs');
 const getSportsProviderRegistry = createLazyModuleLoader('./lib/sports_provider_registry.cjs');
@@ -349,6 +356,9 @@ function loadMirrorState(...args) {
 }
 
 let cachedRiskGuard = null;
+let cachedOperationService = null;
+let cachedOperationEventBus = null;
+let cachedOperationWebhookService = null;
 
 function getRiskGuard() {
   if (!cachedRiskGuard) {
@@ -380,6 +390,272 @@ function clearRiskPanic(...args) {
   return getRiskGuard().clearPanic(...args);
 }
 
+function getOperationEventBus() {
+  if (!cachedOperationEventBus) {
+    cachedOperationEventBus = getOperationEventBusModule().createOperationEventBus();
+  }
+  return cachedOperationEventBus;
+}
+
+function getOperationWebhookService() {
+  if (!cachedOperationWebhookService) {
+    cachedOperationWebhookService = getOperationWebhookServiceModule().createOperationWebhookService({
+      hasWebhookTargets,
+      sendWebhookNotifications,
+    });
+  }
+  return cachedOperationWebhookService;
+}
+
+function mapOperationStatusToPublic(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'running') return 'executing';
+  if (normalized === 'succeeded') return 'completed';
+  if (normalized === 'cancelled') return 'canceled';
+  return normalized || 'planned';
+}
+
+function mapOperationStatusToStore(status, mode) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'validated') return 'validated';
+  if (normalized === 'queued' || normalized === 'submitted') return 'queued';
+  if (normalized === 'running' || normalized === 'executing' || normalized === 'active') return 'running';
+  if (normalized === 'completed' || normalized === 'succeeded' || normalized === 'success' || normalized === 'no-op') {
+    return 'succeeded';
+  }
+  if (normalized === 'failed' || normalized === 'partial' || normalized === 'blocked' || normalized === 'unsafe') {
+    return 'failed';
+  }
+  if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
+  if (normalized === 'closed') return 'closed';
+  if (String(mode || '').trim().toLowerCase() === 'execute') return 'queued';
+  return 'planned';
+}
+
+function choosePersistedOperationStatus(existingStatus, nextStatus) {
+  const rank = {
+    planned: 1,
+    validated: 2,
+    queued: 3,
+    running: 4,
+    failed: 5,
+    succeeded: 5,
+    cancelled: 5,
+    closed: 6,
+  };
+  const current = String(existingStatus || '').trim().toLowerCase();
+  const next = String(nextStatus || '').trim().toLowerCase();
+  if (!current) return next || 'planned';
+  if (!next) return current;
+  if (!rank[current] || !rank[next]) return next;
+  return rank[current] >= rank[next] ? current : next;
+}
+
+function deriveOperationTool(command) {
+  const normalized = typeof command === 'string' ? command.trim() : '';
+  if (!normalized) return null;
+  return normalized.split('.')[0] || normalized;
+}
+
+function deriveOperationAction(command) {
+  const normalized = typeof command === 'string' ? command.trim() : '';
+  if (!normalized || !normalized.includes('.')) return null;
+  return normalized.split('.').slice(1).join('.') || null;
+}
+
+function isPublicOperationCancelable(status) {
+  return !['completed', 'failed', 'canceled', 'closed'].includes(mapOperationStatusToPublic(status));
+}
+
+function isPublicOperationClosable(status) {
+  return ['completed', 'failed', 'canceled'].includes(mapOperationStatusToPublic(status));
+}
+
+async function normalizeOperationPayloadFromStore(store, record, options = {}) {
+  const operation = record && typeof record === 'object' ? record : null;
+  if (!operation) return null;
+
+  let checkpoints = [];
+  if (options.includeCheckpoints !== false && store && typeof store.readCheckpoints === 'function') {
+    const checkpointResult = await store.readCheckpoints(operation.operationId);
+    checkpoints = Array.isArray(checkpointResult && checkpointResult.items) ? checkpointResult.items : [];
+  }
+
+  return {
+    operationId: operation.operationId,
+    operationHash: operation.operationHash || null,
+    tool: deriveOperationTool(operation.command),
+    action: deriveOperationAction(operation.command),
+    command: operation.command || null,
+    summary: operation.summary || operation.description || null,
+    status: mapOperationStatusToPublic(operation.status),
+    createdAt: operation.createdAt,
+    updatedAt: operation.updatedAt,
+    policyPack: operation.metadata && typeof operation.metadata.policyPack === 'string' ? operation.metadata.policyPack : null,
+    profile: operation.metadata && typeof operation.metadata.profile === 'string' ? operation.metadata.profile : null,
+    environment: operation.metadata && typeof operation.metadata.environment === 'string' ? operation.metadata.environment : null,
+    mode: operation.metadata && typeof operation.metadata.mode === 'string' ? operation.metadata.mode : null,
+    scope: operation.scope || null,
+    cancelable: isPublicOperationCancelable(operation.status),
+    closable: isPublicOperationClosable(operation.status),
+    input: operation.request && typeof operation.request === 'object' ? operation.request : {},
+    normalizedInput: operation.request && typeof operation.request === 'object' ? operation.request : {},
+    checkpoints: checkpoints.map((checkpoint) => ({
+      ...checkpoint,
+      status: checkpoint && checkpoint.status ? mapOperationStatusToPublic(checkpoint.status) : checkpoint.status || null,
+    })),
+    metadata: operation.metadata && typeof operation.metadata === 'object' ? operation.metadata : {},
+    result: operation.result === undefined ? null : operation.result,
+    recovery: operation.recovery === undefined ? null : operation.recovery,
+    error: operation.error === undefined ? null : operation.error,
+    validatedAt: operation.validatedAt || null,
+    queuedAt: operation.queuedAt || null,
+    startedAt: operation.startedAt || null,
+    completedAt: operation.completedAt || operation.succeededAt || null,
+    failedAt: operation.failedAt || null,
+    canceledAt: operation.cancelledAt || null,
+    closedAt: operation.closedAt || null,
+  };
+}
+
+function buildOperationSummaryFromPayload(payload, operationContext) {
+  if (payload && typeof payload.summary === 'string' && payload.summary.trim()) {
+    return payload.summary.trim();
+  }
+  if (payload && payload.summary && typeof payload.summary === 'object') {
+    if (typeof payload.summary.message === 'string' && payload.summary.message.trim()) {
+      return payload.summary.message.trim();
+    }
+    if (typeof payload.summary.status === 'string' && payload.summary.status.trim()) {
+      return payload.summary.status.trim();
+    }
+  }
+  if (payload && typeof payload.message === 'string' && payload.message.trim()) {
+    return payload.message.trim();
+  }
+  if (operationContext && typeof operationContext.command === 'string' && operationContext.command.trim()) {
+    return operationContext.command.trim();
+  }
+  return null;
+}
+
+function buildOperationResultSnapshot(payload, operationContext) {
+  return {
+    mode: payload && payload.mode ? payload.mode : (operationContext && operationContext.mode) || null,
+    status: payload && payload.status ? payload.status : (operationContext && operationContext.status) || null,
+    summary: payload && payload.summary ? payload.summary : null,
+    target: operationContext && operationContext.target ? operationContext.target : null,
+  };
+}
+
+function getOperationWebhookTargetsFromEnv() {
+  const targets = {};
+  if (process.env.PANDORA_OPERATION_WEBHOOK_URL) {
+    targets.webhookUrl = process.env.PANDORA_OPERATION_WEBHOOK_URL;
+  }
+  if (process.env.PANDORA_OPERATION_DISCORD_WEBHOOK_URL) {
+    targets.discordWebhookUrl = process.env.PANDORA_OPERATION_DISCORD_WEBHOOK_URL;
+  }
+  if (process.env.PANDORA_OPERATION_TELEGRAM_BOT_TOKEN && process.env.PANDORA_OPERATION_TELEGRAM_CHAT_ID) {
+    targets.telegramBotToken = process.env.PANDORA_OPERATION_TELEGRAM_BOT_TOKEN;
+    targets.telegramChatId = process.env.PANDORA_OPERATION_TELEGRAM_CHAT_ID;
+  }
+  return targets;
+}
+
+async function decorateOperationPayload(payload, operationContext) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !operationContext || typeof operationContext !== 'object') {
+    return payload;
+  }
+
+  const operationStateStore = getOperationStateStore().createOperationStateStore();
+  const candidateOperationId =
+    (typeof payload.operationId === 'string' && payload.operationId.trim() ? payload.operationId.trim() : null)
+    || (typeof operationContext.operationId === 'string' && operationContext.operationId.trim()
+      ? operationContext.operationId.trim()
+      : null);
+  if (!candidateOperationId) {
+    return payload;
+  }
+
+  const existingLookup = await operationStateStore.get(candidateOperationId);
+  const existingRecord = existingLookup && existingLookup.found ? existingLookup.operation : null;
+  const storeStatus = choosePersistedOperationStatus(
+    existingRecord && existingRecord.status,
+    mapOperationStatusToStore(
+      (payload && payload.status) || operationContext.status,
+      (payload && payload.mode) || operationContext.mode,
+    ),
+  );
+
+  const upserted = await operationStateStore.upsert({
+    operationId: candidateOperationId,
+    command: operationContext.command || null,
+    summary: buildOperationSummaryFromPayload(payload, operationContext),
+    status: storeStatus,
+    scope: operationContext.protocol || null,
+    target: operationContext.target || null,
+    request: operationContext.target || {},
+    result: ['succeeded', 'closed'].includes(storeStatus) ? buildOperationResultSnapshot(payload, operationContext) : null,
+    error: storeStatus === 'failed'
+      ? {
+          code: payload && payload.error && payload.error.code ? payload.error.code : null,
+          message: payload && payload.error && payload.error.message
+            ? payload.error.message
+            : (payload && typeof payload.message === 'string' ? payload.message : null),
+        }
+      : null,
+    metadata: {
+      ...((existingRecord && existingRecord.metadata) || {}),
+      protocol: operationContext.protocol || null,
+      mode: (payload && payload.mode) || operationContext.mode || null,
+      runtimeHandle: operationContext.runtimeHandle || null,
+      decoratedBy: 'pandora.cli',
+    },
+  });
+
+  const savedOperation = upserted.operation;
+  const publicStatus = mapOperationStatusToPublic(savedOperation.status);
+  const event = await getOperationEventBus().emitLifecycleEvent({
+    operationId: savedOperation.operationId,
+    operationKind: operationContext.command || null,
+    phase: publicStatus,
+    source: 'cli',
+    summary: buildOperationSummaryFromPayload(payload, operationContext),
+    data: {
+      mode: (payload && payload.mode) || operationContext.mode || null,
+      scope: operationContext.protocol || null,
+    },
+  });
+
+  const webhookTargets = getOperationWebhookTargetsFromEnv();
+  if (getOperationWebhookService().hasTargets(webhookTargets)) {
+    await getOperationWebhookService().notifyLifecycleEvent(webhookTargets, event.event, {
+      metadata: {
+        command: operationContext.command || null,
+      },
+    });
+  }
+
+  return {
+    ...payload,
+    operationId: savedOperation.operationId,
+  };
+}
+
+function getOperationService() {
+  if (!cachedOperationService) {
+    const operationStateStore = getOperationStateStore().createOperationStateStore();
+    cachedOperationService = getOperationServiceModule().createOperationService({
+      operationStateStore,
+      operationEventBus: getOperationEventBus(),
+      operationWebhookService: getOperationWebhookService(),
+      getWebhookTargets: getOperationWebhookTargetsFromEnv,
+    });
+  }
+  return cachedOperationService;
+}
+
 /** Proxy to forecast-store append helper. */
 function appendForecastRecord(...args) {
   return getForecastStore().appendForecastRecord(...args);
@@ -403,6 +679,13 @@ function computeBrierReport(...args) {
 /** Schema command adapter with CLI output wiring. */
 function runSchemaCommand(...args) {
   return getSchemaCommandService().createRunSchemaCommand({ emitSuccess, CliError }).runSchemaCommand(...args);
+}
+
+/** Capabilities command adapter with CLI output wiring. */
+function runCapabilitiesCommand(...args) {
+  return getCapabilitiesCommandService()
+    .createRunCapabilitiesCommand({ emitSuccess, CliError })
+    .runCapabilitiesCommand(...args);
 }
 
 function runAgentCommand(...args) {
@@ -845,9 +1128,11 @@ Usage:
   pandora [--output table|json] claim --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
+  pandora [--output table|json] operations get|list|cancel|close [flags]
   pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
   pandora [--output table|json] simulate mc|particle-filter|agents ...
   pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...
+  pandora [--output json] capabilities
   pandora [--output json] schema
   pandora mcp
   pandora launch [--dotenv-path <path>] [--skip-dotenv] [script args...]
@@ -896,9 +1181,11 @@ Examples:
   pandora risk show
   pandora risk panic --reason "Manual incident stop"
   pandora risk panic --clear
+  pandora operations list --status planned,executing --limit 20
   pandora stream prices --indexer-url https://pandoraindexer.up.railway.app/ --interval-ms 1000
   pandora --output json simulate mc --trials 4000 --horizon 48 --start-yes-pct 57 --seed 7 --antithetic
   pandora --output json simulate particle-filter --observations-json '[{\"yesPct\":56},{\"yesPct\":58},{\"yesPct\":57}]' --particles 750 --seed 11
+  pandora --output json capabilities
   pandora --output json schema
   pandora mcp
   pandora launch --dry-run --market-type amm --question "Will BTC close above $100k by end of 2026?" --rules "Resolves YES if ... Resolves NO if ... cancelled/postponed/abandoned/unresolved => NO." --sources "https://coinmarketcap.com/currencies/bitcoin/" "https://www.coingecko.com/en/coins/bitcoin" --target-timestamp 1798675200 --liquidity 100 --fee-tier 3000
@@ -906,7 +1193,7 @@ Examples:
 Notes:
   - launch/clone-bet forward unknown flags directly to underlying scripts.
   - Env auto-load default: ~/.pandora-cli.env when present; otherwise scripts/.env. Use --skip-dotenv to disable.
-  - --output json is supported for all commands except launch/clone-bet.
+  - Most commands support table and json output. capabilities/schema are json-only, mcp is table-only, and launch/clone-bet forward script output.
   - scan is the canonical enriched discovery command; markets scan remains a backward-compatible alias and markets list is the raw indexer browse surface.
   - Indexer URL resolution order: --indexer-url, PANDORA_INDEXER_URL, INDEXER_URL, default public indexer.
   - mirror status --with-live can enrich output with Polymarket position data when POLYMARKET_* credentials are set; missing endpoints/creds return diagnostics instead of hard failures.
@@ -1162,9 +1449,11 @@ function helpJsonPayload() {
       'pandora [--output table|json] claim ...',
       'pandora [--output table|json] lp add|remove|positions ...',
       'pandora [--output table|json] risk show|panic ...',
+      'pandora [--output table|json] operations get|list|cancel|close ...',
       'pandora stream prices|events ...',
       'pandora [--output table|json] simulate mc|particle-filter|agents ...',
       'pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...',
+      'pandora [--output json] capabilities',
       'pandora [--output json] schema',
       'pandora mcp',
       'pandora launch ...',
@@ -1173,13 +1462,19 @@ function helpJsonPayload() {
     globalFlags: {
       '--output': ['table', 'json'],
     },
-    notes: [
-      '`scan` is the canonical enriched market discovery flow; `markets scan` remains a backward-compatible alias and `markets list` is the raw indexer browse view.',
-      '`arb scan` is the canonical arbitrage flow; `arbitrage` remains a backward-compatible bounded one-shot wrapper.',
-      '`agent market autocomplete` and `agent market validate` expose reusable AI prompt templates and validation tickets for agent-controlled market creation workflows.',
-    ],
-  };
-}
+      modeRouting: {
+        jsonOnly: ['capabilities', 'schema'],
+        stdioOnly: ['mcp'],
+        scriptNative: ['launch', 'clone-bet'],
+      },
+      notes: [
+        '`scan` is the canonical enriched market discovery flow; `markets scan` remains a backward-compatible alias and `markets list` is the raw indexer browse view.',
+        '`arb scan` is the canonical arbitrage flow; `arbitrage` remains a backward-compatible bounded one-shot wrapper.',
+        '`agent market autocomplete` and `agent market validate` expose reusable AI prompt templates and validation tickets for agent-controlled market creation workflows.',
+        'Most commands support table and json output. `capabilities`/`schema` are json-only, `mcp` is stdio server mode, and `launch`/`clone-bet` forward script-native output.',
+      ],
+    };
+  }
 
 function normalizeOutputMode(raw) {
   if (!raw) return 'table';
@@ -4499,6 +4794,15 @@ async function hasContractCodeAtAddress(options = {}) {
   return Boolean(code && code !== '0x' && code !== '0x0');
 }
 
+function deriveWalletAddressFromPrivateKey(privateKey) {
+  const raw = typeof privateKey === 'string' ? privateKey.trim() : '';
+  if (!raw) {
+    return null;
+  }
+  const { privateKeyToAccount } = require('viem/accounts');
+  return privateKeyToAccount(raw).address.toLowerCase();
+}
+
 async function executeTradeOnchain(options) {
   const runtime = resolveTradeRuntimeConfig(options);
   const {
@@ -5961,6 +6265,9 @@ const parseLifecycleFlagsFromModule = createLazyFactoryRunner('./lib/parsers/lif
   CliError,
   requireFlagValue,
 }));
+function parseOperationsFlagsFromModule(...args) {
+  return getOperationsFlagsModule().parseOperationsFlags(...args);
+}
 const parseSportsFlagsFromModule = createLazyFactoryRunner('./lib/parsers/sports_flags.cjs', 'createParseSportsFlags', () => ({
   CliError,
   requireFlagValue,
@@ -6145,6 +6452,7 @@ const runResolveCommandFromService = createLazyFactoryRunner('./lib/resolve_comm
   renderSingleEntityTable,
   CliError,
   assertLiveWriteAllowed,
+  decorateOperationPayload,
 }));
 
 const runClaimCommandFromService = createLazyFactoryRunner('./lib/claim_command_service.cjs', 'createRunClaimCommand', () => ({
@@ -6158,6 +6466,7 @@ const runClaimCommandFromService = createLazyFactoryRunner('./lib/claim_command_
   renderSingleEntityTable,
   CliError,
   assertLiveWriteAllowed,
+  decorateOperationPayload,
 }));
 
 const runLpCommandFromService = createLazyFactoryRunner('./lib/lp_command_service.cjs', 'createRunLpCommand', () => ({
@@ -6171,6 +6480,7 @@ const runLpCommandFromService = createLazyFactoryRunner('./lib/lp_command_servic
   renderSingleEntityTable,
   CliError,
   assertLiveWriteAllowed,
+  decorateOperationPayload,
 }));
 const runSportsCommandFromService = createLazyFactoryRunner('./lib/sports_command_service.cjs', 'createRunSportsCommand', () => ({
   CliError,
@@ -6199,6 +6509,14 @@ const runRiskCommandFromService = createLazyFactoryRunner('./lib/risk_command_se
   setPanic: setRiskPanic,
   clearPanic: clearRiskPanic,
   renderRiskTable,
+}));
+const runOperationsCommandFromService = createLazyFactoryRunner('./lib/operations_command_service.cjs', 'createRunOperationsCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseOperationsFlags: parseOperationsFlagsFromModule,
+  createOperationService: getOperationService,
 }));
 const runModelCommandFromService = createLazyFactoryRunner('./lib/model_command_service.cjs', 'createRunModelCommand', () => ({
   CliError,
@@ -6765,6 +7083,7 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   runMirrorClose,
   runLp,
   runClaim,
+  decorateOperationPayload,
   resolveTrustedDeployPair,
   findMirrorPair,
   defaultMirrorManifestFile,
@@ -6791,6 +7110,7 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   renderMirrorSimulateTable,
   renderMirrorGoTable,
   renderMirrorSyncTable,
+  deriveWalletAddressFromPrivateKey,
   renderMirrorSyncDaemonTable,
   renderMirrorStatusTable,
   renderMirrorCloseTable,
@@ -7075,6 +7395,10 @@ async function runRiskCommand(args, context) {
   return runRiskCommandFromService(args, context);
 }
 
+async function runOperationsCommand(args, context) {
+  return runOperationsCommandFromService(args, context);
+}
+
 async function runModelCommand(args, context) {
   return runModelCommandFromService(args, context);
 }
@@ -7249,10 +7573,12 @@ const dispatch = createCommandRouter({
   runClaimCommand,
   runLpCommand,
   runRiskCommand,
+  runOperationsCommand,
   runModelCommand,
   runMcpCommand,
   runStreamCommand,
   runSimulateCommand,
+  runCapabilitiesCommand,
   runSchemaCommand,
   runScriptCommand,
 });

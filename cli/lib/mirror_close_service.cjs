@@ -1,4 +1,5 @@
 const MIRROR_CLOSE_SCHEMA_VERSION = '1.0.0';
+const SHARED_OPERATION_PROTOCOL = 'shared-operation/v1';
 
 function normalizeError(err, fallbackCode) {
   return {
@@ -6,6 +7,132 @@ function normalizeError(err, fallbackCode) {
     message: err && err.message ? err.message : String(err),
     details: err && err.details ? err.details : null,
   };
+}
+
+function normalizeOperationToken(value, options = {}) {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return options.preserveCase ? trimmed : trimmed.toLowerCase();
+}
+
+function encodeOperationIdPart(value, options = {}) {
+  const normalized = normalizeOperationToken(value, options);
+  return normalized ? encodeURIComponent(normalized) : null;
+}
+
+function normalizeOperationChainId(value) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    return null;
+  }
+  return numeric;
+}
+
+function inferMirrorCloseStatus(payload, options = {}) {
+  if (payload && payload.mode === 'dry-run') {
+    return 'planned';
+  }
+  const successCount = Number.isInteger(payload && payload.summary && payload.summary.successCount)
+    ? payload.summary.successCount
+    : null;
+  const failureCount = Number.isInteger(payload && payload.summary && payload.summary.failureCount)
+    ? payload.summary.failureCount
+    : null;
+  if (successCount === null || failureCount === null) {
+    return options.execute ? 'submitted' : 'planned';
+  }
+  if (failureCount === 0) {
+    return successCount > 0 ? 'completed' : 'no-op';
+  }
+  return successCount > 0 ? 'partial' : 'failed';
+}
+
+function buildMirrorCloseOperationContext(options = {}, payload = {}) {
+  const chainId = normalizeOperationChainId(options.chainId);
+  const all = Boolean((payload && payload.target && payload.target.all) || options.all);
+  const pandoraMarketAddress = normalizeOperationToken(
+    payload && payload.pandoraMarketAddress !== undefined
+      ? payload.pandoraMarketAddress
+      : options.pandoraMarketAddress,
+  );
+  const polymarketMarketId = normalizeOperationToken(
+    payload && payload.polymarketMarketId !== undefined
+      ? payload.polymarketMarketId
+      : options.polymarketMarketId,
+    { preserveCase: true },
+  );
+  const polymarketSlug = normalizeOperationToken(
+    payload && payload.polymarketSlug !== undefined
+      ? payload.polymarketSlug
+      : options.polymarketSlug,
+  );
+  const wallet = normalizeOperationToken(
+    options.wallet
+    || payload.wallet
+    || (typeof options.deriveWalletAddressFromPrivateKey === 'function' && options.privateKey
+      ? options.deriveWalletAddressFromPrivateKey(options.privateKey)
+      : null),
+  );
+
+  if (!all && !pandoraMarketAddress && !polymarketMarketId && !polymarketSlug) {
+    return null;
+  }
+
+  const selector = all
+    ? 'all'
+    : [pandoraMarketAddress, polymarketMarketId, polymarketSlug].filter(Boolean).join(':');
+
+  return {
+    protocol: SHARED_OPERATION_PROTOCOL,
+    command: 'mirror.close',
+    mode: payload && payload.mode ? payload.mode : (options.execute ? 'execute' : 'dry-run'),
+    status: inferMirrorCloseStatus(payload, options),
+    operationId: [
+      'mirror-close',
+      chainId === null ? null : String(chainId),
+      encodeOperationIdPart(selector, { preserveCase: true }),
+      all ? encodeOperationIdPart(wallet) : null,
+    ].filter(Boolean).join(':'),
+    runtimeHandle: {
+      type: 'mirror-close',
+      chainId,
+      all,
+      wallet,
+      pandoraMarketAddress,
+      polymarketMarketId,
+      polymarketSlug,
+    },
+    target: {
+      all,
+      wallet,
+      pandoraMarketAddress,
+      polymarketMarketId,
+      polymarketSlug,
+    },
+  };
+}
+
+async function maybeDecorateOperationPayload(deps, payload, options) {
+  if (!deps || typeof deps.decorateOperationPayload !== 'function') {
+    return payload;
+  }
+  const operationContext = buildMirrorCloseOperationContext(options, payload);
+  if (!operationContext) {
+    return payload;
+  }
+  try {
+    const nextPayload = await deps.decorateOperationPayload(payload, operationContext);
+    return nextPayload === undefined ? payload : nextPayload;
+  } catch (error) {
+    const diagnostic = `Operation decoration failed: ${error && error.message ? error.message : String(error)}`;
+    return Array.isArray(payload.diagnostics)
+      ? {
+          ...payload,
+          diagnostics: payload.diagnostics.concat(diagnostic),
+        }
+      : payload;
+  }
 }
 
 function buildStepResult(step, ok, data, error) {
@@ -69,7 +196,12 @@ async function runMirrorClose(options = {}, deps = {}) {
     payload.summary.successCount = payload.steps.length;
     payload.summary.failureCount = 0;
     payload.diagnostics.push('Dry-run close plan generated.');
-    return payload;
+    return maybeDecorateOperationPayload(deps, payload, {
+      ...options,
+      deriveWalletAddressFromPrivateKey: deps && typeof deps.deriveWalletAddressFromPrivateKey === 'function'
+        ? deps.deriveWalletAddressFromPrivateKey
+        : options.deriveWalletAddressFromPrivateKey,
+    });
   }
 
   let canProceed = true;
@@ -146,10 +278,16 @@ async function runMirrorClose(options = {}, deps = {}) {
     'Polymarket hedge settlement remains manual in this command version; use polymarket trade/close flows as needed.',
   );
 
-  return payload;
+  return maybeDecorateOperationPayload(deps, payload, {
+    ...options,
+    deriveWalletAddressFromPrivateKey: deps && typeof deps.deriveWalletAddressFromPrivateKey === 'function'
+      ? deps.deriveWalletAddressFromPrivateKey
+      : options.deriveWalletAddressFromPrivateKey,
+  });
 }
 
 module.exports = {
   MIRROR_CLOSE_SCHEMA_VERSION,
+  buildMirrorCloseOperationContext,
   runMirrorClose,
 };

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
 
 function requireFn(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -45,6 +46,14 @@ function createCoreCommandFlagParsers(deps) {
   const defaultIndexerTimeoutMs = requireValue(deps, 'defaultIndexerTimeoutMs');
   const defaultExpiringSoonHours = requireValue(deps, 'defaultExpiringSoonHours');
 
+  function resolveMcpWorkspacePath(next, flagName) {
+    assertMcpWorkspacePath(next, {
+      flagName,
+      errorFactory: (code, message, details) => new CliError(code, message, details),
+    });
+    return path.resolve(process.cwd(), next);
+  }
+
   function parseScriptEnvFlags(args) {
     let envFile = defaultEnvFile;
     let useEnvFile = true;
@@ -54,7 +63,7 @@ function createCoreCommandFlagParsers(deps) {
       const token = args[i];
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         i += 1;
         continue;
       }
@@ -82,7 +91,7 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         i += 1;
         continue;
       }
@@ -133,14 +142,14 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         i += 1;
         continue;
       }
 
       if (token === '--example') {
         const next = requireFlagValue(args, i, '--example');
-        exampleFile = path.resolve(process.cwd(), next);
+        exampleFile = resolveMcpWorkspacePath(next, '--example');
         i += 1;
         continue;
       }
@@ -183,14 +192,14 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         i += 1;
         continue;
       }
 
       if (token === '--example') {
         const next = requireFlagValue(args, i, '--example');
-        exampleFile = path.resolve(process.cwd(), next);
+        exampleFile = resolveMcpWorkspacePath(next, '--example');
         i += 1;
         continue;
       }
@@ -214,7 +223,7 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         envFileExplicit = true;
         i += 1;
         continue;

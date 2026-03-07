@@ -17,6 +17,8 @@ module.exports = async function handleMirrorClose({ shared, context, deps }) {
     runClaim,
     assertLiveWriteAllowed,
     renderMirrorCloseTable,
+    decorateOperationPayload,
+    deriveWalletAddressFromPrivateKey,
   } = deps;
 
   if (includesHelpFlag(shared.rest)) {
@@ -47,6 +49,8 @@ module.exports = async function handleMirrorClose({ shared, context, deps }) {
     stopMirrorDaemon,
     runLp,
     runClaim,
+    decorateOperationPayload,
+    deriveWalletAddressFromPrivateKey,
   });
   emitSuccess(context.outputMode, 'mirror.close', payload, renderMirrorCloseTable);
 };
