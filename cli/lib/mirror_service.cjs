@@ -10,13 +10,36 @@ const {
   hashRules,
   preloadPandoraMatchCandidates,
 } = require('./mirror_verify_service.cjs');
+const { buildRequiredAgentMarketValidation } = require('./agent_market_prompt_service.cjs');
 const { deployPandoraAmmMarket } = require('./pandora_deploy_service.cjs');
 const { defaultManifestFile, upsertPair } = require('./mirror_manifest_store.cjs');
+const { isMcpMode } = require('./shared/mcp_path_guard.cjs');
 const { round } = require('./shared/utils.cjs');
 
 const MIRROR_PLAN_SCHEMA_VERSION = '1.0.0';
 const MIRROR_DEPLOY_SCHEMA_VERSION = '1.0.0';
 const MIRROR_BROWSE_SCHEMA_VERSION = '1.0.0';
+const DEFAULT_MIRROR_MIN_CLOSE_LEAD_SECONDS = 3600;
+const MIRROR_SPORT_TIMING_PROFILES = Object.freeze({
+  basketball: Object.freeze({
+    key: 'basketball',
+    expectedDurationMinutes: 150,
+    resolutionBufferMinutes: 30,
+    minimumTradingBufferMinutes: 90,
+  }),
+  soccer: Object.freeze({
+    key: 'soccer',
+    expectedDurationMinutes: 120,
+    resolutionBufferMinutes: 20,
+    minimumTradingBufferMinutes: 30,
+  }),
+  sports: Object.freeze({
+    key: 'sports',
+    expectedDurationMinutes: 150,
+    resolutionBufferMinutes: 30,
+    minimumTradingBufferMinutes: 45,
+  }),
+});
 
 function createServiceError(code, message, details = undefined) {
   const err = new Error(message);
@@ -38,19 +61,454 @@ function normalizeSources(value) {
     .filter(Boolean);
 }
 
+function normalizeComparableText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\b(the|fc|cf|sc|ac|club)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function toUnixSeconds(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return numeric > 1e12 ? Math.floor(numeric / 1000) : Math.floor(numeric);
+  }
+  const parsed = Date.parse(String(value));
+  if (Number.isNaN(parsed)) return null;
+  return Math.floor(parsed / 1000);
+}
+
+function formatTimestampIso(value) {
+  const unixSeconds = toUnixSeconds(value);
+  return Number.isFinite(unixSeconds) ? new Date(unixSeconds * 1000).toISOString() : null;
+}
+
+function parseMirrorTargetTimestampInput(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const unixSeconds = toUnixSeconds(value);
+  return Number.isFinite(unixSeconds) && unixSeconds > 0 ? unixSeconds : null;
+}
+
+function collectMirrorTimingTextPool(sourceMarket) {
+  const raw = sourceMarket && sourceMarket.raw && typeof sourceMarket.raw === 'object' ? sourceMarket.raw : {};
+  const tagEntries = []
+    .concat(Array.isArray(raw.tags) ? raw.tags : [])
+    .concat(Array.isArray(raw.tag_ids) ? raw.tag_ids : [])
+    .concat(Array.isArray(raw.tagIds) ? raw.tagIds : []);
+  const tagText = [];
+  for (const entry of tagEntries) {
+    if (entry === null || entry === undefined) continue;
+    if (typeof entry === 'string' || typeof entry === 'number') {
+      tagText.push(String(entry));
+      continue;
+    }
+    if (typeof entry === 'object') {
+      for (const key of ['name', 'slug', 'label', 'title', 'group', 'topic', 'category', 'shortName', 'short_name']) {
+        if (entry[key]) tagText.push(String(entry[key]));
+      }
+    }
+  }
+  return [
+    sourceMarket && sourceMarket.question,
+    sourceMarket && sourceMarket.eventTitle,
+    sourceMarket && sourceMarket.eventSlug,
+    sourceMarket && sourceMarket.slug,
+    raw.sport,
+    raw.sport_type,
+    raw.league,
+    raw.competition,
+    ...tagText,
+  ]
+    .map((value) => normalizeComparableText(value))
+    .filter(Boolean)
+    .join(' ');
+}
+
+function inferMirrorSportTimingProfile(sourceMarket) {
+  const haystack = collectMirrorTimingTextPool(sourceMarket);
+  if (!haystack) return null;
+  if (/\b(nba|basketball)\b/.test(haystack)) {
+    return MIRROR_SPORT_TIMING_PROFILES.basketball;
+  }
+  if (/\b(soccer|football|premier league|epl|uefa|fifa|mls|la liga|serie a|bundesliga|champions league)\b/.test(haystack)) {
+    return MIRROR_SPORT_TIMING_PROFILES.soccer;
+  }
+  if (/\b(sport|sports|nfl|nhl|mlb|tennis|ufc|mma|formula 1|f1|cricket)\b/.test(haystack)) {
+    return MIRROR_SPORT_TIMING_PROFILES.sports;
+  }
+  return null;
+}
+
+function buildMirrorTimingData(sourceMarket, minCloseLeadSecondsInput) {
+  const minCloseLeadSeconds = Number.isFinite(Number(minCloseLeadSecondsInput))
+    ? Math.max(0, Math.trunc(Number(minCloseLeadSecondsInput)))
+    : DEFAULT_MIRROR_MIN_CLOSE_LEAD_SECONDS;
+  const sourceTimestamp = toUnixSeconds(sourceMarket && sourceMarket.closeTimestamp);
+  const eventStartTimestamp = toUnixSeconds(sourceMarket && sourceMarket.eventStartTimestamp) || sourceTimestamp;
+  const sourceCloseTimestamp = toUnixSeconds(sourceMarket && sourceMarket.sourceCloseTimestamp);
+  const timestampSource = String(
+    (sourceMarket && sourceMarket.timestampSource)
+    || (sourceMarket && sourceMarket.eventStartTimestamp ? 'game_start_time' : sourceMarket && sourceMarket.closeTimestamp ? 'source_timestamp' : ''),
+  ).trim() || null;
+  const profile = inferMirrorSportTimingProfile(sourceMarket);
+  const warnings = [];
+  let suggestedTargetTimestamp = sourceTimestamp;
+  let expectedEndTimestamp = null;
+  let tradingCutoffTimestamp = null;
+  let reason = null;
+
+  if (profile && eventStartTimestamp) {
+    expectedEndTimestamp = eventStartTimestamp + (profile.expectedDurationMinutes * 60);
+    const baseSuggestedTargetTimestamp = expectedEndTimestamp + (profile.resolutionBufferMinutes * 60);
+    const minimumTradingCutoffTimestamp = expectedEndTimestamp + (profile.minimumTradingBufferMinutes * 60);
+    suggestedTargetTimestamp = Math.max(baseSuggestedTargetTimestamp, minimumTradingCutoffTimestamp + minCloseLeadSeconds);
+    tradingCutoffTimestamp = suggestedTargetTimestamp - minCloseLeadSeconds;
+
+    if (timestampSource === 'game_start_time') {
+      warnings.push('Polymarket provided game_start_time, which is the event start. Mirror deploy should use a later targetTimestamp that covers event completion and a buffer.');
+    }
+    if (tradingCutoffTimestamp <= expectedEndTimestamp) {
+      warnings.push('With the current close lead, trading would stop before the expected regulation end. Increase targetTimestamp or reduce min-close-lead-seconds.');
+    } else if (tradingCutoffTimestamp < minimumTradingCutoffTimestamp) {
+      warnings.push('With the current close lead, trading would stop too close to the expected finish and may not cover overtime or stoppage time.');
+    }
+
+    reason = `Suggested targetTimestamp uses ${profile.key} timing defaults: expected duration ${profile.expectedDurationMinutes}m, resolution buffer ${profile.resolutionBufferMinutes}m, and trading cutoff buffer ${profile.minimumTradingBufferMinutes}m before the close lead.`;
+  } else {
+    if (timestampSource === 'game_start_time' && sourceTimestamp) {
+      warnings.push('Only a sports start time was available from Polymarket. Review targetTimestamp manually if you deploy this market.');
+    }
+    if (sourceTimestamp) {
+      tradingCutoffTimestamp = sourceTimestamp - minCloseLeadSeconds;
+    }
+  }
+
+  return {
+    sourceTimestamp,
+    sourceTimestampIso: formatTimestampIso(sourceTimestamp),
+    sourceTimestampKind: timestampSource,
+    sourceCloseTimestamp,
+    sourceCloseTimestampIso: formatTimestampIso(sourceCloseTimestamp),
+    eventStartTimestamp,
+    eventStartTimestampIso: formatTimestampIso(eventStartTimestamp),
+    expectedEndTimestamp,
+    expectedEndTimestampIso: formatTimestampIso(expectedEndTimestamp),
+    suggestedTargetTimestamp,
+    suggestedTargetTimestampIso: formatTimestampIso(suggestedTargetTimestamp),
+    tradingCutoffTimestamp,
+    tradingCutoffTimestampIso: formatTimestampIso(tradingCutoffTimestamp),
+    minCloseLeadSeconds,
+    profile: profile
+      ? {
+          sport: profile.key,
+          expectedDurationMinutes: profile.expectedDurationMinutes,
+          resolutionBufferMinutes: profile.resolutionBufferMinutes,
+          minimumTradingBufferMinutes: profile.minimumTradingBufferMinutes,
+        }
+      : null,
+    reason,
+    warnings,
+  };
+}
+
+function hasPandoraBinaryRules(value) {
+  const text = String(value || '');
+  return /(^|\n)\s*YES\s*:/i.test(text) && /(^|\n)\s*NO\s*:/i.test(text);
+}
+
+function sanitizeParticipantLabel(value) {
+  return String(value || '')
+    .replace(/^["'`(\[]+/, '')
+    .replace(/["'`)\].,:;!?]+$/, '')
+    .trim();
+}
+
+function extractMatchParticipants(question) {
+  const text = String(question || '').trim();
+  if (!text) return [];
+
+  const patterns = [
+    /\bwill\s+(.+?)\s+(?:beat|defeat|top|topple|upset|outscore)\s+(.+?)(?:\?|$)/i,
+    /^(.+?)\s+(?:vs\.?|v\.?|@|at)\s+(.+?)(?:\?|$)/i,
+    /\bbetween\s+(.+?)\s+and\s+(.+?)(?:\?|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const left = sanitizeParticipantLabel(match[1]);
+    const right = sanitizeParticipantLabel(match[2]);
+    if (left && right) {
+      return Array.from(new Set([left, right]));
+    }
+  }
+
+  return [];
+}
+
+function extractResolveToSelection(description) {
+  const text = String(description || '').trim();
+  if (!text) return null;
+
+  const patterns = [
+    /\b(?:this market )?resolve(?:s|d)?\s+to\s+([^.;\n]+)/i,
+    /\bresolve(?:s|d)?\s+(?:in favor of|for)\s+([^.;\n]+)/i,
+    /\bwinner(?:\s+is)?\s*:\s*([^.;\n]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      const candidate = sanitizeParticipantLabel(match[1]);
+      if (candidate) return candidate;
+    }
+  }
+
+  return null;
+}
+
+function findBestParticipantMatch(selection, participants) {
+  const normalizedSelection = normalizeComparableText(selection);
+  if (!normalizedSelection || !Array.isArray(participants) || !participants.length) {
+    return null;
+  }
+
+  let best = null;
+  let bestScore = 0;
+  const selectionTokens = new Set(normalizedSelection.split(' ').filter(Boolean));
+  for (const participant of participants) {
+    const normalizedParticipant = normalizeComparableText(participant);
+    if (!normalizedParticipant) continue;
+    if (
+      normalizedSelection === normalizedParticipant ||
+      normalizedSelection.includes(normalizedParticipant) ||
+      normalizedParticipant.includes(normalizedSelection)
+    ) {
+      return participant;
+    }
+    const participantTokens = new Set(normalizedParticipant.split(' ').filter(Boolean));
+    const overlap = [...selectionTokens].filter((token) => participantTokens.has(token)).length;
+    const score = overlap / Math.max(selectionTokens.size, participantTokens.size, 1);
+    if (score > bestScore) {
+      best = participant;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 0.5 ? best : null;
+}
+
+function buildWinnerRules(selection, opponent) {
+  const yesBranch = `YES: The official winner of the event described in the market question is ${selection}.`;
+  const noBranch = opponent
+    ? `NO: The official winner is ${opponent}, or the event ends in a draw if an official draw is possible.`
+    : `NO: ${selection} is not the official winner of the event described in the market question.`;
+  const edgeBranch =
+    'EDGE: If the event is canceled, postponed, abandoned, or no official result is declared by targetTimestamp, resolve NO.';
+  return [yesBranch, noBranch, edgeBranch].join('\n');
+}
+
+function buildQuestionFallbackRules(question) {
+  const normalizedQuestion = String(question || '').trim().replace(/\?+$/, '');
+  if (!normalizedQuestion) {
+    return 'YES: The market question resolves true by targetTimestamp.\nNO: The market question does not resolve true by targetTimestamp.\nEDGE: If the event is canceled, postponed, abandoned, or no official result is declared by targetTimestamp, resolve NO.';
+  }
+
+  const affirmative = normalizedQuestion.replace(/^will\s+/i, '').trim();
+  return [
+    `YES: ${affirmative.charAt(0).toUpperCase()}${affirmative.slice(1)}.`,
+    `NO: It is not true that ${affirmative}.`,
+    'EDGE: If the event is canceled, postponed, abandoned, or no official result is declared by targetTimestamp, resolve NO.',
+  ].join('\n');
+}
+
+function assertPandoraBinaryRules(rulesText, details = {}) {
+  if (hasPandoraBinaryRules(rulesText)) {
+    return;
+  }
+  throw createServiceError(
+    'MIRROR_RULES_FORMAT_INVALID',
+    'Mirror rules must use explicit Pandora YES:/NO: branches before deploy. Re-run mirror plan --with-rules or pass --rules with binary Pandora rules.',
+    details,
+  );
+}
+
+function isPolymarketSourceUrl(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    return /(^|\.)polymarket\.com$/i.test(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function assertIndependentMirrorSources(sources) {
+  const normalized = normalizeSources(sources);
+  const invalidSources = [];
+  const dependentSources = [];
+  const distinctSources = new Set();
+  const distinctHosts = new Set();
+
+  for (const source of normalized) {
+    try {
+      const parsed = new URL(source);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        invalidSources.push(source);
+        continue;
+      }
+      if (isPolymarketSourceUrl(source)) {
+        dependentSources.push(source);
+        continue;
+      }
+      distinctSources.add(parsed.toString());
+      distinctHosts.add(parsed.hostname.toLowerCase());
+    } catch {
+      invalidSources.push(source);
+    }
+  }
+
+  if (!normalized.length) {
+    throw createServiceError(
+      'MIRROR_SOURCES_REQUIRED',
+      'Mirror deploy requires explicit independent resolution sources via --sources. Polymarket URLs are never used automatically.',
+      {
+        requiredMinimum: 2,
+        normalizedCount: 0,
+      },
+    );
+  }
+
+  if (invalidSources.length) {
+    throw createServiceError(
+      'MIRROR_SOURCES_INVALID',
+      '--sources must contain valid http(s) URLs.',
+      {
+        invalidSources,
+      },
+    );
+  }
+
+  if (dependentSources.length) {
+    throw createServiceError(
+      'MIRROR_SOURCES_INVALID',
+      'Mirror deploy requires independent resolution sources. Polymarket URLs are not allowed in --sources.',
+      {
+        dependentSources,
+      },
+    );
+  }
+
+  if (normalized.length < 2) {
+    throw createServiceError(
+      'MIRROR_SOURCES_REQUIRED',
+      'Mirror deploy requires at least two independent resolution sources in --sources.',
+      {
+        requiredMinimum: 2,
+        normalizedCount: normalized.length,
+      },
+    );
+  }
+
+  if (distinctSources.size < 2 || distinctHosts.size < 2) {
+    throw createServiceError(
+      'MIRROR_SOURCES_REQUIRED',
+      'Mirror deploy requires at least two independent resolution sources from different hosts in --sources.',
+      {
+        requiredMinimum: 2,
+        normalizedCount: normalized.length,
+        distinctSourceCount: distinctSources.size,
+        distinctHostCount: distinctHosts.size,
+      },
+    );
+  }
+
+  return normalized;
+}
+
+function assertMirrorValidationTicket({ execute, question, rules, sources, targetTimestamp, validationTicket }) {
+  const requiredValidation = buildRequiredAgentMarketValidation({
+    question,
+    rules,
+    sources,
+    targetTimestamp,
+  });
+
+  if (!execute || isMcpMode()) {
+    return {
+      requiredValidation,
+      agentValidation: null,
+    };
+  }
+
+  const providedTicket = String(validationTicket || '').trim();
+  if (!providedTicket) {
+    throw createServiceError(
+      'MIRROR_VALIDATION_REQUIRED',
+      'mirror execute requires --validation-ticket from agent market validate for the exact final mirror payload.',
+      {
+        requiredValidation,
+      },
+    );
+  }
+
+  if (providedTicket !== requiredValidation.ticket) {
+    throw createServiceError(
+      'MIRROR_VALIDATION_MISMATCH',
+      'Provided --validation-ticket does not match the exact final mirror market payload.',
+      {
+        expectedTicket: requiredValidation.ticket,
+        receivedTicket: providedTicket,
+        requiredValidation,
+      },
+    );
+  }
+
+  return {
+    requiredValidation,
+    agentValidation: {
+      ok: true,
+      ticket: providedTicket,
+      decision: 'PASS',
+      summary: 'Validated via CLI ticket gate.',
+    },
+  };
+}
+
 function buildRuleTemplate(sourceMarket) {
   const diagnostics = [];
+  const sourceQuestion = String(sourceMarket && sourceMarket.question ? sourceMarket.question : '').trim();
   const sourceDescription = String(sourceMarket && sourceMarket.description ? sourceMarket.description : '').trim();
-  if (sourceDescription) {
+  if (sourceDescription && hasPandoraBinaryRules(sourceDescription)) {
     return {
       rulesText: sourceDescription,
       diagnostics,
     };
   }
 
-  diagnostics.push('Source market description/rules missing; generated fallback rule template.');
+  const selectedOutcome = extractResolveToSelection(sourceDescription);
+  if (selectedOutcome) {
+    const participants = extractMatchParticipants(sourceQuestion);
+    const selectedParticipant = findBestParticipantMatch(selectedOutcome, participants) || selectedOutcome;
+    const opposingParticipant =
+      participants.find((participant) => normalizeComparableText(participant) !== normalizeComparableText(selectedParticipant)) || null;
+
+    diagnostics.push('Translated source market resolution text into Pandora YES/NO rules.');
+    if (participants.length >= 2 && !opposingParticipant) {
+      diagnostics.push('Unable to confidently determine the opposing side; NO branch resolves when the selected side does not win.');
+    }
+    return {
+      rulesText: buildWinnerRules(selectedParticipant, opposingParticipant),
+      diagnostics,
+    };
+  }
+
+  diagnostics.push('Source rules were not already in Pandora YES/NO format; generated fallback binary rule template from the source question.');
   return {
-    rulesText: `Resolves YES if \"${String(sourceMarket && sourceMarket.question ? sourceMarket.question : 'the source condition').trim()}\" is true by the deadline. Resolves NO otherwise; canceled/postponed/abandoned/unresolved => NO.`,
+    rulesText: buildQuestionFallbackRules(sourceQuestion || 'the source condition'),
     diagnostics,
   };
 }
@@ -71,6 +529,14 @@ function buildPlanDigest(planData) {
           sourceRules: planData.rules.sourceRules || null,
           proposedPandoraRules: planData.rules.proposedPandoraRules || null,
           sourceCount: planData.rules.sourceCount || null,
+        }
+      : null,
+    timing: planData.timing
+      ? {
+          sourceTimestamp: planData.timing.sourceTimestamp || null,
+          sourceTimestampKind: planData.timing.sourceTimestampKind || null,
+          suggestedTargetTimestamp: planData.timing.suggestedTargetTimestamp || null,
+          minCloseLeadSeconds: planData.timing.minCloseLeadSeconds || null,
         }
       : null,
     liquidityRecommendation: planData.liquidityRecommendation,
@@ -119,6 +585,12 @@ async function buildMirrorPlan(options = {}) {
 
   const distribution = computeDistributionHint(sourceYesProbability === null ? 0.5 : sourceYesProbability);
   const rules = buildRuleTemplate(sourceMarket);
+  const timing = buildMirrorTimingData(
+    sourceMarket,
+    Number.isFinite(Number(options.minCloseLeadSeconds))
+      ? Number(options.minCloseLeadSeconds)
+      : DEFAULT_MIRROR_MIN_CLOSE_LEAD_SECONDS,
+  );
 
   let match = { best: null, diagnostics: [] };
   try {
@@ -147,6 +619,8 @@ async function buildMirrorPlan(options = {}) {
   for (const item of distribution.diagnostics || []) diagnostics.push(item);
   for (const item of rules.diagnostics || []) diagnostics.push(item);
   for (const item of match.diagnostics || []) diagnostics.push(item);
+  for (const item of timing.warnings || []) diagnostics.push(item);
+  if (timing.reason) diagnostics.push(timing.reason);
 
   const topMatch = match.best
     ? {
@@ -171,6 +645,9 @@ async function buildMirrorPlan(options = {}) {
       question: sourceMarket.question,
       description: options.withRules ? sourceMarket.description : undefined,
       closeTimestamp: sourceMarket.closeTimestamp,
+      eventStartTimestamp: sourceMarket.eventStartTimestamp || null,
+      sourceCloseTimestamp: sourceMarket.sourceCloseTimestamp || null,
+      timestampSource: sourceMarket.timestampSource || null,
       yesPct: sourceMarket.yesPct,
       noPct: sourceMarket.noPct,
       volume24hUsd: round(sourceMarket.volume24hUsd, 6),
@@ -188,6 +665,7 @@ async function buildMirrorPlan(options = {}) {
       proposedPandoraRules: rules.rulesText,
       sourceCount: normalizeSources(options.sources).length,
     },
+    timing,
     similarity: topMatch ? topMatch.similarity : null,
     sizingInputs: {
       V24: round(sourceMarket.volume24hUsd, 6),
@@ -251,15 +729,60 @@ async function deployMirror(options = {}) {
   }
 
   const diagnostics = [];
-  const sourceRulesText = String(
+  const question = String(planData.sourceMarket && planData.sourceMarket.question ? planData.sourceMarket.question : '').trim();
+  const minCloseLeadSeconds = Number.isFinite(Number(options.minCloseLeadSeconds))
+    ? Number(options.minCloseLeadSeconds)
+    : Number(planData.timing && planData.timing.minCloseLeadSeconds);
+  const effectiveTiming = planData.timing && typeof planData.timing === 'object'
+    ? {
+        ...planData.timing,
+        ...(Number.isFinite(Number(minCloseLeadSeconds))
+          ? { minCloseLeadSeconds: Number(minCloseLeadSeconds) }
+          : {}),
+      }
+    : buildMirrorTimingData(planData.sourceMarket || {}, minCloseLeadSeconds);
+  const suggestedTargetTimestamp = parseMirrorTargetTimestampInput(
+    effectiveTiming && effectiveTiming.suggestedTargetTimestamp,
+  );
+  const fallbackTargetTimestamp = parseMirrorTargetTimestampInput(
+    planData.sourceMarket && planData.sourceMarket.closeTimestamp,
+  );
+  const explicitTargetTimestamp = parseMirrorTargetTimestampInput(options.targetTimestamp);
+  const targetTimestamp = explicitTargetTimestamp || suggestedTargetTimestamp || fallbackTargetTimestamp;
+  const refreshedRuleTemplate = buildRuleTemplate({
+    ...(planData.sourceMarket || {}),
+    description:
+      (planData.rules && (planData.rules.sourceRules || planData.rules.proposedPandoraRules))
+      || (planData.sourceMarket && planData.sourceMarket.description)
+      || '',
+  });
+  let sourceRulesText = String(
     options.rules ||
       (planData.rules && (planData.rules.proposedPandoraRules || planData.rules.sourceRules)) ||
       (planData.sourceMarket && planData.sourceMarket.description) ||
       '',
   ).trim();
-
-  const question = String(planData.sourceMarket && planData.sourceMarket.question ? planData.sourceMarket.question : '').trim();
-  const targetTimestamp = Number(planData.sourceMarket && planData.sourceMarket.closeTimestamp);
+  if (!options.rules && !hasPandoraBinaryRules(sourceRulesText) && hasPandoraBinaryRules(refreshedRuleTemplate.rulesText)) {
+    sourceRulesText = refreshedRuleTemplate.rulesText;
+    diagnostics.push('Upgraded non-binary source rules to Pandora YES/NO format during deploy.');
+  }
+  assertPandoraBinaryRules(sourceRulesText, {
+    question,
+    sourceRules: planData.rules && planData.rules.sourceRules ? planData.rules.sourceRules : null,
+    suggestedRules: refreshedRuleTemplate.rulesText,
+  });
+  diagnostics.push(...refreshedRuleTemplate.diagnostics);
+  if (explicitTargetTimestamp && suggestedTargetTimestamp && explicitTargetTimestamp < suggestedTargetTimestamp) {
+    diagnostics.push(
+      `Explicit --target-timestamp (${explicitTargetTimestamp}) is earlier than the suggested sports-safe target (${suggestedTargetTimestamp}). Trading may close before overtime or late completion.`,
+    );
+  } else if (!explicitTargetTimestamp && suggestedTargetTimestamp && suggestedTargetTimestamp !== fallbackTargetTimestamp) {
+    diagnostics.push(
+      `Using suggested targetTimestamp ${suggestedTargetTimestamp} instead of raw source timestamp ${fallbackTargetTimestamp}.`,
+    );
+  }
+  diagnostics.push(...(Array.isArray(effectiveTiming && effectiveTiming.warnings) ? effectiveTiming.warnings : []));
+  if (effectiveTiming && effectiveTiming.reason) diagnostics.push(effectiveTiming.reason);
 
   const liquidityUsdc =
     options.liquidityUsdc !== null && options.liquidityUsdc !== undefined
@@ -275,20 +798,15 @@ async function deployMirror(options = {}) {
       ? Number(options.distributionNo)
       : Number(planData.distributionHint && planData.distributionHint.distributionNo);
 
-  const sources = normalizeSources(options.sources);
-  if (options.sourcesProvided && sources.length < 2) {
-    throw createServiceError(
-      'INVALID_FLAG_VALUE',
-      '--sources requires at least two non-empty URLs when explicitly provided.',
-      {
-        providedCount: Array.isArray(options.sources) ? options.sources.length : 0,
-        normalizedCount: sources.length,
-      },
-    );
-  }
-  if (!options.sourcesProvided && sources.length < 2) {
-    diagnostics.push('Using fallback source URLs because explicit --sources were not provided.');
-  }
+  const sources = assertIndependentMirrorSources(options.sources);
+  const validationGate = assertMirrorValidationTicket({
+    execute: Boolean(options.execute),
+    question,
+    rules: sourceRulesText,
+    sources,
+    targetTimestamp,
+    validationTicket: options.validationTicket,
+  });
 
   let deployPayload;
   try {
@@ -302,11 +820,11 @@ async function deployMirror(options = {}) {
       usdc: options.usdc,
       question,
       rules: sourceRulesText,
-      sources: sources.length >= 2 ? sources : ['https://polymarket.com', 'https://clob.polymarket.com'],
+      sources,
       targetTimestamp,
-      minCloseLeadSeconds: Number.isFinite(Number(options.minCloseLeadSeconds))
-        ? Number(options.minCloseLeadSeconds)
-        : 3600,
+      minCloseLeadSeconds: Number.isFinite(Number(minCloseLeadSeconds))
+        ? Number(minCloseLeadSeconds)
+        : DEFAULT_MIRROR_MIN_CLOSE_LEAD_SECONDS,
       liquidityUsdc,
       distributionYes,
       distributionNo,
@@ -392,9 +910,15 @@ async function deployMirror(options = {}) {
     generatedAt: new Date().toISOString(),
     planDigest: planData.planDigest || buildPlanDigest(planData),
     deploymentArgs: deployPayload.deploymentArgs,
+    timing: {
+      ...(effectiveTiming || {}),
+      selectedTargetTimestamp: targetTimestamp,
+      selectedTargetTimestampIso: formatTimestampIso(targetTimestamp),
+      overrideApplied: Boolean(explicitTargetTimestamp),
+    },
     dryRun: deployPayload.mode === 'dry-run',
-    requiredValidation: deployPayload.requiredValidation || null,
-    agentValidation: deployPayload.agentValidation || null,
+    requiredValidation: deployPayload.requiredValidation || validationGate.requiredValidation || null,
+    agentValidation: deployPayload.agentValidation || validationGate.agentValidation || null,
     tx: deployPayload.tx,
     pandora: deployPayload.pandora,
     postDeployChecks,

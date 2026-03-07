@@ -18,6 +18,7 @@ class TestCliError extends Error {
 
 const TEST_MARKET = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const TEST_POLL = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const ORIGINAL_MCP_MODE = process.env.PANDORA_MCP_MODE;
 
 function requireFlagValue(args, index, flagName) {
   const value = args[index + 1];
@@ -107,6 +108,19 @@ function buildSyncParserDeps() {
     defaultMirrorStateFile: () => '/tmp/mirror-state.json',
     defaultMirrorKillSwitchFile: () => '/tmp/mirror-stop',
   };
+}
+
+function withMcpMode(fn) {
+  process.env.PANDORA_MCP_MODE = '1';
+  try {
+    return fn();
+  } finally {
+    if (ORIGINAL_MCP_MODE === undefined) {
+      delete process.env.PANDORA_MCP_MODE;
+    } else {
+      process.env.PANDORA_MCP_MODE = ORIGINAL_MCP_MODE;
+    }
+  }
 }
 
 function buildGoOptions(overrides = {}) {
@@ -213,6 +227,83 @@ test('parseMirrorSyncFlags accepts --polymarket-rpc-url and enforces companion l
   );
 });
 
+test('parseMirrorGoFlags blocks manifest files outside workspace in MCP mode', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildGoParserDeps());
+
+  withMcpMode(() => {
+    assert.throws(
+      () => parseMirrorGoFlags(['--polymarket-market-id', 'poly-1', '--manifest-file', '/tmp/pairs.json']),
+      (error) => error && error.code === 'MCP_FILE_ACCESS_BLOCKED',
+    );
+  });
+});
+
+test('parseMirrorSyncFlags maps default state paths into the workspace in MCP mode', () => {
+  const parseMirrorSyncFlags = createParseMirrorSyncFlags(buildSyncParserDeps());
+
+  withMcpMode(() => {
+    const parsed = parseMirrorSyncFlags([
+      'once',
+      '--market-address',
+      TEST_MARKET,
+      '--polymarket-market-id',
+      'poly-1',
+      '--paper',
+    ]);
+    assert.ok(parsed.stateFile.startsWith(`${process.cwd()}/.pandora/mirror/`));
+    assert.ok(parsed.killSwitchFile.startsWith(`${process.cwd()}/.pandora/mirror/`));
+  });
+});
+
+test('parseMirrorSyncFlags blocks explicit file paths outside workspace in MCP mode', () => {
+  const parseMirrorSyncFlags = createParseMirrorSyncFlags(buildSyncParserDeps());
+
+  withMcpMode(() => {
+    assert.throws(
+      () => parseMirrorSyncFlags([
+        'run',
+        '--market-address',
+        TEST_MARKET,
+        '--polymarket-market-id',
+        'poly-1',
+        '--state-file',
+        '/tmp/mirror-state.json',
+      ]),
+      (error) => error && error.code === 'MCP_FILE_ACCESS_BLOCKED',
+    );
+
+    assert.throws(
+      () => parseMirrorSyncFlags([
+        'run',
+        '--market-address',
+        TEST_MARKET,
+        '--polymarket-market-id',
+        'poly-1',
+        '--kill-switch-file',
+        '/tmp/mirror-stop',
+      ]),
+      (error) => error && error.code === 'MCP_FILE_ACCESS_BLOCKED',
+    );
+  });
+});
+
+test('parseMirrorSyncFlags validates all polymarket URL override flags', () => {
+  const parseMirrorSyncFlags = createParseMirrorSyncFlags(buildSyncParserDeps());
+
+  assert.throws(
+    () => parseMirrorSyncFlags([
+      'once',
+      '--market-address',
+      TEST_MARKET,
+      '--polymarket-market-id',
+      'poly-1',
+      '--polymarket-gamma-url',
+      'http://example.com/gamma',
+    ]),
+    (error) => error && error.code === 'INVALID_FLAG_VALUE',
+  );
+});
+
 test('deployMirror rejects explicit empty --sources instead of silently falling back', async () => {
   await assert.rejects(
     () =>
@@ -241,8 +332,8 @@ test('deployMirror rejects explicit empty --sources instead of silently falling 
         },
       }),
     (error) => {
-      assert.equal(error.code, 'INVALID_FLAG_VALUE');
-      assert.match(error.message, /at least two non-empty URLs/);
+      assert.equal(error.code, 'MIRROR_SOURCES_REQUIRED');
+      assert.match(error.message, /explicit independent resolution sources/i);
       return true;
     },
   );

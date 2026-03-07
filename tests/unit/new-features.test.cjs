@@ -36,6 +36,7 @@ const {
   readTradingCredsFromEnv,
   normalizePolymarketPositionSummary,
 } = require('../../cli/lib/polymarket_trade_adapter.cjs');
+const { fetchPolymarketMarkets } = require('../../cli/lib/polymarket_adapter.cjs');
 const { buildPlanDigest } = require('../../cli/lib/mirror_service.cjs');
 const {
   computeApprovalDiff,
@@ -208,6 +209,7 @@ function buildParserDeps(overrides = {}) {
     parseInteger: parserParseInteger,
     parseNonNegativeInteger: parserParseNonNegativeInteger,
     parseProbabilityPercent: parserParseProbabilityPercent,
+    parseDateLikeFlag: parserParseDateLikeFlag,
     parseOutcomeSide: parserParseOutcomeSide,
     parseNumber: parserParseNumber,
     parseWebhookFlagIntoOptions: () => null,
@@ -216,6 +218,20 @@ function buildParserDeps(overrides = {}) {
     mergeMirrorSyncGateSkipLists: parserMergeMirrorSyncGateSkipLists,
     ...overrides,
   };
+}
+
+function withMcpMode(fn) {
+  const original = process.env.PANDORA_MCP_MODE;
+  process.env.PANDORA_MCP_MODE = '1';
+  try {
+    return fn();
+  } finally {
+    if (original === undefined) {
+      delete process.env.PANDORA_MCP_MODE;
+    } else {
+      process.env.PANDORA_MCP_MODE = original;
+    }
+  }
 }
 
 const TEST_WALLET = '0x1111111111111111111111111111111111111111';
@@ -229,6 +245,26 @@ test('normalizeQuestion strips punctuation and stopwords', () => {
 test('questionSimilarity is high for equivalent phrasing', () => {
   const score = questionSimilarity('Will Arsenal win the PL?', 'Arsenal to win Premier League');
   assert.ok(score > 0.6);
+});
+
+test('mirror browse parser validates URL override flags', () => {
+  const parseMirrorBrowseFlags = createParseMirrorBrowseFlags(buildParserDeps());
+
+  assert.throws(
+    () => parseMirrorBrowseFlags(['--polymarket-gamma-url', 'http://example.com/gamma']),
+    (error) => error && error.code === 'INVALID_FLAG_VALUE',
+  );
+});
+
+test('mirror sync selector parser blocks pid files outside workspace in MCP mode', () => {
+  const parseMirrorSyncDaemonSelectorFlags = createParseMirrorSyncDaemonSelectorFlags(buildParserDeps());
+
+  withMcpMode(() => {
+    assert.throws(
+      () => parseMirrorSyncDaemonSelectorFlags(['--pid-file', '/tmp/mirror.pid'], 'stop'),
+      (error) => error && error.code === 'MCP_FILE_ACCESS_BLOCKED',
+    );
+  });
 });
 
 test('buildSuggestions returns bounded deterministic suggestions', () => {
@@ -1048,6 +1084,49 @@ test('browsePolymarketMarkets filters mock payload deterministically', async () 
   }
 });
 
+test('fetchPolymarketMarkets prefers game_start_time over midnight endDateIso for sports rows', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    async json() {
+      return [
+        {
+          conditionId: 'gamma-sports-1',
+          question: 'Will Everton beat Burnley?',
+          slug: 'everton-v-burnley-home',
+          endDateIso: '2030-03-09T00:00:00Z',
+          game_start_time: '2030-03-09T23:00:00Z',
+          liquidityNum: '15000',
+          volumeNum: '25000',
+          outcomes: '["Yes","No"]',
+          outcomePrices: '["0.61","0.39"]',
+        },
+      ];
+    },
+  });
+
+  try {
+    const payload = await fetchPolymarketMarkets({ limit: 10, timeoutMs: 1000 });
+    assert.equal(payload.source, 'polymarket:gamma');
+    assert.equal(payload.count, 1);
+    assert.equal(
+      payload.items[0].closeTimestamp,
+      Math.floor(Date.parse('2030-03-09T23:00:00Z') / 1000),
+    );
+    assert.equal(
+      payload.items[0].eventStartTimestamp,
+      Math.floor(Date.parse('2030-03-09T23:00:00Z') / 1000),
+    );
+    assert.equal(
+      payload.items[0].sourceCloseTimestamp,
+      Math.floor(Date.parse('2030-03-09T00:00:00Z') / 1000),
+    );
+    assert.equal(payload.items[0].timestampSource, 'game_start_time');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('browsePolymarketMarkets uses gamma events endpoint for tag-id sports discovery', async () => {
   const requests = [];
   const server = http.createServer((req, res) => {
@@ -1077,6 +1156,7 @@ test('browsePolymarketMarkets uses gamma events endpoint for tag-id sports disco
                   market_slug: 'everton-v-burnley-home',
                   question: 'Will Everton beat Burnley?',
                   end_date_iso: '2030-03-09T16:00:00Z',
+                  game_start_time: '2030-03-09T23:00:00Z',
                   active: true,
                   closed: false,
                   volume24hr: 500000,
@@ -1158,6 +1238,10 @@ test('browsePolymarketMarkets uses gamma events endpoint for tag-id sports disco
     assert.equal(payload.items[1].eventSlug, 'leeds-v-sunderland');
     assert.equal(payload.items[0].eventTitle, 'Everton vs Burnley');
     assert.equal(payload.items[0].eventId, 'evt-82');
+    assert.equal(
+      payload.items[0].closeTimestamp,
+      Math.floor(Date.parse('2030-03-09T23:00:00Z') / 1000),
+    );
 
     const eventRequests = requests.filter((entry) => String(entry).startsWith('/events?'));
     assert.equal(eventRequests.length, 2);
@@ -2105,6 +2189,20 @@ test('createParseMirrorDeployFlags parses min-close and gamma flags', () => {
   assert.equal(options.polymarketGammaMockUrl, 'http://localhost:4010/gamma');
 });
 
+test('createParseMirrorDeployFlags parses explicit --target-timestamp from ISO values', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildParserDeps());
+
+  const options = parseMirrorDeployFlags([
+    '--plan-file',
+    '/tmp/plan.json',
+    '--dry-run',
+    '--target-timestamp',
+    '2030-03-10T04:00:00Z',
+  ]);
+
+  assert.equal(options.targetTimestamp, Math.floor(Date.parse('2030-03-10T04:00:00Z') / 1000));
+});
+
 test('createParseMirrorDeployFlags enforces secure --rpc-url and drops dead allowRuleMismatch field', () => {
   const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildParserDeps());
 
@@ -2353,6 +2451,19 @@ test('createParseMirrorGoFlags rejects explicit empty or underspecified --source
       return true;
     },
   );
+});
+
+test('createParseMirrorGoFlags parses explicit --target-timestamp overrides', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildParserDeps());
+
+  const options = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--target-timestamp',
+    '2030-03-10T04:00:00Z',
+  ]);
+
+  assert.equal(options.targetTimestamp, Math.floor(Date.parse('2030-03-10T04:00:00Z') / 1000));
 });
 
 test('createParseLifecycleFlags validates start|status|resolve contracts', () => {
@@ -2780,4 +2891,13 @@ test('error recovery service builds deterministic command hints for key flows', 
 
   const arbRetry = recovery.getRecoveryForError({ code: 'ARB_SCAN_FAILED' });
   assert.equal(arbRetry.command, 'pandora arb scan --markets <market-a>,<market-b> --output json --iterations 1');
+
+  const mirrorSourcesRetry = recovery.getRecoveryForError({
+    code: 'MIRROR_SOURCES_REQUIRED',
+    details: { planFile: '/tmp/mirror-plan.json', requiredMinimum: 2 },
+  });
+  assert.equal(
+    mirrorSourcesRetry.command,
+    'pandora mirror deploy --dry-run --plan-file /tmp/mirror-plan.json --sources <url1> <url2>',
+  );
 });

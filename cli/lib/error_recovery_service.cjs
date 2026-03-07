@@ -44,8 +44,14 @@ function buildPolymarketPreflightCommand(cliName) {
   return `${cliName} polymarket preflight`;
 }
 
-function buildMirrorDeployRetryCommand(cliName) {
-  return `${cliName} mirror deploy --dry-run --plan-file <plan-file>`;
+function buildMirrorDeployRetryCommand(cliName, details) {
+  const selectorPlan = cleanToken(details && details.planFile, '')
+    ? `--plan-file ${cleanToken(details && details.planFile, '<plan-file>')}`
+    : '--plan-file <plan-file>';
+  const includeSourcesPlaceholder =
+    details
+    && (details.requiredMinimum || details.invalidSources || details.dependentSources || details.requiredValidation);
+  return `${cliName} mirror deploy --dry-run ${selectorPlan}${includeSourcesPlaceholder ? ' --sources <url1> <url2>' : ''}`;
 }
 
 function buildMirrorVerifyRetryCommand(cliName, details) {
@@ -232,12 +238,27 @@ function createErrorRecoveryService(options = {}) {
           command: buildPolymarketPreflightCommand(cliName),
           retryable: true,
         };
+      case 'MIRROR_VALIDATION_REQUIRED':
+      case 'MIRROR_VALIDATION_MISMATCH':
+        return {
+          action: 'Run market validation for the exact mirror payload and reuse the returned ticket',
+          command: buildAgentMarketValidateCommand(cliName, details),
+          retryable: true,
+        };
+      case 'MIRROR_RULES_FORMAT_INVALID':
+      case 'MIRROR_SOURCES_REQUIRED':
+      case 'MIRROR_SOURCES_INVALID':
+        return {
+          action: 'Rebuild mirror deploy inputs in dry-run mode and provide explicit independent sources',
+          command: buildMirrorDeployRetryCommand(cliName, details),
+          retryable: true,
+        };
       case 'MIRROR_DEPLOY_FAILED':
       case 'MIRROR_GO_FAILED':
       case 'MIRROR_GO_PREFLIGHT_FAILED':
         return {
           action: 'Re-run mirror deploy/verify in dry-run mode',
-          command: buildMirrorDeployRetryCommand(cliName),
+          command: buildMirrorDeployRetryCommand(cliName, details),
           retryable: true,
         };
       case 'MIRROR_GO_VERIFY_FAILED':

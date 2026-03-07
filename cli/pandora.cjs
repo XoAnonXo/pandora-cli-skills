@@ -2195,6 +2195,7 @@ function renderAutopilotTable(data) {
 }
 
 function renderMirrorPlanTable(data) {
+  const timing = data.timing || {};
   printTable(
     ['Field', 'Value'],
     [
@@ -2202,6 +2203,10 @@ function renderMirrorPlanTable(data) {
       ['sourceMarketId', data.sourceMarket ? data.sourceMarket.marketId : ''],
       ['sourceSlug', data.sourceMarket ? data.sourceMarket.slug || '' : ''],
       ['sourceYesPct', data.sourceMarket && data.sourceMarket.yesPct !== null ? data.sourceMarket.yesPct : ''],
+      ['sourceTimestampKind', timing.sourceTimestampKind || (data.sourceMarket ? data.sourceMarket.timestampSource || '' : '')],
+      ['eventStartAt', timing.eventStartTimestampIso || ''],
+      ['suggestedTargetAt', timing.suggestedTargetTimestampIso || ''],
+      ['tradingCutoffAt', timing.tradingCutoffTimestampIso || ''],
       ['recommendedLiquidityUsdc', data.liquidityRecommendation ? data.liquidityRecommendation.liquidityUsdc : ''],
       ['distributionYes', data.distributionHint ? data.distributionHint.distributionYes : ''],
       ['distributionNo', data.distributionHint ? data.distributionHint.distributionNo : ''],
@@ -2369,6 +2374,8 @@ function renderMirrorDeployTable(data) {
       ['pollTxHash', data.tx && data.tx.pollTxHash ? data.tx.pollTxHash : ''],
       ['approveTxHash', data.tx && data.tx.approveTxHash ? data.tx.approveTxHash : ''],
       ['marketTxHash', data.tx && data.tx.marketTxHash ? data.tx.marketTxHash : ''],
+      ['targetTimestamp', data.timing && data.timing.selectedTargetTimestampIso ? data.timing.selectedTargetTimestampIso : ''],
+      ['tradingCutoffAt', data.timing && data.timing.tradingCutoffTimestampIso ? data.timing.tradingCutoffTimestampIso : ''],
       ['seedOddsMatch', data.postDeployChecks && data.postDeployChecks.seedOddsMatch !== null ? (data.postDeployChecks.seedOddsMatch ? 'yes' : 'no') : ''],
       ['seedDiffPct', data.postDeployChecks && data.postDeployChecks.diffPct !== null ? data.postDeployChecks.diffPct : ''],
       ['blockedLiveSync', data.postDeployChecks && data.postDeployChecks.blockedLiveSync ? 'yes' : 'no'],

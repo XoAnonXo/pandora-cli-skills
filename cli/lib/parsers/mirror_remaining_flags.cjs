@@ -1,4 +1,5 @@
 const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
+const { normalizeMirrorPathForMcp, validateMirrorUrl } = require('./mirror_parser_guard.cjs');
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -25,6 +26,7 @@ function createParseMirrorBrowseFlags(deps) {
   const parseDateLikeFlag = requireDep(deps, 'parseDateLikeFlag');
   const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
   const parseInteger = requireDep(deps, 'parseInteger');
+  const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
   const allowedSortBy = new Set(['volume24h', 'liquidity', 'endDate']);
   const allowedCategories = new Set(['sports', 'crypto', 'politics', 'entertainment']);
 
@@ -184,17 +186,32 @@ function createParseMirrorBrowseFlags(deps) {
         continue;
       }
       if (token === '--polymarket-gamma-url') {
-        options.polymarketGammaUrl = requireFlagValue(args, i, '--polymarket-gamma-url');
+        options.polymarketGammaUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-url'),
+          '--polymarket-gamma-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-mock-url') {
-        options.polymarketGammaMockUrl = requireFlagValue(args, i, '--polymarket-gamma-mock-url');
+        options.polymarketGammaMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-mock-url'),
+          '--polymarket-gamma-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-mock-url') {
-        options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+        options.polymarketMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-mock-url'),
+          '--polymarket-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
@@ -260,6 +277,7 @@ function createParseMirrorVerifyFlags(deps) {
   const CliError = requireDep(deps, 'CliError');
   const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
   const requireFlagValue = requireDep(deps, 'requireFlagValue');
+  const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
 
   return function parseMirrorVerifyFlags(args) {
     const options = {
@@ -311,27 +329,51 @@ function createParseMirrorVerifyFlags(deps) {
         continue;
       }
       if (token === '--manifest-file') {
-        options.manifestFile = requireFlagValue(args, i, '--manifest-file');
+        options.manifestFile = normalizeMirrorPathForMcp(
+          requireFlagValue(args, i, '--manifest-file'),
+          '--manifest-file',
+          CliError,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-host') {
-        options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
+        options.polymarketHost = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-host'),
+          '--polymarket-host',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-url') {
-        options.polymarketGammaUrl = requireFlagValue(args, i, '--polymarket-gamma-url');
+        options.polymarketGammaUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-url'),
+          '--polymarket-gamma-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-mock-url') {
-        options.polymarketGammaMockUrl = requireFlagValue(args, i, '--polymarket-gamma-mock-url');
+        options.polymarketGammaMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-mock-url'),
+          '--polymarket-gamma-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-mock-url') {
-        options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+        options.polymarketMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-mock-url'),
+          '--polymarket-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
@@ -360,6 +402,7 @@ function createParseMirrorStatusFlags(deps) {
   const requireFlagValue = requireDep(deps, 'requireFlagValue');
   const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
   const parsePositiveNumber = requireDep(deps, 'parsePositiveNumber');
+  const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
   const defaultIndexerTimeoutMs = parseDefaultIndexerTimeoutMs(deps);
 
   return function parseMirrorStatusFlags(args) {
@@ -385,7 +428,11 @@ function createParseMirrorStatusFlags(deps) {
     for (let i = 0; i < args.length; i += 1) {
       const token = args[i];
       if (token === '--state-file') {
-        options.stateFile = requireFlagValue(args, i, '--state-file');
+        options.stateFile = normalizeMirrorPathForMcp(
+          requireFlagValue(args, i, '--state-file'),
+          '--state-file',
+          CliError,
+        );
         i += 1;
         continue;
       }
@@ -407,7 +454,11 @@ function createParseMirrorStatusFlags(deps) {
         continue;
       }
       if (token === '--manifest-file') {
-        options.manifestFile = requireFlagValue(args, i, '--manifest-file');
+        options.manifestFile = normalizeMirrorPathForMcp(
+          requireFlagValue(args, i, '--manifest-file'),
+          '--manifest-file',
+          CliError,
+        );
         i += 1;
         continue;
       }
@@ -447,22 +498,42 @@ function createParseMirrorStatusFlags(deps) {
         continue;
       }
       if (token === '--polymarket-host') {
-        options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
+        options.polymarketHost = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-host'),
+          '--polymarket-host',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-url') {
-        options.polymarketGammaUrl = requireFlagValue(args, i, '--polymarket-gamma-url');
+        options.polymarketGammaUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-url'),
+          '--polymarket-gamma-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-mock-url') {
-        options.polymarketGammaMockUrl = requireFlagValue(args, i, '--polymarket-gamma-mock-url');
+        options.polymarketGammaMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-mock-url'),
+          '--polymarket-gamma-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-mock-url') {
-        options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+        options.polymarketMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-mock-url'),
+          '--polymarket-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }

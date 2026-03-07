@@ -146,6 +146,31 @@ function buildMirrorPolymarketOverrides() {
   };
 }
 
+function buildMirrorSportsPolymarketOverrides() {
+  return {
+    markets: [
+      {
+        question: 'Will the Atlanta Hawks beat the Detroit Pistons?',
+        description: 'This market resolves to Hawks if the Atlanta Hawks win the game.',
+        condition_id: 'poly-sports-1',
+        question_id: 'poly-sports-q-1',
+        market_slug: 'hawks-v-pistons-hawks-win',
+        event_title: 'Atlanta Hawks vs Detroit Pistons',
+        end_date_iso: '2030-03-09T00:00:00Z',
+        game_start_time: '2030-03-09T23:00:00Z',
+        active: true,
+        closed: false,
+        volume24hr: 150000,
+        tokens: [
+          { outcome: 'Yes', price: '0.57', token_id: 'poly-sports-yes-1' },
+          { outcome: 'No', price: '0.43', token_id: 'poly-sports-no-1' },
+        ],
+        tags: [{ id: 1001, name: 'NBA' }, { id: 82, name: 'Sports' }],
+      },
+    ],
+  };
+}
+
 function buildLaunchArgs() {
   return [
     'launch',
@@ -3844,6 +3869,110 @@ test('mirror plan returns deterministic sizing and distribution payload', async 
   }
 });
 
+test('mirror plan computes sports-aware suggested targetTimestamp and cutoff warnings', async () => {
+  const polymarket = await startPolymarketMockServer(buildMirrorSportsPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'plan',
+      '--skip-dotenv',
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-sports-1',
+      '--with-rules',
+      '--min-close-lead-seconds',
+      '3600',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'mirror.plan');
+    assert.equal(payload.data.sourceMarket.timestampSource, 'game_start_time');
+    assert.equal(payload.data.timing.profile.sport, 'basketball');
+    assert.equal(payload.data.timing.eventStartTimestampIso, '2030-03-09T23:00:00.000Z');
+    assert.equal(payload.data.timing.suggestedTargetTimestampIso, '2030-03-10T04:00:00.000Z');
+    assert.equal(payload.data.timing.tradingCutoffTimestampIso, '2030-03-10T03:00:00.000Z');
+    assert.match(payload.data.timing.reason, /basketball timing defaults/i);
+    assert.equal(
+      payload.data.diagnostics.some((line) => /game_start_time/i.test(String(line || ''))),
+      true,
+    );
+  } finally {
+    await polymarket.close();
+  }
+});
+
+test('mirror deploy dry-run uses suggested sports targetTimestamp by default and supports explicit override', async () => {
+  const tempDir = createTempDir('pandora-mirror-sports-timing-');
+  const planFile = path.join(tempDir, 'mirror-plan.json');
+  const polymarket = await startPolymarketMockServer(buildMirrorSportsPolymarketOverrides());
+
+  try {
+    const planResult = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'plan',
+      '--skip-dotenv',
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-sports-1',
+      '--with-rules',
+      '--min-close-lead-seconds',
+      '3600',
+    ]);
+    assert.equal(planResult.status, 0);
+    fs.writeFileSync(planFile, planResult.stdout, 'utf8');
+
+    const dryRunResult = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--plan-file',
+      planFile,
+      '--dry-run',
+      '--sources',
+      'https://www.nba.com',
+      'https://www.espn.com',
+    ]);
+    assert.equal(dryRunResult.status, 0);
+    const dryRunPayload = parseJsonOutput(dryRunResult);
+    assert.equal(dryRunPayload.command, 'mirror.deploy');
+    assert.equal(dryRunPayload.data.deploymentArgs.targetTimestamp, Math.floor(Date.parse('2030-03-10T04:00:00Z') / 1000));
+    assert.equal(dryRunPayload.data.timing.overrideApplied, false);
+
+    const overrideResult = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--plan-file',
+      planFile,
+      '--dry-run',
+      '--target-timestamp',
+      '2030-03-10T04:00:00Z',
+      '--sources',
+      'https://www.nba.com',
+      'https://www.espn.com',
+    ]);
+    assert.equal(overrideResult.status, 0);
+    const overridePayload = parseJsonOutput(overrideResult);
+    assert.equal(overridePayload.data.deploymentArgs.targetTimestamp, Math.floor(Date.parse('2030-03-10T04:00:00Z') / 1000));
+    assert.equal(overridePayload.data.timing.overrideApplied, true);
+  } finally {
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
 test('mirror verify exposes confidence, rules hashes, and gate result for agent checks', async () => {
   const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
   const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
@@ -4373,6 +4502,9 @@ test('mirror deploy dry-run materializes deployment args without chain writes', 
       '--dry-run',
       '--fee-tier',
       '50000',
+      '--sources',
+      'https://www.nba.com',
+      'https://www.espn.com',
     ]);
 
     assert.equal(result.status, 0);
@@ -4427,6 +4559,9 @@ test('mirror deploy validates --private-key format', async () => {
       '--polymarket-market-id',
       'poly-cond-1',
       '--dry-run',
+      '--sources',
+      'https://www.nba.com',
+      'https://www.espn.com',
       '--private-key',
       '0x1234',
     ]);
@@ -4442,18 +4577,15 @@ test('mirror deploy validates --private-key format', async () => {
   }
 });
 
-test('mirror deploy copies exact Polymarket question and full rules text', async () => {
+test('mirror deploy translates Polymarket winner rules into Pandora YES/NO format', async () => {
   const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
   const polymarket = await startPolymarketMockServer({
     ...buildMirrorPolymarketOverrides(),
     markets: [
       {
         ...buildMirrorPolymarketOverrides().markets[0],
-        question: 'Will Team A win (OT included)?',
-        rules: 'Primary rule block from Polymarket.',
-        description: 'Supplemental market description details.',
-        resolution_source: 'https://docs.polymarket.com/rules',
-        events: [{ description: 'Event-level resolution context.' }],
+        question: 'Will the Detroit Pistons beat the Brooklyn Nets?',
+        description: 'This market resolves to Detroit Pistons.',
       },
     ],
   });
@@ -4472,17 +4604,153 @@ test('mirror deploy copies exact Polymarket question and full rules text', async
       '--polymarket-market-id',
       'poly-cond-1',
       '--dry-run',
+      '--sources',
+      'https://www.nba.com',
+      'https://www.espn.com',
     ]);
 
     assert.equal(result.status, 0);
     const payload = parseJsonOutput(result);
     assert.equal(payload.ok, true);
     assert.equal(payload.command, 'mirror.deploy');
-    assert.equal(payload.data.deploymentArgs.question, 'Will Team A win (OT included)?');
-    assert.match(payload.data.deploymentArgs.rules, /Primary rule block from Polymarket\./);
-    assert.match(payload.data.deploymentArgs.rules, /Supplemental market description details\./);
-    assert.match(payload.data.deploymentArgs.rules, /Resolution Source: https:\/\/docs\.polymarket\.com\/rules/);
-    assert.match(payload.data.deploymentArgs.rules, /Event: Event-level resolution context\./);
+    assert.equal(payload.data.deploymentArgs.question, 'Will the Detroit Pistons beat the Brooklyn Nets?');
+    assert.match(payload.data.deploymentArgs.rules, /^YES: The official winner of the event described in the market question is the Detroit Pistons\./);
+    assert.match(payload.data.deploymentArgs.rules, /^NO: The official winner is the Brooklyn Nets,/m);
+    assert.match(payload.data.deploymentArgs.rules, /^EDGE: /m);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror deploy rejects missing explicit sources instead of auto-adding Polymarket URLs', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--dry-run',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'MIRROR_SOURCES_REQUIRED');
+    assert.match(payload.error.message, /explicit independent resolution sources/i);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror deploy rejects Polymarket URLs in explicit --sources', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--dry-run',
+      '--sources',
+      'https://polymarket.com/event/test-market',
+      'https://clob.polymarket.com',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'MIRROR_SOURCES_INVALID');
+    assert.match(payload.error.message, /not allowed in --sources/i);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror deploy rejects same-host sources that are not independent', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--dry-run',
+      '--sources',
+      'https://www.nba.com/game/1',
+      'https://www.nba.com/game/2',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'MIRROR_SOURCES_REQUIRED');
+    assert.match(payload.error.message, /different hosts/i);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('mirror deploy execute requires a validation ticket before any live write', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--execute',
+      '--sources',
+      'https://www.nba.com',
+      'https://www.espn.com',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'MIRROR_VALIDATION_REQUIRED');
+    assert.match(payload.error.message, /validation-ticket/i);
+    assert.equal(payload.error.recovery.command.includes('agent market validate'), true);
   } finally {
     await indexer.close();
     await polymarket.close();
@@ -4508,6 +4776,9 @@ test('mirror go accepts named --skip-gate lists during parsing', async () => {
       'poly-cond-1',
       '--paper',
       '--auto-sync',
+      '--sources',
+      'https://www.nba.com',
+      'https://www.espn.com',
       '--skip-gate',
       'MAX_TRADES_PER_DAY,DEPTH_COVERAGE',
     ]);

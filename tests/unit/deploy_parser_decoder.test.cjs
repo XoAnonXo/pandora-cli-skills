@@ -23,6 +23,7 @@ const TEST_POLL = '0x5555555555555555555555555555555555555555';
 const TEST_MARKET = '0x6666666666666666666666666666666666666666';
 const FUTURE_TS = Math.floor(Date.now() / 1000) + 7_200;
 const MAX_UINT24 = 16_777_215;
+const ORIGINAL_MCP_MODE = process.env.PANDORA_MCP_MODE;
 
 function requireFlagValue(args, index, flagName) {
   const value = args[index + 1];
@@ -121,6 +122,19 @@ function buildMirrorParserDeps() {
     parseMirrorSyncGateSkipList,
     mergeMirrorSyncGateSkipLists,
   };
+}
+
+function withMcpMode(fn) {
+  process.env.PANDORA_MCP_MODE = '1';
+  try {
+    return fn();
+  } finally {
+    if (ORIGINAL_MCP_MODE === undefined) {
+      delete process.env.PANDORA_MCP_MODE;
+    } else {
+      process.env.PANDORA_MCP_MODE = ORIGINAL_MCP_MODE;
+    }
+  }
 }
 
 function buildSportsParserDeps() {
@@ -305,9 +319,12 @@ test('mirror deploy parser defaults maxImbalance to max uint24 and preserves exp
     '--dry-run',
     '--distribution-yes-pct',
     '63',
+    '--validation-ticket',
+    'market-validate:abc123',
   ]);
   assert.equal(distribution.distributionYes, 630_000_000);
   assert.equal(distribution.distributionNo, 370_000_000);
+  assert.equal(distribution.validationTicket, 'market-validate:abc123');
 });
 
 test('mirror go parser defaults maxImbalance to max uint24 and accepts percentage distributions', () => {
@@ -332,9 +349,63 @@ test('mirror go parser defaults maxImbalance to max uint24 and accepts percentag
     '40',
     '--distribution-no-pct',
     '60',
+    '--validation-ticket',
+    'market-validate:def456',
   ]);
   assert.equal(distribution.distributionYes, 400_000_000);
   assert.equal(distribution.distributionNo, 600_000_000);
+  assert.equal(distribution.validationTicket, 'market-validate:def456');
+});
+
+test('mirror deploy parser blocks external file paths in MCP mode', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildMirrorParserDeps());
+
+  withMcpMode(() => {
+    assert.throws(
+      () => parseMirrorDeployFlags(['--plan-file', '/tmp/plan.json', '--dry-run']),
+      (error) => error && error.code === 'MCP_FILE_ACCESS_BLOCKED',
+    );
+
+    assert.throws(
+      () =>
+        parseMirrorDeployFlags([
+          '--polymarket-market-id',
+          'poly-1',
+          '--dry-run',
+          '--manifest-file',
+          '/tmp/pairs.json',
+        ]),
+      (error) => error && error.code === 'MCP_FILE_ACCESS_BLOCKED',
+    );
+  });
+});
+
+test('mirror deploy parser validates all polymarket URL override flags', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildMirrorParserDeps());
+
+  assert.throws(
+    () =>
+      parseMirrorDeployFlags([
+        '--polymarket-market-id',
+        'poly-1',
+        '--dry-run',
+        '--polymarket-gamma-url',
+        'http://example.com/gamma',
+      ]),
+    (error) => error && error.code === 'INVALID_FLAG_VALUE',
+  );
+
+  const parsed = parseMirrorDeployFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--dry-run',
+    '--polymarket-gamma-url',
+    'https://gamma.polymarket.test',
+    '--polymarket-mock-url',
+    'http://localhost:4010/mock',
+  ]);
+  assert.equal(parsed.polymarketGammaUrl, 'https://gamma.polymarket.test');
+  assert.equal(parsed.polymarketMockUrl, 'http://localhost:4010/mock');
 });
 
 test('sports parser defaults maxImbalance to max uint24 and accepts percentage distributions', () => {

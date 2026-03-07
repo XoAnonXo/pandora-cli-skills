@@ -1,3 +1,9 @@
+const {
+  normalizeMirrorPathForMcp,
+  defaultMirrorWorkspacePath,
+  validateMirrorUrl,
+} = require('./mirror_parser_guard.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseMirrorSyncFlags requires deps.${name}()`);
@@ -231,12 +237,20 @@ function createParseMirrorSyncFlags(deps) {
         continue;
       }
       if (token === '--state-file') {
-        options.stateFile = requireFlagValue(rest, i, '--state-file');
+        options.stateFile = normalizeMirrorPathForMcp(
+          requireFlagValue(rest, i, '--state-file'),
+          '--state-file',
+          CliError,
+        );
         i += 1;
         continue;
       }
       if (token === '--kill-switch-file') {
-        options.killSwitchFile = requireFlagValue(rest, i, '--kill-switch-file');
+        options.killSwitchFile = normalizeMirrorPathForMcp(
+          requireFlagValue(rest, i, '--kill-switch-file'),
+          '--kill-switch-file',
+          CliError,
+        );
         i += 1;
         continue;
       }
@@ -285,29 +299,42 @@ function createParseMirrorSyncFlags(deps) {
         continue;
       }
       if (token === '--polymarket-host') {
-        const polymarketHost = requireFlagValue(rest, i, '--polymarket-host');
-        if (!isSecureHttpUrlOrLocal(polymarketHost)) {
-          throw new CliError(
-            'INVALID_FLAG_VALUE',
-            '--polymarket-host must use https:// (or http://localhost/127.0.0.1 for local testing).',
-          );
-        }
-        options.polymarketHost = polymarketHost;
+        options.polymarketHost = validateMirrorUrl(
+          requireFlagValue(rest, i, '--polymarket-host'),
+          '--polymarket-host',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-url') {
-        options.polymarketGammaUrl = requireFlagValue(rest, i, '--polymarket-gamma-url');
+        options.polymarketGammaUrl = validateMirrorUrl(
+          requireFlagValue(rest, i, '--polymarket-gamma-url'),
+          '--polymarket-gamma-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-mock-url') {
-        options.polymarketGammaMockUrl = requireFlagValue(rest, i, '--polymarket-gamma-mock-url');
+        options.polymarketGammaMockUrl = validateMirrorUrl(
+          requireFlagValue(rest, i, '--polymarket-gamma-mock-url'),
+          '--polymarket-gamma-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-mock-url') {
-        options.polymarketMockUrl = requireFlagValue(rest, i, '--polymarket-mock-url');
+        options.polymarketMockUrl = validateMirrorUrl(
+          requireFlagValue(rest, i, '--polymarket-mock-url'),
+          '--polymarket-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
@@ -332,7 +359,11 @@ function createParseMirrorSyncFlags(deps) {
         continue;
       }
       if (token === '--manifest-file') {
-        options.manifestFile = requireFlagValue(rest, i, '--manifest-file');
+        options.manifestFile = normalizeMirrorPathForMcp(
+          requireFlagValue(rest, i, '--manifest-file'),
+          '--manifest-file',
+          CliError,
+        );
         i += 1;
         continue;
       }
@@ -384,7 +415,7 @@ function createParseMirrorSyncFlags(deps) {
     }
 
     if (options.stateFile === null) {
-      options.stateFile = defaultMirrorStateFile({
+      options.stateFile = defaultMirrorWorkspacePath(defaultMirrorStateFile({
         mode: options.mode,
         pandoraMarketAddress: options.pandoraMarketAddress,
         polymarketMarketId: options.polymarketMarketId,
@@ -399,10 +430,10 @@ function createParseMirrorSyncFlags(deps) {
           Array.isArray(options.skipGateChecks) && options.skipGateChecks.length
             ? [...options.skipGateChecks].sort()
             : [],
-      });
+      }));
     }
     if (options.killSwitchFile === null) {
-      options.killSwitchFile = defaultMirrorKillSwitchFile();
+      options.killSwitchFile = defaultMirrorWorkspacePath(defaultMirrorKillSwitchFile());
     }
 
     return options;
@@ -430,7 +461,11 @@ function createParseMirrorSyncDaemonSelectorFlags(deps) {
     for (let i = 0; i < args.length; i += 1) {
       const token = args[i];
       if (token === '--pid-file') {
-        options.pidFile = requireFlagValue(args, i, '--pid-file');
+        options.pidFile = normalizeMirrorPathForMcp(
+          requireFlagValue(args, i, '--pid-file'),
+          '--pid-file',
+          CliError,
+        );
         i += 1;
         continue;
       }

@@ -51,3 +51,13 @@ test('prepareInvocation keeps agentPreflight out of argv and passes it through e
   assert.equal(invocation.argv.includes('--execute-live'), true);
   assert.equal(invocation.env.PANDORA_AGENT_PREFLIGHT, JSON.stringify(agentPreflight));
 });
+
+test('compatibility alias tools advertise their canonical replacement', () => {
+  const registry = createMcpToolRegistry();
+  const tool = registry.listTools().find((entry) => entry.name === 'arbitrage');
+
+  assert.ok(tool);
+  assert.equal(tool.inputSchema.xPandora.aliasOf, 'arb.scan');
+  assert.equal(tool.inputSchema.xPandora.compatibilityAlias, true);
+  assert.match(tool.description, /prefer arb\.scan/i);
+});

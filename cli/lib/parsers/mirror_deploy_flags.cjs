@@ -1,4 +1,5 @@
 const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
+const { normalizeMirrorPathForMcp, parseMirrorTargetTimestamp, validateMirrorUrl } = require('./mirror_parser_guard.cjs');
 
 const MAX_UINT24 = 16_777_215;
 const DISTRIBUTION_SCALE = 1_000_000_000;
@@ -120,6 +121,8 @@ function createParseMirrorDeployFlags(deps) {
       distributionYesPct: null,
       distributionNoPct: null,
       rules: null,
+      validationTicket: null,
+      targetTimestamp: null,
       polymarketHost: null,
       polymarketGammaUrl: null,
       polymarketGammaMockUrl: null,
@@ -131,7 +134,7 @@ function createParseMirrorDeployFlags(deps) {
     for (let i = 0; i < args.length; i += 1) {
       const token = args[i];
       if (token === '--plan-file') {
-        options.planFile = requireFlagValue(args, i, '--plan-file');
+        options.planFile = normalizeMirrorPathForMcp(requireFlagValue(args, i, '--plan-file'), '--plan-file', CliError);
         i += 1;
         continue;
       }
@@ -251,6 +254,20 @@ function createParseMirrorDeployFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--validation-ticket') {
+        options.validationTicket = requireFlagValue(args, i, '--validation-ticket');
+        i += 1;
+        continue;
+      }
+      if (token === '--target-timestamp') {
+        options.targetTimestamp = parseMirrorTargetTimestamp(
+          requireFlagValue(args, i, '--target-timestamp'),
+          '--target-timestamp',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
       if (token === '--distribution-yes') {
         options.distributionYes = parseDistributionUnits(
           requireFlagValue(args, i, '--distribution-yes'),
@@ -290,34 +307,51 @@ function createParseMirrorDeployFlags(deps) {
         continue;
       }
       if (token === '--polymarket-host') {
-        const polymarketHost = requireFlagValue(args, i, '--polymarket-host');
-        if (!isSecureHttpUrlOrLocal(polymarketHost)) {
-          throw new CliError(
-            'INVALID_FLAG_VALUE',
-            '--polymarket-host must use https:// (or http://localhost/127.0.0.1 for local testing).',
-          );
-        }
-        options.polymarketHost = polymarketHost;
+        options.polymarketHost = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-host'),
+          '--polymarket-host',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-url') {
-        options.polymarketGammaUrl = requireFlagValue(args, i, '--polymarket-gamma-url');
+        options.polymarketGammaUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-url'),
+          '--polymarket-gamma-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-mock-url') {
-        options.polymarketGammaMockUrl = requireFlagValue(args, i, '--polymarket-gamma-mock-url');
+        options.polymarketGammaMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-mock-url'),
+          '--polymarket-gamma-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-mock-url') {
-        options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+        options.polymarketMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-mock-url'),
+          '--polymarket-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--manifest-file') {
-        options.manifestFile = requireFlagValue(args, i, '--manifest-file');
+        options.manifestFile = normalizeMirrorPathForMcp(
+          requireFlagValue(args, i, '--manifest-file'),
+          '--manifest-file',
+          CliError,
+        );
         i += 1;
         continue;
       }

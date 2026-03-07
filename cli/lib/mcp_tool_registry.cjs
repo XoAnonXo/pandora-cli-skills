@@ -225,6 +225,7 @@ function toToolDescriptor(definition) {
     canonicalTool: definition.canonicalTool || definition.aliasOf || definition.name,
     aliasOf: definition.aliasOf || null,
     preferred: definition.preferred !== false,
+    compatibilityAlias: Boolean(definition.aliasOf),
     mutating: Boolean(definition.mutating),
     longRunningBlocked: Boolean(definition.longRunningBlocked),
     controlInputNames: Array.isArray(definition.controlInputNames) ? [...definition.controlInputNames] : [],
@@ -238,7 +239,9 @@ function toToolDescriptor(definition) {
 
   return {
     name: definition.name,
-    description: definition.description,
+    description: definition.aliasOf
+      ? `${definition.description} Compatibility alias for ${xPandora.canonicalTool}; prefer ${xPandora.canonicalTool}.`
+      : definition.description,
     inputSchema: {
       ...inputSchema,
       xPandora,

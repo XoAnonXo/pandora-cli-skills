@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.1.62",
+  "version": "1.1.66",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
@@ -32,7 +32,7 @@
     "typecheck": "npx tsc --noEmit",
     "pack:dry-run": "npm pack --dry-run",
     "build": "npm run typecheck",
-    "test:unit": "node --test \"tests/unit/*.test.cjs\"",
+    "test:unit": "node scripts/run_unit_tests.cjs",
     "test:cli": "node --test tests/cli/cli.integration.test.cjs tests/cli/mcp.integration.test.cjs tests/cli/stream.integration.test.cjs tests/cli/sports.integration.test.cjs",
     "test:agent-workflow": "node --test tests/cli/agent_workflow.integration.test.cjs",
     "test:smoke:consumer-json": "node tests/smoke/consumer-json-smoke.cjs",

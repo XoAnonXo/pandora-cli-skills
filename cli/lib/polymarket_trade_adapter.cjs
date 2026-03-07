@@ -49,6 +49,28 @@ function toTimestampSeconds(value) {
   return numeric > 1e12 ? Math.floor(numeric / 1000) : Math.floor(numeric);
 }
 
+function resolvePolymarketEventStartTimestampValue(row) {
+  if (!row || typeof row !== 'object') return null;
+  return row.game_start_time || row.gameStartTime || null;
+}
+
+function resolvePolymarketCloseFallbackValue(row) {
+  if (!row || typeof row !== 'object') return null;
+  return (
+    row.end_date_iso ||
+    row.endDateIso ||
+    row.endDate ||
+    row.end_date ||
+    row.accepting_orders_timestamp ||
+    row.closeTime ||
+    null
+  );
+}
+
+function resolvePolymarketEventTimestamp(row) {
+  return resolvePolymarketEventStartTimestampValue(row) || resolvePolymarketCloseFallbackValue(row);
+}
+
 function normalizeHostList(hostInput) {
   const rawValues = Array.isArray(hostInput) ? hostInput : String(hostInput || '').split(',');
   const hosts = rawValues
@@ -409,16 +431,14 @@ function normalizeMarketRow(row) {
     eventSlug: toStringOrNull(row && (row.event_slug || row.eventSlug)),
     eventTitle: toStringOrNull(row && (row.event_title || row.eventTitle)),
     description: rulesSections.length ? rulesSections.join('\n\n') : null,
-    closeTimestamp: toTimestampSeconds(
-      row &&
-        (row.end_date_iso ||
-          row.endDate ||
-          row.end_date ||
-          row.endDateIso ||
-          row.accepting_orders_timestamp ||
-          row.game_start_time ||
-          row.closeTime),
-    ),
+    eventStartTimestamp: toTimestampSeconds(resolvePolymarketEventStartTimestampValue(row)),
+    sourceCloseTimestamp: toTimestampSeconds(resolvePolymarketCloseFallbackValue(row)),
+    timestampSource: resolvePolymarketEventStartTimestampValue(row)
+      ? 'game_start_time'
+      : resolvePolymarketCloseFallbackValue(row)
+        ? 'end_date_iso'
+        : null,
+    closeTimestamp: toTimestampSeconds(resolvePolymarketEventTimestamp(row)),
     yesPct: tokens.yes,
     noPct: tokens.no,
     yesTokenId: tokens.yesTokenId,

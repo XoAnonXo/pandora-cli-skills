@@ -462,6 +462,50 @@ test('mcp sports.create.plan blocks reading model files outside workspace', asyn
   }
 });
 
+test('mcp mirror.deploy blocks reading plan files outside workspace', async () => {
+  const outsideDir = createTempDir('pandora-mcp-outside-mirror-plan-');
+  const planPath = path.join(outsideDir, 'mirror-plan.json');
+  fs.writeFileSync(planPath, '{}\n');
+
+  try {
+    await withMcpClient(async (client) => {
+      const call = await client.callTool({
+        name: 'mirror.deploy',
+        arguments: {
+          flags: {
+            'plan-file': planPath,
+            'dry-run': true,
+          },
+        },
+      });
+      const envelope = extractStructuredEnvelope(call);
+      assert.equal(envelope.ok, false);
+      assert.equal(envelope.error.code, 'MCP_FILE_ACCESS_BLOCKED');
+      assert.equal(call.isError, true);
+    });
+  } finally {
+    removeDir(outsideDir);
+  }
+});
+
+test('mcp mirror.plan rejects insecure gamma override urls', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'mirror.plan',
+      arguments: {
+        flags: {
+          'polymarket-market-id': 'poly-1',
+          'polymarket-gamma-url': 'http://example.com/gamma',
+        },
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'INVALID_FLAG_VALUE');
+    assert.equal(call.isError, true);
+  });
+});
+
 test('mcp risk.panic requires explicit execute intent', async () => {
   await withMcpClient(async (client) => {
     const call = await client.callTool({

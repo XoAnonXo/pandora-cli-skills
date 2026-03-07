@@ -14,6 +14,20 @@ function toTimestampSeconds(value) {
   return Math.floor(parsed / 1000);
 }
 
+function resolvePolymarketEventStartValue(row) {
+  if (!row || typeof row !== 'object') return null;
+  return row.game_start_time || row.gameStartTime || null;
+}
+
+function resolvePolymarketCloseFallbackValue(row) {
+  if (!row || typeof row !== 'object') return null;
+  return row.endDateIso || row.end_date_iso || row.endDate || row.closedTime || null;
+}
+
+function resolvePolymarketTimestampValue(row) {
+  return resolvePolymarketEventStartValue(row) || resolvePolymarketCloseFallbackValue(row);
+}
+
 function normalizeTokens(tokens) {
   if (!Array.isArray(tokens) || !tokens.length) {
     return { yes: null, no: null, diagnostics: ['No token prices available from Polymarket market payload.'] };
@@ -92,14 +106,17 @@ function mapGammaRow(row) {
   const marketId = row && (row.conditionId || row.condition_id || row.id || row.questionID) ? String(
     row.conditionId || row.condition_id || row.id || row.questionID,
   ) : null;
-  const closeTimestamp = toTimestampSeconds(
-    row && (row.endDateIso || row.end_date_iso || row.endDate || row.game_start_time || row.closedTime),
-  );
+  const eventStartTimestamp = toTimestampSeconds(resolvePolymarketEventStartValue(row));
+  const sourceCloseTimestamp = toTimestampSeconds(resolvePolymarketCloseFallbackValue(row));
+  const closeTimestamp = toTimestampSeconds(resolvePolymarketTimestampValue(row));
   return {
     legId: `polymarket:${String(marketId || '')}`,
     venue: 'polymarket',
     marketId,
     question: row && (row.question || row.title || row.description) ? String(row.question || row.title || row.description) : null,
+    eventStartTimestamp,
+    sourceCloseTimestamp,
+    timestampSource: eventStartTimestamp ? 'game_start_time' : sourceCloseTimestamp ? 'end_date_iso' : null,
     closeTimestamp,
     yesPct: mapped.yes,
     noPct: mapped.no,
@@ -118,12 +135,17 @@ function mapPolymarketRow(row) {
   const mapped = normalizeTokens(row.tokens || []);
   const question = row.question || row.description || null;
   const marketId = row.condition_id || row.question_id || null;
+  const eventStartTimestamp = toTimestampSeconds(resolvePolymarketEventStartValue(row));
+  const sourceCloseTimestamp = toTimestampSeconds(resolvePolymarketCloseFallbackValue(row));
   return {
     legId: `polymarket:${String(marketId || '')}`,
     venue: 'polymarket',
     marketId,
     question,
-    closeTimestamp: toTimestampSeconds(row.end_date_iso || row.game_start_time),
+    eventStartTimestamp,
+    sourceCloseTimestamp,
+    timestampSource: eventStartTimestamp ? 'game_start_time' : sourceCloseTimestamp ? 'end_date_iso' : null,
+    closeTimestamp: toTimestampSeconds(resolvePolymarketTimestampValue(row)),
     yesPct: mapped.yes,
     noPct: mapped.no,
     liquidityUsd: null,

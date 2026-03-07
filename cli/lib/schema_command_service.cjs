@@ -795,6 +795,7 @@ function buildSchemaPayload() {
         type: 'object',
         properties: {
           sourceMarket: { type: 'object' },
+          timing: { type: 'object' },
           liquidityRecommendation: { type: 'object' },
           distributionHint: { type: 'object' },
           rules: { type: 'object' },
@@ -808,6 +809,7 @@ function buildSchemaPayload() {
           mode: { enum: ['dry-run', 'execute'] },
           planDigest: { type: ['string', 'null'] },
           deploymentArgs: { type: ['object', 'null'] },
+          timing: { type: ['object', 'null'] },
           dryRun: { type: ['boolean', 'null'] },
           requiredValidation: { type: ['object', 'null'] },
           agentValidation: { type: ['object', 'null'] },

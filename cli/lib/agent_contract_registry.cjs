@@ -1890,7 +1890,7 @@ const commandContracts = [
     name: 'mirror.plan',
     summary: 'Generate mirror sizing and distribution plan from a Polymarket source market.',
     usage:
-      'pandora [--output table|json] mirror plan --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+      'pandora [--output table|json] mirror plan --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
     emits: ['mirror.plan', 'mirror.plan.help'],
     dataSchema: '#/definitions/MirrorPlanPayload',
     mcpExposed: true,
@@ -1911,6 +1911,7 @@ const commandContracts = [
           'max-liquidity-usdc': numberSchema('Maximum liquidity in USDC.', { minimum: 0 }),
           'with-rules': booleanSchema('Include market rules payloads.'),
           'include-similarity': booleanSchema('Include similarity diagnostics.'),
+          'min-close-lead-seconds': integerSchema('Lead time before targetTimestamp when Pandora trading closes.', { minimum: 1 }),
           'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL.'),
           'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
           'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
@@ -1923,7 +1924,7 @@ const commandContracts = [
     name: 'mirror.deploy',
     summary: 'Deploy a mirror market from selector or plan in dry-run or execute mode.',
     usage:
-      'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]',
+      'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]',
     emits: ['mirror.deploy', 'mirror.deploy.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
@@ -1933,7 +1934,8 @@ const commandContracts = [
       executeRequiresValidation: true,
       notes: [
         'Mirror deploy dry-run returns the exact Pandora deployment payload and required validation ticket.',
-        'Run agent.market.validate on that final payload before rerunning mirror.deploy with execute mode.',
+        'Mirror deploy never auto-copies Polymarket URLs into sources; pass independent public resolution URLs with --sources.',
+        'Run agent.market.validate on that final payload before rerunning mirror.deploy with execute mode, then pass --validation-ticket locally or agentPreflight in MCP.',
       ],
     },
     mcp: {
@@ -1961,6 +1963,14 @@ const commandContracts = [
           'distribution-yes': numberSchema('Initial YES distribution parts.', { minimum: 0 }),
           'distribution-no': numberSchema('Initial NO distribution parts.', { minimum: 0 }),
           sources: flexibleArraySchema(stringSchema(), 'Source URL list.'),
+          'validation-ticket': stringSchema('Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).'),
+          'target-timestamp': {
+            description: 'Explicit target timestamp override.',
+            anyOf: [
+              integerSchema('Explicit target timestamp in unix seconds.', { minimum: 1 }),
+              stringSchema('Explicit ISO date/time override for target timestamp.'),
+            ],
+          },
           'manifest-file': stringSchema('Mirror manifest path.'),
           'polymarket-host': stringSchema('Polymarket host override.'),
           'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL.'),
@@ -2089,7 +2099,7 @@ const commandContracts = [
     name: 'mirror.go',
     summary: 'Run mirror deploy, verify, and optional sync workflow.',
     usage:
-      'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--polymarket-rpc-url <url>] [--manifest-file <path>] [--dotenv-path <path>] [--rpc-url <url>] [--private-key <hex>]',
+      'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--polymarket-rpc-url <url>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--dotenv-path <path>] [--rpc-url <url>] [--private-key <hex>]',
     emits: ['mirror.go', 'mirror.go.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
@@ -2099,6 +2109,7 @@ const commandContracts = [
       executeRequiresValidation: true,
       notes: [
         'Mirror go inherits the exact market payload from its deploy stage; use the returned validation ticket from paper/dry-run output.',
+        'When mirror go will execute a fresh deploy, provide independent public --sources and a matching validation ticket.',
         'Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live.',
       ],
     },
@@ -2125,6 +2136,15 @@ const commandContracts = [
           'max-open-exposure-usdc': numberSchema('Maximum open exposure in USDC.', { minimum: 0 }),
           'max-trades-per-day': integerSchema('Maximum daily trade count.', { minimum: 0 }),
           'polymarket-rpc-url': stringSchema('Polygon RPC URL for Polymarket preflight.'),
+          sources: flexibleArraySchema(stringSchema(), 'Independent public source URL list.'),
+          'validation-ticket': stringSchema('Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).'),
+          'target-timestamp': {
+            description: 'Explicit target timestamp override.',
+            anyOf: [
+              integerSchema('Explicit target timestamp in unix seconds.', { minimum: 1 }),
+              stringSchema('Explicit ISO date/time override for target timestamp.'),
+            ],
+          },
           'manifest-file': stringSchema('Mirror manifest path.'),
           'dotenv-path': stringSchema('Env file path.'),
           'rpc-url': commonFlags.rpcUrl,
