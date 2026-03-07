@@ -119,7 +119,9 @@ function createRunMcpServer(options = {}) {
 
         const toolArgs = params.arguments && typeof params.arguments === 'object' ? params.arguments : {};
         const invocation = registry.prepareInvocation(toolName, toolArgs);
-        const execution = executor.executeJsonCommand(invocation.argv);
+        const execution = executor.executeJsonCommand(invocation.argv, {
+          env: invocation.env,
+        });
         return asToolResult(execution.envelope);
       } catch (err) {
         if (err instanceof McpError) throw err;

@@ -63,6 +63,8 @@ test('mcp tools/list exposes command tools and excludes unsupported launch/clone
     assert.ok(toolNames.includes('lifecycle.resolve'));
     assert.ok(toolNames.includes('risk.show'));
     assert.ok(toolNames.includes('risk.panic'));
+    assert.ok(toolNames.includes('agent.market.autocomplete'));
+    assert.ok(toolNames.includes('agent.market.validate'));
     assert.ok(!toolNames.includes('launch'));
     assert.ok(!toolNames.includes('clone-bet'));
   });
@@ -102,6 +104,18 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
     assert.equal(arbScan.inputSchema.xPandora.canonicalTool, 'arb.scan');
     assert.equal(arbScan.inputSchema.xPandora.preferred, true);
 
+    const mirrorDeploy = byName.get('mirror.deploy');
+    assert.ok(mirrorDeploy);
+    assert.deepEqual(mirrorDeploy.inputSchema.xPandora.controlInputNames, ['agentPreflight']);
+    assert.equal(mirrorDeploy.inputSchema.xPandora.agentWorkflow.executeRequiresValidation, true);
+    assert.deepEqual(mirrorDeploy.inputSchema.xPandora.agentWorkflow.requiredTools, ['agent.market.validate']);
+
+    const agentValidate = byName.get('agent.market.validate');
+    assert.ok(agentValidate);
+    assert.equal(agentValidate.inputSchema.xPandora.canonicalTool, 'agent.market.validate');
+    assert.equal(agentValidate.inputSchema.properties.question.type, 'string');
+    assert.equal(agentValidate.inputSchema.properties['target-timestamp'].type, 'integer');
+
     const arbitrage = byName.get('arbitrage');
     assert.ok(arbitrage);
     assert.equal(arbitrage.inputSchema.xPandora.aliasOf, 'arb.scan');
@@ -114,6 +128,8 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
   assert.equal(localByName.get('trade').xPandora.canonicalTool, 'trade');
   assert.equal(localByName.get('trade').xPandora.aliasOf, null);
   assert.equal(localByName.get('trade').xPandora.preferred, true);
+  assert.deepEqual(localByName.get('mirror.deploy').xPandora.controlInputNames, ['agentPreflight']);
+  assert.equal(localByName.get('mirror.deploy').xPandora.agentWorkflow.executeRequiresValidation, true);
   assert.equal(localByName.get('arb.scan').xPandora.canonicalTool, 'arb.scan');
   assert.equal(localByName.get('arb.scan').xPandora.preferred, true);
   assert.equal(localByName.get('arbitrage').xPandora.aliasOf, 'arb.scan');
@@ -152,6 +168,46 @@ test('mcp write tools require explicit execute intent', async () => {
     assert.equal(envelope.ok, false);
     assert.equal(envelope.error.code, 'MCP_EXECUTE_INTENT_REQUIRED');
     assert.equal(call.isError, true);
+  });
+});
+
+test('mcp execute-mode market creation requires agentPreflight', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'mirror.deploy',
+      arguments: {
+        'polymarket-market-id': '0x-market',
+        execute: true,
+        intent: { execute: true },
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_AGENT_PREFLIGHT_REQUIRED');
+    assert.equal(call.isError, true);
+  });
+});
+
+test('mcp agent.market.validate returns structured prompt payload', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'agent.market.validate',
+      arguments: {
+        question: 'Will Arsenal beat Chelsea?',
+        rules:
+          'YES: Arsenal wins in official full-time result. NO: Chelsea wins or match ends draw. EDGE: Abandoned match resolves NO unless officially replayed before targetTimestamp.',
+        'target-timestamp': 1777777777,
+        sources: ['https://www.premierleague.com', 'https://www.espn.com'],
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.command, 'agent.market.validate');
+    assert.equal(typeof envelope.data.ticket, 'string');
+    assert.equal(envelope.data.ticket.startsWith('market-validate:'), true);
+    assert.equal(envelope.data.requiredAttestation.validationDecision, 'PASS');
   });
 });
 

@@ -55,6 +55,16 @@ test('shared agent contract registry covers all MCP tools with canonical metadat
       Boolean(tool.longRunningBlocked),
       `mcpLongRunningBlocked mismatch for ${tool.name}`,
     );
+    assert.deepEqual(
+      descriptor.controlInputNames,
+      Array.isArray(tool.controlInputNames) ? tool.controlInputNames : [],
+      `controlInputNames mismatch for ${tool.name}`,
+    );
+    assert.deepEqual(
+      descriptor.agentWorkflow,
+      tool.agentWorkflow || null,
+      `agentWorkflow mismatch for ${tool.name}`,
+    );
     assert.equal(typeof descriptor.inputSchema, 'object', `missing inputSchema for ${tool.name}`);
   }
 });

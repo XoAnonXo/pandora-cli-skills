@@ -16,7 +16,7 @@ function buildSchemaPayload() {
       { $ref: '#/definitions/SuccessEnvelope' },
       { $ref: '#/definitions/ErrorEnvelope' },
     ],
-    commandDescriptorVersion: '1.1.0',
+    commandDescriptorVersion: '1.2.0',
     descriptorScope: 'exhaustive-agent-surface',
     commandDescriptors,
     definitions: {
@@ -144,6 +144,37 @@ function buildSchemaPayload() {
       GenericCommandData: {
         type: 'object',
         description: 'Fallback schema for command payloads without a dedicated descriptor.',
+      },
+      AgentValidationAttestation: {
+        type: 'object',
+        properties: {
+          validationTicket: { type: 'string' },
+          validationDecision: { enum: ['PASS', 'FAIL'] },
+          validationSummary: { type: 'string' },
+          autocompleteTicket: { type: ['string', 'null'] },
+        },
+        required: ['validationTicket', 'validationDecision', 'validationSummary'],
+        additionalProperties: true,
+      },
+      AgentMarketPromptPayload: {
+        type: 'object',
+        properties: {
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+          promptKind: { type: 'string' },
+          promptVersion: { type: 'string' },
+          ticket: { type: ['string', 'null'] },
+          input: { type: 'object' },
+          prompt: { type: 'string' },
+          workflow: { type: 'object' },
+          requiredAttestation: {
+            oneOf: [
+              { $ref: '#/definitions/AgentValidationAttestation' },
+              { type: 'null' },
+            ],
+          },
+        },
+        additionalProperties: true,
       },
       VersionPayload: {
         type: 'object',
@@ -775,8 +806,16 @@ function buildSchemaPayload() {
         type: 'object',
         properties: {
           mode: { enum: ['dry-run', 'execute'] },
+          planDigest: { type: ['string', 'null'] },
+          deploymentArgs: { type: ['object', 'null'] },
+          dryRun: { type: ['boolean', 'null'] },
+          requiredValidation: { type: ['object', 'null'] },
+          agentValidation: { type: ['object', 'null'] },
           pandora: { type: 'object' },
           sourceMarket: { type: 'object' },
+          postDeployChecks: { type: ['object', 'null'] },
+          trustManifest: { type: ['object', 'null'] },
+          diagnostics: { type: 'array', items: { type: 'string' } },
           tx: { type: ['object', 'null'] },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },

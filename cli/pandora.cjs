@@ -92,6 +92,7 @@ const getRiskGuardService = createLazyModuleLoader('./lib/risk_guard_service.cjs
 const getForecastStore = createLazyModuleLoader('./lib/forecast_store.cjs');
 const getBrierScoreService = createLazyModuleLoader('./lib/brier_score_service.cjs');
 const getSchemaCommandService = createLazyModuleLoader('./lib/schema_command_service.cjs');
+const getAgentCommandService = createLazyModuleLoader('./lib/agent_command_service.cjs');
 const getMcpServerService = createLazyModuleLoader('./lib/mcp_server_service.cjs');
 const getStreamCommandService = createLazyModuleLoader('./lib/stream_command_service.cjs');
 const getSimulateCommandService = createLazyModuleLoader('./lib/simulate_command_service.cjs');
@@ -402,6 +403,15 @@ function computeBrierReport(...args) {
 /** Schema command adapter with CLI output wiring. */
 function runSchemaCommand(...args) {
   return getSchemaCommandService().createRunSchemaCommand({ emitSuccess, CliError }).runSchemaCommand(...args);
+}
+
+function runAgentCommand(...args) {
+  return getAgentCommandService().createRunAgentCommand({
+    CliError,
+    includesHelpFlag,
+    emitSuccess,
+    commandHelpPayload,
+  }).runAgentCommand(...args);
 }
 
 function resolveForkRuntime(...args) {
@@ -828,6 +838,8 @@ Usage:
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
   pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
+  pandora [--output table|json] agent market autocomplete --question <text> [--market-type amm|parimutuel]
+  pandora [--output table|json] agent market validate --question <text> --rules <text> --target-timestamp <unix-seconds> [--sources <url...>]
   pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
   pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
   pandora [--output table|json] claim --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
@@ -878,6 +890,8 @@ Examples:
   pandora webhook test --webhook-url https://example.com/hook --webhook-template '{\"text\":\"{{message}}\"}'
   pandora leaderboard --metric profit --limit 20
   pandora analyze --market-address 0xabc... --provider mock
+  pandora --output json agent market autocomplete --question "Will BTC close above $100k by Friday?" --market-type amm
+  pandora --output json agent market validate --question "Will BTC close above $100k by Friday?" --rules "YES: ... NO: ... EDGE: ..." --target-timestamp 1798675200 --sources https://example.com/a https://example.com/b
   pandora suggest --wallet 0x1234... --risk medium --budget 50 --count 3
   pandora risk show
   pandora risk panic --reason "Manual incident stop"
@@ -900,6 +914,7 @@ Notes:
   - stream always emits NDJSON to stdout (one JSON object per line).
   - arb scan is the canonical arbitrage command; arbitrage remains a bounded backward-compatible one-shot wrapper.
   - arb scan supports streaming NDJSON and bounded JSON (--output json --iterations 1) for agent workflows.
+  - agent market autocomplete/validate expose prompt templates plus validation tickets for agent-controlled market creation workflows.
 `);
 }
 
@@ -1141,6 +1156,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] webhook test ...',
       'pandora [--output table|json] leaderboard ...',
       'pandora [--output table|json] analyze ...',
+      'pandora [--output table|json] agent market autocomplete|validate ...',
       'pandora [--output table|json] suggest ...',
       'pandora [--output table|json] resolve ...',
       'pandora [--output table|json] claim ...',
@@ -1160,6 +1176,7 @@ function helpJsonPayload() {
     notes: [
       '`scan` is the canonical enriched market discovery flow; `markets scan` remains a backward-compatible alias and `markets list` is the raw indexer browse view.',
       '`arb scan` is the canonical arbitrage flow; `arbitrage` remains a backward-compatible bounded one-shot wrapper.',
+      '`agent market autocomplete` and `agent market validate` expose reusable AI prompt templates and validation tickets for agent-controlled market creation workflows.',
     ],
   };
 }
@@ -7219,6 +7236,7 @@ const dispatch = createCommandRouter({
   runWebhookCommand,
   runLeaderboardCommand,
   runAnalyzeCommand,
+  runAgentCommand,
   runSuggestCommand,
   runResolveCommand,
   runClaimCommand,

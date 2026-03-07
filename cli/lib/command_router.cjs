@@ -39,6 +39,7 @@ function createCommandRouter(deps = {}) {
     runWebhookCommand,
     runLeaderboardCommand,
     runAnalyzeCommand,
+    runAgentCommand,
     runSuggestCommand,
     runResolveCommand,
     runClaimCommand,
@@ -95,6 +96,7 @@ function createCommandRouter(deps = {}) {
   requireFn('runWebhookCommand', runWebhookCommand);
   requireFn('runLeaderboardCommand', runLeaderboardCommand);
   requireFn('runAnalyzeCommand', runAnalyzeCommand);
+  requireFn('runAgentCommand', runAgentCommand);
   requireFn('runSuggestCommand', runSuggestCommand);
   requireFn('runResolveCommand', runResolveCommand);
   requireFn('runClaimCommand', runClaimCommand);
@@ -192,6 +194,7 @@ function createCommandRouter(deps = {}) {
       webhook: async (handlerArgs, handlerContext) => runWebhookCommand(handlerArgs, handlerContext),
       leaderboard: async (handlerArgs, handlerContext) => runLeaderboardCommand(handlerArgs, handlerContext),
       analyze: async (handlerArgs, handlerContext) => runAnalyzeCommand(handlerArgs, handlerContext),
+      agent: async (handlerArgs, handlerContext) => runAgentCommand(handlerArgs, handlerContext),
       suggest: async (handlerArgs, handlerContext) => runSuggestCommand(handlerArgs, handlerContext),
       resolve: async (handlerArgs, handlerContext) => runResolveCommand(handlerArgs, handlerContext),
       claim: async (handlerArgs, handlerContext) => runClaimCommand(handlerArgs, handlerContext),

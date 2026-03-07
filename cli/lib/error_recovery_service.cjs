@@ -74,6 +74,20 @@ function buildMcpRestartCommand(cliName) {
   return `${cliName} mcp`;
 }
 
+function buildAgentMarketValidateCommand(cliName, details) {
+  const requiredValidation =
+    details && typeof details.requiredValidation === 'object' && details.requiredValidation
+      ? details.requiredValidation
+      : null;
+  if (requiredValidation && typeof requiredValidation.cliCommand === 'string' && requiredValidation.cliCommand.trim()) {
+    return requiredValidation.cliCommand.trim().replace(/^pandora\b/, cliName);
+  }
+  if (requiredValidation && Array.isArray(requiredValidation.cliArgv) && requiredValidation.cliArgv.length) {
+    return `${cliName} --output json ${requiredValidation.cliArgv.join(' ')}`;
+  }
+  return `${cliName} --output json agent market validate --question <text> --rules <text> --target-timestamp <unix-seconds> --sources <url1> <url2>`;
+}
+
 function buildMcpBoundedCommand(cliName, details) {
   const toolName = cleanToken(details && details.toolName, '');
   if (toolName.startsWith('sports.sync.')) {
@@ -248,6 +262,16 @@ function createErrorRecoveryService(options = {}) {
         return {
           action: 'Retry MCP tools/call with execute intent enabled',
           command: buildMcpRestartCommand(cliName),
+          retryable: true,
+        };
+      case 'MCP_AGENT_PREFLIGHT_REQUIRED':
+      case 'MCP_AGENT_MARKET_VALIDATION_REQUIRED':
+      case 'MCP_AGENT_MARKET_VALIDATION_MISMATCH':
+      case 'MCP_AGENT_MARKET_VALIDATION_FAILED':
+      case 'MCP_AGENT_PREFLIGHT_INVALID':
+        return {
+          action: 'Run agent market validation on the exact final payload and pass the PASS attestation as agentPreflight',
+          command: buildAgentMarketValidateCommand(cliName, details),
           retryable: true,
         };
       case 'MCP_LONG_RUNNING_MODE_BLOCKED':

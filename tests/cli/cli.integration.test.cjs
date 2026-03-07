@@ -1142,7 +1142,7 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions && payload.data.definitions.SuccessEnvelope);
   assert.ok(payload.data.definitions && payload.data.definitions.ErrorEnvelope);
 
-  assert.equal(payload.data.commandDescriptorVersion, '1.1.0');
+  assert.equal(payload.data.commandDescriptorVersion, '1.2.0');
   assert.ok(payload.data.commandDescriptors);
   assert.ok(payload.data.commandDescriptors.quote);
   assert.equal(payload.data.commandDescriptors.quote.dataSchema, '#/definitions/QuotePayload');

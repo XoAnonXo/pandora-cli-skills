@@ -40,6 +40,9 @@ npm link
 - `--output json` is supported for all commands except `launch`/`clone-bet`; those stream script output directly.
 - Agent schema command: `pandora --output json schema`
 - MCP server mode: `pandora mcp`
+- Agent market prompt tools:
+  - `pandora --output json agent market autocomplete --question "<text>" [--market-type amm|parimutuel]`
+  - `pandora --output json agent market validate --question "<text>" --rules "<text>" --target-timestamp <unix-seconds> [--sources <url...>]`
 - Guided setup command: `pandora setup`
 - Phase 1 discovery command: `pandora scan`
 - Phase 1 lifecycle filters: `pandora markets list --active|--resolved|--expiring-soon`
@@ -73,6 +76,10 @@ npm link
   - `--fork-chain-id <id>`
 - JSON errors can include additive recovery hints:
   - `error.recovery = { action, command, retryable }`
+- Agent/MCP market creation policy:
+  - Agent-drafted manual markets should start with `agent market autocomplete` when rules, sources, or timing still need to be generated/refined.
+  - Execute/live MCP calls for `sports create run`, `mirror deploy`, and `mirror go` require a PASS attestation from `agent market validate`.
+  - Dry-run outputs for those flows include the exact validation ticket that must be echoed back via `agentPreflight` on the execute call.
 - Doctor checks:
   - env presence + format validation
   - RPC reachability and chain id match

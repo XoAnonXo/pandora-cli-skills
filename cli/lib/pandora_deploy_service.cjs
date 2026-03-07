@@ -18,6 +18,10 @@ const {
   MIN_AMM_FEE_TIER,
   MAX_AMM_FEE_TIER,
 } = require('./shared/constants.cjs');
+const {
+  buildRequiredAgentMarketValidation,
+  assertAgentMarketValidation,
+} = require('./agent_market_prompt_service.cjs');
 
 const ERC20_ABI = [
   {
@@ -346,6 +350,13 @@ function buildDeploymentArgs(options = {}) {
 async function deployPandoraAmmMarket(options = {}) {
   const args = buildDeploymentArgs(options);
   const runtime = resolveDeployRuntime(options);
+  const validationInput = {
+    question: args.question,
+    rules: args.rules,
+    sources: args.sources,
+    targetTimestamp: args.targetTimestamp,
+  };
+  const requiredValidation = buildRequiredAgentMarketValidation(validationInput);
 
   const oracle = String(options.oracle || process.env.ORACLE || DEFAULT_ORACLE).toLowerCase();
   const factory = String(options.factory || process.env.FACTORY || DEFAULT_FACTORY).toLowerCase();
@@ -368,6 +379,8 @@ async function deployPandoraAmmMarket(options = {}) {
     },
     tx: null,
     preflight: null,
+    requiredValidation,
+    agentValidation: null,
     pandora: {
       pollAddress: null,
       marketAddress: null,
@@ -378,6 +391,11 @@ async function deployPandoraAmmMarket(options = {}) {
   if (!options.execute) {
     return payload;
   }
+
+  payload.agentValidation = assertAgentMarketValidation(validationInput, {
+    env: options.env || process.env,
+    preflight: options.agentPreflight,
+  });
 
   const privateKey = options.privateKey || process.env.PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {

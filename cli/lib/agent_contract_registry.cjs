@@ -43,6 +43,21 @@ function flexibleArraySchema(itemSchema, description, extras = {}) {
   };
 }
 
+function buildAgentPreflightSchema(description) {
+  return {
+    type: 'object',
+    properties: {
+      validationTicket: stringSchema('Ticket returned by agent.market.validate for the exact market payload.'),
+      validationDecision: enumSchema(['PASS', 'FAIL'], 'Validation verdict from the agent AI run.'),
+      validationSummary: stringSchema('Short summary of the validation result.'),
+      autocompleteTicket: stringSchema('Optional ticket from agent.market.autocomplete when the agent drafted the market.'),
+    },
+    required: ['validationTicket', 'validationDecision', 'validationSummary'],
+    additionalProperties: false,
+    ...(description ? { description } : {}),
+  };
+}
+
 function buildIntentSchema() {
   return {
     type: 'object',
@@ -192,12 +207,73 @@ const commandContracts = [
     helpDataSchema: null,
   }),
   commandContract({
+    name: 'agent',
+    summary: 'Agent prompt workflow namespace for market drafting and validation.',
+    usage: 'pandora [--output table|json] agent market autocomplete|validate ...',
+    emits: ['agent.help'],
+    dataSchema: COMMAND_HELP_SCHEMA_REF,
+    helpDataSchema: null,
+  }),
+  commandContract({
+    name: 'agent.market.autocomplete',
+    summary: 'Emit AI prompt text for drafting market rules, sources, and timing.',
+    usage:
+      'pandora [--output table|json] agent market autocomplete --question <text> [--market-type amm|parimutuel]',
+    emits: ['agent.market.autocomplete', 'agent.help'],
+    dataSchema: '#/definitions/AgentMarketPromptPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['agent', 'market', 'autocomplete'],
+      description: 'Emit AI autocomplete prompt for market drafting.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          question: stringSchema('Seed market question to refine into rules, sources, and timing.'),
+          'market-type': enumSchema(['amm', 'parimutuel'], 'Target market type.'),
+        },
+        requiredFlags: ['question'],
+      }),
+      preferred: true,
+    },
+  }),
+  commandContract({
+    name: 'agent.market.validate',
+    summary: 'Emit AI validation prompt text plus the exact attestation ticket required for execute mode.',
+    usage:
+      'pandora [--output table|json] agent market validate --question <text> --rules <text> --target-timestamp <unix-seconds> [--sources <url...>]',
+    emits: ['agent.market.validate', 'agent.help'],
+    dataSchema: '#/definitions/AgentMarketPromptPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['agent', 'market', 'validate'],
+      description: 'Emit AI validation prompt and required attestation ticket for market execution.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          question: stringSchema('Exact market question to validate.'),
+          rules: stringSchema('Exact market rules to validate.'),
+          'target-timestamp': integerSchema('Resolution timestamp in unix seconds.', { minimum: 1 }),
+          sources: flexibleArraySchema(stringSchema(), 'Source URL list.'),
+        },
+        requiredFlags: ['question', 'rules', 'target-timestamp'],
+      }),
+      preferred: true,
+    },
+  }),
+  commandContract({
     name: 'launch',
     summary: 'Launch a one-off market via the interactive/non-JSON deployment flow.',
     usage:
       'pandora launch --dry-run|--execute [options] --question "<text>" --rules "<resolution rules>" --sources "<url1>" "<url2>" [more] --target-timestamp <unix-seconds>',
     emits: ['launch.help'],
     outputModes: ['table'],
+    agentWorkflow: {
+      requiredTools: ['agent.market.validate'],
+      recommendedTools: ['agent.market.autocomplete'],
+      executeRequiresValidation: true,
+      notes: [
+        'When an agent drafts or executes a manual launch market, run autocomplete first if rules or timing still need refinement.',
+        'Run agent.market.validate on the final payload before any execute path.',
+      ],
+    },
   }),
   commandContract({
     name: 'clone-bet',
@@ -206,6 +282,14 @@ const commandContracts = [
       'pandora clone-bet --dry-run|--execute [options] --question "<text>" --rules "<resolution rules>" --sources "<url1>" "<url2>" [more] --target-timestamp <unix-seconds>',
     emits: ['clone-bet.help'],
     outputModes: ['table'],
+    agentWorkflow: {
+      requiredTools: ['agent.market.validate'],
+      recommendedTools: ['agent.market.autocomplete'],
+      executeRequiresValidation: true,
+      notes: [
+        'When an agent drafts or executes a clone-bet market, validate the final payload before execute mode.',
+      ],
+    },
   }),
   commandContract({
     name: 'markets',
@@ -1202,6 +1286,15 @@ const commandContracts = [
     emits: ['sports.create.run', 'sports.help'],
     dataSchema: '#/definitions/SportsCreatePayload',
     mcpExposed: true,
+    agentWorkflow: {
+      requiredTools: ['agent.market.validate'],
+      recommendedTools: ['agent.market.autocomplete'],
+      executeRequiresValidation: true,
+      notes: [
+        'Use agent.market.autocomplete when the agent must rewrite the question, rules, or timing before market creation.',
+        'Run agent.market.validate on the exact final sports market payload before any execute path.',
+      ],
+    },
     mcp: {
       command: ['sports', 'create', 'run'],
       description: 'Execute or dry-run sports market creation.',
@@ -1217,6 +1310,7 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          agentPreflight: buildAgentPreflightSchema('Agent validation attestation for execute mode.'),
         },
         requiredFlags: ['event-id'],
       }),
@@ -1224,6 +1318,7 @@ const commandContracts = [
       mutating: true,
       safeFlags: ['--dry-run', '--paper'],
       executeFlags: ['--execute'],
+      controlInputNames: ['agentPreflight'],
     },
   }),
   commandContract({
@@ -1832,6 +1927,15 @@ const commandContracts = [
     emits: ['mirror.deploy', 'mirror.deploy.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
+    agentWorkflow: {
+      requiredTools: ['agent.market.validate'],
+      recommendedTools: ['agent.market.autocomplete'],
+      executeRequiresValidation: true,
+      notes: [
+        'Mirror deploy dry-run returns the exact Pandora deployment payload and required validation ticket.',
+        'Run agent.market.validate on that final payload before rerunning mirror.deploy with execute mode.',
+      ],
+    },
     mcp: {
       command: ['mirror', 'deploy'],
       description: 'Dry-run or execute mirror deployment.',
@@ -1863,12 +1967,14 @@ const commandContracts = [
           'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
           'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
           'min-close-lead-seconds': integerSchema('Minimum close lead time in seconds.', { minimum: 0 }),
+          agentPreflight: buildAgentPreflightSchema('Agent validation attestation for execute mode.'),
         },
       }),
       preferred: true,
       mutating: true,
       safeFlags: ['--dry-run'],
       executeFlags: ['--execute'],
+      controlInputNames: ['agentPreflight'],
     },
   }),
   commandContract({
@@ -1987,6 +2093,15 @@ const commandContracts = [
     emits: ['mirror.go', 'mirror.go.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
+    agentWorkflow: {
+      requiredTools: ['agent.market.validate'],
+      recommendedTools: ['agent.market.autocomplete'],
+      executeRequiresValidation: true,
+      notes: [
+        'Mirror go inherits the exact market payload from its deploy stage; use the returned validation ticket from paper/dry-run output.',
+        'Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live.',
+      ],
+    },
     mcp: {
       command: ['mirror', 'go'],
       description: 'Plan/deploy/verify/go orchestration.',
@@ -2014,12 +2129,14 @@ const commandContracts = [
           'dotenv-path': stringSchema('Env file path.'),
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          agentPreflight: buildAgentPreflightSchema('Agent validation attestation for execute or execute-live mode.'),
         },
       }),
       preferred: true,
       mutating: true,
-      safeFlags: ['--paper'],
-      executeFlags: ['--execute-live'],
+      safeFlags: ['--paper', '--dry-run'],
+      executeFlags: ['--execute-live', '--execute'],
+      controlInputNames: ['agentPreflight'],
     },
   }),
   commandContract({
@@ -2518,6 +2635,11 @@ function buildCommandDescriptors() {
       preferred: contract.mcp && contract.mcp.preferred === false ? false : Boolean(canonicalTool ? contract.name === canonicalTool : contract.aliasOf ? false : contract.mcpExposed),
       mcpMutating: Boolean(contract.mcp && contract.mcp.mutating),
       mcpLongRunningBlocked: Boolean(contract.mcp && contract.mcp.longRunningBlocked),
+      controlInputNames:
+        contract.mcp && Array.isArray(contract.mcp.controlInputNames)
+          ? [...contract.mcp.controlInputNames]
+          : [],
+      agentWorkflow: contract.agentWorkflow || null,
     };
   }
   return descriptors;
@@ -2539,6 +2661,8 @@ function buildMcpToolDefinitions() {
       aliasOf: contract.aliasOf || null,
       canonicalTool: contract.canonicalTool || contract.aliasOf || contract.name,
       preferred: contract.mcp.preferred !== false,
+      controlInputNames: Array.isArray(contract.mcp.controlInputNames) ? [...contract.mcp.controlInputNames] : undefined,
+      agentWorkflow: contract.agentWorkflow || null,
     }));
 }
 

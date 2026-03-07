@@ -17,7 +17,14 @@ const { buildMcpToolDefinitions } = require('./agent_contract_registry.cjs');
  *   safeFlags?: string[],
  *   executeFlags?: string[],
  *   longRunningBlocked?: boolean,
- *   placeholderBlocked?: boolean
+ *   placeholderBlocked?: boolean,
+ *   controlInputNames?: string[],
+ *   agentWorkflow?: {
+ *     requiredTools?: string[],
+ *     recommendedTools?: string[],
+ *     executeRequiresValidation?: boolean,
+ *     notes?: string[],
+ *   },
  * }} ToolDefinition
  */
 
@@ -122,7 +129,23 @@ function providedFlagSet(flags) {
 function getTopLevelFlagNames(definition) {
   const properties = definition && definition.inputSchema && definition.inputSchema.properties;
   if (!properties || typeof properties !== 'object') return [];
-  return Object.keys(properties).filter((name) => name !== 'intent');
+  const controlInputNames = Array.isArray(definition && definition.controlInputNames)
+    ? definition.controlInputNames
+    : [];
+  return Object.keys(properties).filter((name) => name !== 'intent' && !controlInputNames.includes(name));
+}
+
+/**
+ * Return top-level MCP input keys that should be consumed as control metadata,
+ * not rendered into CLI argv flags.
+ *
+ * @param {ToolDefinition & {inputSchema?: object}} definition
+ * @returns {string[]}
+ */
+function getControlInputNames(definition) {
+  return Array.isArray(definition && definition.controlInputNames)
+    ? definition.controlInputNames
+    : [];
 }
 
 /**
@@ -154,6 +177,44 @@ function extractInvocationFlags(definition, args) {
 }
 
 /**
+ * Extract control-only invocation inputs that should not become CLI flags.
+ *
+ * @param {ToolDefinition & {inputSchema?: object}} definition
+ * @param {ToolInvocationArgs} args
+ * @returns {{[key: string]: unknown}}
+ */
+function extractControlInputs(definition, args) {
+  const controlInputs = {};
+  for (const inputName of getControlInputNames(definition)) {
+    if (Object.prototype.hasOwnProperty.call(args, inputName) && args[inputName] !== undefined) {
+      controlInputs[inputName] = args[inputName];
+    }
+  }
+  return controlInputs;
+}
+
+function buildInvocationEnv(controlInputs) {
+  const env = {};
+  if (
+    controlInputs
+    && Object.prototype.hasOwnProperty.call(controlInputs, 'agentPreflight')
+    && controlInputs.agentPreflight !== undefined
+  ) {
+    try {
+      env.PANDORA_AGENT_PREFLIGHT = JSON.stringify(controlInputs.agentPreflight);
+    } catch (error) {
+      const err = new Error('agentPreflight must be JSON-serializable.');
+      err.code = 'MCP_AGENT_PREFLIGHT_INVALID';
+      err.details = {
+        cause: error && error.message ? error.message : String(error),
+      };
+      throw err;
+    }
+  }
+  return Object.keys(env).length ? env : undefined;
+}
+
+/**
  * Convert a tool definition to MCP descriptor format.
  *
  * @param {ToolDefinition} definition Tool registration definition.
@@ -166,6 +227,8 @@ function toToolDescriptor(definition) {
     preferred: definition.preferred !== false,
     mutating: Boolean(definition.mutating),
     longRunningBlocked: Boolean(definition.longRunningBlocked),
+    controlInputNames: Array.isArray(definition.controlInputNames) ? [...definition.controlInputNames] : [],
+    agentWorkflow: definition.agentWorkflow || null,
   };
   const inputSchema = definition.inputSchema || {
     type: 'object',
@@ -192,7 +255,7 @@ const TOOL_DEFINITIONS = buildMcpToolDefinitions();
  *
  * @returns {{
  *   listTools: () => object[],
- *   prepareInvocation: (toolName: string, args?: ToolInvocationArgs) => {argv: string[]},
+ *   prepareInvocation: (toolName: string, args?: ToolInvocationArgs) => {argv: string[], env?: object},
  *   hasTool: (toolName: string) => boolean
  * }} MCP tool registry API.
  */
@@ -214,7 +277,7 @@ function createMcpToolRegistry() {
    *
    * @param {string} toolName Registered MCP tool name.
    * @param {ToolInvocationArgs} [args={}] Invocation payload from MCP client.
-   * @returns {{argv: string[]}} Prepared command argv (without binary prefix).
+   * @returns {{argv: string[], env?: object}} Prepared command argv (without binary prefix).
    */
   function prepareInvocation(toolName, args = {}) {
     if (toolName === 'launch' || toolName === 'clone-bet') {
@@ -265,9 +328,11 @@ function createMcpToolRegistry() {
     const positionals = Array.isArray(args.positionals)
       ? args.positionals.map((value) => String(value))
       : [];
+    const controlInputs = extractControlInputs(definition, args);
     const invocationFlags = extractInvocationFlags(definition, args);
     const flagArgv = buildFlagArgv(invocationFlags);
     const argv = [...definition.command, ...positionals, ...flagArgv];
+    let willExecute = false;
 
     if (definition.mutating) {
       const safeFlags = Array.isArray(definition.safeFlags) ? definition.safeFlags : [];
@@ -304,13 +369,48 @@ function createMcpToolRegistry() {
       if (!hasSafe && !hasExecute) {
         if (executeIntent && executeFlags.length) {
           argv.push(executeFlags[0]);
+          willExecute = true;
         } else if (safeFlags.length) {
           argv.push(safeFlags[0]);
+        } else if (executeIntent) {
+          willExecute = true;
         }
+      } else if (hasExecute) {
+        willExecute = true;
       }
     }
 
-    return { argv };
+    if (
+      definition.agentWorkflow
+      && definition.agentWorkflow.executeRequiresValidation
+      && willExecute
+      && !Object.prototype.hasOwnProperty.call(controlInputs, 'agentPreflight')
+    ) {
+      const err = new Error(
+        `${toolName} requires agentPreflight from agent.market.validate before execute mode is allowed.`,
+      );
+      err.code = 'MCP_AGENT_PREFLIGHT_REQUIRED';
+      err.details = {
+        toolName: definition.name,
+        requiredInput: 'agentPreflight',
+        requiredTools: Array.isArray(definition.agentWorkflow.requiredTools)
+          ? [...definition.agentWorkflow.requiredTools]
+          : [],
+        recommendedTools: Array.isArray(definition.agentWorkflow.recommendedTools)
+          ? [...definition.agentWorkflow.recommendedTools]
+          : [],
+        hints: [
+          'Call agent.market.validate with the exact final market payload.',
+          'Pass the PASS attestation back as arguments.agentPreflight on the execute-mode call.',
+        ],
+      };
+      throw err;
+    }
+
+    return {
+      argv,
+      env: buildInvocationEnv(controlInputs),
+    };
   }
 
   return {

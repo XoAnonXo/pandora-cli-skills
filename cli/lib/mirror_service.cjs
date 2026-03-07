@@ -393,6 +393,8 @@ async function deployMirror(options = {}) {
     planDigest: planData.planDigest || buildPlanDigest(planData),
     deploymentArgs: deployPayload.deploymentArgs,
     dryRun: deployPayload.mode === 'dry-run',
+    requiredValidation: deployPayload.requiredValidation || null,
+    agentValidation: deployPayload.agentValidation || null,
     tx: deployPayload.tx,
     pandora: deployPayload.pandora,
     postDeployChecks,
