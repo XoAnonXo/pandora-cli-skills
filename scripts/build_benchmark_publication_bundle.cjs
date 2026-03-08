@@ -13,18 +13,30 @@ const DEFAULT_BUNDLE_PATH = path.join(ROOT_DIR, 'benchmarks', 'latest', 'core-bu
 const DEFAULT_HISTORY_PATH = path.join(ROOT_DIR, 'benchmarks', 'latest', 'core-history.json');
 const DEFAULT_DOC_HISTORY_PATH = path.join(ROOT_DIR, 'docs', 'benchmarks', 'history.json');
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function stableJsonValue(value) {
   if (Array.isArray(value)) {
     return value.map((entry) => stableJsonValue(entry));
   }
   if (value && typeof value === 'object') {
     const sorted = {};
-    for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+    for (const key of Object.keys(value).sort(compareStableStrings)) {
       sorted[key] = stableJsonValue(value[key]);
     }
     return sorted;
   }
   return value;
+}
+
+function stableJsonString(value) {
+  return JSON.stringify(stableJsonValue(value));
 }
 
 function readJson(filePath) {
@@ -37,7 +49,14 @@ function writeJson(filePath, payload) {
 }
 
 function sha256File(filePath) {
-  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  const absolutePath = path.resolve(filePath);
+  if (absolutePath.endsWith('.json')) {
+    return crypto
+      .createHash('sha256')
+      .update(stableJsonString(readJson(absolutePath)))
+      .digest('hex');
+  }
+  return crypto.createHash('sha256').update(fs.readFileSync(absolutePath)).digest('hex');
 }
 
 function buildHistoryEntry(pkg, report, lockDocument, digests) {
@@ -86,7 +105,7 @@ function normalizeHistory(existingHistory, nextEntry) {
     && entry.suite === nextEntry.suite
   ));
   retained.push(nextEntry);
-  retained.sort((left, right) => String(right.generatedAt || '').localeCompare(String(left.generatedAt || '')));
+  retained.sort((left, right) => compareStableStrings(String(right.generatedAt || ''), String(left.generatedAt || '')));
   return retained;
 }
 

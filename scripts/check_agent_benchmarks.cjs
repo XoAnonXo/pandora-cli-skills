@@ -36,13 +36,21 @@ function normalizeRepoRelativePath(filePath) {
   return path.relative(ROOT_DIR, path.resolve(filePath)).split(path.sep).join('/');
 }
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function stableJsonValue(value) {
   if (Array.isArray(value)) {
     return value.map((entry) => stableJsonValue(entry));
   }
   if (value && typeof value === 'object') {
     const sorted = {};
-    for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+    for (const key of Object.keys(value).sort(compareStableStrings)) {
       sorted[key] = stableJsonValue(value[key]);
     }
     return sorted;
