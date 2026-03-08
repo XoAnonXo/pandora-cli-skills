@@ -74,7 +74,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.70"
+          "version": "1.1.71"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -9708,7 +9708,7 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
       "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
-      "trustDistributionHash": "ccd220a0dd86eeb7ee2670e1a1d02eb095d3675e131701c607fce54b62497f57"
+      "trustDistributionHash": "b13d365c9d6773329ed17e7851641f5050863f3fbc52d344b576cf56f7fd6e4c"
     },
     "roadmapSignals": {
       "jobCapableCommands": 12,
@@ -10687,7 +10687,7 @@
           ],
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
-          "version": "1.1.70"
+          "version": "1.1.71"
         },
         "signals": {
           "explicitFilesAllowlist": true,
@@ -10789,11 +10789,11 @@
             "pandora_agent-0.1.0a1-py3-none-any.whl",
             "pandora_agent-0.1.0a1.tar.gz",
             "pandora-agent-sdk-0.1.0-alpha.1.tgz",
-            "pandora-cli-skills-1.1.70.tgz",
-            "pandora-cli-skills-1.1.70.tgz.intoto.jsonl",
-            "pandora-cli-skills-1.1.70.tgz.pem",
-            "pandora-cli-skills-1.1.70.tgz.sha256",
-            "pandora-cli-skills-1.1.70.tgz.sig",
+            "pandora-cli-skills-1.1.71.tgz",
+            "pandora-cli-skills-1.1.71.tgz.intoto.jsonl",
+            "pandora-cli-skills-1.1.71.tgz.pem",
+            "pandora-cli-skills-1.1.71.tgz.sha256",
+            "pandora-cli-skills-1.1.71.tgz.sig",
             "sbom.spdx.json",
             "sbom.spdx.json.intoto.jsonl",
             "sbom.spdx.json.sha256",
@@ -30502,7 +30502,7 @@
       }
     }
   },
-  "packageVersion": "1.1.70",
+  "packageVersion": "1.1.71",
   "registryDigest": {
     "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
     "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
@@ -30514,7 +30514,7 @@
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
     "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
-    "trustDistributionHash": "ccd220a0dd86eeb7ee2670e1a1d02eb095d3675e131701c607fce54b62497f57"
+    "trustDistributionHash": "b13d365c9d6773329ed17e7851641f5050863f3fbc52d344b576cf56f7fd6e4c"
   },
   "schemas": {
     "definitions": {
@@ -68513,7 +68513,7 @@
             ],
             "main": "cli/pandora.cjs",
             "name": "pandora-cli-skills",
-            "version": "1.1.70"
+            "version": "1.1.71"
           },
           "signals": {
             "explicitFilesAllowlist": true,
@@ -68614,11 +68614,11 @@
               "pandora_agent-0.1.0a1-py3-none-any.whl",
               "pandora_agent-0.1.0a1.tar.gz",
               "pandora-agent-sdk-0.1.0-alpha.1.tgz",
-              "pandora-cli-skills-1.1.70.tgz",
-              "pandora-cli-skills-1.1.70.tgz.intoto.jsonl",
-              "pandora-cli-skills-1.1.70.tgz.pem",
-              "pandora-cli-skills-1.1.70.tgz.sha256",
-              "pandora-cli-skills-1.1.70.tgz.sig",
+              "pandora-cli-skills-1.1.71.tgz",
+              "pandora-cli-skills-1.1.71.tgz.intoto.jsonl",
+              "pandora-cli-skills-1.1.71.tgz.pem",
+              "pandora-cli-skills-1.1.71.tgz.sha256",
+              "pandora-cli-skills-1.1.71.tgz.sig",
               "sbom.spdx.json",
               "sbom.spdx.json.intoto.jsonl",
               "sbom.spdx.json.sha256",

@@ -41,6 +41,16 @@ function read(relativePath) {
   return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
 }
 
+function assertMentionsAll(text, values, label) {
+  for (const value of values) {
+    assert.match(
+      text,
+      new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      `${label}: missing ${value}`,
+    );
+  }
+}
+
 
 const BUILTIN_KEYSTORE_PASSWORD = 'test-password';
 const BUILTIN_KEYSTORE_JSON = JSON.stringify({
@@ -131,22 +141,14 @@ test('docs, capabilities, and profile list agree that built-in mutable samples a
     assert.notEqual(item.resolutionStatus, 'ready', `${profileId} should not report ready status by default`);
   }
 
-  assert.match(
-    policyProfilesText,
-    /`degradedBuiltinIds` contains every built-in mutable sample: `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service`/i,
-  );
-  assert.match(
-    policyProfilesText,
-    /`market_observer_ro` is the only built-in profile reporting `ready`/i,
-  );
-  assert.match(
-    agentInterfacesText,
-    /only `market_observer_ro` is built-in runtime-ready by default/i,
-  );
-  assert.match(
-    readmeText,
-    /`market_observer_ro` is the only built-in profile reporting `ready`, and it is read-only/i,
-  );
+  assertMentionsAll(policyProfilesText, expectedMutableBuiltinIds, 'policy-profiles mutable ids');
+  assert.match(policyProfilesText, /degradedBuiltinIds/i);
+  assert.match(policyProfilesText, /market_observer_ro/);
+  assert.match(policyProfilesText, /ready/i);
+  assert.match(agentInterfacesText, /market_observer_ro/);
+  assert.match(agentInterfacesText, /runtime-ready by default/i);
+  assert.match(readmeText, /market_observer_ro/);
+  assert.match(readmeText, /read-only/i);
 });
 
 

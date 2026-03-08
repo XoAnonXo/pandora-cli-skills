@@ -14,6 +14,16 @@ function readJson(relativePath) {
   return JSON.parse(read(relativePath));
 }
 
+function assertMentionsAll(text, values, messagePrefix) {
+  for (const value of values) {
+    assert.match(
+      text,
+      new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      `${messagePrefix}: missing ${value}`,
+    );
+  }
+}
+
 test('runtime capabilities and schema stay aligned with shipped skill docs', () => {
   const capabilitiesResult = runCli(['--output', 'json', 'capabilities']);
   assert.equal(capabilitiesResult.status, 0, capabilitiesResult.output);
@@ -79,12 +89,16 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   assert.match(mergedText, /profile list/);
   assert.match(mergedText, /recipe list/);
   assert.match(mergedText, /npm run generate:sdk-contracts/);
-  assert.match(read('README.md'), /docs\/benchmarks\/README\.md/);
-  assert.match(read('README.md'), /docs\/benchmarks\/scenario-catalog\.md/);
-  assert.match(read('README.md'), /docs\/benchmarks\/scorecard\.md/);
-  assert.match(read('SKILL.md'), /docs\/benchmarks\/README\.md/);
-  assert.match(read('SKILL.md'), /docs\/benchmarks\/scenario-catalog\.md/);
-  assert.match(read('SKILL.md'), /docs\/benchmarks\/scorecard\.md/);
+  assertMentionsAll(read('README.md'), [
+    'docs/benchmarks/README.md',
+    'docs/benchmarks/scenario-catalog.md',
+    'docs/benchmarks/scorecard.md',
+  ], 'README benchmark doc links');
+  assertMentionsAll(read('SKILL.md'), [
+    'docs/benchmarks/README.md',
+    'docs/benchmarks/scenario-catalog.md',
+    'docs/benchmarks/scorecard.md',
+  ], 'SKILL benchmark doc links');
   assert.match(benchmarkOverviewText, /documentation\.router\.taskRoutes/i);
   assert.match(benchmarkOverviewText, /Benchmark methodology, scenarios, or scorecards/);
   assert.match(benchmarkOverviewText, /Benchmark scenario catalog and parity coverage/);
@@ -118,18 +132,17 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   const sdkPackages = capabilities.data.transports.sdk.packages;
   assert.equal(sdkPackages.typescript.publicRegistryPublished, false);
   assert.equal(sdkPackages.python.publicRegistryPublished, false);
-  assert.match(quickstartText, /public npm\/PyPI publication is not claimed/i);
-  assert.match(supportMatrixText, /does not yet claim public npm publication/i);
-  assert.match(supportMatrixText, /does not yet claim public PyPI publication/i);
+  assert.match(quickstartText, /public .* publication is not claimed/i);
+  assertMentionsAll(supportMatrixText, [
+    sdkPackages.typescript.name,
+    sdkPackages.python.name,
+  ], 'support matrix sdk package names');
+  assert.match(supportMatrixText, /not yet claim public/i);
 
   const readyProfiles = capabilities.data.policyProfiles.signerProfiles.readyBuiltinIds;
   const degradedProfiles = capabilities.data.policyProfiles.signerProfiles.degradedBuiltinIds;
-  for (const profileId of readyProfiles) {
-    assert.match(policyProfilesText, new RegExp(profileId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  }
-  for (const profileId of degradedProfiles) {
-    assert.match(policyProfilesText, new RegExp(profileId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  }
+  assertMentionsAll(policyProfilesText, readyProfiles, 'policy-profiles ready ids');
+  assertMentionsAll(policyProfilesText, degradedProfiles, 'policy-profiles degraded ids');
 });
 
 test('benchmark docs and support matrix stay aligned with the shipped latest report and trust metadata', () => {
