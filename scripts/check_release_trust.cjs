@@ -304,8 +304,10 @@ function checkPackageMetadata() {
   assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run benchmark:history'), 'package.json release:prep must refresh benchmark publication history');
   assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run benchmark:check'), 'package.json release:prep must rerun benchmark freshness validation');
   assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm test'), 'package.json prepublishOnly must run npm test');
-  assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm run release:prep'), 'package.json prepublishOnly must run release:prep');
-  assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm run check:release-drift -- --require-clean-tree'), 'package.json prepublishOnly must require a clean tree after release prep');
+  assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm run generate:sbom'), 'package.json prepublishOnly must generate the CycloneDX SBOM before publish');
+  assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm run generate:sbom:spdx'), 'package.json prepublishOnly must generate the SPDX SBOM before publish');
+  assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm run check:release-trust -- --require-sbom'), 'package.json prepublishOnly must verify release trust with SBOMs before publish');
+  assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm run check:release-drift -- --require-clean-tree'), 'package.json prepublishOnly must require a clean tree after verification-only publish gates');
 }
 
 function checkWorkflowAndInstaller() {
