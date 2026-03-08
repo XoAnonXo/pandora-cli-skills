@@ -6,6 +6,13 @@ This is the human-oriented scoped command and flag reference. For machine-author
 - `pandora --output json schema`
 - `pandora <family> ... --help` for the freshest family-specific usage surface
 
+Use the smaller workflow docs before falling back to this file:
+- [`agent-quickstart.md`](./agent-quickstart.md)
+- [`trading-workflows.md`](./trading-workflows.md)
+- [`portfolio-closeout.md`](./portfolio-closeout.md)
+- [`policy-profiles.md`](./policy-profiles.md)
+- [`mirror-operations.md`](./mirror-operations.md)
+
 ## Global conventions
 - Global output mode: `--output table|json` (default `table`)
 - Most commands support `--output table|json`
@@ -27,6 +34,17 @@ This is the human-oriented scoped command and flag reference. For machine-author
 - JSON errors can include additive recovery hints:
   - `error.recovery = { action, command, retryable }`
 
+## Credential and policy guidance
+- For non-signing bootstrap, start with `pandora --output json capabilities`, `schema`, `policy list`, `profile list`, or `pandora mcp`. None of those require signer material.
+- The command signatures below show the live parser surface, so signer-bearing flows still list `--private-key <hex>` where supported.
+- That does **not** mean raw command-line keys are the preferred operating model.
+- Prefer, in order:
+  - read-only discovery via `capabilities`, `schema`, `policy`, and `profile`
+  - policy-scoped MCP gateway access for agents
+  - env / `.env` injection, ideally supplied by a secret manager or other runtime bootstrap you control
+  - raw `--private-key` only for manual fallback or debugging
+- Policy packs and named signer profiles are shipped in alpha via `policy list|get|lint` and `profile list|get|validate`, but there is not yet a universal `--profile` selector across mutating commands. Use `pandora --output json capabilities` / `schema` to inspect current `policyScopes` and `requiresSecrets`.
+
 ## High-value command routing reference
 
 This section is intentionally condensed for retrieval. For the exhaustive live contract:
@@ -34,6 +52,7 @@ This section is intentionally condensed for retrieval. For the exhaustive live c
 - use `pandora --output json capabilities` for compact discovery
 - use `pandora --output json schema` for exact machine-readable inputs/outputs
 - use `pandora <family> ... --help` for the freshest family-specific usage surface
+- remember that listed `--private-key` flags describe compatibility surface, not preferred secret-handling guidance
 
 ```text
 pandora [--output table|json] --version
@@ -46,7 +65,6 @@ pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--b
 pandora [--output table|json] markets get [--id <id> ...] [--stdin]
 pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]
 pandora [--output table|json] lifecycle start --config <path>|status --id <id>|resolve --id <id> --confirm
-pandora arb scan --markets <csv> --output ndjson|json [--min-net-spread-pct <n>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--iterations <n>] [--interval-ms <ms>]
 pandora [--output table|json] odds record --competition <id> --interval <sec> [--max-samples <n>] [--event-id <id>] [--venues pandora_amm,polymarket] [--indexer-url <url>] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>]
 pandora [--output table|json] odds history --event-id <id> --output csv|json [--limit <n>]
 pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
@@ -56,7 +74,7 @@ pandora [--output table|json] events get --id <id> [--type all|liquidity|oracle-
 pandora [--output table|json] positions list [--wallet <address>] [--market-address <address>] [--chain-id <id>] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--where-json <json>]
 pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
 pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
-pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand]
+pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
 pandora [--output table|json] markets scan [scan flags]  # backward-compatible alias of scan
 pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
 pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
@@ -68,6 +86,8 @@ pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson
 pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
 pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
 pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...
+pandora [--output table|json] policy list|get|lint [flags]
+pandora [--output table|json] profile list|get|validate [flags]
 pandora [--output table|json] simulate mc|particle-filter|agents ...
 pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...
 pandora [--output table|json] polymarket check|approve|preflight|trade ...
@@ -153,8 +173,8 @@ pandora [--output table|json] sports resolve plan ...
 | `sports odds snapshot` | Fetch event odds snapshot plus consensus context. | `--event-id`, `--trim-percent`, `--min-tier1-books`, `--min-total-books` |
 | `sports odds bulk` | Fetch all odds for a competition and refresh local cache. | `--competition`, `--provider`, `--timeout-ms`, `--limit` |
 | `sports consensus` | Compute trimmed-median consensus from live or offline checks. | `--event-id` or `--checks-json`, `--trim-percent`, `--book-priority` |
-| `sports create plan` | Build conservative creation plan and safety gates. | `--event-id`, `--selection`, `--market-type`, `--category`, `--creation-window-open-min`, `--creation-window-close-min` |
-| `sports create run` | Dry-run or execute creation path. | `--event-id`, `--dry-run/--execute`, `--liquidity-usdc`, `--chain-id`, `--rpc-url`, `--category`, `--model-file`, `--model-stdin`, `agentPreflight` (MCP execute). For exact fields, inspect `schema` or the specific command descriptor. |
+| `sports create plan` | Build conservative creation plan and safety gates. | `--event-id`, `--selection`, `--market-type`, `--category`, `--creation-window-open-min`, `--creation-window-close-min`, `--book-priority`, `--model-file/--model-stdin` |
+| `sports create run` | Dry-run or execute creation path. | `--event-id`, `--dry-run/--execute`, `--liquidity-usdc`, `--chain-id`, `--rpc-url`, `--category`, `agentPreflight` (MCP execute). For exact fields, inspect `schema` or the specific command descriptor. |
 | `sports sync once|run|start|stop|status` | Evaluate and operate sports sync runtime state. | `--event-id` (required for `once|run|start`), `--risk-profile`, `--state-file`, `--paper/--execute-live` |
 | `sports resolve plan` | Build manual-final resolution recommendation. | `--event-id` or `--checks-json/--checks-file`, `--poll-address`, `--settle-delay-ms`, `--consecutive-checks-required` |
 
@@ -234,6 +254,9 @@ Notes:
 - `operations.cancel` is for cancelable in-flight records.
 - `operations.close` is for terminal records after follow-up is complete.
 - Current persisted records are local-state objects. Use `pandora --output json capabilities` / `schema` for the machine-facing contract.
+- For remote operators, use `operations:read` for `operations.get|list`.
+- Use `operations:write` only for `operations.cancel|close`.
+- Over MCP, `operations.cancel|close` also require `intent.execute=true`.
 
 ### Mirror
 ```bash

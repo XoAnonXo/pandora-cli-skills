@@ -2,11 +2,29 @@
 
 Use this guide for `schema`, `mcp`, JSON output contracts, recovery hints, and machine-facing runtime details.
 
+For a faster task-focused path:
+- external-agent bootstrap:
+  - [`agent-quickstart.md`](./agent-quickstart.md)
+- policy packs and signer profiles:
+  - [`policy-profiles.md`](./policy-profiles.md)
+- release verification and trust posture:
+  - [`../trust/release-verification.md`](../trust/release-verification.md)
+  - [`../trust/security-model.md`](../trust/security-model.md)
+  - [`../trust/support-matrix.md`](../trust/support-matrix.md)
+- trade/sell/claim workflows:
+  - [`trading-workflows.md`](./trading-workflows.md)
+- portfolio and closeout workflows:
+  - [`portfolio-closeout.md`](./portfolio-closeout.md)
+
 ## Agent-native entrypoints
 - `pandora --output json capabilities`
   - compact runtime discovery digest: canonical tool routing, risk/idempotency metadata, output modes, transport status
 - `pandora --output json schema`
   - emits machine-readable envelope schema and full command descriptors
+- `pandora --output json policy list|get|lint`
+  - inspect the shipped policy packs and validate candidate custom packs
+- `pandora --output json profile list|get|validate`
+  - inspect shipped/sample signer profiles, readiness, and validate candidate custom profiles
 - `pandora mcp`
   - runs MCP over stdio for direct tool execution
 - `pandora mcp http [--host <host>] [--port <port>] [--public-base-url <url>] [--auth-token <token>|--auth-token-file <path>] [--auth-scopes <csv>]`
@@ -17,10 +35,110 @@ Use this guide for `schema`, `mcp`, JSON output contracts, recovery hints, and m
 - `pandora --output json agent market autocomplete ...`
 - `pandora --output json agent market validate ...`
 
+## SDK generation and contract export
+- SDK alpha source/artifact surfaces ship in this build:
+  - JavaScript/TypeScript SDK entrypoints under `sdk/typescript`
+  - TypeScript embedded loader/manifest under `sdk/typescript/generated`
+  - Python SDK source/package under `sdk/python`
+  - Python embedded manifest under `sdk/python/pandora_agent/generated`
+  - shared JS contract export under `sdk/generated`
+- `capabilities.data.transports.sdk` reports the shipping state; current builds return `supported=true` and `status="alpha"`.
+- Regenerate the vendored bundle with:
+
+```bash
+npm run generate:sdk-contracts
+```
+
+Run that only from a repository checkout. Installed packages already include the generated SDK artifacts and do not ship the repo-only generator script.
+
+- Use `capabilities` for compact bootstrap metadata:
+  - `commandDigests` for routing and safety hints
+  - `canonicalTools` for alias/preferred-command mapping
+  - `versionCompatibility` for transport and descriptor version notes
+  - `registryDigest` for drift detection
+  - `trustDistribution` for packaged trust signals, release scripts, and verification posture
+- Use `schema` for authoritative codegen input:
+  - top-level envelope definitions
+  - exact per-command `inputSchema`
+  - `commandDescriptors` and descriptor metadata
+- In a repository checkout, `npm run generate:sdk-contracts` regenerates all shipped SDK artifacts:
+  - `sdk/generated`
+  - `sdk/typescript/generated`
+  - `sdk/python/pandora_agent/generated`
+- In the published root package, `sdk/generated` remains the shared JS contract export surface and embedded SDK loaders/manifests route to it instead of duplicating the heavy JSON bundle.
+- The TypeScript SDK keeps its embedded manifest at `sdk/typescript/generated/manifest.json`.
+- The Python SDK keeps its embedded manifest at `sdk/python/pandora_agent/generated/manifest.json`.
+- Rebuild generated clients when either of these changes:
+  - `commandDescriptorVersion`
+  - `capabilities.data.registryDigest.descriptorHash`
+- For direct live execution today, use an MCP client against `pandora mcp` or intentionally hosted `pandora mcp http`; contract export is for local generation, while MCP is the supported execution transport.
+
+## SDK bootstrap modes
+
+- Local SDK execution:
+  - start `pandora mcp`
+  - connect the SDK over stdio
+  - no gateway token is involved
+- Remote SDK execution:
+  - intentionally host `pandora mcp http --auth-scopes <csv>`
+  - connect the SDK to the `/mcp` endpoint with a bearer token
+  - provision signer material only on that gateway runtime if a selected tool actually requires secrets
+- Package-local generated artifact usage:
+  - use `capabilities` / `schema` for live runtime discovery
+  - use the SDK package's own generated manifest/artifacts for installed local metadata
+  - for Python specifically, the shipped package-local manifest lives at `sdk/python/pandora_agent/generated/manifest.json`
+
+## Policy scopes and signer profiles
+- Policy metadata is wired now:
+  - MCP tool metadata includes `xPandora.policyScopes`
+  - `capabilities` / `schema` expose `policyScopes`, `requiresSecrets`, and `policyProfiles`
+  - the HTTP gateway checks bearer-token scopes from `--auth-scopes` before invoking a tool
+- Policy/profile status fields are active alpha surfaces:
+  - `policyProfiles.policyPacks` reports the shipped policy-pack catalog state
+  - `policyProfiles.signerProfiles` reports the shipped signer-profile catalog state
+- signer-profile capability metadata also exposes:
+  - `implementedBackends`
+  - `placeholderBackends`
+  - `readyBuiltinIds`
+  - `pendingBuiltinIds`
+- Use the policy/profile command families directly:
+  - `policy list|get|lint` for pack discovery, compiled-rule inspection, and custom-pack validation
+  - `profile list|get|validate` for profile discovery, backend readiness inspection, and custom-profile validation
+- Current builds do **not** expose a universal `--profile` selector across mutating commands. Live commands that require signing still commonly resolve credentials from flags/env during rollout.
+- Built-in sample profiles cover the `read-only`, `local-env`, `local-keystore`, and `external-signer` backend classes. Inspect concrete ids such as `market_observer_ro`, `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` with `profile get --id <profile-id>` before assuming a backend is operational.
+- In current builds, only `market_observer_ro` is built-in runtime-ready by default. Treat the other built-in mutable profiles as planning samples unless `profile get` reports them ready in your runtime.
+- Preferred operator pattern:
+  - for agent access, mint narrow gateway tokens and grant only the tool scopes you intend to expose
+  - for read-only bootstrap, start with the built-in `research-only` policy and `market_observer_ro` profile pattern
+  - for live signing, inject secrets through env, `.env`, or your own secret-manager wrapper before invoking Pandora
+  - avoid raw `--private-key` on command lines for recurring automation unless you explicitly need a manual fallback
+- Use `pandora --output json capabilities` or `pandora --output json schema` to answer:
+  - which commands require secrets
+  - which `policyScopes` a token must grant
+  - which policy/profile alpha surfaces are shipped in the current build
+
+## Minimal agent onboarding flow
+
+Use this as the concrete preferred sequence:
+
+1. Discover the contract:
+   - `pandora --output json capabilities`
+   - `pandora --output json schema`
+   - `pandora --output json policy list`
+   - `pandora --output json profile list`
+2. Inspect the target tool's `policyScopes` and `requiresSecrets` fields.
+3. Start `pandora mcp` for local stdio, or start the remote gateway only if the agent needs remote tool execution:
+   - `pandora mcp http --auth-scopes <csv>`
+   - if you are embedding the shipped SDKs, keep using their package-local generated artifacts for static metadata and MCP only for execution
+4. Hand the agent the bearer token from `~/.pandora/mcp-http/auth-token` or your own supplied token.
+5. If the tool requires signing, provision env-based secrets on the gateway host itself. Gateway scopes authorize tool use; they do not replace signer material.
+
+Use raw `--private-key` only for manual/operator fallback. It is not the preferred agent path.
+
 ## MCP server mode
 - Transport:
   - MCP stdio JSON-RPC
-- Remote beta transport:
+- Remote HTTP transport:
   - streamable HTTP via `pandora mcp http`
   - bearer-token protected
   - if no auth token is supplied, the gateway generates one and stores it at `~/.pandora/mcp-http/auth-token`
@@ -35,6 +153,8 @@ Use this guide for `schema`, `mcp`, JSON output contracts, recovery hints, and m
   - default gateway scopes are the non-mutating remote-eligible tool scopes plus `operations:read`
   - remote-eligible mutating tools can still appear in tool discovery, but calls are rejected with `FORBIDDEN` unless the bearer token includes the required `xPandora.policyScopes`
   - use `pandora --output json schema` or MCP tool metadata to inspect a tool's declared `policyScopes`
+  - for signer-bearing tools, prefer granting only the exact tool scopes plus `secrets:use` rather than handing an agent raw private-key material
+  - `secrets:use` authorizes secret-bearing tool invocation; it does not materialize signer credentials by itself
 - Tool model:
   - one tool per command family entrypoint
 - Exclusions:

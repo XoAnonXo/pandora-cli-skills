@@ -414,6 +414,12 @@ function createErrorRecoveryService(options = {}) {
           command: `${cliName} lifecycle status --id <lifecycle-id>`,
           retryable: true,
         };
+      case 'LIFECYCLE_INVALID_PHASE':
+        return {
+          action: 'Inspect the persisted lifecycle state and repair the invalid phase before retrying resolve',
+          command: `${cliName} lifecycle status --id ${cleanToken(details && details.id, '<lifecycle-id>')}`,
+          retryable: false,
+        };
       case 'ODDS_RECORD_CONNECTOR_FAILED':
       case 'ODDS_RECORD_FAILED':
       case 'ODDS_RECORD_WRITE_FAILED':

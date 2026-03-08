@@ -3,7 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
+const generatedCommandDescriptors = require('../../sdk/generated/command-descriptors.json');
+const generatedMcpToolDefinitions = require('../../sdk/generated/mcp-tool-definitions.json');
 const { buildCommandDescriptors, buildMcpToolDefinitions } = require('../../cli/lib/agent_contract_registry.cjs');
+const { ROUTED_TOP_LEVEL_COMMANDS } = require('../../cli/lib/command_router.cjs');
+const { buildSdkContractComponents } = require('../../cli/lib/sdk_contract_service.cjs');
 
 const CLI_ROOT = path.resolve(__dirname, '../../cli');
 const EXCLUDED_FILES = new Set([
@@ -36,6 +40,10 @@ function collectEmittedHelpCommands() {
     }
   }
   return emitted;
+}
+
+function sortByName(left, right) {
+  return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
 }
 
 test('shared agent contract registry covers all MCP tools with canonical metadata', () => {
@@ -93,6 +101,17 @@ test('shared agent contract registry declares every emitted help command', () =>
   }
 });
 
+test('shared agent contract registry covers every routed top-level command family', () => {
+  const descriptors = buildCommandDescriptors();
+  const topLevelDescriptors = new Set(
+    Object.keys(descriptors).filter((name) => !String(name).includes('.')),
+  );
+
+  for (const commandName of ROUTED_TOP_LEVEL_COMMANDS) {
+    assert.ok(topLevelDescriptors.has(commandName), `missing top-level descriptor for routed command ${commandName}`);
+  }
+});
+
 test('mirror and sports create schemas expose category names and required selector invariants', () => {
   const descriptors = buildCommandDescriptors();
 
@@ -142,6 +161,46 @@ test('mirror and sports create schemas expose category names and required select
   const sportsCreatePlan = descriptors['sports.create.plan'];
   assert.ok(sportsCreatePlan);
   assert.equal(sportsCreatePlan.inputSchema.properties.category.anyOf[1].enum[1], 'Sports');
+});
+
+test('policy and profile command contracts are exposed with typed MCP schemas', () => {
+  const descriptors = buildCommandDescriptors();
+
+  const policyList = descriptors['policy.list'];
+  assert.ok(policyList);
+  assert.equal(policyList.mcpExposed, true);
+  assert.equal(policyList.dataSchema, '#/definitions/PolicyListPayload');
+
+  const policyGet = descriptors['policy.get'];
+  assert.ok(policyGet);
+  assert.equal(policyGet.inputSchema.properties.id.type, 'string');
+
+  const profileList = descriptors['profile.list'];
+  assert.ok(profileList);
+  assert.equal(profileList.mcpExposed, true);
+  assert.equal(profileList.dataSchema, '#/definitions/ProfileListPayload');
+
+  const profileValidate = descriptors['profile.validate'];
+  assert.ok(profileValidate);
+  assert.equal(profileValidate.inputSchema.properties.file.type, 'string');
+
+  const sportsOddsBulk = descriptors['sports.odds.bulk'];
+  assert.ok(sportsOddsBulk);
+  assert.equal(sportsOddsBulk.mcpExposed, true);
+  assert.equal(sportsOddsBulk.dataSchema, '#/definitions/SportsBulkOddsPayload');
+  assert.equal(sportsOddsBulk.inputSchema.properties.competition.type, 'string');
+});
+
+test('generated descriptor and MCP tool slices stay in sync with the live registry builders', () => {
+  assert.deepEqual(generatedCommandDescriptors, buildCommandDescriptors());
+  const compiled = buildSdkContractComponents({
+    packageVersion: require('../../package.json').version,
+    remoteTransportActive: false,
+  });
+  assert.deepEqual(
+    generatedMcpToolDefinitions,
+    compiled.mcpToolDefinitions.slice().sort(sortByName),
+  );
 });
 
 test('shared agent contract registry normalizes MCP metadata defaults and alias metadata', () => {
@@ -236,25 +295,25 @@ test('shared agent contract registry normalizes MCP metadata defaults and alias 
     const mirrorSyncStartDescriptor = descriptors['mirror.sync.start'];
     assert.ok(mirrorSyncStartDescriptor);
     assert.equal(mirrorSyncStartDescriptor.returnsOperationId, true);
-    assert.equal(mirrorSyncStartDescriptor.returnsRuntimeHandle, true);
+    assert.equal(mirrorSyncStartDescriptor.returnsRuntimeHandle, false);
     assert.ok(mirrorSyncStartDescriptor.externalDependencies.includes('wallet-secrets'));
     assert.ok(mirrorSyncStartDescriptor.externalDependencies.includes('notification-secrets'));
 
     const sportsSyncStartDescriptor = descriptors['sports.sync.start'];
     assert.ok(sportsSyncStartDescriptor);
     assert.equal(sportsSyncStartDescriptor.returnsOperationId, true);
-    assert.equal(sportsSyncStartDescriptor.returnsRuntimeHandle, true);
+    assert.equal(sportsSyncStartDescriptor.returnsRuntimeHandle, false);
 
     const mirrorSyncStopDescriptor = descriptors['mirror.sync.stop'];
     assert.deepEqual(mirrorSyncStopDescriptor.externalDependencies, ['filesystem']);
     assert.equal(mirrorSyncStopDescriptor.riskLevel, 'medium');
     assert.equal(mirrorSyncStopDescriptor.returnsOperationId, true);
-    assert.equal(mirrorSyncStopDescriptor.returnsRuntimeHandle, true);
+    assert.equal(mirrorSyncStopDescriptor.returnsRuntimeHandle, false);
 
     const sportsSyncStopDescriptor = descriptors['sports.sync.stop'];
     assert.deepEqual(sportsSyncStopDescriptor.externalDependencies, ['filesystem']);
     assert.equal(sportsSyncStopDescriptor.returnsOperationId, true);
-    assert.equal(sportsSyncStopDescriptor.returnsRuntimeHandle, true);
+    assert.equal(sportsSyncStopDescriptor.returnsRuntimeHandle, false);
 
     const mirrorStatusDescriptor = descriptors['mirror.status'];
     assert.deepEqual(mirrorStatusDescriptor.externalDependencies, ['filesystem', 'indexer-api', 'polymarket-api']);

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
+const os = require('os');
 const path = require('path');
 
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
@@ -9,6 +10,7 @@ const { buildCapabilitiesPayload } = require('./capabilities_command_service.cjs
 const { createOperationService } = require('./operation_service.cjs');
 const { createMcpProtocolService } = require('./mcp_protocol_service.cjs');
 const { buildCommandDescriptors } = require('./agent_contract_registry.cjs');
+const COMMAND_DESCRIPTORS = buildCommandDescriptors();
 
 function createGatewayError(code, message, details = undefined) {
   const error = new Error(message);
@@ -47,18 +49,26 @@ function parseCsvList(value) {
     .filter(Boolean);
 }
 
+function isWildcardHost(host) {
+  const normalized = String(host || '').trim().toLowerCase();
+  return normalized === '0.0.0.0' || normalized === '::' || normalized === '[::]';
+}
+
 function buildDefaultRemoteScopes() {
-  const descriptors = Object.values(buildCommandDescriptors());
-  const scopes = new Set();
-  for (const descriptor of descriptors) {
-    if (!descriptor || !descriptor.remoteEligible || !descriptor.mcpExposed) continue;
-    if (descriptor.mcpMutating || descriptor.jobCapable) continue;
-    for (const scope of descriptor.policyScopes || []) {
-      scopes.add(scope);
-    }
-  }
-  scopes.add('operations:read');
-  return Array.from(scopes).sort();
+  const knownScopes = new Set(
+    Object.values(COMMAND_DESCRIPTORS).flatMap((descriptor) =>
+      Array.isArray(descriptor && descriptor.policyScopes) ? descriptor.policyScopes : []
+    ),
+  );
+  return [
+    'capabilities:read',
+    'contracts:read',
+    'help:read',
+    'operations:read',
+    'policy:read',
+    'profile:read',
+    'schema:read',
+  ].filter((scope) => knownScopes.has(scope));
 }
 
 function safeTokenEquals(left, right) {
@@ -81,7 +91,14 @@ function readAuthTokenFromFile(filePath) {
 }
 
 function writeGeneratedAuthToken(token) {
-  const baseDir = path.join(process.env.HOME || process.cwd(), '.pandora', 'mcp-http');
+  const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
+  if (!homeDir) {
+    throw createGatewayError(
+      'INVALID_FLAG_VALUE',
+      'Cannot determine a home directory for a generated auth token. Pass --auth-token or --auth-token-file explicitly.',
+    );
+  }
+  const baseDir = path.join(homeDir, '.pandora', 'mcp-http');
   fs.mkdirSync(baseDir, { recursive: true });
   try {
     fs.chmodSync(baseDir, 0o700);
@@ -212,6 +229,25 @@ function scopeMatches(requiredScope, grantedScopes) {
   return grantedScopes.has(`${namespace}:*`);
 }
 
+function assertAnyScope(authInfo, requiredScopes, message, toolName = null) {
+  const scopes = Array.isArray(requiredScopes)
+    ? requiredScopes.map((scope) => String(scope || '').trim()).filter(Boolean)
+    : [];
+  if (!scopes.length) return;
+  const grantedScopes = authInfo && authInfo.scopes instanceof Set ? authInfo.scopes : new Set();
+  const hasMatch = scopes.some((scope) => scopeMatches(scope, grantedScopes));
+  if (hasMatch) return;
+  const error = createGatewayError('FORBIDDEN', message, {
+    requiredScopes: scopes,
+    grantedScopes: Array.from(grantedScopes).sort(),
+    ...(toolName ? { toolName } : {}),
+  });
+  error.recovery = {
+    command: `Restart pandora mcp http with --auth-scopes ${Array.from(new Set([...grantedScopes, ...scopes])).sort().join(',')}`,
+  };
+  throw error;
+}
+
 function ensureAuthorized(req, authConfig) {
   const header = String(req.headers.authorization || '').trim();
   if (!header.startsWith('Bearer ')) {
@@ -249,15 +285,35 @@ function assertToolScopes(toolName, descriptor, authInfo) {
   const grantedScopes = authInfo && authInfo.scopes instanceof Set ? authInfo.scopes : new Set();
   const missingScopes = requiredScopes.filter((scope) => !scopeMatches(scope, grantedScopes));
   if (missingScopes.length) {
-    throw createGatewayError(
+    const error = createGatewayError(
       'FORBIDDEN',
       `${toolName} requires scopes not granted to this gateway token.`,
       {
         toolName,
+        requiredScopes,
         missingScopes,
         grantedScopes: Array.from(grantedScopes).sort(),
+        hints: [
+          `Grant ${missingScopes.join(', ')} to the gateway token and retry.`,
+        ],
       },
     );
+    error.recovery = {
+      command: `Restart pandora mcp http with --auth-scopes ${Array.from(new Set([...grantedScopes, ...missingScopes])).sort().join(',')}`,
+    };
+    throw error;
+  }
+}
+
+function canAccessToolDescriptor(toolName, descriptor, authInfo) {
+  try {
+    assertToolScopes(toolName, descriptor, authInfo);
+    return true;
+  } catch (error) {
+    if (error && error.code === 'FORBIDDEN') {
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -292,17 +348,37 @@ function createMcpHttpGatewayService(options = {}) {
   const startedAt = Date.now();
   let advertisedBaseUrl = parsed.publicBaseUrl;
   let generatedTokenFile = null;
+  let controlBaseUrl = null;
+
+  function resolveRequestBaseUrl(req) {
+    if (advertisedBaseUrl) return advertisedBaseUrl;
+    const forwardedProto = String(req && req.headers ? req.headers['x-forwarded-proto'] || '' : '').trim();
+    const protocol = forwardedProto || 'http';
+    const forwardedHost = String(req && req.headers ? req.headers['x-forwarded-host'] || '' : '').trim();
+    const host = forwardedHost || String(req && req.headers ? req.headers.host || '' : '').trim();
+    if (host) {
+      return `${protocol}://${host}`;
+    }
+    return controlBaseUrl;
+  }
 
   async function handleCapabilities(req, res) {
     const authInfo = ensureAuthorized(req, authConfig);
+    assertToolScopes('capabilities', { xPandora: { policyScopes: COMMAND_DESCRIPTORS.capabilities.policyScopes || [] } }, authInfo);
+    const resolvedBaseUrl = resolveRequestBaseUrl(req);
     const payload = buildCapabilitiesPayload({
       remoteTransportActive: true,
-      remoteTransportUrl: advertisedBaseUrl ? `${advertisedBaseUrl}${parsed.mcpPath}` : null,
+      remoteTransportUrl: resolvedBaseUrl ? `${resolvedBaseUrl}${parsed.mcpPath}` : null,
     });
     payload.gateway = {
+      baseUrl: resolvedBaseUrl || null,
+      capabilitiesPath: parsed.capabilitiesPath,
+      healthPath: parsed.healthPath,
+      mcpPath: parsed.mcpPath,
+      operationsPath: parsed.operationsPath,
       authRequired: true,
       grantedScopes: Array.from(authInfo.scopes).sort(),
-      advertisedBaseUrl,
+      advertisedBaseUrl: resolvedBaseUrl,
     };
     sendJson(res, 200, {
       ok: true,
@@ -353,8 +429,14 @@ function createMcpHttpGatewayService(options = {}) {
 
   async function handleMcp(req, res) {
     const authInfo = ensureAuthorized(req, authConfig);
+    const resolvedBaseUrl = resolveRequestBaseUrl(req);
     const server = protocol.createServer({
       assertToolAllowed: (toolName, descriptor) => assertToolScopes(toolName, descriptor, authInfo),
+      filterToolDescriptor: (toolName, descriptor) => canAccessToolDescriptor(toolName, descriptor, authInfo),
+      buildInvocationEnv: () => ({
+        PANDORA_MCP_REMOTE_ACTIVE: '1',
+        ...(resolvedBaseUrl ? { PANDORA_MCP_REMOTE_URL: `${resolvedBaseUrl}${parsed.mcpPath}` } : {}),
+      }),
     });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -433,8 +515,9 @@ function createMcpHttpGatewayService(options = {}) {
         error && error.code === 'UNAUTHORIZED' ? 401
           : error && error.code === 'FORBIDDEN' ? 403
             : error && error.code === 'OPERATION_NOT_FOUND' ? 404
+              : error && error.code === 'NOT_FOUND' ? 404
               : error && error.code === 'METHOD_NOT_ALLOWED' ? 405
-              : 400;
+              : 500;
       if (error && error.code === 'METHOD_NOT_ALLOWED' && error.details && Array.isArray(error.details.allowedMethods)) {
         res.setHeader('allow', error.details.allowedMethods.join(', '));
       }
@@ -444,6 +527,7 @@ function createMcpHttpGatewayService(options = {}) {
           code: error && error.code ? error.code : 'MCP_HTTP_GATEWAY_FAILED',
           message: error && error.message ? error.message : String(error),
           ...(error && error.details !== undefined ? { details: error.details } : {}),
+          ...(error && error.recovery !== undefined ? { recovery: error.recovery } : {}),
         },
       });
     }
@@ -465,6 +549,7 @@ function createMcpHttpGatewayService(options = {}) {
           error: {
             code: 'MCP_HTTP_GATEWAY_FAILED',
             message: error && error.message ? error.message : String(error),
+            ...(error && error.recovery !== undefined ? { recovery: error.recovery } : {}),
           },
         });
       });
@@ -478,9 +563,11 @@ function createMcpHttpGatewayService(options = {}) {
     });
     const address = server.address();
     const actualPort = address && typeof address === 'object' ? address.port : parsed.port;
-    const baseUrl = `http://${parsed.host}:${actualPort}`;
+    const controlHost = isWildcardHost(parsed.host) ? '127.0.0.1' : parsed.host;
+    const baseUrl = `http://${controlHost}:${actualPort}`;
+    controlBaseUrl = baseUrl;
     if (!advertisedBaseUrl) {
-      advertisedBaseUrl = baseUrl;
+      advertisedBaseUrl = isWildcardHost(parsed.host) ? null : baseUrl;
     }
     if (authConfig.authTokenGenerated) {
       generatedTokenFile = writeGeneratedAuthToken(authConfig.authToken);

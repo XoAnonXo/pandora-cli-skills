@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pandora-agent"
+version = "0.1.0a1"
+description = "Pandora agent SDK alpha for local and remote tool execution."
+requires-python = ">=3.9"
+readme = "README.md"
+authors = [{ name = "Pandora CLI Contributors" }]
+license = { text = "ISC" }
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: ISC License (ISCL)",
+]
+
+[tool.setuptools]
+packages = ["pandora_agent"]
+
+[tool.setuptools.package-data]
+pandora_agent = ["py.typed", "generated/*.json"]

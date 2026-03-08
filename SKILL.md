@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Index and operator guide for Pandora CLI capabilities, mirror operations, and agent-native interfaces.
-version: 1.1.68
+version: 1.1.69
 ---
 
 # Pandora CLI & Skills
@@ -13,14 +13,36 @@ Start here, then open the smallest scoped doc that matches the task:
 
 - [`docs/skills/capabilities.md`](./docs/skills/capabilities.md)
   - command families, canonical paths, use-case routing, and PollCategory mapping
+- [`docs/skills/agent-quickstart.md`](./docs/skills/agent-quickstart.md)
+  - smallest safe bootstrap for agents using local CLI, stdio MCP, remote MCP HTTP, or SDK consumers
 - [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
   - human-oriented command and flag reference, sports matrix, mirror subcommands, and quant/model detail; use capabilities/schema for machine authority
+- [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md)
+  - canonical discover -> quote -> buy/sell -> claim flows, plus arbitrage routing
+- [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md)
+  - portfolio inspection, history/export, LP exits, claim-all, operations, and mirror closeout
 - [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md)
   - mirror timing, validation, independent-source rules, deploy/go workflow, sync, and closeout guidance
 - [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
   - schema, MCP, JSON envelopes, recovery hints, fork runtime, streams, and error codes
+- [`docs/skills/policy-profiles.md`](./docs/skills/policy-profiles.md)
+  - policy packs, signer profiles, gateway scopes, and preferred secret-handling guidance
+- [`docs/skills/recipes.md`](./docs/skills/recipes.md)
+  - reusable safe workflows that compile to ordinary Pandora commands with policy/profile validation
+- [`docs/benchmarks/README.md`](./docs/benchmarks/README.md)
+  - benchmark harness overview, release-gate role, and agent-readiness framing
+- [`docs/benchmarks/scenario-catalog.md`](./docs/benchmarks/scenario-catalog.md)
+  - scenario-by-scenario benchmark coverage and parity groups
+- [`docs/benchmarks/scorecard.md`](./docs/benchmarks/scorecard.md)
+  - weighted scoring, parity failures, and interpretation of benchmark output
 - [`docs/skills/legacy-launchers.md`](./docs/skills/legacy-launchers.md)
   - `launch` / `clone-bet` legacy script wrappers and how they differ from mirror flows
+- [`docs/trust/release-verification.md`](./docs/trust/release-verification.md)
+  - release verification flow for checksums, provenance attestations, SBOM, and cosign signatures
+- [`docs/trust/security-model.md`](./docs/trust/security-model.md)
+  - trust boundaries, mutation controls, secret handling, and release posture
+- [`docs/trust/support-matrix.md`](./docs/trust/support-matrix.md)
+  - support guarantees and limits for local CLI, MCP transports, SDKs, benchmarks, and packaged docs
 
 ## Critical safety rules
 - `mirror plan|deploy|go` do **not** assume a generic `+1h` close buffer. They use a sports-aware suggested `targetTimestamp`; use `--target-timestamp <unix|iso>` only when intentionally overriding that suggestion.
@@ -30,20 +52,45 @@ Start here, then open the smallest scoped doc that matches the task:
 - CLI mirror execute reruns use `--validation-ticket <ticket>`. MCP execute/live reruns use `agentPreflight = { validationTicket, validationDecision: "PASS", validationSummary }`.
 - `sports create run` does not expose a CLI `--validation-ticket`; agent-controlled execute uses `agentPreflight` / `PANDORA_AGENT_PREFLIGHT`.
 - `launch` / `clone-bet` still expose `--target-timestamp-offset-hours`; that legacy script flag is **not** the mirror timing model.
+- Prefer policy-scoped MCP access and the shipped read-only policy/profile artifacts over raw `--private-key` when operating live flows. Policy packs and named profiles are now shipped in alpha via `policy` / `profile`, but current CLI execution still commonly resolves secrets from flags/env and does not yet expose a universal `--profile` selector across mutating commands.
+- Do not assume every built-in signer profile is execution-ready. Current built-in runtime-ready profile: `market_observer_ro`. Built-in pending profiles: `prod_trader_a`, `dev_keystore_operator`, `desk_signer_service`. Implemented backends today: `read-only`, `local-env`. Placeholder planning backends: `external-signer`, `local-keystore`.
 
 ## Capability routing
 - Machine-first discovery:
   - run `pandora --output json capabilities` for the compact runtime digest
   - run `pandora --output json schema` for the full contract surface
+  - run `pandora --output json policy list` to inspect shipped policy packs
+  - run `pandora --output json profile list` to inspect shipped profiles, `runtimeReady`, `resolutionStatus`, and backend readiness metadata
+  - when exposing Pandora to external agents, start with `capabilities/schema`, then intentionally host `pandora mcp http --auth-scopes ...`, then provision signing secrets only on that runtime if a selected tool actually requires them
+- in a repository checkout, use `npm run generate:sdk-contracts` when regenerating the shared JS export in `sdk/generated` plus the standalone SDK-local generated copies in `sdk/typescript/generated` and `sdk/python/pandora_agent/generated`
+- SDK alpha source/artifact surfaces are already shipped in this build under `sdk/typescript`, `sdk/python`, and `sdk/generated`
+- in the published root package, the shared JSON contract bundle lives once under `sdk/generated`; the embedded TypeScript/Python SDK loaders keep their own manifests and route heavy generated artifacts to the shared bundle
   - run `pandora mcp http ...` only when intentionally hosting the remote HTTP MCP gateway for external agents
 - Discovery, scanning, and market lookup:
   - open [`docs/skills/capabilities.md`](./docs/skills/capabilities.md)
+- First-time agent bootstrap:
+  - open [`docs/skills/agent-quickstart.md`](./docs/skills/agent-quickstart.md)
 - Exact flags for a command family:
   - open [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
+- Buy/sell/claim/arbitrage workflows:
+  - open [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md)
+- Portfolio inspection, LP exits, and closeout:
+  - open [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md)
 - Mirror deployment, verification, sync, or closeout:
   - open [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md)
 - Agent, MCP, schema, JSON output, or recovery contracts:
   - open [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
+  - use it for policy scope behavior, gateway auth guidance, and signer-profile status
+- Policy packs, signer profiles, or gateway scope design:
+  - open [`docs/skills/policy-profiles.md`](./docs/skills/policy-profiles.md)
+- Reusable workflows and safe recipe execution:
+  - open [`docs/skills/recipes.md`](./docs/skills/recipes.md)
+- Benchmark methodology, scenarios, or scorecards:
+  - open [`docs/benchmarks/README.md`](./docs/benchmarks/README.md)
+  - then [`docs/benchmarks/scenario-catalog.md`](./docs/benchmarks/scenario-catalog.md) or [`docs/benchmarks/scorecard.md`](./docs/benchmarks/scorecard.md) as needed
+- Release verification, support matrix, or security posture:
+  - open [`docs/trust/release-verification.md`](./docs/trust/release-verification.md)
+  - then [`docs/trust/support-matrix.md`](./docs/trust/support-matrix.md) or [`docs/trust/security-model.md`](./docs/trust/security-model.md) as needed
 - Manual market launcher scripts:
   - open [`docs/skills/legacy-launchers.md`](./docs/skills/legacy-launchers.md)
 
@@ -65,6 +112,11 @@ Start here, then open the smallest scoped doc that matches the task:
 - Agent-native:
     - `pandora --output json capabilities`
     - `pandora --output json schema`
+    - `pandora --output json policy list|get|lint`
+    - `pandora --output json profile list|get|validate`
+    - `pandora --output json recipe list|get|validate|run`
+    - use `capabilities` for compact discovery/routing and `schema` for authoritative contract export when generating client types
+    - for embedded SDK consumers, load the SDK-local manifest entrypoints first rather than assuming every language reads directly from `sdk/generated`
     - `pandora mcp`
     - `pandora mcp http ...` only for remote gateway hosting, not routine discovery
     - `pandora operations get|list|cancel|close`

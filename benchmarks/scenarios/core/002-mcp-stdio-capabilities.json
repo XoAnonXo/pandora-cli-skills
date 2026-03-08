@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-stdio-capabilities",
+  "title": "Stdio MCP capabilities bootstrap",
+  "description": "Local MCP client can discover the capabilities envelope through the typed tool surface.",
+  "transport": "mcp-stdio",
+  "assertionId": "capabilities-bootstrap",
+  "parityGroup": "capabilities-bootstrap",
+  "parityExpectedTransports": ["cli-json", "mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 5000,
+  "weight": 12,
+  "dimensions": ["bootstrap", "mcp", "local-parity"],
+  "request": {
+    "tool": "capabilities",
+    "arguments": {}
+  }
+}

@@ -760,7 +760,7 @@ const commandContracts = [
         safeEquivalent: null,
         externalDependencies: [],
         supportsRemote: true,
-        policyScopes: ['contracts:read'],
+        policyScopes: ['capabilities:read', 'contracts:read'],
       },
   }),
   commandContract({
@@ -1573,6 +1573,13 @@ const commandContracts = [
     },
   }),
   commandContract({
+    name: 'arb',
+    summary: 'Arbitrage command family help and routing entrypoint.',
+    usage: 'pandora [--output table|json] arb scan ...',
+    emits: ['arb.scan.help'],
+    dataSchema: '#/definitions/GenericCommandData',
+  }),
+  commandContract({
     name: 'arbitrage',
     summary: 'Backward-compatible one-shot cross-venue arbitrage wrapper.',
     usage:
@@ -1809,6 +1816,29 @@ const commandContracts = [
     },
   }),
   commandContract({
+    name: 'sports.odds.bulk',
+    summary: 'Fetch all competition odds and refresh the local bulk cache.',
+    usage:
+      'pandora [--output table|json] sports odds bulk --competition <id|slug> [--provider primary|backup|auto] [--timeout-ms <ms>] [--limit <n>]',
+    emits: ['sports.odds.bulk', 'sports.help'],
+    dataSchema: '#/definitions/SportsBulkOddsPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['sports', 'odds', 'bulk'],
+      description: 'Fetch all competition odds and refresh the local bulk cache.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          competition: commonFlags.competition,
+          provider: commonFlags.provider,
+          'timeout-ms': commonFlags.timeoutMs,
+          limit: commonFlags.limit,
+        },
+        requiredFlags: ['competition'],
+      }),
+      preferred: true,
+    },
+  }),
+  commandContract({
     name: 'sports.consensus',
     summary: 'Compute majority-book trimmed-median consensus.',
     usage:
@@ -2003,7 +2033,7 @@ const commandContracts = [
       },
       agentPlatform: {
         returnsOperationId: true,
-        returnsRuntimeHandle: true,
+        returnsRuntimeHandle: false,
       },
     }),
     commandContract({
@@ -2027,7 +2057,7 @@ const commandContracts = [
         externalDependencies: ['filesystem'],
         expectedLatencyMs: 1000,
         returnsOperationId: true,
-        returnsRuntimeHandle: true,
+        returnsRuntimeHandle: false,
       },
     }),
     commandContract({
@@ -2049,7 +2079,7 @@ const commandContracts = [
         externalDependencies: ['filesystem'],
         expectedLatencyMs: 1000,
         returnsOperationId: true,
-        returnsRuntimeHandle: true,
+        returnsRuntimeHandle: false,
       },
     }),
   commandContract({
@@ -3021,7 +3051,7 @@ const commandContracts = [
       },
       agentPlatform: {
         returnsOperationId: true,
-        returnsRuntimeHandle: true,
+        returnsRuntimeHandle: false,
       },
     }),
     commandContract({
@@ -3053,7 +3083,7 @@ const commandContracts = [
         expectedLatencyMs: 1000,
         riskLevel: 'medium',
         returnsOperationId: true,
-        returnsRuntimeHandle: true,
+        returnsRuntimeHandle: false,
       },
     }),
     commandContract({
@@ -3080,7 +3110,7 @@ const commandContracts = [
         externalDependencies: ['filesystem'],
         expectedLatencyMs: 1000,
         returnsOperationId: true,
-        returnsRuntimeHandle: true,
+        returnsRuntimeHandle: false,
       },
     }),
     commandContract({
@@ -3521,6 +3551,298 @@ const commandContracts = [
       supportsRemote: true,
       remoteEligible: true,
       policyScopes: ['operations:write'],
+    },
+  }),
+  commandContract({
+    name: 'policy',
+    summary: 'Policy pack command family help and routing entrypoint.',
+    usage: 'pandora [--output table|json] policy list|get|lint [flags]',
+    emits: ['policy.help'],
+    dataSchema: '#/definitions/PolicyListPayload',
+  }),
+  commandContract({
+    name: 'policy.list',
+    summary: 'List built-in and user-defined policy packs.',
+    usage: 'pandora [--output table|json] policy list',
+    emits: ['policy.list', 'policy.list.help', 'policy.help'],
+    dataSchema: '#/definitions/PolicyListPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['policy', 'list'],
+      description: 'List built-in and user-defined policy packs.',
+      inputSchema: buildInputSchema(),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 150,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'policy.get',
+    summary: 'Return one policy pack by id.',
+    usage: 'pandora [--output table|json] policy get --id <policy-id>',
+    emits: ['policy.get', 'policy.get.help', 'policy.help'],
+    dataSchema: '#/definitions/PolicyPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['policy', 'get'],
+      description: 'Return one policy pack by id.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Policy pack id.'),
+        },
+        requiredFlags: ['id'],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 150,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'policy.lint',
+    summary: 'Validate a policy pack file before use.',
+    usage: 'pandora [--output table|json] policy lint --file <path>',
+    emits: ['policy.lint', 'policy.lint.help', 'policy.help'],
+    dataSchema: '#/definitions/PolicyPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['policy', 'lint'],
+      description: 'Validate a policy pack file before use.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          file: stringSchema('Workspace-relative path to a policy JSON file.'),
+        },
+        requiredFlags: ['file'],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 200,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'profile',
+    summary: 'Signer profile command family help and routing entrypoint.',
+    usage: 'pandora [--output table|json] profile list|get|validate [flags]',
+    emits: ['profile.help'],
+    dataSchema: '#/definitions/ProfileListPayload',
+  }),
+  commandContract({
+    name: 'profile.list',
+    summary: 'List built-in and user-defined signer profiles.',
+    usage: 'pandora [--output table|json] profile list',
+    emits: ['profile.list', 'profile.list.help', 'profile.help'],
+    dataSchema: '#/definitions/ProfileListPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['profile', 'list'],
+      description: 'List built-in and user-defined signer profiles.',
+      inputSchema: buildInputSchema(),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 150,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'profile.get',
+    summary: 'Return one signer profile by id.',
+    usage: 'pandora [--output table|json] profile get --id <profile-id>',
+    emits: ['profile.get', 'profile.get.help', 'profile.help'],
+    dataSchema: '#/definitions/ProfilePayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['profile', 'get'],
+      description: 'Return one signer profile by id.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Signer profile id.'),
+        },
+        requiredFlags: ['id'],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 150,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'profile.validate',
+    summary: 'Validate a signer profile file before use.',
+    usage: 'pandora [--output table|json] profile validate --file <path>',
+    emits: ['profile.validate', 'profile.validate.help', 'profile.help'],
+    dataSchema: '#/definitions/ProfilePayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['profile', 'validate'],
+      description: 'Validate a signer profile file before use.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          file: stringSchema('Workspace-relative path to a signer profile JSON file.'),
+        },
+        requiredFlags: ['file'],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 200,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'recipe',
+    summary: 'Recipe command family help and routing entrypoint.',
+    usage: 'pandora [--output table|json] recipe list|get|validate|run [flags]',
+    emits: ['recipe.help'],
+    dataSchema: '#/definitions/RecipeListPayload',
+  }),
+  commandContract({
+    name: 'recipe.list',
+    summary: 'List first-party Pandora recipes.',
+    usage: 'pandora [--output table|json] recipe list',
+    emits: ['recipe.list', 'recipe.list.help', 'recipe.help'],
+    dataSchema: '#/definitions/RecipeListPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['recipe', 'list'],
+      description: 'List first-party Pandora recipes.',
+      inputSchema: buildInputSchema(),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 150,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'recipe.get',
+    summary: 'Return one recipe manifest by id or file.',
+    usage: 'pandora [--output table|json] recipe get --id <recipe-id>|--file <path>',
+    emits: ['recipe.get', 'recipe.get.help', 'recipe.help'],
+    dataSchema: '#/definitions/RecipePayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['recipe', 'get'],
+      description: 'Return one recipe manifest by id or file.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Built-in recipe id.'),
+          file: stringSchema('Workspace-relative path to a recipe JSON file.'),
+        },
+        oneOf: buildExclusivePresenceBranches([['id'], ['file']]),
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 200,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'recipe.validate',
+    summary: 'Validate a recipe manifest and its policy/profile compatibility.',
+    usage: 'pandora [--output table|json] recipe validate --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>]',
+    emits: ['recipe.validate', 'recipe.validate.help', 'recipe.help'],
+    dataSchema: '#/definitions/RecipeRunPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['recipe', 'validate'],
+      description: 'Validate a recipe manifest and its policy/profile compatibility.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Built-in recipe id.'),
+          file: stringSchema('Workspace-relative path to a recipe JSON file.'),
+          inputs: {
+            type: 'object',
+            description: 'Recipe input values keyed by recipe input id.',
+            additionalProperties: {
+              type: ['string', 'number', 'integer', 'boolean'],
+            },
+          },
+          'policy-id': stringSchema('Optional policy pack id override.'),
+          'profile-id': stringSchema('Optional signer profile id override.'),
+        },
+        oneOf: buildExclusivePresenceBranches([['id'], ['file']]),
+      }),
+      preferred: true,
+      controlInputNames: ['inputs'],
+    },
+    agentPlatform: {
+      expectedLatencyMs: 350,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'recipe.run',
+    summary: 'Run a safe first-party recipe by compiling it into an ordinary Pandora command.',
+    usage: 'pandora [--output table|json] recipe run --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>] [--timeout-ms <ms>]',
+    emits: ['recipe.run', 'recipe.run.help', 'recipe.help'],
+    dataSchema: '#/definitions/RecipeRunPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['recipe', 'run'],
+      description: 'Run a safe recipe by compiling it into an ordinary Pandora command.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Built-in recipe id.'),
+          file: stringSchema('Workspace-relative path to a recipe JSON file.'),
+          inputs: {
+            type: 'object',
+            description: 'Recipe input values keyed by recipe input id.',
+            additionalProperties: {
+              type: ['string', 'number', 'integer', 'boolean'],
+            },
+          },
+          'policy-id': stringSchema('Optional policy pack id override.'),
+          'profile-id': stringSchema('Optional signer profile id override.'),
+          'timeout-ms': integerSchema('Optional timeout for delegated command execution.', { minimum: 1000 }),
+        },
+        oneOf: buildExclusivePresenceBranches([['id'], ['file']]),
+      }),
+      preferred: true,
+      controlInputNames: ['inputs'],
+    },
+    agentPlatform: {
+      riskLevel: 'low',
+      idempotency: 'conditional',
+      expectedLatencyMs: 1200,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
     },
   }),
   commandContract({

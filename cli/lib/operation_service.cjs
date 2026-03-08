@@ -8,6 +8,7 @@ const {
   normalizeOperationState,
 } = require('./shared/operation_states.cjs');
 const {
+  buildOperationHashInput,
   buildOperationHash,
   buildOperationId,
   normalizeOperationHash,
@@ -124,6 +125,13 @@ function normalizePublicOperationRecord(record, checkpoints) {
     canceledAt: record.cancelledAt || null,
     cancelledAt: record.cancelledAt || null,
     closedAt: record.closedAt || null,
+    parentOperationId: record.parentOperationId || null,
+    policyPack: record.policyPack || null,
+    profile: record.profile || null,
+    environment: record.environment || null,
+    mode: record.mode || null,
+    scope: record.scope || null,
+    tags: Array.isArray(record.tags) ? cloneValue(record.tags) : [],
     type: record.metadata && typeof record.metadata.type === 'string' ? record.metadata.type : null,
     target: record.target === undefined ? null : record.target,
     input: record.request === undefined ? null : record.request,
@@ -237,20 +245,31 @@ function buildSeedPayload(seed = {}) {
   if (seed.type !== undefined && metadata.type === undefined) {
     metadata.type = seed.type;
   }
+  const policyPack = typeof seed.policyPack === 'string' && seed.policyPack.trim() ? seed.policyPack.trim() : null;
+  const profile = typeof seed.profile === 'string' && seed.profile.trim() ? seed.profile.trim() : null;
+  const environment = typeof seed.environment === 'string' && seed.environment.trim() ? seed.environment.trim() : null;
+  const mode = typeof seed.mode === 'string' && seed.mode.trim() ? seed.mode.trim() : null;
+  const scope = typeof seed.scope === 'string' && seed.scope.trim() ? seed.scope.trim() : null;
+  const parentOperationId = typeof seed.parentOperationId === 'string' && seed.parentOperationId.trim()
+    ? seed.parentOperationId.trim()
+    : null;
+  const tags = Array.isArray(seed.tags) ? cloneValue(seed.tags) : [];
   const operationHash = normalizeOperationHash(
-    seed.operationHash || buildOperationHash({
+    seed.operationHash || buildOperationHash(buildOperationHashInput({
       command,
       action: seed.action,
+      parentOperationId,
       target: seed.target === undefined ? null : seed.target,
       request,
       context: seed.context === undefined ? null : seed.context,
       metadata,
-      policyPack: seed.policyPack,
-      profile: seed.profile,
-      environment: seed.environment,
-      mode: seed.mode,
-      scope: seed.scope,
-    }, { namespace: 'pandora.operation' }),
+      policyPack,
+      profile,
+      environment,
+      mode,
+      scope,
+      tags,
+    }), { namespace: 'pandora.operation' }),
   );
   const operationId = normalizeOperationId(
     seed.operationId || buildOperationId({ command, operationHash }, { prefix: command || 'operation', operationHash }),
@@ -261,6 +280,7 @@ function buildSeedPayload(seed = {}) {
     command,
     summary: typeof seed.summary === 'string' && seed.summary.trim() ? seed.summary.trim() : null,
     description: typeof seed.description === 'string' && seed.description.trim() ? seed.description.trim() : null,
+    parentOperationId,
     target: seed.target === undefined ? null : cloneValue(seed.target),
     request,
     recovery: seed.recovery === undefined ? null : cloneValue(seed.recovery),
@@ -270,8 +290,12 @@ function buildSeedPayload(seed = {}) {
     closure: seed.closure === undefined ? null : cloneValue(seed.closure),
     metadata,
     runtime: seed.context === undefined ? null : cloneValue(seed.context),
-    scope: typeof seed.scope === 'string' && seed.scope.trim() ? seed.scope.trim() : null,
-    tags: Array.isArray(seed.tags) ? cloneValue(seed.tags) : [],
+    policyPack,
+    profile,
+    environment,
+    mode,
+    scope,
+    tags,
   };
 }
 
@@ -311,44 +335,14 @@ async function emitLifecycle(deps, record, phase, details = {}) {
   }
 }
 
-function transitionPatch(patch = {}) {
-  if (!isPlainObject(patch)) return {};
-  const next = { ...patch };
-  delete next.checkpoint;
-  delete next.checkpoints;
-  return next;
-}
-
-async function appendCheckpoints(store, operationId, patch = {}, status) {
-  const checkpoints = [];
-  if (patch.checkpoint !== undefined) {
-    checkpoints.push(patch.checkpoint);
-  }
-  if (Array.isArray(patch.checkpoints)) {
-    checkpoints.push(...patch.checkpoints);
-  }
-  let latest = null;
-  for (const checkpoint of checkpoints) {
-    const payload = isPlainObject(checkpoint)
-      ? { ...checkpoint }
-      : { label: String(checkpoint || ''), kind: 'note' };
-    if (!payload.status && status) {
-      payload.status = mapPublicStatusToStore(status);
-    }
-    latest = await store.appendCheckpoint(operationId, payload, {
-      syncState: false,
-    });
-  }
-  return latest;
-}
-
 function buildListFilters(filters = {}) {
   const next = {};
   if (Array.isArray(filters.statuses) && filters.statuses.length) {
     next.status = filters.statuses.map((status) => mapPublicStatusToStore(status));
   }
   if (filters.tool) {
-    next.command = String(filters.tool).trim();
+    const tool = String(filters.tool).trim();
+    next.commandPrefix = tool;
   }
   if (Number.isFinite(Number(filters.limit)) && Number(filters.limit) > 0) {
     next.limit = Math.floor(Number(filters.limit));
@@ -365,13 +359,12 @@ function createOperationService(deps = {}) {
   async function createWithStatus(status, seed = {}) {
     const storeStatus = mapPublicStatusToStore(status);
     const payload = buildSeedPayload(seed);
-    const upserted = await store.upsert({
+    await store.upsert({
       ...payload,
       status: storeStatus,
+      checkpoint: seed.checkpoint,
+      checkpoints: seed.checkpoints,
     });
-    if (seed.checkpoint !== undefined || Array.isArray(seed.checkpoints)) {
-      await appendCheckpoints(store, payload.operationId, seed, status);
-    }
     const record = await loadPublicRecord(store, payload.operationId, {
       includeCheckpoints: true,
     });
@@ -400,12 +393,9 @@ function createOperationService(deps = {}) {
   async function transition(reference, nextStatus, patch = {}) {
     const lookup = await get(reference, { includeCheckpoints: false });
     const storeStatus = mapPublicStatusToStore(nextStatus);
-    const updated = await store.setStatus(lookup.operationId, storeStatus, {
-      patch: transitionPatch(patch),
+    await store.setStatus(lookup.operationId, storeStatus, {
+      patch: isPlainObject(patch) ? { ...patch } : {},
     });
-    if (patch.checkpoint !== undefined || Array.isArray(patch.checkpoints)) {
-      await appendCheckpoints(store, lookup.operationId, patch, nextStatus);
-    }
     const record = await loadPublicRecord(store, lookup.operationId, {
       includeCheckpoints: true,
     });

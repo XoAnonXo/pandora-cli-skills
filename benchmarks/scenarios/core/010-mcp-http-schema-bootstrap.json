@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-http-schema-bootstrap",
+  "title": "Remote MCP schema bootstrap",
+  "description": "Remote MCP HTTP exposes the same schema bootstrap contract as local transports.",
+  "transport": "mcp-http",
+  "assertionId": "schema-bootstrap",
+  "parityGroup": "schema-bootstrap",
+  "parityExpectedTransports": ["cli-json", "mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 7000,
+  "weight": 10,
+  "dimensions": [
+    "bootstrap",
+    "schema",
+    "mcp",
+    "remote-parity"
+  ],
+  "request": {
+    "tool": "schema",
+    "arguments": {},
+    "authScopes": [
+      "capabilities:read",
+      "contracts:read",
+      "operations:read",
+      "schema:read"
+    ]
+  }
+}

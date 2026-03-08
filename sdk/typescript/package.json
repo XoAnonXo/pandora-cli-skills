@@ -1,0 +1,28 @@
+{
+  "name": "@pandora/agent-sdk",
+  "version": "0.1.0-alpha.1",
+  "description": "Pandora agent SDK alpha for local and remote tool execution.",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "type": "commonjs",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "generated/**",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./generated": "./generated/index.js",
+    "./generated/manifest": "./generated/manifest.json",
+    "./generated/command-descriptors": "./generated/command-descriptors.json",
+    "./generated/mcp-tool-definitions": "./generated/mcp-tool-definitions.json",
+    "./generated/contract-registry": "./generated/contract-registry.json"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1"
+  }
+}

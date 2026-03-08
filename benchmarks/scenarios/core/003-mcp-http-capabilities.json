@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-http-capabilities",
+  "title": "Remote MCP capabilities bootstrap",
+  "description": "Remote streamable HTTP MCP exposes the same bootstrap contract as local MCP.",
+  "transport": "mcp-http",
+  "assertionId": "capabilities-bootstrap",
+  "parityGroup": "capabilities-bootstrap",
+  "parityExpectedTransports": ["cli-json", "mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 7000,
+  "weight": 12,
+  "dimensions": ["bootstrap", "mcp", "remote-parity"],
+  "request": {
+    "tool": "capabilities",
+    "arguments": {},
+    "authScopes": ["capabilities:read", "contracts:read", "operations:read"]
+  }
+}

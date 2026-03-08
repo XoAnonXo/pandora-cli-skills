@@ -65,6 +65,31 @@ function createMcpProtocolService(options = {}) {
     ? executor.executeJsonCommandAsync.bind(executor)
     : async (...args) => executor.executeJsonCommand(...args);
 
+  function listTools(runtime = {}) {
+    const tools = registry.listTools();
+    if (typeof runtime.filterToolDescriptor !== 'function') {
+      return tools;
+    }
+    return tools.filter((descriptor) =>
+      runtime.filterToolDescriptor(
+        descriptor && descriptor.name ? descriptor.name : '',
+        descriptor,
+      ));
+  }
+
+  function resolveVisibleDescriptor(toolName, runtime = {}) {
+    const descriptor = registry.describeTool(toolName);
+    if (!descriptor) return null;
+    if (typeof runtime.filterToolDescriptor === 'function') {
+      const allowed = runtime.filterToolDescriptor(
+        descriptor && descriptor.name ? descriptor.name : '',
+        descriptor,
+      );
+      if (!allowed) return null;
+    }
+    return descriptor;
+  }
+
   async function callTool(params = {}, runtime = {}) {
     const toolName = String(params.name || '').trim();
     if (!toolName) {
@@ -84,19 +109,32 @@ function createMcpProtocolService(options = {}) {
     }
 
     const toolArgs = hasArguments ? params.arguments : {};
+    const descriptor = resolveVisibleDescriptor(toolName, runtime);
+    if (!descriptor) {
+      const missing = new Error(`Unknown MCP tool: ${toolName}`);
+      missing.code = 'UNKNOWN_TOOL';
+      throw missing;
+    }
     if (typeof runtime.assertToolAllowed === 'function') {
-      runtime.assertToolAllowed(toolName, registry.describeTool(toolName), toolArgs);
+      runtime.assertToolAllowed(toolName, descriptor, toolArgs);
     }
     const invocation = registry.prepareInvocation(toolName, toolArgs);
+    const runtimeEnv =
+      typeof runtime.buildInvocationEnv === 'function'
+        ? runtime.buildInvocationEnv(toolName, descriptor, toolArgs)
+        : undefined;
     const execution = await executeCommand(invocation.argv, {
-      env: invocation.env,
+      env: {
+        ...(invocation.env && typeof invocation.env === 'object' ? invocation.env : {}),
+        ...(runtimeEnv && typeof runtimeEnv === 'object' ? runtimeEnv : {}),
+      },
     });
     return asToolResult(execution.envelope);
   }
 
   function attachHandlers(server, runtime = {}) {
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: registry.listTools(),
+      tools: listTools(runtime),
     }));
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -127,7 +165,7 @@ function createMcpProtocolService(options = {}) {
   }
 
   return {
-    listTools: registry.listTools,
+    listTools,
     describeTool: registry.describeTool,
     callTool,
     createServer,

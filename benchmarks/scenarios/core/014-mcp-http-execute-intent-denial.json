@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-http-execute-intent-denial",
+  "title": "Remote MCP execute-intent denial",
+  "description": "Remote MCP denies execute-intent protected tools before any runtime side effects.",
+  "transport": "mcp-http",
+  "assertionId": "execute-intent-denial",
+  "parityGroup": "execute-intent-denial",
+  "parityExpectedTransports": ["mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 7000,
+  "weight": 20,
+  "dimensions": ["safety", "mcp", "mutation-guard", "remote-parity"],
+  "request": {
+    "tool": "risk.panic",
+    "arguments": {
+      "reason": "benchmark-intent-check"
+    },
+    "authScopes": ["*"]
+  }
+}

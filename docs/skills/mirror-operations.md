@@ -75,6 +75,9 @@ pandora mirror plan \
 - choose at least two independent public resolution URLs from different hosts
 - keep the plan’s suggested `targetTimestamp`, or set `--target-timestamp <unix|iso>` explicitly when you have a justified override
 - pick the correct PollCategory (`Sports` / `1` for sports)
+- for any eventual live signing step, prefer env / `.env` values or another runtime bootstrap you control over raw `--private-key`
+- if you are exposing mirror flows through `pandora mcp http`, inspect the tool `policyScopes` first and grant only the exact scopes needed for the run
+- inspect `policy list|get` and `profile list|get` before live automation; current builds ship those catalogs in alpha, but mutating commands still commonly resolve secrets from env/direct flags during rollout
 
 ### 4. Dry-run deploy or go
 ```bash
@@ -139,3 +142,4 @@ pandora mirror close --pandora-market-address <0x...> --polymarket-market-id <id
 - Do not treat Polymarket URLs as resolution sources.
 - Do not reuse a validation ticket after changing `question`, `rules`, `sources`, or `targetTimestamp`.
 - Do not import the legacy `--target-timestamp-offset-hours` assumption from `launch` / `clone-bet` into mirror flows.
+- Do not normalize recurring mirror automation around raw command-line private keys when scoped gateway tokens and env-based secret injection are available.

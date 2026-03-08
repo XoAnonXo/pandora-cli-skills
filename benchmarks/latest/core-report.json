@@ -1,0 +1,1704 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedAt": "2026-03-08T08:16:07.295Z",
+  "suite": "core",
+  "runtime": {
+    "packageVersion": "1.1.69"
+  },
+  "summary": {
+    "scenarioCount": 19,
+    "passedCount": 19,
+    "failedCount": 0,
+    "successRate": 1,
+    "latencyPassRate": 1,
+    "weightedScoreBase": 100,
+    "weightedScore": 100,
+    "parityGroupCount": 6,
+    "failedParityGroupCount": 0,
+    "overallPass": true
+  },
+  "dimensions": {
+    "bootstrap": {
+      "scenarioCount": 9,
+      "passedCount": 9,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "contract": {
+      "scenarioCount": 2,
+      "passedCount": 2,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "docs": {
+      "scenarioCount": 1,
+      "passedCount": 1,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "parity": {
+      "scenarioCount": 3,
+      "passedCount": 3,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "mcp": {
+      "scenarioCount": 12,
+      "passedCount": 12,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "local-parity": {
+      "scenarioCount": 4,
+      "passedCount": 4,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "remote-parity": {
+      "scenarioCount": 7,
+      "passedCount": 7,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "safety": {
+      "scenarioCount": 5,
+      "passedCount": 5,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "authorization": {
+      "scenarioCount": 1,
+      "passedCount": 1,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "mutation-guard": {
+      "scenarioCount": 2,
+      "passedCount": 2,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "workspace": {
+      "scenarioCount": 2,
+      "passedCount": 2,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "operations": {
+      "scenarioCount": 6,
+      "passedCount": 6,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "schema": {
+      "scenarioCount": 3,
+      "passedCount": 3,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "state": {
+      "scenarioCount": 5,
+      "passedCount": 5,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "sdk": {
+      "scenarioCount": 2,
+      "passedCount": 2,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    },
+    "lifecycle": {
+      "scenarioCount": 2,
+      "passedCount": 2,
+      "failedCount": 0,
+      "latencyPassRate": 1,
+      "weightedScore": 100
+    }
+  },
+  "contractLock": {
+    "commandDescriptorVersion": "1.3.0",
+    "generatedManifestVersion": "1.0.0",
+    "generatedManifestCommandDescriptorVersion": "1.3.0",
+    "generatedManifestPackageVersion": "0.1.0-alpha.1",
+    "generatedManifestRegistryDigest": {
+      "canonicalHash": "20084a8b370d78fc6ea6c8968a44f46fa94bb541f63f30056f452bd7c80daf28",
+      "commandDigestHash": "1b5c1089f6da372865c63a1bcf7c4067a89543adf37b43d5432e170e728910fe",
+      "descriptorHash": "0cdc173e36494551c6ae34115aeaf0ef0d73de9e09776546839cafccf36e4569",
+      "documentationHash": "dd7aff5953db657b01ce0f1361caf3fa57749ff310154f17d21f4964eebcb4d6",
+      "namespaceHash": "a32c9f90304339f7c0de2c296880bef805de8650c45a210237a2fb01e1bc60f6",
+      "routedTopLevelHash": "3d5a6a94876eb387eaf4f655d44b736887642cbb145e14d03f3deaabf9880b52",
+      "topLevelHash": "c993a2966277d0ee3d34b79a3cbcbc61161a32d23044549a205a8c3b8debba46"
+    },
+    "registryDigest": {
+      "descriptorHash": "0cdc173e36494551c6ae34115aeaf0ef0d73de9e09776546839cafccf36e4569",
+      "commandDigestHash": "1b5c1089f6da372865c63a1bcf7c4067a89543adf37b43d5432e170e728910fe",
+      "canonicalHash": "20084a8b370d78fc6ea6c8968a44f46fa94bb541f63f30056f452bd7c80daf28",
+      "topLevelHash": "c993a2966277d0ee3d34b79a3cbcbc61161a32d23044549a205a8c3b8debba46",
+      "routedTopLevelHash": "3d5a6a94876eb387eaf4f655d44b736887642cbb145e14d03f3deaabf9880b52",
+      "namespaceHash": "a32c9f90304339f7c0de2c296880bef805de8650c45a210237a2fb01e1bc60f6",
+      "documentationHash": "dd7aff5953db657b01ce0f1361caf3fa57749ff310154f17d21f4964eebcb4d6"
+    },
+    "documentationContentHash": "88e3b1511c111e2add8143292b3733cf182245940e6f7e1835cdd1ddfbd816fe",
+    "documentationRegistryHash": "dd7aff5953db657b01ce0f1361caf3fa57749ff310154f17d21f4964eebcb4d6",
+    "schemaHash": "891121b59f01d571cbbc571d28a7868fa5214e3f6b87e3da670214832fb715b7",
+    "capabilitiesLocalHash": "9f48a431a265679397a297fc3997272c8c3bc4d24f733bb3447fd3f61c7d86ca",
+    "capabilitiesRemoteTemplateHash": "a2de74404fe124200a89a44642f0b31826c12212a133e3654fc5953e9c3ae6fc",
+    "generatedArtifactHashes": {
+      "generatedContractRegistry": "d350653c32972d4952d85bd06a5bbce52b0aa6f94c123ec0c2d008ddf2c72c86",
+      "generatedCommandDescriptors": "087f97f04e92e04b6a78a8ed27796ebd590b0962d02dd0a083ecbeed9cf4ed16",
+      "generatedMcpToolDefinitions": "e96d7b580a76b67898e17c25dd06bd6108fd51fdcf737f2733097548ffab45f3",
+      "generatedManifest": "d63a15c372b1e49d4e537f8cfbcfecff2757b3ff66efb147480ad42584cec353",
+      "tsContractRegistry": "d350653c32972d4952d85bd06a5bbce52b0aa6f94c123ec0c2d008ddf2c72c86",
+      "tsCommandDescriptors": "087f97f04e92e04b6a78a8ed27796ebd590b0962d02dd0a083ecbeed9cf4ed16",
+      "tsMcpToolDefinitions": "e96d7b580a76b67898e17c25dd06bd6108fd51fdcf737f2733097548ffab45f3",
+      "tsManifest": "0e5c54b5783a0400ce99cde650d9973a0550e802d72a3d32a3c8fe70bcf45480",
+      "pyContractRegistry": "d350653c32972d4952d85bd06a5bbce52b0aa6f94c123ec0c2d008ddf2c72c86",
+      "pyCommandDescriptors": "087f97f04e92e04b6a78a8ed27796ebd590b0962d02dd0a083ecbeed9cf4ed16",
+      "pyMcpToolDefinitions": "e96d7b580a76b67898e17c25dd06bd6108fd51fdcf737f2733097548ffab45f3",
+      "pyManifest": "09d834c2e3c9b7fae337af23dbca3dc2e1c57b0ed8c0b848753e1d49ed3928e4"
+    }
+  },
+  "expectedContractLockPath": "benchmarks/locks/core.lock.json",
+  "contractLockMatchesExpected": true,
+  "contractLockMismatches": [],
+  "parity": {
+    "groups": [
+      {
+        "groupId": "capabilities-bootstrap",
+        "scenarioIds": [
+          "cli-capabilities-bootstrap",
+          "mcp-stdio-capabilities",
+          "mcp-http-capabilities"
+        ],
+        "expectedTransports": [
+          "cli-json",
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "actualTransports": [
+          "cli-json",
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "missingTransports": [],
+        "matches": true,
+        "hashCount": 1,
+        "hashes": [
+          "b676f881f5f33649a8ee3609d93a354feb9f1471050c1a9a18c67505790ca6ee"
+        ]
+      },
+      {
+        "groupId": "execute-intent-denial",
+        "scenarioIds": [
+          "mcp-stdio-execute-intent-denial",
+          "mcp-http-execute-intent-denial"
+        ],
+        "expectedTransports": [
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "actualTransports": [
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "missingTransports": [],
+        "matches": true,
+        "hashCount": 1,
+        "hashes": [
+          "6ac1ce422d9912243a20b03aa46bf4fee9bc69e8d02d84b486be0b93e2ce9081"
+        ]
+      },
+      {
+        "groupId": "workspace-path-denial",
+        "scenarioIds": [
+          "mcp-stdio-workspace-denial",
+          "mcp-http-workspace-denial"
+        ],
+        "expectedTransports": [
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "actualTransports": [
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "missingTransports": [],
+        "matches": true,
+        "hashCount": 1,
+        "hashes": [
+          "9fce831a8894e526c7b077509798bd60689e8d01f1badfb80e7364a36695e2c5"
+        ]
+      },
+      {
+        "groupId": "schema-bootstrap",
+        "scenarioIds": [
+          "cli-schema-bootstrap",
+          "mcp-stdio-schema-bootstrap",
+          "mcp-http-schema-bootstrap"
+        ],
+        "expectedTransports": [
+          "cli-json",
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "actualTransports": [
+          "cli-json",
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "missingTransports": [],
+        "matches": true,
+        "hashCount": 1,
+        "hashes": [
+          "89c398d139c4ae066fe359f39ceca7772718c8803c2523d808b7e9f0c730cfb2"
+        ]
+      },
+      {
+        "groupId": "operations-get-seeded",
+        "scenarioIds": [
+          "cli-operations-get-seeded",
+          "mcp-stdio-operations-get-seeded",
+          "mcp-http-operations-get-seeded"
+        ],
+        "expectedTransports": [
+          "cli-json",
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "actualTransports": [
+          "cli-json",
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "missingTransports": [],
+        "matches": true,
+        "hashCount": 1,
+        "hashes": [
+          "693c1023694cd614a0c6b57b5ad53bf52293b51507ccbd481bf9b37095b4eb5c"
+        ]
+      },
+      {
+        "groupId": "tools-list-bootstrap",
+        "scenarioIds": [
+          "mcp-stdio-list-tools-bootstrap",
+          "mcp-http-list-tools-bootstrap"
+        ],
+        "expectedTransports": [
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "actualTransports": [
+          "mcp-http",
+          "mcp-stdio"
+        ],
+        "missingTransports": [],
+        "matches": true,
+        "hashCount": 1,
+        "hashes": [
+          "2dff063786003d28e5a2dd67935c91784eca08c22426453f66a17e24991aaad1"
+        ]
+      }
+    ],
+    "failedGroups": []
+  },
+  "scenarios": [
+    {
+      "id": "cli-capabilities-bootstrap",
+      "title": "CLI capabilities bootstrap",
+      "description": "CLI JSON bootstrap exposes capabilities, documentation routing, and operation metadata.",
+      "transport": "cli-json",
+      "dimensions": [
+        "bootstrap",
+        "contract",
+        "docs",
+        "parity"
+      ],
+      "weight": 12,
+      "passed": true,
+      "durationMs": 78,
+      "checks": [
+        {
+          "id": "capabilities.ok",
+          "passed": true,
+          "message": "expected ok=true capabilities envelope"
+        },
+        {
+          "id": "capabilities.command",
+          "passed": true,
+          "message": "expected command=capabilities, received capabilities"
+        },
+        {
+          "id": "capabilities.documentation",
+          "passed": true,
+          "message": "expected documentation block"
+        },
+        {
+          "id": "capabilities.documentation-content-hash",
+          "passed": true,
+          "message": "expected documentation.contentHash"
+        },
+        {
+          "id": "capabilities.registry-digest",
+          "passed": true,
+          "message": "expected registry digest with descriptor/documentation hashes"
+        },
+        {
+          "id": "capabilities.command-descriptor-version",
+          "passed": true,
+          "message": "expected commandDescriptorVersion"
+        },
+        {
+          "id": "capabilities.version-compatibility",
+          "passed": true,
+          "message": "expected versionCompatibility.commandDescriptorVersion"
+        },
+        {
+          "id": "capabilities.router-start",
+          "passed": true,
+          "message": "expected agent-quickstart in documentation.router.startHere"
+        },
+        {
+          "id": "capabilities.router-interfaces",
+          "passed": true,
+          "message": "expected agent-interfaces in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-mirror",
+          "passed": true,
+          "message": "expected mirror-operations in documentation.router.taskRoutes"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 10,
+        "passedChecks": 10,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "capabilities-bootstrap",
+      "parityExpectedTransports": [
+        "cli-json",
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "b676f881f5f33649a8ee3609d93a354feb9f1471050c1a9a18c67505790ca6ee",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-stdio-capabilities",
+      "title": "Stdio MCP capabilities bootstrap",
+      "description": "Local MCP client can discover the capabilities envelope through the typed tool surface.",
+      "transport": "mcp-stdio",
+      "dimensions": [
+        "bootstrap",
+        "mcp",
+        "local-parity"
+      ],
+      "weight": 12,
+      "passed": true,
+      "durationMs": 82,
+      "checks": [
+        {
+          "id": "capabilities.ok",
+          "passed": true,
+          "message": "expected ok=true capabilities envelope"
+        },
+        {
+          "id": "capabilities.command",
+          "passed": true,
+          "message": "expected command=capabilities, received capabilities"
+        },
+        {
+          "id": "capabilities.documentation",
+          "passed": true,
+          "message": "expected documentation block"
+        },
+        {
+          "id": "capabilities.documentation-content-hash",
+          "passed": true,
+          "message": "expected documentation.contentHash"
+        },
+        {
+          "id": "capabilities.registry-digest",
+          "passed": true,
+          "message": "expected registry digest with descriptor/documentation hashes"
+        },
+        {
+          "id": "capabilities.command-descriptor-version",
+          "passed": true,
+          "message": "expected commandDescriptorVersion"
+        },
+        {
+          "id": "capabilities.version-compatibility",
+          "passed": true,
+          "message": "expected versionCompatibility.commandDescriptorVersion"
+        },
+        {
+          "id": "capabilities.router-start",
+          "passed": true,
+          "message": "expected agent-quickstart in documentation.router.startHere"
+        },
+        {
+          "id": "capabilities.router-interfaces",
+          "passed": true,
+          "message": "expected agent-interfaces in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-mirror",
+          "passed": true,
+          "message": "expected mirror-operations in documentation.router.taskRoutes"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 10,
+        "passedChecks": 10,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "capabilities-bootstrap",
+      "parityExpectedTransports": [
+        "cli-json",
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "b676f881f5f33649a8ee3609d93a354feb9f1471050c1a9a18c67505790ca6ee",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-http-capabilities",
+      "title": "Remote MCP capabilities bootstrap",
+      "description": "Remote streamable HTTP MCP exposes the same bootstrap contract as local MCP.",
+      "transport": "mcp-http",
+      "dimensions": [
+        "bootstrap",
+        "mcp",
+        "remote-parity"
+      ],
+      "weight": 12,
+      "passed": true,
+      "durationMs": 84,
+      "checks": [
+        {
+          "id": "capabilities.ok",
+          "passed": true,
+          "message": "expected ok=true capabilities envelope"
+        },
+        {
+          "id": "capabilities.command",
+          "passed": true,
+          "message": "expected command=capabilities, received capabilities"
+        },
+        {
+          "id": "capabilities.documentation",
+          "passed": true,
+          "message": "expected documentation block"
+        },
+        {
+          "id": "capabilities.documentation-content-hash",
+          "passed": true,
+          "message": "expected documentation.contentHash"
+        },
+        {
+          "id": "capabilities.registry-digest",
+          "passed": true,
+          "message": "expected registry digest with descriptor/documentation hashes"
+        },
+        {
+          "id": "capabilities.command-descriptor-version",
+          "passed": true,
+          "message": "expected commandDescriptorVersion"
+        },
+        {
+          "id": "capabilities.version-compatibility",
+          "passed": true,
+          "message": "expected versionCompatibility.commandDescriptorVersion"
+        },
+        {
+          "id": "capabilities.router-start",
+          "passed": true,
+          "message": "expected agent-quickstart in documentation.router.startHere"
+        },
+        {
+          "id": "capabilities.router-interfaces",
+          "passed": true,
+          "message": "expected agent-interfaces in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-mirror",
+          "passed": true,
+          "message": "expected mirror-operations in documentation.router.taskRoutes"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 7000,
+        "latencyPass": true,
+        "totalChecks": 10,
+        "passedChecks": 10,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "capabilities-bootstrap",
+      "parityExpectedTransports": [
+        "cli-json",
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "b676f881f5f33649a8ee3609d93a354feb9f1471050c1a9a18c67505790ca6ee",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-http-scope-denial",
+      "title": "Remote MCP scope denial",
+      "description": "Remote gateway hides tools outside the granted token scopes so out-of-scope callers cannot distinguish them from unknown tools.",
+      "transport": "mcp-http",
+      "dimensions": [
+        "safety",
+        "authorization",
+        "remote-parity"
+      ],
+      "weight": 20,
+      "passed": true,
+      "durationMs": 3,
+      "checks": [
+        {
+          "id": "scope-denial.transport-error",
+          "passed": true,
+          "message": "expected transport-level error for hidden out-of-scope tool"
+        },
+        {
+          "id": "scope-denial.code",
+          "passed": true,
+          "message": "expected UNKNOWN_TOOL, received UNKNOWN_TOOL"
+        },
+        {
+          "id": "scope-denial.no-scope-leak",
+          "passed": true,
+          "message": "expected out-of-scope remote tool to avoid leaking missingScopes details"
+        },
+        {
+          "id": "scope-denial.remediation",
+          "passed": true,
+          "message": "expected hidden out-of-scope remote tool to avoid leaking remediation details"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 7000,
+        "latencyPass": true,
+        "totalChecks": 4,
+        "passedChecks": 4,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": null,
+      "parityExpectedTransports": [],
+      "parityHash": null,
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-stdio-execute-intent-denial",
+      "title": "MCP execute-intent denial",
+      "description": "Mutating tools that require execute intent are denied before any runtime side effects.",
+      "transport": "mcp-stdio",
+      "dimensions": [
+        "safety",
+        "mcp",
+        "mutation-guard"
+      ],
+      "weight": 20,
+      "passed": true,
+      "durationMs": 2,
+      "checks": [
+        {
+          "id": "execute-intent.transport-error",
+          "passed": true,
+          "message": "expected transport-level error for execute intent denial"
+        },
+        {
+          "id": "execute-intent.code",
+          "passed": true,
+          "message": "expected MCP_EXECUTE_INTENT_REQUIRED, received MCP_EXECUTE_INTENT_REQUIRED"
+        },
+        {
+          "id": "execute-intent.hints",
+          "passed": true,
+          "message": "expected remediation hints for execute intent denial"
+        },
+        {
+          "id": "execute-intent.no-operation-side-effects",
+          "passed": true,
+          "message": "expected execute-intent denial before any operation state side effects"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 4,
+        "passedChecks": 4,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "execute-intent-denial",
+      "parityExpectedTransports": [
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "6ac1ce422d9912243a20b03aa46bf4fee9bc69e8d02d84b486be0b93e2ce9081",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-stdio-workspace-denial",
+      "title": "MCP workspace path denial",
+      "description": "Workspace-constrained MCP tools reject file reads outside the workspace boundary.",
+      "transport": "mcp-stdio",
+      "dimensions": [
+        "safety",
+        "workspace",
+        "mcp"
+      ],
+      "weight": 15,
+      "passed": true,
+      "durationMs": 41,
+      "checks": [
+        {
+          "id": "workspace-denial.transport-error",
+          "passed": true,
+          "message": "expected transport-level error for workspace path denial"
+        },
+        {
+          "id": "workspace-denial.code",
+          "passed": true,
+          "message": "expected MCP_FILE_ACCESS_BLOCKED, received MCP_FILE_ACCESS_BLOCKED"
+        },
+        {
+          "id": "workspace-denial.recovery",
+          "passed": true,
+          "message": "expected recovery command for workspace path denial"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 3,
+        "passedChecks": 3,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "workspace-path-denial",
+      "parityExpectedTransports": [
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "9fce831a8894e526c7b077509798bd60689e8d01f1badfb80e7364a36695e2c5",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "cli-operations-empty-list",
+      "title": "CLI operations empty-list bootstrap",
+      "description": "Fresh operation state exposes an empty operations list with stable envelope structure.",
+      "transport": "cli-json",
+      "dimensions": [
+        "operations",
+        "bootstrap"
+      ],
+      "weight": 10,
+      "passed": true,
+      "durationMs": 40,
+      "checks": [
+        {
+          "id": "operations-list.ok",
+          "passed": true,
+          "message": "expected ok=true operations list envelope"
+        },
+        {
+          "id": "operations-list.command",
+          "passed": true,
+          "message": "expected command=operations.list, received operations.list"
+        },
+        {
+          "id": "operations-list.items",
+          "passed": true,
+          "message": "expected operations.list data.items array"
+        },
+        {
+          "id": "operations-list.empty",
+          "passed": true,
+          "message": "expected empty operations list in isolated env"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 4,
+        "passedChecks": 4,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": null,
+      "parityExpectedTransports": [],
+      "parityHash": null,
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "cli-schema-bootstrap",
+      "title": "CLI schema bootstrap",
+      "description": "CLI JSON schema bootstrap exposes the exhaustive agent-facing contract descriptor surface.",
+      "transport": "cli-json",
+      "dimensions": [
+        "bootstrap",
+        "contract",
+        "schema",
+        "parity"
+      ],
+      "weight": 10,
+      "passed": true,
+      "durationMs": 67,
+      "checks": [
+        {
+          "id": "schema.ok",
+          "passed": true,
+          "message": "expected ok=true schema envelope"
+        },
+        {
+          "id": "schema.command",
+          "passed": true,
+          "message": "expected command=schema, received schema"
+        },
+        {
+          "id": "schema.scope",
+          "passed": true,
+          "message": "expected command-surface descriptorScope, received command-surface"
+        },
+        {
+          "id": "schema.definitions",
+          "passed": true,
+          "message": "expected schema definitions block"
+        },
+        {
+          "id": "schema.skill-doc-index",
+          "passed": true,
+          "message": "expected SkillDocIndex definition"
+        },
+        {
+          "id": "schema.capabilities-payload",
+          "passed": true,
+          "message": "expected CapabilitiesPayload definition"
+        },
+        {
+          "id": "schema.command-descriptors",
+          "passed": true,
+          "message": "expected commandDescriptors map"
+        },
+        {
+          "id": "schema.mirror-plan-descriptor",
+          "passed": true,
+          "message": "expected mirror.plan descriptor"
+        },
+        {
+          "id": "schema.policy-list-descriptor",
+          "passed": true,
+          "message": "expected policy.list descriptor"
+        },
+        {
+          "id": "schema.operations-get-descriptor",
+          "passed": true,
+          "message": "expected operations.get descriptor"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 10,
+        "passedChecks": 10,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "schema-bootstrap",
+      "parityExpectedTransports": [
+        "cli-json",
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "89c398d139c4ae066fe359f39ceca7772718c8803c2523d808b7e9f0c730cfb2",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-stdio-schema-bootstrap",
+      "title": "Stdio MCP schema bootstrap",
+      "description": "Local MCP exposes the same schema bootstrap contract needed by autonomous clients.",
+      "transport": "mcp-stdio",
+      "dimensions": [
+        "bootstrap",
+        "schema",
+        "mcp",
+        "local-parity"
+      ],
+      "weight": 10,
+      "passed": true,
+      "durationMs": 79,
+      "checks": [
+        {
+          "id": "schema.ok",
+          "passed": true,
+          "message": "expected ok=true schema envelope"
+        },
+        {
+          "id": "schema.command",
+          "passed": true,
+          "message": "expected command=schema, received schema"
+        },
+        {
+          "id": "schema.scope",
+          "passed": true,
+          "message": "expected command-surface descriptorScope, received command-surface"
+        },
+        {
+          "id": "schema.definitions",
+          "passed": true,
+          "message": "expected schema definitions block"
+        },
+        {
+          "id": "schema.skill-doc-index",
+          "passed": true,
+          "message": "expected SkillDocIndex definition"
+        },
+        {
+          "id": "schema.capabilities-payload",
+          "passed": true,
+          "message": "expected CapabilitiesPayload definition"
+        },
+        {
+          "id": "schema.command-descriptors",
+          "passed": true,
+          "message": "expected commandDescriptors map"
+        },
+        {
+          "id": "schema.mirror-plan-descriptor",
+          "passed": true,
+          "message": "expected mirror.plan descriptor"
+        },
+        {
+          "id": "schema.policy-list-descriptor",
+          "passed": true,
+          "message": "expected policy.list descriptor"
+        },
+        {
+          "id": "schema.operations-get-descriptor",
+          "passed": true,
+          "message": "expected operations.get descriptor"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 10,
+        "passedChecks": 10,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "schema-bootstrap",
+      "parityExpectedTransports": [
+        "cli-json",
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "89c398d139c4ae066fe359f39ceca7772718c8803c2523d808b7e9f0c730cfb2",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-http-schema-bootstrap",
+      "title": "Remote MCP schema bootstrap",
+      "description": "Remote MCP HTTP exposes the same schema bootstrap contract as local transports.",
+      "transport": "mcp-http",
+      "dimensions": [
+        "bootstrap",
+        "schema",
+        "mcp",
+        "remote-parity"
+      ],
+      "weight": 10,
+      "passed": true,
+      "durationMs": 80,
+      "checks": [
+        {
+          "id": "schema.ok",
+          "passed": true,
+          "message": "expected ok=true schema envelope"
+        },
+        {
+          "id": "schema.command",
+          "passed": true,
+          "message": "expected command=schema, received schema"
+        },
+        {
+          "id": "schema.scope",
+          "passed": true,
+          "message": "expected command-surface descriptorScope, received command-surface"
+        },
+        {
+          "id": "schema.definitions",
+          "passed": true,
+          "message": "expected schema definitions block"
+        },
+        {
+          "id": "schema.skill-doc-index",
+          "passed": true,
+          "message": "expected SkillDocIndex definition"
+        },
+        {
+          "id": "schema.capabilities-payload",
+          "passed": true,
+          "message": "expected CapabilitiesPayload definition"
+        },
+        {
+          "id": "schema.command-descriptors",
+          "passed": true,
+          "message": "expected commandDescriptors map"
+        },
+        {
+          "id": "schema.mirror-plan-descriptor",
+          "passed": true,
+          "message": "expected mirror.plan descriptor"
+        },
+        {
+          "id": "schema.policy-list-descriptor",
+          "passed": true,
+          "message": "expected policy.list descriptor"
+        },
+        {
+          "id": "schema.operations-get-descriptor",
+          "passed": true,
+          "message": "expected operations.get descriptor"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 7000,
+        "latencyPass": true,
+        "totalChecks": 10,
+        "passedChecks": 10,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "schema-bootstrap",
+      "parityExpectedTransports": [
+        "cli-json",
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "89c398d139c4ae066fe359f39ceca7772718c8803c2523d808b7e9f0c730cfb2",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "cli-operations-get-seeded",
+      "title": "CLI seeded operation fetch",
+      "description": "CLI operations get returns a seeded operation record with stable lifecycle fields.",
+      "transport": "cli-json",
+      "dimensions": [
+        "operations",
+        "state",
+        "parity"
+      ],
+      "weight": 8,
+      "passed": true,
+      "durationMs": 41,
+      "checks": [
+        {
+          "id": "operations-get.ok",
+          "passed": true,
+          "message": "expected ok=true operations get envelope"
+        },
+        {
+          "id": "operations-get.command",
+          "passed": true,
+          "message": "expected command=operations.get, received operations.get"
+        },
+        {
+          "id": "operations-get.id",
+          "passed": true,
+          "message": "expected operationId=benchmark-op-1, received benchmark-op-1"
+        },
+        {
+          "id": "operations-get.status",
+          "passed": true,
+          "message": "expected operation status"
+        },
+        {
+          "id": "operations-get.tool",
+          "passed": true,
+          "message": "expected operation tool"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 5,
+        "passedChecks": 5,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "operations-get-seeded",
+      "parityExpectedTransports": [
+        "cli-json",
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "693c1023694cd614a0c6b57b5ad53bf52293b51507ccbd481bf9b37095b4eb5c",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": [
+            "benchmark-op-1"
+          ]
+        },
+        "after": {
+          "operationIds": [
+            "benchmark-op-1"
+          ]
+        }
+      }
+    },
+    {
+      "id": "mcp-stdio-operations-get-seeded",
+      "title": "Stdio MCP seeded operation fetch",
+      "description": "Local MCP operations.get returns the same seeded operation record as the CLI.",
+      "transport": "mcp-stdio",
+      "dimensions": [
+        "operations",
+        "state",
+        "mcp",
+        "local-parity"
+      ],
+      "weight": 8,
+      "passed": true,
+      "durationMs": 50,
+      "checks": [
+        {
+          "id": "operations-get.ok",
+          "passed": true,
+          "message": "expected ok=true operations get envelope"
+        },
+        {
+          "id": "operations-get.command",
+          "passed": true,
+          "message": "expected command=operations.get, received operations.get"
+        },
+        {
+          "id": "operations-get.id",
+          "passed": true,
+          "message": "expected operationId=benchmark-op-1, received benchmark-op-1"
+        },
+        {
+          "id": "operations-get.status",
+          "passed": true,
+          "message": "expected operation status"
+        },
+        {
+          "id": "operations-get.tool",
+          "passed": true,
+          "message": "expected operation tool"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 5,
+        "passedChecks": 5,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "operations-get-seeded",
+      "parityExpectedTransports": [
+        "cli-json",
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "693c1023694cd614a0c6b57b5ad53bf52293b51507ccbd481bf9b37095b4eb5c",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": [
+            "benchmark-op-1"
+          ]
+        },
+        "after": {
+          "operationIds": [
+            "benchmark-op-1"
+          ]
+        }
+      }
+    },
+    {
+      "id": "mcp-http-operations-get-seeded",
+      "title": "Remote MCP seeded operation fetch",
+      "description": "Remote MCP operations.get returns the same seeded operation record as local transports.",
+      "transport": "mcp-http",
+      "dimensions": [
+        "operations",
+        "state",
+        "mcp",
+        "remote-parity"
+      ],
+      "weight": 8,
+      "passed": true,
+      "durationMs": 49,
+      "checks": [
+        {
+          "id": "operations-get.ok",
+          "passed": true,
+          "message": "expected ok=true operations get envelope"
+        },
+        {
+          "id": "operations-get.command",
+          "passed": true,
+          "message": "expected command=operations.get, received operations.get"
+        },
+        {
+          "id": "operations-get.id",
+          "passed": true,
+          "message": "expected operationId=benchmark-op-1, received benchmark-op-1"
+        },
+        {
+          "id": "operations-get.status",
+          "passed": true,
+          "message": "expected operation status"
+        },
+        {
+          "id": "operations-get.tool",
+          "passed": true,
+          "message": "expected operation tool"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 7000,
+        "latencyPass": true,
+        "totalChecks": 5,
+        "passedChecks": 5,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "operations-get-seeded",
+      "parityExpectedTransports": [
+        "cli-json",
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "693c1023694cd614a0c6b57b5ad53bf52293b51507ccbd481bf9b37095b4eb5c",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": [
+            "benchmark-op-1"
+          ]
+        },
+        "after": {
+          "operationIds": [
+            "benchmark-op-1"
+          ]
+        }
+      }
+    },
+    {
+      "id": "mcp-http-execute-intent-denial",
+      "title": "Remote MCP execute-intent denial",
+      "description": "Remote MCP denies execute-intent protected tools before any runtime side effects.",
+      "transport": "mcp-http",
+      "dimensions": [
+        "safety",
+        "mcp",
+        "mutation-guard",
+        "remote-parity"
+      ],
+      "weight": 20,
+      "passed": true,
+      "durationMs": 3,
+      "checks": [
+        {
+          "id": "execute-intent.transport-error",
+          "passed": true,
+          "message": "expected transport-level error for execute intent denial"
+        },
+        {
+          "id": "execute-intent.code",
+          "passed": true,
+          "message": "expected MCP_EXECUTE_INTENT_REQUIRED, received MCP_EXECUTE_INTENT_REQUIRED"
+        },
+        {
+          "id": "execute-intent.hints",
+          "passed": true,
+          "message": "expected remediation hints for execute intent denial"
+        },
+        {
+          "id": "execute-intent.no-operation-side-effects",
+          "passed": true,
+          "message": "expected execute-intent denial before any operation state side effects"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 7000,
+        "latencyPass": true,
+        "totalChecks": 4,
+        "passedChecks": 4,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "execute-intent-denial",
+      "parityExpectedTransports": [
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "6ac1ce422d9912243a20b03aa46bf4fee9bc69e8d02d84b486be0b93e2ce9081",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-http-workspace-denial",
+      "title": "Remote MCP workspace path denial",
+      "description": "Remote MCP rejects workspace-constrained file paths outside the benchmark workspace boundary.",
+      "transport": "mcp-http",
+      "dimensions": [
+        "safety",
+        "workspace",
+        "mcp",
+        "remote-parity"
+      ],
+      "weight": 15,
+      "passed": true,
+      "durationMs": 41,
+      "checks": [
+        {
+          "id": "workspace-denial.transport-error",
+          "passed": true,
+          "message": "expected transport-level error for workspace path denial"
+        },
+        {
+          "id": "workspace-denial.code",
+          "passed": true,
+          "message": "expected MCP_FILE_ACCESS_BLOCKED, received MCP_FILE_ACCESS_BLOCKED"
+        },
+        {
+          "id": "workspace-denial.recovery",
+          "passed": true,
+          "message": "expected recovery command for workspace path denial"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 7000,
+        "latencyPass": true,
+        "totalChecks": 3,
+        "passedChecks": 3,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "workspace-path-denial",
+      "parityExpectedTransports": [
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "9fce831a8894e526c7b077509798bd60689e8d01f1badfb80e7364a36695e2c5",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-stdio-list-tools-bootstrap",
+      "title": "Stdio MCP listTools bootstrap",
+      "description": "The generated local SDK can list normalized MCP tools with stable xPandora metadata.",
+      "transport": "mcp-stdio",
+      "dimensions": [
+        "bootstrap",
+        "sdk",
+        "mcp",
+        "local-parity"
+      ],
+      "weight": 10,
+      "passed": true,
+      "durationMs": 12,
+      "checks": [
+        {
+          "id": "tools-list.ok",
+          "passed": true,
+          "message": "expected ok=true tools list envelope"
+        },
+        {
+          "id": "tools-list.command",
+          "passed": true,
+          "message": "expected command=mcp.tools.list, received mcp.tools.list"
+        },
+        {
+          "id": "tools-list.items",
+          "passed": true,
+          "message": "expected at least 50 tools, received 95"
+        },
+        {
+          "id": "tools-list.help",
+          "passed": true,
+          "message": "expected help tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.mirror-plan",
+          "passed": true,
+          "message": "expected mirror.plan in MCP tool list"
+        },
+        {
+          "id": "tools-list.help-metadata",
+          "passed": true,
+          "message": "expected normalized xPandora metadata on listed tools"
+        },
+        {
+          "id": "tools-list.alias-metadata",
+          "passed": true,
+          "message": "expected arbitrage alias metadata in tool list"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 7,
+        "passedChecks": 7,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "tools-list-bootstrap",
+      "parityExpectedTransports": [
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "2dff063786003d28e5a2dd67935c91784eca08c22426453f66a17e24991aaad1",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "mcp-http-list-tools-bootstrap",
+      "title": "Remote MCP listTools bootstrap",
+      "description": "The generated remote SDK can list normalized MCP tools with stable xPandora metadata.",
+      "transport": "mcp-http",
+      "dimensions": [
+        "bootstrap",
+        "sdk",
+        "mcp",
+        "remote-parity"
+      ],
+      "weight": 10,
+      "passed": true,
+      "durationMs": 11,
+      "checks": [
+        {
+          "id": "tools-list.ok",
+          "passed": true,
+          "message": "expected ok=true tools list envelope"
+        },
+        {
+          "id": "tools-list.command",
+          "passed": true,
+          "message": "expected command=mcp.tools.list, received mcp.tools.list"
+        },
+        {
+          "id": "tools-list.items",
+          "passed": true,
+          "message": "expected at least 50 tools, received 95"
+        },
+        {
+          "id": "tools-list.help",
+          "passed": true,
+          "message": "expected help tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.mirror-plan",
+          "passed": true,
+          "message": "expected mirror.plan in MCP tool list"
+        },
+        {
+          "id": "tools-list.help-metadata",
+          "passed": true,
+          "message": "expected normalized xPandora metadata on listed tools"
+        },
+        {
+          "id": "tools-list.alias-metadata",
+          "passed": true,
+          "message": "expected arbitrage alias metadata in tool list"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 7000,
+        "latencyPass": true,
+        "totalChecks": 7,
+        "passedChecks": 7,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": "tools-list-bootstrap",
+      "parityExpectedTransports": [
+        "mcp-stdio",
+        "mcp-http"
+      ],
+      "parityHash": "2dff063786003d28e5a2dd67935c91784eca08c22426453f66a17e24991aaad1",
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": []
+        },
+        "after": {
+          "operationIds": []
+        }
+      }
+    },
+    {
+      "id": "cli-operations-cancel-seeded",
+      "title": "CLI seeded operation cancel",
+      "description": "CLI operations cancel transitions an executing seeded operation into canceled state.",
+      "transport": "cli-json",
+      "dimensions": [
+        "operations",
+        "lifecycle",
+        "state"
+      ],
+      "weight": 8,
+      "passed": true,
+      "durationMs": 47,
+      "checks": [
+        {
+          "id": "operations-cancel.ok",
+          "passed": true,
+          "message": "expected ok=true operations cancel envelope"
+        },
+        {
+          "id": "operations-cancel.command",
+          "passed": true,
+          "message": "expected command=operations.cancel, received operations.cancel"
+        },
+        {
+          "id": "operations-cancel.id",
+          "passed": true,
+          "message": "expected operationId=benchmark-op-cancel, received benchmark-op-cancel"
+        },
+        {
+          "id": "operations-cancel.status",
+          "passed": true,
+          "message": "expected canceled status, received canceled"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 4,
+        "passedChecks": 4,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": null,
+      "parityExpectedTransports": [],
+      "parityHash": null,
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": [
+            "benchmark-op-cancel"
+          ]
+        },
+        "after": {
+          "operationIds": [
+            "benchmark-op-cancel"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cli-operations-close-seeded",
+      "title": "CLI seeded operation close",
+      "description": "CLI operations close transitions a terminal seeded operation into closed state.",
+      "transport": "cli-json",
+      "dimensions": [
+        "operations",
+        "lifecycle",
+        "state"
+      ],
+      "weight": 8,
+      "passed": true,
+      "durationMs": 46,
+      "checks": [
+        {
+          "id": "operations-close.ok",
+          "passed": true,
+          "message": "expected ok=true operations close envelope"
+        },
+        {
+          "id": "operations-close.command",
+          "passed": true,
+          "message": "expected command=operations.close, received operations.close"
+        },
+        {
+          "id": "operations-close.id",
+          "passed": true,
+          "message": "expected operationId=benchmark-op-close, received benchmark-op-close"
+        },
+        {
+          "id": "operations-close.status",
+          "passed": true,
+          "message": "expected closed status, received closed"
+        }
+      ],
+      "score": {
+        "latencyTargetMs": 5000,
+        "latencyPass": true,
+        "totalChecks": 4,
+        "passedChecks": 4,
+        "successScore": 100,
+        "latencyScore": 100,
+        "weighted": 100
+      },
+      "parityGroup": null,
+      "parityExpectedTransports": [],
+      "parityHash": null,
+      "failure": null,
+      "runtimeState": {
+        "before": {
+          "operationIds": [
+            "benchmark-op-close"
+          ]
+        },
+        "after": {
+          "operationIds": [
+            "benchmark-op-close"
+          ]
+        }
+      }
+    }
+  ],
+  "writtenLockPath": "/Users/mac/Desktop/pandora-market-setup-shareable/benchmarks/locks/core.lock.json"
+}

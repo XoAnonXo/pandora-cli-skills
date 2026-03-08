@@ -251,7 +251,9 @@ function createCommandExecutorService(options = {}) {
     const timeoutMs = Number.isFinite(runtime.timeoutMs)
       ? Math.max(1_000, Math.trunc(runtime.timeoutMs))
       : defaultTimeoutMs;
-    const env = runtime.env && typeof runtime.env === 'object' ? runtime.env : baseEnv;
+    const env = runtime.env && typeof runtime.env === 'object'
+      ? { ...baseEnv, ...runtime.env }
+      : baseEnv;
     const childEnv = buildChildEnv(env);
     const argv = buildArgv(commandArgs);
 
@@ -278,7 +280,9 @@ function createCommandExecutorService(options = {}) {
     const timeoutMs = Number.isFinite(runtime.timeoutMs)
       ? Math.max(1_000, Math.trunc(runtime.timeoutMs))
       : defaultTimeoutMs;
-    const env = runtime.env && typeof runtime.env === 'object' ? runtime.env : baseEnv;
+    const env = runtime.env && typeof runtime.env === 'object'
+      ? { ...baseEnv, ...runtime.env }
+      : baseEnv;
     const childEnv = buildChildEnv(env);
     const argv = buildArgv(commandArgs);
 

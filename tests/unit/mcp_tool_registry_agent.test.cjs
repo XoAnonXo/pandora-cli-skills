@@ -167,6 +167,30 @@ test('prepareInvocation still rejects unknown legacy flags when compatibility mo
   });
 });
 
+test('recipe MCP tools keep structured inputs out of argv and forward them via env', () => {
+  const registry = createMcpToolRegistry();
+  const invocation = registry.prepareInvocation('recipe.validate', {
+    id: 'mirror.sync.paper-safe',
+    inputs: {
+      'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    },
+    'policy-id': 'paper-trading',
+  });
+
+  assert.deepEqual(invocation.argv, [
+    'recipe',
+    'validate',
+    '--id',
+    'mirror.sync.paper-safe',
+    '--policy-id',
+    'paper-trading',
+  ]);
+  assert.equal(
+    invocation.env.PANDORA_RECIPE_INPUTS,
+    JSON.stringify({ 'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }),
+  );
+});
+
 test('prepareInvocation enforces typed schema values at the MCP boundary', () => {
   const registry = createMcpToolRegistry();
 

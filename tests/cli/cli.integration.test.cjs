@@ -14,8 +14,23 @@ const {
   startJsonHttpServer,
 } = require('../helpers/cli_runner.cjs');
 const { assertSchemaValid } = require('../helpers/json_schema_assert.cjs');
+const {
+  omitGeneratedAt,
+  assertManifestParity,
+  createIsolatedPandoraEnv,
+} = require('../helpers/contract_parity_assertions.cjs');
 const { createMcpToolRegistry } = require('../../cli/lib/mcp_tool_registry.cjs');
 const { upsertOperation, createOperationStateStore } = require('../../cli/lib/operation_state_store.cjs');
+const {
+  buildSdkContractArtifact,
+  SDK_ARTIFACT_GENERATED_AT,
+} = require('../../cli/lib/sdk_contract_service.cjs');
+const { buildPublishedPackageJson } = require('../../scripts/prepare_publish_manifest.cjs');
+const repoPackage = require('../../package.json');
+const generatedManifest = require('../../sdk/generated/manifest.json');
+const generatedContractRegistry = require('../../sdk/generated/contract-registry.json');
+const typescriptSdkPackage = require('../../sdk/typescript/package.json');
+const publishedPackage = buildPublishedPackageJson(repoPackage);
 
 const ADDRESSES = {
   oracle: '0x1111111111111111111111111111111111111111',
@@ -60,6 +75,55 @@ function parseNdjsonOutput(output) {
 
 function stableJsonHash(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+const TRUST_DISTRIBUTION_SCHEMA_DEFINITION_NAMES = Object.freeze([
+  'TrustDistributionPayload',
+  'TrustDistributionSection',
+  'TrustDistributionRootPackage',
+  'TrustGeneratedContractArtifacts',
+  'TrustEmbeddedSdks',
+  'TrustTypescriptSdkDistribution',
+  'TrustPythonSdkDistribution',
+  'TrustDistributionSignals',
+  'TrustVerificationSection',
+  'TrustBenchmarkVerification',
+  'TrustSmokeVerification',
+  'TrustPathPresence',
+  'TrustVerificationScripts',
+  'TrustVerificationSignals',
+]);
+
+function deepCloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function parseTomlStringField(documentText, fieldName) {
+  const match = String(documentText || '').match(new RegExp(`^${fieldName}\\s*=\\s*"([^"\\n]+)"`, 'm'));
+  return match ? match[1] : null;
+}
+
+function omitTrustDistributionFromCapabilities(value) {
+  const clone = deepCloneJson(value);
+  delete clone.trustDistribution;
+  return clone;
+}
+
+function omitTrustDistributionDefinitions(value) {
+  const clone = deepCloneJson(value);
+  for (const definitionName of TRUST_DISTRIBUTION_SCHEMA_DEFINITION_NAMES) {
+    delete clone[definitionName];
+  }
+  for (const definitionName of ['CapabilitiesPayload', 'SchemaCommandPayload']) {
+    if (!clone[definitionName] || typeof clone[definitionName] !== 'object') continue;
+    if (clone[definitionName].properties && typeof clone[definitionName].properties === 'object') {
+      delete clone[definitionName].properties.trustDistribution;
+    }
+    if (Array.isArray(clone[definitionName].required)) {
+      clone[definitionName].required = clone[definitionName].required.filter((fieldName) => fieldName !== 'trustDistribution');
+    }
+  }
+  return clone;
 }
 
 function buildValidEnv(rpcUrl, overrides = {}) {
@@ -1239,10 +1303,53 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.deepEqual(payload.data.commandDescriptors['clone-bet'].outputModes, ['table']);
   assert.equal(payload.data.descriptorScope, 'command-surface');
   assert.equal(payload.data.commandDescriptorMetadata.capabilities.supportsRemote, true);
+  assert.equal(payload.data.trustDistribution.posture, 'repo-release-gates-and-published-surface-observed');
+  assert.equal(payload.data.trustDistribution.distribution.rootPackage.name, repoPackage.name);
+  assert.equal(
+    payload.data.trustDistribution.distribution.generatedContractArtifacts.artifactVersion,
+    generatedManifest.artifactVersion,
+  );
+  assert.equal(
+    payload.data.trustDistribution.distribution.embeddedSdks.typescript.packageName,
+    typescriptSdkPackage.name,
+  );
+  assert.equal(payload.data.trustDistribution.verification.benchmark.lockPath, 'benchmarks/locks/core.lock.json');
+  assert.equal(payload.data.trustDistribution.verification.benchmark.lockPresent, false);
+  assert.equal(payload.data.trustDistribution.distribution.platformValidation.ci.workflowPath, '.github/workflows/ci.yml');
+  assert.deepEqual(payload.data.trustDistribution.distribution.platformValidation.ci.osMatrix, ['macos-latest', 'ubuntu-latest', 'windows-latest']);
+  assert.deepEqual(payload.data.trustDistribution.distribution.platformValidation.ci.nodeVersions, ['20']);
+  assert.equal(payload.data.trustDistribution.verification.ciWorkflow.path, '.github/workflows/ci.yml');
+  assert.equal(payload.data.trustDistribution.verification.ciWorkflow.present, false);
+  assert.ok(payload.data.trustDistribution.verification.releaseAssets.names.includes('checksums.sha256'));
+  assert.ok(payload.data.trustDistribution.verification.releaseAssets.verificationMethods.includes('keyless-cosign-verify-blob'));
+  assert.equal(payload.data.trustDistribution.distribution.signals.shipsTrustDocs, true);
+  assert.equal(payload.data.trustDistribution.distribution.signals.shipsReleaseTrustScripts, false);
+  assert.equal(payload.data.trustDistribution.distribution.signals.shipsBenchmarkHarness, false);
+  assert.equal(payload.data.trustDistribution.distribution.signals.shipsBenchmarkReport, true);
+  assert.equal(payload.data.trustDistribution.verification.scripts.build, null);
+  assert.equal(payload.data.trustDistribution.verification.scripts.prepack, null);
+  assert.equal(payload.data.trustDistribution.verification.scripts.checkReleaseTrust, null);
+  assert.equal(payload.data.trustDistribution.verification.scripts.generateSbom, null);
+  assert.equal(payload.data.trustDistribution.verification.scripts.releasePrep, null);
+  assert.equal(payload.data.trustDistribution.verification.signals.buildRunsReleaseTrustCheck, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.prepackRunsReleaseTrustCheck, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.trustDocsPresent, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsSbom, false);
+  assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsTrustCheck, false);
+  assert.equal(payload.data.trustDistribution.verification.signals.testRunsBenchmarkCheck, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsReleasePrep, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.repoTestRunsSmoke, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.repoReleasePrepRunsSmoke, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.publishedReleasePrepRunsSmoke, false);
   assert.equal(
     payload.data.commandDescriptorMetadata.counts.supportsRemote,
     Object.keys(payload.data.commandDescriptors).length,
   );
+  assert.ok(payload.data.documentation.skills.some((doc) => doc.path === 'docs/trust/release-verification.md'));
+  assert.ok(payload.data.documentation.skills.some((doc) => doc.path === 'docs/trust/security-model.md'));
+  assert.ok(payload.data.documentation.skills.some((doc) => doc.path === 'docs/trust/support-matrix.md'));
+  assert.ok(payload.data.definitions.TrustDistributionPayload);
   assert.ok(payload.data.definitions.QuotePayload);
   assert.ok(payload.data.definitions.TradePayload);
   assert.ok(payload.data.definitions.MirrorPlanPayload);
@@ -1468,6 +1575,56 @@ test('schema and capabilities payloads validate against published definitions', 
   );
 });
 
+test('generated SDK contract bundle stays in parity with live schema and capabilities commands', () => {
+  const tempDir = createTempDir('pandora-sdk-cli-parity-');
+  const env = createIsolatedPandoraEnv(tempDir);
+
+  try {
+    const schemaEnvelope = parseJsonOutput(runCli(['--output', 'json', 'schema'], { env }));
+    const capabilitiesEnvelope = parseJsonOutput(runCli(['--output', 'json', 'capabilities'], { env }));
+    const artifact = buildSdkContractArtifact({
+      packageVersion: generatedManifest.packageVersion,
+      remoteTransportActive: false,
+    });
+
+    assertManifestParity(generatedManifest, artifact);
+    assert.deepEqual(artifact.commandDescriptors, schemaEnvelope.data.commandDescriptors);
+    assert.deepEqual(artifact.schemas.definitions, schemaEnvelope.data.definitions);
+    assert.deepEqual(
+      omitGeneratedAt(artifact.capabilities),
+      omitGeneratedAt(capabilitiesEnvelope.data),
+    );
+    assert.equal(artifact.capabilities.generatedAt, SDK_ARTIFACT_GENERATED_AT);
+    assert.deepEqual(generatedContractRegistry.commandDescriptors, artifact.commandDescriptors);
+    assert.deepEqual(generatedContractRegistry.schemas.envelope.commandDescriptors, artifact.schemas.envelope.commandDescriptors);
+    assert.deepEqual(
+      omitTrustDistributionDefinitions(generatedContractRegistry.schemas.envelope.definitions),
+      omitTrustDistributionDefinitions(artifact.schemas.envelope.definitions),
+    );
+    assert.deepEqual(
+      omitTrustDistributionFromCapabilities(omitGeneratedAt(generatedContractRegistry.capabilities)),
+      omitTrustDistributionFromCapabilities(omitGeneratedAt(artifact.capabilities)),
+    );
+    assert.deepEqual(
+      omitGeneratedAt(artifact.schemas.envelope),
+      omitGeneratedAt(schemaEnvelope.data),
+      'SDK schema bundle should match the live schema payload aside from deterministic generatedAt.',
+    );
+    assert.equal(
+      artifact.schemas.envelope.schemaVersion,
+      schemaEnvelope.data.schemaVersion,
+      'SDK schema bundle should preserve schemaVersion from the live schema command payload.',
+    );
+    assert.equal(
+      artifact.schemas.envelope.generatedAt,
+      SDK_ARTIFACT_GENERATED_AT,
+      'SDK schema bundle should stamp a deterministic generatedAt for packaged SDK artifacts.',
+    );
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
 test('schema command rejects unknown trailing flags', () => {
   const result = runCli(['--output', 'json', 'schema', '--bad-flag']);
   assert.equal(result.status, 1);
@@ -1504,15 +1661,78 @@ test('capabilities --help succeeds in table mode', () => {
   assert.equal(payload.data.title, 'PandoraCliCapabilities');
   assert.equal(payload.data.source, 'agent_contract_registry');
   assert.equal(payload.data.commandDescriptorVersion, schemaPayload.data.commandDescriptorVersion);
+  assert.deepEqual(payload.data.trustDistribution, schemaPayload.data.trustDistribution);
+  assert.equal(payload.data.trustDistribution.distribution.rootPackage.name, repoPackage.name);
+  assert.equal(payload.data.trustDistribution.distribution.rootPackage.version, repoPackage.version);
+  assert.deepEqual(
+    payload.data.trustDistribution.distribution.rootPackage.binNames,
+    Object.keys(repoPackage.bin || {}).sort(),
+  );
+  assert.equal(
+    payload.data.trustDistribution.distribution.generatedContractArtifacts.artifactVersion,
+    generatedManifest.artifactVersion,
+  );
+  assert.equal(
+    payload.data.trustDistribution.distribution.embeddedSdks.typescript.packageName,
+    typescriptSdkPackage.name,
+  );
+  assert.equal(
+    payload.data.trustDistribution.distribution.embeddedSdks.python.packageName,
+    parseTomlStringField(
+      fs.readFileSync(path.join(__dirname, '..', '..', 'sdk', 'python', 'pyproject.toml'), 'utf8'),
+      'name',
+    ),
+  );
+  assert.equal(payload.data.trustDistribution.verification.scripts.build, null);
+  assert.equal(payload.data.trustDistribution.verification.scripts.prepack, null);
+  assert.equal(payload.data.trustDistribution.verification.scripts.benchmarkCheck, null);
+  assert.equal(payload.data.trustDistribution.verification.scripts.checkReleaseTrust, null);
+  assert.equal(payload.data.trustDistribution.verification.scripts.generateSbom, null);
+  assert.equal(payload.data.trustDistribution.verification.scripts.releasePrep, null);
+  assert.equal(payload.data.trustDistribution.distribution.platformValidation.release.workflowPath, '.github/workflows/release.yml');
+  assert.ok(payload.data.trustDistribution.distribution.platformValidation.release.osMatrix.includes('ubuntu-latest'));
+  assert.equal(payload.data.trustDistribution.verification.ciWorkflow.present, false);
+  assert.ok(
+    payload.data.trustDistribution.verification.releaseAssets.names.includes(
+      `pandora-cli-skills-${repoPackage.version}.tgz.intoto.jsonl`,
+    ),
+  );
+  assert.ok(payload.data.trustDistribution.verification.releaseAssets.verificationMethods.includes('github-build-provenance-attestation'));
+  assert.equal(payload.data.trustDistribution.verification.signals.prepublishOnlyRunsTest, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.testRunsSmoke, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.smokeTestsPresent, false);
+  assert.equal(payload.data.trustDistribution.verification.signals.buildRunsReleaseTrustCheck, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.prepackRunsReleaseTrustCheck, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.trustDocsPresent, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsSbom, false);
+  assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsTrustCheck, false);
+  assert.equal(payload.data.trustDistribution.distribution.signals.shipsTrustDocs, true);
+  assert.equal(payload.data.trustDistribution.distribution.signals.shipsReleaseTrustScripts, false);
+  assert.equal(payload.data.trustDistribution.distribution.signals.shipsBenchmarkHarness, false);
+  assert.equal(payload.data.trustDistribution.distribution.signals.shipsBenchmarkReport, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.commands.test, repoPackage.scripts.test);
+  assert.equal(payload.data.trustDistribution.releaseGates.commands.releasePrep, repoPackage.scripts['release:prep']);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsReleasePrep, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.repoTestRunsSmoke, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.repoReleasePrepRunsSmoke, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.publishedSmokeCommandExposed, false);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.packagedSmokeFixturesPresent, false);
   assert.ok(payload.data.summary.totalCommands > 0);
   assert.ok(payload.data.summary.mcpExposedCommands > 0);
   assert.ok(payload.data.outputModeMatrix.jsonOnly.includes('schema'));
   assert.ok(payload.data.outputModeMatrix.tableOnly.includes('mcp'));
   assert.ok(payload.data.outputModeMatrix.tableAndJson.includes('quote'));
   assert.ok(payload.data.topLevelCommands.markets);
+  assert.ok(payload.data.topLevelCommands.arb);
+  assert.ok(payload.data.routedTopLevelCommands.includes('arb'));
   assert.ok(payload.data.topLevelCommands.markets.childCommands.includes('markets.list'));
   assert.ok(payload.data.namespaces.mirror.commands.includes('mirror.plan'));
   assert.ok(payload.data.namespaces.agent.mcpExposedCommands.includes('agent.market.validate'));
+  assert.ok(payload.data.documentation.skills.some((doc) => doc.id === 'release-verification'));
+  assert.ok(payload.data.documentation.skills.some((doc) => doc.id === 'security-model'));
+  assert.ok(payload.data.documentation.skills.some((doc) => doc.id === 'support-matrix'));
+  assert.ok(payload.data.documentation.router.taskRoutes.some((route) => route.label === 'Release verification, support matrix, or security posture'));
     assert.ok(payload.data.canonicalTools['arb.scan'].commands.includes('arbitrage'));
     assert.equal(payload.data.canonicalTools['arb.scan'].preferredCommand, 'arb.scan');
     assert.ok(payload.data.commandDigests.quote);
@@ -1544,8 +1764,8 @@ test('capabilities --help succeeds in table mode', () => {
   assert.ok(payload.data.commandDigests['mirror.sync.start'].externalDependencies.includes('notification-secrets'));
   assert.equal(payload.data.commandDigests.trade.remotePlanned, true);
   assert.equal(payload.data.commandDigests['mirror.sync.start'].returnsOperationId, true);
-  assert.equal(payload.data.commandDigests['mirror.sync.start'].returnsRuntimeHandle, true);
-  assert.equal(payload.data.commandDigests['mirror.sync.stop'].returnsRuntimeHandle, true);
+  assert.equal(payload.data.commandDigests['mirror.sync.start'].returnsRuntimeHandle, false);
+  assert.equal(payload.data.commandDigests['mirror.sync.stop'].returnsRuntimeHandle, false);
   assert.equal(payload.data.commandDigests.help.canRunConcurrent, true);
   assert.equal(payload.data.registryDigest.descriptorHash.length, 64);
   assert.equal(payload.data.registryDigest.descriptorHash, stableJsonHash(schemaPayload.data.commandDescriptors));
@@ -1553,10 +1773,11 @@ test('capabilities --help succeeds in table mode', () => {
   assert.equal(payload.data.registryDigest.commandDigestHash, stableJsonHash(payload.data.commandDigests));
   assert.equal(payload.data.registryDigest.canonicalHash, stableJsonHash(payload.data.canonicalTools));
   assert.equal(payload.data.registryDigest.topLevelHash, stableJsonHash(payload.data.topLevelCommands));
+  assert.equal(payload.data.registryDigest.routedTopLevelHash, stableJsonHash(payload.data.routedTopLevelCommands));
   assert.equal(payload.data.registryDigest.namespaceHash, stableJsonHash(payload.data.namespaces));
   assert.equal(payload.data.summary.totalCommands, Object.keys(schemaPayload.data.commandDescriptors).length);
   assert.ok(capabilityBytes < schemaBytes * 0.5, `capabilities should stay materially smaller than schema (${capabilityBytes} vs ${schemaBytes})`);
-  assert.ok(capabilityBytes < 250000, `capabilities payload should stay compact (${capabilityBytes} bytes)`);
+  assert.ok(capabilityBytes < 300000, `capabilities payload should stay compact (${capabilityBytes} bytes)`);
   });
 
   test('json help payload includes output-mode routing notes', () => {
@@ -1664,6 +1885,9 @@ test('risk panic blocks live writes before onchain execution', () => {
 test('operations list/get/cancel/close manage durable operation records in json envelopes', () => {
   const tempDir = createTempDir('pandora-operations-cli-');
   try {
+    const schemaPayload = parseJsonOutput(runCli(['--output', 'json', 'schema']));
+    const schemaDocument = schemaPayload.data;
+    const descriptors = schemaDocument.commandDescriptors;
     const operationDir = path.join(tempDir, 'operations');
     const created = upsertOperation(
       operationDir,
@@ -1683,12 +1907,14 @@ test('operations list/get/cancel/close manage durable operation records in json 
     assert.equal(listPayload.command, 'operations.list');
     assert.equal(listPayload.data.count, 1);
     assert.equal(listPayload.data.items[0].operationId, created.operation.operationId);
+    assertSchemaValid(schemaDocument, { $ref: descriptors['operations.list'].dataSchema }, listPayload.data, 'operations.list');
 
     const getResult = runCli(['--output', 'json', 'operations', 'get', '--id', created.operation.operationId], { env });
     assert.equal(getResult.status, 0);
     const getPayload = parseJsonOutput(getResult);
     assert.equal(getPayload.command, 'operations.get');
     assert.equal(getPayload.data.operationId, created.operation.operationId);
+    assertSchemaValid(schemaDocument, { $ref: descriptors['operations.get'].dataSchema }, getPayload.data, 'operations.get');
 
     const cancelResult = runCli(['--output', 'json', 'operations', 'cancel', '--id', created.operation.operationId, '--reason', 'stop'], { env });
     assert.equal(cancelResult.status, 0);
@@ -3721,6 +3947,53 @@ test('lifecycle start/status/resolve persists state and requires explicit confir
     const resolvedStatusPayload = parseJsonOutput(resolvedStatus);
     assert.equal(resolvedStatusPayload.data.phase, 'RESOLVED');
     assert.equal(typeof resolvedStatusPayload.data.resolvedAt, 'string');
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('lifecycle rejects invalid persisted phases and concurrent starts are creation-safe', async () => {
+  const tempDir = createTempDir('pandora-lifecycle-race-');
+  const lifecycleDir = path.join(tempDir, 'lifecycles');
+  const configPath = path.join(tempDir, 'lifecycle.json');
+  writeFile(
+    configPath,
+    JSON.stringify({
+      id: 'phase-race-1',
+      source: 'integration-test',
+      marketId: 'market-1',
+    }),
+  );
+
+  const env = {
+    HOME: tempDir,
+    PANDORA_LIFECYCLE_DIR: lifecycleDir,
+  };
+
+  try {
+    const [first, second] = await Promise.all([
+      runCliAsync(['--output', 'json', 'lifecycle', 'start', '--config', configPath], { env }),
+      runCliAsync(['--output', 'json', 'lifecycle', 'start', '--config', configPath], { env }),
+    ]);
+    const statuses = [first.status, second.status].sort();
+    assert.deepEqual(statuses, [0, 1]);
+    const failure = first.status === 1 ? parseJsonOutput(first) : parseJsonOutput(second);
+    assert.equal(failure.error.code, 'LIFECYCLE_EXISTS');
+
+    const lifecycleFile = path.join(lifecycleDir, 'phase-race-1.json');
+    const persisted = JSON.parse(fs.readFileSync(lifecycleFile, 'utf8'));
+    persisted.phase = 'BROKEN_PHASE';
+    writeFile(lifecycleFile, JSON.stringify(persisted));
+
+    const statusResult = runCli(['--output', 'json', 'lifecycle', 'status', '--id', 'phase-race-1'], { env });
+    assert.equal(statusResult.status, 1);
+    const statusPayload = parseJsonOutput(statusResult);
+    assert.equal(statusPayload.error.code, 'LIFECYCLE_INVALID_PHASE');
+
+    const resolveResult = runCli(['--output', 'json', 'lifecycle', 'resolve', '--id', 'phase-race-1', '--confirm'], { env });
+    assert.equal(resolveResult.status, 1);
+    const resolvePayload = parseJsonOutput(resolveResult);
+    assert.equal(resolvePayload.error.code, 'LIFECYCLE_INVALID_PHASE');
   } finally {
     removeDir(tempDir);
   }

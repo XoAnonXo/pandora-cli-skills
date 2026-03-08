@@ -2883,6 +2883,13 @@ test('error recovery service builds deterministic command hints for key flows', 
   });
   assert.equal(configMissing.command, 'pandora lifecycle start --config /tmp/lifecycle.json');
 
+  const invalidLifecyclePhase = recovery.getRecoveryForError({
+    code: 'LIFECYCLE_INVALID_PHASE',
+    details: { id: 'lc-abc' },
+  });
+  assert.equal(invalidLifecyclePhase.command, 'pandora lifecycle status --id lc-abc');
+  assert.equal(invalidLifecyclePhase.retryable, false);
+
   const oddsHistory = recovery.getRecoveryForError({
     code: 'ODDS_HISTORY_FAILED',
     details: { eventId: 'evt-1' },

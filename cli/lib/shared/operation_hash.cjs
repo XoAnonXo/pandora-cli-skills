@@ -22,6 +22,7 @@ function normalizeOperationDescriptor(input = {}) {
   return {
     command: String(descriptor.command || descriptor.tool || '').trim() || null,
     action: String(descriptor.action || '').trim() || null,
+    parentOperationId: String(descriptor.parentOperationId || '').trim() || null,
     target: descriptor.target === undefined ? null : descriptor.target,
     request: descriptor.request === undefined
       ? (descriptor.payload && typeof descriptor.payload === 'object' ? descriptor.payload : {})
@@ -33,6 +34,41 @@ function normalizeOperationDescriptor(input = {}) {
     environment: String(descriptor.environment || '').trim() || null,
     mode: String(descriptor.mode || '').trim() || null,
     scope: String(descriptor.scope || '').trim() || 'local',
+    tags: Array.isArray(descriptor.tags)
+      ? descriptor.tags.map((value) => String(value || '').trim()).filter(Boolean)
+      : [],
+  };
+}
+
+function buildOperationHashInput(input = {}, existing = null) {
+  const data = input && typeof input === 'object' ? input : {};
+  const persisted = existing && typeof existing === 'object' ? existing : null;
+  return {
+    command: data.command !== undefined ? data.command : persisted && persisted.command,
+    action: data.action !== undefined ? data.action : null,
+    parentOperationId: data.parentOperationId !== undefined ? data.parentOperationId : persisted && persisted.parentOperationId,
+    target: data.target !== undefined ? data.target : persisted && persisted.target,
+    request: data.request !== undefined
+      ? data.request
+      : data.input !== undefined
+        ? data.input
+        : data.payload !== undefined
+          ? data.payload
+          : data.args !== undefined
+            ? data.args
+            : persisted && persisted.request,
+    context: data.context !== undefined
+      ? data.context
+      : data.runtime !== undefined
+        ? data.runtime
+        : persisted && persisted.runtime,
+    metadata: data.metadata !== undefined ? data.metadata : persisted && persisted.metadata,
+    policyPack: data.policyPack !== undefined ? data.policyPack : persisted && persisted.policyPack,
+    profile: data.profile !== undefined ? data.profile : persisted && persisted.profile,
+    environment: data.environment !== undefined ? data.environment : persisted && persisted.environment,
+    mode: data.mode !== undefined ? data.mode : persisted && persisted.mode,
+    scope: data.scope !== undefined ? data.scope : persisted && persisted.scope,
+    tags: data.tags !== undefined ? data.tags : persisted && persisted.tags,
   };
 }
 
@@ -98,6 +134,7 @@ function normalizeOperationId(rawId, options = {}) {
 module.exports = {
   stableStringify,
   normalizeOperationDescriptor,
+  buildOperationHashInput,
   buildOperationHash,
   computeOperationHash,
   normalizeOperationHash,

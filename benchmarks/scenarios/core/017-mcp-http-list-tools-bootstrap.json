@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-http-list-tools-bootstrap",
+  "title": "Remote MCP listTools bootstrap",
+  "description": "The generated remote SDK can list normalized MCP tools with stable xPandora metadata.",
+  "transport": "mcp-http",
+  "assertionId": "tools-list-bootstrap",
+  "parityGroup": "tools-list-bootstrap",
+  "parityExpectedTransports": ["mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 7000,
+  "weight": 10,
+  "dimensions": ["bootstrap", "sdk", "mcp", "remote-parity"],
+  "request": {
+    "mode": "listTools",
+    "authScopes": ["*"]
+  }
+}

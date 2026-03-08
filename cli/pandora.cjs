@@ -103,6 +103,8 @@ const getStreamCommandService = createLazyModuleLoader('./lib/stream_command_ser
 const getSimulateCommandService = createLazyModuleLoader('./lib/simulate_command_service.cjs');
 const getOperationsCommandService = createLazyModuleLoader('./lib/operations_command_service.cjs');
 const getOperationsFlagsModule = createLazyModuleLoader('./lib/parsers/operations_flags.cjs');
+const getProfileFlagsModule = createLazyModuleLoader('./lib/parsers/profile_flags.cjs');
+const getRecipeFlagsModule = createLazyModuleLoader('./lib/parsers/recipe_flags.cjs');
 const getForkRuntimeService = createLazyModuleLoader('./lib/fork_runtime_service.cjs');
 const getDoctorService = createLazyModuleLoader('./lib/doctor_service.cjs');
 const getSportsProviderRegistry = createLazyModuleLoader('./lib/sports_provider_registry.cjs');
@@ -1127,6 +1129,9 @@ Usage:
   pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
   pandora [--output table|json] claim --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] policy list|get|lint [flags]
+  pandora [--output table|json] profile list|get|validate [flags]
+  pandora [--output table|json] recipe list|get|validate|run [flags]
   pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
   pandora [--output table|json] operations get|list|cancel|close [flags]
   pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
@@ -1158,6 +1163,8 @@ Examples:
   pandora lifecycle start --config ./configs/lifecycle.json
   pandora arb scan --source polymarket --output json --iterations 1 --min-spread-pct 2 --min-tvl 50
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
+  pandora recipe list
+  pandora recipe run --id mirror.sync.paper-safe --set market-address=0xabc...
   pandora mirror plan --source polymarket --polymarket-market-id 0xabc... --with-rules --include-similarity
   pandora claim --all --dry-run
   pandora mirror browse --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10
@@ -6296,6 +6303,17 @@ const parseRiskPanicFlagsFromModule = createLazyFactoryRunner('./lib/parsers/ris
   CliError,
   requireFlagValue,
 }));
+const parsePolicyFlagsFromModule = createLazyFactoryRunner('./lib/parsers/policy_flags.cjs', 'createParsePolicyFlags', () => ({
+  CliError,
+  requireFlagValue,
+}));
+function parseProfileFlagsFromModule(...args) {
+  return getProfileFlagsModule().parseProfileFlags(...args);
+}
+const parseRecipeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/recipe_flags.cjs', 'createParseRecipeFlags', () => ({
+  CliError,
+  requireFlagValue,
+}));
 const parseModelCalibrateFlagsFromModule = createLazyFactoryRunner('./lib/parsers/model_flags.cjs', 'createParseModelCalibrateFlags', () => ({
   CliError,
   requireFlagValue,
@@ -6509,6 +6527,36 @@ const runRiskCommandFromService = createLazyFactoryRunner('./lib/risk_command_se
   setPanic: setRiskPanic,
   clearPanic: clearRiskPanic,
   renderRiskTable,
+}));
+const runPolicyCommandFromService = createLazyFactoryRunner('./lib/policy_command_service.cjs', 'createRunPolicyCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parsePolicyFlags: parsePolicyFlagsFromModule,
+  createPolicyRegistryService: () => require('./lib/policy_registry_service.cjs').createPolicyRegistryService(),
+}));
+const runProfileCommandFromService = createLazyFactoryRunner('./lib/profile_command_service.cjs', 'createRunProfileCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseProfileFlags: parseProfileFlagsFromModule,
+  createProfileStore: () => require('./lib/profile_store.cjs').createProfileStore(),
+  createProfileResolverService: () => require('./lib/profile_resolver_service.cjs').createProfileResolverService(),
+}));
+const runRecipeCommandFromService = createLazyFactoryRunner('./lib/recipe_command_service.cjs', 'createRunRecipeCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseRecipeFlags: parseRecipeFlagsFromModule,
+  createRecipeRegistryService: () => require('./lib/recipe_registry_service.cjs').createRecipeRegistryService(),
+  createRecipeRuntimeService: require('./lib/recipe_runtime_service.cjs').createRecipeRuntimeService,
+  createCommandExecutorService: () => require('./lib/command_executor_service.cjs').createCommandExecutorService(),
+  createPolicyEvaluatorService: () => require('./lib/policy_evaluator_service.cjs').createPolicyEvaluatorService(),
+  createProfileResolverService: () => require('./lib/profile_resolver_service.cjs').createProfileResolverService(),
+  buildCommandDescriptors: () => require('./lib/agent_contract_registry.cjs').buildCommandDescriptors(),
 }));
 const runOperationsCommandFromService = createLazyFactoryRunner('./lib/operations_command_service.cjs', 'createRunOperationsCommand', () => ({
   CliError,
@@ -7395,6 +7443,18 @@ async function runRiskCommand(args, context) {
   return runRiskCommandFromService(args, context);
 }
 
+async function runPolicyCommand(args, context) {
+  return runPolicyCommandFromService(args, context);
+}
+
+async function runProfileCommand(args, context) {
+  return runProfileCommandFromService(args, context);
+}
+
+async function runRecipeCommand(args, context) {
+  return runRecipeCommandFromService(args, context);
+}
+
 async function runOperationsCommand(args, context) {
   return runOperationsCommandFromService(args, context);
 }
@@ -7572,6 +7632,9 @@ const dispatch = createCommandRouter({
   runResolveCommand,
   runClaimCommand,
   runLpCommand,
+  runPolicyCommand,
+  runProfileCommand,
+  runRecipeCommand,
   runRiskCommand,
   runOperationsCommand,
   runModelCommand,

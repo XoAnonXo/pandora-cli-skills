@@ -32,7 +32,20 @@ function listFilesystemUnitTests() {
 }
 
 const trackedTests = listTrackedUnitTests();
-const testFiles = trackedTests.length ? trackedTests : listFilesystemUnitTests();
+const extraTests = process.argv.slice(2)
+  .map((filePath) => String(filePath || '').trim())
+  .filter(Boolean)
+  .filter((filePath) => fs.existsSync(path.join(rootDir, filePath)));
+const discoveredTests = trackedTests.length ? trackedTests : listFilesystemUnitTests();
+const testFiles = Array.from(
+  new Set(discoveredTests.concat(extraTests)),
+).sort();
+
+if (testFiles.length === 0) {
+  console.error('No unit tests found.');
+  process.exit(1);
+}
+
 const result = spawnSync(process.execPath, ['--test', ...testFiles], {
   cwd: rootDir,
   stdio: 'inherit',

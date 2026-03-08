@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const {
+  buildOperationHashInput,
   buildOperationHash,
   buildOperationId,
   normalizeOperationHash,
@@ -62,6 +63,39 @@ test('operation hash/id helpers are deterministic and normalized', () => {
     request: { at: new Date('2027-01-01T00:00:00.000Z') },
   });
   assert.notEqual(withEarlierDate, withLaterDate);
+});
+
+test('operation hash input helper keeps service/store identity sources aligned', () => {
+  const source = buildOperationHashInput({
+    command: 'sports.create.run',
+    action: 'create',
+    parentOperationId: 'op-parent',
+    request: { eventId: 'evt-1' },
+    context: { mode: 'gateway' },
+    metadata: { type: 'sports' },
+    policyPack: 'desk-default',
+    profile: 'prod-trader-a',
+    environment: 'mainnet',
+    mode: 'execute',
+    scope: 'remote',
+    tags: ['sports', 'live'],
+  });
+
+  assert.deepEqual(source, {
+    command: 'sports.create.run',
+    action: 'create',
+    parentOperationId: 'op-parent',
+    target: null,
+    request: { eventId: 'evt-1' },
+    context: { mode: 'gateway' },
+    metadata: { type: 'sports' },
+    policyPack: 'desk-default',
+    profile: 'prod-trader-a',
+    environment: 'mainnet',
+    mode: 'execute',
+    scope: 'remote',
+    tags: ['sports', 'live'],
+  });
 });
 
 test('operation state helpers normalize aliases and reject invalid transitions', () => {
@@ -309,6 +343,76 @@ test('patchOperation merges against the latest durable state under lock', (t) =>
   assert.equal(patched.operation.summary, 'updated summary');
   assert.equal(patched.operation.checkpointCount, 1);
   assert.equal(patched.operation.latestCheckpoint.label, 'dispatch');
+});
+
+test('setOperationStatus with checkpoints rolls back the state file if checkpoint persistence fails', (t) => {
+  const rootDir = createTempRoot(t);
+  const created = upsertOperation(
+    rootDir,
+    {
+      command: 'mirror.sync.start',
+      request: { marketAddress: '0xdef', execute: true },
+      status: 'planned',
+    },
+    { now: '2026-03-07T11:00:00.000Z' },
+  );
+
+  const originalRenameSync = fs.renameSync;
+  fs.renameSync = (source, target) => {
+    if (String(target).endsWith('.checkpoints.jsonl')) {
+      throw new Error('checkpoint rename failed');
+    }
+    return originalRenameSync(source, target);
+  };
+  t.after(() => {
+    fs.renameSync = originalRenameSync;
+  });
+
+  assert.throws(
+    () => setOperationStatus(rootDir, created.operation.operationId, 'running', {
+      patch: {
+        checkpoint: {
+          kind: 'execute',
+          label: 'dispatch',
+          message: 'should roll back',
+        },
+      },
+    }),
+    /checkpoint rename failed/i,
+  );
+
+  const lookup = getOperation(rootDir, created.operation.operationId);
+  assert.equal(lookup.operation.status, 'planned');
+  assert.equal(lookup.operation.checkpointCount, 0);
+  const checkpoints = readCheckpoints(rootDir, created.operation.operationId);
+  assert.equal(checkpoints.total, 0);
+});
+
+test('upsertOperation enforces expectedCurrentState against the persisted lifecycle state', (t) => {
+  const rootDir = createTempRoot(t);
+  const created = upsertOperation(
+    rootDir,
+    {
+      command: 'mirror.sync.start',
+      request: { marketAddress: '0xdef', execute: true },
+      status: 'queued',
+    },
+    { now: '2026-03-07T11:00:00.000Z' },
+  );
+
+  assert.throws(
+    () => upsertOperation(
+      rootDir,
+      {
+        operationId: created.operation.operationId,
+        operationHash: created.operation.operationHash,
+        command: created.operation.command,
+        status: 'running',
+      },
+      { expectedCurrentState: 'planned' },
+    ),
+    /expected current state/i,
+  );
 });
 
 test('listOperations tolerates corrupted files and still returns valid records', (t) => {

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-stdio-operations-get-seeded",
+  "title": "Stdio MCP seeded operation fetch",
+  "description": "Local MCP operations.get returns the same seeded operation record as the CLI.",
+  "transport": "mcp-stdio",
+  "assertionId": "operations-get-seeded",
+  "parityGroup": "operations-get-seeded",
+  "parityExpectedTransports": ["cli-json", "mcp-stdio", "mcp-http"],
+  "expectedOperationId": "benchmark-op-1",
+  "seedOperations": [
+    {
+      "operationId": "benchmark-op-1",
+      "tool": "mirror.deploy",
+      "command": "mirror.deploy",
+      "status": "planned",
+      "summary": "Seeded benchmark operation",
+      "request": { "marketId": "benchmark-market" },
+      "createdAt": "2026-03-08T00:00:00.000Z",
+      "updatedAt": "2026-03-08T00:00:00.000Z"
+    }
+  ],
+  "targetLatencyMs": 5000,
+  "weight": 8,
+  "dimensions": ["operations", "state", "mcp", "local-parity"],
+  "request": {
+    "tool": "operations.get",
+    "arguments": {
+      "id": "benchmark-op-1"
+    }
+  }
+}

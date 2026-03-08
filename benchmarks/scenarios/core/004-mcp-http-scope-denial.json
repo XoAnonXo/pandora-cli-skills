@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-http-scope-denial",
+  "title": "Remote MCP scope denial",
+  "description": "Remote gateway hides tools outside the granted token scopes so out-of-scope callers cannot distinguish them from unknown tools.",
+  "transport": "mcp-http",
+  "assertionId": "scope-denial",
+  "targetLatencyMs": 7000,
+  "weight": 20,
+  "dimensions": ["safety", "authorization", "remote-parity"],
+  "request": {
+    "tool": "operations.list",
+    "arguments": {},
+    "authScopes": ["capabilities:read"]
+  }
+}

@@ -5,9 +5,102 @@ This document maps the CLI to operator use cases. Use it to decide which command
 For machine-first discovery, start with:
 - `pandora --output json capabilities`
 - `pandora --output json schema`
+- `pandora --output json policy list`
+- `pandora --output json profile list`
 - `pandora mcp`
 
 Use `pandora mcp http` only when you intentionally want to host the remote streamable HTTP gateway for external agents.
+
+## Small-doc routing
+
+Use the smallest scoped doc that matches the task:
+- external agent bootstrap:
+  - [`agent-quickstart.md`](./agent-quickstart.md)
+- JSON/MCP/runtime contract details:
+  - [`agent-interfaces.md`](./agent-interfaces.md)
+- buy/sell/claim/arbitrage workflow:
+  - [`trading-workflows.md`](./trading-workflows.md)
+- portfolio, LP exit, claim-all, and closeout:
+  - [`portfolio-closeout.md`](./portfolio-closeout.md)
+- mirror deploy/sync/close:
+  - [`mirror-operations.md`](./mirror-operations.md)
+- policy packs, signer profiles, and gateway scopes:
+  - [`policy-profiles.md`](./policy-profiles.md)
+- release verification, support guarantees, and security posture:
+  - [`../trust/release-verification.md`](../trust/release-verification.md)
+  - [`../trust/support-matrix.md`](../trust/support-matrix.md)
+  - [`../trust/security-model.md`](../trust/security-model.md)
+- exhaustive flags:
+  - [`command-reference.md`](./command-reference.md)
+
+## Contract export for SDK generators
+
+- SDK alpha source/artifact surfaces are shipped in this build under `sdk/typescript`, `sdk/python`, and `sdk/generated`.
+- Package layout matters:
+  - shared JS contract export: `sdk/generated`
+  - TypeScript embedded loader/manifest: `sdk/typescript/generated`
+  - Python embedded manifest: `sdk/python/pandora_agent/generated`
+- Check `capabilities.data.transports.sdk` for the runtime status; current builds report `supported=true` and `status="alpha"`.
+- Export `pandora --output json capabilities` when you need compact bootstrap metadata:
+  - `commandDigests`
+  - `canonicalTools`
+  - `outputModeMatrix`
+  - `versionCompatibility`
+  - `registryDigest`
+- Export `pandora --output json schema` when you need the authoritative contract surface for local code generation or validation:
+  - JSON envelope definitions
+  - per-command `commandDescriptors`
+  - descriptor metadata and field capabilities
+- In a repository checkout, use `npm run generate:sdk-contracts` when regenerating:
+  - the shared JS export in `sdk/generated`
+  - the standalone TypeScript package-local copy in `sdk/typescript/generated`
+  - the standalone Python package-local copy in `sdk/python/pandora_agent/generated`
+- In the published root package, the shared JSON contract bundle is stored once under `sdk/generated`; embedded SDK loaders/manifests route to that shared bundle instead of duplicating it.
+- For embedded SDK consumers, prefer the SDK package's own generated manifest/artifacts instead of assuming every language reads directly from `sdk/generated`.
+- Treat `commandDescriptorVersion` and `registryDigest.descriptorHash` as the main drift signals for rebuilding generated clients.
+- Use `pandora mcp` for local stdio SDK execution or intentionally hosted `pandora mcp http` for remote streamable HTTP SDK execution instead of local contract export.
+
+## Policy scopes and signer-profile status
+
+- Every command digest and schema descriptor exposes machine-readable `policyScopes`, `requiresSecrets`, and related readiness metadata.
+- `capabilities.data.trustDistribution` is the machine-readable trust/distribution digest for packaged artifacts, release checks, and shipped trust signals.
+- `capabilities.data.policyProfiles.policyPacks` reports `supported=true` and `status="alpha"` in current builds.
+  - use `pandora --output json policy list` to inspect the shipped packs
+  - use `pandora --output json policy get --id <policy-id>` to inspect compiled rules and remediation hints
+  - use `pandora --output json policy lint --file <path>` to validate candidate custom packs
+- `capabilities.data.policyProfiles.signerProfiles` reports `supported=true` and `status="alpha"` in current builds.
+  - use `pandora --output json profile list` to inspect the shipped/sample profiles
+  - use `pandora --output json profile get --id <profile-id>` to inspect backend readiness and resolution notes
+  - use `pandora --output json profile validate --file <path>` to validate candidate custom profiles
+- signer-profile capability metadata also exposes:
+  - `implementedBackends`
+  - `placeholderBackends`
+  - `readyBuiltinIds`
+  - `pendingBuiltinIds`
+- In current builds, treat only `market_observer_ro` as built-in runtime-ready by default unless `profile get` reports otherwise for your runtime.
+- There is not yet a universal `--profile` selector across mutating commands. Live command execution still commonly resolves credentials from flags/env during rollout.
+- `pandora mcp http` is the policy-enforced execution surface available today:
+  - grant the minimum `--auth-scopes` needed for the tools you expose
+  - inspect `policyScopes` in `capabilities` / `schema` before minting gateway tokens
+  - expect mutating tools that need signing to include scopes such as the tool action plus `secrets:use`
+- Operator preference order for live execution:
+  - read-only bootstrap via `capabilities`, `schema`, `policy`, and `profile`
+  - scoped gateway tokens for agent access
+  - env or `.env` values supplied by a secret manager or other runtime bootstrap you control
+  - raw `--private-key` only for one-off/manual fallback
+- The command reference still shows `--private-key` where the parser accepts it. Treat that as supported compatibility surface, not the preferred long-lived operating model.
+
+### Preferred agent bootstrap
+
+Use this sequence instead of starting with secrets:
+
+1. `pandora --output json capabilities`
+2. `pandora --output json schema`
+3. `pandora --output json policy list`
+4. `pandora --output json profile list`
+5. choose the smallest scope set required by the target tools
+6. start `pandora mcp` for local stdio or `pandora mcp http --auth-scopes <csv>` for a remote gateway
+7. only if the selected tools require signing, provision env-based signer material on that runtime
 
 ## Core capability map
 
@@ -25,7 +118,7 @@ Use `pandora mcp http` only when you intentionally want to host the remote strea
 | Analytics and export | `portfolio`, `history`, `export`, `leaderboard`, `analyze`, `suggest` | `portfolio` and `history` are operator analytics, not full accounting ledgers. |
 | Cross-venue analysis | `arb scan`, `arbitrage` | `arb scan` is the canonical scanner; `arbitrage` is the one-shot wrapper. |
 | Quant/model tooling | `simulate mc|particle-filter|agents`, `model calibrate|correlation|diagnose|score brier` | Separate from trading/runtime execution. |
-| Agent-native integration | `capabilities`, `schema`, `mcp`, `agent market autocomplete`, `agent market validate` | Open `agent-interfaces.md` for exact envelope and MCP details. |
+| Agent-native integration | `capabilities`, `schema`, `policy list|get|lint`, `profile list|get|validate`, `mcp`, `agent market autocomplete`, `agent market validate` | Open `agent-interfaces.md` for exact envelope and MCP details. |
 | Legacy script launchers | `launch`, `clone-bet` | Legacy wrappers, documented separately because their timing model differs from mirror. |
 
 ## Canonical paths and aliases
@@ -89,9 +182,17 @@ Notes:
 ## Capability routing by task
 - Need the full CLI surface with flags:
   - open [`command-reference.md`](./command-reference.md)
+- Need the fastest safe external-agent bootstrap:
+  - open [`agent-quickstart.md`](./agent-quickstart.md)
+- Need buy/sell/claim/arbitrage workflow guidance:
+  - open [`trading-workflows.md`](./trading-workflows.md)
+- Need portfolio inspection or closeout guidance:
+  - open [`portfolio-closeout.md`](./portfolio-closeout.md)
 - Need safe mirror operational guidance:
   - open [`mirror-operations.md`](./mirror-operations.md)
 - Need JSON contracts, schema, or MCP tool behavior:
   - open [`agent-interfaces.md`](./agent-interfaces.md)
+- Need policy and signer-profile guidance:
+  - open [`policy-profiles.md`](./policy-profiles.md)
 - Need legacy launcher semantics:
   - open [`legacy-launchers.md`](./legacy-launchers.md)

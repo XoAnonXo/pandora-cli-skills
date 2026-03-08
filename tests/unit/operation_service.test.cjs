@@ -47,6 +47,31 @@ test('operation service creates durable planned operations with canonical fields
   assert.deepEqual(fetched.input, operation.input);
 });
 
+test('operation service persists identity-affecting metadata in public payloads', async (t) => {
+  const rootDir = createTempRoot(t);
+  const service = createOperationService({
+    operationStateStore: createOperationStateStore({ rootDir }),
+  });
+
+  const operation = await service.createPlanned({
+    command: 'trade',
+    input: { marketAddress: '0xabc', side: 'yes', amountUsdc: 25 },
+    policyPack: 'desk-default',
+    profile: 'prod-trader-a',
+    environment: 'mainnet',
+    mode: 'execute',
+    parentOperationId: 'trade-seed-parent',
+    tags: ['desk', 'execute'],
+  });
+
+  assert.equal(operation.policyPack, 'desk-default');
+  assert.equal(operation.profile, 'prod-trader-a');
+  assert.equal(operation.environment, 'mainnet');
+  assert.equal(operation.mode, 'execute');
+  assert.equal(operation.parentOperationId, 'trade-seed-parent');
+  assert.deepEqual(operation.tags, ['desk', 'execute']);
+});
+
 test('operation service transitions through durable lifecycle and preserves checkpoints', async (t) => {
   const rootDir = createTempRoot(t);
   const service = createOperationService({

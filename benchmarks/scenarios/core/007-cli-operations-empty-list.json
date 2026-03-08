@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cli-operations-empty-list",
+  "title": "CLI operations empty-list bootstrap",
+  "description": "Fresh operation state exposes an empty operations list with stable envelope structure.",
+  "transport": "cli-json",
+  "assertionId": "operations-empty-list",
+  "targetLatencyMs": 5000,
+  "weight": 10,
+  "dimensions": ["operations", "bootstrap"],
+  "request": {
+    "args": ["--output", "json", "operations", "list"]
+  }
+}

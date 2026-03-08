@@ -11,6 +11,7 @@ const {
   validateOperationTransition,
 } = require('./shared/operation_states.cjs');
 const {
+  buildOperationHashInput,
   buildOperationHash,
   buildOperationId,
   normalizeOperationHash,
@@ -165,6 +166,18 @@ function appendJsonLine(filePath, payload) {
   return filePath;
 }
 
+function atomicWriteJsonLines(filePath, entries) {
+  ensurePrivateDirectory(path.dirname(filePath));
+  const tempFile = `${filePath}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  const serialized = Array.isArray(entries) && entries.length
+    ? `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`
+    : '';
+  fs.writeFileSync(tempFile, serialized, { mode: 0o600 });
+  fs.renameSync(tempFile, filePath);
+  hardenPrivateFile(filePath);
+  return filePath;
+}
+
 function readJsonFile(filePath, options = {}) {
   if (!fs.existsSync(filePath)) {
     return options.missingOk === false
@@ -278,15 +291,7 @@ function deriveOperationHashSource(input, existing) {
   const data = input && typeof input === 'object' ? input : {};
   if (data.hashSource !== undefined) return data.hashSource;
   if (data.identity !== undefined) return data.identity;
-
-  return {
-    command: pickDefined(data.command, existing && existing.command, null),
-    request: pickDefined(data.request, data.input, data.payload, data.args, existing && existing.request, null),
-    parentOperationId: pickDefined(data.parentOperationId, existing && existing.parentOperationId, null),
-    target: pickDefined(data.target, existing && existing.target, null),
-    scope: pickDefined(data.scope, existing && existing.scope, null),
-    tags: pickDefined(data.tags, existing && existing.tags, []),
-  };
+  return buildOperationHashInput(data, existing);
 }
 
 function normalizeOperationRecord(input, options = {}) {
@@ -307,6 +312,10 @@ function normalizeOperationRecord(input, options = {}) {
   );
   const target = cloneJsonValue(pickDefined(input.target, existing && existing.target), { keepUndefined: true });
   const scope = normalizeTextOrNull(pickDefined(input.scope, existing && existing.scope));
+  const policyPack = normalizeTextOrNull(pickDefined(input.policyPack, existing && existing.policyPack));
+  const profile = normalizeTextOrNull(pickDefined(input.profile, existing && existing.profile));
+  const environment = normalizeTextOrNull(pickDefined(input.environment, existing && existing.environment));
+  const mode = normalizeTextOrNull(pickDefined(input.mode, existing && existing.mode));
   const summary = normalizeTextOrNull(pickDefined(input.summary, existing && existing.summary));
   const description = normalizeTextOrNull(pickDefined(input.description, existing && existing.description));
   const request = cloneJsonValue(
@@ -395,6 +404,10 @@ function normalizeOperationRecord(input, options = {}) {
       ? normalizeIsoTimestamp(preferTimestamp(lifecycle.closedAt, input.closedAt))
       : null,
     parentOperationId,
+    policyPack,
+    profile,
+    environment,
+    mode,
     scope,
     target: target === undefined ? null : target,
     request: request === undefined ? null : request,
@@ -423,6 +436,56 @@ function summarizeCheckpoint(checkpoint) {
     code: checkpoint.code || null,
     message: checkpoint.message || null,
     progress: typeof checkpoint.progress === 'number' ? checkpoint.progress : null,
+  };
+}
+
+function collectCheckpointInputs(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return [];
+  const checkpoints = [];
+  if (input.checkpoint !== undefined) {
+    checkpoints.push(input.checkpoint);
+  }
+  if (Array.isArray(input.checkpoints)) {
+    checkpoints.push(...input.checkpoints);
+  }
+  return checkpoints;
+}
+
+function materializeCheckpointState(operation, checkpointInputs, existingCheckpoints = [], options = {}) {
+  const inputs = Array.isArray(checkpointInputs) ? checkpointInputs : [];
+  const persistedCheckpoints = Array.isArray(existingCheckpoints) ? existingCheckpoints.slice() : [];
+  if (inputs.length === 0) {
+    return {
+      checkpoints: persistedCheckpoints,
+      operation,
+    };
+  }
+  const normalizedNew = inputs.map((entry, index) => {
+    const payload = entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? { ...entry }
+      : { label: String(entry || ''), kind: 'note' };
+    if (!payload.status && options.defaultStatus) {
+      payload.status = options.defaultStatus;
+    }
+    return normalizeCheckpointRecord(payload, {
+      operation,
+      index: persistedCheckpoints.length + index + 1,
+      now: options.now,
+    });
+  });
+  const checkpoints = persistedCheckpoints.concat(normalizedNew);
+  const latestCheckpoint = normalizedNew[normalizedNew.length - 1];
+  return {
+    checkpoints,
+    operation: normalizeOperationRecord({
+      ...operation,
+      checkpointCount: checkpoints.length,
+      lastCheckpointAt: latestCheckpoint.at,
+      latestCheckpoint: summarizeCheckpoint(latestCheckpoint),
+    }, {
+      existing: operation,
+      now: latestCheckpoint.at,
+    }),
   };
 }
 
@@ -604,6 +667,9 @@ function listOperations(rootDir, options = {}) {
   const commandFilter = options.command !== undefined
     ? new Set((Array.isArray(options.command) ? options.command : [options.command]).map((value) => String(value).trim()))
     : null;
+  const commandPrefixFilter = options.commandPrefix !== undefined
+    ? new Set((Array.isArray(options.commandPrefix) ? options.commandPrefix : [options.commandPrefix]).map((value) => String(value).trim()).filter(Boolean))
+    : null;
   const tagFilter = options.tags !== undefined
     ? new Set(normalizeStringList(options.tags))
     : null;
@@ -617,6 +683,16 @@ function listOperations(rootDir, options = {}) {
   let filtered = items.filter((item) => {
     if (statusFilter && !statusFilter.has(item.status)) return false;
     if (commandFilter && !commandFilter.has(item.command)) return false;
+    if (commandPrefixFilter) {
+      let matched = false;
+      for (const prefix of commandPrefixFilter) {
+        if (item.command === prefix || item.command.startsWith(`${prefix}.`)) {
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) return false;
+    }
     if (operationHashFilter && !operationHashFilter.has(item.operationHash)) return false;
     if (operationIdFilter && !operationIdFilter.has(item.operationId)) return false;
     if (tagFilter) {
@@ -665,11 +741,17 @@ function upsertOperation(rootDir, input, options = {}) {
 
     const existing = existingRaw ? normalizeOperationRecord(existingRaw, { existing: null }) : null;
     if (existing && options.expectedCurrentState !== undefined) {
-      const validation = validateOperationTransition(existing.status, pickDefined(input.status, input.state, existing.status), {
-        allowUnknownCurrent: false,
-      });
-      if (!validation.ok) {
-        throw createStoreError('OPERATION_INVALID_TRANSITION', 'Operation update violates lifecycle transition rules.', validation);
+      const expectedStates = new Set(
+        (Array.isArray(options.expectedCurrentState) ? options.expectedCurrentState : [options.expectedCurrentState])
+          .map((value) => normalizeOperationState(value))
+          .filter(Boolean),
+      );
+      if (!expectedStates.has(existing.status)) {
+        throw createStoreError('OPERATION_UNEXPECTED_CURRENT_STATE', 'Operation is not in the expected current state.', {
+          operationId: existing.operationId,
+          actualCurrentState: existing.status,
+          expectedCurrentState: Array.from(expectedStates),
+        });
       }
     }
 
@@ -677,14 +759,36 @@ function upsertOperation(rootDir, input, options = {}) {
       existing,
       now: options.now,
     });
-    atomicWriteJson(stateFilePath, operation);
+    const checkpointInputs = collectCheckpointInputs(input);
+    const existingCheckpoints = existing ? parseCheckpointLines(checkpointFilePath) : [];
+    const checkpointState = materializeCheckpointState(operation, checkpointInputs, existingCheckpoints, {
+      now: options.now,
+      defaultStatus: operation.status,
+    });
+    atomicWriteJson(stateFilePath, checkpointState.operation);
+    try {
+      if (checkpointInputs.length > 0) {
+        atomicWriteJsonLines(checkpointFilePath, checkpointState.checkpoints);
+      }
+    } catch (error) {
+      try {
+        if (existing) {
+          atomicWriteJson(stateFilePath, existing);
+        } else if (fs.existsSync(stateFilePath)) {
+          fs.unlinkSync(stateFilePath);
+        }
+      } catch (rollbackError) {
+        error.rollbackError = rollbackError;
+      }
+      throw error;
+    }
 
     return {
       rootDir: resolvedRootDir,
       filePath: stateFilePath,
       checkpointFilePath,
       created: !existing,
-      operation,
+      operation: checkpointState.operation,
     };
   });
 }
@@ -712,13 +816,31 @@ function patchOperation(rootDir, reference, patch, options = {}) {
       existing: current,
       now: options.now,
     });
-    atomicWriteJson(stateFilePath, operation);
+    const checkpointInputs = collectCheckpointInputs(mergedPatch);
+    const existingCheckpoints = parseCheckpointLines(lookup.checkpointFilePath);
+    const checkpointState = materializeCheckpointState(operation, checkpointInputs, existingCheckpoints, {
+      now: options.now,
+      defaultStatus: operation.status,
+    });
+    atomicWriteJson(stateFilePath, checkpointState.operation);
+    try {
+      if (checkpointInputs.length > 0) {
+        atomicWriteJsonLines(lookup.checkpointFilePath, checkpointState.checkpoints);
+      }
+    } catch (error) {
+      try {
+        atomicWriteJson(stateFilePath, current);
+      } catch (rollbackError) {
+        error.rollbackError = rollbackError;
+      }
+      throw error;
+    }
     return {
       rootDir: lookup.rootDir,
       filePath: stateFilePath,
       checkpointFilePath: lookup.checkpointFilePath,
       created: false,
-      operation,
+      operation: checkpointState.operation,
     };
   });
 }

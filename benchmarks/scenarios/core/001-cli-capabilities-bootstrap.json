@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cli-capabilities-bootstrap",
+  "title": "CLI capabilities bootstrap",
+  "description": "CLI JSON bootstrap exposes capabilities, documentation routing, and operation metadata.",
+  "transport": "cli-json",
+  "assertionId": "capabilities-bootstrap",
+  "parityGroup": "capabilities-bootstrap",
+  "parityExpectedTransports": ["cli-json", "mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 5000,
+  "weight": 12,
+  "dimensions": ["bootstrap", "contract", "docs", "parity"],
+  "request": {
+    "args": ["--output", "json", "capabilities"]
+  }
+}

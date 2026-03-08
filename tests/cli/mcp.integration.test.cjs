@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const pkg = require('../../package.json');
@@ -11,8 +12,18 @@ const { createMcpToolRegistry } = require('../../cli/lib/mcp_tool_registry.cjs')
 const { createMcpHttpGatewayService } = require('../../cli/lib/mcp_http_gateway_service.cjs');
 const { createOperationService } = require('../../cli/lib/operation_service.cjs');
 const { upsertOperation } = require('../../cli/lib/operation_state_store.cjs');
+const generatedManifest = require('../../sdk/generated/manifest.json');
+const generatedContractRegistry = require('../../sdk/generated/contract-registry.json');
 
 const { CLI_PATH, REPO_ROOT, createTempDir, removeDir, runCli } = require('../helpers/cli_runner.cjs');
+const { assertSchemaValid } = require('../helpers/json_schema_assert.cjs');
+const {
+  omitGeneratedAt,
+  normalizeCapabilitiesForTransportParity,
+  assertManifestParity,
+  createIsolatedPandoraEnv,
+  withTemporaryEnv,
+} = require('../helpers/contract_parity_assertions.cjs');
 
 async function withMcpClient(fn, options = {}) {
   const env = options.env && typeof options.env === 'object' ? options.env : process.env;
@@ -34,39 +45,41 @@ async function withMcpClient(fn, options = {}) {
 }
 
 async function withMcpHttpGateway(fn, options = {}) {
-  const tempDir = createTempDir('pandora-mcp-http-');
-  const operationService = createOperationService({
-    rootDir: path.join(tempDir, 'operations'),
-  });
-  const args = [
-    '--host', '127.0.0.1',
-    '--port', '0',
-  ];
-  if (Object.prototype.hasOwnProperty.call(options, 'authToken')) {
-    if (options.authToken) {
-      args.push('--auth-token', options.authToken);
+  return withTemporaryEnv(options.env || {}, async () => {
+    const tempDir = createTempDir('pandora-mcp-http-');
+    const operationService = createOperationService({
+      rootDir: path.join(tempDir, 'operations'),
+    });
+    const args = [
+      '--host', '127.0.0.1',
+      '--port', '0',
+    ];
+    if (Object.prototype.hasOwnProperty.call(options, 'authToken')) {
+      if (options.authToken) {
+        args.push('--auth-token', options.authToken);
+      }
+    } else {
+      args.push('--auth-token', 'test-token');
     }
-  } else {
-    args.push('--auth-token', 'test-token');
-  }
-  if (options.publicBaseUrl) {
-    args.push('--public-base-url', options.publicBaseUrl);
-  }
-  const authScopes = options.authScopes || ['help:read', 'capabilities:read', 'operations:read'];
-  args.push('--auth-scopes', authScopes.join(','));
-  const service = createMcpHttpGatewayService({
-    args,
-    packageVersion: pkg.version,
-    cliPath: CLI_PATH,
-    operationService,
+    if (options.publicBaseUrl) {
+      args.push('--public-base-url', options.publicBaseUrl);
+    }
+    const authScopes = options.authScopes || ['help:read', 'capabilities:read', 'contracts:read', 'operations:read', 'schema:read'];
+    args.push('--auth-scopes', authScopes.join(','));
+    const service = createMcpHttpGatewayService({
+      args,
+      packageVersion: pkg.version,
+      cliPath: CLI_PATH,
+      operationService,
+    });
+    const gateway = await service.start();
+    try {
+      return await fn(gateway, operationService, tempDir);
+    } finally {
+      await gateway.close();
+      removeDir(tempDir);
+    }
   });
-  const gateway = await service.start();
-  try {
-    return await fn(gateway, operationService, tempDir);
-  } finally {
-    await gateway.close();
-    removeDir(tempDir);
-  }
 }
 
 async function withRemoteMcpClient(fn, options = {}) {
@@ -104,6 +117,10 @@ function parseJsonOutput(result) {
   return JSON.parse(String(result.stdout || '').trim());
 }
 
+function stableJsonHash(value) {
+  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
 test('mcp tools/list exposes command tools and excludes unsupported launch/clone-bet', async () => {
   await withMcpClient(async (client) => {
     const list = await client.listTools();
@@ -135,6 +152,12 @@ test('mcp tools/list exposes command tools and excludes unsupported launch/clone
     assert.ok(toolNames.includes('operations.list'));
     assert.ok(toolNames.includes('operations.cancel'));
     assert.ok(toolNames.includes('operations.close'));
+    assert.ok(toolNames.includes('policy.list'));
+    assert.ok(toolNames.includes('policy.get'));
+    assert.ok(toolNames.includes('policy.lint'));
+    assert.ok(toolNames.includes('profile.list'));
+    assert.ok(toolNames.includes('profile.get'));
+    assert.ok(toolNames.includes('profile.validate'));
     assert.ok(toolNames.includes('agent.market.autocomplete'));
     assert.ok(toolNames.includes('agent.market.validate'));
     assert.ok(!toolNames.includes('launch'));
@@ -207,6 +230,16 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
     assert.equal(operationsCancel.inputSchema.xPandora.executeIntentRequired, true);
     assert.equal(operationsCancel.inputSchema.xPandora.canonicalTool, 'operations.cancel');
 
+    const policyGet = byName.get('policy.get');
+    assert.ok(policyGet);
+    assert.equal(policyGet.inputSchema.properties.id.type, 'string');
+    assert.equal(policyGet.inputSchema.xPandora.canonicalTool, 'policy.get');
+
+    const profileValidate = byName.get('profile.validate');
+    assert.ok(profileValidate);
+    assert.equal(profileValidate.inputSchema.properties.file.type, 'string');
+    assert.equal(profileValidate.inputSchema.xPandora.canonicalTool, 'profile.validate');
+
       const mirrorDeploy = byName.get('mirror.deploy');
       assert.ok(mirrorDeploy);
       assert.deepEqual(mirrorDeploy.inputSchema.xPandora.controlInputNames, ['agentPreflight']);
@@ -250,6 +283,62 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
   assert.equal(localByName.get('arbitrage').xPandora.preferred, false);
 });
 
+test('mcp schema/capabilities calls preserve contract-export parity for SDK consumers', async () => {
+  const envRoot = createTempDir('pandora-sdk-mcp-stdio-');
+  const env = createIsolatedPandoraEnv(envRoot);
+  try {
+    const cliSchema = parseJsonOutput(runCli(['--output', 'json', 'schema'], { env }));
+    const cliCapabilities = parseJsonOutput(runCli(['--output', 'json', 'capabilities'], { env }));
+    assertManifestParity(generatedManifest, generatedContractRegistry);
+
+    await withMcpClient(async (client) => {
+      const schemaCall = await client.callTool({
+        name: 'schema',
+        arguments: {},
+      });
+      const capabilitiesCall = await client.callTool({
+        name: 'capabilities',
+        arguments: {},
+      });
+
+      const schemaEnvelope = extractStructuredEnvelope(schemaCall);
+      const capabilitiesEnvelope = extractStructuredEnvelope(capabilitiesCall);
+
+      assert.equal(schemaEnvelope.ok, true);
+      assert.equal(schemaEnvelope.command, 'schema');
+      assert.deepEqual(schemaEnvelope.data.commandDescriptors, cliSchema.data.commandDescriptors);
+      assert.equal(schemaEnvelope.data.commandDescriptorVersion, cliSchema.data.commandDescriptorVersion);
+
+      assert.equal(capabilitiesEnvelope.ok, true);
+      assert.equal(capabilitiesEnvelope.command, 'capabilities');
+      assert.deepEqual(omitGeneratedAt(capabilitiesEnvelope.data), omitGeneratedAt(cliCapabilities.data));
+      assert.equal(capabilitiesEnvelope.data.commandDescriptorVersion, schemaEnvelope.data.commandDescriptorVersion);
+      assert.equal(capabilitiesEnvelope.data.transports.sdk.supported, true);
+      assert.equal(capabilitiesEnvelope.data.transports.sdk.status, 'alpha');
+      assert.deepEqual(generatedContractRegistry.commandDescriptors, schemaEnvelope.data.commandDescriptors);
+      assert.deepEqual(generatedContractRegistry.schemas.envelope.definitions, schemaEnvelope.data.definitions);
+      assert.deepEqual(
+        omitGeneratedAt(capabilitiesEnvelope.data),
+        omitGeneratedAt(generatedContractRegistry.capabilities),
+      );
+      assert.equal(
+        capabilitiesEnvelope.data.registryDigest.descriptorHash,
+        stableJsonHash(schemaEnvelope.data.commandDescriptors),
+      );
+      assert.deepEqual(
+        capabilitiesEnvelope.data.commandDigests.capabilities.policyScopes,
+        cliCapabilities.data.commandDigests.capabilities.policyScopes,
+      );
+      assert.deepEqual(
+        capabilitiesEnvelope.data.commandDigests.schema.policyScopes,
+        cliCapabilities.data.commandDigests.schema.policyScopes,
+      );
+    }, { env });
+  } finally {
+    removeDir(envRoot);
+  }
+});
+
 test('mcp http health/capabilities endpoints enforce auth and report remote transport', async () => {
   await withMcpHttpGateway(async (gateway) => {
     const healthRes = await fetch(`${gateway.config.baseUrl}${gateway.config.healthPath}`);
@@ -273,6 +362,39 @@ test('mcp http health/capabilities endpoints enforce auth and report remote tran
     assert.equal(capabilities.data.transports.mcpStreamableHttp.status, 'active');
     assert.match(capabilities.data.transports.mcpStreamableHttp.endpoint, /\/mcp$/);
     assert.doesNotMatch(capabilities.data.transports.mcpStreamableHttp.endpoint, /:0\//);
+  });
+});
+
+test('mcp http capabilities endpoint requires the full capabilities tool scope set', async () => {
+  await withMcpHttpGateway(async (gateway) => {
+    const response = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(response.status, 403);
+    const payload = await response.json();
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'FORBIDDEN');
+    assert.deepEqual(payload.error.details.requiredScopes, ['capabilities:read', 'contracts:read']);
+  }, {
+    authScopes: ['help:read', 'operations:read'],
+  });
+
+  await withMcpHttpGateway(async (gateway) => {
+    const response = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(response.status, 403);
+    const payload = await response.json();
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'FORBIDDEN');
+    assert.deepEqual(payload.error.details.requiredScopes, ['capabilities:read', 'contracts:read']);
+    assert.deepEqual(payload.error.details.missingScopes, ['contracts:read']);
+  }, {
+    authScopes: ['capabilities:read', 'help:read', 'operations:read'],
   });
 });
 
@@ -300,6 +422,37 @@ test('mcp http can advertise an explicit public base url and generated token fil
     authToken: null,
     publicBaseUrl: 'https://gateway.example.test',
   });
+});
+
+test('mcp http derives a usable advertised endpoint from the request host when bound to a wildcard host', async () => {
+  const tempDir = createTempDir('pandora-mcp-http-wildcard-');
+  const service = createMcpHttpGatewayService({
+    args: ['--host', '0.0.0.0', '--port', '0', '--auth-token', 'test-token', '--auth-scopes', 'capabilities:read,contracts:read,operations:read'],
+    packageVersion: pkg.version,
+    cliPath: CLI_PATH,
+    operationService: createOperationService({
+      rootDir: path.join(tempDir, 'operations'),
+    }),
+  });
+  const gateway = await service.start();
+  try {
+    assert.match(gateway.config.baseUrl, /^http:\/\/127\.0\.0\.1:/);
+    assert.equal(gateway.config.advertisedBaseUrl, null);
+    const response = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+        'x-forwarded-host': 'gateway.example.test:9999',
+        'x-forwarded-proto': 'https',
+      },
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.data.transports.mcpStreamableHttp.endpoint, 'https://gateway.example.test:9999/mcp');
+    assert.equal(payload.data.gateway.advertisedBaseUrl, 'https://gateway.example.test:9999');
+  } finally {
+    await gateway.close();
+    removeDir(tempDir);
+  }
 });
 
 test('mcp http rejects unsupported methods on non-MCP endpoints with Allow headers', async () => {
@@ -362,7 +515,102 @@ test('mcp http listTools/callTool parity works through streamable HTTP client tr
     const envelope = extractStructuredEnvelope(call);
     assert.equal(envelope.ok, true);
     assert.equal(envelope.command, 'help');
+  }, {
+    authScopes: ['help:read', 'capabilities:read', 'operations:read', 'arbitrage:read', 'network:indexer'],
   });
+});
+
+test('mcp http filters tools/list to the granted scope set', async () => {
+  await withRemoteMcpClient(async (client) => {
+    const list = await client.listTools();
+    const toolNames = Array.isArray(list && list.tools)
+      ? list.tools.map((tool) => String(tool.name))
+      : [];
+    assert.ok(toolNames.includes('simulate.mc'));
+    assert.ok(!toolNames.includes('trade'));
+    assert.ok(!toolNames.includes('mirror.deploy'));
+  }, {
+    authScopes: ['help:read', 'operations:read', 'simulate:read'],
+  });
+});
+
+test('mcp http exposes schema/capabilities exports for remote SDK bootstrap clients', async () => {
+  const envRoot = createTempDir('pandora-sdk-mcp-http-');
+  const env = createIsolatedPandoraEnv(envRoot);
+  try {
+    const localCapabilities = parseJsonOutput(runCli(['--output', 'json', 'capabilities'], { env }));
+    assertManifestParity(generatedManifest, generatedContractRegistry);
+
+    await withRemoteMcpClient(async (client, gateway) => {
+      const schemaCall = await client.callTool({
+        name: 'schema',
+        arguments: {},
+      });
+      const capabilitiesCall = await client.callTool({
+        name: 'capabilities',
+        arguments: {},
+      });
+
+      const schemaEnvelope = extractStructuredEnvelope(schemaCall);
+      const capabilitiesEnvelope = extractStructuredEnvelope(capabilitiesCall);
+
+      assert.equal(schemaEnvelope.ok, true);
+      assert.equal(schemaEnvelope.command, 'schema');
+      assert.equal(capabilitiesEnvelope.ok, true);
+      assert.equal(capabilitiesEnvelope.command, 'capabilities');
+      assert.equal(capabilitiesEnvelope.data.transports.mcpStreamableHttp.supported, true);
+      assert.equal(capabilitiesEnvelope.data.transports.sdk.status, 'alpha');
+      assert.equal(capabilitiesEnvelope.data.commandDigests.schema.remoteEligible, true);
+      assert.equal(capabilitiesEnvelope.data.commandDigests.capabilities.remoteEligible, true);
+      assert.equal(capabilitiesEnvelope.data.commandDescriptorVersion, schemaEnvelope.data.commandDescriptorVersion);
+      assertSchemaValid(
+        schemaEnvelope.data,
+        { $ref: '#/definitions/CapabilitiesPayload' },
+        capabilitiesEnvelope.data,
+        'mcp-capabilities-tool-active-remote',
+      );
+
+      const endpointRes = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`, {
+        headers: {
+          authorization: `Bearer ${gateway.auth.token}`,
+        },
+      });
+      assert.equal(endpointRes.status, 200);
+      const endpointEnvelope = await endpointRes.json();
+      assert.equal(endpointEnvelope.ok, true);
+      assertSchemaValid(
+        schemaEnvelope.data,
+        { $ref: '#/definitions/CapabilitiesPayload' },
+        endpointEnvelope.data,
+        'mcp-capabilities-endpoint-active-remote',
+      );
+
+      assert.deepEqual(generatedContractRegistry.commandDescriptors, schemaEnvelope.data.commandDescriptors);
+      assert.deepEqual(generatedContractRegistry.schemas.envelope.definitions, schemaEnvelope.data.definitions);
+      assert.equal(
+        capabilitiesEnvelope.data.registryDigest.descriptorHash,
+        stableJsonHash(schemaEnvelope.data.commandDescriptors),
+      );
+
+      assert.deepEqual(
+        normalizeCapabilitiesForTransportParity(endpointEnvelope.data),
+        normalizeCapabilitiesForTransportParity(capabilitiesEnvelope.data),
+      );
+      assert.deepEqual(
+        normalizeCapabilitiesForTransportParity(capabilitiesEnvelope.data),
+        normalizeCapabilitiesForTransportParity(localCapabilities.data),
+      );
+      assert.deepEqual(
+        normalizeCapabilitiesForTransportParity(capabilitiesEnvelope.data),
+        normalizeCapabilitiesForTransportParity(generatedContractRegistry.capabilities),
+      );
+    }, {
+      authScopes: ['capabilities:read', 'contracts:read', 'operations:read', 'schema:read'],
+      env,
+    });
+  } finally {
+    removeDir(envRoot);
+  }
 });
 
 test('mcp http executes nontrivial read-only tools over streamable HTTP', async () => {
@@ -385,9 +633,9 @@ test('mcp http executes nontrivial read-only tools over streamable HTTP', async 
   });
 });
 
-test('mcp http enforces scope denials for tools outside the granted token scopes', async () => {
+test('mcp http hides out-of-scope tools instead of leaking scope-only denials', async () => {
   await withRemoteMcpClient(async (client) => {
-    const call = await client.callTool({
+    const hidden = await client.callTool({
       name: 'trade',
       arguments: {
         'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -396,10 +644,18 @@ test('mcp http enforces scope denials for tools outside the granted token scopes
         'dry-run': true,
       },
     });
-    const envelope = extractStructuredEnvelope(call);
-    assert.equal(envelope.ok, false);
-    assert.equal(envelope.error.code, 'FORBIDDEN');
-    assert.ok(Array.isArray(envelope.error.details.missingScopes));
+    const unknown = await client.callTool({
+      name: 'definitely.not.a.real.tool',
+      arguments: {},
+    });
+    const hiddenEnvelope = extractStructuredEnvelope(hidden);
+    const unknownEnvelope = extractStructuredEnvelope(unknown);
+    assert.equal(hiddenEnvelope.ok, false);
+    assert.equal(unknownEnvelope.ok, false);
+    assert.equal(hiddenEnvelope.error.code, 'UNKNOWN_TOOL');
+    assert.equal(unknownEnvelope.error.code, 'UNKNOWN_TOOL');
+    assert.equal(hiddenEnvelope.error.message, 'Unknown MCP tool: trade');
+    assert.equal(unknownEnvelope.error.message, 'Unknown MCP tool: definitely.not.a.real.tool');
   });
 });
 

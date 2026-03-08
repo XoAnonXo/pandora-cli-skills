@@ -88,6 +88,53 @@ function writeJsonFileAtomic(filePath, payload) {
   }
 }
 
+function createJsonFileExclusive(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  let fd;
+  try {
+    fd = fs.openSync(filePath, 'wx', 0o600);
+    fs.writeFileSync(fd, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  } catch (error) {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // ignore close failure
+      }
+    }
+    throw error;
+  }
+  fs.closeSync(fd);
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch {
+    // best-effort hardening
+  }
+}
+
+function normalizeLifecycleState(state, filePath, CliError) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) {
+    throw new CliError('INVALID_JSON', `Lifecycle state file must contain a JSON object: ${filePath}`, {
+      filePath,
+    });
+  }
+  const phase = typeof state.phase === 'string' ? state.phase.trim() : '';
+  if (!LIFECYCLE_PHASES.includes(phase)) {
+    throw new CliError('LIFECYCLE_INVALID_PHASE', `Lifecycle file has unsupported phase: ${phase || '<empty>'}`, {
+      filePath,
+      phase: phase || null,
+      phases: LIFECYCLE_PHASES,
+    });
+  }
+  return {
+    ...state,
+    phase,
+    phases: Array.isArray(state.phases) && state.phases.every((entry) => LIFECYCLE_PHASES.includes(entry))
+      ? state.phases
+      : LIFECYCLE_PHASES,
+  };
+}
+
 function renderLifecycleTable(payload) {
   // eslint-disable-next-line no-console
   console.log(`Lifecycle: ${payload.id}`);
@@ -212,13 +259,6 @@ function createRunLifecycleCommand(deps) {
       }
 
       const filePath = lifecycleFilePath(lifecycleDir, id);
-      if (fs.existsSync(filePath)) {
-        throw new CliError('LIFECYCLE_EXISTS', `Lifecycle already exists for id: ${id}`, {
-          id,
-          filePath,
-        });
-      }
-
       const nowIso = new Date().toISOString();
       const preResolvePhases = LIFECYCLE_PHASES.slice(0, LIFECYCLE_PHASES.indexOf('AWAITING_RESOLVE') + 1);
       const payload = {
@@ -238,7 +278,17 @@ function createRunLifecycleCommand(deps) {
         changed: true,
       };
 
-      writeJsonFileAtomic(filePath, payload);
+      try {
+        createJsonFileExclusive(filePath, payload);
+      } catch (error) {
+        if (error && error.code === 'EEXIST') {
+          throw new CliError('LIFECYCLE_EXISTS', `Lifecycle already exists for id: ${id}`, {
+            id,
+            filePath,
+          });
+        }
+        throw error;
+      }
       emitSuccess(context.outputMode, 'lifecycle.start', payload, renderLifecycleTable);
       return;
     }
@@ -249,7 +299,7 @@ function createRunLifecycleCommand(deps) {
         throw new CliError('INVALID_FLAG_VALUE', 'Lifecycle id is empty after sanitization.');
       }
       const filePath = lifecycleFilePath(lifecycleDir, id);
-      const state = readJsonFile(filePath, CliError);
+      const state = normalizeLifecycleState(readJsonFile(filePath, CliError), filePath, CliError);
       emitSuccess(
         context.outputMode,
         'lifecycle.status',
@@ -269,7 +319,7 @@ function createRunLifecycleCommand(deps) {
         throw new CliError('INVALID_FLAG_VALUE', 'Lifecycle id is empty after sanitization.');
       }
       const filePath = lifecycleFilePath(lifecycleDir, id);
-      const state = readJsonFile(filePath, CliError);
+      const state = normalizeLifecycleState(readJsonFile(filePath, CliError), filePath, CliError);
 
       if (state.phase === 'RESOLVED') {
         emitSuccess(
@@ -284,6 +334,18 @@ function createRunLifecycleCommand(deps) {
           renderLifecycleTable,
         );
         return;
+      }
+      if (state.phase !== 'AWAITING_RESOLVE') {
+        throw new CliError(
+          'LIFECYCLE_INVALID_PHASE',
+          `Lifecycle ${id} cannot resolve from phase ${state.phase}. Expected AWAITING_RESOLVE.`,
+          {
+            id,
+            filePath,
+            phase: state.phase,
+            expectedPhase: 'AWAITING_RESOLVE',
+          },
+        );
       }
 
       const nowIso = new Date().toISOString();

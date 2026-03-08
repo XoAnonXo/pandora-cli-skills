@@ -1,3 +1,50 @@
+const ROUTED_TOP_LEVEL_COMMANDS = Object.freeze([
+  'init-env',
+  'doctor',
+  'setup',
+  'markets',
+  'scan',
+  'sports',
+  'lifecycle',
+  'arb',
+  'odds',
+  'quote',
+  'trade',
+  'sell',
+  'polls',
+  'events',
+  'positions',
+  'portfolio',
+  'watch',
+  'history',
+  'export',
+  'arbitrage',
+  'autopilot',
+  'mirror',
+  'polymarket',
+  'webhook',
+  'leaderboard',
+  'analyze',
+  'agent',
+  'suggest',
+  'resolve',
+  'claim',
+  'lp',
+  'policy',
+  'profile',
+  'recipe',
+  'risk',
+  'operations',
+  'model',
+  'mcp',
+  'stream',
+  'simulate',
+  'capabilities',
+  'schema',
+  'launch',
+  'clone-bet',
+]);
+
 /**
  * Build the top-level command dispatcher for `pandora`.
  * The returned function routes parsed command/args/context to subcommand handlers.
@@ -44,6 +91,9 @@ function createCommandRouter(deps = {}) {
     runResolveCommand,
     runClaimCommand,
     runLpCommand,
+    runPolicyCommand,
+    runProfileCommand,
+    runRecipeCommand,
     runRiskCommand,
     runOperationsCommand,
     runModelCommand,
@@ -103,6 +153,9 @@ function createCommandRouter(deps = {}) {
   requireFn('runResolveCommand', runResolveCommand);
   requireFn('runClaimCommand', runClaimCommand);
   requireFn('runLpCommand', runLpCommand);
+  requireFn('runPolicyCommand', runPolicyCommand);
+  requireFn('runProfileCommand', runProfileCommand);
+  requireFn('runRecipeCommand', runRecipeCommand);
   requireFn('runRiskCommand', runRiskCommand);
   requireFn('runOperationsCommand', runOperationsCommand);
   requireFn('runModelCommand', runModelCommand);
@@ -203,6 +256,9 @@ function createCommandRouter(deps = {}) {
       resolve: async (handlerArgs, handlerContext) => runResolveCommand(handlerArgs, handlerContext),
       claim: async (handlerArgs, handlerContext) => runClaimCommand(handlerArgs, handlerContext),
       lp: async (handlerArgs, handlerContext) => runLpCommand(handlerArgs, handlerContext),
+      policy: async (handlerArgs, handlerContext) => runPolicyCommand(handlerArgs, handlerContext),
+      profile: async (handlerArgs, handlerContext) => runProfileCommand(handlerArgs, handlerContext),
+      recipe: async (handlerArgs, handlerContext) => runRecipeCommand(handlerArgs, handlerContext),
       risk: async (handlerArgs, handlerContext) => runRiskCommand(handlerArgs, handlerContext),
       operations: async (handlerArgs, handlerContext) => runOperationsCommand(handlerArgs, handlerContext),
       model: async (handlerArgs, handlerContext) => runModelCommand(handlerArgs, handlerContext),
@@ -253,4 +309,5 @@ function createCommandRouter(deps = {}) {
 /** Public command-router factory export. */
 module.exports = {
   createCommandRouter,
+  ROUTED_TOP_LEVEL_COMMANDS,
 };

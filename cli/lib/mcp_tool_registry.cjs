@@ -569,6 +569,22 @@ function buildInvocationEnv(controlInputs) {
       throw err;
     }
   }
+  if (
+    controlInputs
+    && Object.prototype.hasOwnProperty.call(controlInputs, 'inputs')
+    && controlInputs.inputs !== undefined
+  ) {
+    try {
+      env.PANDORA_RECIPE_INPUTS = JSON.stringify(controlInputs.inputs);
+    } catch (error) {
+      const err = new Error('inputs must be JSON-serializable.');
+      err.code = 'MCP_RECIPE_INPUTS_INVALID';
+      err.details = {
+        cause: error && error.message ? error.message : String(error),
+      };
+      throw err;
+    }
+  }
   return Object.keys(env).length ? env : undefined;
 }
 
