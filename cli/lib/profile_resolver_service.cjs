@@ -209,67 +209,90 @@ async function probeRpcChainContext(options = {}) {
   const timeoutMs = Number.isSafeInteger(Number(options.timeoutMs)) && Number(options.timeoutMs) > 0
     ? Number(options.timeoutMs)
     : 1500;
-  const timeoutHandle = setTimeout(() => controller.abort(new Error(`RPC probe timed out after ${timeoutMs}ms.`)), timeoutMs);
-  try {
-    const response = await fetchImpl(rpcUrl, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: crypto.randomUUID ? crypto.randomUUID() : Date.now(),
-        method: 'eth_chainId',
-        params: [],
-      }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
+  const retryCount = Number.isSafeInteger(Number(options.retryCount)) && Number(options.retryCount) >= 0
+    ? Number(options.retryCount)
+    : 2;
+  const retryDelayMs = Number.isSafeInteger(Number(options.retryDelayMs)) && Number(options.retryDelayMs) >= 0
+    ? Number(options.retryDelayMs)
+    : 150;
+
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(new Error(`RPC probe timed out after ${timeoutMs}ms.`)), timeoutMs);
+    try {
+      const response = await fetchImpl(rpcUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: crypto.randomUUID ? crypto.randomUUID() : Date.now(),
+          method: 'eth_chainId',
+          params: [],
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const httpFailure = {
+          ok: false,
+          reason: 'http-error',
+          message: `RPC probe failed with HTTP ${response.status}.`,
+          chainId: null,
+        };
+        if (attempt < retryCount && (response.status >= 500 || response.status === 429)) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+          continue;
+        }
+        return httpFailure;
+      }
+      const payload = await response.json();
+      const rawChainId = payload && payload.result ? String(payload.result) : null;
+      const normalizedChainId = normalizeComparableChainId(
+        rawChainId && /^0x[a-fA-F0-9]+$/.test(rawChainId)
+          ? Number.parseInt(rawChainId, 16)
+          : rawChainId,
+      );
+      if (normalizedChainId === null) {
+        if (attempt < retryCount) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+          continue;
+        }
+        return {
+          ok: false,
+          reason: 'invalid-response',
+          message: 'RPC probe did not return a valid eth_chainId result.',
+          chainId: null,
+        };
+      }
+      if (normalizedChainId !== expectedChainId) {
+        return {
+          ok: false,
+          reason: 'chain-mismatch',
+          message: `RPC probe chain mismatch. Expected ${expectedChainId}, got ${normalizedChainId}.`,
+          chainId: normalizedChainId,
+        };
+      }
       return {
-        ok: false,
-        reason: 'http-error',
-        message: `RPC probe failed with HTTP ${response.status}.`,
-        chainId: null,
-      };
-    }
-    const payload = await response.json();
-    const rawChainId = payload && payload.result ? String(payload.result) : null;
-    const normalizedChainId = normalizeComparableChainId(
-      rawChainId && /^0x[a-fA-F0-9]+$/.test(rawChainId)
-        ? Number.parseInt(rawChainId, 16)
-        : rawChainId,
-    );
-    if (normalizedChainId === null) {
-      return {
-        ok: false,
-        reason: 'invalid-response',
-        message: 'RPC probe did not return a valid eth_chainId result.',
-        chainId: null,
-      };
-    }
-    if (normalizedChainId !== expectedChainId) {
-      return {
-        ok: false,
-        reason: 'chain-mismatch',
-        message: `RPC probe chain mismatch. Expected ${expectedChainId}, got ${normalizedChainId}.`,
+        ok: true,
+        reason: 'ok',
+        message: `RPC probe confirmed chain ${normalizedChainId}.`,
         chainId: normalizedChainId,
       };
+    } catch (error) {
+      if (attempt < retryCount) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+        continue;
+      }
+      return {
+        ok: false,
+        reason: 'network-error',
+        message: error && error.message ? `RPC probe failed: ${error.message}` : 'RPC probe failed.',
+        chainId: null,
+      };
+    } finally {
+      clearTimeout(timeoutHandle);
     }
-    return {
-      ok: true,
-      reason: 'ok',
-      message: `RPC probe confirmed chain ${normalizedChainId}.`,
-      chainId: normalizedChainId,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      reason: 'network-error',
-      message: error && error.message ? `RPC probe failed: ${error.message}` : 'RPC probe failed.',
-      chainId: null,
-    };
-  } finally {
-    clearTimeout(timeoutHandle);
   }
 }
 

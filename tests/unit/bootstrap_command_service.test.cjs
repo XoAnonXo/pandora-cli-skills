@@ -377,7 +377,7 @@ test('bootstrap command gives a cold agent actionable next steps', async () => {
   assert.equal(payload.defaults.profileId, 'market_observer_ro');
   assert.equal(payload.defaults.mode, 'validated-execution-available');
   assert.ok(payload.warnings.some((warning) => warning.code === 'SIGNER_PROFILES_DEGRADED'));
-  assert.ok(payload.warnings.some((warning) => warning.code === 'SDK_PUBLIC_REGISTRY_PENDING'));
+  assert.ok(!payload.warnings.some((warning) => warning.code === 'SDK_PUBLIC_REGISTRY_PENDING'));
   assert.ok(!payload.warnings.some((warning) => warning.code === 'NO_RUNTIME_READY_MUTABLE_PROFILE'));
   assert.equal(payload.recommendedBootstrapFlow[0], 'bootstrap');
   assert.deepEqual(payload.canonicalTools, ['bootstrap', 'capabilities', 'schema', 'policy.list', 'profile.get', 'recipe.list']);

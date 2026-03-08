@@ -142,6 +142,7 @@ Use the shipped scorecard command for the compact machine-readable A+ decision:
 Use the runtime-local variant when you need signer-readiness certification on the current host:
 
 - `node scripts/check_a_plus_scorecard.cjs --runtime-local-readiness`
+- `npm run check:final-readiness:runtime-local`
 
 ## Scope note
 

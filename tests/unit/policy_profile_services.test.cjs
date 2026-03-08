@@ -272,6 +272,47 @@ test('profile registry lists built-in profiles and validateProfileFile parses cu
   });
 });
 
+test('runtime-local profile probe retries transient RPC failures before degrading mutable built-ins', async () => {
+  let requestCount = 0;
+  await withRpcServer((req, res) => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      res.writeHead(503, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'temporary unavailable' }));
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      result: '0x1',
+    }));
+  }, async (rpcUrl) => {
+    const resolver = createProfileResolverService({
+      env: {
+        PANDORA_PRIVATE_KEY: `0x${'11'.repeat(32)}`,
+        RPC_URL: rpcUrl,
+        CHAIN_ID: '1',
+      },
+    });
+
+    const result = await resolver.probeProfile({
+      profileId: 'prod_trader_a',
+      includeSecretMaterial: false,
+      probeTimeoutMs: 500,
+    });
+
+    assert.equal(result.resolution.ready, true);
+    assert.equal(result.resolution.signerReady, true);
+    assert.equal(result.resolution.networkContextReady, true);
+    assert.ok(
+      Array.isArray(result.resolution.notes) && result.resolution.notes.some((note) => note.includes('RPC probe confirmed chain 1.')),
+      'expected successful RPC confirmation note after retry',
+    );
+    assert.equal(requestCount >= 2, true);
+  });
+});
+
 test('profile resolver enforces read-only and policy compatibility', () => {
   const resolver = createProfileResolverService();
 

@@ -9,6 +9,7 @@ Important scope:
 
 For support levels and runtime guarantees after install, see [`support-matrix.md`](./support-matrix.md).
 For the release-blocking A+ signoff contract, see [`final-readiness-signoff.md`](./final-readiness-signoff.md).
+For the maintainer one-tag publication flow that keeps CLI, SDKs, benchmarks, and trust assets aligned, see [`release-bundle-playbook.md`](./release-bundle-playbook.md).
 For remote gateway deployment after verification, see [`operator-deployment.md`](./operator-deployment.md).
 
 ## Trust model

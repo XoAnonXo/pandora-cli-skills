@@ -71,7 +71,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.71"
+          "version": "1.1.72"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -7788,9 +7788,9 @@
       "visibleCommandCount": 131
     },
     "documentation": {
-      "contentHash": "d78a9c3e9f83937b29b9daa17f2ce860f97b1a1aa901848ae3f086a3d394a6f6",
+      "contentHash": "4f33fc431f52125af5ee6bd505c87b78c901fdf4b86aec987d06a55bf4194291",
       "router": {
-        "contentHash": "bfb8fc56a1c5f7ce488aaf63d132053e7d1bb2a2f4db5b51267125644fed9c18",
+        "contentHash": "1985e2fad063aee7c6addc8a5bb15210f438f14fb0a4bb4c95709475619baeaf",
         "path": "SKILL.md",
         "startHere": [
           {
@@ -8299,7 +8299,7 @@
             "capabilities",
             "schema"
           ],
-          "contentHash": "590d482b4201276c56e08437eac9d82816bcef1a774e719de81e35a89b617589",
+          "contentHash": "81d3a2082be2ddcafab0a93e7308e19a10be63f44affb2ef816430ae851850ca",
           "featured": false,
           "id": "release-verification",
           "kind": "trust",
@@ -8345,7 +8345,7 @@
             "mcp",
             "schema"
           ],
-          "contentHash": "b79ac6708a070272ca9cb105c44689840ed25e978d995a5e3fd11269a32c726e",
+          "contentHash": "e3d83b080bf56d0593cf7faef8e97657f8b9fe8e30883601217ab9b851ba6271",
           "featured": false,
           "id": "support-matrix",
           "kind": "trust",
@@ -9694,14 +9694,14 @@
       "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
       "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
       "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
-      "documentationHash": "ca693763a5fc792fb95226415a22491d2452983270d1c63b071df94e1e74f9d2",
+      "documentationHash": "9d1d0b7ca94ca2739a2102febc3454a76d3b2b70170405f2471405799e3c1a62",
       "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
       "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
       "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
       "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
-      "trustDistributionHash": "e909f4c5ae0df876c7ec33ce1e419c6f2cb45431ce44d4cb598841fd6f9cacf8"
+      "trustDistributionHash": "eab461a148ad998f619b93aa46c835c33c62a4164847cb2236759ebf12b8b065"
     },
     "roadmapSignals": {
       "jobCapableCommands": 12,
@@ -10682,7 +10682,7 @@
           ],
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
-          "version": "1.1.71"
+          "version": "1.1.72"
         },
         "signals": {
           "explicitFilesAllowlist": true,
@@ -10710,7 +10710,7 @@
       "posture": "repo-release-gates-and-published-surface-observed",
       "releaseGates": {
         "commands": {
-          "releasePrep": "npm run clean:sdk-python-cache && npm run check:sdk-contracts && npm run check:sdk-standalone && npm run test:smoke && node scripts/run_agent_benchmarks.cjs --suite core --write-lock --out benchmarks/latest/core-report.json && npm run benchmark:history && npm run benchmark:check && npm run generate:sbom && npm run generate:sbom:spdx && node scripts/check_release_trust.cjs --require-sbom",
+          "releasePrep": "npm run clean:sdk-python-cache && npm run check:sdk-contracts && npm run check:sdk-standalone && node scripts/run_agent_benchmarks.cjs --suite core --write-lock --out benchmarks/latest/core-report.json && npm run benchmark:history && npm run benchmark:check && npm run test:smoke && npm run generate:sbom && npm run generate:sbom:spdx && node scripts/check_release_trust.cjs --require-sbom",
           "test": "npm run build && npm run test:unit && npm run test:cli && npm run test:agent-workflow && npm run test:smoke && npm run benchmark:check"
         },
         "notes": [
@@ -10781,11 +10781,11 @@
             "core-history.json",
             "core-report.json",
             "core.lock.json",
-            "pandora-cli-skills-1.1.71.tgz",
-            "pandora-cli-skills-1.1.71.tgz.intoto.jsonl",
-            "pandora-cli-skills-1.1.71.tgz.pem",
-            "pandora-cli-skills-1.1.71.tgz.sha256",
-            "pandora-cli-skills-1.1.71.tgz.sig",
+            "pandora-cli-skills-1.1.72.tgz",
+            "pandora-cli-skills-1.1.72.tgz.intoto.jsonl",
+            "pandora-cli-skills-1.1.72.tgz.pem",
+            "pandora-cli-skills-1.1.72.tgz.sha256",
+            "pandora-cli-skills-1.1.72.tgz.sig",
             "pandora_agent-0.1.0a1-py3-none-any.whl",
             "pandora_agent-0.1.0a1.tar.gz",
             "sbom.spdx.json",
@@ -30502,14 +30502,14 @@
     "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
     "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
     "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
-    "documentationHash": "ca693763a5fc792fb95226415a22491d2452983270d1c63b071df94e1e74f9d2",
+    "documentationHash": "9d1d0b7ca94ca2739a2102febc3454a76d3b2b70170405f2471405799e3c1a62",
     "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
     "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
     "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
     "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
-    "trustDistributionHash": "e909f4c5ae0df876c7ec33ce1e419c6f2cb45431ce44d4cb598841fd6f9cacf8"
+    "trustDistributionHash": "eab461a148ad998f619b93aa46c835c33c62a4164847cb2236759ebf12b8b065"
   },
   "schemaVersion": "1.0.0",
   "schemas": {
@@ -67735,9 +67735,9 @@
         "visibleCommandCount": 131
       },
       "documentation": {
-        "contentHash": "d78a9c3e9f83937b29b9daa17f2ce860f97b1a1aa901848ae3f086a3d394a6f6",
+        "contentHash": "4f33fc431f52125af5ee6bd505c87b78c901fdf4b86aec987d06a55bf4194291",
         "router": {
-          "contentHash": "bfb8fc56a1c5f7ce488aaf63d132053e7d1bb2a2f4db5b51267125644fed9c18",
+          "contentHash": "1985e2fad063aee7c6addc8a5bb15210f438f14fb0a4bb4c95709475619baeaf",
           "path": "SKILL.md",
           "startHere": [
             {
@@ -68246,7 +68246,7 @@
               "capabilities",
               "schema"
             ],
-            "contentHash": "590d482b4201276c56e08437eac9d82816bcef1a774e719de81e35a89b617589",
+            "contentHash": "81d3a2082be2ddcafab0a93e7308e19a10be63f44affb2ef816430ae851850ca",
             "featured": false,
             "id": "release-verification",
             "kind": "trust",
@@ -68292,7 +68292,7 @@
               "mcp",
               "schema"
             ],
-            "contentHash": "b79ac6708a070272ca9cb105c44689840ed25e978d995a5e3fd11269a32c726e",
+            "contentHash": "e3d83b080bf56d0593cf7faef8e97657f8b9fe8e30883601217ab9b851ba6271",
             "featured": false,
             "id": "support-matrix",
             "kind": "trust",
@@ -68509,7 +68509,7 @@
             ],
             "main": "cli/pandora.cjs",
             "name": "pandora-cli-skills",
-            "version": "1.1.71"
+            "version": "1.1.72"
           },
           "signals": {
             "explicitFilesAllowlist": true,
@@ -68536,7 +68536,7 @@
         "posture": "repo-release-gates-and-published-surface-observed",
         "releaseGates": {
           "commands": {
-            "releasePrep": "npm run clean:sdk-python-cache && npm run check:sdk-contracts && npm run check:sdk-standalone && npm run test:smoke && node scripts/run_agent_benchmarks.cjs --suite core --write-lock --out benchmarks/latest/core-report.json && npm run benchmark:history && npm run benchmark:check && npm run generate:sbom && npm run generate:sbom:spdx && node scripts/check_release_trust.cjs --require-sbom",
+            "releasePrep": "npm run clean:sdk-python-cache && npm run check:sdk-contracts && npm run check:sdk-standalone && node scripts/run_agent_benchmarks.cjs --suite core --write-lock --out benchmarks/latest/core-report.json && npm run benchmark:history && npm run benchmark:check && npm run test:smoke && npm run generate:sbom && npm run generate:sbom:spdx && node scripts/check_release_trust.cjs --require-sbom",
             "test": "npm run build && npm run test:unit && npm run test:cli && npm run test:agent-workflow && npm run test:smoke && npm run benchmark:check"
           },
           "notes": [
@@ -68607,11 +68607,11 @@
               "core-history.json",
               "core-report.json",
               "core.lock.json",
-              "pandora-cli-skills-1.1.71.tgz",
-              "pandora-cli-skills-1.1.71.tgz.intoto.jsonl",
-              "pandora-cli-skills-1.1.71.tgz.pem",
-              "pandora-cli-skills-1.1.71.tgz.sha256",
-              "pandora-cli-skills-1.1.71.tgz.sig",
+              "pandora-cli-skills-1.1.72.tgz",
+              "pandora-cli-skills-1.1.72.tgz.intoto.jsonl",
+              "pandora-cli-skills-1.1.72.tgz.pem",
+              "pandora-cli-skills-1.1.72.tgz.sha256",
+              "pandora-cli-skills-1.1.72.tgz.sig",
               "pandora_agent-0.1.0a1-py3-none-any.whl",
               "pandora_agent-0.1.0a1.tar.gz",
               "sbom.spdx.json",

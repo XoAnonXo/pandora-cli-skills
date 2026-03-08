@@ -60,8 +60,8 @@ Preferred agent path:
 - give the agent the minimum bearer-token scopes it needs
 - only provision signing secrets on the runtime that will actually execute live mutating tools
 - if you are embedding the shipped SDKs, use each package's own generated artifacts:
-  - standalone SDK package identities are `@pandora/agent-sdk` and `pandora-agent`
-  - current release flow builds and verifies standalone SDK artifacts for those package identities; this guide does not yet claim public registry publication
+  - standalone SDK package identities are `@thisispandora/agent-sdk` and `pandora-agent`
+  - current release flow builds, verifies, and publishes those standalone SDK packages alongside the main CLI release
   - this shareable package also includes vendored SDK copies under `sdk/typescript` and `sdk/python`
   - local SDK execution uses `pandora mcp`; remote SDK execution uses intentionally hosted `pandora mcp http ...` plus a bearer token to `/mcp`
   - `sdk/typescript/generated/manifest.json` is the TypeScript manifest entrypoint
@@ -157,7 +157,7 @@ Credential handling note:
 
 Current shipped consumer paths:
 - TypeScript/Node:
-  - standalone package identity: `@pandora/agent-sdk`
+  - standalone package identity: `@thisispandora/agent-sdk`
   - current external install path: signed GitHub release tarball attached to the tagged Pandora release
   - unpacked tree path: `sdk/typescript` for maintainers and in-tree consumers
   - vendored root-package copy: `pandora-cli-skills/sdk/typescript`
@@ -167,7 +167,7 @@ Current shipped consumer paths:
   - embedded package source: `sdk/python` for maintainers and in-tree consumers
   - module/import name: `pandora_agent`
 - Shared contract bundle:
-  - standalone TypeScript package: `@pandora/agent-sdk/generated`
+  - standalone TypeScript package: `@thisispandora/agent-sdk/generated`
   - installed root-package subpath: `pandora-cli-skills/sdk/generated`
   - unpacked tree path: `sdk/generated`
 
@@ -188,8 +188,8 @@ Run that only from a repository checkout. The published npm package already incl
 - Export `schema` for authoritative JSON Schema definitions and per-command descriptors.
 - In a repository checkout, `npm run generate:sdk-contracts` regenerates the shared export in `sdk/generated` plus the standalone SDK package-local copies in `sdk/typescript/generated` and `sdk/python/pandora_agent/generated`.
 - Standalone SDK consumers should prefer the standalone package entrypoints and package-local generated artifacts:
-  - TypeScript SDK package identity: `@pandora/agent-sdk`
-  - TypeScript generated bundle subpath: `@pandora/agent-sdk/generated`
+  - TypeScript SDK package identity: `@thisispandora/agent-sdk`
+  - TypeScript generated bundle subpath: `@thisispandora/agent-sdk/generated`
   - Python SDK package identity: `pandora-agent`
   - use signed GitHub release assets as the external installation path unless a release explicitly announces public npm/PyPI publication
 - Current release/distribution status:

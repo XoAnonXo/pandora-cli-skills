@@ -13,9 +13,10 @@ test('A+ scorecard reports honest blockers without misclassifying release drift 
 
   assert.ok(certification, 'capabilities payload should expose certification.aPlus');
   assert.equal(certification.targetTier, 'A+');
-  assert.equal(certification.status, 'not-certified');
+  assert.equal(certification.status, 'not-evaluable');
   assert.equal(certification.blockingCheckIds.includes('release-drift-discipline'), false);
   assert.equal(certification.blockingCheckIds.includes('typescript-sdk-publication'), false);
-  assert.equal(certification.blockingCheckIds.includes('python-sdk-publication'), true);
+  assert.equal(certification.blockingCheckIds.includes('python-sdk-publication'), false);
   assert.equal(certification.blockingCheckIds.includes('runtime-ready-mutable-profiles'), true);
+  assert.deepEqual(certification.nextCommands, ['pandora --output json capabilities --runtime-local-readiness']);
 });

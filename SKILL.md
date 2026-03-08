@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Index and operator guide for Pandora CLI capabilities, mirror operations, and agent-native interfaces.
-version: 1.1.70
+version: 1.1.72
 ---
 
 # Pandora CLI & Skills
@@ -39,6 +39,8 @@ Start here, then open the smallest scoped doc that matches the task:
   - `launch` / `clone-bet` legacy script wrappers and how they differ from mirror flows
 - [`docs/trust/release-verification.md`](./docs/trust/release-verification.md)
   - release verification flow for checksums, provenance attestations, SBOM, and cosign signatures
+- [`docs/trust/release-bundle-playbook.md`](./docs/trust/release-bundle-playbook.md)
+  - one-tag maintainer flow that republishes the CLI, standalone SDKs, benchmark bundle, and trust assets together
 - [`docs/trust/security-model.md`](./docs/trust/security-model.md)
   - trust boundaries, mutation controls, secret handling, and release posture
 - [`docs/trust/support-matrix.md`](./docs/trust/support-matrix.md)

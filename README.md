@@ -48,6 +48,8 @@ Node.js `>=18` required.
   - `launch` / `clone-bet` legacy script wrappers
 - [`docs/trust/release-verification.md`](./docs/trust/release-verification.md)
   - verify tarballs, checksums, attestations, SBOM, and cosign signatures before install
+- [`docs/trust/release-bundle-playbook.md`](./docs/trust/release-bundle-playbook.md)
+  - one-tag maintainer flow that republishes the CLI, standalone SDKs, benchmark bundle, and trust assets together
 - [`docs/trust/security-model.md`](./docs/trust/security-model.md)
   - trust boundaries, mutation controls, and secret-handling posture across CLI, MCP, gateway, and SDKs
 - [`docs/trust/support-matrix.md`](./docs/trust/support-matrix.md)
@@ -114,10 +116,13 @@ Canonical-routing note:
 
 If you are embedding the shipped SDKs instead of only consuming raw JSON:
 - standalone SDK package identities:
-  - TypeScript/Node: `@pandora/agent-sdk`
+  - TypeScript/Node: `@thisispandora/agent-sdk`
   - Python: `pandora-agent`
-- current release flow builds and verifies standalone SDK artifacts for those package identities; this document does not yet claim public registry publication
+- current release flow builds, verifies, and publishes those standalone SDK packages alongside the main CLI release
 - this repository and the root Pandora package also vendor matching SDK copies under `sdk/typescript` and `sdk/python` for parity, local audit, and in-tree consumption
+
+Maintainer note:
+- use `npm run release:bundle:verify` before tagging any release that touches CLI, contract, SDK, benchmark, or trust surfaces
 - local SDK execution maps to `pandora mcp` over stdio on the same machine
 - remote SDK execution maps to intentionally hosted `pandora mcp http ...`; remote clients connect to the `/mcp` endpoint with a bearer token
 - standalone SDK packages ship package-local generated artifacts
@@ -180,7 +185,7 @@ Populate `.env` or process env with only the fields your live workflow actually 
 
 Current shipped consumer paths:
 - TypeScript/Node:
-  - standalone package identity: `@pandora/agent-sdk`
+  - standalone package identity: `@thisispandora/agent-sdk`
   - current external install path: signed GitHub release tarball attached to the tagged Pandora release
   - repository checkout path: `sdk/typescript` for maintainers and in-tree consumers
   - vendored root-package copy: `pandora-cli-skills/sdk/typescript`
@@ -190,7 +195,7 @@ Current shipped consumer paths:
   - repository checkout path: `sdk/python` for maintainers and in-tree consumers
   - module/import name: `pandora_agent`
 - Shared static contract bundle:
-  - standalone TypeScript package: `@pandora/agent-sdk/generated`
+  - standalone TypeScript package: `@thisispandora/agent-sdk/generated`
   - repository/root shared bundle: `sdk/generated`
   - vendored root-package subpath: `pandora-cli-skills/sdk/generated`
 
@@ -211,8 +216,8 @@ Run that only from a repository checkout. The published npm package ships the ge
 - Use `schema` for the authoritative contract export: JSON envelope definitions, per-command input schemas, and `commandDescriptors`.
 - In a repository checkout, `npm run generate:sdk-contracts` regenerates the shared export in `sdk/generated` plus the standalone SDK package-local copies in `sdk/typescript/generated` and `sdk/python/pandora_agent/generated`.
 - Standalone SDK consumers should prefer the standalone package entrypoints and package-local generated artifacts:
-  - TypeScript SDK package identity: `@pandora/agent-sdk`
-  - TypeScript generated bundle subpath: `@pandora/agent-sdk/generated`
+  - TypeScript SDK package identity: `@thisispandora/agent-sdk`
+  - TypeScript generated bundle subpath: `@thisispandora/agent-sdk/generated`
   - Python SDK package identity: `pandora-agent`
 - Current release/distribution status:
   - standalone SDK artifacts are built and verified in release flow
@@ -248,6 +253,7 @@ Run that only from a repository checkout. The published npm package ships the ge
   - vocabulary: `statusAxes`
 - In the default runtime view, `market_observer_ro` is the only built-in profile reporting `ready`, and it is read-only.
 - Use `pandora --output json capabilities --runtime-local-readiness` when you want the CLI to actively probe local signer/network prerequisites; under valid runtime conditions, built-in mutable profiles such as `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` can move from `degraded` to `ready`.
+- For reproducible host certification without manually sourcing `~/.pandora-cli.env`, run `npm run check:final-readiness:runtime-local`.
 - In the current runtime, no built-in mutable profile is ready:
   - `prod_trader_a` resolves as `missing-secrets`
   - `dev_keystore_operator` resolves as `missing-keystore`

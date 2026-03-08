@@ -4,6 +4,7 @@ Use this matrix to understand which Pandora surfaces are primary, which are inte
 
 For release artifact verification before install, use [`release-verification.md`](./release-verification.md).
 For the release-blocking A+ signoff contract, use [`final-readiness-signoff.md`](./final-readiness-signoff.md).
+For the maintainer one-tag publication flow that republishes CLI + SDK + trust surfaces together, use [`release-bundle-playbook.md`](./release-bundle-playbook.md).
 For concrete remote-gateway deployment guidance, use [`operator-deployment.md`](./operator-deployment.md).
 
 ## Status terms
@@ -64,6 +65,7 @@ Use:
 - `pandora --output json capabilities`
 - `pandora --output json capabilities --runtime-local-readiness`
 - `node scripts/check_a_plus_scorecard.cjs --runtime-local-readiness`
+- `npm run check:final-readiness:runtime-local`
 
 Authoritative machine-readable fields:
 
