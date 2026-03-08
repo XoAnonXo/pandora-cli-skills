@@ -526,7 +526,7 @@ function main() {
     const installedSdkPackage = JSON.parse(
       fs.readFileSync(path.join(installedPackageRoot, 'sdk', 'typescript', 'package.json'), 'utf8'),
     );
-    ensure(installedSdkPackage.name === '@pandora/agent-sdk', 'Embedded TypeScript SDK package name mismatch.');
+    ensure(installedSdkPackage.name === '@thisispandora/agent-sdk', 'Embedded TypeScript SDK package name mismatch.');
     ensure(/^0\.\d+\.\d+-alpha\.\d+$/.test(installedSdkPackage.version), `Embedded TypeScript SDK version is not alpha-tagged: ${installedSdkPackage.version}`);
     ensure(installedSdkPackage.private !== true, 'Embedded TypeScript SDK package should be publishable.');
     const generatedExport = installedSdkPackage.exports && installedSdkPackage.exports['./generated'];
@@ -547,7 +547,7 @@ function main() {
     ensure(generatedSdkPackage.types === './index.d.ts', 'Generated SDK package types entry mismatch.');
 
     const pythonPyproject = fs.readFileSync(path.join(installedPackageRoot, 'sdk', 'python', 'pyproject.toml'), 'utf8');
-    ensure(/name\s*=\s*"pandora-agent"/.test(pythonPyproject), 'Embedded Python SDK pyproject is missing package name.');
+    ensure(/name\s*=\s*"thisispandora-agent"/.test(pythonPyproject), 'Embedded Python SDK pyproject is missing package name.');
     ensure(/version\s*=\s*"0\.\d+\.\d+a\d+"/.test(pythonPyproject), 'Embedded Python SDK pyproject is missing alpha version metadata.');
 
     const smokeEnv = buildIsolatedPandoraEnv(runtimeDir);
@@ -760,7 +760,7 @@ function main() {
     ensure(sdkNodePayload.tsGeneratedDescriptorCount > 0, 'TypeScript generated command-descriptor export is empty.');
     ensure(sdkNodePayload.tsToolDefinitionCount > 0, 'TypeScript generated MCP tool-definition export is empty.');
     ensure(sdkNodePayload.tsRegistryHasPolicyProfiles === true, 'TypeScript generated contract registry export is missing policyProfiles.');
-    ensure(sdkNodePayload.tsPackageName === '@pandora/agent-sdk', 'TypeScript SDK package.json export returned the wrong name.');
+    ensure(sdkNodePayload.tsPackageName === '@thisispandora/agent-sdk', 'TypeScript SDK package.json export returned the wrong name.');
     ensure(
       sdkNodePayload.tsPackageGeneratedExport
         && sdkNodePayload.tsPackageGeneratedExport.require === './generated/index.js'

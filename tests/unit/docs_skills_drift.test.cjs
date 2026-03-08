@@ -130,14 +130,15 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   }
 
   const sdkPackages = capabilities.data.transports.sdk.packages;
-  assert.equal(sdkPackages.typescript.publicRegistryPublished, false);
+  assert.equal(sdkPackages.typescript.publicRegistryPublished, true);
   assert.equal(sdkPackages.python.publicRegistryPublished, false);
-  assert.match(quickstartText, /public .* publication is not claimed/i);
+  assert.match(quickstartText, /public npm package `@thisispandora\/agent-sdk`/i);
   assertMentionsAll(supportMatrixText, [
     sdkPackages.typescript.name,
     sdkPackages.python.name,
   ], 'support matrix sdk package names');
-  assert.match(supportMatrixText, /not yet claim public/i);
+  assert.match(supportMatrixText, /public npm publication is available today/i);
+  assert.match(supportMatrixText, /does not yet claim public PyPI publication/i);
 
   const readyProfiles = capabilities.data.policyProfiles.signerProfiles.readyBuiltinIds;
   const degradedProfiles = capabilities.data.policyProfiles.signerProfiles.degradedBuiltinIds;

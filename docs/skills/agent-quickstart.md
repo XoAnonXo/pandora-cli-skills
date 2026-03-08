@@ -190,15 +190,15 @@ Status:
 - both shipped SDK surfaces are alpha
 - use them when you want a generated catalog plus a single tool-call client API
 - keep local-vs-remote backend choice explicit; the SDKs do not bypass MCP transport or gateway policy checks
-- standalone package identities are `@pandora/agent-sdk` and `pandora-agent`
+- standalone package identities are `@thisispandora/agent-sdk` and `thisispandora-agent`
 - release flow already builds and verifies standalone SDK artifacts for those package identities
 - use signed GitHub release assets as the external install path unless a release explicitly announces public npm/PyPI publication
 - public npm/PyPI publication is not claimed by this guide until a release explicitly says so
 - the repository and the root Pandora package also vendor matching SDK copies under `sdk/typescript` and `sdk/python`
 
 ### TypeScript
-- standalone package identity: `@pandora/agent-sdk`
- - external install path: signed GitHub release tarball attached to the tagged Pandora release
+- standalone package identity: `@thisispandora/agent-sdk`
+ - external install path: public npm package `@thisispandora/agent-sdk` or signed GitHub release tarball attached to the tagged Pandora release
  - repository checkout path: `sdk/typescript` for maintainers and in-tree consumers
 - vendored root-package copy: `pandora-cli-skills/sdk/typescript`
 - generated manifest/loader: `sdk/typescript/generated`
@@ -208,7 +208,7 @@ Status:
 - cold agents should prefer the canonical `bootstrap` contract before low-level `capabilities` / `schema` inspection
 
 ### Python
-- standalone package identity: `pandora-agent`
+- standalone package identity: `thisispandora-agent`
  - external install path: signed GitHub release wheel or sdist attached to the tagged Pandora release
  - repository checkout path: `sdk/python` for maintainers and in-tree consumers
 - module/import name: `pandora_agent`
@@ -221,7 +221,7 @@ Status:
 - the standalone Python package does not bundle the Pandora runtime; local backend use still requires a reachable `pandora mcp` process
 
 ### Shared contract export
-- standalone TypeScript package subpath: `@pandora/agent-sdk/generated`
+- standalone TypeScript package subpath: `@thisispandora/agent-sdk/generated`
 - vendored root-package subpath: `pandora-cli-skills/sdk/generated`
 - repository checkout path: `sdk/generated`
 - this is the shared root contract bundle used for repo parity and vendored root-package fallback behavior

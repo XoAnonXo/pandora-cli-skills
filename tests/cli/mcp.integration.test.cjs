@@ -710,8 +710,8 @@ test('mcp http health/capabilities endpoints enforce auth and report remote tran
     assert.doesNotMatch(capabilities.data.transports.mcpStreamableHttp.endpoint, /:0\//);
     assert.equal(capabilities.data.gateway.schemaPath, '/schema');
     assert.equal(capabilities.data.gateway.toolsPath, '/tools');
-    assert.equal(capabilities.data.transports.sdk.packages.typescript.name, '@pandora/agent-sdk');
-    assert.equal(capabilities.data.transports.sdk.packages.python.name, 'pandora-agent');
+    assert.equal(capabilities.data.transports.sdk.packages.typescript.name, '@thisispandora/agent-sdk');
+    assert.equal(capabilities.data.transports.sdk.packages.python.name, 'thisispandora-agent');
   });
 });
 

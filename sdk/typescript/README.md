@@ -1,10 +1,10 @@
-# @pandora/agent-sdk
+# @thisispandora/agent-sdk
 
 Standalone alpha TypeScript/Node SDK for Pandora's MCP tool interface and generated contract catalog.
 
 ## Status and delivery
-- primary package identity: `@pandora/agent-sdk`
-- generated artifacts ship package-locally under `@pandora/agent-sdk/generated`
+- primary package identity: `@thisispandora/agent-sdk`
+- generated artifacts ship package-locally under `@thisispandora/agent-sdk/generated`
 - current external distribution path: signed GitHub release asset tarball for the tagged Pandora release
 - repository checkout path: `sdk/typescript` is for maintainers and in-tree development only
 - the Pandora CLI package also vendors a matching copy under `sdk/typescript` and `pandora-cli-skills/sdk/typescript` for parity and in-tree consumers
@@ -25,7 +25,7 @@ Current validated install paths:
 Preferred for external consumers:
 
 ```bash
-npm install /path/to/downloaded/pandora-agent-sdk-<version>.tgz
+npm install /path/to/downloaded/thisispandora-agent-sdk-<version>.tgz
 ```
 
 Maintainer and repository-checkout flows:
@@ -47,12 +47,12 @@ Node `>=18` is required.
 Useful package subpaths:
 
 ```text
-@pandora/agent-sdk
-@pandora/agent-sdk/generated
-@pandora/agent-sdk/generated/manifest
-@pandora/agent-sdk/generated/command-descriptors
-@pandora/agent-sdk/generated/mcp-tool-definitions
-@pandora/agent-sdk/generated/contract-registry
+@thisispandora/agent-sdk
+@thisispandora/agent-sdk/generated
+@thisispandora/agent-sdk/generated/manifest
+@thisispandora/agent-sdk/generated/command-descriptors
+@thisispandora/agent-sdk/generated/mcp-tool-definitions
+@thisispandora/agent-sdk/generated/contract-registry
 ```
 
 Native ESM is supported for the root package and the generated subpaths above.
@@ -69,7 +69,7 @@ Cold agents should start with `bootstrap`, not with low-level `capabilities` or 
 const {
   connectPandoraAgentClient,
   loadGeneratedManifest,
-} = require('@pandora/agent-sdk');
+} = require('@thisispandora/agent-sdk');
 
 async function main() {
   const client = await connectPandoraAgentClient({
@@ -95,7 +95,7 @@ main().catch((error) => {
 ### Native ESM quick start
 
 ```js
-import { connectPandoraAgentClient, loadGeneratedManifest } from '@pandora/agent-sdk';
+import { connectPandoraAgentClient, loadGeneratedManifest } from '@thisispandora/agent-sdk';
 
 const client = await connectPandoraAgentClient({
   command: 'pandora',
@@ -118,7 +118,7 @@ Use the generic client factory when you want one entrypoint:
 ```js
 const {
   createPandoraAgentClient,
-} = require('@pandora/agent-sdk');
+} = require('@thisispandora/agent-sdk');
 
 const localClient = createPandoraAgentClient({
   command: 'pandora',
@@ -151,7 +151,7 @@ const {
   loadGeneratedContractRegistry,
   loadGeneratedCapabilities,
   inspectToolPolicySurface,
-} = require('@pandora/agent-sdk');
+} = require('@thisispandora/agent-sdk');
 
 const registry = loadGeneratedContractRegistry();
 const capabilities = loadGeneratedCapabilities();
@@ -164,7 +164,7 @@ console.log(trade.policyScopes);
 If you want the canonical bootstrap payload directly:
 
 ```js
-const { connectPandoraAgentClient } = require('@pandora/agent-sdk');
+const { connectPandoraAgentClient } = require('@thisispandora/agent-sdk');
 
 async function main() {
   const client = await connectPandoraAgentClient({
@@ -185,7 +185,7 @@ async function main() {
 If you want the raw generated bundle:
 
 ```js
-const generated = require('@pandora/agent-sdk/generated');
+const generated = require('@thisispandora/agent-sdk/generated');
 
 console.log(generated.manifest.packageVersion);
 console.log(Object.keys(generated.contractRegistry.tools).length);
@@ -194,8 +194,8 @@ console.log(Object.keys(generated.contractRegistry.tools).length);
 Native ESM can also import those generated subpaths directly:
 
 ```js
-import manifest from '@pandora/agent-sdk/generated/manifest';
-import contractRegistry from '@pandora/agent-sdk/generated/contract-registry';
+import manifest from '@thisispandora/agent-sdk/generated/manifest';
+import contractRegistry from '@thisispandora/agent-sdk/generated/contract-registry';
 
 console.log(manifest.packageVersion);
 console.log(Object.keys(contractRegistry.tools).length);
@@ -207,7 +207,7 @@ console.log(Object.keys(contractRegistry.tools).length);
 const {
   PandoraSdkError,
   PandoraToolCallError,
-} = require('@pandora/agent-sdk');
+} = require('@thisispandora/agent-sdk');
 
 try {
   // tool call

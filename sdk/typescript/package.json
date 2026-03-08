@@ -1,5 +1,5 @@
 {
-  "name": "@pandora/agent-sdk",
+  "name": "@thisispandora/agent-sdk",
   "version": "0.1.0-alpha.1",
   "description": "Standalone TypeScript/Node SDK for Pandora MCP backends and generated contract catalogs.",
   "main": "./index.js",

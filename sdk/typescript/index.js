@@ -436,7 +436,7 @@ class PandoraMcpBackend {
   constructor(options = {}) {
     const manifestVersion = loadGeneratedManifest().packageVersion || '0.0.0';
     this.clientInfo = {
-      name: options.clientName || 'pandora-agent-sdk',
+      name: options.clientName || 'thisispandora-agent-sdk',
       version: options.clientVersion || manifestVersion,
     };
     this.client = null;

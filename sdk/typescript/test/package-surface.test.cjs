@@ -1,15 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const sdk = require('@pandora/agent-sdk');
-const backends = require('@pandora/agent-sdk/backends');
-const catalog = require('@pandora/agent-sdk/catalog');
-const errors = require('@pandora/agent-sdk/errors');
-const generated = require('@pandora/agent-sdk/generated');
-const manifest = require('@pandora/agent-sdk/generated/manifest');
-const commandDescriptors = require('@pandora/agent-sdk/generated/command-descriptors');
-const mcpToolDefinitions = require('@pandora/agent-sdk/generated/mcp-tool-definitions');
-const contractRegistry = require('@pandora/agent-sdk/generated/contract-registry');
+const sdk = require('@thisispandora/agent-sdk');
+const backends = require('@thisispandora/agent-sdk/backends');
+const catalog = require('@thisispandora/agent-sdk/catalog');
+const errors = require('@thisispandora/agent-sdk/errors');
+const generated = require('@thisispandora/agent-sdk/generated');
+const manifest = require('@thisispandora/agent-sdk/generated/manifest');
+const commandDescriptors = require('@thisispandora/agent-sdk/generated/command-descriptors');
+const mcpToolDefinitions = require('@thisispandora/agent-sdk/generated/mcp-tool-definitions');
+const contractRegistry = require('@thisispandora/agent-sdk/generated/contract-registry');
 const packageJson = require('../package.json');
 
 test('package self-reference exposes standalone subpaths', () => {
@@ -25,10 +25,10 @@ test('package self-reference exposes standalone subpaths', () => {
 });
 
 test('package self-reference exposes native ESM entrypoints', async () => {
-  const sdk = await import('@pandora/agent-sdk');
-  const generated = await import('@pandora/agent-sdk/generated');
-  const manifest = await import('@pandora/agent-sdk/generated/manifest');
-  const contractRegistry = await import('@pandora/agent-sdk/generated/contract-registry');
+  const sdk = await import('@thisispandora/agent-sdk');
+  const generated = await import('@thisispandora/agent-sdk/generated');
+  const manifest = await import('@thisispandora/agent-sdk/generated/manifest');
+  const contractRegistry = await import('@thisispandora/agent-sdk/generated/contract-registry');
 
   assert.equal(typeof sdk.connectPandoraAgentClient, 'function');
   assert.equal(typeof generated.default.loadGeneratedManifest, 'function');

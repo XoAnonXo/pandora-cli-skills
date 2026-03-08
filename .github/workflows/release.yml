@@ -421,6 +421,31 @@ jobs:
               "$artifact" >/dev/null
           done
 
+      - name: Publish standalone TypeScript SDK
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          SDK_TARBALL="$(find dist/release/sdk/npm -maxdepth 1 -name '*.tgz' | head -n 1)"
+          test -n "$SDK_TARBALL" && test -f "$SDK_TARBALL"
+
+          SDK_PACKAGE_NAME="$(node -p "require('./sdk/typescript/package.json').name")"
+          SDK_PACKAGE_VERSION="$(node -p "require('./sdk/typescript/package.json').version")"
+
+          if npm view "${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION}" version --json >/dev/null 2>&1; then
+            echo "Standalone TypeScript SDK ${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION} is already published. Skipping publish."
+          else
+            npm publish "$SDK_TARBALL" --access public --tag alpha --provenance
+          fi
+
+      - name: Publish standalone Python SDK
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/release/sdk/python
+          skip-existing: true
+
       - name: Publish npm package
         shell: bash
         env:

@@ -153,7 +153,7 @@ class HttpPandoraBackend(BasePandoraBackend):
         auth_token: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         timeout: float = 30.0,
-        client_name: str = 'pandora-agent-python',
+        client_name: str = 'thisispandora-agent-python',
         client_version: Optional[str] = None,
     ):
         self.url = url
@@ -361,7 +361,7 @@ class StdioPandoraBackend(BasePandoraBackend):
         args: Optional[List[str]] = None,
         cwd: Optional[str] = None,
         env: Optional[Dict[str, str]] = None,
-        client_name: str = 'pandora-agent-python',
+        client_name: str = 'thisispandora-agent-python',
         client_version: Optional[str] = None,
     ):
         self.command = command

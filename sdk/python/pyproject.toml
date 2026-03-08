@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pandora-agent"
+name = "thisispandora-agent"
 version = "0.1.0a1"
 description = "Standalone Python SDK for Pandora agent discovery, vendored contract access, and MCP execution."
 requires-python = ">=3.9"
@@ -31,7 +31,9 @@ Issues = "https://github.com/XoAnonXo/pandora-cli-skills/issues"
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["pandora_agent"]
+include = ["pandora_agent*"]
+namespaces = true
 
 [tool.setuptools.package-data]
 pandora_agent = ["py.typed", "generated/*.json"]
+"pandora_agent.generated" = ["*.json"]

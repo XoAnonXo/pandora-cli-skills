@@ -200,10 +200,10 @@ test('standalone typescript sdk tarball installs into a fresh consumer app and s
     const assert = require('node:assert/strict');
     const fs = require('node:fs');
     const path = require('node:path');
-    const sdk = require('@pandora/agent-sdk');
-    const generated = require('@pandora/agent-sdk/generated');
+    const sdk = require('@thisispandora/agent-sdk');
+    const generated = require('@thisispandora/agent-sdk/generated');
     (async () => {
-      const installedPackagePath = path.join(process.cwd(), 'node_modules', '@pandora', 'agent-sdk', 'package.json');
+      const installedPackagePath = path.join(process.cwd(), 'node_modules', '@thisispandora', 'agent-sdk', 'package.json');
       const installedPackage = JSON.parse(fs.readFileSync(installedPackagePath, 'utf8'));
       const manifest = sdk.loadGeneratedManifest();
       const registry = sdk.loadGeneratedContractRegistry();
@@ -218,7 +218,7 @@ test('standalone typescript sdk tarball installs into a fresh consumer app and s
       const envelope = await client.callTool('capabilities');
       await client.close();
       const tradeSurface = sdk.inspectToolPolicySurface('trade');
-      assert.equal(installedPackage.name, '@pandora/agent-sdk');
+      assert.equal(installedPackage.name, '@thisispandora/agent-sdk');
       assert.deepEqual(installedPackage.exports['./generated'], {
         types: './generated/index.d.ts',
         import: './generated/index.mjs',

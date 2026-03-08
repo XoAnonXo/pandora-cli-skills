@@ -30,7 +30,7 @@ Package verification is necessary but not sufficient for an A+-grade release cla
 Use [`final-readiness-signoff.md`](./final-readiness-signoff.md) as the release-blocking signoff contract that binds together:
 
 - `bootstrap`, `capabilities`, `schema`, and canonical `/tools` discovery
-- standalone SDK release artifacts (`@pandora/agent-sdk`, `pandora-agent`)
+- standalone SDK release artifacts (`@thisispandora/agent-sdk`, `thisispandora-agent`)
 - signer `runtime-local-readiness` and `profile explain` evidence
 - authenticated remote MCP bootstrap/readiness/metrics and operation receipt surfaces
 - benchmark publication assets (`core-bundle.json`, `core-history.json`, `core-report.json`, `core.lock.json`, `benchmark-publication-manifest.json`, `benchmark-publication-bundle.tar.gz`)
@@ -53,7 +53,7 @@ For a tag `vX.Y.Z`, the current release workflow always publishes:
 
 - `pandora-cli-skills-X.Y.Z.tgz`
 - `pandora-cli-skills-X.Y.Z.tgz.sha256`
-- `pandora-agent-sdk-*.tgz`
+- `thisispandora-agent-sdk-*.tgz`
 - `pandora_agent-*.whl`
 - `pandora_agent-*.tar.gz`
 - `checksums.sha256`
@@ -83,7 +83,7 @@ What each file is for:
 
 - `*.tgz`: the installable npm package tarball
 - `*.tgz.sha256`: per-artifact checksum emitted by the workflow
-- `pandora-agent-sdk-*.tgz`: standalone TypeScript SDK tarball built and smoke-tested during release
+- `thisispandora-agent-sdk-*.tgz`: standalone TypeScript SDK tarball built and smoke-tested during release
 - `pandora_agent-*.whl`: standalone Python SDK wheel built and smoke-tested during release
 - `pandora_agent-*.tar.gz`: standalone Python SDK sdist built and smoke-tested during release
 - `checksums.sha256`: release-wide checksum manifest for the main tarball, standalone SDK tarball, wheel, and sdist, the shipped SPDX SBOM, the published benchmark report and lock, and the standalone SDK manifest/checksum files
@@ -163,9 +163,9 @@ Required asset set:
 gh release download "$TAG" -R "$REPO" \
   -p "$ASSET" \
   -p "$ASSET.sha256" \
-  -p "pandora-agent-sdk-*.tgz" \
-  -p "pandora-agent-sdk-*.tgz.sig" \
-  -p "pandora-agent-sdk-*.tgz.pem" \
+  -p "thisispandora-agent-sdk-*.tgz" \
+  -p "thisispandora-agent-sdk-*.tgz.sig" \
+  -p "thisispandora-agent-sdk-*.tgz.pem" \
   -p "pandora_agent-*.whl" \
   -p "pandora_agent-*.whl.sig" \
   -p "pandora_agent-*.whl.pem" \
@@ -417,7 +417,7 @@ The release workflow also signs the standalone SDK artifacts with the same tagge
 TypeScript SDK tarball:
 
 ```bash
-TS_SDK_ASSET="$(ls pandora-agent-sdk-*.tgz | head -n 1)"
+TS_SDK_ASSET="$(ls thisispandora-agent-sdk-*.tgz | head -n 1)"
 cosign verify-blob \
   --signature "${TS_SDK_ASSET}.sig" \
   --certificate "${TS_SDK_ASSET}.pem" \
@@ -612,7 +612,7 @@ Do not install or promote a release if any of these happen:
 TypeScript:
 
 ```bash
-npm install ./pandora-agent-sdk-*.tgz
+npm install ./thisispandora-agent-sdk-*.tgz
 ```
 
 Python wheel:

@@ -35,7 +35,7 @@
           },
           "format": "python",
           "module": "pandora_agent",
-          "name": "pandora-agent",
+          "name": "thisispandora-agent",
           "sourceProjectPath": "sdk/python/pyproject.toml",
           "version": "0.1.0a1"
         },
@@ -99,7 +99,7 @@
             "./package.json"
           ],
           "format": "node",
-          "name": "@pandora/agent-sdk",
+          "name": "@thisispandora/agent-sdk",
           "sourceProjectPath": "sdk/typescript/package.json",
           "version": "0.1.0-alpha.1"
         }
@@ -935,12 +935,10 @@
     "certification": {
       "aPlus": {
         "blockers": [
-          "Standalone TypeScript SDK is publicly published: The TypeScript SDK is still release-artifact/vendored only.",
           "Standalone Python SDK is publicly published: The Python SDK is still release-artifact/vendored only.",
           "At least two mutable built-in signer profiles are runtime-ready: Artifact-neutral capabilities intentionally do not certify host-local signer readiness."
         ],
         "blockingCheckIds": [
-          "typescript-sdk-publication",
           "python-sdk-publication",
           "runtime-ready-mutable-profiles"
         ],
@@ -969,26 +967,26 @@
           },
           {
             "actual": {
-              "packageName": "@pandora/agent-sdk",
-              "publicationStatus": "artifact-verified-not-publicly-published",
-              "publicRegistryPublished": false,
+              "packageName": "@thisispandora/agent-sdk",
+              "publicationStatus": "public-registry-published",
+              "publicRegistryPublished": true,
               "releaseAssetPatterns": [
-                "pandora-agent-sdk-*.tgz"
+                "thisispandora-agent-sdk-*.tgz"
               ]
             },
             "evidencePaths": [
               "transports.sdk.packages.typescript"
             ],
-            "expectation": "A+ requires @pandora/agent-sdk to be installable from a public package registry.",
+            "expectation": "A+ requires @thisispandora/agent-sdk to be installable from a public package registry.",
             "id": "typescript-sdk-publication",
-            "reason": "The TypeScript SDK is still release-artifact/vendored only.",
+            "reason": "The standalone TypeScript SDK is publicly installable.",
             "remediationCommands": [],
-            "status": "fail",
+            "status": "pass",
             "title": "Standalone TypeScript SDK is publicly published"
           },
           {
             "actual": {
-              "packageName": "pandora-agent",
+              "packageName": "thisispandora-agent",
               "publicationStatus": "artifact-verified-not-publicly-published",
               "publicRegistryPublished": false,
               "releaseAssetPatterns": [
@@ -999,7 +997,7 @@
             "evidencePaths": [
               "transports.sdk.packages.python"
             ],
-            "expectation": "A+ requires pandora-agent to be installable from a public package registry.",
+            "expectation": "A+ requires thisispandora-agent to be installable from a public package registry.",
             "id": "python-sdk-publication",
             "reason": "The Python SDK is still release-artifact/vendored only.",
             "remediationCommands": [],
@@ -1180,7 +1178,7 @@
           }
         ],
         "eligible": false,
-        "failCount": 2,
+        "failCount": 1,
         "nextCommands": [
           "pandora --output json capabilities --runtime-local-readiness"
         ],
@@ -1190,7 +1188,7 @@
           "A+ certification is denied whenever any required check fails or cannot yet be evaluated from the current runtime mode."
         ],
         "notEvaluableCount": 1,
-        "passCount": 7,
+        "passCount": 8,
         "readinessMode": "artifact-neutral",
         "status": "not-certified",
         "targetTier": "A+"
@@ -7795,7 +7793,7 @@
       "visibleCommandCount": 131
     },
     "documentation": {
-      "contentHash": "7d0642a8b431a6b150ee311e4a0b38f4a0c00a5911ff44b372666d0457791f6a",
+      "contentHash": "f2fb14bc71fd6663b569783c81f95c8e5b6d09697f7374d4478ec9498d55ec5c",
       "router": {
         "contentHash": "bfb8fc56a1c5f7ce488aaf63d132053e7d1bb2a2f4db5b51267125644fed9c18",
         "path": "SKILL.md",
@@ -8039,7 +8037,7 @@
             "profile.list",
             "schema"
           ],
-          "contentHash": "e5101629bdf7d672c17e50d4e2001e384e785462c7b361a9bda7723a596c7c09",
+          "contentHash": "d87446905767071608916d1e050d754188c65dd5084cde804bf217a494931937",
           "featured": true,
           "id": "capabilities",
           "kind": "routing",
@@ -8063,7 +8061,7 @@
             "profile.list",
             "schema"
           ],
-          "contentHash": "e3575f91fbec53759065610c00d4e6ba35e21d5efb257bb6ee2445d153675d28",
+          "contentHash": "07f27542c29a60fbe8e6872756d04f0947a8a70214b998b65cbac3a60396a664",
           "featured": true,
           "id": "agent-quickstart",
           "kind": "quickstart",
@@ -8088,7 +8086,7 @@
             "operations.list",
             "schema"
           ],
-          "contentHash": "cd4eaa5e821859faeb106be6fb38c7a97f9d5b826c4342596a1c1ae01902a2e4",
+          "contentHash": "4f8fb27d690388c1abd93780975f16b28d4dcf91b27d38a4415d78a354dc03da",
           "featured": true,
           "id": "agent-interfaces",
           "kind": "contract",
@@ -8306,7 +8304,7 @@
             "capabilities",
             "schema"
           ],
-          "contentHash": "066a4a1994c2ee9e35e7c1508e67c9f3e128dd17c768d6aec0fdff2245cf0bf0",
+          "contentHash": "c8b82c189956464b3b5e65811a823549df0ec03eb8571a56c53dd73dfeb9935c",
           "featured": false,
           "id": "release-verification",
           "kind": "trust",
@@ -8352,7 +8350,7 @@
             "mcp",
             "schema"
           ],
-          "contentHash": "accedec78d62ba2c4eb51dacfcc17c6372867e76c39cb8d871b182240de1a71e",
+          "contentHash": "e447dfa855aa6e29d81b85a5604de787a30f290e9b9df20e6b9c4505bcd09df1",
           "featured": false,
           "id": "support-matrix",
           "kind": "trust",
@@ -9701,14 +9699,14 @@
       "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
       "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
       "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
-      "documentationHash": "ef5787779c7b59fcd129b18fb2080bce726e4bcb2612cd5e0933b67fa229972e",
+      "documentationHash": "0efd72fd3a5fa68f5e8e8cc3ad0a1e6df1de95daf8fe227f4deaf37f08153b17",
       "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
       "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
       "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
       "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
-      "trustDistributionHash": "b13d365c9d6773329ed17e7851641f5050863f3fbc52d344b576cf56f7fd6e4c"
+      "trustDistributionHash": "72c16397548a53d3d48927497b72732788e5b2bc6948e8c0de3c1edef1cad504"
     },
     "roadmapSignals": {
       "jobCapableCommands": 12,
@@ -10529,7 +10527,7 @@
               "pip install /path/to/downloaded/pandora_agent-<version>.tar.gz"
             ],
             "moduleName": "pandora_agent",
-            "name": "pandora-agent",
+            "name": "thisispandora-agent",
             "publicationStatus": "artifact-verified-not-publicly-published",
             "publicRegistryPublished": false,
             "recommendedConsumption": "signed-github-release-artifact-until-public-registry",
@@ -10544,14 +10542,15 @@
           "typescript": {
             "distributionStatus": "vendored-alpha",
             "installExamples": [
-              "npm install /path/to/downloaded/pandora-agent-sdk-<version>.tgz"
+              "npm install @thisispandora/agent-sdk@0.1.0-alpha.1",
+              "npm install /path/to/downloaded/thisispandora-agent-sdk-<version>.tgz"
             ],
-            "name": "@pandora/agent-sdk",
-            "publicationStatus": "artifact-verified-not-publicly-published",
-            "publicRegistryPublished": false,
-            "recommendedConsumption": "signed-github-release-artifact-until-public-registry",
+            "name": "@thisispandora/agent-sdk",
+            "publicationStatus": "public-registry-published",
+            "publicRegistryPublished": true,
+            "recommendedConsumption": "public-npm-package",
             "releaseAssetPatterns": [
-              "pandora-agent-sdk-*.tgz"
+              "thisispandora-agent-sdk-*.tgz"
             ],
             "repoPath": "sdk/typescript/package.json",
             "vendoredInRootPackage": true,
@@ -10567,7 +10566,7 @@
       "distribution": {
         "embeddedSdks": {
           "python": {
-            "packageName": "pandora-agent",
+            "packageName": "thisispandora-agent",
             "projectPath": "sdk/python/pyproject.toml",
             "shipped": true,
             "version": "0.1.0a1"
@@ -10586,7 +10585,7 @@
               "./generated/mcp-tool-definitions",
               "./package.json"
             ],
-            "packageName": "@pandora/agent-sdk",
+            "packageName": "@thisispandora/agent-sdk",
             "packagePath": "sdk/typescript/package.json",
             "shipped": true,
             "version": "0.1.0-alpha.1"
@@ -10786,9 +10785,6 @@
             "core-history.json",
             "core-report.json",
             "core.lock.json",
-            "pandora_agent-0.1.0a1-py3-none-any.whl",
-            "pandora_agent-0.1.0a1.tar.gz",
-            "pandora-agent-sdk-0.1.0-alpha.1.tgz",
             "pandora-cli-skills-1.1.71.tgz",
             "pandora-cli-skills-1.1.71.tgz.intoto.jsonl",
             "pandora-cli-skills-1.1.71.tgz.pem",
@@ -10798,7 +10794,10 @@
             "sbom.spdx.json.intoto.jsonl",
             "sbom.spdx.json.sha256",
             "sdk-checksums.sha256",
-            "sdk-release-manifest.json"
+            "sdk-release-manifest.json",
+            "thisispandora_agent-0.1.0a1-py3-none-any.whl",
+            "thisispandora_agent-0.1.0a1.tar.gz",
+            "thisispandora-agent-sdk-0.1.0-alpha.1.tgz"
           ],
           "verificationMethods": [
             "checksum-manifest",
@@ -30507,14 +30506,14 @@
     "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
     "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
     "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
-    "documentationHash": "ef5787779c7b59fcd129b18fb2080bce726e4bcb2612cd5e0933b67fa229972e",
+    "documentationHash": "0efd72fd3a5fa68f5e8e8cc3ad0a1e6df1de95daf8fe227f4deaf37f08153b17",
     "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
     "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
     "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
     "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
-    "trustDistributionHash": "b13d365c9d6773329ed17e7851641f5050863f3fbc52d344b576cf56f7fd6e4c"
+    "trustDistributionHash": "72c16397548a53d3d48927497b72732788e5b2bc6948e8c0de3c1edef1cad504"
   },
   "schemas": {
     "definitions": {
@@ -67739,7 +67738,7 @@
         "visibleCommandCount": 131
       },
       "documentation": {
-        "contentHash": "7d0642a8b431a6b150ee311e4a0b38f4a0c00a5911ff44b372666d0457791f6a",
+        "contentHash": "f2fb14bc71fd6663b569783c81f95c8e5b6d09697f7374d4478ec9498d55ec5c",
         "router": {
           "contentHash": "bfb8fc56a1c5f7ce488aaf63d132053e7d1bb2a2f4db5b51267125644fed9c18",
           "path": "SKILL.md",
@@ -67983,7 +67982,7 @@
               "profile.list",
               "schema"
             ],
-            "contentHash": "e5101629bdf7d672c17e50d4e2001e384e785462c7b361a9bda7723a596c7c09",
+            "contentHash": "d87446905767071608916d1e050d754188c65dd5084cde804bf217a494931937",
             "featured": true,
             "id": "capabilities",
             "kind": "routing",
@@ -68007,7 +68006,7 @@
               "profile.list",
               "schema"
             ],
-            "contentHash": "e3575f91fbec53759065610c00d4e6ba35e21d5efb257bb6ee2445d153675d28",
+            "contentHash": "07f27542c29a60fbe8e6872756d04f0947a8a70214b998b65cbac3a60396a664",
             "featured": true,
             "id": "agent-quickstart",
             "kind": "quickstart",
@@ -68032,7 +68031,7 @@
               "operations.list",
               "schema"
             ],
-            "contentHash": "cd4eaa5e821859faeb106be6fb38c7a97f9d5b826c4342596a1c1ae01902a2e4",
+            "contentHash": "4f8fb27d690388c1abd93780975f16b28d4dcf91b27d38a4415d78a354dc03da",
             "featured": true,
             "id": "agent-interfaces",
             "kind": "contract",
@@ -68250,7 +68249,7 @@
               "capabilities",
               "schema"
             ],
-            "contentHash": "066a4a1994c2ee9e35e7c1508e67c9f3e128dd17c768d6aec0fdff2245cf0bf0",
+            "contentHash": "c8b82c189956464b3b5e65811a823549df0ec03eb8571a56c53dd73dfeb9935c",
             "featured": false,
             "id": "release-verification",
             "kind": "trust",
@@ -68296,7 +68295,7 @@
               "mcp",
               "schema"
             ],
-            "contentHash": "accedec78d62ba2c4eb51dacfcc17c6372867e76c39cb8d871b182240de1a71e",
+            "contentHash": "e447dfa855aa6e29d81b85a5604de787a30f290e9b9df20e6b9c4505bcd09df1",
             "featured": false,
             "id": "support-matrix",
             "kind": "trust",
@@ -68393,7 +68392,7 @@
         "distribution": {
           "embeddedSdks": {
             "python": {
-              "packageName": "pandora-agent",
+              "packageName": "thisispandora-agent",
               "projectPath": "sdk/python/pyproject.toml",
               "shipped": true,
               "version": "0.1.0a1"
@@ -68412,7 +68411,7 @@
                 "./generated/mcp-tool-definitions",
                 "./package.json"
               ],
-              "packageName": "@pandora/agent-sdk",
+              "packageName": "@thisispandora/agent-sdk",
               "packagePath": "sdk/typescript/package.json",
               "shipped": true,
               "version": "0.1.0-alpha.1"
@@ -68611,9 +68610,6 @@
               "core-history.json",
               "core-report.json",
               "core.lock.json",
-              "pandora_agent-0.1.0a1-py3-none-any.whl",
-              "pandora_agent-0.1.0a1.tar.gz",
-              "pandora-agent-sdk-0.1.0-alpha.1.tgz",
               "pandora-cli-skills-1.1.71.tgz",
               "pandora-cli-skills-1.1.71.tgz.intoto.jsonl",
               "pandora-cli-skills-1.1.71.tgz.pem",
@@ -68623,7 +68619,10 @@
               "sbom.spdx.json.intoto.jsonl",
               "sbom.spdx.json.sha256",
               "sdk-checksums.sha256",
-              "sdk-release-manifest.json"
+              "sdk-release-manifest.json",
+              "thisispandora_agent-0.1.0a1-py3-none-any.whl",
+              "thisispandora_agent-0.1.0a1.tar.gz",
+              "thisispandora-agent-sdk-0.1.0-alpha.1.tgz"
             ],
             "verificationMethods": [
               "checksum-manifest",

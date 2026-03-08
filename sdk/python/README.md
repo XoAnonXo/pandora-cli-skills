@@ -1,6 +1,6 @@
-# pandora-agent
+# thisispandora-agent
 
-`pandora-agent` is the standalone Python SDK for Pandora's agent-facing contract and MCP execution surfaces.
+`thisispandora-agent` is the standalone Python SDK for Pandora's agent-facing contract and MCP execution surfaces.
 
 It is intended to work as a normal installed Python package:
 - it ships its own generated contract artifacts inside `pandora_agent/generated`
@@ -11,7 +11,7 @@ It is intended to work as a normal installed Python package:
 
 ## What this package is for
 
-Use `pandora-agent` when Python code needs to:
+Use `thisispandora-agent` when Python code needs to:
 - inspect the shipped Pandora command and tool catalog without shelling out
 - inspect policy scopes and signer-profile metadata before choosing tools
 - connect to a local Pandora process over stdio MCP

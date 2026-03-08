@@ -475,8 +475,8 @@ function checkWorkflowAndInstaller() {
     'GET /bootstrap',
     'GET /schema',
     'GET /tools',
-    '@pandora/agent-sdk',
-    'pandora-agent',
+    '@thisispandora/agent-sdk',
+    'thisispandora-agent',
     'sdk-release-manifest.json',
     'sdk-checksums.sha256',
     'runtime-local-readiness',
@@ -520,9 +520,9 @@ function checkWorkflowAndInstaller() {
   }
 
   const releaseVerificationExpectations = [
-    'pandora-agent-sdk-*.tgz',
-    'pandora-agent-sdk-*.tgz.sig',
-    'pandora-agent-sdk-*.tgz.pem',
+    'thisispandora-agent-sdk-*.tgz',
+    'thisispandora-agent-sdk-*.tgz.sig',
+    'thisispandora-agent-sdk-*.tgz.pem',
     'pandora_agent-*.whl',
     'pandora_agent-*.whl.sig',
     'pandora_agent-*.whl.pem',

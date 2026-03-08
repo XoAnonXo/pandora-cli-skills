@@ -188,7 +188,7 @@ function verifyTypescriptMetadata(metadata) {
   const rootExport = typescriptPackage.exports && typescriptPackage.exports['.'];
   const generatedExport = typescriptPackage.exports && typescriptPackage.exports['./generated'];
 
-  assert(typescriptPackage.name === '@pandora/agent-sdk', 'TypeScript SDK package name must be @pandora/agent-sdk');
+  assert(typescriptPackage.name === '@thisispandora/agent-sdk', 'TypeScript SDK package name must be @thisispandora/agent-sdk');
   assert(typeof typescriptPackage.version === 'string' && typescriptPackage.version.length > 0, 'TypeScript SDK version is required');
   assert(typescriptPackage.main === './index.js', 'TypeScript SDK main must be ./index.js');
   assert(typescriptPackage.types === './index.d.ts', 'TypeScript SDK types must be ./index.d.ts');
@@ -229,7 +229,7 @@ function verifyPythonMetadata(metadata) {
     pythonGeneratedManifest,
   } = metadata;
 
-  assert(pythonProject.name === 'pandora-agent', 'Python SDK project.name must be pandora-agent');
+  assert(pythonProject.name === 'thisispandora-agent', 'Python SDK project.name must be thisispandora-agent');
   assert(typeof pythonProject.version === 'string' && pythonProject.version.length > 0, 'Python SDK project.version is required');
   assert(typeof pythonProject['requires-python'] === 'string' && pythonProject['requires-python'].length > 0, 'Python SDK requires-python is required');
   assert(pythonGeneratedManifest.packageVersion === pythonProject.version, 'Python generated manifest packageVersion must match sdk/python/pyproject.toml');
@@ -462,7 +462,7 @@ function smokeInstalledTypescriptTarball(metadata, tarballPath) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-sdk-npm-smoke-'));
   try {
     writeJson(path.join(tempDir, 'package.json'), {
-      name: 'pandora-agent-sdk-smoke',
+      name: 'thisispandora-agent-sdk-smoke',
       private: true,
       version: '0.0.0',
     });
@@ -474,15 +474,15 @@ function smokeInstalledTypescriptTarball(metadata, tarballPath) {
       },
     });
     const script = `
-const sdk = require('@pandora/agent-sdk');
-const backends = require('@pandora/agent-sdk/backends');
-const catalog = require('@pandora/agent-sdk/catalog');
-const errors = require('@pandora/agent-sdk/errors');
-const generated = require('@pandora/agent-sdk/generated');
-const manifest = require('@pandora/agent-sdk/generated/manifest');
-const commandDescriptors = require('@pandora/agent-sdk/generated/command-descriptors');
-const mcpToolDefinitions = require('@pandora/agent-sdk/generated/mcp-tool-definitions');
-const contractRegistry = require('@pandora/agent-sdk/generated/contract-registry');
+const sdk = require('@thisispandora/agent-sdk');
+const backends = require('@thisispandora/agent-sdk/backends');
+const catalog = require('@thisispandora/agent-sdk/catalog');
+const errors = require('@thisispandora/agent-sdk/errors');
+const generated = require('@thisispandora/agent-sdk/generated');
+const manifest = require('@thisispandora/agent-sdk/generated/manifest');
+const commandDescriptors = require('@thisispandora/agent-sdk/generated/command-descriptors');
+const mcpToolDefinitions = require('@thisispandora/agent-sdk/generated/mcp-tool-definitions');
+const contractRegistry = require('@thisispandora/agent-sdk/generated/contract-registry');
 if (sdk.loadGeneratedManifest().packageVersion !== process.argv[1]) {
   throw new Error('Unexpected installed TypeScript packageVersion: ' + sdk.loadGeneratedManifest().packageVersion);
 }
@@ -559,15 +559,15 @@ process.stdout.write(JSON.stringify({
       include: ['consumer.ts'],
     });
     fs.writeFileSync(entryPath, `'use strict';
-import sdk = require('@pandora/agent-sdk');
-import backends = require('@pandora/agent-sdk/backends');
-import catalog = require('@pandora/agent-sdk/catalog');
-import errors = require('@pandora/agent-sdk/errors');
-import generated = require('@pandora/agent-sdk/generated');
-import manifest = require('@pandora/agent-sdk/generated/manifest');
-import commandDescriptors = require('@pandora/agent-sdk/generated/command-descriptors');
-import mcpToolDefinitions = require('@pandora/agent-sdk/generated/mcp-tool-definitions');
-import contractRegistry = require('@pandora/agent-sdk/generated/contract-registry');
+import sdk = require('@thisispandora/agent-sdk');
+import backends = require('@thisispandora/agent-sdk/backends');
+import catalog = require('@thisispandora/agent-sdk/catalog');
+import errors = require('@thisispandora/agent-sdk/errors');
+import generated = require('@thisispandora/agent-sdk/generated');
+import manifest = require('@thisispandora/agent-sdk/generated/manifest');
+import commandDescriptors = require('@thisispandora/agent-sdk/generated/command-descriptors');
+import mcpToolDefinitions = require('@thisispandora/agent-sdk/generated/mcp-tool-definitions');
+import contractRegistry = require('@thisispandora/agent-sdk/generated/contract-registry');
 
 const version: string = manifest.packageVersion;
 const digest: Record<string, unknown> = manifest.registryDigest || {};
@@ -596,7 +596,7 @@ void errorCtor;
     });
 
     const esmScriptPath = path.join(tempDir, 'consumer.mjs');
-    fs.writeFileSync(esmScriptPath, `import sdk, { connectPandoraAgentClient, loadGeneratedManifest } from '@pandora/agent-sdk';\nimport generated from '@pandora/agent-sdk/generated';\nimport manifest from '@pandora/agent-sdk/generated/manifest';\nimport contractRegistry from '@pandora/agent-sdk/generated/contract-registry';\n\nif (typeof connectPandoraAgentClient !== 'function') throw new Error('Missing ESM connectPandoraAgentClient export.');\nif (typeof loadGeneratedManifest !== 'function') throw new Error('Missing ESM loadGeneratedManifest export.');\nif (sdk.loadGeneratedManifest().packageVersion !== ${JSON.stringify(metadata.typescriptPackage.version)}) throw new Error('Unexpected ESM sdk packageVersion.');\nif (manifest.packageVersion !== ${JSON.stringify(metadata.typescriptPackage.version)}) throw new Error('Unexpected ESM manifest packageVersion.');\nif (contractRegistry.packageVersion !== ${JSON.stringify(metadata.typescriptPackage.version)}) throw new Error('Unexpected ESM contract-registry packageVersion.');\nif (generated.loadGeneratedManifest().packageVersion !== ${JSON.stringify(metadata.typescriptPackage.version)}) throw new Error('Unexpected ESM generated packageVersion.');\nconsole.log(JSON.stringify({ esm: true, toolCount: Object.keys(contractRegistry.tools || {}).length }));\n`, 'utf8');
+    fs.writeFileSync(esmScriptPath, `import sdk, { connectPandoraAgentClient, loadGeneratedManifest } from '@thisispandora/agent-sdk';\nimport generated from '@thisispandora/agent-sdk/generated';\nimport manifest from '@thisispandora/agent-sdk/generated/manifest';\nimport contractRegistry from '@thisispandora/agent-sdk/generated/contract-registry';\n\nif (typeof connectPandoraAgentClient !== 'function') throw new Error('Missing ESM connectPandoraAgentClient export.');\nif (typeof loadGeneratedManifest !== 'function') throw new Error('Missing ESM loadGeneratedManifest export.');\nif (sdk.loadGeneratedManifest().packageVersion !== ${JSON.stringify(metadata.typescriptPackage.version)}) throw new Error('Unexpected ESM sdk packageVersion.');\nif (manifest.packageVersion !== ${JSON.stringify(metadata.typescriptPackage.version)}) throw new Error('Unexpected ESM manifest packageVersion.');\nif (contractRegistry.packageVersion !== ${JSON.stringify(metadata.typescriptPackage.version)}) throw new Error('Unexpected ESM contract-registry packageVersion.');\nif (generated.loadGeneratedManifest().packageVersion !== ${JSON.stringify(metadata.typescriptPackage.version)}) throw new Error('Unexpected ESM generated packageVersion.');\nconsole.log(JSON.stringify({ esm: true, toolCount: Object.keys(contractRegistry.tools || {}).length }));\n`, 'utf8');
     const esmRuntime = JSON.parse(
       String(runCommand(process.execPath, [esmScriptPath], { cwd: tempDir }).stdout || '').trim(),
     );
@@ -612,7 +612,7 @@ void errorCtor;
       },
       include: ['consumer-esm.ts'],
     });
-    fs.writeFileSync(path.join(tempDir, 'consumer-esm.ts'), `import sdk, { connectPandoraAgentClient, loadGeneratedManifest } from '@pandora/agent-sdk';\nimport generated from '@pandora/agent-sdk/generated';\nimport manifest from '@pandora/agent-sdk/generated/manifest';\nimport commandDescriptors from '@pandora/agent-sdk/generated/command-descriptors';\nimport mcpToolDefinitions from '@pandora/agent-sdk/generated/mcp-tool-definitions';\nimport contractRegistry from '@pandora/agent-sdk/generated/contract-registry';\n\nconst connectFn: typeof connectPandoraAgentClient = connectPandoraAgentClient;\nconst version: string = manifest.packageVersion;\nconst registryVersion: string = contractRegistry.packageVersion;\nconst generatedVersion: string = generated.loadGeneratedManifest().packageVersion;\nconst sdkVersion: string = loadGeneratedManifest().packageVersion;\nconst helpDescriptor = commandDescriptors.help;\nconst toolCount: number = mcpToolDefinitions.length;\nvoid sdk;\nvoid connectFn;\nvoid version;\nvoid registryVersion;\nvoid generatedVersion;\nvoid sdkVersion;\nvoid helpDescriptor;\nvoid toolCount;\n`, 'utf8');
+    fs.writeFileSync(path.join(tempDir, 'consumer-esm.ts'), `import sdk, { connectPandoraAgentClient, loadGeneratedManifest } from '@thisispandora/agent-sdk';\nimport generated from '@thisispandora/agent-sdk/generated';\nimport manifest from '@thisispandora/agent-sdk/generated/manifest';\nimport commandDescriptors from '@thisispandora/agent-sdk/generated/command-descriptors';\nimport mcpToolDefinitions from '@thisispandora/agent-sdk/generated/mcp-tool-definitions';\nimport contractRegistry from '@thisispandora/agent-sdk/generated/contract-registry';\n\nconst connectFn: typeof connectPandoraAgentClient = connectPandoraAgentClient;\nconst version: string = manifest.packageVersion;\nconst registryVersion: string = contractRegistry.packageVersion;\nconst generatedVersion: string = generated.loadGeneratedManifest().packageVersion;\nconst sdkVersion: string = loadGeneratedManifest().packageVersion;\nconst helpDescriptor = commandDescriptors.help;\nconst toolCount: number = mcpToolDefinitions.length;\nvoid sdk;\nvoid connectFn;\nvoid version;\nvoid registryVersion;\nvoid generatedVersion;\nvoid sdkVersion;\nvoid helpDescriptor;\nvoid toolCount;\n`, 'utf8');
     runCommand(process.execPath, [resolveTypescriptCompilerPath(), '--project', tsconfigPath, '--noEmit'], {
       cwd: tempDir,
     });
