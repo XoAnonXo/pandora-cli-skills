@@ -110,11 +110,12 @@ function resolvePythonRuntime() {
 }
 
 function runCommand(command, args, options = {}) {
+  const needsWindowsShell = process.platform === 'win32' && /\.cmd$/i.test(String(command || ''));
   const result = spawnSync(command, args, {
     cwd: options.cwd || ROOT_DIR,
     encoding: 'utf8',
     env: options.env || process.env,
-    shell: false,
+    shell: needsWindowsShell,
     windowsHide: true,
     maxBuffer: options.maxBuffer || 1024 * 1024 * 64,
   });
