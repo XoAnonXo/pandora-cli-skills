@@ -42,7 +42,7 @@ All rows below must be green for signoff.
 | Evidence area | Required proof | Minimum evidence sources |
 | --- | --- | --- |
 | Bootstrap and contract discovery | A cold agent can bootstrap from canonical machine-readable surfaces without relying on prose-only guidance. | `pandora --output json bootstrap`, `pandora --output json capabilities`, `pandora --output json schema`, authenticated `GET /bootstrap`, authenticated `GET /schema`, authenticated `GET /tools` |
-| Standalone SDK distribution | The standalone TypeScript and Python SDK artifacts attached to the tagged release match the generated contract and smoke successfully. | `@thisispandora/agent-sdk`, `thisispandora-agent`, `sdk-release-manifest.json`, `sdk-checksums.sha256`, release-built SDK tarball/wheel/sdist artifacts |
+| Standalone SDK distribution | The standalone TypeScript and Python SDK artifacts attached to the tagged release match the generated contract and smoke successfully. | `@thisispandora/agent-sdk`, `pandora-agent`, `sdk-release-manifest.json`, `sdk-checksums.sha256`, release-built SDK tarball/wheel/sdist artifacts |
 | Signer readiness | Mutable profile readiness is proven by runtime checks, not by metadata alone. | `runtime-local-readiness`, `profile explain`, `profile get`, built-in signer readiness metadata from `capabilities.data.policyProfiles.signerProfiles` |
 | Remote MCP and control plane | Remote MCP bootstrap, discovery, operation inspection, and auth surfaces are live and covered by release truth. | authenticated `GET /bootstrap`, `GET /schema`, `GET /tools`, `GET /metrics`, `GET /ready`, `/operations/{operationId}/receipt`, `/operations/{operationId}/receipt/verify`, `/auth/principals`, token rotation/revocation surfaces when multi-principal mode is used |
 | Operation receipts | Mutable operations emit tamper-evident receipts that can be fetched and verified. | local receipt artifacts, `/operations/{operationId}/receipt`, `/operations/{operationId}/receipt/verify`, receipt verification coverage |
@@ -113,7 +113,7 @@ Do not sign off an A+ release unless all of the following are true:
 
 - `bootstrap` is present and is the documented first call for cold agents.
 - canonical-tool discovery is the default machine-facing path.
-- `@thisispandora/agent-sdk` and `thisispandora-agent` release artifacts are attached and verified.
+- `@thisispandora/agent-sdk` and `pandora-agent` release artifacts are attached and verified.
 - mutable signer readiness is backed by runtime-local evidence, not only static profile metadata.
 - remote MCP trust surfaces are covered by authenticated bootstrap, schema, tools, readiness, and metrics endpoints.
 - mutable operations can produce and verify receipts through the documented receipt surfaces.

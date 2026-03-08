@@ -59,7 +59,7 @@ For a faster task-focused path:
 ## SDK generation and contract export
 - SDK alpha surfaces ship in this build as standalone packages, and the repository/root package also vendors matching copies:
   - TypeScript/Node SDK: standalone package identity `@thisispandora/agent-sdk`, repository path `sdk/typescript`, vendored root-package copy `pandora-cli-skills/sdk/typescript`
-  - Python SDK: standalone package identity `thisispandora-agent`, repository path `sdk/python`, module/import name `pandora_agent`
+  - Python SDK: standalone package identity `pandora-agent`, repository path `sdk/python`, module/import name `pandora_agent`
   - shared JS contract export: standalone TypeScript subpath `@thisispandora/agent-sdk/generated`, repository/root bundle `sdk/generated`, vendored root-package subpath `pandora-cli-skills/sdk/generated`
   - release flow builds and verifies standalone SDK artifacts for those identities; this doc does not claim public registry publication yet
 - `capabilities.data.transports.sdk` reports the shipping state; current builds return `supported=true` and `status="alpha"`.
@@ -93,7 +93,7 @@ Run that only from a repository checkout. Installed packages already include the
 - Standalone-package consumers should treat the SDK packages as the primary delivery vehicle:
   - TypeScript package identity: `@thisispandora/agent-sdk`
   - TypeScript generated bundle subpath: `@thisispandora/agent-sdk/generated`
-  - Python package identity: `thisispandora-agent`
+  - Python package identity: `pandora-agent`
 - The root Pandora package still vendors matching copies:
   - TypeScript client entrypoint: `pandora-cli-skills/sdk/typescript`
   - shared static contract bundle: `pandora-cli-skills/sdk/generated`
@@ -116,7 +116,7 @@ Run that only from a repository checkout. Installed packages already include the
 - Package-local generated artifact usage:
   - use `capabilities` / `schema` for live runtime discovery
   - standalone TypeScript consumers should use the `@thisispandora/agent-sdk` package surface and `@thisispandora/agent-sdk/generated` when that package is installed from a validated artifact
-  - standalone Python consumers should use the `thisispandora-agent` package surface and its package-local `pandora_agent/generated` artifacts when installed from a validated artifact
+  - standalone Python consumers should use the `pandora-agent` package surface and its package-local `pandora_agent/generated` artifacts when installed from a validated artifact
   - vendored root-package consumers should use `pandora-cli-skills/sdk/typescript`, `sdk/python`, and `sdk/generated`
 
 ## Policy scopes and signer profiles

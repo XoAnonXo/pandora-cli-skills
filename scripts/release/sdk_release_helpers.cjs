@@ -229,7 +229,7 @@ function verifyPythonMetadata(metadata) {
     pythonGeneratedManifest,
   } = metadata;
 
-  assert(pythonProject.name === 'thisispandora-agent', 'Python SDK project.name must be thisispandora-agent');
+  assert(pythonProject.name === 'pandora-agent', 'Python SDK project.name must be pandora-agent');
   assert(typeof pythonProject.version === 'string' && pythonProject.version.length > 0, 'Python SDK project.version is required');
   assert(typeof pythonProject['requires-python'] === 'string' && pythonProject['requires-python'].length > 0, 'Python SDK requires-python is required');
   assert(pythonGeneratedManifest.packageVersion === pythonProject.version, 'Python generated manifest packageVersion must match sdk/python/pyproject.toml');

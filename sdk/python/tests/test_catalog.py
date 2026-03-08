@@ -58,7 +58,7 @@ class GeneratedCatalogTests(unittest.TestCase):
                 },
                 'format': 'python',
                 'module': 'pandora_agent',
-                'name': 'thisispandora-agent',
+                'name': 'pandora-agent',
                 'sourceProjectPath': 'sdk/python/pyproject.toml',
                 'version': manifest['packageVersion'],
             },

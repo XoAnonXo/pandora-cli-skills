@@ -547,7 +547,7 @@ function main() {
     ensure(generatedSdkPackage.types === './index.d.ts', 'Generated SDK package types entry mismatch.');
 
     const pythonPyproject = fs.readFileSync(path.join(installedPackageRoot, 'sdk', 'python', 'pyproject.toml'), 'utf8');
-    ensure(/name\s*=\s*"thisispandora-agent"/.test(pythonPyproject), 'Embedded Python SDK pyproject is missing package name.');
+    ensure(/name\s*=\s*"pandora-agent"/.test(pythonPyproject), 'Embedded Python SDK pyproject is missing package name.');
     ensure(/version\s*=\s*"0\.\d+\.\d+a\d+"/.test(pythonPyproject), 'Embedded Python SDK pyproject is missing alpha version metadata.');
 
     const smokeEnv = buildIsolatedPandoraEnv(runtimeDir);

@@ -38,7 +38,7 @@
           },
           "format": "python",
           "module": "pandora_agent",
-          "name": "thisispandora-agent",
+          "name": "pandora-agent",
           "sourceProjectPath": "sdk/python/pyproject.toml",
           "version": "0.1.0a1"
         },
@@ -257,7 +257,7 @@
     },
     "format": "python",
     "module": "pandora_agent",
-    "name": "thisispandora-agent",
+    "name": "pandora-agent",
     "sourceProjectPath": "sdk/python/pyproject.toml",
     "version": "0.1.0a1"
   },
@@ -272,7 +272,7 @@
       },
       "format": "python",
       "module": "pandora_agent",
-      "name": "thisispandora-agent",
+      "name": "pandora-agent",
       "sourceProjectPath": "sdk/python/pyproject.toml",
       "version": "0.1.0a1"
     },
@@ -345,14 +345,14 @@
     "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
     "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
     "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
-    "documentationHash": "e2b519fb7d6b3b29e84f181a475273736831b0bc9816ddd1030b8e6b368f82b1",
+    "documentationHash": "7ecef83cc4b7fb8f2a9959de934d21e2712623d4b22ee9b1030cdbd14efaf3c8",
     "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
     "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
     "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
     "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
-    "trustDistributionHash": "72c16397548a53d3d48927497b72732788e5b2bc6948e8c0de3c1edef1cad504"
+    "trustDistributionHash": "2a3dea8998f6eaa0a39543d4ac111d3e1853601d53a36f6dcde7d72fdea7a789"
   },
   "schemaVersion": "1.0.0"
 }

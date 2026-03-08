@@ -22,7 +22,7 @@ from .policies import (
 )
 
 try:
-    __version__ = _importlib_metadata.version('thisispandora-agent')
+    __version__ = _importlib_metadata.version('pandora-agent')
 except _importlib_metadata.PackageNotFoundError:  # pragma: no cover - source-tree fallback
     __version__ = str(load_generated_manifest().get('packageVersion') or '0.0.0')
 

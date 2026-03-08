@@ -41,7 +41,7 @@ Use the smallest scoped doc that matches the task:
 
 - SDK alpha surfaces are productized as standalone packages, and this repository also vendors matching copies:
   - TypeScript/Node SDK: standalone package identity `@thisispandora/agent-sdk`, repository path `sdk/typescript`, vendored root-package copy `pandora-cli-skills/sdk/typescript`
-  - Python SDK: standalone package identity `thisispandora-agent`, repository path `sdk/python`, module name `pandora_agent`
+  - Python SDK: standalone package identity `pandora-agent`, repository path `sdk/python`, module name `pandora_agent`
   - shared contract bundle: standalone TypeScript subpath `@thisispandora/agent-sdk/generated`, repository/root bundle `sdk/generated`, vendored root-package subpath `pandora-cli-skills/sdk/generated`
   - release flow builds and verifies standalone SDK artifacts for those identities; this doc does not claim public registry publication yet
 - Package layout matters:

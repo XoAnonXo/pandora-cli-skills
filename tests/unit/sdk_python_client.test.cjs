@@ -92,7 +92,7 @@ test('python sdk generated helpers expose normalized package manifest and catalo
   ].join('\n');
   const result = runPython(script);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /thisispandora-agent \['bundle', 'commandDescriptors', 'mcpToolDefinitions'\] contract-registry\.json True/);
+  assert.match(result.stdout, /pandora-agent \['bundle', 'commandDescriptors', 'mcpToolDefinitions'\] contract-registry\.json True/);
 });
 
 test('standalone python sdk installs into an isolated target and stays usable for consumers', async (t) => {
@@ -134,7 +134,7 @@ test('standalone python sdk installs into an isolated target and stays usable fo
     "descriptors = client.get_command_descriptors()",
     "client.close()",
     "print(json.dumps({",
-    "  'installedVersion': metadata.version('thisispandora-agent'),",
+    "  'installedVersion': metadata.version('pandora-agent'),",
     "  'manifestVersion': manifest['packageVersion'],",
     "  'contractPackageVersion': manifest['contractPackageVersion'],",
     "  'toolCount': len((registry or {}).get('tools', {})),",

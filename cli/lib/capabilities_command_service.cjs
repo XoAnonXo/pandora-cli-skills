@@ -1153,8 +1153,8 @@ function buildTransports(options = {}, trustDistribution = null) {
           publicRegistryPublished: true,
           recommendedConsumption: 'public-npm-package',
           vendoredInRootPackage: true,
-          releaseAssetPatterns: ['thisispandora-agent-sdk-*.tgz'],
-          installExamples: ['npm install @thisispandora/agent-sdk@0.1.0-alpha.1', 'npm install /path/to/downloaded/thisispandora-agent-sdk-<version>.tgz'],
+          releaseAssetPatterns: ['pandora-agent-sdk-*.tgz'],
+          installExamples: ['npm install @thisispandora/agent-sdk@0.1.0-alpha.1', 'npm install /path/to/downloaded/pandora-agent-sdk-<version>.tgz'],
         },
         python: {
           name: normalizeString(embeddedSdks.python && embeddedSdks.python.packageName),
@@ -1623,7 +1623,7 @@ function buildAPlusCertification(payload = {}) {
     id: 'python-sdk-publication',
     title: 'Standalone Python SDK is publicly published',
     status: pythonSdk.publicRegistryPublished === true ? 'pass' : 'fail',
-    expectation: 'A+ requires thisispandora-agent to be installable from a public package registry.',
+    expectation: 'A+ requires pandora-agent to be installable from a public package registry.',
     actual: {
       packageName: pythonSdk.name || null,
       publicRegistryPublished: Boolean(pythonSdk.publicRegistryPublished),

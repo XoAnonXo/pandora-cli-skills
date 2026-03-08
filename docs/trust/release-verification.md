@@ -30,7 +30,7 @@ Package verification is necessary but not sufficient for an A+-grade release cla
 Use [`final-readiness-signoff.md`](./final-readiness-signoff.md) as the release-blocking signoff contract that binds together:
 
 - `bootstrap`, `capabilities`, `schema`, and canonical `/tools` discovery
-- standalone SDK release artifacts (`@thisispandora/agent-sdk`, `thisispandora-agent`)
+- standalone SDK release artifacts (`@thisispandora/agent-sdk`, `pandora-agent`)
 - signer `runtime-local-readiness` and `profile explain` evidence
 - authenticated remote MCP bootstrap/readiness/metrics and operation receipt surfaces
 - benchmark publication assets (`core-bundle.json`, `core-history.json`, `core-report.json`, `core.lock.json`, `benchmark-publication-manifest.json`, `benchmark-publication-bundle.tar.gz`)
