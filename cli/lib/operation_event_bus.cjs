@@ -229,7 +229,6 @@ function createOperationEventBus(options = {}) {
         }
         reject(timeoutError);
       }, listenerTimeoutMs);
-      timer.unref?.();
     });
 
     try {

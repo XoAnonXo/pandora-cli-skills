@@ -19,8 +19,10 @@ const EXPECTED_PUBLISHED_SCRIPT_NAMES = [
 ];
 
 function packDryRun() {
-  const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const output = execFileSync(npmExecutable, ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+  const command = process.platform === 'win32'
+    ? { file: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', 'npm', 'pack', '--dry-run', '--json', '--ignore-scripts'] }
+    : { file: 'npm', args: ['pack', '--dry-run', '--json', '--ignore-scripts'] };
+  const output = execFileSync(command.file, command.args, {
     cwd: ROOT,
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 16,

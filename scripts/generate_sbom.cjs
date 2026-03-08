@@ -185,12 +185,22 @@ function buildNpmSbomArgs(options) {
   return args;
 }
 
-function resolveNpmExecutable() {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+function resolveNpmCommand(args) {
+  if (process.platform === 'win32') {
+    return {
+      file: process.env.ComSpec || 'cmd.exe',
+      args: ['/d', '/s', '/c', 'npm', ...args],
+    };
+  }
+  return {
+    file: 'npm',
+    args,
+  };
 }
 
 function runNpmSbom(options, workingRoot) {
-  const output = execFileSync(resolveNpmExecutable(), buildNpmSbomArgs(options), {
+  const command = resolveNpmCommand(buildNpmSbomArgs(options));
+  const output = execFileSync(command.file, command.args, {
     cwd: workingRoot,
     encoding: 'utf8',
     env: {
