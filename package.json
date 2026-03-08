@@ -84,7 +84,7 @@
     "prepack": "npm run check:docs && npm run check:release-trust && npm run clean:sdk-python-cache && npm run check:sdk-contracts && npm run benchmark:check && npm run prepare:publish-manifest && node scripts/run_agent_benchmarks.cjs --suite core --write-lock --out benchmarks/latest/core-report.json && node scripts/check_agent_benchmarks.cjs",
     "postpack": "node scripts/restore_publish_manifest.cjs",
     "prepublishOnly": "npm test",
-    "test:unit": "node scripts/run_unit_tests.cjs tests/unit/sdk_contract_service.test.cjs tests/unit/sdk_typescript_client.test.cjs tests/unit/sdk_python_client.test.cjs tests/unit/policy_profile_services.test.cjs tests/unit/policy_profile_contracts.test.cjs tests/unit/skill_doc_registry.test.cjs tests/unit/docs_skills_drift.test.cjs tests/unit/benchmark_runner.test.cjs tests/unit/release_trust.test.cjs tests/unit/recipe_runtime.test.cjs",
+    "test:unit": "node scripts/run_unit_tests.cjs",
     "test:cli": "node --test tests/cli/cli.integration.test.cjs tests/cli/mcp.integration.test.cjs tests/cli/stream.integration.test.cjs tests/cli/sports.integration.test.cjs tests/cli/policy_profile_cli.integration.test.cjs tests/cli/policy_profile_mcp.integration.test.cjs tests/cli/recipe.integration.test.cjs",
     "test:agent-workflow": "node --test tests/cli/agent_workflow.integration.test.cjs",
     "test:smoke:consumer-json": "node tests/smoke/consumer-json-smoke.cjs",
