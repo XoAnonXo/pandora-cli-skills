@@ -269,11 +269,14 @@ function normalizePublicationScenario(scenario) {
     score: scenario.score || null,
     failure: scenario.failure || null,
     checks: Array.isArray(scenario.checks)
-      ? scenario.checks.map((check) => ({
-        id: check && check.id ? check.id : null,
-        passed: Boolean(check && check.passed),
-        message: check && check.message ? check.message : null,
-      }))
+      ? scenario.checks.map((check) => {
+        const passed = Boolean(check && check.passed);
+        return {
+          id: check && check.id ? check.id : null,
+          passed,
+          message: !passed && check && check.message ? check.message : null,
+        };
+      })
       : [],
   };
 }

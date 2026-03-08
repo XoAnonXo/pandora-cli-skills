@@ -194,6 +194,33 @@ test('committed public benchmark bundle is internally consistent and self-descri
   }
 });
 
+
+
+test('published benchmark report strips passing check messages but keeps failing ones', () => {
+  const { createPublishedBenchmarkReport } = require('../../benchmarks/lib/runner.cjs');
+  const report = {
+    schemaVersion: "1.0.0",
+    suite: "core",
+    runtime: { packageVersion: "1.1.71" },
+    summary: { scenarioCount: 1, passedCount: 1, failedCount: 0, latencyPassRate: 1, failedParityGroupCount: 0 },
+    contractLock: {},
+    expectedContractLockPath: "benchmarks/locks/core.lock.json",
+    contractLockMatchesExpected: true,
+    contractLockMismatches: [],
+    parity: { groups: [], failedGroups: [] },
+    scenarios: [{
+      id: "s", title: "Scenario", description: "desc", transport: "cli-json", dimensions: [], weight: 1, passed: true, runtimeState: null, parityGroup: null, parityExpectedTransports: [], parityHash: null, score: { weighted: 100 }, failure: null,
+      checks: [
+        { id: "pass-check", passed: true, message: "machine specific /tmp/foo" },
+        { id: "fail-check", passed: false, message: "actual failure detail" },
+      ]
+    }]
+  };
+  const published = createPublishedBenchmarkReport(report);
+  assert.equal(published.scenarios[0].checks[0].message, null);
+  assert.equal(published.scenarios[0].checks[1].message, "actual failure detail");
+});
+
 test.todo('public benchmark bundle avoids absolute machine-specific paths such as writtenLockPath');
 
 test('benchmark trust failure messaging distinguishes benchmark refresh from publication history refresh', () => {
