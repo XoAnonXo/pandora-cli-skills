@@ -32,6 +32,14 @@ function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function sortDeep(value) {
   if (Array.isArray(value)) {
     return value.map((entry) => sortDeep(entry));
@@ -40,18 +48,54 @@ function sortDeep(value) {
     return value;
   }
   const sorted = {};
-  for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+  for (const key of Object.keys(value).sort(compareStableStrings)) {
     sorted[key] = sortDeep(value[key]);
   }
   return sorted;
 }
 
 function sortByName(left, right) {
-  return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
+  return compareStableStrings(left && left.name, right && right.name);
 }
 
 function serializeJson(value) {
   return `${JSON.stringify(sortDeep(value), null, 2)}\n`;
+}
+
+function normalizeJsonForComparison(value) {
+  if (Array.isArray(value)) {
+    const normalizedItems = value.map((entry) => normalizeJsonForComparison(entry));
+    const allPrimitive = normalizedItems.every(
+      (entry) => entry === null || ['string', 'number', 'boolean'].includes(typeof entry),
+    );
+    if (allPrimitive) {
+      return normalizedItems.slice().sort(compareStableStrings);
+    }
+    const allObjects = normalizedItems.every((entry) => entry && typeof entry === 'object' && !Array.isArray(entry));
+    if (allObjects) {
+      return normalizedItems
+        .slice()
+        .sort((left, right) => compareStableStrings(JSON.stringify(left), JSON.stringify(right)));
+    }
+    return normalizedItems;
+  }
+  if (!isPlainObject(value)) {
+    return value;
+  }
+  const sorted = {};
+  for (const key of Object.keys(value).sort(compareStableStrings)) {
+    sorted[key] = normalizeJsonForComparison(value[key]);
+  }
+  return sorted;
+}
+
+function jsonContentsSemanticallyEqual(currentContent, nextContent) {
+  try {
+    return JSON.stringify(normalizeJsonForComparison(JSON.parse(currentContent)))
+      === JSON.stringify(normalizeJsonForComparison(JSON.parse(nextContent)));
+  } catch {
+    return false;
+  }
 }
 
 function buildPublishedSurfaceManifestMetadata(contractRegistry, versions = {}) {
@@ -429,4 +473,5 @@ module.exports = {
   SOURCE_RELATIVE_PATH,
   buildGeneratedArtifactFiles,
   cleanupLegacyGeneratedFiles,
+  jsonContentsSemanticallyEqual,
 };

@@ -1,4 +1,5 @@
 {
+  "artifactVersion": "1.0.0",
   "artifacts": {
     "bundle": "contract-registry.json",
     "commandDescriptors": "command-descriptors.json",
@@ -6,7 +7,6 @@
     "mcpToolDefinitions": "mcp-tool-definitions.json",
     "types": "index.d.ts"
   },
-  "artifactVersion": "1.0.0",
   "backends": {
     "local": {
       "backendType": "stdio",
@@ -380,7 +380,7 @@
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
     "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
-    "trustDistributionHash": "2a3dea8998f6eaa0a39543d4ac111d3e1853601d53a36f6dcde7d72fdea7a789"
+    "trustDistributionHash": "e909f4c5ae0df876c7ec33ce1e419c6f2cb45431ce44d4cb598841fd6f9cacf8"
   },
   "schemaVersion": "1.0.0"
 }

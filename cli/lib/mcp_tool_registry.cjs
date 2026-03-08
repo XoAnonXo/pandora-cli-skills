@@ -56,6 +56,14 @@ function compatibilityAliasDebugModeEnabled(options = {}) {
     || process.env.PANDORA_MCP_DEBUG_COMPATIBILITY_ALIASES === '1';
 }
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function isCompatibilityAliasDefinition(definition) {
   return Boolean(definition && (definition.compatibilityAlias || definition.aliasOf));
 }
@@ -73,7 +81,7 @@ function compareToolDefinitions(left, right) {
     return leftPreferred ? -1 : 1;
   }
 
-  return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
+  return compareStableStrings(left && left.name, right && right.name);
 }
 
 function sortToolDefinitions(definitions) {

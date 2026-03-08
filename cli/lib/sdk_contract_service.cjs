@@ -17,11 +17,19 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function sortStrings(values) {
   return Array.from(new Set(Array.isArray(values) ? values : []))
     .map((value) => String(value || '').trim())
     .filter(Boolean)
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareStableStrings);
 }
 
 function sortObjectKeys(value) {
@@ -32,7 +40,7 @@ function sortObjectKeys(value) {
     return value;
   }
   const sorted = {};
-  for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+  for (const key of Object.keys(value).sort(compareStableStrings)) {
     sorted[key] = sortObjectKeys(value[key]);
   }
   return sorted;
@@ -234,7 +242,7 @@ function buildGeneratedToolDefinitions(remoteTransportActive, options = {}) {
     })
     .map((definition) => buildGeneratedToolDefinition(definition))
     .filter(Boolean)
-    .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
+    .sort((left, right) => compareStableStrings(left && left.name, right && right.name));
 }
 
 function splitCommandDescriptorsByCompatibility(commandDescriptors) {

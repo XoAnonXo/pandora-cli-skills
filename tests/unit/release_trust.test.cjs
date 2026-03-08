@@ -112,9 +112,14 @@ test('benchmark trust docs describe the public bundle and tagged-source reproduc
 
 test('capabilities payload tolerates malformed benchmark reports without crashing', () => {
   const reportPath = path.join(ROOT, 'benchmarks/latest/core-report.json');
-  const original = fs.readFileSync(reportPath, 'utf8');
+  const originalReadFileSync = fs.readFileSync;
   try {
-    fs.writeFileSync(reportPath, '{not-json}\n');
+    fs.readFileSync = function patchedReadFileSync(filePath, ...args) {
+      if (path.resolve(String(filePath)) === reportPath) {
+        return '{not-json}\n';
+      }
+      return originalReadFileSync.call(this, filePath, ...args);
+    };
     const payload = buildCapabilitiesPayload({ generatedAtOverride: '2026-03-08T00:00:00.000Z' });
     assert.equal(payload.trustDistribution.verification.benchmark.reportPresent, true);
     assert.equal(payload.trustDistribution.verification.benchmark.reportOverallPass, null);
@@ -124,6 +129,6 @@ test('capabilities payload tolerates malformed benchmark reports without crashin
       && payload.trustDistribution.notes.some((note) => /Benchmark report JSON is invalid/i.test(note)),
     );
   } finally {
-    fs.writeFileSync(reportPath, original);
+    fs.readFileSync = originalReadFileSync;
   }
 });

@@ -12,6 +12,14 @@ const COMPATIBILITY_FLAG = '--include-compatibility';
 const COMPATIBILITY_QUERY_PARAM = 'include_aliases=1';
 const COMPATIBILITY_MODE_HINT = 'Compatibility aliases are hidden by default. Pass --include-compatibility or include_aliases=1 only for legacy/debug workflows.';
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function getJsonSchemaPrimitiveType(value) {
   if (Array.isArray(value)) return 'array';
   if (value === null) return 'null';
@@ -35,7 +43,7 @@ function sortUniqueStrings(values) {
 function sortObjectKeys(record) {
   const source = record && typeof record === 'object' ? record : {};
   const sorted = {};
-  for (const key of Object.keys(source).sort((left, right) => left.localeCompare(right))) {
+  for (const key of Object.keys(source).sort(compareStableStrings)) {
     sorted[key] = source[key];
   }
   return sorted;

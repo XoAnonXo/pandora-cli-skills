@@ -45,6 +45,15 @@ const COMPATIBILITY_FLAG = '--include-compatibility';
 const COMPATIBILITY_QUERY_PARAM = 'include_aliases=1';
 const COMPATIBILITY_MODE_HINT = 'Compatibility aliases are hidden by default. Pass --include-compatibility or include_aliases=1 only for legacy/debug workflows.';
 const A_PLUS_TARGET_TIER = 'A+';
+
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 const PRINCIPAL_TEMPLATE_SPECS = Object.freeze([
   {
     id: 'read-only-researcher',
@@ -188,7 +197,7 @@ function sortStrings(values) {
   return Array.from(new Set(Array.isArray(values) ? values : []))
     .map((value) => String(value || '').trim())
     .filter(Boolean)
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareStableStrings);
 }
 
 function isPathShipped(relativePath, filesAllowlist) {
@@ -210,7 +219,7 @@ function isPathShipped(relativePath, filesAllowlist) {
 function sortObjectKeys(record) {
   const source = record && typeof record === 'object' ? record : {};
   const sorted = {};
-  for (const key of Object.keys(source).sort((left, right) => left.localeCompare(right))) {
+  for (const key of Object.keys(source).sort(compareStableStrings)) {
     sorted[key] = source[key];
   }
   return sorted;
@@ -889,7 +898,7 @@ function buildOutputModeMatrix(commandDescriptors) {
 
 function buildTopLevelCommands(commandDescriptors) {
   const topLevel = {};
-  const commandNames = Object.keys(commandDescriptors).sort((left, right) => left.localeCompare(right));
+  const commandNames = Object.keys(commandDescriptors).sort(compareStableStrings);
 
   for (const commandName of commandNames) {
     if (commandName.includes('.')) continue;
@@ -919,7 +928,7 @@ function buildRouterTopLevelCommands() {
         .map((entry) => String(entry || '').trim())
         .filter(Boolean),
     ),
-  ).sort((left, right) => left.localeCompare(right));
+  ).sort(compareStableStrings);
 }
 
 function buildNamespaces(commandDescriptors) {
@@ -943,7 +952,7 @@ function buildNamespaces(commandDescriptors) {
   }
 
   const normalized = {};
-  for (const namespaceName of Object.keys(namespaces).sort((left, right) => left.localeCompare(right))) {
+  for (const namespaceName of Object.keys(namespaces).sort(compareStableStrings)) {
     normalized[namespaceName] = {
       ...namespaces[namespaceName],
       commands: sortStrings(namespaces[namespaceName].commands),
@@ -983,7 +992,7 @@ function buildCanonicalTools(commandDescriptors, options = {}) {
   }
 
   const normalized = {};
-  for (const canonicalTool of Object.keys(canonicalTools).sort((left, right) => left.localeCompare(right))) {
+  for (const canonicalTool of Object.keys(canonicalTools).sort(compareStableStrings)) {
     const preferredCommand = includeCompatibility
       ? (canonicalTools[canonicalTool].preferredCommand || canonicalTools[canonicalTool].nonAliasPreferredCommand || canonicalTool)
       : (canonicalTools[canonicalTool].nonAliasPreferredCommand || canonicalTools[canonicalTool].preferredCommand || canonicalTool);

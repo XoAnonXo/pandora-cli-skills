@@ -27,7 +27,16 @@ function packDryRun() {
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 16,
   });
-  const parsed = JSON.parse(output);
+  const trimmed = String(output || '').trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf('[');
+    const end = trimmed.lastIndexOf(']');
+    assert.ok(start >= 0 && end >= start, 'npm pack --dry-run --json must emit a JSON array payload');
+    parsed = JSON.parse(trimmed.slice(start, end + 1));
+  }
   assert.ok(Array.isArray(parsed) && parsed.length > 0, 'npm pack --dry-run --json must return an array');
   return parsed[parsed.length - 1];
 }

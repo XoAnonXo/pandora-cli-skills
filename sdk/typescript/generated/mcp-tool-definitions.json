@@ -2,8 +2,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "agent.market.autocomplete",
     "canRunConcurrent": true,
+    "canonicalTool": "agent.market.autocomplete",
     "command": [
       "agent",
       "market",
@@ -39,6 +39,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "agent",
           "market",
@@ -47,7 +48,6 @@
         "canonicalName": "agent.market.autocomplete",
         "canonicalTool": "agent.market.autocomplete",
         "canonicalUsage": "pandora [--output table|json] agent market autocomplete --question <text> [--market-type amm|parimutuel]",
-        "canRunConcurrent": true,
         "command": [
           "agent",
           "market",
@@ -165,6 +165,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "agent",
         "market",
@@ -173,7 +174,6 @@
       "canonicalName": "agent.market.autocomplete",
       "canonicalTool": "agent.market.autocomplete",
       "canonicalUsage": "pandora [--output table|json] agent market autocomplete --question <text> [--market-type amm|parimutuel]",
-      "canRunConcurrent": true,
       "command": [
         "agent",
         "market",
@@ -270,8 +270,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "agent.market.validate",
     "canRunConcurrent": true,
+    "canonicalTool": "agent.market.validate",
     "command": [
       "agent",
       "market",
@@ -318,6 +318,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "agent",
           "market",
@@ -326,7 +327,6 @@
         "canonicalName": "agent.market.validate",
         "canonicalTool": "agent.market.validate",
         "canonicalUsage": "pandora [--output table|json] agent market validate --question <text> --rules <text> --target-timestamp <unix-seconds> [--sources <url...>]",
-        "canRunConcurrent": true,
         "command": [
           "agent",
           "market",
@@ -444,6 +444,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "agent",
         "market",
@@ -452,7 +453,6 @@
       "canonicalName": "agent.market.validate",
       "canonicalTool": "agent.market.validate",
       "canonicalUsage": "pandora [--output table|json] agent market validate --question <text> --rules <text> --target-timestamp <unix-seconds> [--sources <url...>]",
-      "canRunConcurrent": true,
       "command": [
         "agent",
         "market",
@@ -549,8 +549,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "analyze",
     "canRunConcurrent": true,
+    "canonicalTool": "analyze",
     "command": [
       "analyze"
     ],
@@ -606,13 +606,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "analyze"
         ],
         "canonicalName": "analyze",
         "canonicalTool": "analyze",
         "canonicalUsage": "pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]",
-        "canRunConcurrent": true,
         "command": [
           "analyze"
         ],
@@ -732,13 +732,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "analyze"
       ],
       "canonicalName": "analyze",
       "canonicalTool": "analyze",
       "canonicalUsage": "pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]",
-      "canRunConcurrent": true,
       "command": [
         "analyze"
       ],
@@ -836,8 +836,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "arb.scan",
     "canRunConcurrent": true,
+    "canonicalTool": "arb.scan",
     "command": [
       "arb",
       "scan",
@@ -949,6 +949,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "arb",
           "scan"
@@ -956,7 +957,6 @@
         "canonicalName": "arb.scan",
         "canonicalTool": "arb.scan",
         "canonicalUsage": "pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
-        "canRunConcurrent": true,
         "command": [
           "arb",
           "scan",
@@ -1081,6 +1081,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "arb",
         "scan"
@@ -1088,7 +1089,6 @@
       "canonicalName": "arb.scan",
       "canonicalTool": "arb.scan",
       "canonicalUsage": "pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
-      "canRunConcurrent": true,
       "command": [
         "arb",
         "scan",
@@ -1191,8 +1191,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "autopilot.once",
     "canRunConcurrent": false,
+    "canonicalTool": "autopilot.once",
     "command": [
       "autopilot",
       "once"
@@ -1303,6 +1303,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "autopilot",
           "once"
@@ -1310,7 +1311,6 @@
         "canonicalName": "autopilot.once",
         "canonicalTool": "autopilot.once",
         "canonicalUsage": "pandora [--output table|json] autopilot once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-        "canRunConcurrent": false,
         "command": [
           "autopilot",
           "once"
@@ -1442,6 +1442,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "autopilot",
         "once"
@@ -1449,7 +1450,6 @@
       "canonicalName": "autopilot.once",
       "canonicalTool": "autopilot.once",
       "canonicalUsage": "pandora [--output table|json] autopilot once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-      "canRunConcurrent": false,
       "command": [
         "autopilot",
         "once"
@@ -1556,8 +1556,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "autopilot.run",
     "canRunConcurrent": false,
+    "canonicalTool": "autopilot.run",
     "command": [
       "autopilot",
       "run"
@@ -1656,6 +1656,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "autopilot",
           "run"
@@ -1663,7 +1664,6 @@
         "canonicalName": "autopilot.run",
         "canonicalTool": "autopilot.run",
         "canonicalUsage": "pandora [--output table|json] autopilot run --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-        "canRunConcurrent": false,
         "command": [
           "autopilot",
           "run"
@@ -1797,6 +1797,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "autopilot",
         "run"
@@ -1804,7 +1805,6 @@
       "canonicalName": "autopilot.run",
       "canonicalTool": "autopilot.run",
       "canonicalUsage": "pandora [--output table|json] autopilot run --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-      "canRunConcurrent": false,
       "command": [
         "autopilot",
         "run"
@@ -1925,8 +1925,8 @@
       ]
     },
     "aliasOf": null,
-    "canonicalTool": "bootstrap",
     "canRunConcurrent": true,
+    "canonicalTool": "bootstrap",
     "command": [
       "bootstrap"
     ],
@@ -1963,13 +1963,13 @@
           ]
         },
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "bootstrap"
         ],
         "canonicalName": "bootstrap",
         "canonicalTool": "bootstrap",
         "canonicalUsage": "pandora [--output json] bootstrap [--include-compatibility]",
-        "canRunConcurrent": true,
         "command": [
           "bootstrap"
         ],
@@ -2103,13 +2103,13 @@
         ]
       },
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "bootstrap"
       ],
       "canonicalName": "bootstrap",
       "canonicalTool": "bootstrap",
       "canonicalUsage": "pandora [--output json] bootstrap [--include-compatibility]",
-      "canRunConcurrent": true,
       "command": [
         "bootstrap"
       ],
@@ -2206,8 +2206,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "capabilities",
     "canRunConcurrent": true,
+    "canonicalTool": "capabilities",
     "command": [
       "capabilities"
     ],
@@ -2235,13 +2235,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "capabilities"
         ],
         "canonicalName": "capabilities",
         "canonicalTool": "capabilities",
         "canonicalUsage": "pandora [--output json] capabilities [--include-compatibility] [--runtime-local-readiness]",
-        "canRunConcurrent": true,
         "command": [
           "capabilities"
         ],
@@ -2358,13 +2358,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "capabilities"
       ],
       "canonicalName": "capabilities",
       "canonicalTool": "capabilities",
       "canonicalUsage": "pandora [--output json] capabilities [--include-compatibility] [--runtime-local-readiness]",
-      "canRunConcurrent": true,
       "command": [
         "capabilities"
       ],
@@ -2459,8 +2459,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "claim",
     "canRunConcurrent": false,
+    "canonicalTool": "claim",
     "command": [
       "claim"
     ],
@@ -2568,13 +2568,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "claim"
         ],
         "canonicalName": "claim",
         "canonicalTool": "claim",
         "canonicalUsage": "pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]",
-        "canRunConcurrent": false,
         "command": [
           "claim"
         ],
@@ -2708,13 +2708,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "claim"
       ],
       "canonicalName": "claim",
       "canonicalTool": "claim",
       "canonicalUsage": "pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]",
-      "canRunConcurrent": false,
       "command": [
         "claim"
       ],
@@ -2822,8 +2822,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "events.get",
     "canRunConcurrent": true,
+    "canonicalTool": "events.get",
     "command": [
       "events",
       "get"
@@ -2853,6 +2853,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "events",
           "get"
@@ -2860,7 +2861,6 @@
         "canonicalName": "events.get",
         "canonicalTool": "events.get",
         "canonicalUsage": "pandora [--output table|json] events get --id <id>",
-        "canRunConcurrent": true,
         "command": [
           "events",
           "get"
@@ -2982,6 +2982,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "events",
         "get"
@@ -2989,7 +2990,6 @@
       "canonicalName": "events.get",
       "canonicalTool": "events.get",
       "canonicalUsage": "pandora [--output table|json] events get --id <id>",
-      "canRunConcurrent": true,
       "command": [
         "events",
         "get"
@@ -3089,8 +3089,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "events.list",
     "canRunConcurrent": true,
+    "canonicalTool": "events.list",
     "command": [
       "events",
       "list"
@@ -3160,6 +3160,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "events",
           "list"
@@ -3167,7 +3168,6 @@
         "canonicalName": "events.list",
         "canonicalTool": "events.list",
         "canonicalUsage": "pandora [--output table|json] events list [--wallet <address>] [--market-address <address>] [--chain-id <id>] [--status open|won|lost|closed|all] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc]",
-        "canRunConcurrent": true,
         "command": [
           "events",
           "list"
@@ -3289,6 +3289,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "events",
         "list"
@@ -3296,7 +3297,6 @@
       "canonicalName": "events.list",
       "canonicalTool": "events.list",
       "canonicalUsage": "pandora [--output table|json] events list [--wallet <address>] [--market-address <address>] [--chain-id <id>] [--status open|won|lost|closed|all] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc]",
-      "canRunConcurrent": true,
       "command": [
         "events",
         "list"
@@ -3396,8 +3396,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "export",
     "canRunConcurrent": false,
+    "canonicalTool": "export",
     "command": [
       "export"
     ],
@@ -3459,13 +3459,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "export"
         ],
         "canonicalName": "export",
         "canonicalTool": "export",
         "canonicalUsage": "pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]",
-        "canRunConcurrent": false,
         "command": [
           "export"
         ],
@@ -3586,13 +3586,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "export"
       ],
       "canonicalName": "export",
       "canonicalTool": "export",
       "canonicalUsage": "pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]",
-      "canRunConcurrent": false,
       "command": [
         "export"
       ],
@@ -3691,8 +3691,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "help",
     "canRunConcurrent": true,
+    "canonicalTool": "help",
     "command": [
       "help"
     ],
@@ -3711,13 +3711,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "help"
         ],
         "canonicalName": "help",
         "canonicalTool": "help",
         "canonicalUsage": "pandora [--output table|json] help",
-        "canRunConcurrent": true,
         "command": [
           "help"
         ],
@@ -3832,13 +3832,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "help"
       ],
       "canonicalName": "help",
       "canonicalTool": "help",
       "canonicalUsage": "pandora [--output table|json] help",
-      "canRunConcurrent": true,
       "command": [
         "help"
       ],
@@ -3932,8 +3932,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "history",
     "canRunConcurrent": true,
+    "canonicalTool": "history",
     "command": [
       "history"
     ],
@@ -4031,13 +4031,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "history"
         ],
         "canonicalName": "history",
         "canonicalTool": "history",
         "canonicalUsage": "pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]",
-        "canRunConcurrent": true,
         "command": [
           "history"
         ],
@@ -4157,13 +4157,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "history"
       ],
       "canonicalName": "history",
       "canonicalTool": "history",
       "canonicalUsage": "pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]",
-      "canRunConcurrent": true,
       "command": [
         "history"
       ],
@@ -4261,8 +4261,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "leaderboard",
     "canRunConcurrent": true,
+    "canonicalTool": "leaderboard",
     "command": [
       "leaderboard"
     ],
@@ -4316,13 +4316,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "leaderboard"
         ],
         "canonicalName": "leaderboard",
         "canonicalTool": "leaderboard",
         "canonicalUsage": "pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]",
-        "canRunConcurrent": true,
         "command": [
           "leaderboard"
         ],
@@ -4442,13 +4442,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "leaderboard"
       ],
       "canonicalName": "leaderboard",
       "canonicalTool": "leaderboard",
       "canonicalUsage": "pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]",
-      "canRunConcurrent": true,
       "command": [
         "leaderboard"
       ],
@@ -4546,8 +4546,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "lifecycle.resolve",
     "canRunConcurrent": false,
+    "canonicalTool": "lifecycle.resolve",
     "command": [
       "lifecycle",
       "resolve"
@@ -4592,6 +4592,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "lifecycle",
           "resolve"
@@ -4599,7 +4600,6 @@
         "canonicalName": "lifecycle.resolve",
         "canonicalTool": "lifecycle.resolve",
         "canonicalUsage": "pandora [--output table|json] lifecycle resolve --id <id> --confirm",
-        "canRunConcurrent": false,
         "command": [
           "lifecycle",
           "resolve"
@@ -4722,6 +4722,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "lifecycle",
         "resolve"
@@ -4729,7 +4730,6 @@
       "canonicalName": "lifecycle.resolve",
       "canonicalTool": "lifecycle.resolve",
       "canonicalUsage": "pandora [--output table|json] lifecycle resolve --id <id> --confirm",
-      "canRunConcurrent": false,
       "command": [
         "lifecycle",
         "resolve"
@@ -4830,8 +4830,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "lifecycle.start",
     "canRunConcurrent": false,
+    "canonicalTool": "lifecycle.start",
     "command": [
       "lifecycle",
       "start"
@@ -4871,6 +4871,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "lifecycle",
           "start"
@@ -4878,7 +4879,6 @@
         "canonicalName": "lifecycle.start",
         "canonicalTool": "lifecycle.start",
         "canonicalUsage": "pandora [--output table|json] lifecycle start --config <file>",
-        "canRunConcurrent": false,
         "command": [
           "lifecycle",
           "start"
@@ -5003,6 +5003,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "lifecycle",
         "start"
@@ -5010,7 +5011,6 @@
       "canonicalName": "lifecycle.start",
       "canonicalTool": "lifecycle.start",
       "canonicalUsage": "pandora [--output table|json] lifecycle start --config <file>",
-      "canRunConcurrent": false,
       "command": [
         "lifecycle",
         "start"
@@ -5112,8 +5112,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "lifecycle.status",
     "canRunConcurrent": true,
+    "canonicalTool": "lifecycle.status",
     "command": [
       "lifecycle",
       "status"
@@ -5143,6 +5143,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "lifecycle",
           "status"
@@ -5150,7 +5151,6 @@
         "canonicalName": "lifecycle.status",
         "canonicalTool": "lifecycle.status",
         "canonicalUsage": "pandora [--output table|json] lifecycle status --id <id>",
-        "canRunConcurrent": true,
         "command": [
           "lifecycle",
           "status"
@@ -5272,6 +5272,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "lifecycle",
         "status"
@@ -5279,7 +5280,6 @@
       "canonicalName": "lifecycle.status",
       "canonicalTool": "lifecycle.status",
       "canonicalUsage": "pandora [--output table|json] lifecycle status --id <id>",
-      "canRunConcurrent": true,
       "command": [
         "lifecycle",
         "status"
@@ -5379,8 +5379,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "lp.add",
     "canRunConcurrent": false,
+    "canonicalTool": "lp.add",
     "command": [
       "lp",
       "add"
@@ -5494,6 +5494,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "lp",
           "add"
@@ -5501,7 +5502,6 @@
         "canonicalName": "lp.add",
         "canonicalTool": "lp.add",
         "canonicalUsage": "pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
-        "canRunConcurrent": false,
         "command": [
           "lp",
           "add"
@@ -5634,6 +5634,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "lp",
         "add"
@@ -5641,7 +5642,6 @@
       "canonicalName": "lp.add",
       "canonicalTool": "lp.add",
       "canonicalUsage": "pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
-      "canRunConcurrent": false,
       "command": [
         "lp",
         "add"
@@ -5748,8 +5748,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "lp.positions",
     "canRunConcurrent": true,
+    "canonicalTool": "lp.positions",
     "command": [
       "lp",
       "positions"
@@ -5794,6 +5794,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "lp",
           "positions"
@@ -5801,7 +5802,6 @@
         "canonicalName": "lp.positions",
         "canonicalTool": "lp.positions",
         "canonicalUsage": "pandora [--output table|json] lp positions [--market-address <address>] [--wallet <address>] [--indexer-url <url>] [--timeout-ms <ms>] [--rpc-url <url>]",
-        "canRunConcurrent": true,
         "command": [
           "lp",
           "positions"
@@ -5924,6 +5924,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "lp",
         "positions"
@@ -5931,7 +5932,6 @@
       "canonicalName": "lp.positions",
       "canonicalTool": "lp.positions",
       "canonicalUsage": "pandora [--output table|json] lp positions [--market-address <address>] [--wallet <address>] [--indexer-url <url>] [--timeout-ms <ms>] [--rpc-url <url>]",
-      "canRunConcurrent": true,
       "command": [
         "lp",
         "positions"
@@ -6031,8 +6031,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "lp.remove",
     "canRunConcurrent": false,
+    "canonicalTool": "lp.remove",
     "command": [
       "lp",
       "remove"
@@ -6150,6 +6150,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "lp",
           "remove"
@@ -6157,7 +6158,6 @@
         "canonicalName": "lp.remove",
         "canonicalTool": "lp.remove",
         "canonicalUsage": "pandora [--output table|json] lp remove [--market-address <address>] [--wallet <address>] [--lp-tokens <n>|--all|--all-markets] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
-        "canRunConcurrent": false,
         "command": [
           "lp",
           "remove"
@@ -6290,6 +6290,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "lp",
         "remove"
@@ -6297,7 +6298,6 @@
       "canonicalName": "lp.remove",
       "canonicalTool": "lp.remove",
       "canonicalUsage": "pandora [--output table|json] lp remove [--market-address <address>] [--wallet <address>] [--lp-tokens <n>|--all|--all-markets] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
-      "canRunConcurrent": false,
       "command": [
         "lp",
         "remove"
@@ -6404,8 +6404,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "markets.get",
     "canRunConcurrent": true,
+    "canonicalTool": "markets.get",
     "command": [
       "markets",
       "get"
@@ -6447,6 +6447,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "markets",
           "get"
@@ -6454,7 +6455,6 @@
         "canonicalName": "markets.get",
         "canonicalTool": "markets.get",
         "canonicalUsage": "pandora [--output table|json] markets get [--id <id> ...] [--stdin]",
-        "canRunConcurrent": true,
         "command": [
           "markets",
           "get"
@@ -6575,6 +6575,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "markets",
         "get"
@@ -6582,7 +6583,6 @@
       "canonicalName": "markets.get",
       "canonicalTool": "markets.get",
       "canonicalUsage": "pandora [--output table|json] markets get [--id <id> ...] [--stdin]",
-      "canRunConcurrent": true,
       "command": [
         "markets",
         "get"
@@ -6681,8 +6681,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "markets.list",
     "canRunConcurrent": true,
+    "canonicalTool": "markets.list",
     "command": [
       "markets",
       "list"
@@ -6793,6 +6793,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "markets",
           "list"
@@ -6800,7 +6801,6 @@
         "canonicalName": "markets.list",
         "canonicalTool": "markets.list",
         "canonicalUsage": "pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]",
-        "canRunConcurrent": true,
         "command": [
           "markets",
           "list"
@@ -6921,6 +6921,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "markets",
         "list"
@@ -6928,7 +6929,6 @@
       "canonicalName": "markets.list",
       "canonicalTool": "markets.list",
       "canonicalUsage": "pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]",
-      "canRunConcurrent": true,
       "command": [
         "markets",
         "list"
@@ -7027,8 +7027,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.browse",
     "canRunConcurrent": true,
+    "canonicalTool": "mirror.browse",
     "command": [
       "mirror",
       "browse"
@@ -7158,6 +7158,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "mirror",
           "browse"
@@ -7165,7 +7166,6 @@
         "canonicalName": "mirror.browse",
         "canonicalTool": "mirror.browse",
         "canonicalUsage": "pandora [--output table|json] mirror browse [--min-yes-pct <n>] [--max-yes-pct <n>] [--min-volume-24h <n>] [--closes-after <date>|--end-date-after <date|72h>] [--closes-before <date>|--end-date-before <date|72h>] [--question-contains <text>|--keyword <text>] [--slug <text>] [--category sports|crypto|politics|entertainment] [--exclude-sports] [--sort-by volume24h|liquidity|endDate] [--limit <n>] [--chain-id <id>] [--polymarket-tag-id <id>] [--polymarket-tag-ids <csv>] [--sport-tag-id <id>] [--sport-tag-ids <csv>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
-        "canRunConcurrent": true,
         "command": [
           "mirror",
           "browse"
@@ -7289,6 +7289,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "mirror",
         "browse"
@@ -7296,7 +7297,6 @@
       "canonicalName": "mirror.browse",
       "canonicalTool": "mirror.browse",
       "canonicalUsage": "pandora [--output table|json] mirror browse [--min-yes-pct <n>] [--max-yes-pct <n>] [--min-volume-24h <n>] [--closes-after <date>|--end-date-after <date|72h>] [--closes-before <date>|--end-date-before <date|72h>] [--question-contains <text>|--keyword <text>] [--slug <text>] [--category sports|crypto|politics|entertainment] [--exclude-sports] [--sort-by volume24h|liquidity|endDate] [--limit <n>] [--chain-id <id>] [--polymarket-tag-id <id>] [--polymarket-tag-ids <csv>] [--sport-tag-id <id>] [--sport-tag-ids <csv>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
-      "canRunConcurrent": true,
       "command": [
         "mirror",
         "browse"
@@ -7397,8 +7397,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.close",
     "canRunConcurrent": false,
+    "canonicalTool": "mirror.close",
     "command": [
       "mirror",
       "close"
@@ -8282,6 +8282,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "mirror",
           "close"
@@ -8289,7 +8290,6 @@
         "canonicalName": "mirror.close",
         "canonicalTool": "mirror.close",
         "canonicalUsage": "pandora [--output table|json] mirror close --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]",
-        "canRunConcurrent": false,
         "command": [
           "mirror",
           "close"
@@ -8426,6 +8426,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "mirror",
         "close"
@@ -8433,7 +8434,6 @@
       "canonicalName": "mirror.close",
       "canonicalTool": "mirror.close",
       "canonicalUsage": "pandora [--output table|json] mirror close --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]",
-      "canRunConcurrent": false,
       "command": [
         "mirror",
         "close"
@@ -8556,8 +8556,8 @@
       ]
     },
     "aliasOf": null,
-    "canonicalTool": "mirror.deploy",
     "canRunConcurrent": false,
+    "canonicalTool": "mirror.deploy",
     "command": [
       "mirror",
       "deploy"
@@ -9112,6 +9112,7 @@
           ]
         },
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "mirror",
           "deploy"
@@ -9119,7 +9120,6 @@
         "canonicalName": "mirror.deploy",
         "canonicalTool": "mirror.deploy",
         "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
-        "canRunConcurrent": false,
         "command": [
           "mirror",
           "deploy"
@@ -9270,6 +9270,7 @@
         ]
       },
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "mirror",
         "deploy"
@@ -9277,7 +9278,6 @@
       "canonicalName": "mirror.deploy",
       "canonicalTool": "mirror.deploy",
       "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
-      "canRunConcurrent": false,
       "command": [
         "mirror",
         "deploy"
@@ -9402,8 +9402,8 @@
       ]
     },
     "aliasOf": null,
-    "canonicalTool": "mirror.go",
     "canRunConcurrent": false,
+    "canonicalTool": "mirror.go",
     "command": [
       "mirror",
       "go"
@@ -10321,6 +10321,7 @@
           ]
         },
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "mirror",
           "go"
@@ -10328,7 +10329,6 @@
         "canonicalName": "mirror.go",
         "canonicalTool": "mirror.go",
         "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
-        "canRunConcurrent": false,
         "command": [
           "mirror",
           "go"
@@ -10484,6 +10484,7 @@
         ]
       },
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "mirror",
         "go"
@@ -10491,7 +10492,6 @@
       "canonicalName": "mirror.go",
       "canonicalTool": "mirror.go",
       "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
-      "canRunConcurrent": false,
       "command": [
         "mirror",
         "go"
@@ -10606,8 +10606,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.hedge-calc",
     "canRunConcurrent": true,
+    "canonicalTool": "mirror.hedge-calc",
     "command": [
       "mirror",
       "hedge-calc"
@@ -10672,6 +10672,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "mirror",
           "hedge-calc"
@@ -10679,7 +10680,6 @@
         "canonicalName": "mirror.hedge-calc",
         "canonicalTool": "mirror.hedge-calc",
         "canonicalUsage": "pandora [--output table|json] mirror hedge-calc --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--hedge-ratio <n>] [--polymarket-yes-pct <0-100>]",
-        "canRunConcurrent": true,
         "command": [
           "mirror",
           "hedge-calc"
@@ -10803,6 +10803,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "mirror",
         "hedge-calc"
@@ -10810,7 +10811,6 @@
       "canonicalName": "mirror.hedge-calc",
       "canonicalTool": "mirror.hedge-calc",
       "canonicalUsage": "pandora [--output table|json] mirror hedge-calc --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--hedge-ratio <n>] [--polymarket-yes-pct <0-100>]",
-      "canRunConcurrent": true,
       "command": [
         "mirror",
         "hedge-calc"
@@ -10911,8 +10911,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.lp-explain",
     "canRunConcurrent": true,
+    "canonicalTool": "mirror.lp-explain",
     "command": [
       "mirror",
       "lp-explain"
@@ -10960,6 +10960,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "mirror",
           "lp-explain"
@@ -10967,7 +10968,6 @@
         "canonicalName": "mirror.lp-explain",
         "canonicalTool": "mirror.lp-explain",
         "canonicalUsage": "pandora [--output table|json] mirror lp-explain --liquidity-usdc <n> [--source-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>]",
-        "canRunConcurrent": true,
         "command": [
           "mirror",
           "lp-explain"
@@ -11091,6 +11091,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "mirror",
         "lp-explain"
@@ -11098,7 +11099,6 @@
       "canonicalName": "mirror.lp-explain",
       "canonicalTool": "mirror.lp-explain",
       "canonicalUsage": "pandora [--output table|json] mirror lp-explain --liquidity-usdc <n> [--source-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>]",
-      "canRunConcurrent": true,
       "command": [
         "mirror",
         "lp-explain"
@@ -11199,8 +11199,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.plan",
     "canRunConcurrent": true,
+    "canonicalTool": "mirror.plan",
     "command": [
       "mirror",
       "plan"
@@ -11313,6 +11313,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "mirror",
           "plan"
@@ -11320,7 +11321,6 @@
         "canonicalName": "mirror.plan",
         "canonicalTool": "mirror.plan",
         "canonicalUsage": "pandora [--output table|json] mirror plan --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
-        "canRunConcurrent": true,
         "command": [
           "mirror",
           "plan"
@@ -11444,6 +11444,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "mirror",
         "plan"
@@ -11451,7 +11452,6 @@
       "canonicalName": "mirror.plan",
       "canonicalTool": "mirror.plan",
       "canonicalUsage": "pandora [--output table|json] mirror plan --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
-      "canRunConcurrent": true,
       "command": [
         "mirror",
         "plan"
@@ -11552,8 +11552,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.simulate",
     "canRunConcurrent": true,
+    "canonicalTool": "mirror.simulate",
     "command": [
       "mirror",
       "simulate"
@@ -11628,6 +11628,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "mirror",
           "simulate"
@@ -11635,7 +11636,6 @@
         "canonicalName": "mirror.simulate",
         "canonicalTool": "mirror.simulate",
         "canonicalUsage": "pandora [--output table|json] mirror simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--polymarket-yes-pct <0-100>]",
-        "canRunConcurrent": true,
         "command": [
           "mirror",
           "simulate"
@@ -11759,6 +11759,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "mirror",
         "simulate"
@@ -11766,7 +11767,6 @@
       "canonicalName": "mirror.simulate",
       "canonicalTool": "mirror.simulate",
       "canonicalUsage": "pandora [--output table|json] mirror simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--polymarket-yes-pct <0-100>]",
-      "canRunConcurrent": true,
       "command": [
         "mirror",
         "simulate"
@@ -11867,8 +11867,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.status",
     "canRunConcurrent": true,
+    "canonicalTool": "mirror.status",
     "command": [
       "mirror",
       "status"
@@ -12016,6 +12016,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "mirror",
           "status"
@@ -12023,7 +12024,6 @@
         "canonicalName": "mirror.status",
         "canonicalTool": "mirror.status",
         "canonicalUsage": "pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>]",
-        "canRunConcurrent": true,
         "command": [
           "mirror",
           "status"
@@ -12148,6 +12148,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "mirror",
         "status"
@@ -12155,7 +12156,6 @@
       "canonicalName": "mirror.status",
       "canonicalTool": "mirror.status",
       "canonicalUsage": "pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>]",
-      "canRunConcurrent": true,
       "command": [
         "mirror",
         "status"
@@ -12257,8 +12257,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.sync.once",
     "canRunConcurrent": false,
+    "canonicalTool": "mirror.sync.once",
     "command": [
       "mirror",
       "sync",
@@ -13775,6 +13775,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "mirror",
           "sync",
@@ -13783,7 +13784,6 @@
         "canonicalName": "mirror.sync.once",
         "canonicalTool": "mirror.sync.once",
         "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-        "canRunConcurrent": false,
         "command": [
           "mirror",
           "sync",
@@ -13926,6 +13926,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "mirror",
         "sync",
@@ -13934,7 +13935,6 @@
       "canonicalName": "mirror.sync.once",
       "canonicalTool": "mirror.sync.once",
       "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-      "canRunConcurrent": false,
       "command": [
         "mirror",
         "sync",
@@ -14049,8 +14049,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.sync.run",
     "canRunConcurrent": false,
+    "canonicalTool": "mirror.sync.run",
     "command": [
       "mirror",
       "sync",
@@ -15579,6 +15579,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "mirror",
           "sync",
@@ -15587,7 +15588,6 @@
         "canonicalName": "mirror.sync.run",
         "canonicalTool": "mirror.sync.run",
         "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-        "canRunConcurrent": false,
         "command": [
           "mirror",
           "sync",
@@ -15732,6 +15732,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "mirror",
         "sync",
@@ -15740,7 +15741,6 @@
       "canonicalName": "mirror.sync.run",
       "canonicalTool": "mirror.sync.run",
       "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-      "canRunConcurrent": false,
       "command": [
         "mirror",
         "sync",
@@ -15856,8 +15856,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.sync.start",
     "canRunConcurrent": false,
+    "canonicalTool": "mirror.sync.start",
     "command": [
       "mirror",
       "sync",
@@ -17374,6 +17374,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "mirror",
           "sync",
@@ -17382,7 +17383,6 @@
         "canonicalName": "mirror.sync.start",
         "canonicalTool": "mirror.sync.start",
         "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-        "canRunConcurrent": false,
         "command": [
           "mirror",
           "sync",
@@ -17527,6 +17527,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "mirror",
         "sync",
@@ -17535,7 +17536,6 @@
       "canonicalName": "mirror.sync.start",
       "canonicalTool": "mirror.sync.start",
       "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
-      "canRunConcurrent": false,
       "command": [
         "mirror",
         "sync",
@@ -17651,8 +17651,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.sync.status",
     "canRunConcurrent": true,
+    "canonicalTool": "mirror.sync.status",
     "command": [
       "mirror",
       "sync",
@@ -17736,6 +17736,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "mirror",
           "sync",
@@ -17744,7 +17745,6 @@
         "canonicalName": "mirror.sync.status",
         "canonicalTool": "mirror.sync.status",
         "canonicalUsage": "pandora [--output table|json] mirror sync status --pid-file <path>|--strategy-hash <hash>",
-        "canRunConcurrent": true,
         "command": [
           "mirror",
           "sync",
@@ -17864,6 +17864,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "mirror",
         "sync",
@@ -17872,7 +17873,6 @@
       "canonicalName": "mirror.sync.status",
       "canonicalTool": "mirror.sync.status",
       "canonicalUsage": "pandora [--output table|json] mirror sync status --pid-file <path>|--strategy-hash <hash>",
-      "canRunConcurrent": true,
       "command": [
         "mirror",
         "sync",
@@ -17971,8 +17971,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.sync.stop",
     "canRunConcurrent": false,
+    "canonicalTool": "mirror.sync.stop",
     "command": [
       "mirror",
       "sync",
@@ -18202,6 +18202,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "mirror",
           "sync",
@@ -18210,7 +18211,6 @@
         "canonicalName": "mirror.sync.stop",
         "canonicalTool": "mirror.sync.stop",
         "canonicalUsage": "pandora [--output table|json] mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all",
-        "canRunConcurrent": false,
         "command": [
           "mirror",
           "sync",
@@ -18331,6 +18331,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "mirror",
         "sync",
@@ -18339,7 +18340,6 @@
       "canonicalName": "mirror.sync.stop",
       "canonicalTool": "mirror.sync.stop",
       "canonicalUsage": "pandora [--output table|json] mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all",
-      "canRunConcurrent": false,
       "command": [
         "mirror",
         "sync",
@@ -18439,8 +18439,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "mirror.verify",
     "canRunConcurrent": true,
+    "canonicalTool": "mirror.verify",
     "command": [
       "mirror",
       "verify"
@@ -18664,6 +18664,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "mirror",
           "verify"
@@ -18671,7 +18672,6 @@
         "canonicalName": "mirror.verify",
         "canonicalTool": "mirror.verify",
         "canonicalUsage": "pandora [--output table|json] mirror verify --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--trust-deploy] [--manifest-file <path>] [--include-similarity] [--with-rules] [--allow-rule-mismatch] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
-        "canRunConcurrent": true,
         "command": [
           "mirror",
           "verify"
@@ -18795,6 +18795,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "mirror",
         "verify"
@@ -18802,7 +18803,6 @@
       "canonicalName": "mirror.verify",
       "canonicalTool": "mirror.verify",
       "canonicalUsage": "pandora [--output table|json] mirror verify --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--trust-deploy] [--manifest-file <path>] [--include-similarity] [--with-rules] [--allow-rule-mismatch] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
-      "canRunConcurrent": true,
       "command": [
         "mirror",
         "verify"
@@ -18903,8 +18903,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "model.calibrate",
     "canRunConcurrent": false,
+    "canonicalTool": "model.calibrate",
     "command": [
       "model",
       "calibrate"
@@ -18955,6 +18955,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "model",
           "calibrate"
@@ -18962,7 +18963,6 @@
         "canonicalName": "model.calibrate",
         "canonicalTool": "model.calibrate",
         "canonicalUsage": "pandora [--output table|json] model calibrate (--prices <csv>|--returns <csv>) [--dt <n>] [--jump-threshold-sigma <n>] [--min-jump-count <n>] [--model-id <id>] [--save-model <path>]",
-        "canRunConcurrent": false,
         "command": [
           "model",
           "calibrate"
@@ -19080,6 +19080,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "model",
         "calibrate"
@@ -19087,7 +19088,6 @@
       "canonicalName": "model.calibrate",
       "canonicalTool": "model.calibrate",
       "canonicalUsage": "pandora [--output table|json] model calibrate (--prices <csv>|--returns <csv>) [--dt <n>] [--jump-threshold-sigma <n>] [--min-jump-count <n>] [--model-id <id>] [--save-model <path>]",
-      "canRunConcurrent": false,
       "command": [
         "model",
         "calibrate"
@@ -19184,8 +19184,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "model.correlation",
     "canRunConcurrent": false,
+    "canonicalTool": "model.correlation",
     "command": [
       "model",
       "correlation"
@@ -19264,6 +19264,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "model",
           "correlation"
@@ -19271,7 +19272,6 @@
         "canonicalName": "model.correlation",
         "canonicalTool": "model.correlation",
         "canonicalUsage": "pandora [--output table|json] model correlation --series <id:v1,v2,...> --series <id:v1,v2,...> [--copula t|gaussian|clayton|gumbel] [--compare <csv>] [--tail-alpha <n>] [--df <n>] [--joint-threshold-z <n>] [--scenario-shocks <csv>] [--model-id <id>] [--save-model <path>]",
-        "canRunConcurrent": false,
         "command": [
           "model",
           "correlation"
@@ -19389,6 +19389,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "model",
         "correlation"
@@ -19396,7 +19397,6 @@
       "canonicalName": "model.correlation",
       "canonicalTool": "model.correlation",
       "canonicalUsage": "pandora [--output table|json] model correlation --series <id:v1,v2,...> --series <id:v1,v2,...> [--copula t|gaussian|clayton|gumbel] [--compare <csv>] [--tail-alpha <n>] [--df <n>] [--joint-threshold-z <n>] [--scenario-shocks <csv>] [--model-id <id>] [--save-model <path>]",
-      "canRunConcurrent": false,
       "command": [
         "model",
         "correlation"
@@ -19493,8 +19493,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "model.diagnose",
     "canRunConcurrent": true,
+    "canonicalTool": "model.diagnose",
     "command": [
       "model",
       "diagnose"
@@ -19564,6 +19564,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "model",
           "diagnose"
@@ -19571,7 +19572,6 @@
         "canonicalName": "model.diagnose",
         "canonicalTool": "model.diagnose",
         "canonicalUsage": "pandora [--output table|json] model diagnose [--calibration-rmse <n>] [--drift-bps <n>] [--spread-bps <n>] [--depth-coverage <0..1>] [--informed-flow-ratio <0..1>] [--noise-ratio <0..1>] [--anomaly-rate <0..1>] [--manipulation-alerts <n>] [--tail-dependence <0..1>]",
-        "canRunConcurrent": true,
         "command": [
           "model",
           "diagnose"
@@ -19689,6 +19689,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "model",
         "diagnose"
@@ -19696,7 +19697,6 @@
       "canonicalName": "model.diagnose",
       "canonicalTool": "model.diagnose",
       "canonicalUsage": "pandora [--output table|json] model diagnose [--calibration-rmse <n>] [--drift-bps <n>] [--spread-bps <n>] [--depth-coverage <0..1>] [--informed-flow-ratio <0..1>] [--noise-ratio <0..1>] [--anomaly-rate <0..1>] [--manipulation-alerts <n>] [--tail-dependence <0..1>]",
-      "canRunConcurrent": true,
       "command": [
         "model",
         "diagnose"
@@ -19793,8 +19793,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "model.score.brier",
     "canRunConcurrent": true,
+    "canonicalTool": "model.score.brier",
     "command": [
       "model",
       "score",
@@ -19873,6 +19873,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "model",
           "score",
@@ -19881,7 +19882,6 @@
         "canonicalName": "model.score.brier",
         "canonicalTool": "model.score.brier",
         "canonicalUsage": "pandora [--output table|json] model score brier [--source <name>] [--market-address <address>] [--competition <id>] [--event-id <id>] [--model-id <id>] [--group-by source|market|competition|model|none] [--window-days <n>] [--bucket-count <n>] [--forecast-file <path>] [--include-records] [--include-unresolved] [--limit <n>]",
-        "canRunConcurrent": true,
         "command": [
           "model",
           "score",
@@ -20000,6 +20000,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "model",
         "score",
@@ -20008,7 +20009,6 @@
       "canonicalName": "model.score.brier",
       "canonicalTool": "model.score.brier",
       "canonicalUsage": "pandora [--output table|json] model score brier [--source <name>] [--market-address <address>] [--competition <id>] [--event-id <id>] [--model-id <id>] [--group-by source|market|competition|model|none] [--window-days <n>] [--bucket-count <n>] [--forecast-file <path>] [--include-records] [--include-unresolved] [--limit <n>]",
-      "canRunConcurrent": true,
       "command": [
         "model",
         "score",
@@ -20106,8 +20106,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "odds.history",
     "canRunConcurrent": true,
+    "canonicalTool": "odds.history",
     "command": [
       "odds",
       "history"
@@ -20149,6 +20149,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "odds",
           "history"
@@ -20156,7 +20157,6 @@
         "canonicalName": "odds.history",
         "canonicalTool": "odds.history",
         "canonicalUsage": "pandora [--output table|json] odds history --event-id <id> --output csv|json [--limit <n>]",
-        "canRunConcurrent": true,
         "command": [
           "odds",
           "history"
@@ -20277,6 +20277,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "odds",
         "history"
@@ -20284,7 +20285,6 @@
       "canonicalName": "odds.history",
       "canonicalTool": "odds.history",
       "canonicalUsage": "pandora [--output table|json] odds history --event-id <id> --output csv|json [--limit <n>]",
-      "canRunConcurrent": true,
       "command": [
         "odds",
         "history"
@@ -20383,8 +20383,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "odds.record",
     "canRunConcurrent": false,
+    "canonicalTool": "odds.record",
     "command": [
       "odds",
       "record"
@@ -20460,6 +20460,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "odds",
           "record"
@@ -20467,7 +20468,6 @@
         "canonicalName": "odds.record",
         "canonicalTool": "odds.record",
         "canonicalUsage": "pandora [--output table|json] odds record --competition <id> --interval <sec> [--max-samples <n>] [--event-id <id>] [--venues pandora_amm,polymarket] [--indexer-url <url>] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>]",
-        "canRunConcurrent": false,
         "command": [
           "odds",
           "record"
@@ -20591,6 +20591,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "odds",
         "record"
@@ -20598,7 +20599,6 @@
       "canonicalName": "odds.record",
       "canonicalTool": "odds.record",
       "canonicalUsage": "pandora [--output table|json] odds record --competition <id> --interval <sec> [--max-samples <n>] [--event-id <id>] [--venues pandora_amm,polymarket] [--indexer-url <url>] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>]",
-      "canRunConcurrent": false,
       "command": [
         "odds",
         "record"
@@ -20699,8 +20699,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "operations.cancel",
     "canRunConcurrent": false,
+    "canonicalTool": "operations.cancel",
     "command": [
       "operations",
       "cancel"
@@ -20742,6 +20742,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "operations",
           "cancel"
@@ -20749,7 +20750,6 @@
         "canonicalName": "operations.cancel",
         "canonicalTool": "operations.cancel",
         "canonicalUsage": "pandora [--output table|json] operations cancel --id <operation-id> [--reason <text>]",
-        "canRunConcurrent": false,
         "command": [
           "operations",
           "cancel"
@@ -20868,6 +20868,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "operations",
         "cancel"
@@ -20875,7 +20876,6 @@
       "canonicalName": "operations.cancel",
       "canonicalTool": "operations.cancel",
       "canonicalUsage": "pandora [--output table|json] operations cancel --id <operation-id> [--reason <text>]",
-      "canRunConcurrent": false,
       "command": [
         "operations",
         "cancel"
@@ -20973,8 +20973,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "operations.close",
     "canRunConcurrent": false,
+    "canonicalTool": "operations.close",
     "command": [
       "operations",
       "close"
@@ -21016,6 +21016,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "operations",
           "close"
@@ -21023,7 +21024,6 @@
         "canonicalName": "operations.close",
         "canonicalTool": "operations.close",
         "canonicalUsage": "pandora [--output table|json] operations close --id <operation-id> [--reason <text>]",
-        "canRunConcurrent": false,
         "command": [
           "operations",
           "close"
@@ -21142,6 +21142,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "operations",
         "close"
@@ -21149,7 +21150,6 @@
       "canonicalName": "operations.close",
       "canonicalTool": "operations.close",
       "canonicalUsage": "pandora [--output table|json] operations close --id <operation-id> [--reason <text>]",
-      "canRunConcurrent": false,
       "command": [
         "operations",
         "close"
@@ -21247,8 +21247,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "operations.get",
     "canRunConcurrent": true,
+    "canonicalTool": "operations.get",
     "command": [
       "operations",
       "get"
@@ -21276,6 +21276,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "operations",
           "get"
@@ -21283,7 +21284,6 @@
         "canonicalName": "operations.get",
         "canonicalTool": "operations.get",
         "canonicalUsage": "pandora [--output table|json] operations get --id <operation-id>",
-        "canRunConcurrent": true,
         "command": [
           "operations",
           "get"
@@ -21401,6 +21401,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "operations",
         "get"
@@ -21408,7 +21409,6 @@
       "canonicalName": "operations.get",
       "canonicalTool": "operations.get",
       "canonicalUsage": "pandora [--output table|json] operations get --id <operation-id>",
-      "canRunConcurrent": true,
       "command": [
         "operations",
         "get"
@@ -21505,8 +21505,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "operations.list",
     "canRunConcurrent": true,
+    "canonicalTool": "operations.list",
     "command": [
       "operations",
       "list"
@@ -21547,6 +21547,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "operations",
           "list"
@@ -21554,7 +21555,6 @@
         "canonicalName": "operations.list",
         "canonicalTool": "operations.list",
         "canonicalUsage": "pandora [--output table|json] operations list [--status <csv>] [--tool <name>] [--limit <n>]",
-        "canRunConcurrent": true,
         "command": [
           "operations",
           "list"
@@ -21672,6 +21672,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "operations",
         "list"
@@ -21679,7 +21680,6 @@
       "canonicalName": "operations.list",
       "canonicalTool": "operations.list",
       "canonicalUsage": "pandora [--output table|json] operations list [--status <csv>] [--tool <name>] [--limit <n>]",
-      "canRunConcurrent": true,
       "command": [
         "operations",
         "list"
@@ -21776,8 +21776,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "operations.receipt",
     "canRunConcurrent": true,
+    "canonicalTool": "operations.receipt",
     "command": [
       "operations",
       "receipt"
@@ -21805,6 +21805,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "operations",
           "receipt"
@@ -21812,7 +21813,6 @@
         "canonicalName": "operations.receipt",
         "canonicalTool": "operations.receipt",
         "canonicalUsage": "pandora [--output table|json] operations receipt --id <operation-id>",
-        "canRunConcurrent": true,
         "command": [
           "operations",
           "receipt"
@@ -21930,6 +21930,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "operations",
         "receipt"
@@ -21937,7 +21938,6 @@
       "canonicalName": "operations.receipt",
       "canonicalTool": "operations.receipt",
       "canonicalUsage": "pandora [--output table|json] operations receipt --id <operation-id>",
-      "canRunConcurrent": true,
       "command": [
         "operations",
         "receipt"
@@ -22034,8 +22034,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "operations.verify-receipt",
     "canRunConcurrent": true,
+    "canonicalTool": "operations.verify-receipt",
     "command": [
       "operations",
       "verify-receipt"
@@ -22067,6 +22067,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "operations",
           "verify-receipt"
@@ -22074,7 +22075,6 @@
         "canonicalName": "operations.verify-receipt",
         "canonicalTool": "operations.verify-receipt",
         "canonicalUsage": "pandora [--output table|json] operations verify-receipt --id <operation-id>|--file <path> [--expected-operation-hash <hash>]",
-        "canRunConcurrent": true,
         "command": [
           "operations",
           "verify-receipt"
@@ -22192,6 +22192,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "operations",
         "verify-receipt"
@@ -22199,7 +22200,6 @@
       "canonicalName": "operations.verify-receipt",
       "canonicalTool": "operations.verify-receipt",
       "canonicalUsage": "pandora [--output table|json] operations verify-receipt --id <operation-id>|--file <path> [--expected-operation-hash <hash>]",
-      "canRunConcurrent": true,
       "command": [
         "operations",
         "verify-receipt"
@@ -22296,8 +22296,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "policy.explain",
     "canRunConcurrent": true,
+    "canonicalTool": "policy.explain",
     "command": [
       "policy",
       "explain"
@@ -22345,6 +22345,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "policy",
           "explain"
@@ -22352,7 +22353,6 @@
         "canonicalName": "policy.explain",
         "canonicalTool": "policy.explain",
         "canonicalUsage": "pandora [--output table|json] policy explain --id <policy-id> [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]",
-        "canRunConcurrent": true,
         "command": [
           "policy",
           "explain"
@@ -22472,6 +22472,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "policy",
         "explain"
@@ -22479,7 +22480,6 @@
       "canonicalName": "policy.explain",
       "canonicalTool": "policy.explain",
       "canonicalUsage": "pandora [--output table|json] policy explain --id <policy-id> [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]",
-      "canRunConcurrent": true,
       "command": [
         "policy",
         "explain"
@@ -22577,8 +22577,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "policy.get",
     "canRunConcurrent": true,
+    "canonicalTool": "policy.get",
     "command": [
       "policy",
       "get"
@@ -22606,6 +22606,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "policy",
           "get"
@@ -22613,7 +22614,6 @@
         "canonicalName": "policy.get",
         "canonicalTool": "policy.get",
         "canonicalUsage": "pandora [--output table|json] policy get --id <policy-id>",
-        "canRunConcurrent": true,
         "command": [
           "policy",
           "get"
@@ -22733,6 +22733,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "policy",
         "get"
@@ -22740,7 +22741,6 @@
       "canonicalName": "policy.get",
       "canonicalTool": "policy.get",
       "canonicalUsage": "pandora [--output table|json] policy get --id <policy-id>",
-      "canRunConcurrent": true,
       "command": [
         "policy",
         "get"
@@ -22838,8 +22838,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "policy.lint",
     "canRunConcurrent": true,
+    "canonicalTool": "policy.lint",
     "command": [
       "policy",
       "lint"
@@ -22867,6 +22867,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "policy",
           "lint"
@@ -22874,7 +22875,6 @@
         "canonicalName": "policy.lint",
         "canonicalTool": "policy.lint",
         "canonicalUsage": "pandora [--output table|json] policy lint --file <path>",
-        "canRunConcurrent": true,
         "command": [
           "policy",
           "lint"
@@ -22994,6 +22994,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "policy",
         "lint"
@@ -23001,7 +23002,6 @@
       "canonicalName": "policy.lint",
       "canonicalTool": "policy.lint",
       "canonicalUsage": "pandora [--output table|json] policy lint --file <path>",
-      "canRunConcurrent": true,
       "command": [
         "policy",
         "lint"
@@ -23099,8 +23099,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "policy.list",
     "canRunConcurrent": true,
+    "canonicalTool": "policy.list",
     "command": [
       "policy",
       "list"
@@ -23120,6 +23120,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "policy",
           "list"
@@ -23127,7 +23128,6 @@
         "canonicalName": "policy.list",
         "canonicalTool": "policy.list",
         "canonicalUsage": "pandora [--output table|json] policy list",
-        "canRunConcurrent": true,
         "command": [
           "policy",
           "list"
@@ -23247,6 +23247,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "policy",
         "list"
@@ -23254,7 +23255,6 @@
       "canonicalName": "policy.list",
       "canonicalTool": "policy.list",
       "canonicalUsage": "pandora [--output table|json] policy list",
-      "canRunConcurrent": true,
       "command": [
         "policy",
         "list"
@@ -23352,8 +23352,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "policy.recommend",
     "canRunConcurrent": true,
+    "canonicalTool": "policy.recommend",
     "command": [
       "policy",
       "recommend"
@@ -23394,6 +23394,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "policy",
           "recommend"
@@ -23401,7 +23402,6 @@
         "canonicalName": "policy.recommend",
         "canonicalTool": "policy.recommend",
         "canonicalUsage": "pandora [--output table|json] policy recommend [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]",
-        "canRunConcurrent": true,
         "command": [
           "policy",
           "recommend"
@@ -23521,6 +23521,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "policy",
         "recommend"
@@ -23528,7 +23529,6 @@
       "canonicalName": "policy.recommend",
       "canonicalTool": "policy.recommend",
       "canonicalUsage": "pandora [--output table|json] policy recommend [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]",
-      "canRunConcurrent": true,
       "command": [
         "policy",
         "recommend"
@@ -23626,8 +23626,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "polls.get",
     "canRunConcurrent": true,
+    "canonicalTool": "polls.get",
     "command": [
       "polls",
       "get"
@@ -23657,6 +23657,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "polls",
           "get"
@@ -23664,7 +23665,6 @@
         "canonicalName": "polls.get",
         "canonicalTool": "polls.get",
         "canonicalUsage": "pandora [--output table|json] polls get --id <id>",
-        "canRunConcurrent": true,
         "command": [
           "polls",
           "get"
@@ -23786,6 +23786,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "polls",
         "get"
@@ -23793,7 +23794,6 @@
       "canonicalName": "polls.get",
       "canonicalTool": "polls.get",
       "canonicalUsage": "pandora [--output table|json] polls get --id <id>",
-      "canRunConcurrent": true,
       "command": [
         "polls",
         "get"
@@ -23893,8 +23893,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "polls.list",
     "canRunConcurrent": true,
+    "canonicalTool": "polls.list",
     "command": [
       "polls",
       "list"
@@ -23954,6 +23954,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "polls",
           "list"
@@ -23961,7 +23962,6 @@
         "canonicalName": "polls.list",
         "canonicalTool": "polls.list",
         "canonicalUsage": "pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--where-json <json>]",
-        "canRunConcurrent": true,
         "command": [
           "polls",
           "list"
@@ -24083,6 +24083,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "polls",
         "list"
@@ -24090,7 +24091,6 @@
       "canonicalName": "polls.list",
       "canonicalTool": "polls.list",
       "canonicalUsage": "pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--where-json <json>]",
-      "canRunConcurrent": true,
       "command": [
         "polls",
         "list"
@@ -24190,8 +24190,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "polymarket.approve",
     "canRunConcurrent": false,
+    "canonicalTool": "polymarket.approve",
     "command": [
       "polymarket",
       "approve"
@@ -24261,6 +24261,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "polymarket",
           "approve"
@@ -24268,7 +24269,6 @@
         "canonicalName": "polymarket.approve",
         "canonicalTool": "polymarket.approve",
         "canonicalUsage": "pandora [--output table|json] polymarket approve --dry-run|--execute [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]",
-        "canRunConcurrent": false,
         "command": [
           "polymarket",
           "approve"
@@ -24403,6 +24403,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "polymarket",
         "approve"
@@ -24410,7 +24411,6 @@
       "canonicalName": "polymarket.approve",
       "canonicalTool": "polymarket.approve",
       "canonicalUsage": "pandora [--output table|json] polymarket approve --dry-run|--execute [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]",
-      "canRunConcurrent": false,
       "command": [
         "polymarket",
         "approve"
@@ -24519,8 +24519,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "polymarket.check",
     "canRunConcurrent": true,
+    "canonicalTool": "polymarket.check",
     "command": [
       "polymarket",
       "check"
@@ -24570,6 +24570,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "polymarket",
           "check"
@@ -24577,7 +24578,6 @@
         "canonicalName": "polymarket.check",
         "canonicalTool": "polymarket.check",
         "canonicalUsage": "pandora [--output table|json] polymarket check [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]",
-        "canRunConcurrent": true,
         "command": [
           "polymarket",
           "check"
@@ -24705,6 +24705,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "polymarket",
         "check"
@@ -24712,7 +24713,6 @@
       "canonicalName": "polymarket.check",
       "canonicalTool": "polymarket.check",
       "canonicalUsage": "pandora [--output table|json] polymarket check [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]",
-      "canRunConcurrent": true,
       "command": [
         "polymarket",
         "check"
@@ -24816,8 +24816,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "polymarket.preflight",
     "canRunConcurrent": true,
+    "canonicalTool": "polymarket.preflight",
     "command": [
       "polymarket",
       "preflight"
@@ -24867,6 +24867,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "polymarket",
           "preflight"
@@ -24874,7 +24875,6 @@
         "canonicalName": "polymarket.preflight",
         "canonicalTool": "polymarket.preflight",
         "canonicalUsage": "pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]",
-        "canRunConcurrent": true,
         "command": [
           "polymarket",
           "preflight"
@@ -25002,6 +25002,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "polymarket",
         "preflight"
@@ -25009,7 +25010,6 @@
       "canonicalName": "polymarket.preflight",
       "canonicalTool": "polymarket.preflight",
       "canonicalUsage": "pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]",
-      "canRunConcurrent": true,
       "command": [
         "polymarket",
         "preflight"
@@ -25113,8 +25113,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "polymarket.trade",
     "canRunConcurrent": false,
+    "canonicalTool": "polymarket.trade",
     "command": [
       "polymarket",
       "trade"
@@ -25232,6 +25232,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "polymarket",
           "trade"
@@ -25239,7 +25240,6 @@
         "canonicalName": "polymarket.trade",
         "canonicalTool": "polymarket.trade",
         "canonicalUsage": "pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
-        "canRunConcurrent": false,
         "command": [
           "polymarket",
           "trade"
@@ -25374,6 +25374,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "polymarket",
         "trade"
@@ -25381,7 +25382,6 @@
       "canonicalName": "polymarket.trade",
       "canonicalTool": "polymarket.trade",
       "canonicalUsage": "pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
-      "canRunConcurrent": false,
       "command": [
         "polymarket",
         "trade"
@@ -25490,8 +25490,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "portfolio",
     "canRunConcurrent": true,
+    "canonicalTool": "portfolio",
     "command": [
       "portfolio"
     ],
@@ -25551,13 +25551,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "portfolio"
         ],
         "canonicalName": "portfolio",
         "canonicalTool": "portfolio",
         "canonicalUsage": "pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]",
-        "canRunConcurrent": true,
         "command": [
           "portfolio"
         ],
@@ -25680,13 +25680,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "portfolio"
       ],
       "canonicalName": "portfolio",
       "canonicalTool": "portfolio",
       "canonicalUsage": "pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]",
-      "canRunConcurrent": true,
       "command": [
         "portfolio"
       ],
@@ -25786,8 +25786,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "positions.list",
     "canRunConcurrent": true,
+    "canonicalTool": "positions.list",
     "command": [
       "positions",
       "list"
@@ -25877,6 +25877,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "positions",
           "list"
@@ -25884,7 +25885,6 @@
         "canonicalName": "positions.list",
         "canonicalTool": "positions.list",
         "canonicalUsage": "pandora [--output table|json] positions list --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]",
-        "canRunConcurrent": true,
         "command": [
           "positions",
           "list"
@@ -26006,6 +26006,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "positions",
         "list"
@@ -26013,7 +26014,6 @@
       "canonicalName": "positions.list",
       "canonicalTool": "positions.list",
       "canonicalUsage": "pandora [--output table|json] positions list --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]",
-      "canRunConcurrent": true,
       "command": [
         "positions",
         "list"
@@ -26113,8 +26113,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "profile.explain",
     "canRunConcurrent": true,
+    "canonicalTool": "profile.explain",
     "command": [
       "profile",
       "explain"
@@ -26166,6 +26166,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "profile",
           "explain"
@@ -26173,7 +26174,6 @@
         "canonicalName": "profile.explain",
         "canonicalTool": "profile.explain",
         "canonicalUsage": "pandora [--output table|json] profile explain --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]",
-        "canRunConcurrent": true,
         "command": [
           "profile",
           "explain"
@@ -26293,6 +26293,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "profile",
         "explain"
@@ -26300,7 +26301,6 @@
       "canonicalName": "profile.explain",
       "canonicalTool": "profile.explain",
       "canonicalUsage": "pandora [--output table|json] profile explain --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]",
-      "canRunConcurrent": true,
       "command": [
         "profile",
         "explain"
@@ -26398,8 +26398,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "profile.get",
     "canRunConcurrent": true,
+    "canonicalTool": "profile.get",
     "command": [
       "profile",
       "get"
@@ -26451,6 +26451,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "profile",
           "get"
@@ -26458,7 +26459,6 @@
         "canonicalName": "profile.get",
         "canonicalTool": "profile.get",
         "canonicalUsage": "pandora [--output table|json] profile get --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]",
-        "canRunConcurrent": true,
         "command": [
           "profile",
           "get"
@@ -26578,6 +26578,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "profile",
         "get"
@@ -26585,7 +26586,6 @@
       "canonicalName": "profile.get",
       "canonicalTool": "profile.get",
       "canonicalUsage": "pandora [--output table|json] profile get --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]",
-      "canRunConcurrent": true,
       "command": [
         "profile",
         "get"
@@ -26683,8 +26683,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "profile.list",
     "canRunConcurrent": true,
+    "canonicalTool": "profile.list",
     "command": [
       "profile",
       "list"
@@ -26704,6 +26704,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "profile",
           "list"
@@ -26711,7 +26712,6 @@
         "canonicalName": "profile.list",
         "canonicalTool": "profile.list",
         "canonicalUsage": "pandora [--output table|json] profile list",
-        "canRunConcurrent": true,
         "command": [
           "profile",
           "list"
@@ -26831,6 +26831,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "profile",
         "list"
@@ -26838,7 +26839,6 @@
       "canonicalName": "profile.list",
       "canonicalTool": "profile.list",
       "canonicalUsage": "pandora [--output table|json] profile list",
-      "canRunConcurrent": true,
       "command": [
         "profile",
         "list"
@@ -26936,8 +26936,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "profile.recommend",
     "canRunConcurrent": true,
+    "canonicalTool": "profile.recommend",
     "command": [
       "profile",
       "recommend"
@@ -26990,6 +26990,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "profile",
           "recommend"
@@ -26997,7 +26998,6 @@
         "canonicalName": "profile.recommend",
         "canonicalTool": "profile.recommend",
         "canonicalUsage": "pandora [--output table|json] profile recommend [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>] [--no-builtins|--builtin-only]",
-        "canRunConcurrent": true,
         "command": [
           "profile",
           "recommend"
@@ -27117,6 +27117,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "profile",
         "recommend"
@@ -27124,7 +27125,6 @@
       "canonicalName": "profile.recommend",
       "canonicalTool": "profile.recommend",
       "canonicalUsage": "pandora [--output table|json] profile recommend [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>] [--no-builtins|--builtin-only]",
-      "canRunConcurrent": true,
       "command": [
         "profile",
         "recommend"
@@ -27222,8 +27222,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "profile.validate",
     "canRunConcurrent": true,
+    "canonicalTool": "profile.validate",
     "command": [
       "profile",
       "validate"
@@ -27251,6 +27251,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "profile",
           "validate"
@@ -27258,7 +27259,6 @@
         "canonicalName": "profile.validate",
         "canonicalTool": "profile.validate",
         "canonicalUsage": "pandora [--output table|json] profile validate --file <path>",
-        "canRunConcurrent": true,
         "command": [
           "profile",
           "validate"
@@ -27378,6 +27378,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "profile",
         "validate"
@@ -27385,7 +27386,6 @@
       "canonicalName": "profile.validate",
       "canonicalTool": "profile.validate",
       "canonicalUsage": "pandora [--output table|json] profile validate --file <path>",
-      "canRunConcurrent": true,
       "command": [
         "profile",
         "validate"
@@ -27483,8 +27483,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "quote",
     "canRunConcurrent": true,
+    "canonicalTool": "quote",
     "command": [
       "quote"
     ],
@@ -27580,13 +27580,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "quote"
         ],
         "canonicalName": "quote",
         "canonicalTool": "quote",
         "canonicalUsage": "pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]",
-        "canRunConcurrent": true,
         "command": [
           "quote"
         ],
@@ -27706,13 +27706,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "quote"
       ],
       "canonicalName": "quote",
       "canonicalTool": "quote",
       "canonicalUsage": "pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]",
-      "canRunConcurrent": true,
       "command": [
         "quote"
       ],
@@ -27810,8 +27810,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "recipe.get",
     "canRunConcurrent": true,
+    "canonicalTool": "recipe.get",
     "command": [
       "recipe",
       "get"
@@ -27880,6 +27880,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "recipe",
           "get"
@@ -27887,7 +27888,6 @@
         "canonicalName": "recipe.get",
         "canonicalTool": "recipe.get",
         "canonicalUsage": "pandora [--output table|json] recipe get --id <recipe-id>|--file <path>",
-        "canRunConcurrent": true,
         "command": [
           "recipe",
           "get"
@@ -28007,6 +28007,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "recipe",
         "get"
@@ -28014,7 +28015,6 @@
       "canonicalName": "recipe.get",
       "canonicalTool": "recipe.get",
       "canonicalUsage": "pandora [--output table|json] recipe get --id <recipe-id>|--file <path>",
-      "canRunConcurrent": true,
       "command": [
         "recipe",
         "get"
@@ -28112,8 +28112,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "recipe.list",
     "canRunConcurrent": true,
+    "canonicalTool": "recipe.list",
     "command": [
       "recipe",
       "list"
@@ -28133,6 +28133,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "recipe",
           "list"
@@ -28140,7 +28141,6 @@
         "canonicalName": "recipe.list",
         "canonicalTool": "recipe.list",
         "canonicalUsage": "pandora [--output table|json] recipe list",
-        "canRunConcurrent": true,
         "command": [
           "recipe",
           "list"
@@ -28260,6 +28260,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "recipe",
         "list"
@@ -28267,7 +28268,6 @@
       "canonicalName": "recipe.list",
       "canonicalTool": "recipe.list",
       "canonicalUsage": "pandora [--output table|json] recipe list",
-      "canRunConcurrent": true,
       "command": [
         "recipe",
         "list"
@@ -28365,8 +28365,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "recipe.run",
     "canRunConcurrent": false,
+    "canonicalTool": "recipe.run",
     "command": [
       "recipe",
       "run"
@@ -28462,6 +28462,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "recipe",
           "run"
@@ -28469,7 +28470,6 @@
         "canonicalName": "recipe.run",
         "canonicalTool": "recipe.run",
         "canonicalUsage": "pandora [--output table|json] recipe run --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>] [--timeout-ms <ms>]",
-        "canRunConcurrent": false,
         "command": [
           "recipe",
           "run"
@@ -28593,6 +28593,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "recipe",
         "run"
@@ -28600,7 +28601,6 @@
       "canonicalName": "recipe.run",
       "canonicalTool": "recipe.run",
       "canonicalUsage": "pandora [--output table|json] recipe run --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>] [--timeout-ms <ms>]",
-      "canRunConcurrent": false,
       "command": [
         "recipe",
         "run"
@@ -28701,8 +28701,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "recipe.validate",
     "canRunConcurrent": true,
+    "canonicalTool": "recipe.validate",
     "command": [
       "recipe",
       "validate"
@@ -28793,6 +28793,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "recipe",
           "validate"
@@ -28800,7 +28801,6 @@
         "canonicalName": "recipe.validate",
         "canonicalTool": "recipe.validate",
         "canonicalUsage": "pandora [--output table|json] recipe validate --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>]",
-        "canRunConcurrent": true,
         "command": [
           "recipe",
           "validate"
@@ -28922,6 +28922,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "recipe",
         "validate"
@@ -28929,7 +28930,6 @@
       "canonicalName": "recipe.validate",
       "canonicalTool": "recipe.validate",
       "canonicalUsage": "pandora [--output table|json] recipe validate --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>]",
-      "canRunConcurrent": true,
       "command": [
         "recipe",
         "validate"
@@ -29029,8 +29029,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "resolve",
     "canRunConcurrent": false,
+    "canonicalTool": "resolve",
     "command": [
       "resolve"
     ],
@@ -29137,13 +29137,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "resolve"
         ],
         "canonicalName": "resolve",
         "canonicalTool": "resolve",
         "canonicalUsage": "pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]",
-        "canRunConcurrent": false,
         "command": [
           "resolve"
         ],
@@ -29274,13 +29274,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "resolve"
       ],
       "canonicalName": "resolve",
       "canonicalTool": "resolve",
       "canonicalUsage": "pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]",
-      "canRunConcurrent": false,
       "command": [
         "resolve"
       ],
@@ -29386,8 +29386,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "risk.panic",
     "canRunConcurrent": false,
+    "canonicalTool": "risk.panic",
     "command": [
       "risk",
       "panic"
@@ -29442,6 +29442,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "risk",
           "panic"
@@ -29449,7 +29450,6 @@
         "canonicalName": "risk.panic",
         "canonicalTool": "risk.panic",
         "canonicalUsage": "pandora [--output table|json] risk panic [--clear] [--reason <text>] [--actor <id>]",
-        "canRunConcurrent": false,
         "command": [
           "risk",
           "panic"
@@ -29568,6 +29568,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "risk",
         "panic"
@@ -29575,7 +29576,6 @@
       "canonicalName": "risk.panic",
       "canonicalTool": "risk.panic",
       "canonicalUsage": "pandora [--output table|json] risk panic [--clear] [--reason <text>] [--actor <id>]",
-      "canRunConcurrent": false,
       "command": [
         "risk",
         "panic"
@@ -29673,8 +29673,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "risk.show",
     "canRunConcurrent": true,
+    "canonicalTool": "risk.show",
     "command": [
       "risk",
       "show"
@@ -29694,6 +29694,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "risk",
           "show"
@@ -29701,7 +29702,6 @@
         "canonicalName": "risk.show",
         "canonicalTool": "risk.show",
         "canonicalUsage": "pandora [--output table|json] risk show",
-        "canRunConcurrent": true,
         "command": [
           "risk",
           "show"
@@ -29819,6 +29819,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "risk",
         "show"
@@ -29826,7 +29827,6 @@
       "canonicalName": "risk.show",
       "canonicalTool": "risk.show",
       "canonicalUsage": "pandora [--output table|json] risk show",
-      "canRunConcurrent": true,
       "command": [
         "risk",
         "show"
@@ -29923,8 +29923,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "scan",
     "canRunConcurrent": true,
+    "canonicalTool": "scan",
     "command": [
       "scan"
     ],
@@ -30026,13 +30026,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "scan"
         ],
         "canonicalName": "scan",
         "canonicalTool": "scan",
         "canonicalUsage": "pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]",
-        "canRunConcurrent": true,
         "command": [
           "scan"
         ],
@@ -30152,13 +30152,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "scan"
       ],
       "canonicalName": "scan",
       "canonicalTool": "scan",
       "canonicalUsage": "pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]",
-      "canRunConcurrent": true,
       "command": [
         "scan"
       ],
@@ -30256,8 +30256,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "schema",
     "canRunConcurrent": true,
+    "canonicalTool": "schema",
     "command": [
       "schema"
     ],
@@ -30281,13 +30281,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "schema"
         ],
         "canonicalName": "schema",
         "canonicalTool": "schema",
         "canonicalUsage": "pandora [--output json] schema [--include-compatibility]",
-        "canRunConcurrent": true,
         "command": [
           "schema"
         ],
@@ -30402,13 +30402,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "schema"
       ],
       "canonicalName": "schema",
       "canonicalTool": "schema",
       "canonicalUsage": "pandora [--output json] schema [--include-compatibility]",
-      "canRunConcurrent": true,
       "command": [
         "schema"
       ],
@@ -30502,8 +30502,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sell",
     "canRunConcurrent": false,
+    "canonicalTool": "sell",
     "command": [
       "sell"
     ],
@@ -30656,13 +30656,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "sell"
         ],
         "canonicalName": "sell",
         "canonicalTool": "sell",
         "canonicalUsage": "pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]",
-        "canRunConcurrent": false,
         "command": [
           "sell"
         ],
@@ -30797,13 +30797,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "sell"
       ],
       "canonicalName": "sell",
       "canonicalTool": "sell",
       "canonicalUsage": "pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]",
-      "canRunConcurrent": false,
       "command": [
         "sell"
       ],
@@ -30912,8 +30912,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "simulate.agents",
     "canRunConcurrent": true,
+    "canonicalTool": "simulate.agents",
     "command": [
       "simulate",
       "agents"
@@ -30962,6 +30962,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "simulate",
           "agents"
@@ -30969,7 +30970,6 @@
         "canonicalName": "simulate.agents",
         "canonicalTool": "simulate.agents",
         "canonicalUsage": "pandora [--output table|json] simulate agents [--n-informed <n>] [--n-noise <n>] [--n-mm <n>] [--n-steps <n>] [--seed <int>]",
-        "canRunConcurrent": true,
         "command": [
           "simulate",
           "agents"
@@ -31087,6 +31087,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "simulate",
         "agents"
@@ -31094,7 +31095,6 @@
       "canonicalName": "simulate.agents",
       "canonicalTool": "simulate.agents",
       "canonicalUsage": "pandora [--output table|json] simulate agents [--n-informed <n>] [--n-noise <n>] [--n-mm <n>] [--n-steps <n>] [--seed <int>]",
-      "canRunConcurrent": true,
       "command": [
         "simulate",
         "agents"
@@ -31191,8 +31191,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "simulate.mc",
     "canRunConcurrent": true,
+    "canonicalTool": "simulate.mc",
     "command": [
       "simulate",
       "mc"
@@ -31281,6 +31281,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "simulate",
           "mc"
@@ -31288,7 +31289,6 @@
         "canonicalName": "simulate.mc",
         "canonicalTool": "simulate.mc",
         "canonicalUsage": "pandora [--output table|json] simulate mc [--trials <n>] [--horizon <n>] [--start-yes-pct <0-100>] [--entry-yes-pct <0-100>] [--position yes|no] [--stake-usdc <n>] [--drift-bps <n>] [--vol-bps <n>] [--confidence <50-100>] [--var-level <50-100>] [--seed <n>] [--antithetic] [--stratified]",
-        "canRunConcurrent": true,
         "command": [
           "simulate",
           "mc"
@@ -31406,6 +31406,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "simulate",
         "mc"
@@ -31413,7 +31414,6 @@
       "canonicalName": "simulate.mc",
       "canonicalTool": "simulate.mc",
       "canonicalUsage": "pandora [--output table|json] simulate mc [--trials <n>] [--horizon <n>] [--start-yes-pct <0-100>] [--entry-yes-pct <0-100>] [--position yes|no] [--stake-usdc <n>] [--drift-bps <n>] [--vol-bps <n>] [--confidence <50-100>] [--var-level <50-100>] [--seed <n>] [--antithetic] [--stratified]",
-      "canRunConcurrent": true,
       "command": [
         "simulate",
         "mc"
@@ -31510,8 +31510,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "simulate.particle-filter",
     "canRunConcurrent": true,
+    "canonicalTool": "simulate.particle-filter",
     "command": [
       "simulate",
       "particle-filter"
@@ -31598,6 +31598,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "simulate",
           "particle-filter"
@@ -31605,7 +31606,6 @@
         "canonicalName": "simulate.particle-filter",
         "canonicalTool": "simulate.particle-filter",
         "canonicalUsage": "pandora [--output table|json] simulate particle-filter (--observations-json <json>|--input <path>|--stdin) [--particles <n>] [--process-noise <n>] [--observation-noise <n>] [--drift-bps <n>] [--initial-yes-pct <0-100>] [--initial-spread <n>] [--resample-threshold <0-1>] [--resample-method systematic|multinomial] [--credible-interval <50-100>] [--seed <n>]",
-        "canRunConcurrent": true,
         "command": [
           "simulate",
           "particle-filter"
@@ -31723,6 +31723,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "simulate",
         "particle-filter"
@@ -31730,7 +31731,6 @@
       "canonicalName": "simulate.particle-filter",
       "canonicalTool": "simulate.particle-filter",
       "canonicalUsage": "pandora [--output table|json] simulate particle-filter (--observations-json <json>|--input <path>|--stdin) [--particles <n>] [--process-noise <n>] [--observation-noise <n>] [--drift-bps <n>] [--initial-yes-pct <0-100>] [--initial-spread <n>] [--resample-threshold <0-1>] [--resample-method systematic|multinomial] [--credible-interval <50-100>] [--seed <n>]",
-      "canRunConcurrent": true,
       "command": [
         "simulate",
         "particle-filter"
@@ -31827,8 +31827,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.books.list",
     "canRunConcurrent": true,
+    "canonicalTool": "sports.books.list",
     "command": [
       "sports",
       "books",
@@ -31869,6 +31869,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "sports",
           "books",
@@ -31877,7 +31878,6 @@
         "canonicalName": "sports.books.list",
         "canonicalTool": "sports.books.list",
         "canonicalUsage": "pandora [--output table|json] sports books list [--provider primary|backup|auto] [--book-priority <csv>] [--timeout-ms <ms>]",
-        "canRunConcurrent": true,
         "command": [
           "sports",
           "books",
@@ -31999,6 +31999,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "sports",
         "books",
@@ -32007,7 +32008,6 @@
       "canonicalName": "sports.books.list",
       "canonicalTool": "sports.books.list",
       "canonicalUsage": "pandora [--output table|json] sports books list [--provider primary|backup|auto] [--book-priority <csv>] [--timeout-ms <ms>]",
-      "canRunConcurrent": true,
       "command": [
         "sports",
         "books",
@@ -32107,8 +32107,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.consensus",
     "canRunConcurrent": true,
+    "canonicalTool": "sports.consensus",
     "command": [
       "sports",
       "consensus"
@@ -32167,6 +32167,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "sports",
           "consensus"
@@ -32174,7 +32175,6 @@
         "canonicalName": "sports.consensus",
         "canonicalTool": "sports.consensus",
         "canonicalUsage": "pandora [--output table|json] sports consensus --event-id <id>|--checks-json <json> [--provider primary|backup|auto] [--book-priority <csv>] [--trim-percent <n>] [--min-tier1-books <n>] [--min-total-books <n>]",
-        "canRunConcurrent": true,
         "command": [
           "sports",
           "consensus"
@@ -32295,6 +32295,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "sports",
         "consensus"
@@ -32302,7 +32303,6 @@
       "canonicalName": "sports.consensus",
       "canonicalTool": "sports.consensus",
       "canonicalUsage": "pandora [--output table|json] sports consensus --event-id <id>|--checks-json <json> [--provider primary|backup|auto] [--book-priority <csv>] [--trim-percent <n>] [--min-tier1-books <n>] [--min-total-books <n>]",
-      "canRunConcurrent": true,
       "command": [
         "sports",
         "consensus"
@@ -32401,8 +32401,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.create.plan",
     "canRunConcurrent": true,
+    "canonicalTool": "sports.create.plan",
     "command": [
       "sports",
       "create",
@@ -32528,6 +32528,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "sports",
           "create",
@@ -32536,7 +32537,6 @@
         "canonicalName": "sports.create.plan",
         "canonicalTool": "sports.create.plan",
         "canonicalUsage": "pandora [--output table|json] sports create plan --event-id <id> [--market-type amm|parimutuel] [--selection home|away|draw] [--creation-window-open-min <n>] [--creation-window-close-min <n>] [--category <id|name>] [--book-priority <csv>] [--model-file <path>|--model-stdin]",
-        "canRunConcurrent": true,
         "command": [
           "sports",
           "create",
@@ -32658,6 +32658,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "sports",
         "create",
@@ -32666,7 +32667,6 @@
       "canonicalName": "sports.create.plan",
       "canonicalTool": "sports.create.plan",
       "canonicalUsage": "pandora [--output table|json] sports create plan --event-id <id> [--market-type amm|parimutuel] [--selection home|away|draw] [--creation-window-open-min <n>] [--creation-window-close-min <n>] [--category <id|name>] [--book-priority <csv>] [--model-file <path>|--model-stdin]",
-      "canRunConcurrent": true,
       "command": [
         "sports",
         "create",
@@ -32778,8 +32778,8 @@
       ]
     },
     "aliasOf": null,
-    "canonicalTool": "sports.create.run",
     "canRunConcurrent": false,
+    "canonicalTool": "sports.create.run",
     "command": [
       "sports",
       "create",
@@ -32972,6 +32972,7 @@
           ]
         },
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "sports",
           "create",
@@ -32980,7 +32981,6 @@
         "canonicalName": "sports.create.run",
         "canonicalTool": "sports.create.run",
         "canonicalUsage": "pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]",
-        "canRunConcurrent": false,
         "command": [
           "sports",
           "create",
@@ -33134,6 +33134,7 @@
         ]
       },
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "sports",
         "create",
@@ -33142,7 +33143,6 @@
       "canonicalName": "sports.create.run",
       "canonicalTool": "sports.create.run",
       "canonicalUsage": "pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]",
-      "canRunConcurrent": false,
       "command": [
         "sports",
         "create",
@@ -33256,8 +33256,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.events.list",
     "canRunConcurrent": true,
+    "canonicalTool": "sports.events.list",
     "command": [
       "sports",
       "events",
@@ -33311,6 +33311,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "sports",
           "events",
@@ -33319,7 +33320,6 @@
         "canonicalName": "sports.events.list",
         "canonicalTool": "sports.events.list",
         "canonicalUsage": "pandora [--output table|json] sports events list [--provider primary|backup|auto] [--competition <id|slug>] [--kickoff-after <iso>] [--kickoff-before <iso>] [--limit <n>] [--timeout-ms <ms>]",
-        "canRunConcurrent": true,
         "command": [
           "sports",
           "events",
@@ -33441,6 +33441,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "sports",
         "events",
@@ -33449,7 +33450,6 @@
       "canonicalName": "sports.events.list",
       "canonicalTool": "sports.events.list",
       "canonicalUsage": "pandora [--output table|json] sports events list [--provider primary|backup|auto] [--competition <id|slug>] [--kickoff-after <iso>] [--kickoff-before <iso>] [--limit <n>] [--timeout-ms <ms>]",
-      "canRunConcurrent": true,
       "command": [
         "sports",
         "events",
@@ -33549,8 +33549,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.events.live",
     "canRunConcurrent": true,
+    "canonicalTool": "sports.events.live",
     "command": [
       "sports",
       "events",
@@ -33596,6 +33596,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "sports",
           "events",
@@ -33604,7 +33605,6 @@
         "canonicalName": "sports.events.live",
         "canonicalTool": "sports.events.live",
         "canonicalUsage": "pandora [--output table|json] sports events live [--provider primary|backup|auto] [--competition <id|slug>] [--limit <n>] [--timeout-ms <ms>]",
-        "canRunConcurrent": true,
         "command": [
           "sports",
           "events",
@@ -33726,6 +33726,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "sports",
         "events",
@@ -33734,7 +33735,6 @@
       "canonicalName": "sports.events.live",
       "canonicalTool": "sports.events.live",
       "canonicalUsage": "pandora [--output table|json] sports events live [--provider primary|backup|auto] [--competition <id|slug>] [--limit <n>] [--timeout-ms <ms>]",
-      "canRunConcurrent": true,
       "command": [
         "sports",
         "events",
@@ -33834,8 +33834,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.odds.bulk",
     "canRunConcurrent": true,
+    "canonicalTool": "sports.odds.bulk",
     "command": [
       "sports",
       "odds",
@@ -33884,6 +33884,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "sports",
           "odds",
@@ -33892,7 +33893,6 @@
         "canonicalName": "sports.odds.bulk",
         "canonicalTool": "sports.odds.bulk",
         "canonicalUsage": "pandora [--output table|json] sports odds bulk --competition <id|slug> [--provider primary|backup|auto] [--timeout-ms <ms>] [--limit <n>]",
-        "canRunConcurrent": true,
         "command": [
           "sports",
           "odds",
@@ -34014,6 +34014,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "sports",
         "odds",
@@ -34022,7 +34023,6 @@
       "canonicalName": "sports.odds.bulk",
       "canonicalTool": "sports.odds.bulk",
       "canonicalUsage": "pandora [--output table|json] sports odds bulk --competition <id|slug> [--provider primary|backup|auto] [--timeout-ms <ms>] [--limit <n>]",
-      "canRunConcurrent": true,
       "command": [
         "sports",
         "odds",
@@ -34122,8 +34122,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.odds.snapshot",
     "canRunConcurrent": true,
+    "canonicalTool": "sports.odds.snapshot",
     "command": [
       "sports",
       "odds",
@@ -34182,6 +34182,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "sports",
           "odds",
@@ -34190,7 +34191,6 @@
         "canonicalName": "sports.odds.snapshot",
         "canonicalTool": "sports.odds.snapshot",
         "canonicalUsage": "pandora [--output table|json] sports odds snapshot --event-id <id> [--provider primary|backup|auto] [--book-priority <csv>] [--trim-percent <n>] [--min-tier1-books <n>] [--min-total-books <n>]",
-        "canRunConcurrent": true,
         "command": [
           "sports",
           "odds",
@@ -34312,6 +34312,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "sports",
         "odds",
@@ -34320,7 +34321,6 @@
       "canonicalName": "sports.odds.snapshot",
       "canonicalTool": "sports.odds.snapshot",
       "canonicalUsage": "pandora [--output table|json] sports odds snapshot --event-id <id> [--provider primary|backup|auto] [--book-priority <csv>] [--trim-percent <n>] [--min-tier1-books <n>] [--min-total-books <n>]",
-      "canRunConcurrent": true,
       "command": [
         "sports",
         "odds",
@@ -34420,8 +34420,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.resolve.plan",
     "canRunConcurrent": true,
+    "canonicalTool": "sports.resolve.plan",
     "command": [
       "sports",
       "resolve",
@@ -34484,6 +34484,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "sports",
           "resolve",
@@ -34492,7 +34493,6 @@
         "canonicalName": "sports.resolve.plan",
         "canonicalTool": "sports.resolve.plan",
         "canonicalUsage": "pandora [--output table|json] sports resolve plan --event-id <id>|--checks-json <json>|--checks-file <path> [--poll-address <address>] [--settle-delay-ms <ms>] [--consecutive-checks-required <n>] [--now <iso>|--now-ms <ms>] [--reason <text>]",
-        "canRunConcurrent": true,
         "command": [
           "sports",
           "resolve",
@@ -34614,6 +34614,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "sports",
         "resolve",
@@ -34622,7 +34623,6 @@
       "canonicalName": "sports.resolve.plan",
       "canonicalTool": "sports.resolve.plan",
       "canonicalUsage": "pandora [--output table|json] sports resolve plan --event-id <id>|--checks-json <json>|--checks-file <path> [--poll-address <address>] [--settle-delay-ms <ms>] [--consecutive-checks-required <n>] [--now <iso>|--now-ms <ms>] [--reason <text>]",
-      "canRunConcurrent": true,
       "command": [
         "sports",
         "resolve",
@@ -34722,8 +34722,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.sync.once",
     "canRunConcurrent": false,
+    "canonicalTool": "sports.sync.once",
     "command": [
       "sports",
       "sync",
@@ -34793,6 +34793,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "sports",
           "sync",
@@ -34801,7 +34802,6 @@
         "canonicalName": "sports.sync.once",
         "canonicalTool": "sports.sync.once",
         "canonicalUsage": "pandora [--output table|json] sports sync once --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]",
-        "canRunConcurrent": false,
         "command": [
           "sports",
           "sync",
@@ -34934,6 +34934,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "sports",
         "sync",
@@ -34942,7 +34943,6 @@
       "canonicalName": "sports.sync.once",
       "canonicalTool": "sports.sync.once",
       "canonicalUsage": "pandora [--output table|json] sports sync once --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]",
-      "canRunConcurrent": false,
       "command": [
         "sports",
         "sync",
@@ -35050,8 +35050,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.sync.run",
     "canRunConcurrent": false,
+    "canonicalTool": "sports.sync.run",
     "command": [
       "sports",
       "sync",
@@ -35121,6 +35121,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "sports",
           "sync",
@@ -35129,7 +35130,6 @@
         "canonicalName": "sports.sync.run",
         "canonicalTool": "sports.sync.run",
         "canonicalUsage": "pandora [--output table|json] sports sync run --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]",
-        "canRunConcurrent": false,
         "command": [
           "sports",
           "sync",
@@ -35264,6 +35264,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "sports",
         "sync",
@@ -35272,7 +35273,6 @@
       "canonicalName": "sports.sync.run",
       "canonicalTool": "sports.sync.run",
       "canonicalUsage": "pandora [--output table|json] sports sync run --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]",
-      "canRunConcurrent": false,
       "command": [
         "sports",
         "sync",
@@ -35381,8 +35381,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.sync.start",
     "canRunConcurrent": false,
+    "canonicalTool": "sports.sync.start",
     "command": [
       "sports",
       "sync",
@@ -35452,6 +35452,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "sports",
           "sync",
@@ -35460,7 +35461,6 @@
         "canonicalName": "sports.sync.start",
         "canonicalTool": "sports.sync.start",
         "canonicalUsage": "pandora [--output table|json] sports sync start --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]",
-        "canRunConcurrent": false,
         "command": [
           "sports",
           "sync",
@@ -35595,6 +35595,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "sports",
         "sync",
@@ -35603,7 +35604,6 @@
       "canonicalName": "sports.sync.start",
       "canonicalTool": "sports.sync.start",
       "canonicalUsage": "pandora [--output table|json] sports sync start --event-id <id> [--paper|--execute-live] [--risk-profile conservative|balanced|aggressive] [--state-file <path>]",
-      "canRunConcurrent": false,
       "command": [
         "sports",
         "sync",
@@ -35712,8 +35712,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.sync.status",
     "canRunConcurrent": true,
+    "canonicalTool": "sports.sync.status",
     "command": [
       "sports",
       "sync",
@@ -35741,6 +35741,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "sports",
           "sync",
@@ -35749,7 +35750,6 @@
         "canonicalName": "sports.sync.status",
         "canonicalTool": "sports.sync.status",
         "canonicalUsage": "pandora [--output table|json] sports sync status [--state-file <path>]",
-        "canRunConcurrent": true,
         "command": [
           "sports",
           "sync",
@@ -35869,6 +35869,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "sports",
         "sync",
@@ -35877,7 +35878,6 @@
       "canonicalName": "sports.sync.status",
       "canonicalTool": "sports.sync.status",
       "canonicalUsage": "pandora [--output table|json] sports sync status [--state-file <path>]",
-      "canRunConcurrent": true,
       "command": [
         "sports",
         "sync",
@@ -35976,8 +35976,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "sports.sync.stop",
     "canRunConcurrent": false,
+    "canonicalTool": "sports.sync.stop",
     "command": [
       "sports",
       "sync",
@@ -36015,6 +36015,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "sports",
           "sync",
@@ -36023,7 +36024,6 @@
         "canonicalName": "sports.sync.stop",
         "canonicalTool": "sports.sync.stop",
         "canonicalUsage": "pandora [--output table|json] sports sync stop [--state-file <path>]",
-        "canRunConcurrent": false,
         "command": [
           "sports",
           "sync",
@@ -36144,6 +36144,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "sports",
         "sync",
@@ -36152,7 +36153,6 @@
       "canonicalName": "sports.sync.stop",
       "canonicalTool": "sports.sync.stop",
       "canonicalUsage": "pandora [--output table|json] sports sync stop [--state-file <path>]",
-      "canRunConcurrent": false,
       "command": [
         "sports",
         "sync",
@@ -36252,8 +36252,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "suggest",
     "canRunConcurrent": true,
+    "canonicalTool": "suggest",
     "command": [
       "suggest"
     ],
@@ -36315,13 +36315,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "suggest"
         ],
         "canonicalName": "suggest",
         "canonicalTool": "suggest",
         "canonicalUsage": "pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]",
-        "canRunConcurrent": true,
         "command": [
           "suggest"
         ],
@@ -36441,13 +36441,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "suggest"
       ],
       "canonicalName": "suggest",
       "canonicalTool": "suggest",
       "canonicalUsage": "pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]",
-      "canRunConcurrent": true,
       "command": [
         "suggest"
       ],
@@ -36545,8 +36545,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "trade",
     "canRunConcurrent": false,
+    "canonicalTool": "trade",
     "command": [
       "trade"
     ],
@@ -36704,13 +36704,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "trade"
         ],
         "canonicalName": "trade",
         "canonicalTool": "trade",
         "canonicalUsage": "pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]",
-        "canRunConcurrent": false,
         "command": [
           "trade"
         ],
@@ -36845,13 +36845,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "trade"
       ],
       "canonicalName": "trade",
       "canonicalTool": "trade",
       "canonicalUsage": "pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]",
-      "canRunConcurrent": false,
       "command": [
         "trade"
       ],
@@ -36960,8 +36960,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "version",
     "canRunConcurrent": true,
+    "canonicalTool": "version",
     "command": [
       "version"
     ],
@@ -36980,13 +36980,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": true,
         "canonicalCommandTokens": [
           "version"
         ],
         "canonicalName": "version",
         "canonicalTool": "version",
         "canonicalUsage": "pandora [--output table|json] version",
-        "canRunConcurrent": true,
         "command": [
           "version"
         ],
@@ -37101,13 +37101,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": true,
       "canonicalCommandTokens": [
         "version"
       ],
       "canonicalName": "version",
       "canonicalTool": "version",
       "canonicalUsage": "pandora [--output table|json] version",
-      "canRunConcurrent": true,
       "command": [
         "version"
       ],
@@ -37201,8 +37201,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "watch",
     "canRunConcurrent": false,
+    "canonicalTool": "watch",
     "command": [
       "watch"
     ],
@@ -37320,13 +37320,13 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "watch"
         ],
         "canonicalName": "watch",
         "canonicalTool": "watch",
         "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
-        "canRunConcurrent": false,
         "command": [
           "watch"
         ],
@@ -37449,13 +37449,13 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "watch"
       ],
       "canonicalName": "watch",
       "canonicalTool": "watch",
       "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
-      "canRunConcurrent": false,
       "command": [
         "watch"
       ],
@@ -37555,8 +37555,8 @@
   {
     "agentWorkflow": null,
     "aliasOf": null,
-    "canonicalTool": "webhook.test",
     "canRunConcurrent": false,
+    "canonicalTool": "webhook.test",
     "command": [
       "webhook",
       "test"
@@ -37628,6 +37628,7 @@
         "agentPreflightRequiredForExecuteMode": false,
         "agentWorkflow": null,
         "aliasOf": null,
+        "canRunConcurrent": false,
         "canonicalCommandTokens": [
           "webhook",
           "test"
@@ -37635,7 +37636,6 @@
         "canonicalName": "webhook.test",
         "canonicalTool": "webhook.test",
         "canonicalUsage": "pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]",
-        "canRunConcurrent": false,
         "command": [
           "webhook",
           "test"
@@ -37761,6 +37761,7 @@
       "agentPreflightRequiredForExecuteMode": false,
       "agentWorkflow": null,
       "aliasOf": null,
+      "canRunConcurrent": false,
       "canonicalCommandTokens": [
         "webhook",
         "test"
@@ -37768,7 +37769,6 @@
       "canonicalName": "webhook.test",
       "canonicalTool": "webhook.test",
       "canonicalUsage": "pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]",
-      "canRunConcurrent": false,
       "command": [
         "webhook",
         "test"

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-08T19:59:25.579Z",
+  "generatedAt": "2026-03-08T20:35:58.543Z",
   "suite": "core",
   "runtime": {
     "packageVersion": "1.1.71"
@@ -147,7 +147,7 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
       "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
-      "trustDistributionHash": "2a3dea8998f6eaa0a39543d4ac111d3e1853601d53a36f6dcde7d72fdea7a789"
+      "trustDistributionHash": "e909f4c5ae0df876c7ec33ce1e419c6f2cb45431ce44d4cb598841fd6f9cacf8"
     },
     "registryDigest": {
       "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
@@ -158,28 +158,28 @@
       "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
       "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
       "documentationHash": "7ecef83cc4b7fb8f2a9959de934d21e2712623d4b22ee9b1030cdbd14efaf3c8",
-      "trustDistributionHash": "2a3dea8998f6eaa0a39543d4ac111d3e1853601d53a36f6dcde7d72fdea7a789",
+      "trustDistributionHash": "e909f4c5ae0df876c7ec33ce1e419c6f2cb45431ce44d4cb598841fd6f9cacf8",
       "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740"
     },
     "documentationContentHash": "f964c1d8d9d88bf90d017b45dfb3e8ecee1ebc9bd18594358447426ca8943a2a",
     "documentationRegistryHash": "7ecef83cc4b7fb8f2a9959de934d21e2712623d4b22ee9b1030cdbd14efaf3c8",
-    "schemaHash": "493dcf84d315f7dada6245b3da781b6b4a122dd43d5f1169252b3523e98a2a79",
-    "capabilitiesLocalHash": "aafc00d84b76195b2c0fb20cd0030a237ed2ad883bac056835e27a51287d96e7",
-    "capabilitiesRemoteTemplateHash": "f733cc0ef4e6a8aaf712390648d79020f0769fe36668408235055668705502c5",
+    "schemaHash": "2a6376f2afb5687e430c4cd8bfcc164b0a91a5efb8120fd4a33fbe2934bc9cee",
+    "capabilitiesLocalHash": "b5a1ebf4ba0159631d3bf28f5de65cf40bcc3527dcbf92832f7f65d8fcd281c1",
+    "capabilitiesRemoteTemplateHash": "dbad49d54688b9dccd75c6f5ddcfe180a1c322bfef32346ba3aa5cd7401b648a",
     "generatedArtifactHashes": {
-      "generatedContractRegistry": "07b4344f1ecba7dab7b60c08b02db99adbb93d5e482e6bd62bace1937524ee4a",
-      "generatedCommandDescriptors": "2bcac578d6355d7adba01978aff77d61dd2c988a2f3679d1fd35a76e0d0f8130",
-      "generatedMcpToolDefinitions": "ee72c632cdc08f348a102a858c2d0c91f43c7617fe581799e3159df7ba2dc487",
-      "generatedManifest": "ffd687697d4fcf04a5b5ca4d555eb0c84983474c882191f3f1b2a7001bbf3d51",
-      "tsContractRegistry": "07b4344f1ecba7dab7b60c08b02db99adbb93d5e482e6bd62bace1937524ee4a",
-      "tsCommandDescriptors": "2bcac578d6355d7adba01978aff77d61dd2c988a2f3679d1fd35a76e0d0f8130",
-      "tsMcpToolDefinitions": "ee72c632cdc08f348a102a858c2d0c91f43c7617fe581799e3159df7ba2dc487",
-      "tsManifest": "93c8893ba9a3b7bf00c69f9580f53ad17a2067446f759b62175f4c7fe8823345",
-      "pyContractRegistry": "07b4344f1ecba7dab7b60c08b02db99adbb93d5e482e6bd62bace1937524ee4a",
-      "pyCommandDescriptors": "2bcac578d6355d7adba01978aff77d61dd2c988a2f3679d1fd35a76e0d0f8130",
-      "pyMcpToolDefinitions": "ee72c632cdc08f348a102a858c2d0c91f43c7617fe581799e3159df7ba2dc487",
-      "pyManifest": "3ebfb984b3f7c1d27654ff752f323d49572c0f931bfa99de32533afd9c93103f"
+      "generatedContractRegistry": "f3ae5ac755281129eb2b67cfae770faa7de1369a0c0c822642d227a4f76c7960",
+      "generatedCommandDescriptors": "13af25863d4cdb20aefdfad0d9fc873ec67898532ded99bb11f04ac589b47c0b",
+      "generatedMcpToolDefinitions": "2ee7d560447a5628968b8ad293ec7b44f21faafb72fc27f970c30419f883b666",
+      "generatedManifest": "2efda8ea1ac3fc297d3537f6a6138ff6e069c7b9e6dc778601c7469eae6805a2",
+      "tsContractRegistry": "f3ae5ac755281129eb2b67cfae770faa7de1369a0c0c822642d227a4f76c7960",
+      "tsCommandDescriptors": "13af25863d4cdb20aefdfad0d9fc873ec67898532ded99bb11f04ac589b47c0b",
+      "tsMcpToolDefinitions": "2ee7d560447a5628968b8ad293ec7b44f21faafb72fc27f970c30419f883b666",
+      "tsManifest": "16f08c88425423d3363e8dad2c4afbfed16ef8e6cf287f96372734b8f01f8ca8",
+      "pyContractRegistry": "f3ae5ac755281129eb2b67cfae770faa7de1369a0c0c822642d227a4f76c7960",
+      "pyCommandDescriptors": "13af25863d4cdb20aefdfad0d9fc873ec67898532ded99bb11f04ac589b47c0b",
+      "pyMcpToolDefinitions": "2ee7d560447a5628968b8ad293ec7b44f21faafb72fc27f970c30419f883b666",
+      "pyManifest": "9eb045380e5109e61e3cd4906ee43de88324e5c872fd0e35a966f0439b3b25db"
     }
   },
   "expectedContractLockPath": "benchmarks/locks/core.lock.json",
@@ -208,7 +208,7 @@
         "matches": true,
         "hashCount": 1,
         "hashes": [
-          "be1c5cf2fd765e7de15921f410672fabe7fb4fa07a37928faa2fb57a926673e4"
+          "c7cb2ccf19b7ad56cdcd867dff25ffcd31839bd571e6f50f41269d76451fb848"
         ]
       },
       {
@@ -274,7 +274,7 @@
         "matches": true,
         "hashCount": 1,
         "hashes": [
-          "2ce275dff7bb255883afec717b01da4e5e9721347a7390b779b91278121a8fec"
+          "8933fea7784d135c7e9800da38aa4358e56267420816de83d2b7731d4b417da3"
         ]
       },
       {
@@ -339,7 +339,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 97,
+      "durationMs": 86,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -472,7 +472,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "be1c5cf2fd765e7de15921f410672fabe7fb4fa07a37928faa2fb57a926673e4",
+      "parityHash": "c7cb2ccf19b7ad56cdcd867dff25ffcd31839bd571e6f50f41269d76451fb848",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -495,7 +495,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 99,
+      "durationMs": 93,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -628,7 +628,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "be1c5cf2fd765e7de15921f410672fabe7fb4fa07a37928faa2fb57a926673e4",
+      "parityHash": "c7cb2ccf19b7ad56cdcd867dff25ffcd31839bd571e6f50f41269d76451fb848",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -651,7 +651,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 104,
+      "durationMs": 93,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -784,7 +784,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "be1c5cf2fd765e7de15921f410672fabe7fb4fa07a37928faa2fb57a926673e4",
+      "parityHash": "c7cb2ccf19b7ad56cdcd867dff25ffcd31839bd571e6f50f41269d76451fb848",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -807,7 +807,7 @@
       ],
       "weight": 20,
       "passed": true,
-      "durationMs": 2,
+      "durationMs": 4,
       "checks": [
         {
           "id": "scope-denial.transport-error",
@@ -924,7 +924,7 @@
       ],
       "weight": 15,
       "passed": true,
-      "durationMs": 43,
+      "durationMs": 41,
       "checks": [
         {
           "id": "workspace-denial.transport-error",
@@ -978,7 +978,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 47,
+      "durationMs": 45,
       "checks": [
         {
           "id": "operations-list.ok",
@@ -1036,7 +1036,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 76,
+      "durationMs": 71,
       "checks": [
         {
           "id": "schema.ok",
@@ -1144,7 +1144,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "2ce275dff7bb255883afec717b01da4e5e9721347a7390b779b91278121a8fec",
+      "parityHash": "8933fea7784d135c7e9800da38aa4358e56267420816de83d2b7731d4b417da3",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1168,7 +1168,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 115,
+      "durationMs": 85,
       "checks": [
         {
           "id": "schema.ok",
@@ -1276,7 +1276,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "2ce275dff7bb255883afec717b01da4e5e9721347a7390b779b91278121a8fec",
+      "parityHash": "8933fea7784d135c7e9800da38aa4358e56267420816de83d2b7731d4b417da3",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1300,7 +1300,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 89,
+      "durationMs": 86,
       "checks": [
         {
           "id": "schema.ok",
@@ -1408,7 +1408,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "2ce275dff7bb255883afec717b01da4e5e9721347a7390b779b91278121a8fec",
+      "parityHash": "8933fea7784d135c7e9800da38aa4358e56267420816de83d2b7731d4b417da3",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1431,7 +1431,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 52,
+      "durationMs": 47,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1502,7 +1502,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 60,
+      "durationMs": 54,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1573,7 +1573,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 59,
+      "durationMs": 53,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1867,7 +1867,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 12,
+      "durationMs": 11,
       "checks": [
         {
           "id": "tools-list.ok",
@@ -1972,7 +1972,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 68,
+      "durationMs": 60,
       "checks": [
         {
           "id": "operations-cancel.ok",
@@ -2034,7 +2034,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 66,
+      "durationMs": 60,
       "checks": [
         {
           "id": "operations-close.ok",

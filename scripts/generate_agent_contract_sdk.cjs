@@ -7,6 +7,7 @@ const {
   buildGeneratedArtifactFiles,
   GENERATED_DIR,
   LEGACY_GENERATED_FILES,
+  jsonContentsSemanticallyEqual,
 } = require('./lib/agent_contract_sdk_export.cjs');
 
 const REFRESH_SDK_COMMAND = 'node scripts/generate_agent_contract_sdk.cjs';
@@ -158,7 +159,13 @@ function checkArtifacts(files) {
         throw error;
       }
     }
-    if (normalizeTextForComparison(currentContent) !== normalizeTextForComparison(file.content)) {
+    const normalizedCurrentContent = normalizeTextForComparison(currentContent);
+    const normalizedNextContent = normalizeTextForComparison(file.content);
+    const jsonMatch =
+      file.relativePath.endsWith('.json')
+      && normalizedCurrentContent !== 'null'
+      && jsonContentsSemanticallyEqual(normalizedCurrentContent, normalizedNextContent);
+    if (!jsonMatch && normalizedCurrentContent !== normalizedNextContent) {
       staleFiles.push(file.relativePath);
     }
   }
