@@ -7047,9 +7047,9 @@
     },
     "description": "Runtime capability digest derived from the Pandora command contract registry.",
     "documentation": {
-      "contentHash": "88e3b1511c111e2add8143292b3733cf182245940e6f7e1835cdd1ddfbd816fe",
+      "contentHash": "945e3edee8b85d2b3a801b38581f602526962e1928d6af9d82bd0d2a318e1748",
       "router": {
-        "contentHash": "4ffb0c8b8ae44c771dc0f39ffa264c277e2c4d8a2202621c165cd549a7b91632",
+        "contentHash": "712c58bca8a738a9860bc4732c1956d14f0ff24baf558eb506737853027f9ce1",
         "path": "SKILL.md",
         "startHere": [
           {
@@ -8433,7 +8433,7 @@
       "canonicalHash": "20084a8b370d78fc6ea6c8968a44f46fa94bb541f63f30056f452bd7c80daf28",
       "commandDigestHash": "1b5c1089f6da372865c63a1bcf7c4067a89543adf37b43d5432e170e728910fe",
       "descriptorHash": "0cdc173e36494551c6ae34115aeaf0ef0d73de9e09776546839cafccf36e4569",
-      "documentationHash": "dd7aff5953db657b01ce0f1361caf3fa57749ff310154f17d21f4964eebcb4d6",
+      "documentationHash": "1c519c482cd050b003086a1f1d60604bf9d414351ee58e1ae28e0177931dbe1f",
       "namespaceHash": "a32c9f90304339f7c0de2c296880bef805de8650c45a210237a2fb01e1bc60f6",
       "routedTopLevelHash": "3d5a6a94876eb387eaf4f655d44b736887642cbb145e14d03f3deaabf9880b52",
       "topLevelHash": "c993a2966277d0ee3d34b79a3cbcbc61161a32d23044549a205a8c3b8debba46"
@@ -9257,7 +9257,7 @@
           ],
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
-          "version": "1.1.69"
+          "version": "1.1.70"
         },
         "signals": {
           "explicitFilesAllowlist": true,
@@ -9338,15 +9338,15 @@
         "provenance": "repository-files-and-release-workflow",
         "releaseAssets": {
           "names": [
-            "pandora-cli-skills-1.1.69.tgz",
-            "pandora-cli-skills-1.1.69.tgz.sha256",
+            "pandora-cli-skills-1.1.70.tgz",
+            "pandora-cli-skills-1.1.70.tgz.sha256",
             "checksums.sha256",
             "sbom.spdx.json",
             "sbom.spdx.json.sha256",
             "sbom.spdx.json.intoto.jsonl",
-            "pandora-cli-skills-1.1.69.tgz.intoto.jsonl",
-            "pandora-cli-skills-1.1.69.tgz.sig",
-            "pandora-cli-skills-1.1.69.tgz.pem"
+            "pandora-cli-skills-1.1.70.tgz.intoto.jsonl",
+            "pandora-cli-skills-1.1.70.tgz.sig",
+            "pandora-cli-skills-1.1.70.tgz.pem"
           ],
           "verificationMethods": [
             "checksum-manifest",
@@ -27575,12 +27575,12 @@
     }
   },
   "commandDescriptorVersion": "1.3.0",
-  "packageVersion": "1.1.69",
+  "packageVersion": "1.1.70",
   "registryDigest": {
     "canonicalHash": "20084a8b370d78fc6ea6c8968a44f46fa94bb541f63f30056f452bd7c80daf28",
     "commandDigestHash": "1b5c1089f6da372865c63a1bcf7c4067a89543adf37b43d5432e170e728910fe",
     "descriptorHash": "0cdc173e36494551c6ae34115aeaf0ef0d73de9e09776546839cafccf36e4569",
-    "documentationHash": "dd7aff5953db657b01ce0f1361caf3fa57749ff310154f17d21f4964eebcb4d6",
+    "documentationHash": "1c519c482cd050b003086a1f1d60604bf9d414351ee58e1ae28e0177931dbe1f",
     "namespaceHash": "a32c9f90304339f7c0de2c296880bef805de8650c45a210237a2fb01e1bc60f6",
     "routedTopLevelHash": "3d5a6a94876eb387eaf4f655d44b736887642cbb145e14d03f3deaabf9880b52",
     "topLevelHash": "c993a2966277d0ee3d34b79a3cbcbc61161a32d23044549a205a8c3b8debba46"
@@ -58608,9 +58608,9 @@
       "description": "The standard envelope format returned by the Pandora CLI in --output json mode. Exception: `pandora stream` emits NDJSON ticks directly instead of success/error envelopes.",
       "descriptorScope": "command-surface",
       "documentation": {
-        "contentHash": "88e3b1511c111e2add8143292b3733cf182245940e6f7e1835cdd1ddfbd816fe",
+        "contentHash": "945e3edee8b85d2b3a801b38581f602526962e1928d6af9d82bd0d2a318e1748",
         "router": {
-          "contentHash": "4ffb0c8b8ae44c771dc0f39ffa264c277e2c4d8a2202621c165cd549a7b91632",
+          "contentHash": "712c58bca8a738a9860bc4732c1956d14f0ff24baf558eb506737853027f9ce1",
           "path": "SKILL.md",
           "startHere": [
             {
@@ -59364,7 +59364,7 @@
             ],
             "main": "cli/pandora.cjs",
             "name": "pandora-cli-skills",
-            "version": "1.1.69"
+            "version": "1.1.70"
           },
           "signals": {
             "explicitFilesAllowlist": true,
@@ -59445,15 +59445,15 @@
           "provenance": "repository-files-and-release-workflow",
           "releaseAssets": {
             "names": [
-              "pandora-cli-skills-1.1.69.tgz",
-              "pandora-cli-skills-1.1.69.tgz.sha256",
+              "pandora-cli-skills-1.1.70.tgz",
+              "pandora-cli-skills-1.1.70.tgz.sha256",
               "checksums.sha256",
               "sbom.spdx.json",
               "sbom.spdx.json.sha256",
               "sbom.spdx.json.intoto.jsonl",
-              "pandora-cli-skills-1.1.69.tgz.intoto.jsonl",
-              "pandora-cli-skills-1.1.69.tgz.sig",
-              "pandora-cli-skills-1.1.69.tgz.pem"
+              "pandora-cli-skills-1.1.70.tgz.intoto.jsonl",
+              "pandora-cli-skills-1.1.70.tgz.sig",
+              "pandora-cli-skills-1.1.70.tgz.pem"
             ],
             "verificationMethods": [
               "checksum-manifest",

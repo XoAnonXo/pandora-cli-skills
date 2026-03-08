@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Index and operator guide for Pandora CLI capabilities, mirror operations, and agent-native interfaces.
-version: 1.1.69
+version: 1.1.70
 ---
 
 # Pandora CLI & Skills

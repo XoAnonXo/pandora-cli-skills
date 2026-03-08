@@ -10,7 +10,7 @@
       "canonicalHash": "20084a8b370d78fc6ea6c8968a44f46fa94bb541f63f30056f452bd7c80daf28",
       "commandDigestHash": "1b5c1089f6da372865c63a1bcf7c4067a89543adf37b43d5432e170e728910fe",
       "descriptorHash": "0cdc173e36494551c6ae34115aeaf0ef0d73de9e09776546839cafccf36e4569",
-      "documentationHash": "dd7aff5953db657b01ce0f1361caf3fa57749ff310154f17d21f4964eebcb4d6",
+      "documentationHash": "1c519c482cd050b003086a1f1d60604bf9d414351ee58e1ae28e0177931dbe1f",
       "namespaceHash": "a32c9f90304339f7c0de2c296880bef805de8650c45a210237a2fb01e1bc60f6",
       "routedTopLevelHash": "3d5a6a94876eb387eaf4f655d44b736887642cbb145e14d03f3deaabf9880b52",
       "topLevelHash": "c993a2966277d0ee3d34b79a3cbcbc61161a32d23044549a205a8c3b8debba46"
@@ -22,26 +22,26 @@
       "topLevelHash": "c993a2966277d0ee3d34b79a3cbcbc61161a32d23044549a205a8c3b8debba46",
       "routedTopLevelHash": "3d5a6a94876eb387eaf4f655d44b736887642cbb145e14d03f3deaabf9880b52",
       "namespaceHash": "a32c9f90304339f7c0de2c296880bef805de8650c45a210237a2fb01e1bc60f6",
-      "documentationHash": "dd7aff5953db657b01ce0f1361caf3fa57749ff310154f17d21f4964eebcb4d6"
+      "documentationHash": "1c519c482cd050b003086a1f1d60604bf9d414351ee58e1ae28e0177931dbe1f"
     },
-    "documentationContentHash": "88e3b1511c111e2add8143292b3733cf182245940e6f7e1835cdd1ddfbd816fe",
-    "documentationRegistryHash": "dd7aff5953db657b01ce0f1361caf3fa57749ff310154f17d21f4964eebcb4d6",
-    "schemaHash": "891121b59f01d571cbbc571d28a7868fa5214e3f6b87e3da670214832fb715b7",
-    "capabilitiesLocalHash": "9f48a431a265679397a297fc3997272c8c3bc4d24f733bb3447fd3f61c7d86ca",
-    "capabilitiesRemoteTemplateHash": "a2de74404fe124200a89a44642f0b31826c12212a133e3654fc5953e9c3ae6fc",
+    "documentationContentHash": "945e3edee8b85d2b3a801b38581f602526962e1928d6af9d82bd0d2a318e1748",
+    "documentationRegistryHash": "1c519c482cd050b003086a1f1d60604bf9d414351ee58e1ae28e0177931dbe1f",
+    "schemaHash": "b592979c8d72666bd4d8b641917648c30e89a9157d53e3c6b13d148e0a5e39a8",
+    "capabilitiesLocalHash": "62b46ac41330a3ff7abf8a08c486b86a2a8de1fdfe829b34de7c48c25c1b165e",
+    "capabilitiesRemoteTemplateHash": "dfddd7b42270252ea5220b411a91aa57bc5b235c780a98471b3efba5d0eaa1c6",
     "generatedArtifactHashes": {
-      "generatedContractRegistry": "d350653c32972d4952d85bd06a5bbce52b0aa6f94c123ec0c2d008ddf2c72c86",
+      "generatedContractRegistry": "6903282ea2adafebbf02c764de6e54ca8d76359c675afbbc471310fad6f1acaa",
       "generatedCommandDescriptors": "087f97f04e92e04b6a78a8ed27796ebd590b0962d02dd0a083ecbeed9cf4ed16",
       "generatedMcpToolDefinitions": "e96d7b580a76b67898e17c25dd06bd6108fd51fdcf737f2733097548ffab45f3",
-      "generatedManifest": "d63a15c372b1e49d4e537f8cfbcfecff2757b3ff66efb147480ad42584cec353",
-      "tsContractRegistry": "d350653c32972d4952d85bd06a5bbce52b0aa6f94c123ec0c2d008ddf2c72c86",
+      "generatedManifest": "dc548b42ed61a5fb490f65d63f13a40c6924159069f780b614921efc4d90a682",
+      "tsContractRegistry": "6903282ea2adafebbf02c764de6e54ca8d76359c675afbbc471310fad6f1acaa",
       "tsCommandDescriptors": "087f97f04e92e04b6a78a8ed27796ebd590b0962d02dd0a083ecbeed9cf4ed16",
       "tsMcpToolDefinitions": "e96d7b580a76b67898e17c25dd06bd6108fd51fdcf737f2733097548ffab45f3",
-      "tsManifest": "0e5c54b5783a0400ce99cde650d9973a0550e802d72a3d32a3c8fe70bcf45480",
-      "pyContractRegistry": "d350653c32972d4952d85bd06a5bbce52b0aa6f94c123ec0c2d008ddf2c72c86",
+      "tsManifest": "4f5b18a89ba729b8ce4ffe21b405e411d62f22b9818ffbad71a4fc4b10a78438",
+      "pyContractRegistry": "6903282ea2adafebbf02c764de6e54ca8d76359c675afbbc471310fad6f1acaa",
       "pyCommandDescriptors": "087f97f04e92e04b6a78a8ed27796ebd590b0962d02dd0a083ecbeed9cf4ed16",
       "pyMcpToolDefinitions": "e96d7b580a76b67898e17c25dd06bd6108fd51fdcf737f2733097548ffab45f3",
-      "pyManifest": "09d834c2e3c9b7fae337af23dbca3dc2e1c57b0ed8c0b848753e1d49ed3928e4"
+      "pyManifest": "d2180ba22f8623cd1e0ed7234c2849254669b3642c4594ee050b89de41b9fead"
     }
   }
 }
