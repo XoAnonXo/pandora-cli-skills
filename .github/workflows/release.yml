@@ -453,7 +453,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          npm publish "${{ steps.pack.outputs.tarball }}" --access public --provenance
+          PACKAGE_NAME="${{ steps.release_meta.outputs.package_name }}"
+          PACKAGE_VERSION="${{ steps.release_meta.outputs.package_version }}"
+
+          if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --json >/dev/null 2>&1; then
+            echo "Root package ${PACKAGE_NAME}@${PACKAGE_VERSION} is already published. Skipping publish."
+          else
+            npm publish "${{ steps.pack.outputs.tarball }}" --access public --provenance
+          fi
 
       - name: Verify npm publication parity
         shell: bash
