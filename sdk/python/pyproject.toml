@@ -5,19 +5,33 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pandora-agent"
 version = "0.1.0a1"
-description = "Pandora agent SDK alpha for local and remote tool execution."
+description = "Standalone Python SDK for Pandora agent discovery, vendored contract access, and MCP execution."
 requires-python = ">=3.9"
 readme = "README.md"
 authors = [{ name = "Pandora CLI Contributors" }]
-license = { text = "ISC" }
+license = "ISC"
+keywords = ["pandora", "mcp", "sdk", "agent", "cli"]
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "License :: OSI Approved :: ISC License (ISCL)",
+  "Operating System :: OS Independent",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
 ]
 
+[project.urls]
+Homepage = "https://github.com/XoAnonXo/pandora-cli-skills/tree/main/sdk/python"
+Repository = "https://github.com/XoAnonXo/pandora-cli-skills"
+Documentation = "https://github.com/XoAnonXo/pandora-cli-skills/tree/main/sdk/python#readme"
+Issues = "https://github.com/XoAnonXo/pandora-cli-skills/issues"
+
 [tool.setuptools]
-packages = ["pandora_agent"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["pandora_agent"]
 
 [tool.setuptools.package-data]
 pandora_agent = ["py.typed", "generated/*.json"]

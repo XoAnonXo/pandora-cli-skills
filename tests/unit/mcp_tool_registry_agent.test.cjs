@@ -70,12 +70,20 @@ test('prepareInvocation keeps agentPreflight out of argv and passes it through e
 
 test('compatibility alias tools advertise their canonical replacement', () => {
   const registry = createMcpToolRegistry();
-  const tool = registry.listTools().find((entry) => entry.name === 'arbitrage');
+  const tool = registry.describeTool('arbitrage');
 
   assert.ok(tool);
   assert.equal(tool.inputSchema.xPandora.aliasOf, 'arb.scan');
   assert.equal(tool.inputSchema.xPandora.compatibilityAlias, true);
   assert.match(tool.description, /prefer arb\.scan/i);
+});
+
+test('default tool discovery hides compatibility aliases', () => {
+  const registry = createMcpToolRegistry();
+  const toolNames = registry.listTools().map((entry) => entry.name);
+
+  assert.ok(toolNames.includes('arb.scan'));
+  assert.equal(toolNames.includes('arbitrage'), false);
 });
 
 test('prepareInvocation rejects unknown top-level MCP arguments', () => {

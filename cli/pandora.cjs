@@ -88,6 +88,7 @@ const getMirrorManifestStore = createLazyModuleLoader('./lib/mirror_manifest_sto
 const getAutopilotStateStore = createLazyModuleLoader('./lib/autopilot_state_store.cjs');
 const getMirrorStateStore = createLazyModuleLoader('./lib/mirror_state_store.cjs');
 const getRiskStateStore = createLazyModuleLoader('./lib/risk_state_store.cjs');
+const getExecutionSignerService = createLazyModuleLoader('./lib/signers/execution_signer_service.cjs');
 const getOperationStateStore = createLazyModuleLoader('./lib/operation_state_store.cjs');
 const getOperationServiceModule = createLazyModuleLoader('./lib/operation_service.cjs');
 const getRiskGuardService = createLazyModuleLoader('./lib/risk_guard_service.cjs');
@@ -97,6 +98,7 @@ const getForecastStore = createLazyModuleLoader('./lib/forecast_store.cjs');
 const getBrierScoreService = createLazyModuleLoader('./lib/brier_score_service.cjs');
 const getSchemaCommandService = createLazyModuleLoader('./lib/schema_command_service.cjs');
 const getCapabilitiesCommandService = createLazyModuleLoader('./lib/capabilities_command_service.cjs');
+const getBootstrapCommandService = createLazyModuleLoader('./lib/bootstrap_command_service.cjs');
 const getAgentCommandService = createLazyModuleLoader('./lib/agent_command_service.cjs');
 const getMcpServerService = createLazyModuleLoader('./lib/mcp_server_service.cjs');
 const getStreamCommandService = createLazyModuleLoader('./lib/stream_command_service.cjs');
@@ -690,6 +692,12 @@ function runCapabilitiesCommand(...args) {
     .runCapabilitiesCommand(...args);
 }
 
+/** Bootstrap command adapter with CLI output wiring. */
+function runBootstrapCommand(...args) {
+  return getBootstrapCommandService()
+    .createRunBootstrapCommand({ emitSuccess, CliError })(...args);
+}
+
 function runAgentCommand(...args) {
   return getAgentCommandService().createRunAgentCommand({
     CliError,
@@ -1112,8 +1120,8 @@ Usage:
   pandora [--output table|json] lifecycle start|status|resolve ...
   pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
-  pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
-  pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
+  pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
+  pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
   pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
@@ -1126,17 +1134,18 @@ Usage:
   pandora [--output table|json] agent market autocomplete --question <text> [--market-type amm|parimutuel]
   pandora [--output table|json] agent market validate --question <text> --rules <text> --target-timestamp <unix-seconds> [--sources <url...>]
   pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
-  pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
-  pandora [--output table|json] claim --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
-  pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]
+  pandora [--output table|json] claim --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] policy list|get|lint [flags]
   pandora [--output table|json] profile list|get|validate [flags]
   pandora [--output table|json] recipe list|get|validate|run [flags]
   pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
-  pandora [--output table|json] operations get|list|cancel|close [flags]
+  pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]
   pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
   pandora [--output table|json] simulate mc|particle-filter|agents ...
   pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...
+  pandora [--output json] bootstrap
   pandora [--output json] capabilities
   pandora [--output json] schema
   pandora mcp
@@ -1189,10 +1198,13 @@ Examples:
   pandora risk panic --reason "Manual incident stop"
   pandora risk panic --clear
   pandora operations list --status planned,executing --limit 20
+  pandora operations receipt --id op_123
+  pandora operations verify-receipt --id op_123
   pandora stream prices --indexer-url https://pandoraindexer.up.railway.app/ --interval-ms 1000
   pandora --output json simulate mc --trials 4000 --horizon 48 --start-yes-pct 57 --seed 7 --antithetic
   pandora --output json simulate particle-filter --observations-json '[{\"yesPct\":56},{\"yesPct\":58},{\"yesPct\":57}]' --particles 750 --seed 11
   pandora --output json capabilities
+  pandora --output json bootstrap
   pandora --output json schema
   pandora mcp
   pandora launch --dry-run --market-type amm --question "Will BTC close above $100k by end of 2026?" --rules "Resolves YES if ... Resolves NO if ... cancelled/postponed/abandoned/unresolved => NO." --sources "https://coinmarketcap.com/currencies/bitcoin/" "https://www.coingecko.com/en/coins/bitcoin" --target-timestamp 1798675200 --liquidity 100 --fee-tier 3000
@@ -1200,7 +1212,8 @@ Examples:
 Notes:
   - launch/clone-bet forward unknown flags directly to underlying scripts.
   - Env auto-load default: ~/.pandora-cli.env when present; otherwise scripts/.env. Use --skip-dotenv to disable.
-  - Most commands support table and json output. capabilities/schema are json-only, mcp is table-only, and launch/clone-bet forward script output.
+  - bootstrap is the preferred first call for cold agent clients; it returns canonical tools only by default and points to the next safe discovery calls.
+  - Most commands support table and json output. bootstrap/capabilities/schema are json-only, mcp is table-only, and launch/clone-bet forward script output.
   - scan is the canonical enriched discovery command; markets scan remains a backward-compatible alias and markets list is the raw indexer browse surface.
   - Indexer URL resolution order: --indexer-url, PANDORA_INDEXER_URL, INDEXER_URL, default public indexer.
   - mirror status --with-live can enrich output with Polymarket position data when POLYMARKET_* credentials are set; missing endpoints/creds return diagnostics instead of hard failures.
@@ -1456,10 +1469,11 @@ function helpJsonPayload() {
       'pandora [--output table|json] claim ...',
       'pandora [--output table|json] lp add|remove|positions ...',
       'pandora [--output table|json] risk show|panic ...',
-      'pandora [--output table|json] operations get|list|cancel|close ...',
+      'pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close ...',
       'pandora stream prices|events ...',
       'pandora [--output table|json] simulate mc|particle-filter|agents ...',
       'pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...',
+      'pandora [--output json] bootstrap',
       'pandora [--output json] capabilities',
       'pandora [--output json] schema',
       'pandora mcp',
@@ -1470,15 +1484,16 @@ function helpJsonPayload() {
       '--output': ['table', 'json'],
     },
       modeRouting: {
-        jsonOnly: ['capabilities', 'schema'],
+        jsonOnly: ['bootstrap', 'capabilities', 'schema'],
         stdioOnly: ['mcp'],
         scriptNative: ['launch', 'clone-bet'],
       },
       notes: [
+        '`bootstrap` is the preferred first call for cold agent clients; it returns canonical tools only by default and points to the next safe discovery calls.',
         '`scan` is the canonical enriched market discovery flow; `markets scan` remains a backward-compatible alias and `markets list` is the raw indexer browse view.',
         '`arb scan` is the canonical arbitrage flow; `arbitrage` remains a backward-compatible bounded one-shot wrapper.',
         '`agent market autocomplete` and `agent market validate` expose reusable AI prompt templates and validation tickets for agent-controlled market creation workflows.',
-        'Most commands support table and json output. `capabilities`/`schema` are json-only, `mcp` is stdio server mode, and `launch`/`clone-bet` forward script-native output.',
+        'Most commands support table and json output. `bootstrap`/`capabilities`/`schema` are json-only, `mcp` is stdio server mode, and `launch`/`clone-bet` forward script-native output.',
       ],
     };
   }
@@ -1829,6 +1844,8 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
   }
   if (options.rpcUrl) args.push('--rpc-url', options.rpcUrl);
   if (options.polymarketRpcUrl) args.push('--polymarket-rpc-url', options.polymarketRpcUrl);
+  if (options.profileId) args.push('--profile-id', options.profileId);
+  if (options.profileFile) args.push('--profile-file', options.profileFile);
   if (options.funder) args.push('--funder', options.funder);
   if (options.usdc) args.push('--usdc', options.usdc);
   if (options.polymarketHost) args.push('--polymarket-host', options.polymarketHost);
@@ -4735,11 +4752,28 @@ function resolveTradeRuntimeConfig(options) {
     );
   }
 
-  const privateKey = options.privateKey || process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY;
-  if (!privateKey || !isValidPrivateKey(privateKey)) {
+  const hasProfileSelector = Boolean(
+    options.profile
+    || (typeof options.profileId === 'string' && options.profileId.trim())
+    || (typeof options.profileFile === 'string' && options.profileFile.trim()),
+  );
+  const explicitPrivateKey = options.privateKey ? String(options.privateKey).trim() : '';
+  if (explicitPrivateKey && !isValidPrivateKey(explicitPrivateKey)) {
     throw new CliError(
       'INVALID_FLAG_VALUE',
-      'Missing or invalid private key. Set PANDORA_PRIVATE_KEY (preferred) or PRIVATE_KEY, or pass --private-key.',
+      'Invalid --private-key. Expected 0x + 64 hex chars.',
+    );
+  }
+  const envPrivateKey = String(process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY || '').trim();
+  const privateKey = explicitPrivateKey
+    ? explicitPrivateKey
+    : isValidPrivateKey(envPrivateKey)
+      ? envPrivateKey
+      : null;
+  if (!privateKey && !hasProfileSelector) {
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      'Missing signer credentials. Set PANDORA_PRIVATE_KEY (preferred) or PRIVATE_KEY, pass --private-key, or use --profile-id/--profile-file.',
     );
   }
 
@@ -4763,6 +4797,9 @@ function resolveTradeRuntimeConfig(options) {
     chain,
     rpcUrl,
     privateKey,
+    profileId: options.profileId || null,
+    profileFile: options.profileFile || null,
+    profile: options.profile || null,
     usdcAddress,
   };
 }
@@ -4812,18 +4849,47 @@ function deriveWalletAddressFromPrivateKey(privateKey) {
 
 async function executeTradeOnchain(options) {
   const runtime = resolveTradeRuntimeConfig(options);
+  const viemRuntime = await loadViemRuntime();
   const {
     createPublicClient,
-    createWalletClient,
     formatUnits,
     http,
     parseUnits,
-    privateKeyToAccount,
-  } = await loadViemRuntime();
-
-  const account = privateKeyToAccount(runtime.privateKey);
+  } = viemRuntime;
+  let materializedSigner;
+  const tradeAction = String(options && options.mode ? options.mode : 'buy').toLowerCase();
+  try {
+    materializedSigner = await getExecutionSignerService().materializeExecutionSigner({
+      privateKey: runtime.privateKey,
+      profileId: runtime.profileId,
+      profileFile: runtime.profileFile,
+      profile: runtime.profile,
+      chain: runtime.chain,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+      viemRuntime,
+      env: process.env,
+      requireSigner: true,
+      mode: 'execute',
+      liveRequested: true,
+      mutating: true,
+      command: tradeAction === 'sell' ? 'sell' : 'trade',
+      toolFamily: tradeAction === 'sell' ? 'sell' : 'trade',
+      category: options && options.category ? options.category : null,
+      metadata: {
+        source: 'trade',
+        action: tradeAction,
+      },
+    });
+  } catch (error) {
+    if (error && error.code) {
+      throw new CliError(error.code, error.message || 'Unable to materialize signer for trade execution.', error.details);
+    }
+    throw error;
+  }
+  const account = materializedSigner.account;
   const publicClient = createPublicClient({ chain: runtime.chain, transport: http(runtime.rpcUrl) });
-  const walletClient = createWalletClient({ account, chain: runtime.chain, transport: http(runtime.rpcUrl) });
+  const walletClient = materializedSigner.walletClient;
 
   const marketCode = await publicClient.getBytecode({ address: options.marketAddress });
   if (!marketCode || marketCode === '0x' || marketCode === '0x0') {
@@ -6535,6 +6601,10 @@ const runPolicyCommandFromService = createLazyFactoryRunner('./lib/policy_comman
   commandHelpPayload,
   parsePolicyFlags: parsePolicyFlagsFromModule,
   createPolicyRegistryService: () => require('./lib/policy_registry_service.cjs').createPolicyRegistryService(),
+  createPolicyEvaluatorService: (...args) => require('./lib/policy_evaluator_service.cjs').createPolicyEvaluatorService(...args),
+  createPolicyProfileGuidanceService: (...args) => require('./lib/policy_profile_guidance_service.cjs').createPolicyProfileGuidanceService(...args),
+  createProfileStore: () => require('./lib/profile_store.cjs').createProfileStore(),
+  createProfileResolverService: (...args) => require('./lib/profile_resolver_service.cjs').createProfileResolverService(...args),
 }));
 const runProfileCommandFromService = createLazyFactoryRunner('./lib/profile_command_service.cjs', 'createRunProfileCommand', () => ({
   CliError,
@@ -6543,7 +6613,10 @@ const runProfileCommandFromService = createLazyFactoryRunner('./lib/profile_comm
   commandHelpPayload,
   parseProfileFlags: parseProfileFlagsFromModule,
   createProfileStore: () => require('./lib/profile_store.cjs').createProfileStore(),
-  createProfileResolverService: () => require('./lib/profile_resolver_service.cjs').createProfileResolverService(),
+  createProfileResolverService: (...args) => require('./lib/profile_resolver_service.cjs').createProfileResolverService(...args),
+  createPolicyRegistryService: () => require('./lib/policy_registry_service.cjs').createPolicyRegistryService(),
+  createPolicyEvaluatorService: (...args) => require('./lib/policy_evaluator_service.cjs').createPolicyEvaluatorService(...args),
+  createPolicyProfileGuidanceService: (...args) => require('./lib/policy_profile_guidance_service.cjs').createPolicyProfileGuidanceService(...args),
 }));
 const runRecipeCommandFromService = createLazyFactoryRunner('./lib/recipe_command_service.cjs', 'createRunRecipeCommand', () => ({
   CliError,
@@ -7641,6 +7714,7 @@ const dispatch = createCommandRouter({
   runMcpCommand,
   runStreamCommand,
   runSimulateCommand,
+  runBootstrapCommand,
   runCapabilitiesCommand,
   runSchemaCommand,
   runScriptCommand,

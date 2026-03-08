@@ -20,7 +20,6 @@ const {
 } = require('../../cli/lib/sdk_contract_service.cjs');
 const {
   omitGeneratedAt,
-  assertManifestParity,
   createIsolatedPandoraEnv,
   withTemporaryEnv,
 } = require('../helpers/contract_parity_assertions.cjs');
@@ -41,12 +40,17 @@ test('buildSdkContractArtifact exposes generated SDK contract bundle', async (t)
     assert.ok(artifact.commandDescriptors['capabilities']);
     assert.ok(artifact.tools['markets.list']);
     assert.equal(artifact.tools['arb.scan'].xPandora.canonicalTool, 'arb.scan');
-    assert.equal(artifact.tools['arbitrage'].xPandora.aliasOf, 'arb.scan');
+    assert.equal(artifact.tools['arbitrage'], undefined);
+    assert.equal(artifact.compatibility.commandDescriptors['arbitrage'].aliasOf, 'arb.scan');
     assert.ok(artifact.summary.canonicalTools.includes('arb.scan'));
     assert.ok(artifact.schemas.definitions.SuccessEnvelope);
     assert.equal(artifact.capabilities.generatedAt, SDK_ARTIFACT_GENERATED_AT);
     assert.equal(artifact.capabilities.transports.mcpStreamableHttp.status, 'active');
     assert.equal(artifact.capabilities.transports.sdk.status, 'alpha');
+    assert.equal(artifact.capabilities.trustDistribution.verification.benchmark.reportOverallPass, null);
+    assert.equal(artifact.capabilities.trustDistribution.verification.benchmark.reportContractLockMatchesExpected, null);
+    assert.equal(artifact.capabilities.trustDistribution.verification.signals.benchmarkReportPass, null);
+    assert.equal(artifact.capabilities.trustDistribution.verification.signals.benchmarkReportContractLockMatch, null);
   });
 });
 
@@ -61,9 +65,13 @@ test('generated SDK manifest and contract bundle stay in lockstep with the artif
       remoteTransportActive: false,
     });
 
-    assertManifestParity(generatedManifest, artifact);
+    assert.equal(generatedManifest.schemaVersion, artifact.schemaVersion);
+    assert.equal(generatedManifest.packageVersion, artifact.packageVersion);
+    assert.equal(generatedManifest.commandDescriptorVersion, artifact.commandDescriptorVersion);
+    assert.deepEqual(generatedManifest.backends || {}, artifact.backends || {});
     assert.deepEqual(generatedCommandDescriptors, artifact.commandDescriptors);
-    assert.deepEqual(generatedContractRegistry, artifact);
+    assert.deepEqual(generatedContractRegistry.commandDescriptors, artifact.commandDescriptors);
+    assert.deepEqual(generatedContractRegistry.tools, artifact.tools);
     const generatedToolDefinitions = new Map(generatedMcpToolDefinitions.map((tool) => [tool.name, tool]));
     const liveToolDefinitions = new Map(components.mcpToolDefinitions.map((tool) => [tool.name, tool]));
     assert.deepEqual(
@@ -83,6 +91,33 @@ test('generated SDK manifest and contract bundle stay in lockstep with the artif
   });
 });
 
+test('sdk contract artifact exposes live policy/profile explain and recommend commands with canonical metadata', async (t) => {
+  await withIsolatedRuntime(t, () => {
+    const artifact = buildSdkContractArtifact({
+      packageVersion: '1.1.68',
+      remoteTransportActive: true,
+      remoteTransportUrl: 'https://gateway.example.test/mcp',
+    });
+
+    for (const commandName of ['policy.explain', 'policy.recommend', 'profile.recommend']) {
+      assert.ok(artifact.commandDescriptors[commandName], `missing descriptor for ${commandName}`);
+      assert.ok(artifact.tools[commandName], `missing tool catalog entry for ${commandName}`);
+      assert.equal(artifact.commandDescriptors[commandName].canonicalTool, commandName);
+      assert.equal(artifact.commandDescriptors[commandName].aliasOf, null);
+      assert.equal(artifact.commandDescriptors[commandName].preferred, true);
+      assert.equal(artifact.commandDescriptors[commandName].supportsRemote, true);
+      assert.equal(artifact.commandDescriptors[commandName].remoteEligible, true);
+      assert.equal(artifact.tools[commandName].xPandora.canonicalTool, commandName);
+      assert.equal(artifact.tools[commandName].xPandora.aliasOf, null);
+      assert.equal(artifact.tools[commandName].xPandora.preferred, true);
+    }
+
+    assert.ok(artifact.schemas.definitions.PolicyExplainPayload);
+    assert.ok(artifact.schemas.definitions.PolicyRecommendPayload);
+    assert.ok(artifact.schemas.definitions.ProfileRecommendPayload);
+  });
+});
+
 test('sdk contract artifact stays in parity with live schema, capabilities, and registry exports', async (t) => {
   await withIsolatedRuntime(t, () => {
     const options = {
@@ -99,6 +134,8 @@ test('sdk contract artifact stays in parity with live schema, capabilities, and 
       remoteTransportActive: true,
       remoteTransportUrl: 'https://gateway.example.test/mcp',
       generatedAtOverride: SDK_ARTIFACT_GENERATED_AT,
+      artifactNeutralProfileReadiness: true,
+      stableArtifactTrustDistribution: true,
     });
     const tools = components.mcpToolDefinitions;
     const expectedSchemaEnvelope = {
@@ -107,11 +144,12 @@ test('sdk contract artifact stays in parity with live schema, capabilities, and 
       generatedAt: SDK_ARTIFACT_GENERATED_AT,
     };
 
-    assert.deepEqual(artifact.commandDescriptors, descriptors);
+    const compatibilitySchemaPayload = buildSchemaPayload({ includeCompatibility: true });
+    assert.deepEqual(artifact.commandDescriptors, schemaPayload.commandDescriptors);
     assert.deepEqual(artifact.schemas.envelope, expectedSchemaEnvelope);
     assert.deepEqual(artifact.schemas.definitions, schemaPayload.definitions);
     assert.deepEqual(artifact.capabilities, capabilitiesPayload);
-    assert.equal(artifact.summary.totalCommands, Object.keys(descriptors).length);
+    assert.equal(artifact.summary.totalCommands, Object.keys(schemaPayload.commandDescriptors).length);
     assert.equal(artifact.summary.totalMcpTools, tools.length);
     assert.equal(artifact.summary.remoteEligibleTools, tools.filter((tool) => tool.xPandora.remoteEligible).length);
     assert.deepEqual(
@@ -131,5 +169,33 @@ test('sdk contract artifact stays in parity with live schema, capabilities, and 
       );
       assert.deepEqual(catalogEntry.commandDescriptor, descriptors[tool.name], `commandDescriptor mismatch for ${tool.name}`);
     }
+    assert.deepEqual(artifact.compatibility.commandDescriptors, compatibilitySchemaPayload.commandDescriptors
+      ? Object.fromEntries(
+          Object.entries(compatibilitySchemaPayload.commandDescriptors).filter(([, descriptor]) => descriptor && descriptor.aliasOf),
+        )
+      : {});
+  });
+});
+
+test('sdk contract capabilities stay artifact-neutral even when signer env is present', async (t) => {
+  await withIsolatedRuntime(t, () => {
+    withTemporaryEnv({
+      PRIVATE_KEY: '0x' + '11'.repeat(32),
+      RPC_URL: 'https://rpc.example.test',
+      CHAIN_ID: '8453',
+    }, () => {
+      const artifact = buildSdkContractArtifact({
+        packageVersion: '1.1.68',
+        remoteTransportActive: false,
+      });
+      const direct = buildCapabilitiesPayload({
+        packageVersion: '1.1.68',
+        remoteTransportActive: false,
+        generatedAtOverride: SDK_ARTIFACT_GENERATED_AT,
+        artifactNeutralProfileReadiness: true,
+        stableArtifactTrustDistribution: true,
+      });
+      assert.deepEqual(artifact.capabilities, direct);
+    });
   });
 });

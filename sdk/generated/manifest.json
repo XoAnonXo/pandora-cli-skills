@@ -27,8 +27,90 @@
     "packagedClients": {
       "backendType": "generated-sdk",
       "notes": [
+        "Cold agents should prefer the canonical bootstrap surface before lower-level capabilities/schema discovery.",
+        "Compatibility aliases are available only through the explicit contractRegistry.compatibility surface.",
+        "Generated SDK catalogs default to canonical-only command and tool surfaces.",
         "Generated TypeScript and Python SDK alpha packages are shipped in this build under sdk/typescript and sdk/python."
       ],
+      "publishedPackages": {
+        "python": {
+          "artifactSubpaths": {
+            "bundle": "pandora_agent/generated/contract-registry.json",
+            "commandDescriptors": "pandora_agent/generated/command-descriptors.json",
+            "manifest": "pandora_agent/generated/manifest.json",
+            "mcpToolDefinitions": "pandora_agent/generated/mcp-tool-definitions.json"
+          },
+          "format": "python",
+          "module": "pandora_agent",
+          "name": "pandora-agent",
+          "sourceProjectPath": "sdk/python/pyproject.toml",
+          "version": "0.1.0a1"
+        },
+        "root": {
+          "artifactSubpaths": {
+            "bundle": "sdk/generated/contract-registry.json",
+            "commandDescriptors": "sdk/generated/command-descriptors.json",
+            "entrypoint": "sdk/generated/index.js",
+            "manifest": "sdk/generated/manifest.json",
+            "mcpToolDefinitions": "sdk/generated/mcp-tool-definitions.json",
+            "types": "sdk/generated/index.d.ts"
+          },
+          "binNames": [
+            "pandora"
+          ],
+          "exportSubpaths": [
+            ".",
+            "./sdk/generated",
+            "./sdk/generated/command-descriptors",
+            "./sdk/generated/contract-registry",
+            "./sdk/generated/manifest",
+            "./sdk/generated/mcp-tool-definitions",
+            "./sdk/generated/package.json",
+            "./sdk/typescript",
+            "./sdk/typescript/backends",
+            "./sdk/typescript/catalog",
+            "./sdk/typescript/errors",
+            "./sdk/typescript/generated",
+            "./sdk/typescript/generated/command-descriptors",
+            "./sdk/typescript/generated/contract-registry",
+            "./sdk/typescript/generated/manifest",
+            "./sdk/typescript/generated/mcp-tool-definitions",
+            "./sdk/typescript/package.json"
+          ],
+          "format": "node",
+          "main": "cli/pandora.cjs",
+          "name": "pandora-cli-skills",
+          "sourceProjectPath": "package.json",
+          "version": "1.1.70"
+        },
+        "typescript": {
+          "artifactSubpaths": {
+            "bundle": "generated/contract-registry.json",
+            "commandDescriptors": "generated/command-descriptors.json",
+            "entrypoint": "index.js",
+            "manifest": "generated/manifest.json",
+            "mcpToolDefinitions": "generated/mcp-tool-definitions.json",
+            "types": "index.d.ts"
+          },
+          "exportSubpaths": [
+            ".",
+            "./backends",
+            "./catalog",
+            "./errors",
+            "./generated",
+            "./generated/command-descriptors",
+            "./generated/contract-registry",
+            "./generated/index",
+            "./generated/manifest",
+            "./generated/mcp-tool-definitions",
+            "./package.json"
+          ],
+          "format": "node",
+          "name": "@pandora/agent-sdk",
+          "sourceProjectPath": "sdk/typescript/package.json",
+          "version": "0.1.0-alpha.1"
+        }
+      },
       "supported": true,
       "transport": "sdk"
     },
@@ -47,7 +129,7 @@
     }
   },
   "catalogSummary": {
-    "aliases": 4,
+    "aliases": 0,
     "canonicalTools": [
       "agent.market.autocomplete",
       "agent.market.validate",
@@ -55,6 +137,7 @@
       "arb.scan",
       "autopilot.once",
       "autopilot.run",
+      "bootstrap",
       "capabilities",
       "claim",
       "events.get",
@@ -96,9 +179,13 @@
       "operations.close",
       "operations.get",
       "operations.list",
+      "operations.receipt",
+      "operations.verify-receipt",
+      "policy.explain",
       "policy.get",
       "policy.lint",
       "policy.list",
+      "policy.recommend",
       "polls.get",
       "polls.list",
       "polymarket.approve",
@@ -107,8 +194,10 @@
       "polymarket.trade",
       "portfolio",
       "positions.list",
+      "profile.explain",
       "profile.get",
       "profile.list",
+      "profile.recommend",
       "profile.validate",
       "quote",
       "recipe.get",
@@ -144,30 +233,154 @@
       "watch",
       "webhook.test"
     ],
+    "compatibilityAliasCommands": 4,
+    "compatibilityAliasTools": 1,
+    "compatibilityRegistryPath": "compatibility",
+    "defaultCatalogMode": "canonical-only",
     "mutatingTools": 29,
     "operationBackedCommands": 6,
-    "remoteEligibleTools": 95,
+    "remoteEligibleTools": 101,
     "topLevelCommands": 46,
-    "totalCommands": 128,
-    "totalMcpTools": 95
+    "totalCommands": 131,
+    "totalMcpTools": 101
   },
-  "commandCount": 128,
-  "commandDescriptorVersion": "1.3.0",
-  "contractCommandDescriptorVersion": "1.3.0",
+  "commandCount": 131,
+  "commandDescriptorVersion": "1.4.0",
+  "contractCommandDescriptorVersion": "1.4.0",
   "contractPackageVersion": "1.1.70",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
-  "mcpToolCount": 95,
+  "mcpToolCount": 101,
+  "package": {
+    "artifactSubpaths": {
+      "bundle": "sdk/generated/contract-registry.json",
+      "commandDescriptors": "sdk/generated/command-descriptors.json",
+      "entrypoint": "sdk/generated/index.js",
+      "manifest": "sdk/generated/manifest.json",
+      "mcpToolDefinitions": "sdk/generated/mcp-tool-definitions.json",
+      "types": "sdk/generated/index.d.ts"
+    },
+    "binNames": [
+      "pandora"
+    ],
+    "exportSubpaths": [
+      ".",
+      "./sdk/generated",
+      "./sdk/generated/command-descriptors",
+      "./sdk/generated/contract-registry",
+      "./sdk/generated/manifest",
+      "./sdk/generated/mcp-tool-definitions",
+      "./sdk/generated/package.json",
+      "./sdk/typescript",
+      "./sdk/typescript/backends",
+      "./sdk/typescript/catalog",
+      "./sdk/typescript/errors",
+      "./sdk/typescript/generated",
+      "./sdk/typescript/generated/command-descriptors",
+      "./sdk/typescript/generated/contract-registry",
+      "./sdk/typescript/generated/manifest",
+      "./sdk/typescript/generated/mcp-tool-definitions",
+      "./sdk/typescript/package.json"
+    ],
+    "format": "node",
+    "main": "cli/pandora.cjs",
+    "name": "pandora-cli-skills",
+    "sourceProjectPath": "package.json",
+    "version": "1.1.70"
+  },
   "packageVersion": "1.1.70",
+  "publishedSurfaces": {
+    "python": {
+      "artifactSubpaths": {
+        "bundle": "pandora_agent/generated/contract-registry.json",
+        "commandDescriptors": "pandora_agent/generated/command-descriptors.json",
+        "manifest": "pandora_agent/generated/manifest.json",
+        "mcpToolDefinitions": "pandora_agent/generated/mcp-tool-definitions.json"
+      },
+      "format": "python",
+      "module": "pandora_agent",
+      "name": "pandora-agent",
+      "sourceProjectPath": "sdk/python/pyproject.toml",
+      "version": "0.1.0a1"
+    },
+    "root": {
+      "artifactSubpaths": {
+        "bundle": "sdk/generated/contract-registry.json",
+        "commandDescriptors": "sdk/generated/command-descriptors.json",
+        "entrypoint": "sdk/generated/index.js",
+        "manifest": "sdk/generated/manifest.json",
+        "mcpToolDefinitions": "sdk/generated/mcp-tool-definitions.json",
+        "types": "sdk/generated/index.d.ts"
+      },
+      "binNames": [
+        "pandora"
+      ],
+      "exportSubpaths": [
+        ".",
+        "./sdk/generated",
+        "./sdk/generated/command-descriptors",
+        "./sdk/generated/contract-registry",
+        "./sdk/generated/manifest",
+        "./sdk/generated/mcp-tool-definitions",
+        "./sdk/generated/package.json",
+        "./sdk/typescript",
+        "./sdk/typescript/backends",
+        "./sdk/typescript/catalog",
+        "./sdk/typescript/errors",
+        "./sdk/typescript/generated",
+        "./sdk/typescript/generated/command-descriptors",
+        "./sdk/typescript/generated/contract-registry",
+        "./sdk/typescript/generated/manifest",
+        "./sdk/typescript/generated/mcp-tool-definitions",
+        "./sdk/typescript/package.json"
+      ],
+      "format": "node",
+      "main": "cli/pandora.cjs",
+      "name": "pandora-cli-skills",
+      "sourceProjectPath": "package.json",
+      "version": "1.1.70"
+    },
+    "typescript": {
+      "artifactSubpaths": {
+        "bundle": "generated/contract-registry.json",
+        "commandDescriptors": "generated/command-descriptors.json",
+        "entrypoint": "index.js",
+        "manifest": "generated/manifest.json",
+        "mcpToolDefinitions": "generated/mcp-tool-definitions.json",
+        "types": "index.d.ts"
+      },
+      "exportSubpaths": [
+        ".",
+        "./backends",
+        "./catalog",
+        "./errors",
+        "./generated",
+        "./generated/command-descriptors",
+        "./generated/contract-registry",
+        "./generated/index",
+        "./generated/manifest",
+        "./generated/mcp-tool-definitions",
+        "./package.json"
+      ],
+      "format": "node",
+      "name": "@pandora/agent-sdk",
+      "sourceProjectPath": "sdk/typescript/package.json",
+      "version": "0.1.0-alpha.1"
+    }
+  },
   "registryDigest": {
-    "canonicalHash": "20084a8b370d78fc6ea6c8968a44f46fa94bb541f63f30056f452bd7c80daf28",
-    "commandDigestHash": "1b5c1089f6da372865c63a1bcf7c4067a89543adf37b43d5432e170e728910fe",
-    "descriptorHash": "0cdc173e36494551c6ae34115aeaf0ef0d73de9e09776546839cafccf36e4569",
-    "documentationHash": "1c519c482cd050b003086a1f1d60604bf9d414351ee58e1ae28e0177931dbe1f",
-    "namespaceHash": "a32c9f90304339f7c0de2c296880bef805de8650c45a210237a2fb01e1bc60f6",
-    "routedTopLevelHash": "3d5a6a94876eb387eaf4f655d44b736887642cbb145e14d03f3deaabf9880b52",
-    "topLevelHash": "c993a2966277d0ee3d34b79a3cbcbc61161a32d23044549a205a8c3b8debba46"
+    "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
+    "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
+    "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
+    "documentationHash": "ef5787779c7b59fcd129b18fb2080bce726e4bcb2612cd5e0933b67fa229972e",
+    "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
+    "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
+    "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
+    "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
+    "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
+    "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
+    "trustDistributionHash": "ccd220a0dd86eeb7ee2670e1a1d02eb095d3675e131701c607fce54b62497f57"
   },
   "schemaVersion": "1.0.0"
 }

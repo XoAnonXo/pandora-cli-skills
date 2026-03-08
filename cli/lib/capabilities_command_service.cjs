@@ -16,6 +16,9 @@ const { buildSkillDocIndex } = require('./skill_doc_registry.cjs');
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const BENCHMARK_LOCK_PATH = 'benchmarks/locks/core.lock.json';
 const BENCHMARK_REPORT_PATH = 'benchmarks/latest/core-report.json';
+const BENCHMARK_BUNDLE_PATH = 'benchmarks/latest/core-bundle.json';
+const BENCHMARK_HISTORY_PATH = 'benchmarks/latest/core-history.json';
+const BENCHMARK_DOC_HISTORY_PATH = 'docs/benchmarks/history.json';
 const BENCHMARK_CHECK_SCRIPT_PATH = 'scripts/check_agent_benchmarks.cjs';
 const BENCHMARK_RUN_SCRIPT_PATH = 'scripts/run_agent_benchmarks.cjs';
 const CI_WORKFLOW_PATH = '.github/workflows/ci.yml';
@@ -37,6 +40,148 @@ const TRUST_DOC_PATHS = Object.freeze([
 const SMOKE_TEST_PATHS = Object.freeze([
   'tests/smoke/pack-install-smoke.cjs',
   'tests/smoke/consumer-json-smoke.cjs',
+]);
+const COMPATIBILITY_FLAG = '--include-compatibility';
+const COMPATIBILITY_QUERY_PARAM = 'include_aliases=1';
+const COMPATIBILITY_MODE_HINT = 'Compatibility aliases are hidden by default. Pass --include-compatibility or include_aliases=1 only for legacy/debug workflows.';
+const A_PLUS_TARGET_TIER = 'A+';
+const PRINCIPAL_TEMPLATE_SPECS = Object.freeze([
+  {
+    id: 'read-only-researcher',
+    summary: 'Read-only market and contract discovery for external agents and analysts.',
+    authMode: 'remote-gateway-token-record',
+    mutating: false,
+    signerRequired: false,
+    commandNames: [
+      'bootstrap',
+      'capabilities',
+      'schema',
+      'scan',
+      'quote',
+      'portfolio',
+      'policy.list',
+      'profile.list',
+      'recipe.list',
+      'operations.list',
+      'operations.get',
+    ],
+    optionalScopes: ['help:read', 'operations.receipt:read', 'operations.verify-receipt:read'],
+    notes: [
+      'Start here for cold-agent exploration and research-only automations.',
+      'Pair with a separate narrower execute persona instead of widening this template into a trader token.',
+    ],
+  },
+  {
+    id: 'operator',
+    summary: 'Live operator persona for profile-backed trading, mirror, sports, and closeout workflows.',
+    authMode: 'remote-gateway-token-record',
+    mutating: true,
+    signerRequired: true,
+    commandNames: [
+      'bootstrap',
+      'capabilities',
+      'schema',
+      'policy.recommend',
+      'profile.recommend',
+      'profile.explain',
+      'operations.list',
+      'operations.get',
+      'operations.receipt',
+      'operations.verify-receipt',
+      'trade',
+      'sell',
+      'lp.add',
+      'lp.remove',
+      'claim',
+      'resolve',
+      'mirror.deploy',
+      'mirror.go',
+      'mirror.sync.start',
+      'mirror.sync.stop',
+      'sports.create.run',
+    ],
+    optionalScopes: ['help:read'],
+    notes: [
+      'Use only with a runtime-ready mutable profile and host-local signer material.',
+      'This template grants mutation scopes but does not itself provide signer credentials or policy approval.',
+    ],
+  },
+  {
+    id: 'auditor',
+    summary: 'Read-only audit persona for schema, policy/profile posture, and operation receipt verification.',
+    authMode: 'remote-gateway-token-record',
+    mutating: false,
+    signerRequired: false,
+    commandNames: [
+      'bootstrap',
+      'capabilities',
+      'schema',
+      'policy.list',
+      'profile.list',
+      'profile.get',
+      'profile.explain',
+      'operations.list',
+      'operations.get',
+      'operations.receipt',
+      'operations.verify-receipt',
+    ],
+    optionalScopes: ['help:read'],
+    notes: [
+      'Intended for post-execution review, policy inspection, and receipt verification without mutation rights.',
+      'Prefer this persona for third-party auditors and release-validation agents.',
+    ],
+  },
+  {
+    id: 'recipe-validator',
+    summary: 'Read-only persona for recipe linting, validation, and workflow planning.',
+    authMode: 'remote-gateway-token-record',
+    mutating: false,
+    signerRequired: false,
+    commandNames: [
+      'bootstrap',
+      'capabilities',
+      'schema',
+      'policy.list',
+      'policy.recommend',
+      'profile.list',
+      'profile.get',
+      'profile.explain',
+      'recipe.list',
+      'recipe.validate',
+    ],
+    optionalScopes: ['help:read'],
+    notes: [
+      'Use this persona for CI or agent planning loops that must validate recipes without executing them.',
+      'If a recipe later needs live execution, switch to a separate operator persona rather than widening this token.',
+    ],
+  },
+  {
+    id: 'benchmark-runner',
+    summary: 'Read-only benchmark and parity persona for bootstrap, schema, receipt, and discovery checks.',
+    authMode: 'remote-gateway-token-record',
+    mutating: false,
+    signerRequired: false,
+    commandNames: [
+      'bootstrap',
+      'capabilities',
+      'schema',
+      'scan',
+      'quote',
+      'portfolio',
+      'policy.list',
+      'profile.list',
+      'recipe.list',
+      'operations.list',
+      'operations.get',
+      'operations.receipt',
+      'operations.verify-receipt',
+    ],
+    optionalScopes: ['help:read', 'mirror.read', 'sports.read'],
+    notes: [
+      'Covers the shipped read-only benchmark and trust-validation surfaces.',
+      'Specialized denial-path benchmark scenarios may still use dedicated scenario tokens outside this baseline template.',
+    ],
+  },
 ]);
 
 function sortStrings(values) {
@@ -75,6 +220,11 @@ function stableJsonHash(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
+function cloneJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
 function sanitizePackageName(name) {
   return String(name || '')
     .trim()
@@ -82,12 +232,24 @@ function sanitizePackageName(name) {
     .replace(/[\\/]/g, '-');
 }
 
-function buildReleaseAssetNames(packageName, packageVersion) {
+function buildReleaseAssetNames(packageName, packageVersion, options = {}) {
   const tarballName = `${sanitizePackageName(packageName)}-${packageVersion}.tgz`;
-  return [
+  const names = [
     tarballName,
     `${tarballName}.sha256`,
     'checksums.sha256',
+    'core-report.json',
+    'core-bundle.json',
+    'core-history.json',
+    'core.lock.json',
+    'benchmark-publication-bundle.tar.gz',
+    'benchmark-publication-bundle.tar.gz.sha256',
+    'benchmark-publication-bundle.tar.gz.intoto.jsonl',
+    'benchmark-publication-manifest.json',
+    'benchmark-publication-manifest.json.sha256',
+    'benchmark-publication-manifest.json.intoto.jsonl',
+    'sdk-checksums.sha256',
+    'sdk-release-manifest.json',
     'sbom.spdx.json',
     'sbom.spdx.json.sha256',
     'sbom.spdx.json.intoto.jsonl',
@@ -95,10 +257,72 @@ function buildReleaseAssetNames(packageName, packageVersion) {
     `${tarballName}.sig`,
     `${tarballName}.pem`,
   ];
+  const typescriptPackageName = normalizeString(options.typescriptPackageName);
+  const typescriptVersion = normalizeString(options.typescriptVersion);
+  if (typescriptPackageName && typescriptVersion) {
+    names.push(`${sanitizePackageName(typescriptPackageName)}-${typescriptVersion}.tgz`);
+  }
+  const pythonPackageName = normalizeString(options.pythonPackageName);
+  const pythonVersion = normalizeString(options.pythonVersion);
+  if (pythonPackageName && pythonVersion) {
+    const sanitizedPythonPackageName = String(pythonPackageName).replace(/-/g, '_');
+    names.push(
+      `${sanitizedPythonPackageName}-${pythonVersion}-py3-none-any.whl`,
+      `${sanitizedPythonPackageName}-${pythonVersion}.tar.gz`,
+    );
+  }
+  return sortStrings(names);
 }
 
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function isCompatibilityAliasDescriptor(descriptor) {
+  return Boolean(descriptor && descriptor.aliasOf);
+}
+
+function countCompatibilityAliases(commandDescriptors) {
+  return Object.values(commandDescriptors || {}).filter((descriptor) => isCompatibilityAliasDescriptor(descriptor)).length;
+}
+
+function countCanonicalToolsWithCompatibilityAliases(commandDescriptors) {
+  const canonicalTools = new Set();
+  for (const descriptor of Object.values(commandDescriptors || {})) {
+    if (!isCompatibilityAliasDescriptor(descriptor)) continue;
+    const canonicalTool = normalizeString(descriptor && descriptor.canonicalTool);
+    if (canonicalTool) canonicalTools.add(canonicalTool);
+  }
+  return canonicalTools.size;
+}
+
+function filterDiscoveryCommandDescriptors(commandDescriptors, options = {}) {
+  if (options.includeCompatibility === true) {
+    return sortObjectKeys(commandDescriptors);
+  }
+  const filtered = {};
+  for (const [commandName, descriptor] of Object.entries(commandDescriptors || {})) {
+    if (isCompatibilityAliasDescriptor(descriptor)) continue;
+    filtered[commandName] = descriptor;
+  }
+  return sortObjectKeys(filtered);
+}
+
+function buildDiscoveryPreferences(fullCommandDescriptors, visibleCommandDescriptors, options = {}) {
+  const totalAliasCount = countCompatibilityAliases(fullCommandDescriptors);
+  const visibleAliasCount = countCompatibilityAliases(visibleCommandDescriptors);
+  return {
+    canonicalOnlyDefault: true,
+    includeCompatibility: options.includeCompatibility === true,
+    aliasesHiddenByDefault: true,
+    compatibilityFlag: COMPATIBILITY_FLAG,
+    compatibilityQueryParam: COMPATIBILITY_QUERY_PARAM,
+    compatibilityModeHint: COMPATIBILITY_MODE_HINT,
+    visibleCommandCount: Object.keys(visibleCommandDescriptors || {}).length,
+    totalAliasCount,
+    hiddenAliasCount: Math.max(totalAliasCount - visibleAliasCount, 0),
+    canonicalToolsWithCompatibilityAliases: countCanonicalToolsWithCompatibilityAliases(fullCommandDescriptors),
+  };
 }
 
 function pathExists(relativePath) {
@@ -220,8 +444,13 @@ function buildTrustDistributionMetadata() {
   }));
   const benchmarkLockPresent = shippedAndPresent(BENCHMARK_LOCK_PATH);
   const benchmarkReportRead = readJsonSafelyIfExists(BENCHMARK_REPORT_PATH);
+  const benchmarkBundleRead = readJsonSafelyIfExists(BENCHMARK_BUNDLE_PATH);
+  const benchmarkHistoryRead = readJsonSafelyIfExists(BENCHMARK_HISTORY_PATH);
   const benchmarkReport = benchmarkReportRead.value;
   const benchmarkReportPresent = shippedAndPresent(BENCHMARK_REPORT_PATH) && benchmarkReportRead.present;
+  const benchmarkBundlePresent = shippedAndPresent(BENCHMARK_BUNDLE_PATH) && benchmarkBundleRead.present;
+  const benchmarkHistoryPresent = shippedAndPresent(BENCHMARK_HISTORY_PATH) && benchmarkHistoryRead.present;
+  const benchmarkDocsHistoryPresent = shippedAndPresent(BENCHMARK_DOC_HISTORY_PATH);
   const benchmarkScriptPresent = shippedAndPresent(BENCHMARK_CHECK_SCRIPT_PATH);
   const benchmarkRunnerPresent = shippedAndPresent(BENCHMARK_RUN_SCRIPT_PATH);
   const ciWorkflowPresent = shippedAndPresent(CI_WORKFLOW_PATH);
@@ -331,6 +560,12 @@ function buildTrustDistributionMetadata() {
         lockPresent: benchmarkLockPresent,
         reportPath: BENCHMARK_REPORT_PATH,
         reportPresent: benchmarkReportPresent,
+        bundlePath: BENCHMARK_BUNDLE_PATH,
+        bundlePresent: benchmarkBundlePresent,
+        historyPath: BENCHMARK_HISTORY_PATH,
+        historyPresent: benchmarkHistoryPresent,
+        docsHistoryPath: BENCHMARK_DOC_HISTORY_PATH,
+        docsHistoryPresent: benchmarkDocsHistoryPresent,
         reportOverallPass:
           benchmarkReportPresent && benchmarkReport
             ? benchmarkReport.summary && benchmarkReport.summary.overallPass === true
@@ -349,6 +584,12 @@ function buildTrustDistributionMetadata() {
         names: buildReleaseAssetNames(
           normalizeString(packageJson && packageJson.name),
           normalizeString(packageJson && packageJson.version),
+          {
+            typescriptPackageName: normalizeString(typescriptSdkPackage && typescriptSdkPackage.name),
+            typescriptVersion: normalizeString(typescriptSdkPackage && typescriptSdkPackage.version),
+            pythonPackageName: parseTomlStringField(pythonPyprojectText, 'name'),
+            pythonVersion: parseTomlStringField(pythonPyprojectText, 'version'),
+          },
         ),
         verificationMethods: [...RELEASE_VERIFICATION_METHODS],
       },
@@ -391,7 +632,7 @@ function buildTrustDistributionMetadata() {
         prepackRunsReleaseTrustCheck: scriptIncludes(repoScripts.prepack, 'check:release-trust'),
         prepackRunsSdkContractCheck: scriptIncludes(repoScripts.prepack, 'check:sdk-contracts'),
         prepackRunsBenchmarkCheck: scriptIncludes(repoScripts.prepack, 'benchmark:check'),
-        prepublishOnlyRunsTest: normalizeScript(repoScripts.prepublishOnly) === 'npm test',
+        prepublishOnlyRunsTest: scriptIncludes(repoScripts.prepublishOnly, 'npm test'),
         testRunsUnit: scriptIncludes(repoScripts.test, 'test:unit'),
         testRunsCli: scriptIncludes(repoScripts.test, 'test:cli'),
         testRunsAgentWorkflow: scriptIncludes(repoScripts.test, 'test:agent-workflow'),
@@ -448,8 +689,175 @@ function buildTrustDistributionMetadata() {
   };
 }
 
+function buildStableTrustDistributionMetadata(trustDistribution) {
+  if (!trustDistribution || typeof trustDistribution !== 'object') return trustDistribution;
+  const stable = cloneJson(trustDistribution);
+  if (stable.verification && stable.verification.benchmark && typeof stable.verification.benchmark === 'object') {
+    stable.verification.benchmark.reportOverallPass = null;
+    stable.verification.benchmark.reportContractLockMatchesExpected = null;
+  }
+  if (stable.verification && stable.verification.signals && typeof stable.verification.signals === 'object') {
+    stable.verification.signals.benchmarkReportPass = null;
+    stable.verification.signals.benchmarkReportContractLockMatch = null;
+  }
+  if (Array.isArray(stable.notes)) {
+    const note = 'Generated contract artifacts normalize live benchmark pass-state so SDK bundles stay stable across benchmark refreshes.';
+    if (!stable.notes.includes(note)) {
+      stable.notes.push(note);
+    }
+  }
+  return stable;
+}
+
 function buildSample(values, limit = 12) {
   return sortStrings(values).slice(0, limit);
+}
+
+function mergeUniqueStringList(values = []) {
+  return sortStrings(
+    values.flatMap((value) => {
+      if (Array.isArray(value)) return value;
+      if (value === null || value === undefined) return [];
+      return [value];
+    }),
+  );
+}
+
+function describeSignerImplementationStatus(status) {
+  if (status === 'implemented') {
+    return 'Backend code path exists in the current runtime.';
+  }
+  if (status === 'placeholder') {
+    return 'Sample/profile metadata is shipped, but the backend code path is not implemented yet.';
+  }
+  return 'No implementation signal is currently available for this backend in the active runtime snapshot.';
+}
+
+function describeSignerRuntimeStatus(status) {
+  if (status === 'ready') {
+    return 'At least one built-in profile using this backend resolved as runtime-ready in the current process.';
+  }
+  if (status === 'degraded') {
+    return 'Backend is implemented, but the current runtime is missing signer material, network context, or compatibility prerequisites for built-in profiles using it.';
+  }
+  if (status === 'placeholder') {
+    return 'Backend is still a placeholder in the current runtime and cannot become ready yet.';
+  }
+  return 'Runtime readiness is not currently observable for this backend from built-in profiles in this process.';
+}
+
+function getDescriptorPolicyScopes(commandDescriptors, commandName) {
+  const descriptor = commandDescriptors && commandDescriptors[commandName];
+  return Array.isArray(descriptor && descriptor.policyScopes)
+    ? sortStrings(descriptor.policyScopes)
+    : [];
+}
+
+function getDescriptorCanonicalTool(commandDescriptors, commandName) {
+  const descriptor = commandDescriptors && commandDescriptors[commandName];
+  return normalizeString(descriptor && descriptor.canonicalTool) || normalizeString(commandName);
+}
+
+function buildPrincipalTemplates(commandDescriptors) {
+  const templates = PRINCIPAL_TEMPLATE_SPECS.map((spec) => {
+    const grantedScopes = mergeUniqueStringList(
+      spec.commandNames.map((commandName) => getDescriptorPolicyScopes(commandDescriptors, commandName)),
+    );
+    const canonicalTools = mergeUniqueStringList(
+      spec.commandNames.map((commandName) => getDescriptorCanonicalTool(commandDescriptors, commandName)),
+    );
+    return {
+      id: spec.id,
+      summary: spec.summary,
+      authMode: spec.authMode,
+      mutating: Boolean(spec.mutating),
+      signerRequired: Boolean(spec.signerRequired),
+      canonicalTools,
+      recommendedCommands: sortStrings(spec.commandNames),
+      grantedScopes,
+      optionalScopes: sortStrings(spec.optionalScopes),
+      tokenRecordTemplate: {
+        id: spec.id,
+        tokenPlaceholder: '<replace-with-random-secret>',
+        scopes: grantedScopes,
+      },
+      notes: Array.isArray(spec.notes) ? spec.notes.slice() : [],
+    };
+  });
+  return {
+    supported: true,
+    status: 'active',
+    notes: [
+      'Principal templates are least-privilege starter personas for remote `pandora mcp http` bearer tokens.',
+      'They are reference templates for `--auth-tokens-file` entries, not a hosted identity provider or automatic gateway provisioning layer.',
+      'Prefer creating one token per persona and widening scopes only when `policy explain`, `profile explain`, or `bootstrap` says a target workflow requires it.',
+    ],
+    templates,
+  };
+}
+
+function classifyBuiltinProfileRuntimeStatus(resolution) {
+  if (resolution && resolution.ready === true) {
+    return 'ready';
+  }
+  if (resolution && resolution.backendImplemented === false) {
+    return 'placeholder';
+  }
+  if (resolution && resolution.backendImplemented === true) {
+    return 'degraded';
+  }
+  return 'unknown';
+}
+
+function buildSignerBackendStatuses(builtinProfileResolutions, signerBackends) {
+  const backendStatuses = {};
+  const backends = sortStrings(signerBackends);
+
+  for (const signerBackend of backends) {
+    const matchingProfiles = builtinProfileResolutions.filter((item) => item.signerBackend === signerBackend);
+    const readyBuiltinIds = sortStrings(
+      matchingProfiles
+        .filter((item) => item.runtimeStatus === 'ready')
+        .map((item) => item.id),
+    );
+    const degradedBuiltinIds = sortStrings(
+      matchingProfiles
+        .filter((item) => item.runtimeStatus === 'degraded')
+        .map((item) => item.id),
+    );
+    const placeholderBuiltinIds = sortStrings(
+      matchingProfiles
+        .filter((item) => item.runtimeStatus === 'placeholder')
+        .map((item) => item.id),
+    );
+    const hasImplemented = matchingProfiles.some(
+      (item) => item.resolution && item.resolution.backendImplemented === true,
+    );
+    const implementationStatus = hasImplemented ? 'implemented' : 'placeholder';
+    let runtimeStatus = 'unknown';
+    if (implementationStatus === 'placeholder') {
+      runtimeStatus = 'placeholder';
+    } else if (readyBuiltinIds.length > 0) {
+      runtimeStatus = 'ready';
+    } else if (matchingProfiles.length > 0) {
+      runtimeStatus = 'degraded';
+    }
+
+    backendStatuses[signerBackend] = {
+      implementationStatus,
+      runtimeStatus,
+      builtinProfileCount: matchingProfiles.length,
+      readyBuiltinIds,
+      degradedBuiltinIds,
+      placeholderBuiltinIds,
+      notes: [
+        describeSignerImplementationStatus(implementationStatus),
+        describeSignerRuntimeStatus(runtimeStatus),
+      ],
+    };
+  }
+
+  return sortObjectKeys(backendStatuses);
 }
 
 function buildOutputModeMatrix(commandDescriptors) {
@@ -486,10 +894,15 @@ function buildTopLevelCommands(commandDescriptors) {
   for (const commandName of commandNames) {
     if (commandName.includes('.')) continue;
     const descriptor = commandDescriptors[commandName] || {};
+    const childCommands = commandNames.filter((candidate) => candidate.startsWith(`${commandName}.`));
+    const childMcpExposed = childCommands.some((candidate) => commandDescriptors[candidate] && commandDescriptors[candidate].mcpExposed);
+    const callableViaMcp = Boolean(descriptor.mcpExposed);
     topLevel[commandName] = {
       outputModes: sortStrings(descriptor.outputModes),
-      childCommands: commandNames.filter((candidate) => candidate.startsWith(`${commandName}.`)),
-      mcpExposed: Boolean(descriptor.mcpExposed),
+      childCommands,
+      mcpExposed: Boolean(descriptor.mcpExposed || childMcpExposed),
+      callableViaMcp,
+      hasMcpChildren: childMcpExposed,
       canonicalTool: descriptor.canonicalTool || null,
       aliasOf: descriptor.aliasOf || null,
       preferred: Boolean(descriptor.preferred),
@@ -540,7 +953,8 @@ function buildNamespaces(commandDescriptors) {
   return normalized;
 }
 
-function buildCanonicalTools(commandDescriptors) {
+function buildCanonicalTools(commandDescriptors, options = {}) {
+  const includeCompatibility = options.includeCompatibility === true;
   const canonicalTools = {};
 
   for (const [commandName, descriptor] of Object.entries(commandDescriptors)) {
@@ -550,21 +964,36 @@ function buildCanonicalTools(commandDescriptors) {
     if (!canonicalTools[canonicalTool]) {
       canonicalTools[canonicalTool] = {
         preferredCommand: null,
+        nonAliasPreferredCommand: null,
         commands: [],
+        compatibilityAliasCount: 0,
       };
     }
 
     canonicalTools[canonicalTool].commands.push(commandName);
+    if (isCompatibilityAliasDescriptor(descriptor)) {
+      canonicalTools[canonicalTool].compatibilityAliasCount += 1;
+    }
     if (descriptor.preferred) {
       canonicalTools[canonicalTool].preferredCommand = commandName;
+    }
+    if (!isCompatibilityAliasDescriptor(descriptor) && !canonicalTools[canonicalTool].nonAliasPreferredCommand) {
+      canonicalTools[canonicalTool].nonAliasPreferredCommand = commandName;
     }
   }
 
   const normalized = {};
   for (const canonicalTool of Object.keys(canonicalTools).sort((left, right) => left.localeCompare(right))) {
+    const preferredCommand = includeCompatibility
+      ? (canonicalTools[canonicalTool].preferredCommand || canonicalTools[canonicalTool].nonAliasPreferredCommand || canonicalTool)
+      : (canonicalTools[canonicalTool].nonAliasPreferredCommand || canonicalTools[canonicalTool].preferredCommand || canonicalTool);
     normalized[canonicalTool] = {
-      preferredCommand: canonicalTools[canonicalTool].preferredCommand || canonicalTool,
-      commands: sortStrings(canonicalTools[canonicalTool].commands),
+      preferredCommand,
+      commands: includeCompatibility
+        ? sortStrings(canonicalTools[canonicalTool].commands)
+        : [preferredCommand],
+      compatibilityAliasCount: canonicalTools[canonicalTool].compatibilityAliasCount,
+      compatibilityIncluded: includeCompatibility,
     };
   }
   return normalized;
@@ -647,17 +1076,19 @@ function buildCommandDigests(commandDescriptors, options = {}) {
   return sortObjectKeys(digests);
 }
 
-function buildSummary(commandDescriptors, outputModeMatrix) {
-  const descriptorList = Object.entries(commandDescriptors);
+function buildSummary(allCommandDescriptors, discoveryCommandDescriptors, outputModeMatrix) {
+  const descriptorList = Object.entries(allCommandDescriptors);
+  const discoveryList = Object.entries(discoveryCommandDescriptors);
   const routedTopLevelCommands = buildRouterTopLevelCommands();
   return {
     totalCommands: descriptorList.length,
-    topLevelCommands: Object.keys(commandDescriptors).filter((commandName) => !commandName.includes('.')).length,
+    discoveryCommands: discoveryList.length,
+    topLevelCommands: Object.keys(discoveryCommandDescriptors).filter((commandName) => !commandName.includes('.')).length,
     routedTopLevelCommands: routedTopLevelCommands.length,
     aliases: descriptorList.filter(([, descriptor]) => descriptor && descriptor.aliasOf).length,
-    mcpExposedCommands: descriptorList.filter(([, descriptor]) => descriptor && descriptor.mcpExposed).length,
-    mcpMutatingCommands: descriptorList.filter(([, descriptor]) => descriptor && descriptor.mcpMutating).length,
-    mcpLongRunningBlockedCommands: descriptorList.filter(
+    mcpExposedCommands: discoveryList.filter(([, descriptor]) => descriptor && descriptor.mcpExposed).length,
+    mcpMutatingCommands: discoveryList.filter(([, descriptor]) => descriptor && descriptor.mcpMutating).length,
+    mcpLongRunningBlockedCommands: discoveryList.filter(
       ([, descriptor]) => descriptor && descriptor.mcpLongRunningBlocked,
     ).length,
     jsonOnlyCommands: outputModeMatrix.jsonOnly.length,
@@ -666,12 +1097,15 @@ function buildSummary(commandDescriptors, outputModeMatrix) {
   };
 }
 
-function buildTransports(options = {}) {
+function buildTransports(options = {}, trustDistribution = null) {
   const remoteTransportActive = Boolean(options.remoteTransportActive);
   const remoteTransportUrl =
     typeof options.remoteTransportUrl === 'string' && options.remoteTransportUrl.trim()
       ? options.remoteTransportUrl.trim()
       : null;
+  const distribution = trustDistribution && trustDistribution.distribution ? trustDistribution.distribution : {};
+  const embeddedSdks = distribution && distribution.embeddedSdks ? distribution.embeddedSdks : {};
+  const generatedArtifacts = distribution && distribution.generatedContractArtifacts ? distribution.generatedContractArtifacts : {};
   const remoteTransportNotes = remoteTransportActive
     ? [
         'Remote streamable HTTP MCP gateway is active in this runtime.',
@@ -692,18 +1126,63 @@ function buildTransports(options = {}) {
     mcpStreamableHttp: {
       supported: true,
       status: remoteTransportActive ? 'active' : 'inactive',
+      deploymentModel: 'self-hosted-operator-gateway',
+      publicManagedService: false,
+      operatorDocsPath: pathExists('docs/trust/operator-deployment.md') ? 'docs/trust/operator-deployment.md' : null,
+      operatorDocsPresent: pathExists('docs/trust/operator-deployment.md'),
+      operationsApiAvailable: true,
+      webhookSupport: true,
       ...(remoteTransportUrl ? { endpoint: remoteTransportUrl } : {}),
       notes: remoteTransportNotes,
     },
     sdk: {
       supported: true,
       status: 'alpha',
-      notes: ['Generated TypeScript and Python SDK alpha packages are shipped in this build under sdk/typescript and sdk/python.'],
+      recommendedBootstrapCommand: 'bootstrap',
+      notes: [
+        'Generated TypeScript and Python SDK alpha packages are shipped in this build under sdk/typescript and sdk/python.',
+        'Cold agents should prefer the canonical bootstrap surface before lower-level capabilities/schema discovery.',
+      ],
+      packages: {
+        typescript: {
+          name: normalizeString(embeddedSdks.typescript && embeddedSdks.typescript.packageName),
+          version: normalizeString(embeddedSdks.typescript && embeddedSdks.typescript.version),
+          repoPath: normalizeString(embeddedSdks.typescript && embeddedSdks.typescript.packagePath),
+          distributionStatus: 'vendored-alpha',
+          publicationStatus: 'artifact-verified-not-publicly-published',
+          publicRegistryPublished: false,
+          recommendedConsumption: 'signed-github-release-artifact-until-public-registry',
+          vendoredInRootPackage: true,
+          releaseAssetPatterns: ['pandora-agent-sdk-*.tgz'],
+          installExamples: ['npm install /path/to/downloaded/pandora-agent-sdk-<version>.tgz'],
+        },
+        python: {
+          name: normalizeString(embeddedSdks.python && embeddedSdks.python.packageName),
+          version: normalizeString(embeddedSdks.python && embeddedSdks.python.version),
+          repoPath: normalizeString(embeddedSdks.python && embeddedSdks.python.projectPath),
+          moduleName: 'pandora_agent',
+          distributionStatus: 'vendored-alpha',
+          publicationStatus: 'artifact-verified-not-publicly-published',
+          publicRegistryPublished: false,
+          recommendedConsumption: 'signed-github-release-artifact-until-public-registry',
+          vendoredInRootPackage: true,
+          releaseAssetPatterns: ['pandora_agent-*.whl', 'pandora_agent-*.tar.gz'],
+          installExamples: [
+            'pip install /path/to/downloaded/pandora_agent-<version>-py3-none-any.whl',
+            'pip install /path/to/downloaded/pandora_agent-<version>.tar.gz',
+          ],
+        },
+      },
+      generatedBundle: {
+        repoPath: normalizeString(generatedArtifacts.manifestPath),
+        bundlePath: normalizeString(generatedArtifacts.bundlePath),
+        artifactVersion: normalizeString(generatedArtifacts.artifactVersion),
+      },
     },
   };
 }
 
-function buildPolicyProfilesStatus(commandDescriptors) {
+function buildPolicyProfilesStatus(commandDescriptors, options = {}) {
   const policyScopedCommands = Object.entries(commandDescriptors)
     .filter(([, descriptor]) => descriptor && Array.isArray(descriptor.policyScopes) && descriptor.policyScopes.length)
     .map(([name]) => name);
@@ -712,9 +1191,17 @@ function buildPolicyProfilesStatus(commandDescriptors) {
     .map(([name]) => name);
   const policies = createPolicyRegistryService().listPolicyPacks();
   const profileStore = createProfileStore();
-  const profileResolver = createProfileResolverService({ store: profileStore });
+  const profileResolver = createProfileResolverService({
+    store: profileStore,
+    env: options.artifactNeutralProfileReadiness === true ? {} : process.env,
+  });
   const profiles = profileStore.loadProfileSet({ includeBuiltIns: true });
   const builtinProfileEntries = profiles.items.filter((item) => item.builtin);
+  const mutableBuiltinIds = sortStrings(
+    builtinProfileEntries
+      .filter((item) => !(item.profile && item.profile.readOnly))
+      .map((item) => item.id),
+  );
   const builtinProfileResolutions = builtinProfileEntries.map((item) => {
     const resolved = profileResolver.resolveProfile({
       profileId: item.id,
@@ -726,11 +1213,27 @@ function buildPolicyProfilesStatus(commandDescriptors) {
       resolution: resolved && resolved.resolution ? resolved.resolution : null,
     };
   });
+  const builtinRuntimeStates = builtinProfileResolutions.map((item) => ({
+    ...item,
+    runtimeStatus: classifyBuiltinProfileRuntimeStatus(item.resolution),
+  }));
   const readyBuiltinIds = builtinProfileResolutions
     .filter((item) => item.resolution && item.resolution.ready === true)
     .map((item) => item.id);
-  const pendingBuiltinIds = builtinProfileResolutions
-    .filter((item) => !item.resolution || item.resolution.ready !== true)
+  const readyMutableBuiltinIds = sortStrings(
+    readyBuiltinIds.filter((id) => mutableBuiltinIds.includes(id)),
+  );
+  const degradedBuiltinIds = builtinRuntimeStates
+    .filter((item) => item.runtimeStatus === 'degraded')
+    .map((item) => item.id);
+  const degradedMutableBuiltinIds = sortStrings(
+    degradedBuiltinIds.filter((id) => mutableBuiltinIds.includes(id)),
+  );
+  const placeholderBuiltinIds = builtinRuntimeStates
+    .filter((item) => item.runtimeStatus === 'placeholder')
+    .map((item) => item.id);
+  const pendingBuiltinIds = builtinRuntimeStates
+    .filter((item) => item.runtimeStatus !== 'ready')
     .map((item) => item.id);
   const implementedBackends = sortStrings(
     builtinProfileResolutions
@@ -742,6 +1245,10 @@ function buildPolicyProfilesStatus(commandDescriptors) {
       .filter((item) => item.resolution && item.resolution.backendImplemented === false)
       .map((item) => item.signerBackend),
   );
+  const signerBackends = sortStrings(
+    profiles.items.map((item) => item.profile && item.profile.signerBackend).filter(Boolean),
+  );
+  const backendStatuses = buildSignerBackendStatuses(builtinRuntimeStates, signerBackends);
   return {
     policyPacks: {
       supported: true,
@@ -759,18 +1266,172 @@ function buildPolicyProfilesStatus(commandDescriptors) {
       notes: [
         'Named signer profiles are available for discovery, compatibility checks, and readiness resolution.',
         'Use `profile get --id <profile-id>` or `profile validate --file <path>` for per-profile resolution details.',
+        'Implementation status and runtime readiness are separate axes: an implemented backend can still report degraded until the current runtime supplies signer material and network context.',
         placeholderBackends.length
           ? `Placeholder sample backends are included for planning only: ${placeholderBackends.join(', ')}.`
           : 'All shipped signer backends report concrete runtime implementations.',
       ],
+      statusAxes: {
+        implementation: {
+          implemented: 'Executable backend code path exists in the current runtime.',
+          placeholder: 'Profile/backend metadata ships for planning, but the executable backend is not implemented yet.',
+        },
+        runtime: {
+          ready: 'Implemented backend plus current runtime prerequisites are satisfied for at least one shipped built-in profile.',
+          degraded: 'Implemented backend exists, but the current runtime is missing signer material, network context, or execution compatibility prerequisites.',
+          placeholder: 'Backend is still a placeholder in the current runtime and cannot become ready yet.',
+          unknown: 'Current runtime could not derive readiness for this backend from built-in profiles.',
+        },
+      },
       secretBearingCommandCount: secretCommands.length,
       sampleSecretBearingCommands: buildSample(secretCommands),
       builtinIds: sortStrings(builtinProfileEntries.map((item) => item.id)),
-      signerBackends: sortStrings(profiles.items.map((item) => item.profile && item.profile.signerBackend).filter(Boolean)),
+      mutableBuiltinCount: mutableBuiltinIds.length,
+      mutableBuiltinIds,
+      signerBackends,
       implementedBackends,
       placeholderBackends,
+      backendStatuses,
       readyBuiltinCount: readyBuiltinIds.length,
       readyBuiltinIds: sortStrings(readyBuiltinIds),
+      readyMutableBuiltinCount: readyMutableBuiltinIds.length,
+      readyMutableBuiltinIds,
+      degradedBuiltinCount: degradedBuiltinIds.length,
+      degradedBuiltinIds: sortStrings(degradedBuiltinIds),
+      degradedMutableBuiltinCount: degradedMutableBuiltinIds.length,
+      degradedMutableBuiltinIds,
+      placeholderBuiltinCount: placeholderBuiltinIds.length,
+      placeholderBuiltinIds: sortStrings(placeholderBuiltinIds),
+      pendingBuiltinCount: pendingBuiltinIds.length,
+      pendingBuiltinIds: sortStrings(pendingBuiltinIds),
+    },
+  };
+}
+
+async function buildPolicyProfilesStatusAsync(commandDescriptors, options = {}) {
+  if (options.artifactNeutralProfileReadiness === true) {
+    return buildPolicyProfilesStatus(commandDescriptors, options);
+  }
+  const policyScopedCommands = Object.entries(commandDescriptors)
+    .filter(([, descriptor]) => descriptor && Array.isArray(descriptor.policyScopes) && descriptor.policyScopes.length)
+    .map(([name]) => name);
+  const secretCommands = Object.entries(commandDescriptors)
+    .filter(([, descriptor]) => descriptor && descriptor.requiresSecrets)
+    .map(([name]) => name);
+  const policies = createPolicyRegistryService().listPolicyPacks();
+  const profileStore = createProfileStore();
+  const profileResolver = createProfileResolverService({
+    store: profileStore,
+    env: options.artifactNeutralProfileReadiness === true ? {} : process.env,
+  });
+  const profiles = profileStore.loadProfileSet({ includeBuiltIns: true });
+  const builtinProfileEntries = profiles.items.filter((item) => item.builtin);
+  const mutableBuiltinIds = sortStrings(
+    builtinProfileEntries
+      .filter((item) => !(item.profile && item.profile.readOnly))
+      .map((item) => item.id),
+  );
+  const builtinProfileResolutions = await Promise.all(builtinProfileEntries.map(async (item) => {
+    const resolved = await profileResolver.probeProfile({
+      profileId: item.id,
+      includeSecretMaterial: false,
+      fetch: options.fetch,
+    });
+    return {
+      id: item.id,
+      signerBackend: item.profile && item.profile.signerBackend ? item.profile.signerBackend : null,
+      resolution: resolved && resolved.resolution ? resolved.resolution : null,
+    };
+  }));
+  const builtinRuntimeStates = builtinProfileResolutions.map((item) => ({
+    ...item,
+    runtimeStatus: classifyBuiltinProfileRuntimeStatus(item.resolution),
+  }));
+  const readyBuiltinIds = builtinProfileResolutions
+    .filter((item) => item.resolution && item.resolution.ready === true)
+    .map((item) => item.id);
+  const readyMutableBuiltinIds = sortStrings(
+    readyBuiltinIds.filter((id) => mutableBuiltinIds.includes(id)),
+  );
+  const degradedBuiltinIds = builtinRuntimeStates
+    .filter((item) => item.runtimeStatus === 'degraded')
+    .map((item) => item.id);
+  const degradedMutableBuiltinIds = sortStrings(
+    degradedBuiltinIds.filter((id) => mutableBuiltinIds.includes(id)),
+  );
+  const placeholderBuiltinIds = builtinRuntimeStates
+    .filter((item) => item.runtimeStatus === 'placeholder')
+    .map((item) => item.id);
+  const pendingBuiltinIds = builtinRuntimeStates
+    .filter((item) => item.runtimeStatus !== 'ready')
+    .map((item) => item.id);
+  const implementedBackends = sortStrings(
+    builtinProfileResolutions
+      .filter((item) => item.resolution && item.resolution.backendImplemented === true)
+      .map((item) => item.signerBackend),
+  );
+  const placeholderBackends = sortStrings(
+    builtinProfileResolutions
+      .filter((item) => item.resolution && item.resolution.backendImplemented === false)
+      .map((item) => item.signerBackend),
+  );
+  const signerBackends = sortStrings(
+    profiles.items.map((item) => item.profile && item.profile.signerBackend).filter(Boolean),
+  );
+  const backendStatuses = buildSignerBackendStatuses(builtinRuntimeStates, signerBackends);
+  return {
+    policyPacks: {
+      supported: true,
+      status: 'alpha',
+      notes: ['Built-in and user-defined policy packs are available, exposed in contracts, and enforced on policy-scoped execution paths.'],
+      policyScopedCommandCount: policyScopedCommands.length,
+      samplePolicyScopedCommands: buildSample(policyScopedCommands),
+      builtinIds: sortStrings(policies.items.filter((item) => item.source === 'builtin').map((item) => item.id)),
+      userCount: Number.isFinite(policies.storedCount) ? policies.storedCount : 0,
+      userSampleIds: buildSample(policies.items.filter((item) => item.source === 'store').map((item) => item.id), 8),
+    },
+    signerProfiles: {
+      supported: true,
+      status: 'alpha',
+      notes: [
+        'Named signer profiles are available for discovery, compatibility checks, and readiness resolution.',
+        'Use `profile get --id <profile-id>` or `profile validate --file <path>` for per-profile resolution details.',
+        'Implementation status and runtime readiness are separate axes: an implemented backend can still report degraded until the current runtime supplies signer material and network context.',
+        placeholderBackends.length
+          ? `Placeholder sample backends are included for planning only: ${placeholderBackends.join(', ')}.`
+          : 'All shipped signer backends report concrete runtime implementations.',
+      ],
+      statusAxes: {
+        implementation: {
+          implemented: 'Executable backend code path exists in the current runtime.',
+          placeholder: 'Profile/backend metadata ships for planning, but the executable backend is not implemented yet.',
+        },
+        runtime: {
+          ready: 'Implemented backend plus current runtime prerequisites are satisfied for at least one shipped built-in profile.',
+          degraded: 'Implemented backend exists, but the current runtime is missing signer material, network context, or execution compatibility prerequisites.',
+          placeholder: 'Backend is still a placeholder in the current runtime and cannot become ready yet.',
+          unknown: 'Current runtime could not derive readiness for this backend from built-in profiles.',
+        },
+      },
+      secretBearingCommandCount: secretCommands.length,
+      sampleSecretBearingCommands: buildSample(secretCommands),
+      builtinIds: sortStrings(builtinProfileEntries.map((item) => item.id)),
+      mutableBuiltinCount: mutableBuiltinIds.length,
+      mutableBuiltinIds,
+      signerBackends,
+      implementedBackends,
+      placeholderBackends,
+      backendStatuses,
+      readyBuiltinCount: readyBuiltinIds.length,
+      readyBuiltinIds: sortStrings(readyBuiltinIds),
+      readyMutableBuiltinCount: readyMutableBuiltinIds.length,
+      readyMutableBuiltinIds,
+      degradedBuiltinCount: degradedBuiltinIds.length,
+      degradedBuiltinIds: sortStrings(degradedBuiltinIds),
+      degradedMutableBuiltinCount: degradedMutableBuiltinIds.length,
+      degradedMutableBuiltinIds,
+      placeholderBuiltinCount: placeholderBuiltinIds.length,
+      placeholderBuiltinIds: sortStrings(placeholderBuiltinIds),
       pendingBuiltinCount: pendingBuiltinIds.length,
       pendingBuiltinIds: sortStrings(pendingBuiltinIds),
     },
@@ -784,6 +1445,10 @@ function buildOperationProtocolStatus(commandDescriptors) {
   const jobCapableCommands = Object.entries(commandDescriptors)
     .filter(([, descriptor]) => descriptor && descriptor.jobCapable)
     .map(([name]) => name);
+  const receiptCommands = sortStrings(
+    ['operations.receipt', 'operations.verify-receipt']
+      .filter((commandName) => Object.prototype.hasOwnProperty.call(commandDescriptors || {}, commandName)),
+  );
   return {
     supported: operationReadyCommands.length > 0,
     status: operationReadyCommands.length > 0 ? 'partial' : 'planned',
@@ -792,6 +1457,12 @@ function buildOperationProtocolStatus(commandDescriptors) {
       : ['Operation protocol is planned. Current contracts expose jobCapable/returnsOperationId metadata only.'],
     operationReadyCommands: sortStrings(operationReadyCommands),
     jobCapableCommands: sortStrings(jobCapableCommands),
+    receiptCommands,
+    receiptCommandsSupported: receiptCommands.length === 2,
+    receiptVerificationSupported: receiptCommands.includes('operations.verify-receipt'),
+    receiptIntegrityModel: 'hash-and-signature-verified-json',
+    receiptSignatureAlgorithm: 'ed25519',
+    signedReceipts: true,
   };
 }
 
@@ -830,20 +1501,404 @@ function buildRoadmapSignals(commandDescriptors, options = {}) {
   };
 }
 
-function buildRegistryDigest(commandDescriptors, commandDigests) {
-  const canonicalTools = buildCanonicalTools(commandDescriptors);
-  const topLevelCommands = buildTopLevelCommands(commandDescriptors);
-  const routedTopLevelCommands = buildRouterTopLevelCommands();
-  const namespaces = buildNamespaces(commandDescriptors);
-  const documentation = buildSkillDocIndex();
+function hasCommandDigest(payload, commandName) {
+  return Boolean(payload && payload.commandDigests && payload.commandDigests[commandName]);
+}
+
+function createAPlusCheck({
+  id,
+  title,
+  status,
+  expectation,
+  actual,
+  evidencePaths = [],
+  remediationCommands = [],
+  reason,
+}) {
   return {
-    descriptorHash: stableJsonHash(commandDescriptors),
+    id,
+    title,
+    status,
+    expectation,
+    actual,
+    reason,
+    evidencePaths: sortStrings(evidencePaths),
+    remediationCommands: sortStrings(remediationCommands),
+  };
+}
+
+function buildAPlusCertification(payload = {}) {
+  const checks = [];
+  const discoveryPreferences = payload.discoveryPreferences || {};
+  const transports = payload.transports || {};
+  const sdkPackages = transports.sdk && transports.sdk.packages ? transports.sdk.packages : {};
+  const typescriptSdk = sdkPackages.typescript || {};
+  const pythonSdk = sdkPackages.python || {};
+  const signerProfiles = payload.policyProfiles && payload.policyProfiles.signerProfiles
+    ? payload.policyProfiles.signerProfiles
+    : {};
+  const principalTemplates = payload.principalTemplates && Array.isArray(payload.principalTemplates.templates)
+    ? payload.principalTemplates.templates
+    : [];
+  const benchmark = payload.trustDistribution
+    && payload.trustDistribution.verification
+    && payload.trustDistribution.verification.benchmark
+    ? payload.trustDistribution.verification.benchmark
+    : {};
+  const releaseAssets = payload.trustDistribution
+    && payload.trustDistribution.verification
+    && payload.trustDistribution.verification.releaseAssets
+    && Array.isArray(payload.trustDistribution.verification.releaseAssets.names)
+      ? payload.trustDistribution.verification.releaseAssets.names
+      : [];
+  const verificationSignals = payload.trustDistribution
+    && payload.trustDistribution.verification
+    && payload.trustDistribution.verification.signals
+    ? payload.trustDistribution.verification.signals
+    : {};
+  const releaseGateSignals = payload.trustDistribution
+    && payload.trustDistribution.releaseGates
+    && payload.trustDistribution.releaseGates.signals
+    ? payload.trustDistribution.releaseGates.signals
+    : {};
+  const operationProtocol = payload.operationProtocol || {};
+  const remoteGateway = transports.mcpStreamableHttp || {};
+  const readinessMode = payload.readinessMode || 'artifact-neutral';
+  const readyMutableBuiltinCount = Number.isFinite(signerProfiles.readyMutableBuiltinCount)
+    ? signerProfiles.readyMutableBuiltinCount
+    : 0;
+  const readyMutableBuiltinIds = Array.isArray(signerProfiles.readyMutableBuiltinIds)
+    ? signerProfiles.readyMutableBuiltinIds
+    : [];
+
+  checks.push(createAPlusCheck({
+    id: 'bootstrap-canonical-default',
+    title: 'Single-call canonical bootstrap exists',
+    status:
+      payload.recommendedFirstCall === 'bootstrap'
+      && discoveryPreferences.canonicalOnlyDefault === true
+      && discoveryPreferences.aliasesHiddenByDefault === true
+      && hasCommandDigest(payload, 'bootstrap')
+        ? 'pass'
+        : 'fail',
+    expectation: 'Cold agents start from bootstrap and see canonical tools only by default.',
+    actual: {
+      recommendedFirstCall: payload.recommendedFirstCall || null,
+      canonicalOnlyDefault: Boolean(discoveryPreferences.canonicalOnlyDefault),
+      aliasesHiddenByDefault: Boolean(discoveryPreferences.aliasesHiddenByDefault),
+      bootstrapCommandPresent: hasCommandDigest(payload, 'bootstrap'),
+    },
+    evidencePaths: [
+      'recommendedFirstCall',
+      'discoveryPreferences.canonicalOnlyDefault',
+      'discoveryPreferences.aliasesHiddenByDefault',
+      'commandDigests.bootstrap',
+    ],
+    remediationCommands: ['pandora --output json bootstrap'],
+    reason:
+      payload.recommendedFirstCall === 'bootstrap'
+      ? 'Bootstrap is the canonical discovery entrypoint.'
+      : 'Bootstrap is not yet the canonical first call.',
+  }));
+
+  checks.push(createAPlusCheck({
+    id: 'typescript-sdk-publication',
+    title: 'Standalone TypeScript SDK is publicly published',
+    status: typescriptSdk.publicRegistryPublished === true ? 'pass' : 'fail',
+    expectation: 'A+ requires @pandora/agent-sdk to be installable from a public package registry.',
+    actual: {
+      packageName: typescriptSdk.name || null,
+      publicRegistryPublished: Boolean(typescriptSdk.publicRegistryPublished),
+      publicationStatus: typescriptSdk.publicationStatus || null,
+      releaseAssetPatterns: Array.isArray(typescriptSdk.releaseAssetPatterns) ? typescriptSdk.releaseAssetPatterns : [],
+    },
+    evidencePaths: ['transports.sdk.packages.typescript'],
+    reason:
+      typescriptSdk.publicRegistryPublished === true
+        ? 'The standalone TypeScript SDK is publicly installable.'
+        : 'The TypeScript SDK is still release-artifact/vendored only.',
+  }));
+
+  checks.push(createAPlusCheck({
+    id: 'python-sdk-publication',
+    title: 'Standalone Python SDK is publicly published',
+    status: pythonSdk.publicRegistryPublished === true ? 'pass' : 'fail',
+    expectation: 'A+ requires pandora-agent to be installable from a public package registry.',
+    actual: {
+      packageName: pythonSdk.name || null,
+      publicRegistryPublished: Boolean(pythonSdk.publicRegistryPublished),
+      publicationStatus: pythonSdk.publicationStatus || null,
+      releaseAssetPatterns: Array.isArray(pythonSdk.releaseAssetPatterns) ? pythonSdk.releaseAssetPatterns : [],
+    },
+    evidencePaths: ['transports.sdk.packages.python'],
+    reason:
+      pythonSdk.publicRegistryPublished === true
+        ? 'The standalone Python SDK is publicly installable.'
+        : 'The Python SDK is still release-artifact/vendored only.',
+  }));
+
+  checks.push(createAPlusCheck({
+    id: 'runtime-ready-mutable-profiles',
+    title: 'At least two mutable built-in signer profiles are runtime-ready',
+    status:
+      readinessMode !== 'runtime-local'
+        ? 'not-evaluable'
+        : (readyMutableBuiltinCount >= 2 ? 'pass' : 'fail'),
+    expectation: 'A+ requires at least two mutable built-in profiles to be runtime-ready in the current host.',
+    actual: {
+      readinessMode,
+      readyMutableBuiltinCount,
+      readyMutableBuiltinIds,
+    },
+    evidencePaths: [
+      'readinessMode',
+      'policyProfiles.signerProfiles.readyMutableBuiltinCount',
+      'policyProfiles.signerProfiles.readyMutableBuiltinIds',
+    ],
+    remediationCommands:
+      readinessMode !== 'runtime-local'
+        ? ['pandora --output json capabilities --runtime-local-readiness']
+        : ['pandora --output json profile explain --id prod_trader_a --command trade --mode execute'],
+    reason:
+      readinessMode !== 'runtime-local'
+        ? 'Artifact-neutral capabilities intentionally do not certify host-local signer readiness.'
+        : (readyMutableBuiltinCount >= 2
+          ? 'Current host runtime satisfies the mutable-profile readiness threshold.'
+          : 'Current host runtime does not yet have two mutable built-in profiles ready.'),
+  }));
+
+  checks.push(createAPlusCheck({
+    id: 'policy-profile-explainability',
+    title: 'Policy/profile reasoning is machine-explainable',
+    status:
+      ['policy.explain', 'policy.recommend', 'profile.explain', 'profile.recommend']
+        .every((commandName) => hasCommandDigest(payload, commandName))
+        ? 'pass'
+        : 'fail',
+    expectation: 'Agents can ask what is safe, why not, and what to do next without ad hoc prompting.',
+    actual: {
+      policyExplain: hasCommandDigest(payload, 'policy.explain'),
+      policyRecommend: hasCommandDigest(payload, 'policy.recommend'),
+      profileExplain: hasCommandDigest(payload, 'profile.explain'),
+      profileRecommend: hasCommandDigest(payload, 'profile.recommend'),
+    },
+    evidencePaths: [
+      'commandDigests.policy.explain',
+      'commandDigests.policy.recommend',
+      'commandDigests.profile.explain',
+      'commandDigests.profile.recommend',
+    ],
+    reason: 'Explain/recommend surfaces are part of the live command contract.',
+  }));
+
+  checks.push(createAPlusCheck({
+    id: 'canonical-discovery-default',
+    title: 'Canonical discovery dominates by default',
+    status:
+      discoveryPreferences.canonicalOnlyDefault === true
+      && discoveryPreferences.aliasesHiddenByDefault === true
+      && Boolean(discoveryPreferences.compatibilityFlag)
+      && Boolean(discoveryPreferences.compatibilityQueryParam)
+        ? 'pass'
+        : 'fail',
+    expectation: 'Compatibility aliases are hidden by default and require explicit opt-in.',
+    actual: {
+      canonicalOnlyDefault: Boolean(discoveryPreferences.canonicalOnlyDefault),
+      aliasesHiddenByDefault: Boolean(discoveryPreferences.aliasesHiddenByDefault),
+      compatibilityFlag: discoveryPreferences.compatibilityFlag || null,
+      compatibilityQueryParam: discoveryPreferences.compatibilityQueryParam || null,
+    },
+    evidencePaths: ['discoveryPreferences'],
+    reason: 'Default discovery preferences enforce canonical-tool-first behavior.',
+  }));
+
+  checks.push(createAPlusCheck({
+    id: 'receipt-audit-strength',
+    title: 'Mutation receipts are emitted, verifiable, and signed',
+    status:
+      operationProtocol.receiptCommandsSupported === true
+      && operationProtocol.receiptVerificationSupported === true
+      && operationProtocol.signedReceipts === true
+        ? 'pass'
+        : 'fail',
+    expectation: 'A+ requires receipt retrieval, receipt verification, and cryptographically signed receipts.',
+    actual: {
+      receiptCommandsSupported: Boolean(operationProtocol.receiptCommandsSupported),
+      receiptVerificationSupported: Boolean(operationProtocol.receiptVerificationSupported),
+      receiptIntegrityModel: operationProtocol.receiptIntegrityModel || null,
+      signedReceipts: Boolean(operationProtocol.signedReceipts),
+    },
+    evidencePaths: ['operationProtocol'],
+    reason:
+      operationProtocol.signedReceipts === true
+        ? 'Receipt verification and signing are both available.'
+        : 'Receipts are currently hash-verified JSON, not signed trust artifacts.',
+  }));
+
+  checks.push(createAPlusCheck({
+    id: 'remote-control-plane-posture',
+    title: 'Remote control plane has machine-visible operational posture',
+    status:
+      remoteGateway.supported === true
+      && remoteGateway.deploymentModel === 'self-hosted-operator-gateway'
+      && remoteGateway.operatorDocsPresent === true
+      && remoteGateway.operationsApiAvailable === true
+      && remoteGateway.webhookSupport === true
+      && payload.principalTemplates
+      && payload.principalTemplates.supported === true
+      && principalTemplates.length >= 4
+        ? 'pass'
+        : 'fail',
+    expectation: 'Remote operation requires deployable gateway posture, webhook/operations support, and principal templates.',
+    actual: {
+      supported: Boolean(remoteGateway.supported),
+      deploymentModel: remoteGateway.deploymentModel || null,
+      publicManagedService: Boolean(remoteGateway.publicManagedService),
+      operatorDocsPresent: Boolean(remoteGateway.operatorDocsPresent),
+      operationsApiAvailable: Boolean(remoteGateway.operationsApiAvailable),
+      webhookSupport: Boolean(remoteGateway.webhookSupport),
+      principalTemplateCount: principalTemplates.length,
+    },
+    evidencePaths: ['transports.mcpStreamableHttp', 'principalTemplates'],
+    reason: 'Remote MCP posture is exposed directly in capabilities and principal templates.',
+  }));
+
+  checks.push(createAPlusCheck({
+    id: 'public-benchmark-trust-bundle',
+    title: 'Public benchmark bundle is release-attached and currently passing',
+    status:
+      releaseAssets.includes('benchmark-publication-bundle.tar.gz')
+      && releaseAssets.includes('benchmark-publication-manifest.json')
+      && benchmark.reportPresent === true
+      && benchmark.reportOverallPass === true
+      && benchmark.reportContractLockMatchesExpected === true
+        ? 'pass'
+        : 'fail',
+    expectation: 'A+ requires a published benchmark bundle plus a passing, lock-matched benchmark report.',
+    actual: {
+      benchmarkPublicationBundle: releaseAssets.includes('benchmark-publication-bundle.tar.gz'),
+      benchmarkPublicationManifest: releaseAssets.includes('benchmark-publication-manifest.json'),
+      reportPresent: benchmark.reportPresent === true,
+      reportOverallPass: benchmark.reportOverallPass === true,
+      reportContractLockMatchesExpected: benchmark.reportContractLockMatchesExpected === true,
+    },
+    evidencePaths: [
+      'trustDistribution.verification.releaseAssets.names',
+      'trustDistribution.verification.benchmark',
+    ],
+    remediationCommands: ['node scripts/check_a_plus_scorecard.cjs --runtime-local-readiness'],
+    reason: 'Benchmark publication and freshness are part of the machine-checkable trust chain.',
+  }));
+
+  const releaseDriftPass = [
+    verificationSignals.buildRunsDocsCheck,
+    verificationSignals.buildRunsReleaseTrustCheck,
+    verificationSignals.buildRunsSdkContractCheck,
+    verificationSignals.buildRunsBenchmarkCheck,
+    verificationSignals.prepackRunsDocsCheck,
+    verificationSignals.prepackRunsReleaseTrustCheck,
+    verificationSignals.prepackRunsSdkContractCheck,
+    verificationSignals.prepackRunsBenchmarkCheck,
+    verificationSignals.prepublishOnlyRunsTest,
+    verificationSignals.testRunsUnit,
+    verificationSignals.testRunsCli,
+    verificationSignals.testRunsAgentWorkflow,
+    verificationSignals.testRunsSmoke,
+    verificationSignals.testRunsBenchmarkCheck,
+    verificationSignals.trustDocsPresent,
+    verificationSignals.benchmarkReportPresent,
+    verificationSignals.benchmarkReportPass,
+    verificationSignals.benchmarkReportContractLockMatch,
+    releaseGateSignals.workflowRunsNpmTest,
+    releaseGateSignals.workflowRunsReleasePrep,
+    releaseGateSignals.repoTestRunsSmoke,
+    releaseGateSignals.repoTestRunsBenchmarkCheck,
+    releaseGateSignals.repoReleasePrepRunsSmoke,
+    releaseGateSignals.repoReleasePrepRunsBenchmarkCheck,
+    releaseGateSignals.repoReleasePrepRunsSbom,
+    releaseGateSignals.repoReleasePrepRunsSpdxSbom,
+    releaseGateSignals.repoReleasePrepRunsReleaseTrust,
+  ].every((value) => value === true);
+
+  checks.push(createAPlusCheck({
+    id: 'release-drift-discipline',
+    title: 'Release/package/docs/benchmark drift gates are all green',
+    status: releaseDriftPass ? 'pass' : 'fail',
+    expectation: 'A+ requires repo head, packaged surface, benchmark artifacts, and trust gates to agree.',
+    actual: {
+      verificationSignals,
+      releaseGateSignals,
+    },
+    evidencePaths: [
+      'trustDistribution.verification.signals',
+      'trustDistribution.releaseGates.signals',
+    ],
+    remediationCommands: ['npm run release:prep'],
+    reason:
+      releaseDriftPass
+        ? 'Release, pack, benchmark, and trust signals are all aligned.'
+        : 'One or more release/package/benchmark drift gates are currently failing.',
+  }));
+
+  const failChecks = checks.filter((check) => check.status === 'fail');
+  const notEvaluableChecks = checks.filter((check) => check.status === 'not-evaluable');
+  const passChecks = checks.filter((check) => check.status === 'pass');
+  const status = failChecks.length === 0 && notEvaluableChecks.length === 0
+    ? 'certified'
+    : (failChecks.length > 0 ? 'not-certified' : 'not-evaluable');
+  const blockingChecks = [...failChecks, ...notEvaluableChecks];
+
+  return {
+    targetTier: A_PLUS_TARGET_TIER,
+    status,
+    eligible: status === 'certified',
+    readinessMode,
+    passCount: passChecks.length,
+    failCount: failChecks.length,
+    notEvaluableCount: notEvaluableChecks.length,
+    blockingCheckIds: blockingChecks.map((check) => check.id),
+    blockers: blockingChecks.map((check) => `${check.title}: ${check.reason}`),
+    nextCommands: sortStrings(
+      blockingChecks.flatMap((check) => check.remediationCommands || []),
+    ),
+    notes: [
+      'This scorecard is the machine-readable threshold gate for the Pandora A+ claim.',
+      'Artifact-neutral discovery can prove packaging and contract posture, but runtime-local signer readiness must be checked explicitly.',
+      'A+ certification is denied whenever any required check fails or cannot yet be evaluated from the current runtime mode.',
+    ],
+    checks,
+  };
+}
+
+function buildRegistryDigest(commandDescriptors, commandDigests, extra = {}) {
+  const discoveryCommandDescriptors = extra && extra.discoveryCommandDescriptors && typeof extra.discoveryCommandDescriptors === 'object'
+    ? extra.discoveryCommandDescriptors
+    : commandDescriptors;
+  const discoveryPreferences = extra && extra.discoveryPreferences && typeof extra.discoveryPreferences === 'object'
+    ? extra.discoveryPreferences
+    : null;
+  const canonicalTools = buildCanonicalTools(commandDescriptors, {
+    includeCompatibility: Boolean(discoveryPreferences && discoveryPreferences.includeCompatibility),
+  });
+  const topLevelCommands = buildTopLevelCommands(discoveryCommandDescriptors);
+  const routedTopLevelCommands = buildRouterTopLevelCommands();
+  const namespaces = buildNamespaces(discoveryCommandDescriptors);
+  const documentation = buildSkillDocIndex();
+  const trustDistribution = extra && typeof extra.trustDistribution === 'object' ? extra.trustDistribution : null;
+  const policyProfiles = extra && typeof extra.policyProfiles === 'object' ? extra.policyProfiles : null;
+  const principalTemplates = extra && typeof extra.principalTemplates === 'object' ? extra.principalTemplates : null;
+  return {
+    descriptorHash: stableJsonHash(discoveryCommandDescriptors),
+    fullDescriptorHash: stableJsonHash(commandDescriptors),
     commandDigestHash: stableJsonHash(commandDigests),
     canonicalHash: stableJsonHash(canonicalTools),
     topLevelHash: stableJsonHash(topLevelCommands),
     routedTopLevelHash: stableJsonHash(routedTopLevelCommands),
     namespaceHash: stableJsonHash(namespaces),
     documentationHash: stableJsonHash(documentation),
+    trustDistributionHash: stableJsonHash(trustDistribution),
+    policyProfilesHash: stableJsonHash(policyProfiles),
+    principalTemplatesHash: stableJsonHash(principalTemplates),
   };
 }
 
@@ -851,6 +1906,9 @@ function buildCapabilitiesPayload(options = {}) {
   const normalizedOptions = {
     ...options,
   };
+  if (!Object.prototype.hasOwnProperty.call(normalizedOptions, 'artifactNeutralProfileReadiness')) {
+    normalizedOptions.artifactNeutralProfileReadiness = true;
+  }
   if (!Object.prototype.hasOwnProperty.call(normalizedOptions, 'remoteTransportActive')) {
     normalizedOptions.remoteTransportActive = process.env.PANDORA_MCP_REMOTE_ACTIVE === '1';
   }
@@ -860,8 +1918,17 @@ function buildCapabilitiesPayload(options = {}) {
         ? process.env.PANDORA_MCP_REMOTE_URL.trim()
         : null;
   }
-  const commandDescriptors = sortObjectKeys(buildCommandDescriptors());
-  const transports = buildTransports(normalizedOptions);
+  if (!Object.prototype.hasOwnProperty.call(normalizedOptions, 'includeCompatibility')) {
+    normalizedOptions.includeCompatibility = false;
+  }
+  const allCommandDescriptors = sortObjectKeys(buildCommandDescriptors());
+  const commandDescriptors = filterDiscoveryCommandDescriptors(allCommandDescriptors, normalizedOptions);
+  const discoveryPreferences = buildDiscoveryPreferences(allCommandDescriptors, commandDescriptors, normalizedOptions);
+  const liveTrustDistribution = buildTrustDistributionMetadata();
+  const trustDistribution = normalizedOptions.stableArtifactTrustDistribution
+    ? buildStableTrustDistributionMetadata(liveTrustDistribution)
+    : liveTrustDistribution;
+  const transports = buildTransports(normalizedOptions, trustDistribution);
   const remoteTransportActive = Boolean(normalizedOptions.remoteTransportActive)
     || Object.entries(transports).some(
       ([name, transport]) =>
@@ -872,7 +1939,9 @@ function buildCapabilitiesPayload(options = {}) {
     );
   const commandDigests = buildCommandDigests(commandDescriptors, { remoteTransportActive });
   const outputModeMatrix = buildOutputModeMatrix(commandDescriptors);
-  return {
+  const policyProfiles = buildPolicyProfilesStatus(commandDescriptors, normalizedOptions);
+  const principalTemplates = buildPrincipalTemplates(allCommandDescriptors);
+  const payload = {
     schemaVersion: '1.0.0',
     generatedAt:
       typeof normalizedOptions.generatedAtOverride === 'string' && normalizedOptions.generatedAtOverride.trim()
@@ -882,11 +1951,15 @@ function buildCapabilitiesPayload(options = {}) {
     description: 'Runtime capability digest derived from the Pandora command contract registry.',
     source: 'agent_contract_registry',
     commandDescriptorVersion: COMMAND_DESCRIPTOR_VERSION,
-    summary: buildSummary(commandDescriptors, outputModeMatrix),
+    recommendedFirstCall: 'bootstrap',
+    discoveryPreferences,
+    readinessMode: normalizedOptions.artifactNeutralProfileReadiness === true ? 'artifact-neutral' : 'runtime-local',
+    summary: buildSummary(allCommandDescriptors, commandDescriptors, outputModeMatrix),
     transports,
-    roadmapSignals: buildRoadmapSignals(commandDescriptors, { remoteTransportActive }),
-    trustDistribution: buildTrustDistributionMetadata(),
-    policyProfiles: buildPolicyProfilesStatus(commandDescriptors),
+    roadmapSignals: buildRoadmapSignals(allCommandDescriptors, { remoteTransportActive }),
+    trustDistribution,
+    policyProfiles,
+    principalTemplates,
     operationProtocol: buildOperationProtocolStatus(commandDescriptors),
     versionCompatibility: buildVersionCompatibility({ remoteTransportActive }),
     documentation: buildSkillDocIndex(),
@@ -894,10 +1967,113 @@ function buildCapabilitiesPayload(options = {}) {
     topLevelCommands: buildTopLevelCommands(commandDescriptors),
     routedTopLevelCommands: buildRouterTopLevelCommands(),
     namespaces: buildNamespaces(commandDescriptors),
-    canonicalTools: buildCanonicalTools(commandDescriptors),
+    canonicalTools: buildCanonicalTools(allCommandDescriptors, normalizedOptions),
     commandDigests,
-    registryDigest: buildRegistryDigest(commandDescriptors, commandDigests),
+    registryDigest: buildRegistryDigest(allCommandDescriptors, commandDigests, {
+      discoveryCommandDescriptors: commandDescriptors,
+      discoveryPreferences,
+      trustDistribution,
+      policyProfiles,
+      principalTemplates,
+    }),
   };
+  const certificationPayload = normalizedOptions.stableArtifactTrustDistribution
+    ? {
+      ...payload,
+      trustDistribution: liveTrustDistribution,
+    }
+    : payload;
+  payload.certification = {
+    aPlus: buildAPlusCertification(certificationPayload),
+  };
+  return payload;
+}
+
+async function buildCapabilitiesPayloadAsync(options = {}) {
+  const normalizedOptions = {
+    ...options,
+  };
+  if (!Object.prototype.hasOwnProperty.call(normalizedOptions, 'artifactNeutralProfileReadiness')) {
+    normalizedOptions.artifactNeutralProfileReadiness = true;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalizedOptions, 'remoteTransportActive')) {
+    normalizedOptions.remoteTransportActive = process.env.PANDORA_MCP_REMOTE_ACTIVE === '1';
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalizedOptions, 'remoteTransportUrl')) {
+    normalizedOptions.remoteTransportUrl =
+      typeof process.env.PANDORA_MCP_REMOTE_URL === 'string' && process.env.PANDORA_MCP_REMOTE_URL.trim()
+        ? process.env.PANDORA_MCP_REMOTE_URL.trim()
+        : null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalizedOptions, 'includeCompatibility')) {
+    normalizedOptions.includeCompatibility = false;
+  }
+  const allCommandDescriptors = sortObjectKeys(buildCommandDescriptors());
+  const commandDescriptors = filterDiscoveryCommandDescriptors(allCommandDescriptors, normalizedOptions);
+  const discoveryPreferences = buildDiscoveryPreferences(allCommandDescriptors, commandDescriptors, normalizedOptions);
+  const liveTrustDistribution = buildTrustDistributionMetadata();
+  const trustDistribution = normalizedOptions.stableArtifactTrustDistribution
+    ? buildStableTrustDistributionMetadata(liveTrustDistribution)
+    : liveTrustDistribution;
+  const transports = buildTransports(normalizedOptions, trustDistribution);
+  const remoteTransportActive = Boolean(normalizedOptions.remoteTransportActive)
+    || Object.entries(transports).some(
+      ([name, transport]) =>
+        !['cliJson', 'mcpStdio'].includes(name)
+        && transport
+        && transport.supported === true
+        && String(transport.status || '').toLowerCase() === 'active',
+    );
+  const commandDigests = buildCommandDigests(commandDescriptors, { remoteTransportActive });
+  const outputModeMatrix = buildOutputModeMatrix(commandDescriptors);
+  const policyProfiles = await buildPolicyProfilesStatusAsync(commandDescriptors, normalizedOptions);
+  const principalTemplates = buildPrincipalTemplates(allCommandDescriptors);
+  const payload = {
+    schemaVersion: '1.0.0',
+    generatedAt:
+      typeof normalizedOptions.generatedAtOverride === 'string' && normalizedOptions.generatedAtOverride.trim()
+        ? normalizedOptions.generatedAtOverride.trim()
+        : new Date().toISOString(),
+    title: 'PandoraCliCapabilities',
+    description: 'Runtime capability digest derived from the Pandora command contract registry.',
+    source: 'agent_contract_registry',
+    commandDescriptorVersion: COMMAND_DESCRIPTOR_VERSION,
+    recommendedFirstCall: 'bootstrap',
+    discoveryPreferences,
+    readinessMode: normalizedOptions.artifactNeutralProfileReadiness === true ? 'artifact-neutral' : 'runtime-local',
+    summary: buildSummary(allCommandDescriptors, commandDescriptors, outputModeMatrix),
+    transports,
+    roadmapSignals: buildRoadmapSignals(allCommandDescriptors, { remoteTransportActive }),
+    trustDistribution,
+    policyProfiles,
+    principalTemplates,
+    operationProtocol: buildOperationProtocolStatus(commandDescriptors),
+    versionCompatibility: buildVersionCompatibility({ remoteTransportActive }),
+    documentation: buildSkillDocIndex(),
+    outputModeMatrix,
+    topLevelCommands: buildTopLevelCommands(commandDescriptors),
+    routedTopLevelCommands: buildRouterTopLevelCommands(),
+    namespaces: buildNamespaces(commandDescriptors),
+    canonicalTools: buildCanonicalTools(allCommandDescriptors, normalizedOptions),
+    commandDigests,
+    registryDigest: buildRegistryDigest(allCommandDescriptors, commandDigests, {
+      discoveryCommandDescriptors: commandDescriptors,
+      discoveryPreferences,
+      trustDistribution,
+      policyProfiles,
+      principalTemplates,
+    }),
+  };
+  const certificationPayload = normalizedOptions.stableArtifactTrustDistribution
+    ? {
+      ...payload,
+      trustDistribution: liveTrustDistribution,
+    }
+    : payload;
+  payload.certification = {
+    aPlus: buildAPlusCertification(certificationPayload),
+  };
+  return payload;
 }
 
 function createRunCapabilitiesCommand(deps) {
@@ -911,21 +2087,23 @@ function createRunCapabilitiesCommand(deps) {
     throw new Error('createRunCapabilitiesCommand requires CliError');
   }
 
-  function runCapabilitiesCommand(args, context) {
+  async function runCapabilitiesCommand(args, context) {
     if (Array.isArray(args) && (args.includes('--help') || args.includes('-h'))) {
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'capabilities.help', {
-          usage: 'pandora --output json capabilities',
+          usage: 'pandora --output json capabilities [--include-compatibility] [--runtime-local-readiness]',
           notes: [
             'The capabilities payload is derived from the same command contract registry that powers pandora schema.',
             'Use schema for the full JSON Schema envelope definitions and exact per-command input schemas.',
             'Use capabilities for the compact runtime digest, canonical tool routing, and policy/readiness metadata.',
+            'By default capabilities hides compatibility aliases and only exposes canonical discovery commands.',
+            'By default capabilities is artifact-neutral for cold-agent discovery. Pass --runtime-local-readiness to probe the current host runtime explicitly.',
           ],
           commandDescriptorVersion: COMMAND_DESCRIPTOR_VERSION,
         });
       } else {
         // eslint-disable-next-line no-console
-        console.log('Usage: pandora --output json capabilities');
+        console.log('Usage: pandora --output json capabilities [--include-compatibility] [--runtime-local-readiness]');
         // eslint-disable-next-line no-console
         console.log('');
         // eslint-disable-next-line no-console
@@ -936,6 +2114,10 @@ function createRunCapabilitiesCommand(deps) {
         console.log('  - It is derived from the same command contract registry used by pandora schema.');
         // eslint-disable-next-line no-console
         console.log('  - capabilities is the compact discovery digest; schema remains the full contract surface.');
+        // eslint-disable-next-line no-console
+        console.log('  - By default it hides compatibility aliases. Pass --include-compatibility to surface legacy aliases in discovery maps.');
+        // eslint-disable-next-line no-console
+        console.log('  - By default capabilities is artifact-neutral for cold-agent discovery. Pass --runtime-local-readiness to inspect current host readiness.');
       }
       return;
     }
@@ -946,24 +2128,40 @@ function createRunCapabilitiesCommand(deps) {
       });
     }
 
-    if (Array.isArray(args) && args.length > 0) {
+    const includeCompatibility = Array.isArray(args) && args.includes('--include-compatibility');
+    const runtimeLocalReadiness = Array.isArray(args) && args.includes('--runtime-local-readiness');
+    const unsupportedArgs = Array.isArray(args)
+      ? args.filter((arg) => arg !== '--runtime-local-readiness' && arg !== '--include-compatibility')
+      : [];
+
+    if (unsupportedArgs.length > 0) {
       throw new CliError(
         'INVALID_ARGS',
         'capabilities does not accept additional flags or positional arguments.',
         {
-          hints: ['Run `pandora --output json capabilities` without extra arguments.'],
+          hints: ['Run `pandora --output json capabilities`, `pandora --output json capabilities --include-compatibility`, or `pandora --output json capabilities --runtime-local-readiness`.'],
         },
       );
     }
 
-    emitSuccess(context.outputMode, 'capabilities', buildCapabilitiesPayload());
+    emitSuccess(
+      context.outputMode,
+      'capabilities',
+      await buildCapabilitiesPayloadAsync({
+        includeCompatibility,
+        artifactNeutralProfileReadiness: !runtimeLocalReadiness,
+      }),
+    );
   }
 
   return { runCapabilitiesCommand };
 }
 
 module.exports = {
+  buildAPlusCertification,
   buildCapabilitiesPayload,
+  buildCapabilitiesPayloadAsync,
+  buildStableTrustDistributionMetadata,
   buildTrustDistributionMetadata,
   createRunCapabilitiesCommand,
 };

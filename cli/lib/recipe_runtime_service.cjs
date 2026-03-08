@@ -32,11 +32,47 @@ function resolveDelegatedCommand(commandArgs) {
   return commandTokens.length ? commandTokens.join('.') : null;
 }
 
+function hasFlag(commandArgs, flagName) {
+  const args = Array.isArray(commandArgs) ? commandArgs : [];
+  return args.includes(flagName);
+}
+
+function parseGrantedScopesFromEnv(env = process.env) {
+  const rawValue = env && typeof env.PANDORA_MCP_GRANTED_SCOPES === 'string'
+    ? env.PANDORA_MCP_GRANTED_SCOPES.trim()
+    : '';
+  if (!rawValue) return [];
+  return Array.from(new Set(rawValue.split(',').map((scope) => String(scope || '').trim()).filter(Boolean))).sort();
+}
+
+function scopeMatches(requiredScope, grantedScopes) {
+  if (!requiredScope) return true;
+  const granted = Array.isArray(grantedScopes) ? grantedScopes : [];
+  if (granted.includes('*')) return true;
+  if (granted.includes(requiredScope)) return true;
+  const [namespace] = String(requiredScope).split(':');
+  return granted.includes(`${namespace}:*`);
+}
+
+function injectSelectorArgs(commandArgs, overrides = {}) {
+  const args = Array.isArray(commandArgs) ? [...commandArgs] : [];
+  const policyId = normalizeText(overrides.policyId);
+  const profileId = normalizeText(overrides.profileId);
+  if (policyId && !hasFlag(args, '--policy-id')) {
+    args.push('--policy-id', policyId);
+  }
+  if (profileId && !hasFlag(args, '--profile-id')) {
+    args.push('--profile-id', profileId);
+  }
+  return args;
+}
+
 function createRecipeRuntimeService(options = {}) {
   const commandDescriptors = options.commandDescriptors || {};
   const commandExecutor = options.commandExecutor;
   const policyEvaluator = options.policyEvaluator;
   const profileResolver = options.profileResolver;
+  const remoteActive = options.remoteActive === true;
 
   if (!commandExecutor || typeof commandExecutor.executeJsonCommand !== 'function') {
     throw new Error('createRecipeRuntimeService requires commandExecutor.executeJsonCommand().');
@@ -44,8 +80,8 @@ function createRecipeRuntimeService(options = {}) {
   if (!policyEvaluator || typeof policyEvaluator.evaluateExecution !== 'function') {
     throw new Error('createRecipeRuntimeService requires policyEvaluator.evaluateExecution().');
   }
-  if (!profileResolver || typeof profileResolver.resolveProfile !== 'function') {
-    throw new Error('createRecipeRuntimeService requires profileResolver.resolveProfile().');
+  if (!profileResolver || typeof profileResolver.probeProfile !== 'function') {
+    throw new Error('createRecipeRuntimeService requires profileResolver.probeProfile().');
   }
 
   function parseInputValue(type, rawValue, key) {
@@ -166,7 +202,7 @@ function createRecipeRuntimeService(options = {}) {
     };
   }
 
-  function validateRecipeExecution(compiled, overrides = {}) {
+  async function validateRecipeExecution(compiled, overrides = {}) {
     const request = buildPolicyRequest(compiled, overrides);
     const denials = [];
     const warnings = [];
@@ -190,6 +226,42 @@ function createRecipeRuntimeService(options = {}) {
       });
     }
 
+    if (remoteActive && compiled.recipe.supportsRemote === false) {
+      denials.push({
+        code: 'RECIPE_REMOTE_EXECUTION_DENIED',
+        message: `Recipe ${compiled.recipe.id} is not eligible for remote execution.`,
+        recipeId: compiled.recipe.id,
+        command: compiled.command,
+      });
+    }
+
+    if (remoteActive && compiled.descriptor && compiled.descriptor.mcpLongRunningBlocked) {
+      denials.push({
+        code: 'RECIPE_REMOTE_LONG_RUNNING_DENIED',
+        message: `Recipe ${compiled.recipe.id} delegates to ${compiled.command}, which is blocked for remote/agent execution because it is long-running.`,
+        recipeId: compiled.recipe.id,
+        command: compiled.command,
+      });
+    }
+
+    if (remoteActive && compiled.descriptor && compiled.descriptor.mcpExposed !== true) {
+      denials.push({
+        code: 'RECIPE_REMOTE_MCP_EXPOSURE_REQUIRED',
+        message: `Recipe ${compiled.recipe.id} delegates to ${compiled.command}, which is not exposed as an MCP/agent tool.`,
+        recipeId: compiled.recipe.id,
+        command: compiled.command,
+      });
+    }
+
+    if (remoteActive && compiled.descriptor && compiled.descriptor.remoteEligible !== true) {
+      denials.push({
+        code: 'RECIPE_REMOTE_TOOL_NOT_ELIGIBLE',
+        message: `Recipe ${compiled.recipe.id} delegates to ${compiled.command}, which is not eligible for remote execution.`,
+        recipeId: compiled.recipe.id,
+        command: compiled.command,
+      });
+    }
+
     const externalRecipeUnsafe =
       compiled.source === 'file'
       && (request.mutating || request.liveRequested || request.requiresSecrets);
@@ -200,6 +272,24 @@ function createRecipeRuntimeService(options = {}) {
         command: compiled.command,
         source: compiled.source,
       });
+    }
+
+    if (remoteActive) {
+      const grantedScopes = parseGrantedScopesFromEnv(process.env);
+      const delegatedScopes = Array.isArray(compiled.descriptor && compiled.descriptor.policyScopes)
+        ? compiled.descriptor.policyScopes
+        : [];
+      const missingDelegatedScopes = delegatedScopes.filter((scope) => !scopeMatches(scope, grantedScopes));
+      if (missingDelegatedScopes.length) {
+        denials.push({
+          code: 'RECIPE_REMOTE_SCOPE_DENIED',
+          message: `Recipe ${compiled.recipe.id} delegates to ${compiled.command}, which requires scopes not granted to the current remote principal.`,
+          recipeId: compiled.recipe.id,
+          command: compiled.command,
+          missingScopes: missingDelegatedScopes,
+          grantedScopes,
+        });
+      }
     }
 
     const policyEvaluation = request.policyId ? policyEvaluator.evaluateExecution(request) : {
@@ -234,7 +324,7 @@ function createRecipeRuntimeService(options = {}) {
       });
     } else if (profileId) {
       try {
-        profileResolution = profileResolver.resolveProfile({
+        profileResolution = await profileResolver.probeProfile({
           profileId,
           policyId: overrides.policyId || compiled.policyId || null,
           command: compiled.command,
@@ -297,27 +387,28 @@ function createRecipeRuntimeService(options = {}) {
     return null;
   }
 
-  function runRecipe(compiled, overrides = {}) {
-    const validation = validateRecipeExecution(compiled, overrides);
+  async function runRecipe(compiled, overrides = {}) {
+    const validation = await validateRecipeExecution(compiled, overrides);
     if (!validation.ok) {
       return {
         ok: false,
         recipeId: compiled.recipe.id,
-        compiledCommand: compiled.commandArgs,
+        compiledCommand: injectSelectorArgs(compiled.commandArgs, overrides),
         validation,
         operationId: null,
         result: null,
       };
     }
 
-    const execution = commandExecutor.executeJsonCommand(compiled.commandArgs, {
+    const delegatedArgs = injectSelectorArgs(compiled.commandArgs, overrides);
+    const execution = commandExecutor.executeJsonCommand(delegatedArgs, {
       timeoutMs: overrides.timeoutMs,
     });
 
     return {
       ok: execution.ok,
       recipeId: compiled.recipe.id,
-      compiledCommand: compiled.commandArgs,
+      compiledCommand: delegatedArgs,
       validation,
       operationId: extractOperationId(execution.envelope),
       result: execution.envelope,

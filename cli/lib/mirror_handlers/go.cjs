@@ -281,6 +281,8 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         rpcUrl: options.rpcUrl,
         polymarketRpcUrl: options.polymarketRpcUrl,
         privateKey: options.privateKey,
+        profileId: options.profileId || null,
+        profileFile: options.profileFile || null,
         funder: options.funder,
         usdc: options.usdc,
         polymarketHost: options.polymarketHost,
@@ -320,6 +322,8 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
               chainId: options.chainId,
               rpcUrl: options.rpcUrl,
               privateKey: options.privateKey,
+              profileId: options.profileId || null,
+              profileFile: options.profileFile || null,
               usdc: options.usdc,
             };
             if (typeof assertLiveWriteAllowed === 'function') {

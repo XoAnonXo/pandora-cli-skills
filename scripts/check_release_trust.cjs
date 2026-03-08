@@ -10,15 +10,30 @@ const CI_WORKFLOW_PATH = path.join(ROOT_DIR, '.github', 'workflows', 'ci.yml');
 const RELEASE_WORKFLOW_PATH = path.join(ROOT_DIR, '.github', 'workflows', 'release.yml');
 const INSTALLER_PATH = path.join(ROOT_DIR, 'scripts', 'release', 'install_release.sh');
 const SBOM_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'generate_sbom.cjs');
+const SDK_STANDALONE_CHECK_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'check_standalone_sdk_packages.cjs');
+const SDK_RELEASE_ARTIFACT_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'release', 'build_standalone_sdk_artifacts.cjs');
 const PREPARE_MANIFEST_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'prepare_publish_manifest.cjs');
 const RESTORE_MANIFEST_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'restore_publish_manifest.cjs');
 const RELEASE_VERIFICATION_DOC_PATH = path.join(ROOT_DIR, 'docs', 'trust', 'release-verification.md');
 const SUPPORT_MATRIX_DOC_PATH = path.join(ROOT_DIR, 'docs', 'trust', 'support-matrix.md');
+const FINAL_SIGNOFF_DOC_PATH = path.join(ROOT_DIR, 'docs', 'trust', 'final-readiness-signoff.md');
 const pkg = require(PACKAGE_PATH);
 const RELEASE_ASSET_FRAGMENTS = Object.freeze([
   '.tgz',
   '.tgz.sha256',
+  'benchmark-publication-manifest.json',
+  'benchmark-publication-manifest.json.sha256',
+  'benchmark-publication-manifest.json.intoto.jsonl',
+  'benchmark-publication-bundle.tar.gz',
+  'benchmark-publication-bundle.tar.gz.sha256',
+  'benchmark-publication-bundle.tar.gz.intoto.jsonl',
   'checksums.sha256',
+  'core-bundle.json',
+  'core-history.json',
+  'core-report.json',
+  'core.lock.json',
+  'sdk-checksums.sha256',
+  'sdk-release-manifest.json',
   'sbom.spdx.json',
   'sbom.spdx.json.sha256',
   'sbom.spdx.json.intoto.jsonl',
@@ -26,6 +41,8 @@ const RELEASE_ASSET_FRAGMENTS = Object.freeze([
   '.sig',
   '.pem',
 ]);
+
+const DOC_OPTIONAL_RELEASE_ASSET_FRAGMENTS = new Set();
 
 const DEFAULT_PUBLISHED_SCRIPT_NAMES = Object.freeze([
   'cli',
@@ -232,11 +249,14 @@ function checkPackageMetadata() {
   assert(pkg.exports && pkg.exports['.'] === './cli/pandora.cjs', 'package.json exports[\".\"] must point at ./cli/pandora.cjs');
   assert(pkg.exports && pkg.exports['./sdk/generated'] === './sdk/generated/index.js', 'package.json must export ./sdk/generated');
   assert(pkg.exports && pkg.exports['./sdk/typescript'] === './sdk/typescript/index.js', 'package.json must export ./sdk/typescript');
+  assert(pkg.exports && pkg.exports['./sdk/typescript/backends'] === './sdk/typescript/backends.js', 'package.json must export ./sdk/typescript/backends');
+  assert(pkg.exports && pkg.exports['./sdk/typescript/catalog'] === './sdk/typescript/catalog.js', 'package.json must export ./sdk/typescript/catalog');
+  assert(pkg.exports && pkg.exports['./sdk/typescript/errors'] === './sdk/typescript/errors.js', 'package.json must export ./sdk/typescript/errors');
   assert(pkg.exports && pkg.exports['./sdk/typescript/generated'] === './sdk/typescript/generated/index.js', 'package.json must export ./sdk/typescript/generated');
   assert(pkg.exports && pkg.exports['./sdk/typescript/generated/manifest'] === './sdk/typescript/generated/manifest.json', 'package.json must export ./sdk/typescript/generated/manifest');
-  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/command-descriptors'] === './sdk/generated/command-descriptors.json', 'package.json must alias ./sdk/typescript/generated/command-descriptors');
-  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/mcp-tool-definitions'] === './sdk/generated/mcp-tool-definitions.json', 'package.json must alias ./sdk/typescript/generated/mcp-tool-definitions');
-  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/contract-registry'] === './sdk/generated/contract-registry.json', 'package.json must alias ./sdk/typescript/generated/contract-registry');
+  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/command-descriptors'] === './sdk/typescript/generated/command-descriptors.json', 'package.json must export ./sdk/typescript/generated/command-descriptors');
+  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/mcp-tool-definitions'] === './sdk/typescript/generated/mcp-tool-definitions.json', 'package.json must export ./sdk/typescript/generated/mcp-tool-definitions');
+  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/contract-registry'] === './sdk/typescript/generated/contract-registry.json', 'package.json must export ./sdk/typescript/generated/contract-registry');
   assert(Array.isArray(pkg.files) && pkg.files.length > 0, 'package.json must define files');
 
   const requiredFileEntries = [
@@ -245,17 +265,23 @@ function checkPackageMetadata() {
     'sdk/generated/**',
     'sdk/typescript/index.js',
     'sdk/typescript/index.d.ts',
-    'sdk/typescript/generated/index.js',
-    'sdk/typescript/generated/index.d.ts',
-    'sdk/typescript/generated/manifest.json',
+    'sdk/typescript/backends.js',
+    'sdk/typescript/backends.d.ts',
+    'sdk/typescript/catalog.js',
+    'sdk/typescript/catalog.d.ts',
+    'sdk/typescript/errors.js',
+    'sdk/typescript/errors.d.ts',
+    'sdk/typescript/generated/**',
     'sdk/typescript/package.json',
     'sdk/python/pandora_agent/**',
-    '!sdk/python/pandora_agent/generated/**',
-    'sdk/python/pandora_agent/generated/manifest.json',
+    'sdk/python/pandora_agent/generated/**',
     'sdk/python/pyproject.toml',
     'benchmarks/latest/core-report.json',
+    'benchmarks/latest/core-bundle.json',
+    'benchmarks/latest/core-history.json',
     'README.md',
     'README_FOR_SHARING.md',
+    'docs/benchmarks/**',
     'docs/skills/**',
     'docs/trust/**',
     'scripts/release/install_release.sh',
@@ -264,6 +290,22 @@ function checkPackageMetadata() {
   for (const entry of requiredFileEntries) {
     assert(pkg.files.includes(entry), `package.json files is missing required entry: ${entry}`);
   }
+
+  assert(pkg.scripts['check:sdk-standalone'] === 'node scripts/check_standalone_sdk_packages.cjs', 'package.json must expose check:sdk-standalone');
+  assert(pkg.scripts['check:sdk-contracts'] === 'npm run clean:sdk-python-cache && node scripts/generate_agent_contract_sdk.cjs --check', 'package.json must expose check:sdk-contracts with the generated artifact freshness gate');
+  assert(pkg.scripts['check:final-readiness'] === 'node scripts/check_a_plus_scorecard.cjs --artifact-neutral', 'package.json must expose check:final-readiness');
+  assert(pkg.scripts['benchmark:check'] === 'node scripts/check_agent_benchmarks.cjs', 'package.json must expose benchmark:check with the benchmark freshness gate');
+  assert(pkg.scripts['release:build-sdk-artifacts'] === 'node scripts/release/build_standalone_sdk_artifacts.cjs', 'package.json must expose release:build-sdk-artifacts');
+  assert(typeof pkg.scripts.build === 'string' && pkg.scripts.build.includes('npm run check:sdk-standalone'), 'package.json build must run check:sdk-standalone');
+  assert(typeof pkg.scripts.prepack === 'string' && pkg.scripts.prepack.includes('npm run check:sdk-standalone'), 'package.json prepack must run check:sdk-standalone');
+  assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run check:sdk-standalone'), 'package.json release:prep must run check:sdk-standalone');
+  assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run check:sdk-contracts'), 'package.json release:prep must run check:sdk-contracts');
+  assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('node scripts/run_agent_benchmarks.cjs --suite core --write-lock --out benchmarks/latest/core-report.json'), 'package.json release:prep must refresh the committed benchmark report and lock');
+  assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run benchmark:history'), 'package.json release:prep must refresh benchmark publication history');
+  assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run benchmark:check'), 'package.json release:prep must rerun benchmark freshness validation');
+  assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm test'), 'package.json prepublishOnly must run npm test');
+  assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm run release:prep'), 'package.json prepublishOnly must run release:prep');
+  assert(typeof pkg.scripts.prepublishOnly === 'string' && pkg.scripts.prepublishOnly.includes('npm run check:release-drift -- --require-clean-tree'), 'package.json prepublishOnly must require a clean tree after release prep');
 }
 
 function checkWorkflowAndInstaller() {
@@ -271,14 +313,18 @@ function checkWorkflowAndInstaller() {
   ensureFile(RELEASE_WORKFLOW_PATH);
   ensureFile(INSTALLER_PATH);
   ensureFile(SBOM_SCRIPT_PATH);
+  ensureFile(SDK_STANDALONE_CHECK_SCRIPT_PATH);
+  ensureFile(SDK_RELEASE_ARTIFACT_SCRIPT_PATH);
   ensureFile(RELEASE_VERIFICATION_DOC_PATH);
   ensureFile(SUPPORT_MATRIX_DOC_PATH);
+  ensureFile(FINAL_SIGNOFF_DOC_PATH);
 
   const ciWorkflow = readUtf8(CI_WORKFLOW_PATH);
   const workflow = readUtf8(RELEASE_WORKFLOW_PATH);
   const installer = readUtf8(INSTALLER_PATH);
   const releaseVerificationDoc = readUtf8(RELEASE_VERIFICATION_DOC_PATH);
   const supportMatrixDoc = readUtf8(SUPPORT_MATRIX_DOC_PATH);
+  const finalSignoffDoc = readUtf8(FINAL_SIGNOFF_DOC_PATH);
 
   const ciWorkflowExpectations = [
     'ubuntu-latest',
@@ -286,6 +332,9 @@ function checkWorkflowAndInstaller() {
     'windows-latest',
     'node: [20]',
     'npm test',
+    'Standalone SDK Artifacts',
+    'python3 -m pip install --disable-pip-version-check --quiet "setuptools>=68" wheel build',
+    'npm run release:build-sdk-artifacts',
   ];
 
   for (const fragment of ciWorkflowExpectations) {
@@ -305,10 +354,36 @@ function checkWorkflowAndInstaller() {
     'npm ci',
     'run: npm test',
     'run: npm run release:prep',
+    'python3 -m pip install --disable-pip-version-check --quiet "setuptools>=68" wheel build',
+    'run: npm run release:build-sdk-artifacts',
     'npm pack',
+    'Refresh benchmark publication JSON artifacts',
+    'Build benchmark publication bundle',
+    'Build benchmark publication manifest',
+    'core-bundle.json',
+    'core-history.json',
+    'benchmark-publication-bundle.tar.gz',
+    'benchmark-publication-bundle.tar.gz.sha256',
+    'benchmark-publication-manifest.json',
+    'benchmark-publication-manifest.json.sha256',
+    'docs/benchmarks',
     'checksums.sha256',
+    'sdk-checksums.sha256',
+    'sdk-release-manifest.json',
+    'dist/release/sdk/npm/*.tgz',
+    'dist/release/sdk/npm/*.tgz.sig',
+    'dist/release/sdk/npm/*.tgz.pem',
+    'dist/release/sdk/python/*.whl',
+    'dist/release/sdk/python/*.whl.sig',
+    'dist/release/sdk/python/*.whl.pem',
+    'dist/release/sdk/python/*.tar.gz',
+    'dist/release/sdk/python/*.tar.gz.sig',
+    'dist/release/sdk/python/*.tar.gz.pem',
+    '"$SDK_CHECKSUMS"',
     'scripts/generate_sbom.cjs',
     'actions/attest-build-provenance@',
+    'steps.benchmark_bundle_attestation_asset.outputs.bundle_asset',
+    'steps.benchmark_manifest_attestation_asset.outputs.bundle_asset',
     'actions/attest-sbom@',
     'sbom.spdx.json',
     'cosign sign-blob',
@@ -324,6 +399,30 @@ function checkWorkflowAndInstaller() {
     ['.tgz', ['steps.pack.outputs.tarball']],
     ['.tgz.sha256', ['steps.pack.outputs.checksum_file']],
     [
+      'benchmark-publication-bundle.tar.gz',
+      ['steps.benchmark_bundle.outputs.bundle_file'],
+    ],
+    [
+      'benchmark-publication-bundle.tar.gz.sha256',
+      ['steps.benchmark_bundle.outputs.bundle_checksum_file'],
+    ],
+    [
+      'benchmark-publication-bundle.tar.gz.intoto.jsonl',
+      ['steps.benchmark_bundle_attestation_asset.outputs.bundle_asset'],
+    ],
+    [
+      'benchmark-publication-manifest.json',
+      ['steps.benchmark_manifest.outputs.manifest_file'],
+    ],
+    [
+      'benchmark-publication-manifest.json.sha256',
+      ['steps.benchmark_manifest.outputs.manifest_checksum_file'],
+    ],
+    [
+      'benchmark-publication-manifest.json.intoto.jsonl',
+      ['steps.benchmark_manifest_attestation_asset.outputs.bundle_asset'],
+    ],
+    [
       'sbom.spdx.json.intoto.jsonl',
       ['steps.sbom_attestation_asset.outputs.bundle_asset', '${SBOM_FILE}.intoto.jsonl'],
     ],
@@ -333,11 +432,20 @@ function checkWorkflowAndInstaller() {
     const dynamicMatchers = dynamicWorkflowAssetMatchers.get(fragment) || [];
     const workflowHasFragment = workflow.includes(fragment) || dynamicMatchers.some((matcher) => workflow.includes(matcher));
     assert(workflowHasFragment, `release workflow is missing required release asset fragment: ${fragment}`);
-    assert(releaseVerificationDoc.includes(fragment), `release-verification doc is missing required release asset fragment: ${fragment}`);
+    if (!DOC_OPTIONAL_RELEASE_ASSET_FRAGMENTS.has(fragment)) {
+      assert(releaseVerificationDoc.includes(fragment), `release-verification doc is missing required release asset fragment: ${fragment}`);
+    }
   }
 
   const installerExpectations = [
     'checksums.sha256',
+    'core-bundle.json',
+    'core-history.json',
+    'core-report.json',
+    'core.lock.json',
+    'benchmark-publication-manifest.json',
+    'sdk-checksums.sha256',
+    'sdk-release-manifest.json',
     'cosign verify-blob',
     'gh attestation verify',
     'sbom.spdx.json',
@@ -356,13 +464,83 @@ function checkWorkflowAndInstaller() {
     'release installer is missing required verification flow: sbom.spdx.json.intoto.jsonl',
   );
 
+  const finalSignoffExpectations = [
+    'release-blocking signoff contract',
+    'docs/trust/final-readiness-signoff.md',
+    'bootstrap',
+    'capabilities',
+    'schema',
+    'GET /bootstrap',
+    'GET /schema',
+    'GET /tools',
+    '@pandora/agent-sdk',
+    'pandora-agent',
+    'sdk-release-manifest.json',
+    'sdk-checksums.sha256',
+    'runtime-local-readiness',
+    'profile explain',
+    '/operations/{operationId}/receipt',
+    '/operations/{operationId}/receipt/verify',
+    'core-bundle.json',
+    'core-history.json',
+    'core-report.json',
+    'core.lock.json',
+    'benchmark-publication-manifest.json',
+    'benchmark-publication-bundle.tar.gz',
+    'checksums.sha256',
+    'sbom.spdx.json',
+    '.intoto.jsonl',
+    '.sig',
+    '.pem',
+    'npm test',
+    'npm run check:docs',
+    'npm run check:sdk-contracts',
+    'npm run check:final-readiness',
+    'npm run benchmark:check',
+    'npm run check:release-trust',
+    'npm run release:prep',
+  ];
+  for (const fragment of finalSignoffExpectations) {
+    assert(finalSignoffDoc.includes(fragment), `final-readiness-signoff doc is missing required signoff evidence fragment: ${fragment}`);
+  }
+
   const supportMatrixExpectations = [
     'Linux, macOS, and Windows',
     'GitHub build provenance for both the tarball and shipped SPDX SBOM asset',
     'keyless cosign verification',
+    'signed GitHub release tarball attached to the tagged Pandora release',
+    'signed GitHub release wheel or sdist attached to the tagged Pandora release',
+    'benchmark publication bundle',
+    'final-readiness-signoff.md',
   ];
   for (const fragment of supportMatrixExpectations) {
     assert(supportMatrixDoc.includes(fragment), `support-matrix doc is missing required release assurance statement: ${fragment}`);
+  }
+
+  const releaseVerificationExpectations = [
+    'pandora-agent-sdk-*.tgz',
+    'pandora-agent-sdk-*.tgz.sig',
+    'pandora-agent-sdk-*.tgz.pem',
+    'pandora_agent-*.whl',
+    'pandora_agent-*.whl.sig',
+    'pandora_agent-*.whl.pem',
+    'pandora_agent-*.tar.gz',
+    'pandora_agent-*.tar.gz.sig',
+    'pandora_agent-*.tar.gz.pem',
+    'core-bundle.json',
+    'core-history.json',
+    'benchmark-publication-bundle.tar.gz',
+    'benchmark-publication-bundle.tar.gz.intoto.jsonl',
+    'benchmark-publication-manifest.json',
+    'benchmark-publication-manifest.json.intoto.jsonl',
+    'docs/benchmarks/history.json',
+    'docsHistoryPath',
+    'docsHistorySha256',
+    'standalone SDK tarball, wheel, and sdist',
+    'final-readiness-signoff.md',
+  ];
+  for (const fragment of releaseVerificationExpectations) {
+    assert(releaseVerificationDoc.includes(fragment), `release-verification doc is missing required SDK release verification guidance: ${fragment}`);
   }
 }
 
@@ -383,17 +561,21 @@ function checkPackedArtifact() {
     'README_FOR_SHARING.md',
     'cli/pandora.cjs',
     'benchmarks/latest/core-report.json',
+    'benchmarks/latest/core-bundle.json',
+    'benchmarks/latest/core-history.json',
     'sdk/generated/index.js',
     'sdk/generated/manifest.json',
     'sdk/typescript/index.js',
     'sdk/typescript/index.d.ts',
-    'sdk/typescript/generated/index.js',
+    'sdk/typescript/generated/**',
     'sdk/typescript/generated/manifest.json',
     'sdk/typescript/package.json',
-    'sdk/python/pandora_agent/generated/manifest.json',
+    'sdk/python/pandora_agent/generated/**',
+    'docs/benchmarks/history.json',
     'docs/skills/agent-quickstart.md',
     'docs/skills/agent-interfaces.md',
     'docs/skills/capabilities.md',
+    'docs/trust/final-readiness-signoff.md',
     'docs/trust/release-verification.md',
     'docs/trust/security-model.md',
     'docs/trust/support-matrix.md',
@@ -401,6 +583,12 @@ function checkPackedArtifact() {
   ];
 
   for (const packPath of requiredPackPaths) {
+    if (packPath.endsWith('/**')) {
+      const prefix = packPath.slice(0, -3);
+      const hasMatch = Array.from(packedFiles).some((entry) => entry === prefix || entry.startsWith(`${prefix}/`));
+      assert(hasMatch, `Packed artifact is missing required file: ${packPath}`);
+      continue;
+    }
     assert(packedFiles.has(packPath), `Packed artifact is missing required file: ${packPath}`);
   }
 

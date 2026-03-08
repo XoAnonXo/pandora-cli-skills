@@ -1,3 +1,8 @@
+const {
+  consumeProfileSelectorFlag,
+  assertNoMixedSignerSelectors,
+} = require('./shared_profile_selector_flags.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseTradeFlags requires deps.${name}()`);
@@ -54,6 +59,8 @@ function createParseTradeFlags(deps) {
       forkRpcUrl: null,
       forkChainId: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
       usdc: null,
     };
 
@@ -209,6 +216,18 @@ function createParseTradeFlags(deps) {
         i += 1;
         continue;
       }
+      const profileIndex = consumeProfileSelectorFlag({
+        token,
+        args,
+        index: i,
+        options,
+        CliError,
+        requireFlagValue,
+      });
+      if (profileIndex !== null) {
+        i = profileIndex;
+        continue;
+      }
 
       if (token === '--usdc') {
         options.usdc = parseAddressFlag(requireFlagValue(args, i, '--usdc'), '--usdc');
@@ -250,6 +269,7 @@ function createParseTradeFlags(deps) {
     ) {
       throw new CliError('INVALID_ARGS', '--min-probability-pct cannot be greater than --max-probability-pct.');
     }
+    assertNoMixedSignerSelectors(options, CliError);
 
     return options;
   };

@@ -7,7 +7,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
-from .errors import PandoraSdkError
+from .errors import PandoraSdkError, PandoraToolCallError
+from .catalog import load_generated_manifest
 
 LATEST_PROTOCOL_VERSION = '2025-11-25'
 
@@ -34,20 +35,25 @@ def _build_jsonrpc_notification(method: str, params: Optional[Dict[str, Any]] = 
 
 
 def normalize_tool_envelope(result: Dict[str, Any]) -> Dict[str, Any]:
+    envelope = result.get('structuredContent') if isinstance(result.get('structuredContent'), dict) else None
+
+    def raise_tool_error(default_message: str, fallback_code: str = 'PANDORA_SDK_TOOL_ERROR') -> None:
+        error_payload = envelope.get('error') if isinstance(envelope, dict) and isinstance(envelope.get('error'), dict) else {}
+        code = error_payload.get('code') if isinstance(error_payload.get('code'), str) else fallback_code
+        message = error_payload.get('message') if isinstance(error_payload.get('message'), str) else default_message
+        details = error_payload.get('details') if 'details' in error_payload else {'result': result}
+        if not isinstance(details, dict):
+            details = {'details': details}
+        if 'result' not in details:
+            details['result'] = result
+        raise PandoraToolCallError(code, message, details, envelope=envelope, result=result)
+
     if bool(result.get('isError')):
-        envelope = result.get('structuredContent') if isinstance(result.get('structuredContent'), dict) else None
-        message = 'Pandora tool returned an MCP error result.'
-        if isinstance(envelope, dict):
-            error_payload = envelope.get('error')
-            if isinstance(error_payload, dict) and isinstance(error_payload.get('message'), str):
-                message = error_payload['message']
-        raise PandoraSdkError('PANDORA_SDK_TOOL_ERROR', message, {'result': result, 'envelope': envelope})
+        raise_tool_error('Pandora tool returned an MCP error result.')
     if isinstance(result.get('structuredContent'), dict):
         envelope = result['structuredContent']
         if envelope.get('ok') is False:
-            error_payload = envelope.get('error') if isinstance(envelope.get('error'), dict) else {}
-            message = error_payload.get('message') if isinstance(error_payload.get('message'), str) else 'Pandora tool returned a failure envelope.'
-            raise PandoraSdkError('PANDORA_SDK_TOOL_ERROR', message, {'result': result, 'envelope': envelope})
+            raise_tool_error('Pandora tool returned a failure envelope.')
         return envelope
     for item in result.get('content', []) or []:
         if isinstance(item, dict) and item.get('type') == 'text' and isinstance(item.get('text'), str):
@@ -59,10 +65,14 @@ def normalize_tool_envelope(result: Dict[str, Any]) -> Dict[str, Any]:
                     'Tool result text was not valid JSON.',
                     {'text': item['text']},
                 ) from error
+            if not isinstance(envelope, dict):
+                raise PandoraSdkError(
+                    'PANDORA_SDK_INVALID_TOOL_RESULT',
+                    'Tool result JSON must decode to an object envelope.',
+                    {'parsedType': type(envelope).__name__},
+                )
             if isinstance(envelope, dict) and envelope.get('ok') is False:
-                error_payload = envelope.get('error') if isinstance(envelope.get('error'), dict) else {}
-                message = error_payload.get('message') if isinstance(error_payload.get('message'), str) else 'Pandora tool returned a failure envelope.'
-                raise PandoraSdkError('PANDORA_SDK_TOOL_ERROR', message, {'result': result, 'envelope': envelope})
+                raise_tool_error('Pandora tool returned a failure envelope.')
             return envelope
     raise PandoraSdkError('PANDORA_SDK_INVALID_TOOL_RESULT', 'Tool result did not include structuredContent or JSON text.', result)
 
@@ -144,14 +154,14 @@ class HttpPandoraBackend(BasePandoraBackend):
         headers: Optional[Dict[str, str]] = None,
         timeout: float = 30.0,
         client_name: str = 'pandora-agent-python',
-        client_version: str = '0.1.0a1',
+        client_version: Optional[str] = None,
     ):
         self.url = url
         self.auth_token = auth_token
         self.headers = _normalize_authorization_headers(headers, auth_token)
         self.timeout = timeout
         self.client_name = client_name
-        self.client_version = client_version
+        self.client_version = client_version or str(load_generated_manifest().get('packageVersion') or '0.0.0')
         self._request_id = 0
         self._session_id = None
         self._protocol_version = None
@@ -262,9 +272,35 @@ class HttpPandoraBackend(BasePandoraBackend):
                 return parsed
         except urllib.error.HTTPError as error:
             message = error.read().decode('utf-8', errors='replace')
-            raise PandoraSdkError('PANDORA_SDK_HTTP_ERROR', f'HTTP {error.code}: {message}') from error
+            details: Dict[str, Any] = {
+                'status': error.code,
+                'body': message or None,
+                'url': self.url,
+            }
+            try:
+                parsed_message = json.loads(message) if message else None
+            except json.JSONDecodeError:
+                parsed_message = None
+            if isinstance(parsed_message, dict):
+                details['response'] = parsed_message
+                error_payload = parsed_message.get('error') if isinstance(parsed_message.get('error'), dict) else {}
+                code = error_payload.get('code') if isinstance(error_payload.get('code'), str) else 'PANDORA_SDK_HTTP_ERROR'
+                formatted_message = error_payload.get('message') if isinstance(error_payload.get('message'), str) else f'HTTP {error.code}: {message}'
+                if 'details' in error_payload:
+                    details['remoteDetails'] = error_payload.get('details')
+                if 'recovery' in error_payload:
+                    details['recovery'] = error_payload.get('recovery')
+                raise PandoraSdkError(code, formatted_message, details) from error
+            raise PandoraSdkError('PANDORA_SDK_HTTP_ERROR', f'HTTP {error.code}: {message}', details) from error
         except urllib.error.URLError as error:
-            raise PandoraSdkError('PANDORA_SDK_HTTP_ERROR', str(error)) from error
+            raise PandoraSdkError(
+                'PANDORA_SDK_HTTP_ERROR',
+                str(error),
+                {
+                    'reason': str(getattr(error, 'reason', error)),
+                    'url': self.url,
+                },
+            ) from error
 
     def connect(self) -> None:
         if self._connected:
@@ -326,14 +362,14 @@ class StdioPandoraBackend(BasePandoraBackend):
         cwd: Optional[str] = None,
         env: Optional[Dict[str, str]] = None,
         client_name: str = 'pandora-agent-python',
-        client_version: str = '0.1.0a1',
+        client_version: Optional[str] = None,
     ):
         self.command = command
         self.args = list(args or ['mcp'])
         self.cwd = cwd
         self.env = dict(env or {})
         self.client_name = client_name
-        self.client_version = client_version
+        self.client_version = client_version or str(load_generated_manifest().get('packageVersion') or '0.0.0')
         self._process = None
         self._request_id = 0
         self._connected = False

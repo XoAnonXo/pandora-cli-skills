@@ -31,10 +31,14 @@ function parseOperationsFlags(args = [], deps = {}) {
     tool: null,
     limit: null,
     reason: null,
+    file: null,
+    expectedOperationHash: null,
   };
   const allowedFlagsByAction = {
     get: new Set(['--id']),
     list: new Set(['--status', '--statuses', '--tool', '--limit']),
+    receipt: new Set(['--id']),
+    'verify-receipt': new Set(['--id', '--file', '--expected-operation-hash']),
     cancel: new Set(['--id', '--reason']),
     close: new Set(['--id', '--reason']),
   };
@@ -85,17 +89,34 @@ function parseOperationsFlags(args = [], deps = {}) {
       index += 1;
       continue;
     }
+    if (token === '--file') {
+      options.file = requireFlagValue(rest, index, '--file', CliError);
+      index += 1;
+      continue;
+    }
+    if (token === '--expected-operation-hash') {
+      options.expectedOperationHash = requireFlagValue(rest, index, '--expected-operation-hash', CliError);
+      index += 1;
+      continue;
+    }
     throw new CliError('UNKNOWN_FLAG', `Unknown flag: ${token}`, { flag: token });
   }
 
   if (!action) {
-    throw buildCliError(CliError, 'operations requires subcommand: get|list|cancel|close');
+    throw buildCliError(CliError, 'operations requires subcommand: get|list|receipt|verify-receipt|cancel|close');
   }
-  if (!['get', 'list', 'cancel', 'close'].includes(action)) {
-    throw buildCliError(CliError, `operations requires subcommand: get|list|cancel|close. Received: ${action}`);
+  if (!['get', 'list', 'receipt', 'verify-receipt', 'cancel', 'close'].includes(action)) {
+    throw buildCliError(CliError, `operations requires subcommand: get|list|receipt|verify-receipt|cancel|close. Received: ${action}`);
   }
-  if (['get', 'cancel', 'close'].includes(action) && !options.id) {
+  if (['get', 'receipt', 'cancel', 'close'].includes(action) && !options.id) {
     throw new CliError('MISSING_REQUIRED_FLAG', `${action} requires --id.`, { flag: '--id' });
+  }
+  if (action === 'verify-receipt' && ((!options.id && !options.file) || (options.id && options.file))) {
+    throw new CliError(
+      'INVALID_ARGS',
+      'verify-receipt requires exactly one of --id or --file.',
+      { flags: ['--id', '--file'] },
+    );
   }
 
   return options;

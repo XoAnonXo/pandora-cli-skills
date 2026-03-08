@@ -1,19 +1,8 @@
 'use strict';
-function loadJson(name) {
-  try {
-    return require(`./${name}`);
-  } catch (error) {
-    if (error && error.code !== 'MODULE_NOT_FOUND') {
-      throw error;
-    }
-    return require('../../generated/' + name);
-  }
-}
-
-const manifest = loadJson('manifest.json');
-const commandDescriptors = loadJson('command-descriptors.json');
-const mcpToolDefinitions = loadJson('mcp-tool-definitions.json');
-const contractRegistry = loadJson('contract-registry.json');
+const manifest = require('./manifest.json');
+const commandDescriptors = require('./command-descriptors.json');
+const mcpToolDefinitions = require('./mcp-tool-definitions.json');
+const contractRegistry = require('./contract-registry.json');
 
 function loadGeneratedManifest() {
   return manifest;

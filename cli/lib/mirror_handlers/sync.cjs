@@ -359,6 +359,8 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
             chainId: options.chainId,
             rpcUrl: options.rpcUrl,
             privateKey: options.privateKey,
+            profileId: options.profileId || null,
+            profileFile: options.profileFile || null,
             usdc: options.usdc,
           };
           if (typeof assertLiveWriteAllowed === 'function') {

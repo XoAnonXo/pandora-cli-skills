@@ -409,6 +409,88 @@ test('mirror deploy parser validates all polymarket URL override flags', () => {
   assert.equal(parsed.polymarketMockUrl, 'http://localhost:4010/mock');
 });
 
+test('mirror deploy parser accepts profile selectors and rejects mixed signer selectors', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildMirrorParserDeps());
+
+  const parsed = parseMirrorDeployFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--dry-run',
+    '--profile-id',
+    'prod_trader_a',
+  ]);
+  assert.equal(parsed.profileId, 'prod_trader_a');
+  assert.equal(parsed.profileFile, null);
+
+  assert.throws(
+    () =>
+      parseMirrorDeployFlags([
+        '--polymarket-market-id',
+        'poly-1',
+        '--dry-run',
+        '--private-key',
+        TEST_PRIVATE_KEY,
+        '--profile-id',
+        'prod_trader_a',
+      ]),
+    (error) => error && error.code === 'INVALID_FLAG_COMBINATION',
+  );
+});
+
+test('mirror go parser accepts profile selectors and keeps polymarket private-key compatibility', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildMirrorParserDeps());
+
+  const withProfile = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--profile-file',
+    '/tmp/profile.json',
+  ]);
+  assert.match(withProfile.profileFile, /\/tmp\/profile\.json$/);
+
+  const mixed = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--private-key',
+    TEST_PRIVATE_KEY,
+    '--profile-id',
+    'prod_trader_a',
+  ]);
+  assert.equal(mixed.privateKey, TEST_PRIVATE_KEY);
+  assert.equal(mixed.profileId, 'prod_trader_a');
+});
+
+test('sports create run parser accepts profile selectors and rejects mixed signer selectors', () => {
+  const parseSportsFlags = createParseSportsFlags(buildSportsParserDeps());
+
+  const parsed = parseSportsFlags([
+    'create',
+    'run',
+    '--event-id',
+    'evt-1',
+    '--profile-id',
+    'sports_operator',
+    '--dry-run',
+  ]);
+  assert.equal(parsed.options.profileId, 'sports_operator');
+
+  assert.throws(
+    () =>
+      parseSportsFlags([
+        'create',
+        'run',
+        '--event-id',
+        'evt-1',
+        '--profile-id',
+        'sports_operator',
+        '--private-key',
+        TEST_PRIVATE_KEY,
+        '--dry-run',
+      ]),
+    (error) => error && error.code === 'INVALID_FLAG_COMBINATION',
+  );
+});
+
 test('sports parser defaults maxImbalance to max uint24 and accepts percentage distributions', () => {
   const parseSportsFlags = createParseSportsFlags(buildSportsParserDeps());
 

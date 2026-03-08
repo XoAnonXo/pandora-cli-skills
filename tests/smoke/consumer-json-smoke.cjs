@@ -291,8 +291,20 @@ function validateCapabilitiesPayload(payload, installedPackageJson) {
     'capabilities payload should not expose benchmarkCheck in the published package.');
   ensure(payload.data.trustDistribution.verification.benchmark.reportPath === 'benchmarks/latest/core-report.json',
     'capabilities payload should expose benchmarks/latest/core-report.json as the latest benchmark report path.');
+  ensure(payload.data.trustDistribution.verification.benchmark.bundlePath === 'benchmarks/latest/core-bundle.json',
+    'capabilities payload should expose benchmarks/latest/core-bundle.json as the benchmark publication bundle path.');
+  ensure(payload.data.trustDistribution.verification.benchmark.historyPath === 'benchmarks/latest/core-history.json',
+    'capabilities payload should expose benchmarks/latest/core-history.json as the benchmark history path.');
+  ensure(payload.data.trustDistribution.verification.benchmark.docsHistoryPath === 'docs/benchmarks/history.json',
+    'capabilities payload should expose docs/benchmarks/history.json as the docs history path.');
   ensure(payload.data.trustDistribution.verification.benchmark.reportPresent === true,
     'capabilities payload should report benchmark report presence.');
+  ensure(payload.data.trustDistribution.verification.benchmark.bundlePresent === true,
+    'capabilities payload should report benchmark bundle presence.');
+  ensure(payload.data.trustDistribution.verification.benchmark.historyPresent === true,
+    'capabilities payload should report benchmark history presence.');
+  ensure(payload.data.trustDistribution.verification.benchmark.docsHistoryPresent === true,
+    'capabilities payload should report docs benchmark history presence.');
   ensure(payload.data.trustDistribution.verification.benchmark.reportOverallPass === true,
     'capabilities payload should report a green packaged benchmark report.');
   ensure(payload.data.trustDistribution.verification.benchmark.reportContractLockMatchesExpected === true,
@@ -462,6 +474,36 @@ function main() {
       fs.existsSync(path.join(installedPackageRoot, 'benchmarks', 'latest', 'core-report.json')),
       'Installed package is missing benchmarks/latest/core-report.json.',
     );
+    ensure(
+      fs.existsSync(path.join(installedPackageRoot, 'benchmarks', 'locks', 'core.lock.json')),
+      'Installed package is missing benchmarks/locks/core.lock.json.',
+    );
+    ensure(
+      fs.existsSync(path.join(installedPackageRoot, 'docs', 'trust', 'release-verification.md')),
+      'Installed package is missing docs/trust/release-verification.md.',
+    );
+    ensure(
+      fs.existsSync(path.join(installedPackageRoot, 'docs', 'benchmarks', 'history.json')),
+      'Installed package is missing docs/benchmarks/history.json.',
+    );
+    const installedBenchmarkReport = JSON.parse(
+      fs.readFileSync(path.join(installedPackageRoot, 'benchmarks', 'latest', 'core-report.json'), 'utf8'),
+    );
+    const installedBenchmarkHistory = JSON.parse(
+      fs.readFileSync(path.join(installedPackageRoot, 'docs', 'benchmarks', 'history.json'), 'utf8'),
+    );
+    ensure(installedBenchmarkReport.summary && installedBenchmarkReport.summary.overallPass === true,
+      'Installed benchmark report should indicate overallPass=true.');
+    ensure(installedBenchmarkHistory.latestVersion === installedPackageJson.version,
+      'Installed benchmark history latestVersion must match installed package version.');
+    ensure(
+      Array.isArray(installedBenchmarkHistory.entries)
+        && installedBenchmarkHistory.entries.some((entry) => entry && entry.version === installedPackageJson.version),
+      'Installed benchmark history must include an entry for the installed package version.',
+    );
+    const installedHistoryEntry = installedBenchmarkHistory.entries.find((entry) => entry && entry.version === installedPackageJson.version);
+    ensure(installedHistoryEntry && installedHistoryEntry.summary && installedHistoryEntry.summary.weightedScore === installedBenchmarkReport.summary.weightedScore,
+      'Installed benchmark history must reflect the installed benchmark report weighted score.');
     ensureMissingPath(
       path.join(installedPackageRoot, 'sdk', 'python', 'pandora_agent', '__pycache__'),
       'Installed package should not ship sdk/python/pandora_agent/__pycache__.',
@@ -487,9 +529,15 @@ function main() {
     ensure(installedSdkPackage.name === '@pandora/agent-sdk', 'Embedded TypeScript SDK package name mismatch.');
     ensure(/^0\.\d+\.\d+-alpha\.\d+$/.test(installedSdkPackage.version), `Embedded TypeScript SDK version is not alpha-tagged: ${installedSdkPackage.version}`);
     ensure(installedSdkPackage.private !== true, 'Embedded TypeScript SDK package should be publishable.');
+    const generatedExport = installedSdkPackage.exports && installedSdkPackage.exports['./generated'];
+    const generatedExportTarget = typeof generatedExport === 'string'
+      ? generatedExport
+      : generatedExport && typeof generatedExport === 'object'
+        ? generatedExport.require || generatedExport.default
+        : null;
     ensure(
-      installedSdkPackage.exports && installedSdkPackage.exports['./generated'] === './generated/index.js',
-      'Embedded TypeScript SDK package should export ./generated.',
+      generatedExportTarget === './generated/index.js',
+      'Embedded TypeScript SDK package should export ./generated to ./generated/index.js.',
     );
 
     const generatedSdkPackage = JSON.parse(
@@ -532,10 +580,21 @@ function main() {
     ensureExitCode(capabilitiesResult, 0, 'pandora --output json capabilities');
     const capabilitiesPayload = parseJsonStdout(capabilitiesResult, 'pandora --output json capabilities');
     validateCapabilitiesPayload(capabilitiesPayload, installedPackageJson);
+    ensure(capabilitiesPayload.data.recommendedFirstCall === 'bootstrap', 'Installed capabilities should recommend bootstrap first.');
+    ensure(capabilitiesPayload.data.readinessMode === 'artifact-neutral', 'Installed capabilities should default to artifact-neutral readiness.');
     ensure(
       JSON.stringify(schemaPayload.data.trustDistribution) === JSON.stringify(capabilitiesPayload.data.trustDistribution),
       'Installed schema trustDistribution should match installed capabilities trustDistribution.',
     );
+
+    const bootstrapResult = runPandora(installedCli, ['--output', 'json', 'bootstrap'], { cwd: appDir, env: smokeEnv });
+    ensureExitCode(bootstrapResult, 0, 'pandora --output json bootstrap');
+    const bootstrapPayload = parseJsonStdout(bootstrapResult, 'pandora --output json bootstrap');
+    ensure(bootstrapPayload.command === 'bootstrap', 'bootstrap command mismatch.');
+    ensure(bootstrapPayload.data.readinessMode === 'artifact-neutral', 'bootstrap should default to artifact-neutral readiness.');
+    ensure(bootstrapPayload.data.preferences?.recommendedFirstCall === 'bootstrap', 'bootstrap preferences should name bootstrap as the first call.');
+    ensure(Array.isArray(bootstrapPayload.data.recommendedBootstrapFlow) && bootstrapPayload.data.recommendedBootstrapFlow[0] === 'bootstrap', 'bootstrap flow should begin with bootstrap.');
+    ensure(Array.isArray(bootstrapPayload.data.canonicalTools) && bootstrapPayload.data.canonicalTools.length > 0, 'bootstrap should expose canonical tools.');
 
     const policyListResult = runPandora(installedCli, ['--output', 'json', 'policy', 'list'], { cwd: appDir, env: smokeEnv });
     ensureExitCode(policyListResult, 0, 'pandora --output json policy list');
@@ -702,7 +761,12 @@ function main() {
     ensure(sdkNodePayload.tsToolDefinitionCount > 0, 'TypeScript generated MCP tool-definition export is empty.');
     ensure(sdkNodePayload.tsRegistryHasPolicyProfiles === true, 'TypeScript generated contract registry export is missing policyProfiles.');
     ensure(sdkNodePayload.tsPackageName === '@pandora/agent-sdk', 'TypeScript SDK package.json export returned the wrong name.');
-    ensure(sdkNodePayload.tsPackageGeneratedExport === './generated/index.js', 'TypeScript SDK package.json export is missing ./generated.');
+    ensure(
+      sdkNodePayload.tsPackageGeneratedExport
+        && sdkNodePayload.tsPackageGeneratedExport.require === './generated/index.js'
+        && sdkNodePayload.tsPackageGeneratedExport.default === './generated/index.js',
+      'TypeScript SDK package.json export is missing ./generated.',
+    );
     ensure(sdkNodePayload.generatedPackageMain === './index.js', 'Generated SDK package.json export returned the wrong main entry.');
     ensure(sdkNodePayload.policyPackStatus === 'alpha', 'TypeScript SDK should report alpha policy pack status.');
     ensure(sdkNodePayload.signerProfileStatus === 'alpha', 'TypeScript SDK should report alpha signer profile status.');

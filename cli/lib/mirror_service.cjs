@@ -847,6 +847,8 @@ async function deployMirror(options = {}) {
         chainId: options.chainId,
         rpcUrl: options.rpcUrl,
         privateKey: options.privateKey,
+        profileId: options.profileId || null,
+        profileFile: options.profileFile || null,
         oracle: options.oracle,
         factory: options.factory,
         usdc: options.usdc,
@@ -864,6 +866,9 @@ async function deployMirror(options = {}) {
         maxImbalance: options.maxImbalance === null || options.maxImbalance === undefined ? 16_777_215 : Number(options.maxImbalance),
         arbiter: options.arbiter,
         category: options.category,
+        command: 'mirror.deploy',
+        toolFamily: 'mirror',
+        source: 'mirror.deploy',
       });
     } catch (err) {
       throw createServiceError(

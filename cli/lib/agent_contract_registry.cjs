@@ -6,7 +6,7 @@ const ODDS_HELP_SCHEMA_REF = '#/definitions/OddsHelpPayload';
 const MIRROR_STATUS_HELP_SCHEMA_REF = '#/definitions/MirrorStatusHelpPayload';
 const SCHEMA_HELP_SCHEMA_REF = '#/definitions/SchemaHelpPayload';
 const CAPABILITIES_HELP_SCHEMA_REF = '#/definitions/CapabilitiesHelpPayload';
-const COMMAND_DESCRIPTOR_VERSION = '1.3.0';
+const COMMAND_DESCRIPTOR_VERSION = '1.4.0';
 const { POLL_CATEGORY_NAME_LIST } = require('./shared/poll_categories.cjs');
 
 function stringSchema(description, extras = {}) {
@@ -270,7 +270,7 @@ const DEFAULT_AGENT_PLATFORM_METADATA = Object.freeze({
 
 const AGENT_PLATFORM_NON_REMOTE_COMMANDS = new Set(['launch', 'clone-bet', 'mcp']);
 const AGENT_PLATFORM_CRITICAL_RISK_COMMANDS = new Set(['risk.panic']);
-const AGENT_PLATFORM_FAST_LOCAL_COMMANDS = new Set(['help', 'version', 'schema']);
+const AGENT_PLATFORM_FAST_LOCAL_COMMANDS = new Set(['help', 'version', 'schema', 'bootstrap']);
 const AGENT_PLATFORM_LOCAL_DAEMON_CONTROL_COMMANDS = new Set([
   'sports.sync.stop',
   'sports.sync.status',
@@ -630,6 +630,8 @@ const commonFlags = {
   chainId: integerSchema('Chain id.', { minimum: 1 }),
   rpcUrl: stringSchema('RPC URL.'),
   privateKey: stringSchema('Hex private key.'),
+  profileId: stringSchema('Named signer profile id.'),
+  profileFile: stringSchema('Path to a signer profile file.'),
   wallet: stringSchema('Wallet address.'),
   marketAddress: stringSchema('Market address.'),
   pollAddress: stringSchema('Poll address.'),
@@ -743,7 +745,7 @@ const commandContracts = [
   commandContract({
     name: 'capabilities',
     summary: 'Return a compact runtime capability digest for agents.',
-    usage: 'pandora [--output json] capabilities',
+    usage: 'pandora [--output json] capabilities [--include-compatibility] [--runtime-local-readiness]',
     emits: ['capabilities', 'capabilities.help'],
     outputModes: ['json'],
     dataSchema: '#/definitions/CapabilitiesPayload',
@@ -752,7 +754,12 @@ const commandContracts = [
     mcp: {
       command: ['capabilities'],
       description: 'Return runtime capability metadata derived from the Pandora agent contract registry.',
-      inputSchema: buildInputSchema(),
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'include-compatibility': booleanSchema('Include compatibility aliases in default discovery maps and digests.'),
+          'runtime-local-readiness': booleanSchema('Use current host readiness instead of artifact-neutral readiness.'),
+        },
+      }),
       preferred: true,
     },
       agentPlatform: {
@@ -764,9 +771,46 @@ const commandContracts = [
       },
   }),
   commandContract({
+    name: 'bootstrap',
+    summary: 'Canonical agent bootstrap payload for cold clients and preferred-tool discovery.',
+    usage: 'pandora [--output json] bootstrap [--include-compatibility]',
+    emits: ['bootstrap', 'bootstrap.help'],
+    outputModes: ['json'],
+    dataSchema: '#/definitions/BootstrapPayload',
+    helpDataSchema: COMMAND_HELP_SCHEMA_REF,
+    agentWorkflow: {
+      requiredTools: ['capabilities', 'schema'],
+      recommendedTools: ['help'],
+      notes: [
+        'Start with capabilities to detect transport availability, remote endpoints, and documentation digests.',
+        'Load schema next to capture JSON envelopes, command descriptors, and canonicalTool/preferred guidance before selecting tools.',
+        'Prefer canonical tools whose preferred flag is true; treat aliasOf entries as backward-compatible compatibility aliases.',
+      ],
+    },
+    mcpExposed: true,
+    mcp: {
+      command: ['bootstrap'],
+      description: 'Return the preferred first-call bootstrap payload for cold agent clients.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'include-compatibility': booleanSchema('Include compatibility aliases in the bootstrap tool view.'),
+        },
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 250,
+      safeEquivalent: 'capabilities',
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['capabilities:read', 'contracts:read', 'schema:read'],
+    },
+  }),
+  commandContract({
     name: 'schema',
     summary: 'Emit JSON envelope schema plus command descriptor map for agents.',
-    usage: 'pandora [--output json] schema',
+    usage: 'pandora [--output json] schema [--include-compatibility]',
     emits: ['schema', 'schema.help'],
     outputModes: ['json'],
     dataSchema: '#/definitions/SchemaCommandPayload',
@@ -775,7 +819,11 @@ const commandContracts = [
     mcp: {
       command: ['schema'],
       description: 'Return official Pandora JSON envelope schema.',
-      inputSchema: buildInputSchema(),
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'include-compatibility': booleanSchema('Include compatibility alias descriptors in addition to canonical commands.'),
+        },
+      }),
       preferred: true,
     },
   }),
@@ -1017,7 +1065,7 @@ const commandContracts = [
     name: 'trade',
     summary: 'Execute or dry-run a buy flow with optional risk constraints.',
     usage:
-      'pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
+      'pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]',
     emits: ['trade', 'trade.help', 'trade.quote.help'],
     dataSchema: '#/definitions/TradePayload',
     mcpExposed: true,
@@ -1049,6 +1097,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           usdc: stringSchema('USDC token address override.'),
         },
         requiredFlags: ['market-address', 'side', 'amount-usdc'],
@@ -1072,7 +1122,7 @@ const commandContracts = [
     name: 'sell',
     summary: 'Execute or dry-run an AMM sell flow.',
     usage:
-      'pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
+      'pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]',
     emits: ['sell', 'sell.help', 'sell.quote.help'],
     dataSchema: '#/definitions/TradePayload',
     mcpExposed: true,
@@ -1101,6 +1151,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           usdc: stringSchema('USDC token address override.'),
         },
         requiredFlags: ['market-address', 'side'],
@@ -1125,7 +1177,7 @@ const commandContracts = [
     name: 'lp',
     summary: 'LP command family help and routing entrypoint.',
     usage:
-      'pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
+      'pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
     emits: ['lp.help'],
     dataSchema: '#/definitions/LpPayload',
   }),
@@ -1133,7 +1185,7 @@ const commandContracts = [
     name: 'lp.add',
     summary: 'Dry-run or execute LP add.',
     usage:
-      'pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
+      'pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
     emits: ['lp.help'],
     dataSchema: '#/definitions/LpPayload',
     mcpExposed: true,
@@ -1154,6 +1206,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           usdc: stringSchema('USDC token address override.'),
           'deadline-seconds': integerSchema('Deadline offset in seconds.', { minimum: 1 }),
           'indexer-url': commonFlags.indexerUrl,
@@ -1171,7 +1225,7 @@ const commandContracts = [
     name: 'lp.remove',
     summary: 'Dry-run or execute LP remove.',
     usage:
-      'pandora [--output table|json] lp remove [--market-address <address>] [--wallet <address>] [--lp-tokens <n>|--all|--all-markets] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
+      'pandora [--output table|json] lp remove [--market-address <address>] [--wallet <address>] [--lp-tokens <n>|--all|--all-markets] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
     emits: ['lp.help'],
     dataSchema: '#/definitions/LpPayload',
     mcpExposed: true,
@@ -1194,6 +1248,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           usdc: stringSchema('USDC token address override.'),
           'deadline-seconds': integerSchema('Deadline offset in seconds.', { minimum: 1 }),
           'indexer-url': commonFlags.indexerUrl,
@@ -1233,7 +1289,7 @@ const commandContracts = [
     name: 'resolve',
     summary: 'Dry-run or execute poll resolution.',
     usage:
-      'pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
+      'pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]',
     emits: ['resolve', 'resolve.help'],
     dataSchema: '#/definitions/ResolvePayload',
     mcpExposed: true,
@@ -1256,6 +1312,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
         },
         requiredFlags: ['poll-address', 'answer', 'reason'],
       }),
@@ -1269,7 +1327,7 @@ const commandContracts = [
     name: 'claim',
     summary: 'Dry-run or execute winnings redemption for one market or all discovered markets.',
     usage:
-      'pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]',
+      'pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]',
     emits: ['claim', 'claim.help'],
     dataSchema: '#/definitions/ClaimPayload',
     mcpExposed: true,
@@ -1292,6 +1350,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           'indexer-url': commonFlags.indexerUrl,
           'timeout-ms': commonFlags.timeoutMs,
         },
@@ -1895,7 +1955,7 @@ const commandContracts = [
     name: 'sports.create.run',
     summary: 'Execute or dry-run sports market creation.',
     usage:
-      'pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
+      'pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]',
     emits: ['sports.create.run', 'sports.help'],
     dataSchema: '#/definitions/SportsCreatePayload',
     mcpExposed: true,
@@ -1924,6 +1984,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           agentPreflight: buildAgentPreflightSchema('Agent validation attestation for execute mode.'),
         },
         requiredFlags: ['event-id'],
@@ -2556,7 +2618,7 @@ const commandContracts = [
     name: 'mirror.deploy',
     summary: 'Deploy a mirror market from selector or plan in dry-run or execute mode.',
     usage:
-      'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]',
+      'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]',
     emits: ['mirror.deploy', 'mirror.deploy.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
@@ -2589,6 +2651,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           oracle: stringSchema('Oracle address.'),
           factory: stringSchema('Factory address.'),
           usdc: stringSchema('USDC token address.'),
@@ -2735,7 +2799,7 @@ const commandContracts = [
     name: 'mirror.go',
     summary: 'Run mirror deploy, verify, and optional sync workflow.',
     usage:
-      'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]',
+      'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]',
     emits: ['mirror.go', 'mirror.go.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
@@ -2782,6 +2846,8 @@ const commandContracts = [
           'polymarket-rpc-url': stringSchema('Polygon RPC URL for Polymarket preflight.'),
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           funder: stringSchema('Polymarket proxy/safe address.'),
           usdc: stringSchema('USDC token address override.'),
           oracle: stringSchema('Oracle address override.'),
@@ -2839,7 +2905,7 @@ const commandContracts = [
     name: 'mirror.sync.once',
     summary: 'Execute one mirror sync tick.',
     usage:
-      'pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
+      'pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.once', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
@@ -2875,6 +2941,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           funder: stringSchema('Polymarket proxy/safe address.'),
           usdc: stringSchema('USDC token address override.'),
           'polymarket-rpc-url': stringSchema('Polygon RPC URL for Polymarket preflight.'),
@@ -2909,7 +2977,7 @@ const commandContracts = [
     name: 'mirror.sync.run',
     summary: 'Run continuous mirror sync loop.',
     usage:
-      'pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
+      'pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.run', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
@@ -2948,6 +3016,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           funder: stringSchema('Polymarket proxy/safe address.'),
           usdc: stringSchema('USDC token address override.'),
           'polymarket-rpc-url': stringSchema('Polygon RPC URL for Polymarket preflight.'),
@@ -2983,7 +3053,7 @@ const commandContracts = [
       name: 'mirror.sync.start',
     summary: 'Start detached mirror sync daemon.',
     usage:
-      'pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
+      'pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.start', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorSyncPayload',
     mcpExposed: true,
@@ -3019,6 +3089,8 @@ const commandContracts = [
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
           'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
           funder: stringSchema('Polymarket proxy/safe address.'),
           usdc: stringSchema('USDC token address override.'),
           'polymarket-rpc-url': stringSchema('Polygon RPC URL for Polymarket preflight.'),
@@ -3433,7 +3505,7 @@ const commandContracts = [
   commandContract({
     name: 'operations',
     summary: 'Inspect and control durable operation records for mutable workflows.',
-    usage: 'pandora [--output table|json] operations get|list|cancel|close [flags]',
+    usage: 'pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]',
     emits: ['operations.help'],
     dataSchema: '#/definitions/CommandHelpPayload',
   }),
@@ -3480,6 +3552,59 @@ const commandContracts = [
           tool: stringSchema('Optional tool/command family filter.'),
           limit: integerSchema('Maximum result count.', { minimum: 1 }),
         },
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 250,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['operations:read'],
+    },
+  }),
+  commandContract({
+    name: 'operations.receipt',
+    summary: 'Return the terminal receipt for a completed, failed, canceled, or closed operation.',
+    usage: 'pandora [--output table|json] operations receipt --id <operation-id>',
+    emits: ['operations.receipt', 'operations.receipt.help', 'operations.help'],
+    dataSchema: '#/definitions/OperationReceiptPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['operations', 'receipt'],
+      description: 'Inspect the terminal receipt for a Pandora operation.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Operation id whose terminal receipt should be returned.'),
+        },
+        requiredFlags: ['id'],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 225,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['operations:read'],
+    },
+  }),
+  commandContract({
+    name: 'operations.verify-receipt',
+    summary: 'Verify a stored or on-disk operation receipt for tampering and operation-hash mismatch.',
+    usage: 'pandora [--output table|json] operations verify-receipt --id <operation-id>|--file <path> [--expected-operation-hash <hash>]',
+    emits: ['operations.verify-receipt', 'operations.verify-receipt.help', 'operations.help'],
+    dataSchema: '#/definitions/OperationReceiptVerificationPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['operations', 'verify-receipt'],
+      description: 'Verify the stored terminal receipt for a Pandora operation by id. File-based verification remains CLI-only.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Operation id whose terminal receipt should be verified.'),
+          'expected-operation-hash': stringSchema('Optional expected operation hash to bind the verification result.'),
+        },
+        requiredFlags: ['id'],
       }),
       preferred: true,
     },
@@ -3556,7 +3681,7 @@ const commandContracts = [
   commandContract({
     name: 'policy',
     summary: 'Policy pack command family help and routing entrypoint.',
-    usage: 'pandora [--output table|json] policy list|get|lint [flags]',
+    usage: 'pandora [--output table|json] policy list|get|explain|recommend|lint [flags]',
     emits: ['policy.help'],
     dataSchema: '#/definitions/PolicyListPayload',
   }),
@@ -3634,9 +3759,69 @@ const commandContracts = [
     },
   }),
   commandContract({
+    name: 'policy.explain',
+    summary: 'Evaluate one policy pack against an exact execution context and return remediation.',
+    usage: 'pandora [--output table|json] policy explain --id <policy-id> [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]',
+    emits: ['policy.explain', 'policy.explain.help', 'policy.help'],
+    dataSchema: '#/definitions/PolicyExplainPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['policy', 'explain'],
+      description: 'Evaluate one policy pack against an exact command/mode/chain/category/profile context and return actionable remediation.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Policy pack id.'),
+          command: stringSchema('Exact target command to evaluate. Add together with mode/chain/category/profile for the full execution context.'),
+          mode: stringSchema('Execution mode to evaluate exactly: dry-run, paper, fork, execute, or execute-live.'),
+          'chain-id': stringSchema('Chain id to evaluate exactly.'),
+          category: stringSchema('Poll category id or canonical name to evaluate exactly.'),
+          'profile-id': stringSchema('Optional signer profile id to include as compatibility context.'),
+        },
+        requiredFlags: ['id'],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 200,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'policy.recommend',
+    summary: 'Recommend policy packs for an execution context.',
+    usage: 'pandora [--output table|json] policy recommend [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]',
+    emits: ['policy.recommend', 'policy.recommend.help', 'policy.help'],
+    dataSchema: '#/definitions/PolicyRecommendPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['policy', 'recommend'],
+      description: 'Recommend policy packs for a command/mode/chain/category/profile execution context.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          command: stringSchema('Exact target command to evaluate.'),
+          mode: stringSchema('Execution mode to evaluate: dry-run, paper, fork, execute, or execute-live.'),
+          'chain-id': stringSchema('Chain id to evaluate.'),
+          category: stringSchema('Poll category id or canonical name to evaluate.'),
+          'profile-id': stringSchema('Optional signer profile id to include as compatibility context.'),
+        },
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 200,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
     name: 'profile',
     summary: 'Signer profile command family help and routing entrypoint.',
-    usage: 'pandora [--output table|json] profile list|get|validate [flags]',
+    usage: 'pandora [--output table|json] profile list|get|explain|recommend|validate [flags]',
     emits: ['profile.help'],
     dataSchema: '#/definitions/ProfileListPayload',
   }),
@@ -3663,17 +3848,23 @@ const commandContracts = [
   }),
   commandContract({
     name: 'profile.get',
-    summary: 'Return one signer profile by id.',
-    usage: 'pandora [--output table|json] profile get --id <profile-id>',
+    summary: 'Inspect one signer profile by id and optionally annotate it with compatibility context.',
+    usage: 'pandora [--output table|json] profile get --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]',
     emits: ['profile.get', 'profile.get.help', 'profile.help'],
     dataSchema: '#/definitions/ProfilePayload',
     mcpExposed: true,
     mcp: {
       command: ['profile', 'get'],
-      description: 'Return one signer profile by id.',
+      description: 'Inspect one signer profile by id and optionally include compatibility context.',
       inputSchema: buildInputSchema({
         flagProperties: {
           id: stringSchema('Signer profile id.'),
+          'store-file': stringSchema('Optional profile store file path.'),
+          command: stringSchema('Optional exact target command to annotate compatibility context.'),
+          mode: stringSchema('Optional execution mode to annotate compatibility context.'),
+          'chain-id': stringSchema('Optional chain id to annotate compatibility context.'),
+          category: stringSchema('Optional poll category id or name to annotate compatibility context.'),
+          'policy-id': stringSchema('Optional policy id to annotate compatibility context.'),
         },
         requiredFlags: ['id'],
       }),
@@ -3681,6 +3872,70 @@ const commandContracts = [
     },
     agentPlatform: {
       expectedLatencyMs: 150,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'profile.explain',
+    summary: 'Evaluate one signer profile against an exact execution context and return remediation.',
+    usage: 'pandora [--output table|json] profile explain --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]',
+    emits: ['profile.explain', 'profile.explain.help', 'profile.help'],
+    dataSchema: '#/definitions/ProfilePayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['profile', 'explain'],
+      description: 'Evaluate one signer profile against an exact command/mode/chain/category/policy context and return actionable remediation.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          id: stringSchema('Signer profile id.'),
+          'store-file': stringSchema('Optional profile store file path.'),
+          command: stringSchema('Exact target command to evaluate. Add together with mode/chain/category/policy for the full execution context.'),
+          mode: stringSchema('Execution mode to evaluate exactly: dry-run, paper, fork, execute, or execute-live.'),
+          'chain-id': stringSchema('Chain id to evaluate exactly.'),
+          category: stringSchema('Poll category id or canonical name to evaluate exactly.'),
+          'policy-id': stringSchema('Policy id to evaluate exactly.'),
+        },
+        requiredFlags: ['id'],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 200,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
+    },
+  }),
+  commandContract({
+    name: 'profile.recommend',
+    summary: 'Recommend signer profiles for an execution context.',
+    usage: 'pandora [--output table|json] profile recommend [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>] [--no-builtins|--builtin-only]',
+    emits: ['profile.recommend', 'profile.recommend.help', 'profile.help'],
+    dataSchema: '#/definitions/ProfileRecommendPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['profile', 'recommend'],
+      description: 'Recommend signer profiles for a command/mode/chain/category/policy execution context.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'store-file': stringSchema('Optional profile store file path.'),
+          command: stringSchema('Exact target command to evaluate.'),
+          mode: stringSchema('Execution mode to evaluate: dry-run, paper, fork, execute, or execute-live.'),
+          'chain-id': stringSchema('Chain id to evaluate.'),
+          category: stringSchema('Poll category id or canonical name to evaluate.'),
+          'policy-id': stringSchema('Optional policy id to include as compatibility context.'),
+          'no-builtins': booleanSchema('Exclude built-in profiles from recommendation results.'),
+          'builtin-only': booleanSchema('Restrict recommendations to built-in profiles.'),
+        },
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 200,
       externalDependencies: [],
       supportsRemote: true,
       remoteEligible: true,
@@ -3891,12 +4146,28 @@ const commandContracts = [
   }),
 ];
 
+function isCompatibilityAliasContract(contract) {
+  return Boolean(contract && contract.aliasOf);
+}
+
+function resolveCanonicalToolName(contract) {
+  return contract.canonicalTool || contract.aliasOf || (contract.mcpExposed ? contract.name : null);
+}
+
+function isPreferredMcpContract(contract, canonicalTool) {
+  if (contract.mcp && contract.mcp.preferred === false) return false;
+  if (canonicalTool) return contract.name === canonicalTool;
+  if (contract.aliasOf) return false;
+  return Boolean(contract.mcpExposed);
+}
+
 function buildCommandDescriptors() {
   const contractByName = new Map(commandContracts.map((contract) => [contract.name, contract]));
   const descriptors = {};
   for (const contract of commandContracts) {
-    const canonicalTool = contract.canonicalTool || contract.aliasOf || (contract.mcpExposed ? contract.name : null);
+    const canonicalTool = resolveCanonicalToolName(contract);
     const canonicalContract = canonicalTool ? contractByName.get(canonicalTool) || null : null;
+    const compatibilityAlias = isCompatibilityAliasContract(contract);
     const agentPlatform = resolveAgentPlatformMetadata(contract);
     const safeFlags =
       contract.mcp && Array.isArray(contract.mcp.safeFlags)
@@ -3918,7 +4189,7 @@ function buildCommandDescriptors() {
       mcpExposed: Boolean(contract.mcpExposed),
       aliasOf: contract.aliasOf || null,
       canonicalTool,
-      preferred: contract.mcp && contract.mcp.preferred === false ? false : Boolean(canonicalTool ? contract.name === canonicalTool : contract.aliasOf ? false : contract.mcpExposed),
+      preferred: isPreferredMcpContract(contract, canonicalTool),
       mcpMutating,
       mcpLongRunningBlocked: Boolean(contract.mcp && contract.mcp.longRunningBlocked),
       controlInputNames:
@@ -3941,11 +4212,18 @@ function buildCommandDescriptors() {
   return descriptors;
 }
 
-function buildMcpToolDefinitions() {
+function buildMcpToolDefinitions(options = {}) {
+  const includeCompatibilityAliases =
+    !options || !Object.prototype.hasOwnProperty.call(options, 'includeCompatibilityAliases')
+      ? true
+      : Boolean(options.includeCompatibilityAliases);
   return commandContracts
     .filter((contract) => contract.mcpExposed && contract.mcp)
+    .filter((contract) => includeCompatibilityAliases || !isCompatibilityAliasContract(contract))
     .map((contract) => {
       const agentPlatform = resolveAgentPlatformMetadata(contract);
+      const compatibilityAlias = isCompatibilityAliasContract(contract);
+      const canonicalTool = resolveCanonicalToolName(contract);
       return {
         name: contract.name,
         command: contract.mcp.command,
@@ -3957,8 +4235,16 @@ function buildMcpToolDefinitions() {
         longRunningBlocked: Boolean(contract.mcp.longRunningBlocked),
         placeholderBlocked: Boolean(contract.mcp.placeholderBlocked),
         aliasOf: contract.aliasOf || null,
-        canonicalTool: contract.canonicalTool || contract.aliasOf || contract.name,
-        preferred: contract.mcp.preferred !== false,
+        canonicalTool,
+        preferred: isPreferredMcpContract(contract, canonicalTool),
+        ...(compatibilityAlias
+          ? {
+              compatibilityAlias: true,
+              compatibilityOptInRequired: true,
+              defaultDiscoveryVisible: false,
+              discoveryTier: 'compatibility',
+            }
+          : {}),
         controlInputNames: Array.isArray(contract.mcp.controlInputNames) ? [...contract.mcp.controlInputNames] : [],
         agentWorkflow: contract.agentWorkflow || null,
         ...agentPlatform,

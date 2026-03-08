@@ -57,6 +57,7 @@ Node.js `>=18` required.
 
 ```bash
 # compact capability digest for agents
+pandora --output json bootstrap
 pandora --output json capabilities
 
 # schema for typed consumers
@@ -85,12 +86,17 @@ pandora --output json sell --dry-run \
 pandora --output json operations list --status planned,queued,running --limit 20
 ```
 
+Notes:
+- `bootstrap` is the preferred first call for cold agents and returns canonical tools by default.
+- Use `pandora --output json bootstrap --include-compatibility` only when you are debugging or migrating a legacy caller that still speaks in alias commands.
+
 ## Agent-first onboarding
 
 Use this path when the consumer is an agent, not a human operator:
 
 ```bash
 # 1) discover the live contract
+pandora --output json bootstrap
 pandora --output json capabilities
 pandora --output json schema
 pandora --output json policy list
@@ -102,23 +108,55 @@ pandora mcp
 pandora mcp http [--auth-scopes <csv>]
 ```
 
+Canonical-routing note:
+- start from `bootstrap`, then resolve any follow-up decisions against canonical tool names from `bootstrap`, `capabilities`, or `schema`
+- only opt into compatibility aliases with `--include-compatibility` when you are inspecting legacy/debug workflows; do not use alias names as the default planning surface for new agents
+
 If you are embedding the shipped SDKs instead of only consuming raw JSON:
-- local SDK execution maps to `pandora mcp` over stdio
-- remote SDK execution maps to intentionally hosted `pandora mcp http ...` plus a bearer token
-- the shared JS contract export remains under `sdk/generated`
-- the embedded TypeScript SDK keeps a local loader and manifest under `sdk/typescript/generated`, but the heavy generated JSON artifacts are shared from `sdk/generated` in the published root package
-- the embedded Python SDK keeps a local manifest under `sdk/python/pandora_agent/generated` and falls back to `sdk/generated` for heavy generated JSON artifacts in the published root package
+- standalone SDK package identities:
+  - TypeScript/Node: `@pandora/agent-sdk`
+  - Python: `pandora-agent`
+- current release flow builds and verifies standalone SDK artifacts for those package identities; this document does not yet claim public registry publication
+- this repository and the root Pandora package also vendor matching SDK copies under `sdk/typescript` and `sdk/python` for parity, local audit, and in-tree consumption
+- local SDK execution maps to `pandora mcp` over stdio on the same machine
+- remote SDK execution maps to intentionally hosted `pandora mcp http ...`; remote clients connect to the `/mcp` endpoint with a bearer token
+- standalone SDK packages ship package-local generated artifacts
+- the repository root also keeps a shared contract bundle under `sdk/generated` for parity checks, custom generators, and vendored consumers
+- the vendored TypeScript copy keeps a local loader and manifest under `sdk/typescript/generated`
+- the vendored Python copy keeps a local manifest under `sdk/python/pandora_agent/generated/manifest.json`; in the published root package its loader falls back to the shared `sdk/generated` bundle for the heavy generated JSON artifacts
 
 For live signing:
 - current builds ship policy packs and named profiles in alpha
 - current builds also ship first-party recipes in alpha via `recipe list|get|validate|run`
-- inspect them with `policy list|get|lint` and `profile list|get|validate` before exposing tools to an agent
-- do not assume every built-in signer profile is runtime-ready:
-  - implemented backends today: `read-only`, `local-env`
-  - planning/placeholder sample backends: `external-signer`, `local-keystore`
-  - current built-in ready profile: `market_observer_ro`
-  - current built-in pending profiles: `prod_trader_a`, `dev_keystore_operator`, `desk_signer_service`
-- there is not yet a universal `--profile` selector across mutating commands, so live execution still commonly resolves signing material from env / `.env` / explicit flags
+- inspect them with `policy list|get|lint` and `profile list|get|explain|validate` before exposing tools to an agent
+- treat `bootstrap` as the machine-usable recommendation surface:
+  - `defaults.policyId` / `defaults.profileId`
+  - `policyProfiles.policyPacks.recommendedReadOnlyPolicyId` / `recommendedMutablePolicyId`
+  - `policyProfiles.signerProfiles.recommendedReadOnlyProfileId` / `recommendedMutableProfileId`
+  - `nextSteps[]`
+- use `bootstrap` for safe defaults, then use `policy explain`, `policy recommend`, and `profile recommend` for exact context-aware remediation or ranking
+  - use `policy get` for pack inspection
+  - use `profile get` for raw profile state
+  - use `profile explain` for exact usability decisions
+- do not collapse signer readiness into one “pending” bucket:
+  - implementation-status fields: `implementedBackends`, `placeholderBackends`
+  - runtime-readiness fields: `readyBuiltinIds`, `degradedBuiltinIds`, `placeholderBuiltinIds`
+  - backend-level rollup: `policyProfiles.signerProfiles.backendStatuses`
+  - vocabulary: `policyProfiles.signerProfiles.statusAxes`
+  - today, all shipped signer backends are implemented: `read-only`, `local-env`, `local-keystore`, `external-signer`
+  - in the default runtime view, `market_observer_ro` is the only built-in profile reporting `ready`, and it is read-only
+  - `--runtime-local-readiness` actively probes local signer/network prerequisites and can promote built-in mutable profiles such as `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` to `ready` when their runtime requirements are satisfied
+  - in the current runtime, no built-in mutable profile is ready
+  - current built-in mutable profile states are:
+    - `prod_trader_a`: backend rollup `degraded`, per-profile `resolutionStatus` `missing-secrets`
+    - `dev_keystore_operator`: backend rollup `degraded`, per-profile `resolutionStatus` `missing-keystore`
+    - `desk_signer_service`: backend rollup `degraded`, per-profile `resolutionStatus` `missing-context`
+  - `degraded` means the backend is implemented, but this process is still missing signer material, keystore access, external-signer context, network context, or other compatibility prerequisites
+  - use `profile list` for the compact `runtimeReady` / `resolutionStatus` view
+  - use `profile explain --id <profile-id> [--command <tool>] [--mode <mode>] [--policy-id <id>] [--chain-id <id>] [--category <id|name>]` before mutable execution to inspect `explanation.requestedContext`, `explanation.usable`, `explanation.readiness`, `explanation.compatibility`, `explanation.remediation`, and `explanation.blockers`
+- there is not yet a universal `--profile` selector across mutating commands
+- direct Pandora signer-bearing commands now accept `--profile-id` / `--profile-file` for `trade`, `sell`, `lp add`, `lp remove`, `resolve`, `claim`, `mirror deploy`, `mirror go`, `mirror sync once|run|start`, and `sports create run`
+- other live families still commonly resolve signing material from env / `.env` / explicit flags
 - the preferred agent pattern is a scoped MCP gateway plus signer material only on the runtime that actually executes live tools
 
 ## Live execution setup
@@ -138,7 +176,23 @@ Populate `.env` or process env with only the fields your live workflow actually 
 - `FACTORY`
 - `USDC`
 
-## SDK And Contract Export
+## Standalone SDKs And Contract Export
+
+Current shipped consumer paths:
+- TypeScript/Node:
+  - standalone package identity: `@pandora/agent-sdk`
+  - current external install path: signed GitHub release tarball attached to the tagged Pandora release
+  - repository checkout path: `sdk/typescript` for maintainers and in-tree consumers
+  - vendored root-package copy: `pandora-cli-skills/sdk/typescript`
+- Python:
+  - standalone package identity: `pandora-agent`
+  - current external install path: signed GitHub release wheel or sdist attached to the tagged Pandora release
+  - repository checkout path: `sdk/python` for maintainers and in-tree consumers
+  - module/import name: `pandora_agent`
+- Shared static contract bundle:
+  - standalone TypeScript package: `@pandora/agent-sdk/generated`
+  - repository/root shared bundle: `sdk/generated`
+  - vendored root-package subpath: `pandora-cli-skills/sdk/generated`
 
 ```bash
 npm run generate:sdk-contracts
@@ -146,33 +200,72 @@ npm run generate:sdk-contracts
 
 Run that only from a repository checkout. The published npm package ships the generated SDK artifacts already and does not include the repo-only generator script.
 
-- This package ships SDK alpha source/artifact surfaces:
-  - JavaScript/TypeScript SDK entrypoints under `sdk/typescript`
-  - TypeScript embedded loader/manifest under `sdk/typescript/generated`
-  - Python SDK source/package under `sdk/python`
-  - Python embedded manifest under `sdk/python/pandora_agent/generated`
+- This repository ships standalone SDK alpha packages plus vendored copies and the shared contract bundle:
+  - JavaScript/TypeScript SDK package sources under `sdk/typescript`
+  - Python SDK package sources under `sdk/python`
+  - vendored TypeScript loader/manifest under `sdk/typescript/generated`
+  - vendored Python manifest under `sdk/python/pandora_agent/generated`
   - shared JS contract export under `sdk/generated`
 - `capabilities.data.transports.sdk` reports `supported=true` and `status="alpha"` in current builds.
 - Use `capabilities` for compact discovery, canonical tool routing, transport status, and registry digests.
 - Use `schema` for the authoritative contract export: JSON envelope definitions, per-command input schemas, and `commandDescriptors`.
-- In a repository checkout, `npm run generate:sdk-contracts` regenerates the shared export in `sdk/generated` and the standalone SDK-local generated copies in `sdk/typescript/generated` and `sdk/python/pandora_agent/generated`.
-- In the published root package, the shared JSON contract bundle is stored once under `sdk/generated`; embedded SDK loaders/manifests route to that shared bundle instead of duplicating it.
-- For embedded SDK consumers, prefer each SDK's own generated manifest/artifact entrypoints instead of hard-coding `sdk/generated`:
-  - TypeScript: `sdk/typescript/generated/manifest.json`
-  - Python: `sdk/python/pandora_agent/generated/manifest.json`
+- In a repository checkout, `npm run generate:sdk-contracts` regenerates the shared export in `sdk/generated` plus the standalone SDK package-local copies in `sdk/typescript/generated` and `sdk/python/pandora_agent/generated`.
+- Standalone SDK consumers should prefer the standalone package entrypoints and package-local generated artifacts:
+  - TypeScript SDK package identity: `@pandora/agent-sdk`
+  - TypeScript generated bundle subpath: `@pandora/agent-sdk/generated`
+  - Python SDK package identity: `pandora-agent`
+- Current release/distribution status:
+  - standalone SDK artifacts are built and verified in release flow
+  - use signed GitHub release assets as the external installation path unless a release explicitly announces public npm/PyPI publication
+- The root Pandora package continues to vendor matching copies:
+  - TypeScript client: `pandora-cli-skills/sdk/typescript`
+  - shared contract bundle: `pandora-cli-skills/sdk/generated`
+  - vendored manifests: `sdk/typescript/generated/manifest.json` and `sdk/python/pandora_agent/generated/manifest.json`
 - Custom generators can still export raw `capabilities` / `schema` snapshots if they need bespoke codegen.
 - Regenerate cached clients or derived types when `commandDescriptorVersion` or `registryDigest.descriptorHash` changes.
-- For most agent bootstrap flows, start with `capabilities`, `schema`, `policy`, `profile`, or MCP before embedding the alpha SDK sources into your own code.
+- For most agent bootstrap flows, start with `bootstrap`, then `schema`, `policy`, `profile`, or MCP before embedding the alpha SDK sources into your own code.
 - For direct execution instead of local codegen, connect an SDK or MCP client to `pandora mcp` for local stdio, or intentionally host `pandora mcp http ...` for remote streamable HTTP execution.
 
 ## Policy And Signer Guidance
 
 - Prefer scoped MCP access over broad live credentials when an agent can work through `pandora mcp http`. The gateway enforces bearer-token scopes from `--auth-scopes` against each tool's declared `policyScopes`.
 - Current builds ship policy packs in alpha. `capabilities.data.policyProfiles.policyPacks` reports `supported=true` and `status="alpha"`, and `pandora --output json policy list|get|lint` exposes the available built-in/user-defined packs.
-- Current builds also ship named signer profiles in alpha. `capabilities.data.policyProfiles.signerProfiles` reports `supported=true` and `status="alpha"`, and `pandora --output json profile list|get|validate` exposes sample/user profiles plus readiness metadata.
-- `capabilities.data.policyProfiles.signerProfiles` also exposes `implementedBackends`, `placeholderBackends`, `readyBuiltinIds`, and `pendingBuiltinIds`.
-- In current builds, treat only `market_observer_ro` as built-in runtime-ready by default unless `profile get` reports otherwise in your runtime.
-- There is not yet a universal `--profile` selector across mutating commands. Live execution still commonly resolves secrets from process env, `.env`, or explicit flags while profile-directed execution rolls out.
+- Current builds also ship named signer profiles in alpha. `capabilities.data.policyProfiles.signerProfiles` reports `supported=true` and `status="alpha"`, and `pandora --output json profile list|get|explain|validate` exposes sample/user profiles plus readiness metadata.
+- `bootstrap` is the canonical recommendation surface today:
+  - `defaults.policyId` and `defaults.profileId` are the cold-start defaults
+  - `policyProfiles.policyPacks.recommendedReadOnlyPolicyId` / `recommendedMutablePolicyId` are the machine-usable policy recommendations
+  - `policyProfiles.signerProfiles.recommendedReadOnlyProfileId` / `recommendedMutableProfileId` are the machine-usable profile recommendations
+  - `nextSteps[]` gives the canonical follow-up commands in order
+- `bootstrap` remains the preferred cold-start surface, but exact-context commands are also available:
+  - `policy explain`
+  - `policy recommend`
+  - `profile recommend`
+- treat those exact-context commands as follow-ups after you already know the canonical target tool and execution context; they are not a substitute for `bootstrap`
+- `capabilities.data.policyProfiles.signerProfiles` now separates implementation status from runtime readiness:
+  - implementation fields: `implementedBackends`, `placeholderBackends`
+  - runtime fields: `readyBuiltinIds`, `degradedBuiltinIds`, `placeholderBuiltinIds`, `pendingBuiltinIds`
+  - backend rollup: `backendStatuses`
+  - vocabulary: `statusAxes`
+- In the default runtime view, `market_observer_ro` is the only built-in profile reporting `ready`, and it is read-only.
+- Use `pandora --output json capabilities --runtime-local-readiness` when you want the CLI to actively probe local signer/network prerequisites; under valid runtime conditions, built-in mutable profiles such as `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` can move from `degraded` to `ready`.
+- In the current runtime, no built-in mutable profile is ready:
+  - `prod_trader_a` resolves as `missing-secrets`
+  - `dev_keystore_operator` resolves as `missing-keystore`
+  - `desk_signer_service` resolves as `missing-context`
+- Treat `degraded` as the backend-level summary only. The exact cause lives in the per-profile payload:
+  - `profile list` for `runtimeReady` and `resolutionStatus`
+  - `profile get --id <profile-id>` for raw `resolution` and constraint details
+  - `profile explain --id <profile-id> [--command <tool>] [--mode <mode>] [--policy-id <id>] [--chain-id <id>] [--category <id|name>]` for the exact decision surface:
+    - prefer canonical command names from `bootstrap`, `capabilities`, or `schema` when filling `--command`
+    - `explanation.requestedContext.exact` tells you whether the evaluation is complete or still missing flags
+    - `explanation.requestedContext.missingFlags` tells the agent what to add before trusting the answer
+    - `explanation.remediation[]` is the machine-usable action list; treat `blockers` as the human-readable summary
+- There is not yet a universal `--profile` selector across mutating commands.
+- Direct signer-bearing execution now supports `--profile-id` / `--profile-file` on:
+  - `trade`, `sell`, `lp add`, `lp remove`, `resolve`, `claim`
+  - `mirror deploy`, `mirror go`, `mirror sync once|run|start`
+  - sports live execution paths that route through the shared sports parsers/services
+- Some families still commonly bootstrap secrets from process env, `.env`, or explicit flags, but profile-directed execution is no longer limited to the core trading/admin commands.
 - The built-in read-only pair is `research-only` plus `market_observer_ro`. Use that pattern for discovery, schema inspection, validation, and other non-signing agent workflows before granting write access.
 - If you host `pandora mcp http` without `--auth-token` or `--auth-token-file`, Pandora generates a bearer token at `~/.pandora/mcp-http/auth-token`. If the runtime cannot resolve a home directory, pass one of those flags explicitly.
 - `--private-key <hex>` remains supported because the live parser surface still accepts it, but use it as a manual fallback rather than the default operator pattern.

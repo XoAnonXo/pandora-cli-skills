@@ -473,141 +473,6 @@
     "supportsWebhook": false,
     "usage": "pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]"
   },
-  "arbitrage": {
-    "agentWorkflow": null,
-    "aliasOf": "arb.scan",
-    "canonicalCommandTokens": [
-      "arb",
-      "scan"
-    ],
-    "canonicalTool": "arb.scan",
-    "canonicalUsage": "pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
-    "canRunConcurrent": true,
-    "controlInputNames": [],
-    "dataSchema": "#/definitions/ArbitragePayload",
-    "emits": [
-      "arbitrage",
-      "arbitrage.help"
-    ],
-    "executeFlags": [],
-    "executeIntentRequired": false,
-    "executeIntentRequiredForLiveMode": false,
-    "expectedLatencyMs": 5000,
-    "externalDependencies": [
-      "indexer-api"
-    ],
-    "helpDataSchema": "#/definitions/CommandHelpPayload",
-    "idempotency": "idempotent",
-    "inputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "allow-same-venue": {
-          "description": "Allow same-venue opportunities.",
-          "type": "boolean"
-        },
-        "chain-id": {
-          "description": "Chain id.",
-          "minimum": 1,
-          "type": "integer"
-        },
-        "cross-venue-only": {
-          "description": "Require cross-venue opportunities.",
-          "type": "boolean"
-        },
-        "include-similarity": {
-          "description": "Include similarity diagnostics.",
-          "type": "boolean"
-        },
-        "indexer-url": {
-          "description": "Indexer base URL.",
-          "type": "string"
-        },
-        "limit": {
-          "description": "Maximum number of results.",
-          "minimum": 1,
-          "type": "integer"
-        },
-        "max-close-diff-hours": {
-          "description": "Maximum close-time difference in hours.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "min-liquidity-usdc": {
-          "description": "Minimum liquidity in USDC.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "min-spread-pct": {
-          "description": "Minimum spread percent.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "min-token-score": {
-          "description": "Token-overlap threshold.",
-          "maximum": 1,
-          "minimum": 0,
-          "type": "number"
-        },
-        "polymarket-host": {
-          "description": "Polymarket host override.",
-          "type": "string"
-        },
-        "polymarket-mock-url": {
-          "description": "Polymarket mock host override.",
-          "type": "string"
-        },
-        "question-contains": {
-          "description": "Question substring filter.",
-          "type": "string"
-        },
-        "similarity-threshold": {
-          "description": "Question similarity threshold.",
-          "maximum": 1,
-          "minimum": 0,
-          "type": "number"
-        },
-        "timeout-ms": {
-          "description": "Request timeout in milliseconds.",
-          "minimum": 1,
-          "type": "integer"
-        },
-        "venues": {
-          "description": "Comma-delimited venue list.",
-          "type": "string"
-        },
-        "with-rules": {
-          "description": "Include rule payloads.",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
-    "jobCapable": false,
-    "mcpExposed": true,
-    "mcpLongRunningBlocked": false,
-    "mcpMutating": false,
-    "outputModes": [
-      "table",
-      "json"
-    ],
-    "policyScopes": [
-      "arbitrage:read",
-      "network:indexer"
-    ],
-    "preferred": false,
-    "recommendedPreflightTool": null,
-    "remoteEligible": true,
-    "requiresSecrets": false,
-    "returnsOperationId": false,
-    "returnsRuntimeHandle": false,
-    "riskLevel": "low",
-    "safeEquivalent": null,
-    "safeFlags": [],
-    "summary": "Backward-compatible one-shot cross-venue arbitrage wrapper.",
-    "supportsRemote": true,
-    "supportsWebhook": false,
-    "usage": "pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]"
-  },
   "autopilot": {
     "agentWorkflow": null,
     "aliasOf": null,
@@ -944,6 +809,78 @@
     "supportsWebhook": true,
     "usage": "pandora [--output table|json] autopilot run --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
   },
+  "bootstrap": {
+    "agentWorkflow": {
+      "notes": [
+        "Start with capabilities to detect transport availability, remote endpoints, and documentation digests.",
+        "Load schema next to capture JSON envelopes, command descriptors, and canonicalTool/preferred guidance before selecting tools.",
+        "Prefer canonical tools whose preferred flag is true; treat aliasOf entries as backward-compatible compatibility aliases."
+      ],
+      "recommendedTools": [
+        "help"
+      ],
+      "requiredTools": [
+        "capabilities",
+        "schema"
+      ]
+    },
+    "aliasOf": null,
+    "canonicalCommandTokens": [
+      "bootstrap"
+    ],
+    "canonicalTool": "bootstrap",
+    "canonicalUsage": "pandora [--output json] bootstrap [--include-compatibility]",
+    "canRunConcurrent": true,
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/BootstrapPayload",
+    "emits": [
+      "bootstrap",
+      "bootstrap.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 250,
+    "externalDependencies": [],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "include-compatibility": {
+          "description": "Include compatibility aliases in the bootstrap tool view.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "json"
+    ],
+    "policyScopes": [
+      "bootstrap:read",
+      "capabilities:read",
+      "contracts:read",
+      "schema:read"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": "capabilities",
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": "capabilities",
+    "safeFlags": [],
+    "summary": "Canonical agent bootstrap payload for cold clients and preferred-tool discovery.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output json] bootstrap [--include-compatibility]"
+  },
   "capabilities": {
     "agentWorkflow": null,
     "aliasOf": null,
@@ -951,7 +888,7 @@
       "capabilities"
     ],
     "canonicalTool": "capabilities",
-    "canonicalUsage": "pandora [--output json] capabilities",
+    "canonicalUsage": "pandora [--output json] capabilities [--include-compatibility] [--runtime-local-readiness]",
     "canRunConcurrent": true,
     "controlInputNames": [],
     "dataSchema": "#/definitions/CapabilitiesPayload",
@@ -968,7 +905,16 @@
     "idempotency": "idempotent",
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "include-compatibility": {
+          "description": "Include compatibility aliases in default discovery maps and digests.",
+          "type": "boolean"
+        },
+        "runtime-local-readiness": {
+          "description": "Use current host readiness instead of artifact-neutral readiness.",
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "jobCapable": false,
@@ -994,7 +940,7 @@
     "summary": "Return a compact runtime capability digest for agents.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output json] capabilities"
+    "usage": "pandora [--output json] capabilities [--include-compatibility] [--runtime-local-readiness]"
   },
   "claim": {
     "agentWorkflow": null,
@@ -1003,7 +949,7 @@
       "claim"
     ],
     "canonicalTool": "claim",
-    "canonicalUsage": "pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]",
+    "canonicalUsage": "pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]",
     "canRunConcurrent": false,
     "controlInputNames": [],
     "dataSchema": "#/definitions/ClaimPayload",
@@ -1084,6 +1030,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -1132,7 +1086,7 @@
     "summary": "Dry-run or execute winnings redemption for one market or all discovered markets.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]"
+    "usage": "pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]"
   },
   "clone-bet": {
     "agentWorkflow": {
@@ -2257,7 +2211,7 @@
     "summary": "LP command family help and routing entrypoint.",
     "supportsRemote": false,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]"
+    "usage": "pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]"
   },
   "lp.add": {
     "agentWorkflow": null,
@@ -2267,7 +2221,7 @@
       "add"
     ],
     "canonicalTool": "lp.add",
-    "canonicalUsage": "pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
+    "canonicalUsage": "pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
     "canRunConcurrent": false,
     "controlInputNames": [],
     "dataSchema": "#/definitions/LpPayload",
@@ -2348,6 +2302,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -2400,7 +2362,7 @@
     "summary": "Dry-run or execute LP add.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]"
+    "usage": "pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]"
   },
   "lp.positions": {
     "agentWorkflow": null,
@@ -2489,7 +2451,7 @@
       "remove"
     ],
     "canonicalTool": "lp.remove",
-    "canonicalUsage": "pandora [--output table|json] lp remove [--market-address <address>] [--wallet <address>] [--lp-tokens <n>|--all|--all-markets] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
+    "canonicalUsage": "pandora [--output table|json] lp remove [--market-address <address>] [--wallet <address>] [--lp-tokens <n>|--all|--all-markets] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
     "canRunConcurrent": false,
     "controlInputNames": [],
     "dataSchema": "#/definitions/LpPayload",
@@ -2578,6 +2540,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -2626,7 +2596,7 @@
     "summary": "Dry-run or execute LP remove.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] lp remove [--market-address <address>] [--wallet <address>] [--lp-tokens <n>|--all|--all-markets] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]"
+    "usage": "pandora [--output table|json] lp remove [--market-address <address>] [--wallet <address>] [--lp-tokens <n>|--all|--all-markets] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]"
   },
   "markets": {
     "agentWorkflow": null,
@@ -2896,57 +2866,6 @@
     "supportsRemote": true,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]"
-  },
-  "markets.scan": {
-    "agentWorkflow": null,
-    "aliasOf": "scan",
-    "canonicalCommandTokens": [
-      "scan"
-    ],
-    "canonicalTool": "scan",
-    "canonicalUsage": "pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]",
-    "canRunConcurrent": true,
-    "controlInputNames": [],
-    "dataSchema": "#/definitions/PagedEntityPayload",
-    "emits": [
-      "scan",
-      "scan.help"
-    ],
-    "executeFlags": [],
-    "executeIntentRequired": false,
-    "executeIntentRequiredForLiveMode": false,
-    "expectedLatencyMs": 5000,
-    "externalDependencies": [
-      "indexer-api"
-    ],
-    "helpDataSchema": "#/definitions/CommandHelpPayload",
-    "idempotency": "idempotent",
-    "inputSchema": null,
-    "jobCapable": false,
-    "mcpExposed": false,
-    "mcpLongRunningBlocked": false,
-    "mcpMutating": false,
-    "outputModes": [
-      "table",
-      "json"
-    ],
-    "policyScopes": [
-      "markets:read",
-      "network:indexer"
-    ],
-    "preferred": false,
-    "recommendedPreflightTool": null,
-    "remoteEligible": false,
-    "requiresSecrets": false,
-    "returnsOperationId": false,
-    "returnsRuntimeHandle": false,
-    "riskLevel": "low",
-    "safeEquivalent": null,
-    "safeFlags": [],
-    "summary": "Backward-compatible alias of `scan`.",
-    "supportsRemote": false,
-    "supportsWebhook": false,
-    "usage": "pandora [--output table|json] markets scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]"
   },
   "mcp": {
     "agentWorkflow": null,
@@ -4153,7 +4072,7 @@
       "deploy"
     ],
     "canonicalTool": "mirror.deploy",
-    "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
+    "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
     "canRunConcurrent": false,
     "controlInputNames": [
       "agentPreflight"
@@ -4651,6 +4570,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -4715,7 +4642,7 @@
     "summary": "Deploy a mirror market from selector or plan in dry-run or execute mode.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]"
+    "usage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]"
   },
   "mirror.go": {
     "agentWorkflow": {
@@ -4738,7 +4665,7 @@
       "go"
     ],
     "canonicalTool": "mirror.go",
-    "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
+    "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
     "canRunConcurrent": false,
     "controlInputNames": [
       "agentPreflight"
@@ -5569,6 +5496,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -5665,7 +5600,7 @@
     "summary": "Run mirror deploy, verify, and optional sync workflow.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
+    "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
   },
   "mirror.hedge-calc": {
     "agentWorkflow": null,
@@ -6350,7 +6285,7 @@
       "once"
     ],
     "canonicalTool": "mirror.sync.once",
-    "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
     "canRunConcurrent": false,
     "controlInputNames": [],
     "dataSchema": "#/definitions/MirrorSyncPayload",
@@ -7814,6 +7749,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -7888,7 +7831,7 @@
     "summary": "Execute one mirror sync tick.",
     "supportsRemote": true,
     "supportsWebhook": true,
-    "usage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+    "usage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
   },
   "mirror.sync.run": {
     "agentWorkflow": null,
@@ -7899,7 +7842,7 @@
       "run"
     ],
     "canonicalTool": "mirror.sync.run",
-    "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
     "canRunConcurrent": false,
     "controlInputNames": [],
     "dataSchema": "#/definitions/MirrorSyncPayload",
@@ -9371,6 +9314,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -9450,7 +9401,7 @@
     "summary": "Run continuous mirror sync loop.",
     "supportsRemote": true,
     "supportsWebhook": true,
-    "usage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+    "usage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
   },
   "mirror.sync.start": {
     "agentWorkflow": null,
@@ -9461,7 +9412,7 @@
       "start"
     ],
     "canonicalTool": "mirror.sync.start",
-    "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
     "canRunConcurrent": false,
     "controlInputNames": [],
     "dataSchema": "#/definitions/MirrorSyncPayload",
@@ -10925,6 +10876,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -11000,7 +10959,7 @@
     "summary": "Start detached mirror sync daemon.",
     "supportsRemote": true,
     "supportsWebhook": true,
-    "usage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+    "usage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
   },
   "mirror.sync.status": {
     "agentWorkflow": null,
@@ -12379,7 +12338,7 @@
     "summary": "Inspect and control durable operation records for mutable workflows.",
     "supportsRemote": false,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] operations get|list|cancel|close [flags]"
+    "usage": "pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]"
   },
   "operations.cancel": {
     "agentWorkflow": null,
@@ -12670,6 +12629,134 @@
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] operations list [--status <csv>] [--tool <name>] [--limit <n>]"
   },
+  "operations.receipt": {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canonicalCommandTokens": [
+      "operations",
+      "receipt"
+    ],
+    "canonicalTool": "operations.receipt",
+    "canonicalUsage": "pandora [--output table|json] operations receipt --id <operation-id>",
+    "canRunConcurrent": true,
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/OperationReceiptPayload",
+    "emits": [
+      "operations.receipt",
+      "operations.receipt.help",
+      "operations.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 225,
+    "externalDependencies": [],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Operation id whose terminal receipt should be returned.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "operations:read"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Return the terminal receipt for a completed, failed, canceled, or closed operation.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] operations receipt --id <operation-id>"
+  },
+  "operations.verify-receipt": {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canonicalCommandTokens": [
+      "operations",
+      "verify-receipt"
+    ],
+    "canonicalTool": "operations.verify-receipt",
+    "canonicalUsage": "pandora [--output table|json] operations verify-receipt --id <operation-id>|--file <path> [--expected-operation-hash <hash>]",
+    "canRunConcurrent": true,
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/OperationReceiptVerificationPayload",
+    "emits": [
+      "operations.verify-receipt",
+      "operations.verify-receipt.help",
+      "operations.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 250,
+    "externalDependencies": [],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "expected-operation-hash": {
+          "description": "Optional expected operation hash to bind the verification result.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Operation id whose terminal receipt should be verified.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "operations:read"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Verify a stored or on-disk operation receipt for tampering and operation-hash mismatch.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] operations verify-receipt --id <operation-id>|--file <path> [--expected-operation-hash <hash>]"
+  },
   "policy": {
     "agentWorkflow": null,
     "aliasOf": null,
@@ -12713,7 +12800,90 @@
     "summary": "Policy pack command family help and routing entrypoint.",
     "supportsRemote": false,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] policy list|get|lint [flags]"
+    "usage": "pandora [--output table|json] policy list|get|explain|recommend|lint [flags]"
+  },
+  "policy.explain": {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canonicalCommandTokens": [
+      "policy",
+      "explain"
+    ],
+    "canonicalTool": "policy.explain",
+    "canonicalUsage": "pandora [--output table|json] policy explain --id <policy-id> [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]",
+    "canRunConcurrent": true,
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/PolicyExplainPayload",
+    "emits": [
+      "policy.explain",
+      "policy.explain.help",
+      "policy.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 200,
+    "externalDependencies": [],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "description": "Poll category id or canonical name to evaluate exactly.",
+          "type": "string"
+        },
+        "chain-id": {
+          "description": "Chain id to evaluate exactly.",
+          "type": "string"
+        },
+        "command": {
+          "description": "Exact target command to evaluate. Add together with mode/chain/category/profile for the full execution context.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Policy pack id.",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Execution mode to evaluate exactly: dry-run, paper, fork, execute, or execute-live.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Optional signer profile id to include as compatibility context.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "policy:read",
+      "contracts:read"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Evaluate one policy pack against an exact execution context and return remediation.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] policy explain --id <policy-id> [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]"
   },
   "policy.get": {
     "agentWorkflow": null,
@@ -12895,6 +13065,82 @@
     "supportsRemote": true,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] policy list"
+  },
+  "policy.recommend": {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canonicalCommandTokens": [
+      "policy",
+      "recommend"
+    ],
+    "canonicalTool": "policy.recommend",
+    "canonicalUsage": "pandora [--output table|json] policy recommend [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]",
+    "canRunConcurrent": true,
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/PolicyRecommendPayload",
+    "emits": [
+      "policy.recommend",
+      "policy.recommend.help",
+      "policy.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 200,
+    "externalDependencies": [],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "description": "Poll category id or canonical name to evaluate.",
+          "type": "string"
+        },
+        "chain-id": {
+          "description": "Chain id to evaluate.",
+          "type": "string"
+        },
+        "command": {
+          "description": "Exact target command to evaluate.",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Execution mode to evaluate: dry-run, paper, fork, execute, or execute-live.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Optional signer profile id to include as compatibility context.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "policy:read",
+      "contracts:read"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Recommend policy packs for an execution context.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] policy recommend [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]"
   },
   "polls": {
     "agentWorkflow": null,
@@ -13905,37 +14151,61 @@
     "summary": "Signer profile command family help and routing entrypoint.",
     "supportsRemote": false,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] profile list|get|validate [flags]"
+    "usage": "pandora [--output table|json] profile list|get|explain|recommend|validate [flags]"
   },
-  "profile.get": {
+  "profile.explain": {
     "agentWorkflow": null,
     "aliasOf": null,
     "canonicalCommandTokens": [
       "profile",
-      "get"
+      "explain"
     ],
-    "canonicalTool": "profile.get",
-    "canonicalUsage": "pandora [--output table|json] profile get --id <profile-id>",
+    "canonicalTool": "profile.explain",
+    "canonicalUsage": "pandora [--output table|json] profile explain --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]",
     "canRunConcurrent": true,
     "controlInputNames": [],
     "dataSchema": "#/definitions/ProfilePayload",
     "emits": [
-      "profile.get",
-      "profile.get.help",
+      "profile.explain",
+      "profile.explain.help",
       "profile.help"
     ],
     "executeFlags": [],
     "executeIntentRequired": false,
     "executeIntentRequiredForLiveMode": false,
-    "expectedLatencyMs": 150,
+    "expectedLatencyMs": 200,
     "externalDependencies": [],
     "helpDataSchema": "#/definitions/CommandHelpPayload",
     "idempotency": "idempotent",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "category": {
+          "description": "Poll category id or canonical name to evaluate exactly.",
+          "type": "string"
+        },
+        "chain-id": {
+          "description": "Chain id to evaluate exactly.",
+          "type": "string"
+        },
+        "command": {
+          "description": "Exact target command to evaluate. Add together with mode/chain/category/policy for the full execution context.",
+          "type": "string"
+        },
         "id": {
           "description": "Signer profile id.",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Execution mode to evaluate exactly: dry-run, paper, fork, execute, or execute-live.",
+          "type": "string"
+        },
+        "policy-id": {
+          "description": "Policy id to evaluate exactly.",
+          "type": "string"
+        },
+        "store-file": {
+          "description": "Optional profile store file path.",
           "type": "string"
         }
       },
@@ -13965,10 +14235,97 @@
     "riskLevel": "low",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Return one signer profile by id.",
+    "summary": "Evaluate one signer profile against an exact execution context and return remediation.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] profile get --id <profile-id>"
+    "usage": "pandora [--output table|json] profile explain --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]"
+  },
+  "profile.get": {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canonicalCommandTokens": [
+      "profile",
+      "get"
+    ],
+    "canonicalTool": "profile.get",
+    "canonicalUsage": "pandora [--output table|json] profile get --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]",
+    "canRunConcurrent": true,
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/ProfilePayload",
+    "emits": [
+      "profile.get",
+      "profile.get.help",
+      "profile.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 150,
+    "externalDependencies": [],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "description": "Optional poll category id or name to annotate compatibility context.",
+          "type": "string"
+        },
+        "chain-id": {
+          "description": "Optional chain id to annotate compatibility context.",
+          "type": "string"
+        },
+        "command": {
+          "description": "Optional exact target command to annotate compatibility context.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Signer profile id.",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Optional execution mode to annotate compatibility context.",
+          "type": "string"
+        },
+        "policy-id": {
+          "description": "Optional policy id to annotate compatibility context.",
+          "type": "string"
+        },
+        "store-file": {
+          "description": "Optional profile store file path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "profile:read",
+      "contracts:read"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Inspect one signer profile by id and optionally annotate it with compatibility context.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] profile get --id <profile-id> [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]"
   },
   "profile.list": {
     "agentWorkflow": null,
@@ -14024,6 +14381,94 @@
     "supportsRemote": true,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] profile list"
+  },
+  "profile.recommend": {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canonicalCommandTokens": [
+      "profile",
+      "recommend"
+    ],
+    "canonicalTool": "profile.recommend",
+    "canonicalUsage": "pandora [--output table|json] profile recommend [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>] [--no-builtins|--builtin-only]",
+    "canRunConcurrent": true,
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/ProfileRecommendPayload",
+    "emits": [
+      "profile.recommend",
+      "profile.recommend.help",
+      "profile.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 200,
+    "externalDependencies": [],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "builtin-only": {
+          "description": "Restrict recommendations to built-in profiles.",
+          "type": "boolean"
+        },
+        "category": {
+          "description": "Poll category id or canonical name to evaluate.",
+          "type": "string"
+        },
+        "chain-id": {
+          "description": "Chain id to evaluate.",
+          "type": "string"
+        },
+        "command": {
+          "description": "Exact target command to evaluate.",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Execution mode to evaluate: dry-run, paper, fork, execute, or execute-live.",
+          "type": "string"
+        },
+        "no-builtins": {
+          "description": "Exclude built-in profiles from recommendation results.",
+          "type": "boolean"
+        },
+        "policy-id": {
+          "description": "Optional policy id to include as compatibility context.",
+          "type": "string"
+        },
+        "store-file": {
+          "description": "Optional profile store file path.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "profile:read",
+      "contracts:read"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Recommend signer profiles for an execution context.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] profile recommend [--store-file <path>] [--command <tool>] [--mode dry-run|paper|fork|execute|execute-live] [--chain-id <id>] [--category <id|name>] [--policy-id <id>] [--no-builtins|--builtin-only]"
   },
   "profile.validate": {
     "agentWorkflow": null,
@@ -14687,7 +15132,7 @@
       "resolve"
     ],
     "canonicalTool": "resolve",
-    "canonicalUsage": "pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]",
+    "canonicalUsage": "pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]",
     "canRunConcurrent": false,
     "controlInputNames": [],
     "dataSchema": "#/definitions/ResolvePayload",
@@ -14767,6 +15212,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "reason": {
           "description": "Operator reason string.",
           "type": "string"
@@ -14814,7 +15267,7 @@
     "summary": "Dry-run or execute poll resolution.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]"
+    "usage": "pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]"
   },
   "risk": {
     "agentWorkflow": null,
@@ -15149,7 +15602,7 @@
       "schema"
     ],
     "canonicalTool": "schema",
-    "canonicalUsage": "pandora [--output json] schema",
+    "canonicalUsage": "pandora [--output json] schema [--include-compatibility]",
     "canRunConcurrent": true,
     "controlInputNames": [],
     "dataSchema": "#/definitions/SchemaCommandPayload",
@@ -15166,7 +15619,12 @@
     "idempotency": "idempotent",
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "include-compatibility": {
+          "description": "Include compatibility alias descriptors in addition to canonical commands.",
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "jobCapable": false,
@@ -15191,7 +15649,7 @@
     "summary": "Emit JSON envelope schema plus command descriptor map for agents.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output json] schema"
+    "usage": "pandora [--output json] schema [--include-compatibility]"
   },
   "sell": {
     "agentWorkflow": null,
@@ -15200,7 +15658,7 @@
       "sell"
     ],
     "canonicalTool": "sell",
-    "canonicalUsage": "pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]",
+    "canonicalUsage": "pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]",
     "canRunConcurrent": false,
     "controlInputNames": [],
     "dataSchema": "#/definitions/TradePayload",
@@ -15299,6 +15757,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -15375,57 +15841,7 @@
     "summary": "Execute or dry-run an AMM sell flow.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]"
-  },
-  "sell.quote": {
-    "agentWorkflow": null,
-    "aliasOf": "quote",
-    "canonicalCommandTokens": [
-      "quote"
-    ],
-    "canonicalTool": "quote",
-    "canonicalUsage": "pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]",
-    "canRunConcurrent": true,
-    "controlInputNames": [],
-    "dataSchema": "#/definitions/QuotePayload",
-    "emits": [
-      "sell.quote.help"
-    ],
-    "executeFlags": [],
-    "executeIntentRequired": false,
-    "executeIntentRequiredForLiveMode": false,
-    "expectedLatencyMs": 5000,
-    "externalDependencies": [
-      "chain-rpc"
-    ],
-    "helpDataSchema": "#/definitions/CommandHelpPayload",
-    "idempotency": "idempotent",
-    "inputSchema": null,
-    "jobCapable": false,
-    "mcpExposed": false,
-    "mcpLongRunningBlocked": false,
-    "mcpMutating": false,
-    "outputModes": [
-      "table",
-      "json"
-    ],
-    "policyScopes": [
-      "sell:read",
-      "network:rpc"
-    ],
-    "preferred": false,
-    "recommendedPreflightTool": null,
-    "remoteEligible": false,
-    "requiresSecrets": false,
-    "returnsOperationId": false,
-    "returnsRuntimeHandle": false,
-    "riskLevel": "low",
-    "safeEquivalent": null,
-    "safeFlags": [],
-    "summary": "Backward-compatible quote entrypoint under `sell`.",
-    "supportsRemote": false,
-    "supportsWebhook": false,
-    "usage": "pandora [--output table|json] sell quote --market-address <address> --side yes|no --shares <amount>|--amount <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]"
+    "usage": "pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]"
   },
   "setup": {
     "agentWorkflow": null,
@@ -16246,7 +16662,7 @@
       "run"
     ],
     "canonicalTool": "sports.create.run",
-    "canonicalUsage": "pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]",
+    "canonicalUsage": "pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]",
     "canRunConcurrent": false,
     "controlInputNames": [
       "agentPreflight"
@@ -16408,6 +16824,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -16448,7 +16872,7 @@
     "summary": "Execute or dry-run sports market creation.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]"
+    "usage": "pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]"
   },
   "sports.events.list": {
     "agentWorkflow": null,
@@ -17547,7 +17971,7 @@
       "trade"
     ],
     "canonicalTool": "trade",
-    "canonicalUsage": "pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]",
+    "canonicalUsage": "pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]",
     "canRunConcurrent": false,
     "controlInputNames": [],
     "dataSchema": "#/definitions/TradePayload",
@@ -17655,6 +18079,14 @@
           "description": "Hex private key.",
           "type": "string"
         },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -17727,57 +18159,7 @@
     "summary": "Execute or dry-run a buy flow with optional risk constraints.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]"
-  },
-  "trade.quote": {
-    "agentWorkflow": null,
-    "aliasOf": "quote",
-    "canonicalCommandTokens": [
-      "quote"
-    ],
-    "canonicalTool": "quote",
-    "canonicalUsage": "pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]",
-    "canRunConcurrent": true,
-    "controlInputNames": [],
-    "dataSchema": "#/definitions/QuotePayload",
-    "emits": [
-      "trade.quote.help"
-    ],
-    "executeFlags": [],
-    "executeIntentRequired": false,
-    "executeIntentRequiredForLiveMode": false,
-    "expectedLatencyMs": 5000,
-    "externalDependencies": [
-      "chain-rpc"
-    ],
-    "helpDataSchema": "#/definitions/CommandHelpPayload",
-    "idempotency": "idempotent",
-    "inputSchema": null,
-    "jobCapable": false,
-    "mcpExposed": false,
-    "mcpLongRunningBlocked": false,
-    "mcpMutating": false,
-    "outputModes": [
-      "table",
-      "json"
-    ],
-    "policyScopes": [
-      "trade:read",
-      "network:rpc"
-    ],
-    "preferred": false,
-    "recommendedPreflightTool": null,
-    "remoteEligible": false,
-    "requiresSecrets": false,
-    "returnsOperationId": false,
-    "returnsRuntimeHandle": false,
-    "riskLevel": "low",
-    "safeEquivalent": null,
-    "safeFlags": [],
-    "summary": "Backward-compatible subcommand alias of `quote` under `trade`.",
-    "supportsRemote": false,
-    "supportsWebhook": false,
-    "usage": "pandora [--output table|json] trade quote --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]"
+    "usage": "pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]"
   },
   "version": {
     "agentWorkflow": null,

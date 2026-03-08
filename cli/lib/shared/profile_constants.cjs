@@ -41,6 +41,21 @@ const PROFILE_ENV_CHAIN_ID_CANDIDATES = Object.freeze([
   'CHAIN_ID',
 ]);
 
+const PROFILE_ENV_KEYSTORE_PASSWORD_CANDIDATES = Object.freeze([
+  'PANDORA_KEYSTORE_PASSWORD',
+  'KEYSTORE_PASSWORD',
+]);
+
+const PROFILE_ENV_EXTERNAL_SIGNER_URL_CANDIDATES = Object.freeze([
+  'PANDORA_EXTERNAL_SIGNER_URL',
+  'EXTERNAL_SIGNER_URL',
+]);
+
+const PROFILE_ENV_EXTERNAL_SIGNER_TOKEN_CANDIDATES = Object.freeze([
+  'PANDORA_EXTERNAL_SIGNER_TOKEN',
+  'EXTERNAL_SIGNER_TOKEN',
+]);
+
 const PROFILE_DEFAULT_LOCAL_ENV_PROFILE_ID = 'prod_trader_a';
 const PROFILE_DEFAULT_READ_ONLY_PROFILE_ID = 'market_observer_ro';
 const PROFILE_DEFAULT_KEYSTORE_PROFILE_ID = 'dev_keystore_operator';
@@ -161,7 +176,7 @@ const PROFILE_BUILTIN_SAMPLE_PROFILES = deepFreeze([
     version: PROFILE_SCHEMA_VERSION,
     displayName: 'Dev Keystore Operator (sample local keystore profile)',
     description:
-      'Built-in sample keystore-backed profile. Local keystore materialization is planned but not yet resolved.',
+      'Built-in sample keystore-backed profile. The backend is implemented, but runtime readiness still depends on the keystore file, password, and network context.',
     signerBackend: 'local-keystore',
     chainAllowlist: [1],
     categoryAllowlist: ['Sports', 'Crypto'],
@@ -171,6 +186,9 @@ const PROFILE_BUILTIN_SAMPLE_PROFILES = deepFreeze([
     secretRef: {
       kind: 'file',
       path: '~/.pandora/keys/dev_keystore_operator.json',
+      passwordEnv: PROFILE_ENV_KEYSTORE_PASSWORD_CANDIDATES,
+      rpcUrlEnv: PROFILE_ENV_RPC_URL_CANDIDATES,
+      chainIdEnv: PROFILE_ENV_CHAIN_ID_CANDIDATES,
     },
     approvalMode: 'manual',
     riskCeilings: {
@@ -189,7 +207,7 @@ const PROFILE_BUILTIN_SAMPLE_PROFILES = deepFreeze([
     version: PROFILE_SCHEMA_VERSION,
     displayName: 'Desk Signer Service (sample external signer profile)',
     description:
-      'Built-in sample profile for an external signer integration. External signer execution is still a placeholder.',
+      'Built-in sample profile for an external signer integration. The backend is implemented, but runtime readiness still depends on the signer endpoint and network context.',
     signerBackend: 'external-signer',
     chainAllowlist: [1, 137],
     categoryAllowlist: ['Politics', 'Sports', 'Finance', 'Crypto'],
@@ -199,6 +217,10 @@ const PROFILE_BUILTIN_SAMPLE_PROFILES = deepFreeze([
     secretRef: {
       kind: 'external-signer',
       reference: 'signer://desk-signer-service',
+      baseUrlEnv: PROFILE_ENV_EXTERNAL_SIGNER_URL_CANDIDATES,
+      authTokenEnv: PROFILE_ENV_EXTERNAL_SIGNER_TOKEN_CANDIDATES,
+      rpcUrlEnv: PROFILE_ENV_RPC_URL_CANDIDATES,
+      chainIdEnv: PROFILE_ENV_CHAIN_ID_CANDIDATES,
     },
     approvalMode: 'external',
     riskCeilings: {
@@ -224,6 +246,9 @@ module.exports = {
   PROFILE_ENV_WALLET_CANDIDATES,
   PROFILE_ENV_RPC_URL_CANDIDATES,
   PROFILE_ENV_CHAIN_ID_CANDIDATES,
+  PROFILE_ENV_KEYSTORE_PASSWORD_CANDIDATES,
+  PROFILE_ENV_EXTERNAL_SIGNER_URL_CANDIDATES,
+  PROFILE_ENV_EXTERNAL_SIGNER_TOKEN_CANDIDATES,
   PROFILE_DEFAULT_LOCAL_ENV_PROFILE_ID,
   PROFILE_DEFAULT_READ_ONLY_PROFILE_ID,
   PROFILE_DEFAULT_KEYSTORE_PROFILE_ID,

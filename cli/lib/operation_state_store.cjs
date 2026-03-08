@@ -20,6 +20,7 @@ const {
 
 const OPERATION_STORE_SCHEMA_VERSION = OPERATION_STATE_SCHEMA_VERSION;
 const OPERATION_CHECKPOINT_SCHEMA_VERSION = '1.0.0';
+const OPERATION_RECEIPT_SCHEMA_VERSION = '1.0.0';
 
 function createStoreError(code, message, details) {
   const error = new Error(message);
@@ -62,6 +63,12 @@ function defaultOperationCheckpointFile(operationId, options = {}) {
   const rootDir = resolveOperationsDir(options.rootDir);
   const normalizedId = normalizeOperationId(operationId);
   return path.join(rootDir, `${normalizedId}.checkpoints.jsonl`);
+}
+
+function defaultOperationReceiptFile(operationId, options = {}) {
+  const rootDir = resolveOperationsDir(options.rootDir);
+  const normalizedId = normalizeOperationId(operationId);
+  return path.join(rootDir, `${normalizedId}.receipt.json`);
 }
 
 function ensurePrivateDirectory(dirPath) {
@@ -645,6 +652,7 @@ function listOperations(rootDir, options = {}) {
     if (!entry.isFile()) continue;
     if (!entry.name.endsWith('.json')) continue;
     if (entry.name.endsWith('.checkpoints.json')) continue;
+    if (entry.name.endsWith('.receipt.json')) continue;
     const filePath = path.join(resolvedRootDir, entry.name);
     try {
       const parsed = readJsonFile(filePath, { missingOk: false });
@@ -962,6 +970,54 @@ function readCheckpoints(rootDir, reference, options = {}) {
   };
 }
 
+function readReceipt(rootDir, reference, options = {}) {
+  const lookup = resolveOperationLookup(rootDir, reference, options);
+  const receiptFilePath = lookup && lookup.found
+    ? defaultOperationReceiptFile(lookup.operation.operationId, { rootDir: lookup.rootDir })
+    : (lookup && lookup.operation && lookup.operation.operationId
+      ? defaultOperationReceiptFile(lookup.operation.operationId, { rootDir: lookup.rootDir })
+      : null);
+  if (!receiptFilePath || !fs.existsSync(receiptFilePath)) {
+    return {
+      rootDir: lookup.rootDir,
+      found: false,
+      receiptFilePath,
+      receipt: null,
+    };
+  }
+  const receipt = readJsonFile(receiptFilePath, { missingOk: false });
+  return {
+    rootDir: lookup.rootDir,
+    found: true,
+    receiptFilePath,
+    receipt: cloneJsonValue(receipt),
+  };
+}
+
+function writeReceipt(rootDir, reference, receipt, options = {}) {
+  const lookup = resolveOperationLookup(rootDir, reference, options);
+  if (!lookup.found || !lookup.operation || !lookup.operation.operationId) {
+    throw createStoreError('OPERATION_NOT_FOUND', 'Cannot write receipt for missing operation.', {
+      reference,
+    });
+  }
+  const receiptFilePath = defaultOperationReceiptFile(lookup.operation.operationId, { rootDir: lookup.rootDir });
+  const lockPath = `${receiptFilePath}.lock`;
+  const payload = cloneJsonValue({
+    schemaVersion: OPERATION_RECEIPT_SCHEMA_VERSION,
+    ...(receipt && typeof receipt === 'object' ? receipt : {}),
+  });
+  return withFileLock(lockPath, options, () => {
+    atomicWriteJson(receiptFilePath, payload);
+    return {
+      rootDir: lookup.rootDir,
+      found: true,
+      receiptFilePath,
+      receipt: payload,
+    };
+  });
+}
+
 function createOperationStateStore(options = {}) {
   const rootDir = resolveOperationsDir(options.rootDir || options.dir);
   return {
@@ -990,18 +1046,32 @@ function createOperationStateStore(options = {}) {
     readCheckpoints(reference, callOptions = {}) {
       return readCheckpoints(rootDir, reference, callOptions);
     },
+    readReceipt(reference, callOptions = {}) {
+      return readReceipt(rootDir, reference, callOptions);
+    },
+    writeReceipt(reference, receipt, callOptions = {}) {
+      return writeReceipt(rootDir, reference, receipt, callOptions);
+    },
+    receiptFile(reference) {
+      const lookup = getOperation(rootDir, reference, {});
+      if (!lookup || !lookup.found) return null;
+      return defaultOperationReceiptFile(lookup.operation.operationId, { rootDir });
+    },
   };
 }
 
 module.exports = {
   OPERATION_STORE_SCHEMA_VERSION,
   OPERATION_CHECKPOINT_SCHEMA_VERSION,
+  OPERATION_RECEIPT_SCHEMA_VERSION,
   createStoreError,
   expandHome,
   defaultOperationsDir,
   resolveOperationsDir,
   defaultOperationStateFile,
   defaultOperationCheckpointFile,
+  defaultOperationReceiptFile,
+  normalizeOperationId,
   normalizeOperationRecord,
   normalizeCheckpointRecord,
   summarizeCheckpoint,
@@ -1013,5 +1083,7 @@ module.exports = {
   setOperationStatus,
   appendCheckpoint,
   readCheckpoints,
+  readReceipt,
+  writeReceipt,
   createOperationStateStore,
 };

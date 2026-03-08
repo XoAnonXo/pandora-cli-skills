@@ -8,10 +8,13 @@ const pkg = require('../../package.json');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
+const { buildCapabilitiesPayload } = require('../../cli/lib/capabilities_command_service.cjs');
 const { createMcpToolRegistry } = require('../../cli/lib/mcp_tool_registry.cjs');
 const { createMcpHttpGatewayService } = require('../../cli/lib/mcp_http_gateway_service.cjs');
 const { createOperationService } = require('../../cli/lib/operation_service.cjs');
-const { upsertOperation } = require('../../cli/lib/operation_state_store.cjs');
+const { createOperationStateStore, upsertOperation } = require('../../cli/lib/operation_state_store.cjs');
+const { createOperationWebhookDeliveryStore } = require('../../cli/lib/operation_webhook_delivery_store.cjs');
+const { computeOperationHash } = require('../../cli/lib/shared/operation_hash.cjs');
 const generatedManifest = require('../../sdk/generated/manifest.json');
 const generatedContractRegistry = require('../../sdk/generated/contract-registry.json');
 
@@ -19,11 +22,17 @@ const { CLI_PATH, REPO_ROOT, createTempDir, removeDir, runCli } = require('../he
 const { assertSchemaValid } = require('../helpers/json_schema_assert.cjs');
 const {
   omitGeneratedAt,
+  omitTrustDistributionFromCapabilities,
+  omitTrustDistributionDefinitions,
   normalizeCapabilitiesForTransportParity,
   assertManifestParity,
   createIsolatedPandoraEnv,
   withTemporaryEnv,
 } = require('../helpers/contract_parity_assertions.cjs');
+const {
+  assertBootstrapPolicyProfileRecommendations,
+  assertCanonicalToolFirstCommandSet,
+} = require('../helpers/policy_profile_assertions.cjs');
 
 async function withMcpClient(fn, options = {}) {
   const env = options.env && typeof options.env === 'object' ? options.env : process.env;
@@ -54,7 +63,11 @@ async function withMcpHttpGateway(fn, options = {}) {
       '--host', '127.0.0.1',
       '--port', '0',
     ];
-    if (Object.prototype.hasOwnProperty.call(options, 'authToken')) {
+    if (Array.isArray(options.authTokenRecords) && options.authTokenRecords.length) {
+      const authTokensFile = path.join(tempDir, 'auth-tokens.json');
+      fs.writeFileSync(authTokensFile, JSON.stringify({ schemaVersion: '1.0.0', tokens: options.authTokenRecords }, null, 2));
+      args.push('--auth-tokens-file', authTokensFile);
+    } else if (Object.prototype.hasOwnProperty.call(options, 'authToken')) {
       if (options.authToken) {
         args.push('--auth-token', options.authToken);
       }
@@ -65,7 +78,9 @@ async function withMcpHttpGateway(fn, options = {}) {
       args.push('--public-base-url', options.publicBaseUrl);
     }
     const authScopes = options.authScopes || ['help:read', 'capabilities:read', 'contracts:read', 'operations:read', 'schema:read'];
-    args.push('--auth-scopes', authScopes.join(','));
+    if (!(Array.isArray(options.authTokenRecords) && options.authTokenRecords.length)) {
+      args.push('--auth-scopes', authScopes.join(','));
+    }
     const service = createMcpHttpGatewayService({
       args,
       packageVersion: pkg.version,
@@ -150,18 +165,24 @@ test('mcp tools/list exposes command tools and excludes unsupported launch/clone
     assert.ok(toolNames.includes('risk.panic'));
     assert.ok(toolNames.includes('operations.get'));
     assert.ok(toolNames.includes('operations.list'));
-    assert.ok(toolNames.includes('operations.cancel'));
-    assert.ok(toolNames.includes('operations.close'));
-    assert.ok(toolNames.includes('policy.list'));
-    assert.ok(toolNames.includes('policy.get'));
-    assert.ok(toolNames.includes('policy.lint'));
-    assert.ok(toolNames.includes('profile.list'));
-    assert.ok(toolNames.includes('profile.get'));
-    assert.ok(toolNames.includes('profile.validate'));
-    assert.ok(toolNames.includes('agent.market.autocomplete'));
-    assert.ok(toolNames.includes('agent.market.validate'));
-    assert.ok(!toolNames.includes('launch'));
-    assert.ok(!toolNames.includes('clone-bet'));
+    assert.ok(toolNames.includes('operations.receipt'));
+	    assert.ok(toolNames.includes('operations.cancel'));
+	    assert.ok(toolNames.includes('operations.close'));
+	    assert.ok(toolNames.includes('bootstrap'));
+	    assert.ok(toolNames.includes('policy.list'));
+	    assert.ok(toolNames.includes('policy.get'));
+	    assert.ok(toolNames.includes('policy.explain'));
+	    assert.ok(toolNames.includes('policy.recommend'));
+	    assert.ok(toolNames.includes('policy.lint'));
+	    assert.ok(toolNames.includes('profile.list'));
+	    assert.ok(toolNames.includes('profile.get'));
+	    assert.ok(toolNames.includes('profile.explain'));
+	    assert.ok(toolNames.includes('profile.recommend'));
+	    assert.ok(toolNames.includes('profile.validate'));
+	    assert.ok(toolNames.includes('agent.market.autocomplete'));
+	    assert.ok(toolNames.includes('agent.market.validate'));
+	    assert.ok(!toolNames.includes('launch'));
+	    assert.ok(!toolNames.includes('clone-bet'));
   });
 });
 
@@ -182,6 +203,308 @@ test('mcp http --help prints gateway usage without stack traces', async () => {
   assert.equal(result.status, 0, result.output || result.stderr);
   assert.match(result.stdout, /pandora mcp http/);
   assert.match(result.stdout, /auth-token/);
+  assert.match(result.stdout, /bootstrap/);
+});
+
+test('mcp http supports multiple bearer tokens with distinct principals and scopes', async () => {
+  await withMcpHttpGateway(async (gateway) => {
+    const baseUrl = gateway.config.baseUrl;
+    const reader = await fetch(`${baseUrl}${gateway.config.capabilitiesPath}`, {
+      headers: { authorization: 'Bearer reader-token' },
+    });
+    assert.equal(reader.status, 200);
+    const readerPayload = await reader.json();
+    assert.equal(readerPayload.principalId, 'reader');
+
+    const denied = await fetch(`${baseUrl}${gateway.config.operationsPath}`, {
+      headers: { authorization: 'Bearer reader-token' },
+    });
+    assert.equal(denied.status, 403);
+
+    const operator = await fetch(`${baseUrl}${gateway.config.operationsPath}`, {
+      headers: { authorization: 'Bearer operator-token' },
+    });
+    assert.equal(operator.status, 200);
+  }, {
+	    authTokenRecords: [
+	      { id: 'reader', token: 'reader-token', scopes: ['capabilities:read', 'contracts:read'] },
+	      { id: 'operator', token: 'operator-token', scopes: ['capabilities:read', 'contracts:read', 'operations:read'] },
+	    ],
+	  });
+	});
+
+test('mcp http rotates generated auth tokens across restarts and rejects stale bearer tokens', async () => {
+  const homeDir = createTempDir('pandora-mcp-http-home-');
+  try {
+    let firstToken = null;
+    let tokenFile = null;
+
+    await withMcpHttpGateway(async (gateway) => {
+      firstToken = gateway.auth.token;
+      tokenFile = gateway.auth.tokenFile;
+      assert.equal(gateway.auth.generated, true);
+      assert.equal(typeof tokenFile, 'string');
+      assert.equal(fs.existsSync(tokenFile), true);
+      assert.equal(fs.readFileSync(tokenFile, 'utf8').trim(), firstToken);
+    }, {
+      authToken: null,
+      env: { HOME: homeDir },
+    });
+
+    await withMcpHttpGateway(async (gateway) => {
+      const secondToken = gateway.auth.token;
+      assert.equal(gateway.auth.generated, true);
+      assert.equal(typeof gateway.auth.tokenFile, 'string');
+      assert.equal(gateway.auth.tokenFile, tokenFile);
+      assert.notEqual(secondToken, firstToken);
+      assert.equal(fs.readFileSync(gateway.auth.tokenFile, 'utf8').trim(), secondToken);
+
+      const staleResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`, {
+        headers: {
+          authorization: `Bearer ${firstToken}`,
+        },
+      });
+      assert.equal(staleResponse.status, 401);
+
+      const liveResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`, {
+        headers: {
+          authorization: `Bearer ${secondToken}`,
+        },
+      });
+      assert.equal(liveResponse.status, 200);
+    }, {
+      authToken: null,
+      env: { HOME: homeDir },
+    });
+  } finally {
+    removeDir(homeDir);
+  }
+});
+
+test('mcp http tools and schema can expose denied tools with missing scopes for bootstrap', async () => {
+  await withMcpHttpGateway(async (gateway) => {
+    const baseUrl = gateway.config.baseUrl;
+    const headers = { authorization: 'Bearer limited-token' };
+
+    const toolsResponse = await fetch(`${baseUrl}${gateway.config.toolsPath}?include_denied=1`, { headers });
+    assert.equal(toolsResponse.status, 200);
+    const toolsPayload = await toolsResponse.json();
+    const trade = toolsPayload.data.tools.find((tool) => tool.name === 'trade');
+    assert.ok(trade);
+    assert.equal(trade.xPandora.authorized, false);
+    assert.ok(Array.isArray(trade.xPandora.missingScopes));
+    assert.ok(trade.xPandora.missingScopes.length > 0);
+
+    const schemaResponse = await fetch(`${baseUrl}${gateway.config.schemaPath}?include_denied=1`, { headers });
+    assert.equal(schemaResponse.status, 200);
+    const schemaPayload = await schemaResponse.json();
+    assert.equal(schemaPayload.data.gatewayScopeAccess.principalId, 'default');
+    assert.equal(schemaPayload.data.gatewayScopeAccess.commands.trade.authorized, false);
+    assert.ok(schemaPayload.data.gatewayScopeAccess.commands.trade.missingScopes.length > 0);
+  }, {
+    authToken: 'limited-token',
+    authScopes: ['schema:read', 'contracts:read'],
+  });
+});
+
+test('mcp http keeps principal context consistent across authenticated bootstrap surfaces and health stays anonymous', async () => {
+  await withMcpHttpGateway(async (gateway, operationService) => {
+    await operationService.createCompleted({
+      operationId: 'principal-audit-op',
+      command: 'mirror.deploy',
+      summary: 'principal consistency audit',
+      result: { txHash: '0xprincipal' },
+    });
+
+    const healthResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.healthPath}`);
+    assert.equal(healthResponse.status, 200);
+    const healthPayload = await healthResponse.json();
+    assert.equal(healthPayload.ok, true);
+    assert.equal(Object.prototype.hasOwnProperty.call(healthPayload, 'principalId'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(healthPayload.data, 'principalId'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(healthPayload.data, 'grantedScopes'), false);
+
+    const headers = {
+      authorization: 'Bearer auditor-token',
+    };
+
+    const capabilitiesResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`, { headers });
+    assert.equal(capabilitiesResponse.status, 200);
+    const capabilitiesPayload = await capabilitiesResponse.json();
+    assert.equal(capabilitiesPayload.principalId, 'auditor');
+    assert.equal(capabilitiesPayload.data.gateway.principalId, 'auditor');
+    assert.deepEqual(capabilitiesPayload.data.gateway.grantedScopes, ['capabilities:read', 'contracts:read', 'operations:read', 'schema:read']);
+
+    const toolsResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.toolsPath}?include_denied=1`, { headers });
+    assert.equal(toolsResponse.status, 200);
+    const toolsPayload = await toolsResponse.json();
+    assert.equal(toolsPayload.data.principalId, 'auditor');
+    assert.ok(toolsPayload.data.tools.every((tool) => tool.xPandora.principalId === 'auditor'));
+
+    const schemaResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.schemaPath}?include_denied=1`, { headers });
+    assert.equal(schemaResponse.status, 200);
+    const schemaPayload = await schemaResponse.json();
+    assert.equal(schemaPayload.data.gatewayScopeAccess.principalId, 'auditor');
+
+    const bootstrapResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.bootstrapPath}?include_denied=1`, { headers });
+    assert.equal(bootstrapResponse.status, 200);
+    const bootstrapPayload = await bootstrapResponse.json();
+    assert.equal(bootstrapPayload.principalId, 'auditor');
+    assert.equal(bootstrapPayload.data.principalId, 'auditor');
+    assert.equal(bootstrapPayload.data.gateway.principalId, 'auditor');
+    assert.equal(bootstrapPayload.data.capabilities.gateway.principalId, 'auditor');
+    assert.equal(bootstrapPayload.data.schema.gatewayScopeAccess.principalId, 'auditor');
+    assert.equal(bootstrapPayload.data.tools.principalId, 'auditor');
+
+    const operationsResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.operationsPath}/principal-audit-op`, { headers });
+    assert.equal(operationsResponse.status, 200);
+    const operationsPayload = await operationsResponse.json();
+    assert.equal(operationsPayload.ok, true);
+    assert.equal(operationsPayload.command, 'operations.get');
+    assert.equal(operationsPayload.data.operationId, 'principal-audit-op');
+  }, {
+    authTokenRecords: [
+      {
+        id: 'auditor',
+        token: 'auditor-token',
+        scopes: ['capabilities:read', 'contracts:read', 'operations:read', 'schema:read'],
+      },
+    ],
+  });
+});
+
+test('mcp http bootstrap endpoint exposes principal context and scope-respecting bootstrap data', async () => {
+  const cliCapabilities = parseJsonOutput(runCli(['--output', 'json', 'capabilities']));
+  await withMcpHttpGateway(async (gateway) => {
+    const baseUrl = gateway.config.baseUrl;
+
+    const unauthorized = await fetch(`${baseUrl}${gateway.config.bootstrapPath}`);
+    assert.equal(unauthorized.status, 401);
+
+    const fullResponse = await fetch(`${baseUrl}${gateway.config.bootstrapPath}`, {
+      headers: { authorization: 'Bearer bootstrap-full-token' },
+    });
+    assert.equal(fullResponse.status, 200);
+    const fullPayload = await fullResponse.json();
+    assert.equal(fullPayload.ok, true);
+    assert.equal(fullPayload.command, 'mcp.bootstrap');
+    assert.equal(fullPayload.principalId, 'bootstrap-full');
+    assert.equal(fullPayload.data.principalId, 'bootstrap-full');
+    assert.deepEqual(
+      fullPayload.data.grantedScopes,
+      ['arb:read', 'capabilities:read', 'contracts:read', 'network:indexer', 'schema:read'],
+    );
+    assert.equal(fullPayload.data.gateway.bootstrapPath, '/bootstrap');
+	    assert.equal(fullPayload.data.summary.readinessMode, 'artifact-neutral');
+	    assert.equal(fullPayload.data.summary.preferences.recommendedFirstCall, 'bootstrap');
+	    assert.equal(fullPayload.data.summary.recommendedBootstrapFlow[0], 'bootstrap');
+	    assertCanonicalToolFirstCommandSet(
+	      cliCapabilities.data.commandDigests,
+	      fullPayload.data.summary.recommendedBootstrapFlow,
+	    );
+	    assertBootstrapPolicyProfileRecommendations(
+	      fullPayload.data.summary,
+	      cliCapabilities.data.commandDigests,
+	      { expectedMutableProfileId: null },
+	    );
+	    assert.equal(fullPayload.data.access.capabilities.authorized, true);
+	    assert.equal(fullPayload.data.access.schema.authorized, true);
+	    assert.equal(fullPayload.data.access.tools.authorized, true);
+    assert.equal(typeof fullPayload.data.schema.commandDescriptors.trade, 'object');
+    const fullToolNames = fullPayload.data.tools.tools.map((tool) => tool.name);
+    assert.ok(fullToolNames.includes('arb.scan'));
+    assert.ok(!fullToolNames.includes('arbitrage'));
+
+    const limitedResponse = await fetch(`${baseUrl}${gateway.config.bootstrapPath}`, {
+      headers: { authorization: 'Bearer bootstrap-limited-token' },
+    });
+    assert.equal(limitedResponse.status, 200);
+    const limitedPayload = await limitedResponse.json();
+    assert.equal(limitedPayload.data.principalId, 'bootstrap-limited');
+    assert.equal(limitedPayload.data.access.capabilities.authorized, false);
+    assert.deepEqual(limitedPayload.data.access.capabilities.missingScopes, ['capabilities:read']);
+    assert.equal(limitedPayload.data.access.schema.authorized, true);
+    assert.equal(limitedPayload.data.access.tools.authorized, true);
+    assert.equal(limitedPayload.data.capabilities, null);
+    assert.equal(typeof limitedPayload.data.schema.commandDescriptors.trade, 'object');
+    const limitedToolNames = limitedPayload.data.tools.tools.map((tool) => tool.name);
+    assert.ok(!limitedToolNames.includes('trade'));
+    assert.ok(!limitedToolNames.includes('arbitrage'));
+
+    const detailedResponse = await fetch(`${baseUrl}${gateway.config.bootstrapPath}?include_denied=1&include_aliases=1`, {
+      headers: { authorization: 'Bearer bootstrap-limited-token' },
+    });
+    assert.equal(detailedResponse.status, 200);
+    const detailedPayload = await detailedResponse.json();
+	    assert.equal(detailedPayload.data.includeAliases, true);
+	    assert.equal(detailedPayload.data.includeDenied, true);
+	    const detailedTrade = detailedPayload.data.tools.tools.find((tool) => tool.name === 'trade');
+    assert.ok(detailedTrade);
+    assert.equal(detailedTrade.xPandora.authorized, false);
+    assert.ok(detailedTrade.xPandora.missingScopes.length > 0);
+    assert.ok(detailedPayload.data.tools.tools.some((tool) => tool.name === 'arbitrage'));
+    assert.ok(!detailedPayload.data.summary.canonicalTools.includes('arbitrage'));
+    assert.ok(detailedPayload.data.summary.includedToolCommands.includes('arbitrage'));
+    assert.equal(detailedPayload.data.schema.gatewayScopeAccess.principalId, 'bootstrap-limited');
+    assert.equal(detailedPayload.data.schema.gatewayScopeAccess.commands.trade.authorized, false);
+  }, {
+    authTokenRecords: [
+      {
+        id: 'bootstrap-full',
+        token: 'bootstrap-full-token',
+        scopes: ['capabilities:read', 'contracts:read', 'schema:read', 'arb:read', 'network:indexer'],
+      },
+      {
+        id: 'bootstrap-limited',
+        token: 'bootstrap-limited-token',
+        scopes: ['contracts:read', 'schema:read'],
+      },
+    ],
+  });
+});
+
+test('mcp http operations endpoint supports cancel and close lifecycle mutations over REST', async () => {
+  await withMcpHttpGateway(async (gateway, operationService) => {
+    const cancelOperation = await operationService.createExecuting({
+      tool: 'mirror.sync.start',
+      command: 'mirror.sync.start',
+      operationHash: computeOperationHash({ command: 'mirror.sync.start', mode: 'execute' }),
+      status: 'executing',
+    });
+    const closeOperation = await operationService.createCompleted({
+      tool: 'claim',
+      command: 'claim',
+      operationHash: computeOperationHash({ command: 'claim', mode: 'execute' }),
+      status: 'completed',
+    });
+    const headers = {
+      authorization: 'Bearer rest-ops-token',
+      'content-type': 'application/json',
+    };
+
+    const cancel = await fetch(`${gateway.config.baseUrl}${gateway.config.operationsPath}/${cancelOperation.operationId}/cancel`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ intent: 'execute', reason: 'stop' }),
+    });
+    assert.equal(cancel.status, 200);
+    const cancelPayload = await cancel.json();
+    assert.equal(cancelPayload.command, 'operations.cancel');
+    assert.equal(cancelPayload.data.status, 'canceled');
+
+    const close = await fetch(`${gateway.config.baseUrl}${gateway.config.operationsPath}/${closeOperation.operationId}/close`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ intent: 'execute', reason: 'archive' }),
+    });
+    assert.equal(close.status, 200);
+    const closePayload = await close.json();
+    assert.equal(closePayload.command, 'operations.close');
+    assert.equal(closePayload.data.status, 'closed');
+  }, {
+    authToken: 'rest-ops-token',
+    authScopes: ['operations:read', 'operations:write'],
+  });
 });
 
 test('mcp tools/list exposes typed per-tool schemas and canonical metadata', async () => {
@@ -258,10 +581,7 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
     assert.equal(agentValidate.inputSchema.properties['target-timestamp'].type, 'integer');
 
       const arbitrage = byName.get('arbitrage');
-      assert.ok(arbitrage);
-      assert.equal(arbitrage.inputSchema.xPandora.aliasOf, 'arb.scan');
-      assert.equal(arbitrage.inputSchema.xPandora.canonicalTool, 'arb.scan');
-      assert.equal(arbitrage.inputSchema.xPandora.preferred, false);
+      assert.equal(arbitrage, undefined);
 
       const riskPanic = byName.get('risk.panic');
       assert.ok(riskPanic);
@@ -278,9 +598,13 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
   assert.equal(localByName.get('mirror.deploy').xPandora.agentWorkflow.executeRequiresValidation, true);
   assert.equal(localByName.get('arb.scan').xPandora.canonicalTool, 'arb.scan');
   assert.equal(localByName.get('arb.scan').xPandora.preferred, true);
-  assert.equal(localByName.get('arbitrage').xPandora.aliasOf, 'arb.scan');
-  assert.equal(localByName.get('arbitrage').xPandora.canonicalTool, 'arb.scan');
-  assert.equal(localByName.get('arbitrage').xPandora.preferred, false);
+  assert.equal(localByName.has('arbitrage'), false);
+
+  const arbitrageDescriptor = createMcpToolRegistry().describeTool('arbitrage');
+  assert.ok(arbitrageDescriptor);
+  assert.equal(arbitrageDescriptor.inputSchema.xPandora.aliasOf, 'arb.scan');
+  assert.equal(arbitrageDescriptor.inputSchema.xPandora.canonicalTool, 'arb.scan');
+  assert.equal(arbitrageDescriptor.inputSchema.xPandora.preferred, false);
 });
 
 test('mcp schema/capabilities calls preserve contract-export parity for SDK consumers', async () => {
@@ -289,6 +613,7 @@ test('mcp schema/capabilities calls preserve contract-export parity for SDK cons
   try {
     const cliSchema = parseJsonOutput(runCli(['--output', 'json', 'schema'], { env }));
     const cliCapabilities = parseJsonOutput(runCli(['--output', 'json', 'capabilities'], { env }));
+    const generatedArtifactsAligned = generatedManifest.commandDescriptorVersion === cliSchema.data.commandDescriptorVersion;
     assertManifestParity(generatedManifest, generatedContractRegistry);
 
     await withMcpClient(async (client) => {
@@ -311,16 +636,36 @@ test('mcp schema/capabilities calls preserve contract-export parity for SDK cons
 
       assert.equal(capabilitiesEnvelope.ok, true);
       assert.equal(capabilitiesEnvelope.command, 'capabilities');
-      assert.deepEqual(omitGeneratedAt(capabilitiesEnvelope.data), omitGeneratedAt(cliCapabilities.data));
+      assert.deepEqual(
+        normalizeCapabilitiesForTransportParity(
+          omitTrustDistributionFromCapabilities(omitGeneratedAt(capabilitiesEnvelope.data)),
+        ),
+        normalizeCapabilitiesForTransportParity(
+          omitTrustDistributionFromCapabilities(omitGeneratedAt(cliCapabilities.data)),
+        ),
+      );
       assert.equal(capabilitiesEnvelope.data.commandDescriptorVersion, schemaEnvelope.data.commandDescriptorVersion);
       assert.equal(capabilitiesEnvelope.data.transports.sdk.supported, true);
       assert.equal(capabilitiesEnvelope.data.transports.sdk.status, 'alpha');
-      assert.deepEqual(generatedContractRegistry.commandDescriptors, schemaEnvelope.data.commandDescriptors);
-      assert.deepEqual(generatedContractRegistry.schemas.envelope.definitions, schemaEnvelope.data.definitions);
-      assert.deepEqual(
-        omitGeneratedAt(capabilitiesEnvelope.data),
-        omitGeneratedAt(generatedContractRegistry.capabilities),
-      );
+      if (generatedArtifactsAligned) {
+        assert.deepEqual(generatedContractRegistry.commandDescriptors, schemaEnvelope.data.commandDescriptors);
+        assert.deepEqual(
+          omitTrustDistributionDefinitions(generatedContractRegistry.schemas.envelope.definitions),
+          omitTrustDistributionDefinitions(schemaEnvelope.data.definitions),
+        );
+        const stableCapabilitiesArtifact = buildCapabilitiesPayload({
+          stableArtifactTrustDistribution: true,
+          generatedAtOverride: capabilitiesEnvelope.data.generatedAt,
+        });
+        assert.deepEqual(
+          normalizeCapabilitiesForTransportParity(
+            omitTrustDistributionFromCapabilities(omitGeneratedAt(stableCapabilitiesArtifact)),
+          ),
+          normalizeCapabilitiesForTransportParity(
+            omitTrustDistributionFromCapabilities(omitGeneratedAt(generatedContractRegistry.capabilities)),
+          ),
+        );
+      }
       assert.equal(
         capabilitiesEnvelope.data.registryDigest.descriptorHash,
         stableJsonHash(schemaEnvelope.data.commandDescriptors),
@@ -346,6 +691,7 @@ test('mcp http health/capabilities endpoints enforce auth and report remote tran
     const health = await healthRes.json();
     assert.equal(health.ok, true);
     assert.equal(health.data.authRequired, true);
+    assert.equal(health.data.endpoints.bootstrap, '/bootstrap');
 
     const unauthorizedRes = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`);
     assert.equal(unauthorizedRes.status, 401);
@@ -362,6 +708,100 @@ test('mcp http health/capabilities endpoints enforce auth and report remote tran
     assert.equal(capabilities.data.transports.mcpStreamableHttp.status, 'active');
     assert.match(capabilities.data.transports.mcpStreamableHttp.endpoint, /\/mcp$/);
     assert.doesNotMatch(capabilities.data.transports.mcpStreamableHttp.endpoint, /:0\//);
+    assert.equal(capabilities.data.gateway.schemaPath, '/schema');
+    assert.equal(capabilities.data.gateway.toolsPath, '/tools');
+    assert.equal(capabilities.data.transports.sdk.packages.typescript.name, '@pandora/agent-sdk');
+    assert.equal(capabilities.data.transports.sdk.packages.python.name, 'pandora-agent');
+  });
+});
+
+test('mcp http serves the readyPath and metricsPath advertised by capabilities', async () => {
+  await withMcpHttpGateway(async (gateway) => {
+    const capabilitiesRes = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(capabilitiesRes.status, 200);
+    const capabilities = await capabilitiesRes.json();
+    const { readyPath, metricsPath } = capabilities.data.gateway;
+
+    const readyRes = await fetch(`${gateway.config.baseUrl}${readyPath}`);
+    assert.equal(readyRes.status, 200);
+    const readyPayload = await readyRes.json();
+    assert.equal(readyPayload.ok, true);
+    assert.equal(readyPayload.command, 'mcp.http.ready');
+    assert.equal(readyPayload.data.ready, true);
+    assert.equal(readyPayload.data.endpoints.ready, readyPath);
+    assert.equal(readyPayload.data.endpoints.metrics, metricsPath);
+
+    const unauthorizedMetrics = await fetch(`${gateway.config.baseUrl}${metricsPath}`);
+    assert.equal(unauthorizedMetrics.status, 401);
+
+    const metricsRes = await fetch(`${gateway.config.baseUrl}${metricsPath}`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(metricsRes.status, 200);
+    const metricsPayload = await metricsRes.json();
+    assert.equal(metricsPayload.ok, true);
+    assert.equal(metricsPayload.command, 'mcp.http.metrics');
+    assert.equal(metricsPayload.data.service, 'pandora-mcp-http');
+    assert.equal(metricsPayload.data.principalId, gateway.auth.tokenRecords[0].id);
+    assert.equal(typeof metricsPayload.data.requests.total, 'number');
+  });
+});
+
+test('mcp http schema endpoint requires auth and returns schema envelope', async () => {
+  await withMcpHttpGateway(async (gateway) => {
+    const cliSchema = parseJsonOutput(runCli(['--output', 'json', 'schema']));
+    const unauthorized = await fetch(`${gateway.config.baseUrl}${gateway.config.schemaPath}`);
+    assert.equal(unauthorized.status, 401);
+
+    const response = await fetch(`${gateway.config.baseUrl}${gateway.config.schemaPath}`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'schema');
+    assert.equal(payload.data.commandDescriptorVersion, cliSchema.data.commandDescriptorVersion);
+    assert.equal(typeof payload.data.commandDescriptors, 'object');
+  });
+});
+
+test('mcp http tools endpoint hides compatibility aliases by default and can include them explicitly', async () => {
+  await withMcpHttpGateway(async (gateway) => {
+    const response = await fetch(`${gateway.config.baseUrl}${gateway.config.toolsPath}`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mcp.tools');
+    assert.equal(payload.data.includeAliases, false);
+    const names = payload.data.tools.map((tool) => tool.name);
+    assert.ok(names.includes('arb.scan'));
+    assert.ok(!names.includes('arbitrage'));
+
+    const aliasResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.toolsPath}?include_aliases=1`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(aliasResponse.status, 200);
+    const aliasPayload = await aliasResponse.json();
+    assert.equal(aliasPayload.data.includeAliases, true);
+    const aliasNames = aliasPayload.data.tools.map((tool) => tool.name);
+    assert.ok(aliasNames.includes('arb.scan'));
+    assert.ok(aliasNames.includes('arbitrage'));
+  }, {
+    authScopes: ['capabilities:read', 'contracts:read', 'operations:read', 'arb:read', 'arbitrage:read', 'network:indexer'],
   });
 });
 
@@ -503,10 +943,11 @@ test('mcp http listTools/callTool parity works through streamable HTTP client tr
     assert.equal(helpTool.inputSchema.xPandora.supportsRemote, true);
     assert.equal(helpTool.inputSchema.xPandora.remoteEligible, true);
 
-    const arbitrage = byName.get('arbitrage');
-    assert.ok(arbitrage);
-    assert.equal(arbitrage.inputSchema.xPandora.aliasOf, 'arb.scan');
-    assert.equal(arbitrage.inputSchema.xPandora.supportsRemote, true);
+    const arbScan = byName.get('arb.scan');
+    assert.ok(arbScan);
+    assert.equal(arbScan.inputSchema.xPandora.aliasOf, null);
+    assert.equal(arbScan.inputSchema.xPandora.supportsRemote, true);
+    assert.equal(byName.get('arbitrage'), undefined);
 
     const call = await client.callTool({
       name: 'help',
@@ -516,7 +957,7 @@ test('mcp http listTools/callTool parity works through streamable HTTP client tr
     assert.equal(envelope.ok, true);
     assert.equal(envelope.command, 'help');
   }, {
-    authScopes: ['help:read', 'capabilities:read', 'operations:read', 'arbitrage:read', 'network:indexer'],
+    authScopes: ['help:read', 'capabilities:read', 'operations:read', 'arb:read', 'network:indexer'],
   });
 });
 
@@ -538,7 +979,9 @@ test('mcp http exposes schema/capabilities exports for remote SDK bootstrap clie
   const envRoot = createTempDir('pandora-sdk-mcp-http-');
   const env = createIsolatedPandoraEnv(envRoot);
   try {
+    const localSchema = parseJsonOutput(runCli(['--output', 'json', 'schema'], { env }));
     const localCapabilities = parseJsonOutput(runCli(['--output', 'json', 'capabilities'], { env }));
+    const generatedArtifactsAligned = generatedManifest.commandDescriptorVersion === localSchema.data.commandDescriptorVersion;
     assertManifestParity(generatedManifest, generatedContractRegistry);
 
     await withRemoteMcpClient(async (client, gateway) => {
@@ -585,8 +1028,10 @@ test('mcp http exposes schema/capabilities exports for remote SDK bootstrap clie
         'mcp-capabilities-endpoint-active-remote',
       );
 
-      assert.deepEqual(generatedContractRegistry.commandDescriptors, schemaEnvelope.data.commandDescriptors);
-      assert.deepEqual(generatedContractRegistry.schemas.envelope.definitions, schemaEnvelope.data.definitions);
+      if (generatedArtifactsAligned) {
+        assert.deepEqual(generatedContractRegistry.commandDescriptors, schemaEnvelope.data.commandDescriptors);
+        assert.deepEqual(generatedContractRegistry.schemas.envelope.definitions, schemaEnvelope.data.definitions);
+      }
       assert.equal(
         capabilitiesEnvelope.data.registryDigest.descriptorHash,
         stableJsonHash(schemaEnvelope.data.commandDescriptors),
@@ -600,10 +1045,20 @@ test('mcp http exposes schema/capabilities exports for remote SDK bootstrap clie
         normalizeCapabilitiesForTransportParity(capabilitiesEnvelope.data),
         normalizeCapabilitiesForTransportParity(localCapabilities.data),
       );
-      assert.deepEqual(
-        normalizeCapabilitiesForTransportParity(capabilitiesEnvelope.data),
-        normalizeCapabilitiesForTransportParity(generatedContractRegistry.capabilities),
-      );
+      if (generatedArtifactsAligned) {
+        const stableCapabilitiesArtifact = buildCapabilitiesPayload({
+          stableArtifactTrustDistribution: true,
+          generatedAtOverride: capabilitiesEnvelope.data.generatedAt,
+        });
+        assert.deepEqual(
+          normalizeCapabilitiesForTransportParity(
+            omitTrustDistributionFromCapabilities(stableCapabilitiesArtifact),
+          ),
+          normalizeCapabilitiesForTransportParity(
+            omitTrustDistributionFromCapabilities(generatedContractRegistry.capabilities),
+          ),
+        );
+      }
     }, {
       authScopes: ['capabilities:read', 'contracts:read', 'operations:read', 'schema:read'],
       env,
@@ -676,12 +1131,13 @@ test('mcp http propagates tool-boundary argument errors as structured error payl
   });
 });
 
-test('mcp http exposes operation records through the gateway operations endpoint', async () => {
+test('mcp http exposes operation records and receipts through the gateway operations endpoint', async () => {
   await withMcpHttpGateway(async (gateway, operationService) => {
-    const created = await operationService.createPlanned({
+    const created = await operationService.createCompleted({
       operationId: 'remote-op-1',
-      tool: 'mirror.deploy',
+      command: 'mirror.deploy',
       summary: 'Remote test operation',
+      result: { txHash: '0xremote' },
     });
     assert.equal(created.operationId, 'remote-op-1');
 
@@ -696,6 +1152,32 @@ test('mcp http exposes operation records through the gateway operations endpoint
     assert.equal(recordPayload.command, 'operations.get');
     assert.equal(recordPayload.data.operationId, 'remote-op-1');
 
+    const receiptRes = await fetch(`${gateway.config.baseUrl}${gateway.config.operationsPath}/remote-op-1/receipt`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(receiptRes.status, 200);
+    const receiptPayload = await receiptRes.json();
+    assert.equal(receiptPayload.ok, true);
+    assert.equal(receiptPayload.command, 'operations.receipt');
+    assert.equal(receiptPayload.data.operationId, 'remote-op-1');
+    assert.equal(receiptPayload.data.result.txHash, '0xremote');
+
+    const verifyRes = await fetch(`${gateway.config.baseUrl}${gateway.config.operationsPath}/remote-op-1/receipt/verify?expectedOperationHash=${created.operationHash}`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(verifyRes.status, 200);
+    const verifyPayload = await verifyRes.json();
+    assert.equal(verifyPayload.ok, true);
+    assert.equal(verifyPayload.command, 'operations.verify-receipt');
+    assert.equal(verifyPayload.data.ok, true);
+    assert.equal(verifyPayload.data.operationId, 'remote-op-1');
+    assert.equal(verifyPayload.data.expectedOperationHash, created.operationHash);
+    assert.equal(verifyPayload.data.source.type, 'operation-id');
+
     const listRes = await fetch(`${gateway.config.baseUrl}${gateway.config.operationsPath}?limit=10`, {
       headers: {
         authorization: `Bearer ${gateway.auth.token}`,
@@ -707,6 +1189,204 @@ test('mcp http exposes operation records through the gateway operations endpoint
     assert.equal(listPayload.command, 'operations.list');
     assert.ok(Array.isArray(listPayload.data.items));
     assert.ok(listPayload.data.items.some((item) => item.operationId === 'remote-op-1'));
+  });
+});
+
+test('mcp http exposes persisted webhook delivery ledgers through the operations endpoint', async () => {
+  await withMcpHttpGateway(async (gateway, operationService, tempDir) => {
+    const rootDir = path.join(tempDir, 'operations');
+    const created = await operationService.createCompleted({
+      operationId: 'remote-op-webhooks',
+      command: 'mirror.sync.run',
+      summary: 'Webhook visibility test',
+      result: { ok: true },
+    });
+    const deliveryStore = createOperationWebhookDeliveryStore({
+      rootDir,
+      operationStateStore: createOperationStateStore({ rootDir }),
+    });
+    await deliveryStore.append(created.operationId, {
+      eventId: 'evt-webhook-1',
+      phase: 'completed',
+      delivered: false,
+      deliveryPolicy: { timeoutMs: 5000, maxAttempts: 4 },
+      context: { event: 'pandora.operation.lifecycle', operationId: created.operationId },
+      report: {
+        schemaVersion: '1.0.0',
+        generatedAt: new Date().toISOString(),
+        count: 1,
+        successCount: 0,
+        failureCount: 1,
+        permanentFailureCount: 0,
+        retryExhaustedCount: 1,
+        results: [{
+          target: 'generic',
+          ok: false,
+          deliveryId: 'wh_test_delivery',
+          terminalState: 'failed_retry_exhausted',
+        }],
+      },
+      error: { code: 'WEBHOOK_TIMEOUT', message: 'Timed out' },
+    });
+
+    const response = await fetch(`${gateway.config.baseUrl}${gateway.config.operationsPath}/${created.operationId}/webhooks`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'operations.webhooks');
+    assert.equal(payload.data.operationId, created.operationId);
+    assert.equal(payload.data.count, 1);
+    assert.equal(payload.data.deliveries[0].delivered, false);
+    assert.equal(payload.data.deliveries[0].report.results[0].terminalState, 'failed_retry_exhausted');
+  });
+});
+
+test('mcp http returns 403 for operations lifecycle writes without operations:write scope', async () => {
+  await withMcpHttpGateway(async (gateway, operationService) => {
+    await operationService.createPlanned({
+      operationId: 'op-read-only-denied',
+      command: 'mirror.sync.run',
+      summary: 'Read-only denial test',
+    });
+
+    const deniedResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.operationsPath}/op-read-only-denied/cancel`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer reader-token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ intent: 'execute', reason: 'should fail' }),
+    });
+    assert.equal(deniedResponse.status, 403);
+    const deniedPayload = await deniedResponse.json();
+    assert.equal(deniedPayload.ok, false);
+    assert.equal(deniedPayload.error.code, 'FORBIDDEN');
+  }, {
+    authTokenRecords: [
+      {
+        id: 'reader',
+        token: 'reader-token',
+        scopes: ['operations:read'],
+      },
+    ],
+  });
+});
+
+test('mcp http auth admin surface lists, rotates, and revokes principals in multi-principal mode', async () => {
+  await withMcpHttpGateway(async (gateway) => {
+    const baseUrl = gateway.config.baseUrl;
+    const authHeaders = { authorization: 'Bearer admin-token' };
+
+    const currentRes = await fetch(`${baseUrl}${gateway.config.authPath}/current`, { headers: authHeaders });
+    assert.equal(currentRes.status, 200);
+    const currentPayload = await currentRes.json();
+    assert.equal(currentPayload.ok, true);
+    assert.equal(currentPayload.command, 'mcp.auth.current');
+    assert.equal(currentPayload.data.currentPrincipal.principalId, 'admin');
+
+    const principalsRes = await fetch(`${baseUrl}${gateway.config.authPath}/principals`, { headers: authHeaders });
+    assert.equal(principalsRes.status, 200);
+    const principalsPayload = await principalsRes.json();
+    assert.equal(principalsPayload.ok, true);
+    assert.equal(principalsPayload.command, 'mcp.auth.principals');
+    assert.ok(principalsPayload.data.principals.some((entry) => entry.principalId === 'reader'));
+
+    const rotateRes = await fetch(`${baseUrl}${gateway.config.authPath}/principals/reader/rotate`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ intent: 'execute' }),
+    });
+    assert.equal(rotateRes.status, 200);
+    const rotatePayload = await rotateRes.json();
+    assert.equal(rotatePayload.ok, true);
+    assert.equal(rotatePayload.command, 'mcp.auth.rotate');
+    assert.equal(rotatePayload.data.targetPrincipalId, 'reader');
+    assert.equal(typeof rotatePayload.data.issuedToken, 'string');
+    assert.notEqual(rotatePayload.data.issuedToken, 'reader-token');
+
+    const oldTokenRes = await fetch(`${baseUrl}${gateway.config.capabilitiesPath}`, {
+      headers: { authorization: 'Bearer reader-token' },
+    });
+    assert.equal(oldTokenRes.status, 401);
+
+    const newTokenRes = await fetch(`${baseUrl}${gateway.config.authPath}/current`, {
+      headers: { authorization: `Bearer ${rotatePayload.data.issuedToken}` },
+    });
+    assert.equal(newTokenRes.status, 200);
+    const newTokenPayload = await newTokenRes.json();
+    assert.equal(newTokenPayload.data.currentPrincipal.principalId, 'reader');
+
+    const revokeRes = await fetch(`${baseUrl}${gateway.config.authPath}/principals/reader/revoke`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ intent: 'execute' }),
+    });
+    assert.equal(revokeRes.status, 200);
+    const revokePayload = await revokeRes.json();
+    assert.equal(revokePayload.ok, true);
+    assert.equal(revokePayload.command, 'mcp.auth.revoke');
+    assert.equal(revokePayload.data.revoked, true);
+
+    const revokedTokenRes = await fetch(`${baseUrl}${gateway.config.authPath}/current`, {
+      headers: { authorization: `Bearer ${rotatePayload.data.issuedToken}` },
+    });
+    assert.equal(revokedTokenRes.status, 401);
+  }, {
+    authTokenRecords: [
+      {
+        id: 'admin',
+        token: 'admin-token',
+        scopes: ['capabilities:read', 'gateway:auth:read', 'gateway:auth:write'],
+      },
+      {
+        id: 'reader',
+        token: 'reader-token',
+        scopes: ['capabilities:read'],
+      },
+    ],
+  });
+});
+
+test('mcp http allows operations:write principals to cancel operations over REST', async () => {
+  await withMcpHttpGateway(async (gateway, operationService) => {
+    await operationService.createPlanned({
+      operationId: 'op-read-write-split',
+      command: 'mirror.sync',
+      summary: 'Read/write split audit',
+    });
+
+    const allowedResponse = await fetch(`${gateway.config.baseUrl}${gateway.config.operationsPath}/op-read-write-split/cancel`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer operator-token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ intent: 'execute', reason: 'authorized cancel' }),
+    });
+    assert.equal(allowedResponse.status, 200);
+    const allowedPayload = await allowedResponse.json();
+    assert.equal(allowedPayload.ok, true);
+    assert.equal(allowedPayload.command, 'operations.cancel');
+    assert.equal(allowedPayload.data.operationId, 'op-read-write-split');
+    assert.equal(allowedPayload.data.status, 'canceled');
+  }, {
+    authTokenRecords: [
+      {
+        id: 'operator',
+        token: 'operator-token',
+        scopes: ['operations:read', 'operations:write'],
+      },
+    ],
   });
 });
 
@@ -753,7 +1433,7 @@ test('mcp tools/list preserves xPandora metadata defaults and live registry pari
     }
 
     for (const [commandName, descriptor] of Object.entries(descriptors)) {
-      if (descriptor.mcpExposed) {
+      if (descriptor.mcpExposed && !descriptor.aliasOf) {
         assert.ok(liveByName.has(commandName), `schema marks ${commandName} MCP-exposed but live MCP is missing it`);
       }
     }
@@ -769,16 +1449,17 @@ test('mcp tools/list preserves xPandora metadata defaults and live registry pari
     assert.deepEqual(help.inputSchema.xPandora.controlInputNames, []);
     assert.equal(help.inputSchema.xPandora.agentWorkflow, null);
 
-      const arbitrage = liveByName.get('arbitrage');
-      assert.ok(arbitrage);
-      assert.equal(arbitrage.inputSchema.xPandora.aliasOf, 'arb.scan');
-      assert.equal(arbitrage.inputSchema.xPandora.canonicalTool, 'arb.scan');
-      assert.equal(arbitrage.inputSchema.xPandora.preferred, false);
-      assert.equal(arbitrage.inputSchema.xPandora.compatibilityAlias, true);
-      assert.match(arbitrage.description, /Compatibility alias for arb\.scan/);
-      assert.match(arbitrage.description, /prefer arb\.scan/);
-    });
+    const arbitrage = liveByName.get('arbitrage');
+    assert.equal(arbitrage, undefined);
+
+    const arbScan = liveByName.get('arb.scan');
+    assert.ok(arbScan);
+    assert.equal(arbScan.inputSchema.xPandora.aliasOf, null);
+    assert.equal(arbScan.inputSchema.xPandora.canonicalTool, 'arb.scan');
+    assert.equal(arbScan.inputSchema.xPandora.preferred, true);
+    assert.equal(arbScan.inputSchema.xPandora.compatibilityAlias, false);
   });
+});
 
 test('mcp rejects mutually-exclusive execution mode flags before CLI dispatch', async () => {
   await withMcpClient(async (client) => {
@@ -1350,6 +2031,81 @@ test('mcp operations.get can inspect seeded operation records', async () => {
       assert.equal(envelope.ok, true);
       assert.equal(envelope.command, 'operations.get');
       assert.equal(envelope.data.operationId, created.operation.operationId);
+    }, {
+      env: {
+        ...process.env,
+        PANDORA_OPERATION_DIR: operationDir,
+        HOME: tempDir,
+      },
+    });
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('mcp operations.receipt can inspect a terminal operation receipt', async () => {
+  const tempDir = createTempDir('pandora-mcp-operations-receipt-');
+  try {
+    const operationDir = path.join(tempDir, 'operations');
+    const operationService = createOperationService({
+      rootDir: operationDir,
+    });
+    const created = await operationService.createCompleted({
+      command: 'mirror.deploy',
+      request: { marketAddress: '0xabc', execute: false },
+      result: { txHash: '0xabc123' },
+    });
+    await withMcpClient(async (client) => {
+      const call = await client.callTool({
+        name: 'operations.receipt',
+        arguments: {
+          id: created.operationId,
+        },
+      });
+      const envelope = extractStructuredEnvelope(call);
+      assert.equal(envelope.ok, true);
+      assert.equal(envelope.command, 'operations.receipt');
+      assert.equal(envelope.data.operationId, created.operationId);
+      assert.equal(envelope.data.result.txHash, '0xabc123');
+    }, {
+      env: {
+        ...process.env,
+        PANDORA_OPERATION_DIR: operationDir,
+        HOME: tempDir,
+      },
+    });
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('mcp operations.verify-receipt can verify a terminal operation receipt by id', async () => {
+  const tempDir = createTempDir('pandora-mcp-operations-verify-receipt-');
+  try {
+    const operationDir = path.join(tempDir, 'operations');
+    const operationService = createOperationService({
+      rootDir: operationDir,
+    });
+    const created = await operationService.createCompleted({
+      command: 'mirror.deploy',
+      request: { marketAddress: '0xabc', execute: false },
+      result: { txHash: '0xabc123' },
+    });
+    await withMcpClient(async (client) => {
+      const call = await client.callTool({
+        name: 'operations.verify-receipt',
+        arguments: {
+          id: created.operationId,
+          'expected-operation-hash': created.operationHash,
+        },
+      });
+      const envelope = extractStructuredEnvelope(call);
+      assert.equal(envelope.ok, true);
+      assert.equal(envelope.command, 'operations.verify-receipt');
+      assert.equal(envelope.data.ok, true);
+      assert.equal(envelope.data.operationId, created.operationId);
+      assert.equal(envelope.data.expectedOperationHash, created.operationHash);
+      assert.equal(envelope.data.source.type, 'operation-id');
     }, {
       env: {
         ...process.env,

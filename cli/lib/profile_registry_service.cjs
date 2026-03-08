@@ -10,6 +10,9 @@ const {
   PROFILE_ENV_WALLET_CANDIDATES,
   PROFILE_ENV_RPC_URL_CANDIDATES,
   PROFILE_ENV_CHAIN_ID_CANDIDATES,
+  PROFILE_ENV_KEYSTORE_PASSWORD_CANDIDATES,
+  PROFILE_ENV_EXTERNAL_SIGNER_URL_CANDIDATES,
+  PROFILE_ENV_EXTERNAL_SIGNER_TOKEN_CANDIDATES,
 } = require('./shared/profile_constants.cjs');
 const { createProfileError } = require('./shared/profile_errors.cjs');
 
@@ -236,6 +239,18 @@ function normalizeLocalKeystoreSecretRef(value, readOnly) {
     normalized.path || normalized.file || normalized.keystorePath,
     'secretRef.path',
   );
+  normalized.passwordEnv = normalizeStringList(
+    normalized.passwordEnv || normalized.passphraseEnv || PROFILE_ENV_KEYSTORE_PASSWORD_CANDIDATES,
+    'secretRef.passwordEnv',
+  );
+  normalized.rpcUrlEnv = normalizeStringList(
+    normalized.rpcUrlEnv || PROFILE_ENV_RPC_URL_CANDIDATES,
+    'secretRef.rpcUrlEnv',
+  );
+  normalized.chainIdEnv = normalizeStringList(
+    normalized.chainIdEnv || PROFILE_ENV_CHAIN_ID_CANDIDATES,
+    'secretRef.chainIdEnv',
+  );
   return sortObjectKeysDeep(normalized);
 }
 
@@ -251,6 +266,22 @@ function normalizeExternalSignerSecretRef(value, readOnly) {
   normalized.reference = normalizeNonEmptyString(
     normalized.reference || normalized.signerRef || normalized.signerId,
     'secretRef.reference',
+  );
+  normalized.baseUrlEnv = normalizeStringList(
+    normalized.baseUrlEnv || normalized.urlEnv || PROFILE_ENV_EXTERNAL_SIGNER_URL_CANDIDATES,
+    'secretRef.baseUrlEnv',
+  );
+  normalized.authTokenEnv = normalizeStringList(
+    normalized.authTokenEnv || normalized.tokenEnv || PROFILE_ENV_EXTERNAL_SIGNER_TOKEN_CANDIDATES,
+    'secretRef.authTokenEnv',
+  );
+  normalized.rpcUrlEnv = normalizeStringList(
+    normalized.rpcUrlEnv || PROFILE_ENV_RPC_URL_CANDIDATES,
+    'secretRef.rpcUrlEnv',
+  );
+  normalized.chainIdEnv = normalizeStringList(
+    normalized.chainIdEnv || PROFILE_ENV_CHAIN_ID_CANDIDATES,
+    'secretRef.chainIdEnv',
   );
   return sortObjectKeysDeep(normalized);
 }

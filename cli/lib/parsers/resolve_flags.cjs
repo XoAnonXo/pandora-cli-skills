@@ -1,3 +1,8 @@
+const {
+  consumeProfileSelectorFlag,
+  assertNoMixedSignerSelectors,
+} = require('./shared_profile_selector_flags.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseResolveFlags requires deps.${name}()`);
@@ -31,6 +36,8 @@ function createParseResolveFlags(deps) {
       forkRpcUrl: null,
       forkChainId: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -109,6 +116,18 @@ function createParseResolveFlags(deps) {
         i += 1;
         continue;
       }
+      const profileIndex = consumeProfileSelectorFlag({
+        token,
+        args,
+        index: i,
+        options,
+        CliError,
+        requireFlagValue,
+      });
+      if (profileIndex !== null) {
+        i = profileIndex;
+        continue;
+      }
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for resolve: ${token}`);
     }
 
@@ -124,6 +143,7 @@ function createParseResolveFlags(deps) {
     if (options.dryRun === options.execute) {
       throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');
     }
+    assertNoMixedSignerSelectors(options, CliError);
 
     return options;
   };

@@ -6,7 +6,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const { buildPublishedPackageJson } = require('../../scripts/prepare_publish_manifest.cjs');
+const PREPARE_PUBLISH_MANIFEST = path.join(ROOT, 'scripts', 'prepare_publish_manifest.cjs');
+const RESTORE_PUBLISH_MANIFEST = path.join(ROOT, 'scripts', 'restore_publish_manifest.cjs');
 const REQUIRED_ENV_KEYS = [
   'CHAIN_ID',
   'RPC_URL',
@@ -22,6 +23,15 @@ const REQUIRED_ENV_KEYS = [
 ];
 const NPM_CMD = 'npm';
 const NODE_CMD = process.execPath;
+const EXPECTED_PUBLISHED_SCRIPT_NAMES = [
+  'cli',
+  'init-env',
+  'doctor',
+  'setup',
+  'dry-run',
+  'execute',
+  'dry-run:clone',
+];
 
 function havePython() {
   const probe = run('python3', ['--version'], { timeoutMs: 10_000 });
@@ -125,6 +135,20 @@ function runPandora(installedCli, args, options = {}) {
   return run(NODE_CMD, [installedCli, ...args], options);
 }
 
+function preparePublishManifest() {
+  return run(NODE_CMD, [PREPARE_PUBLISH_MANIFEST], {
+    cwd: ROOT,
+    timeoutMs: 120_000,
+  });
+}
+
+function restorePublishManifest() {
+  return run(NODE_CMD, [RESTORE_PUBLISH_MANIFEST], {
+    cwd: ROOT,
+    timeoutMs: 120_000,
+  });
+}
+
 function extractTarball(tarballPath, extractDir) {
   fs.mkdirSync(extractDir, { recursive: true });
   ensureExitCode(
@@ -134,9 +158,13 @@ function extractTarball(tarballPath, extractDir) {
   );
 }
 
-function getPackResult(packDir) {
+function getPackResult(packDir, options = {}) {
+  const packArgs = ['pack', '--silent'];
+  if (options.ignoreScripts) {
+    packArgs.push('--ignore-scripts');
+  }
   if (process.platform === 'win32') {
-    const fallback = runNpm(['pack', '--silent']);
+    const fallback = runNpm(packArgs);
     if (fallback.status !== 0) {
       return fallback;
     }
@@ -158,7 +186,7 @@ function getPackResult(packDir) {
     return fallback;
   }
 
-  const withDestination = runNpm(['pack', '--silent', '--pack-destination', packDir]);
+  const withDestination = runNpm([...packArgs, '--pack-destination', packDir]);
   if (withDestination.status === 0) {
     return withDestination;
   }
@@ -167,7 +195,7 @@ function getPackResult(packDir) {
     return withDestination;
   }
 
-  const fallback = runNpm(['pack', '--silent']);
+  const fallback = runNpm(packArgs);
   if (fallback.status !== 0) {
     return fallback;
   }
@@ -202,8 +230,16 @@ function main() {
   fs.mkdirSync(runtimeDir, { recursive: true });
 
   try {
-    const pack = getPackResult(packDir);
-    ensureExitCode(pack, 0, 'npm pack');
+    const prepareResult = preparePublishManifest();
+    ensureExitCode(prepareResult, 0, 'prepare publish manifest');
+    let pack;
+    try {
+      pack = getPackResult(packDir, { ignoreScripts: true });
+      ensureExitCode(pack, 0, 'npm pack --ignore-scripts');
+    } finally {
+      const restoreResult = restorePublishManifest();
+      ensureExitCode(restoreResult, 0, 'restore publish manifest');
+    }
 
     const tarballName = pack.stdout
       .split(/\r?\n/)
@@ -230,13 +266,25 @@ function main() {
     const installedPackageJson = JSON.parse(
       fs.readFileSync(path.join(installedPackageRoot, 'package.json'), 'utf8'),
     );
-    const expectedPublishedManifest = buildPublishedPackageJson(JSON.parse(
+    const repoPackageJson = JSON.parse(
       fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'),
-    ));
-    if (JSON.stringify(installedPackageJson) !== JSON.stringify(expectedPublishedManifest)) {
-      throw new Error('Installed package.json does not match the prepared publish manifest.');
-    }
+    );
     const installedScripts = installedPackageJson.scripts || {};
+    if (installedPackageJson.name !== repoPackageJson.name) {
+      throw new Error('Installed package name should match the repository package name.');
+    }
+    if (installedPackageJson.version !== repoPackageJson.version) {
+      throw new Error('Installed package version should match the repository package version.');
+    }
+    if (installedPackageJson.bin?.pandora !== 'cli/pandora.cjs') {
+      throw new Error('Installed package bin.pandora should point to cli/pandora.cjs.');
+    }
+    if (installedPackageJson.devDependencies !== undefined) {
+      throw new Error('Installed package should not ship devDependencies.');
+    }
+    if (JSON.stringify(Object.keys(installedScripts).sort()) !== JSON.stringify([...EXPECTED_PUBLISHED_SCRIPT_NAMES].sort())) {
+      throw new Error(`Installed package should expose only published scripts: ${EXPECTED_PUBLISHED_SCRIPT_NAMES.join(', ')}.`);
+    }
     if (installedPackageJson.exports['./sdk/generated'] !== './sdk/generated/index.js') {
       throw new Error('Installed package exports missing ./sdk/generated.');
     }
@@ -252,14 +300,14 @@ function main() {
     if (installedPackageJson.exports['./sdk/typescript/generated/manifest'] !== './sdk/typescript/generated/manifest.json') {
       throw new Error('Installed package exports missing ./sdk/typescript/generated/manifest.');
     }
-    if (installedPackageJson.exports['./sdk/typescript/generated/command-descriptors'] !== './sdk/generated/command-descriptors.json') {
-      throw new Error('Installed package exports missing ./sdk/typescript/generated/command-descriptors alias.');
+    if (installedPackageJson.exports['./sdk/typescript/generated/command-descriptors'] !== './sdk/typescript/generated/command-descriptors.json') {
+      throw new Error('Installed package exports missing ./sdk/typescript/generated/command-descriptors.');
     }
-    if (installedPackageJson.exports['./sdk/typescript/generated/mcp-tool-definitions'] !== './sdk/generated/mcp-tool-definitions.json') {
-      throw new Error('Installed package exports missing ./sdk/typescript/generated/mcp-tool-definitions alias.');
+    if (installedPackageJson.exports['./sdk/typescript/generated/mcp-tool-definitions'] !== './sdk/typescript/generated/mcp-tool-definitions.json') {
+      throw new Error('Installed package exports missing ./sdk/typescript/generated/mcp-tool-definitions.');
     }
-    if (installedPackageJson.exports['./sdk/typescript/generated/contract-registry'] !== './sdk/generated/contract-registry.json') {
-      throw new Error('Installed package exports missing ./sdk/typescript/generated/contract-registry alias.');
+    if (installedPackageJson.exports['./sdk/typescript/generated/contract-registry'] !== './sdk/typescript/generated/contract-registry.json') {
+      throw new Error('Installed package exports missing ./sdk/typescript/generated/contract-registry.');
     }
     if (installedPackageJson.exports['./sdk/typescript/package.json'] !== './sdk/typescript/package.json') {
       throw new Error('Installed package exports missing ./sdk/typescript/package.json.');
@@ -276,16 +324,7 @@ function main() {
     if (!fs.existsSync(path.join(installedPackageRoot, 'sdk', 'typescript', 'generated', 'manifest.json'))) {
       throw new Error('Installed package is missing sdk/typescript/generated/manifest.json.');
     }
-    const requiredInstalledScripts = [
-      'cli',
-      'init-env',
-      'doctor',
-      'setup',
-      'dry-run',
-      'execute',
-      'dry-run:clone',
-    ];
-    for (const scriptName of requiredInstalledScripts) {
+    for (const scriptName of EXPECTED_PUBLISHED_SCRIPT_NAMES) {
       if (typeof installedScripts[scriptName] !== 'string' || installedScripts[scriptName].length === 0) {
         throw new Error(`Installed package is missing published script ${scriptName}.`);
       }
@@ -386,6 +425,9 @@ print(json.dumps({
     }
     for (const relativePath of [
       path.join('benchmarks', 'latest', 'core-report.json'),
+      path.join('benchmarks', 'latest', 'core-bundle.json'),
+      path.join('benchmarks', 'latest', 'core-history.json'),
+      path.join('docs', 'benchmarks', 'history.json'),
     ]) {
       if (!fs.existsSync(path.join(installedPackageRoot, relativePath))) {
         throw new Error(`Installed package is missing ${relativePath}.`);
@@ -412,6 +454,12 @@ print(json.dumps({
     if (!/latest benchmark report/i.test(installedBenchmarkDocs)) {
       throw new Error('Installed benchmark docs should explain that the packaged artifact ships the latest benchmark report.');
     }
+    if (!/core-bundle\.json/i.test(installedBenchmarkDocs)) {
+      throw new Error('Installed benchmark docs should reference core-bundle.json.');
+    }
+    if (!/core-history\.json/i.test(installedBenchmarkDocs)) {
+      throw new Error('Installed benchmark docs should reference core-history.json.');
+    }
     if (!/`benchmarks\/latest\/core-report\.json`/.test(installedBenchmarkDocs)) {
       throw new Error('Installed benchmark docs should reference benchmarks/latest/core-report.json.');
     }
@@ -424,8 +472,20 @@ print(json.dumps({
     const installedBenchmarkReport = JSON.parse(
       fs.readFileSync(path.join(installedPackageRoot, 'benchmarks', 'latest', 'core-report.json'), 'utf8'),
     );
+    const installedBenchmarkBundle = JSON.parse(
+      fs.readFileSync(path.join(installedPackageRoot, 'benchmarks', 'latest', 'core-bundle.json'), 'utf8'),
+    );
+    const installedBenchmarkHistory = JSON.parse(
+      fs.readFileSync(path.join(installedPackageRoot, 'benchmarks', 'latest', 'core-history.json'), 'utf8'),
+    );
     if (installedBenchmarkReport.summary?.overallPass !== true) {
       throw new Error('Installed benchmark report should set summary.overallPass=true.');
+    }
+    if (installedBenchmarkBundle.latest?.summary?.overallPass !== true) {
+      throw new Error('Installed benchmark bundle should set latest.summary.overallPass=true.');
+    }
+    if (!Array.isArray(installedBenchmarkHistory.entries) || installedBenchmarkHistory.entries.length === 0) {
+      throw new Error('Installed benchmark history should contain at least one release entry.');
     }
     if (!Array.isArray(installedBenchmarkReport.parity?.groups) || installedBenchmarkReport.parity.groups.length === 0) {
       throw new Error('Installed benchmark report should include parity groups.');
@@ -454,6 +514,28 @@ print(json.dumps({
     if (!capabilitiesPayload?.data?.documentation?.router?.taskRoutes?.some((route) => route.docId === 'mirror-operations')) {
       throw new Error('pandora capabilities should expose mirror-operations in router.taskRoutes.');
     }
+    if (capabilitiesPayload?.data?.recommendedFirstCall !== 'bootstrap') {
+      throw new Error('pandora capabilities should recommend bootstrap as the first call.');
+    }
+    if (capabilitiesPayload?.data?.readinessMode !== 'artifact-neutral') {
+      throw new Error('pandora capabilities should default to artifact-neutral readiness.');
+    }
+
+    const bootstrapJson = runPandora(installedCli, ['--output', 'json', 'bootstrap'], { cwd: appDir, env: smokeEnv });
+    ensureExitCode(bootstrapJson, 0, 'pandora bootstrap');
+    const bootstrapPayload = JSON.parse(bootstrapJson.stdout);
+    if (bootstrapPayload?.command !== 'bootstrap') {
+      throw new Error('pandora bootstrap should return command=bootstrap.');
+    }
+    if (bootstrapPayload?.data?.readinessMode !== 'artifact-neutral') {
+      throw new Error('pandora bootstrap should default to artifact-neutral readiness.');
+    }
+    if (bootstrapPayload?.data?.preferences?.recommendedFirstCall !== 'bootstrap') {
+      throw new Error('pandora bootstrap should expose bootstrap-first preferences.');
+    }
+    if (!Array.isArray(bootstrapPayload?.data?.recommendedBootstrapFlow) || bootstrapPayload.data.recommendedBootstrapFlow[0] !== 'bootstrap') {
+      throw new Error('pandora bootstrap should start recommendedBootstrapFlow with bootstrap.');
+    }
 
     const help = runPandora(installedCli, ['help'], { cwd: appDir, env: smokeEnv });
     ensureExitCode(help, 0, 'pandora help');
@@ -477,11 +559,11 @@ print(json.dumps({
 
     const policyHelp = runPandora(installedCli, ['policy', '--help'], { cwd: appDir, env: smokeEnv });
     ensureExitCode(policyHelp, 0, 'pandora policy --help');
-    ensureOutputContains(policyHelp, /policy list\|get\|lint/, 'pandora policy --help');
+    ensureOutputContains(policyHelp, /policy list\|get\|explain\|recommend\|lint/, 'pandora policy --help');
 
     const profileHelp = runPandora(installedCli, ['profile', '--help'], { cwd: appDir, env: smokeEnv });
     ensureExitCode(profileHelp, 0, 'pandora profile --help');
-    ensureOutputContains(profileHelp, /profile list\|get\|validate/, 'pandora profile --help');
+    ensureOutputContains(profileHelp, /profile list\|get\|explain\|recommend\|validate/, 'pandora profile --help');
 
     const policyList = runPandora(installedCli, ['policy', 'list'], { cwd: appDir, env: smokeEnv });
     ensureExitCode(policyList, 0, 'pandora policy list');

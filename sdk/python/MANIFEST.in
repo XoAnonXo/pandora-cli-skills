@@ -1,0 +1,11 @@
+include README.md
+include pyproject.toml
+include pandora_agent/py.typed
+recursive-include pandora_agent/generated *.json
+recursive-include examples *.py
+prune tests
+prune build
+prune dist
+prune pandora_agent.egg-info
+global-exclude __pycache__
+global-exclude *.py[cod]

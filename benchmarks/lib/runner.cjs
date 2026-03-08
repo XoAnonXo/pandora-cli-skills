@@ -22,6 +22,10 @@ const { getAssertion, getErrorEnvelope } = require('./assertions.cjs');
 
 const SCENARIO_SCHEMA_VERSION = '1.0.0';
 const LOCK_SCHEMA_VERSION = '1.0.0';
+const REPORT_SCHEMA_VERSION = '1.0.0';
+const SCORECARD_KIND = 'benchmark-scorecard';
+const LOCK_KIND = 'benchmark-contract-lock';
+const PUBLICATION_GRADE = 'release-grade';
 const DEFAULT_SUITE = 'core';
 const SUITE_EXPECTATIONS = Object.freeze({
   core: Object.freeze({
@@ -49,6 +53,10 @@ const GENERATED_ARTIFACT_PATHS = Object.freeze({
 
 function stableJsonHash(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function stableSortedJsonHash(value) {
+  return stableJsonHash(sortJsonValue(value));
 }
 
 function deepClone(value) {
@@ -83,6 +91,14 @@ function defaultSuiteLockPath(suite = DEFAULT_SUITE) {
 
 function defaultSuiteLockId(suite = DEFAULT_SUITE) {
   return path.relative(REPO_ROOT, defaultSuiteLockPath(suite));
+}
+
+function defaultSuiteReportPath(suite = DEFAULT_SUITE) {
+  return path.join(REPO_ROOT, 'benchmarks', 'latest', `${suite}-report.json`);
+}
+
+function defaultSuiteReportId(suite = DEFAULT_SUITE) {
+  return path.relative(REPO_ROOT, defaultSuiteReportPath(suite));
 }
 
 function getSuiteExpectation(suite = DEFAULT_SUITE) {
@@ -232,38 +248,131 @@ function normalizeCapabilitiesForLock(capabilities) {
 }
 
 function normalizeBenchmarkReportForFreshness(report) {
+  return createPublishedBenchmarkReport(report);
+}
+
+function normalizePublicationScenario(scenario) {
+  return {
+    id: scenario.id,
+    title: scenario.title || null,
+    description: scenario.description || null,
+    transport: scenario.transport,
+    dimensions: Array.isArray(scenario.dimensions) ? scenario.dimensions.slice() : [],
+    weight: scenario.weight,
+    passed: scenario.passed,
+    runtimeState: scenario.runtimeState || null,
+    parityGroup: scenario.parityGroup || null,
+    parityExpectedTransports: Array.isArray(scenario.parityExpectedTransports)
+      ? scenario.parityExpectedTransports.slice()
+      : [],
+    parityHash: scenario.parityHash || null,
+    score: scenario.score || null,
+    failure: scenario.failure || null,
+    checks: Array.isArray(scenario.checks)
+      ? scenario.checks.map((check) => ({
+        id: check && check.id ? check.id : null,
+        passed: Boolean(check && check.passed),
+        message: check && check.message ? check.message : null,
+      }))
+      : [],
+  };
+}
+
+function normalizePublicationParity(parity) {
+  const groups = Array.isArray(parity && parity.groups)
+    ? parity.groups.map((group) => ({
+      groupId: group && group.groupId ? group.groupId : null,
+      scenarioIds: Array.isArray(group && group.scenarioIds) ? group.scenarioIds.slice() : [],
+      expectedTransports: Array.isArray(group && group.expectedTransports) ? group.expectedTransports.slice() : [],
+      actualTransports: Array.isArray(group && group.actualTransports) ? group.actualTransports.slice() : [],
+      missingTransports: Array.isArray(group && group.missingTransports) ? group.missingTransports.slice() : [],
+      matches: Boolean(group && group.matches),
+      hashCount: Number.isFinite(Number(group && group.hashCount)) ? Number(group.hashCount) : 0,
+      hashes: Array.isArray(group && group.hashes) ? group.hashes.slice() : [],
+    }))
+    : [];
+  groups.sort((left, right) => String(left.groupId || '').localeCompare(String(right.groupId || '')));
+  return {
+    groups,
+    failedGroups: Array.isArray(parity && parity.failedGroups) ? parity.failedGroups.slice().sort((left, right) => String(left).localeCompare(String(right))) : [],
+  };
+}
+
+function computeReleaseGatePass(summary, report) {
+  return Boolean(
+    summary
+    && summary.failedCount === 0
+    && summary.latencyPassRate === 1
+    && Number(summary.failedParityGroupCount || 0) === 0
+    && report
+    && report.contractLockMatchesExpected === true,
+  );
+}
+
+function createPublishedBenchmarkReport(report) {
   const clone = deepClone(report);
-  if (clone && typeof clone === 'object') {
-    delete clone.generatedAt;
-    delete clone.writtenLockPath;
-  }
-  if (clone && Array.isArray(clone.scenarios)) {
-    clone.scenarios = clone.scenarios.map((scenario) => ({
-      id: scenario.id,
-      title: scenario.title || null,
-      description: scenario.description || null,
-      transport: scenario.transport,
-      dimensions: Array.isArray(scenario.dimensions) ? scenario.dimensions.slice().sort() : [],
-      weight: scenario.weight,
-      passed: scenario.passed,
-      runtimeState: scenario.runtimeState || null,
-      parityGroup: scenario.parityGroup || null,
-      parityExpectedTransports: Array.isArray(scenario.parityExpectedTransports)
-        ? scenario.parityExpectedTransports.slice().sort()
-        : [],
-      parityHash: scenario.parityHash || null,
-      score: scenario.score,
-      failure: scenario.failure || null,
-      checks: Array.isArray(scenario.checks)
-        ? scenario.checks.map((check) => ({
-          id: check && check.id ? check.id : null,
-          passed: Boolean(check && check.passed),
-          message: check && check.message ? check.message : null,
-        }))
-        : [],
-    })).sort((left, right) => String(left.id || '').localeCompare(String(right.id || '')));
-  }
-  return sortJsonValue(clone);
+  const suite = String(clone && clone.suite || DEFAULT_SUITE).trim() || DEFAULT_SUITE;
+  const suiteExpectation = getSuiteExpectation(suite) || {};
+  const minimumWeightedScore = Number.isFinite(Number(suiteExpectation.minimumWeightedScore))
+    ? Number(suiteExpectation.minimumWeightedScore)
+    : 95;
+  const expectedScenarioCount = Number.isFinite(Number(suiteExpectation.expectedScenarioCount))
+    ? Number(suiteExpectation.expectedScenarioCount)
+    : (
+      Array.isArray(clone && clone.scenarios)
+        ? clone.scenarios.length
+        : 0
+    );
+  const contractLock = clone && clone.contractLock && typeof clone.contractLock === 'object'
+    ? sortJsonValue(clone.contractLock)
+    : {};
+  const expectedContractLockPath = String(clone && clone.expectedContractLockPath || defaultSuiteLockId(suite)).trim() || defaultSuiteLockId(suite);
+  const summary = clone && clone.summary && typeof clone.summary === 'object'
+    ? sortJsonValue(clone.summary)
+    : {};
+  const published = {
+    schemaVersion: clone && clone.schemaVersion ? clone.schemaVersion : REPORT_SCHEMA_VERSION,
+    suite,
+    runtime: clone && clone.runtime && typeof clone.runtime === 'object' ? sortJsonValue(clone.runtime) : {},
+    publication: {
+      kind: SCORECARD_KIND,
+      grade: PUBLICATION_GRADE,
+      deterministic: true,
+      reportPath: defaultSuiteReportId(suite),
+      suiteLockPath: expectedContractLockPath,
+      expectedScenarioCount,
+      minimumWeightedScore,
+    },
+    summary,
+    dimensions: clone && clone.dimensions && typeof clone.dimensions === 'object'
+      ? sortJsonValue(clone.dimensions)
+      : {},
+    contractLock,
+    expectedContractLockPath,
+    contractLockMatchesExpected: clone && clone.contractLockMatchesExpected === true,
+    contractLockMismatches: Array.isArray(clone && clone.contractLockMismatches)
+      ? clone.contractLockMismatches.slice().sort((left, right) => String(left).localeCompare(String(right)))
+      : [],
+    parity: normalizePublicationParity(clone && clone.parity),
+    scenarios: Array.isArray(clone && clone.scenarios)
+      ? clone.scenarios.map((scenario) => normalizePublicationScenario(scenario))
+      : [],
+  };
+  const lockDocument = createLockDocument(suite, contractLock);
+  published.summary = {
+    ...published.summary,
+    overallPass: computeReleaseGatePass(published.summary, published),
+  };
+  published.publication = {
+    ...published.publication,
+    suiteLockHash: stableJsonHash(sortJsonValue(lockDocument)),
+    contractLockHash: stableJsonHash(contractLock),
+    contractLockStatus: published.contractLockMatchesExpected ? 'locked' : 'unlocked',
+    releaseGatePass: published.summary.overallPass === true,
+  };
+  const scorecardHashInput = sortJsonValue(published);
+  published.publication.scorecardHash = stableJsonHash(scorecardHashInput);
+  return sortJsonValue(published);
 }
 
 function stripToolsListParityNoise(envelope) {
@@ -298,7 +407,7 @@ function normalizeParityEnvelope(scenario, envelope) {
     if (clone.data && typeof clone.data === 'object') {
       delete clone.data.generatedAt;
     }
-    return clone;
+    return sortJsonValue(clone);
   }
   if (scenario.assertionId === 'workspace-path-denial') {
     const clone = deepClone(envelope);
@@ -357,6 +466,7 @@ function buildContractLock(capabilities, schemaPayload, generatedManifest) {
     generatedAtOverride: '1970-01-01T00:00:00.000Z',
     remoteTransportActive: true,
     remoteTransportUrl: 'https://gateway.example.test/mcp',
+    stableArtifactTrustDistribution: true,
   });
   return {
     commandDescriptorVersion: COMMAND_DESCRIPTOR_VERSION,
@@ -404,13 +514,13 @@ function compareContractLock(actual, expected) {
       mismatches.push(`contractLock.${key} mismatch`);
     }
   }
-  if (stableJsonHash(expectedLock.registryDigest || null) !== stableJsonHash(actual.registryDigest || null)) {
+  if (stableSortedJsonHash(expectedLock.registryDigest || null) !== stableSortedJsonHash(actual.registryDigest || null)) {
     mismatches.push('contractLock.registryDigest mismatch');
   }
-  if (stableJsonHash(expectedLock.generatedManifestRegistryDigest || null) !== stableJsonHash(actual.generatedManifestRegistryDigest || null)) {
+  if (stableSortedJsonHash(expectedLock.generatedManifestRegistryDigest || null) !== stableSortedJsonHash(actual.generatedManifestRegistryDigest || null)) {
     mismatches.push('contractLock.generatedManifestRegistryDigest mismatch');
   }
-  if (stableJsonHash(expectedLock.generatedArtifactHashes || null) !== stableJsonHash(actual.generatedArtifactHashes || null)) {
+  if (stableSortedJsonHash(expectedLock.generatedArtifactHashes || null) !== stableSortedJsonHash(actual.generatedArtifactHashes || null)) {
     mismatches.push('contractLock.generatedArtifactHashes mismatch');
   }
   return {
@@ -420,11 +530,21 @@ function compareContractLock(actual, expected) {
 }
 
 function createLockDocument(suite, contractLock) {
-  return {
+  const normalizedContractLock = sortJsonValue(contractLock || {});
+  const lockDocument = {
     schemaVersion: LOCK_SCHEMA_VERSION,
     suite,
-    contractLock,
+    publication: {
+      kind: LOCK_KIND,
+      grade: PUBLICATION_GRADE,
+      deterministic: true,
+      suiteLockPath: defaultSuiteLockId(suite),
+      contractLockHash: stableJsonHash(normalizedContractLock),
+    },
+    contractLock: normalizedContractLock,
   };
+  lockDocument.publication.lockDocumentHash = stableJsonHash(sortJsonValue(lockDocument));
+  return sortJsonValue(lockDocument);
 }
 
 function writeSuiteLock(suite, contractLock, lockPath = defaultSuiteLockPath(suite)) {
@@ -655,7 +775,10 @@ async function runBenchmarkSuite(options = {}) {
     : 0;
   const passedCount = results.filter((result) => result.passed).length;
   const latencyPassCount = results.filter((result) => result.score.latencyPass).length;
-  const capabilities = buildCapabilitiesPayload({ generatedAtOverride: '1970-01-01T00:00:00.000Z' });
+  const capabilities = buildCapabilitiesPayload({
+    generatedAtOverride: '1970-01-01T00:00:00.000Z',
+    stableArtifactTrustDistribution: true,
+  });
   const schemaPayload = buildSchemaPayload();
   const generatedManifest = loadGeneratedManifest();
   const contractLock = buildContractLock(capabilities, schemaPayload, generatedManifest);
@@ -671,7 +794,7 @@ async function runBenchmarkSuite(options = {}) {
     && lockStatus.matches;
 
   return {
-    schemaVersion: '1.0.0',
+    schemaVersion: REPORT_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     suite,
     runtime: {
@@ -714,5 +837,9 @@ module.exports = {
   writeSuiteLock,
   createLockDocument,
   buildContractLock,
+  compareContractLock,
+  createPublishedBenchmarkReport,
   normalizeBenchmarkReportForFreshness,
+  defaultSuiteReportPath,
+  defaultSuiteReportId,
 };

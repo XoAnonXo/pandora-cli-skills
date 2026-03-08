@@ -35,10 +35,15 @@ test('release workflow and installer advertise provenance, sbom, and signature v
   assert.match(workflow, /run:\s*npm test/);
   assert.match(workflow, /run:\s*npm run release:prep/);
   assert.match(workflow, /scripts\/generate_sbom\.cjs/);
+  assert.match(workflow, /Build benchmark publication manifest/);
   assert.match(workflow, /actions\/attest-build-provenance@/);
   assert.match(workflow, /actions\/attest-sbom@/);
   assert.match(workflow, /sbom\.spdx\.json/);
   assert.match(workflow, /sbom\.spdx\.json\.sha256/);
+  assert.match(workflow, /core-bundle\.json/);
+  assert.match(workflow, /core-history\.json/);
+  assert.match(workflow, /benchmark-publication-bundle\.tar\.gz/);
+  assert.match(workflow, /benchmark-publication-manifest\.json/);
   assert.match(workflow, /sbom\.spdx\.json\.intoto\.jsonl|steps\.sbom_attestation_asset\.outputs\.bundle_asset/);
   assert.match(workflow, /checksums\.sha256/);
   assert.match(workflow, /\.intoto\.jsonl/);
@@ -63,6 +68,13 @@ test('trust docs reflect the shipped workflow and verification flow', () => {
   assert.match(releaseVerification, /gh attestation verify/);
   assert.match(releaseVerification, /cosign verify-blob/);
   assert.match(releaseVerification, /checksums\.sha256/);
+  assert.match(releaseVerification, /benchmark-publication-bundle\.tar\.gz/);
+  assert.match(releaseVerification, /benchmark-publication-manifest\.json/);
+  assert.match(releaseVerification, /core-bundle\.json/);
+  assert.match(releaseVerification, /core-history\.json/);
+  assert.match(releaseVerification, /docs\/benchmarks\/history\.json/);
+  assert.match(releaseVerification, /docsHistoryPath/);
+  assert.match(releaseVerification, /docsHistorySha256/);
   assert.match(releaseVerification, /sbom\.spdx\.json\.intoto\.jsonl/);
   assert.match(releaseVerification, /\.intoto\.jsonl/);
   assert.match(releaseVerification, /\.sig/);
@@ -74,6 +86,28 @@ test('trust docs reflect the shipped workflow and verification flow', () => {
     /GitHub build provenance for both the tarball and shipped SPDX SBOM asset/i,
   );
   assert.match(supportMatrix, /Linux, macOS, and Windows/i);
+});
+
+test('benchmark trust docs describe the public bundle and tagged-source reproduction flow consistently', () => {
+  const benchmarkOverview = readText('docs/benchmarks/README.md');
+  const releaseVerification = readText('docs/trust/release-verification.md');
+
+  assert.match(benchmarkOverview, /core-report\.json/);
+  assert.match(benchmarkOverview, /core-bundle\.json/);
+  assert.match(benchmarkOverview, /core-history\.json/);
+  assert.match(benchmarkOverview, /benchmark-publication-manifest\.json/);
+  assert.match(benchmarkOverview, /core\.lock\.json/);
+  assert.match(benchmarkOverview, /tagged source checkout/i);
+  assert.match(benchmarkOverview, /rather than the installed npm package alone/i);
+
+  assert.match(releaseVerification, /core-report\.json/);
+  assert.match(releaseVerification, /core-bundle\.json/);
+  assert.match(releaseVerification, /core-history\.json/);
+  assert.match(releaseVerification, /benchmark-publication-manifest\.json/);
+  assert.match(releaseVerification, /core\.lock\.json/);
+  assert.match(releaseVerification, /docs\/benchmarks\/history\.json/);
+  assert.match(releaseVerification, /tagged checkout/i);
+  assert.match(releaseVerification, /tagged source tree, not from the installed npm package alone/i);
 });
 
 test('capabilities payload tolerates malformed benchmark reports without crashing', () => {

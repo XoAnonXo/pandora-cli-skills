@@ -1,3 +1,8 @@
+const {
+  consumeProfileSelectorFlag,
+  assertNoMixedSignerSelectors,
+} = require('./shared_profile_selector_flags.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseClaimFlags requires deps.${name}()`);
@@ -32,6 +37,8 @@ function createParseClaimFlags(deps) {
       forkRpcUrl: null,
       forkChainId: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
       indexerUrl: null,
       timeoutMs: 12000,
     };
@@ -107,6 +114,18 @@ function createParseClaimFlags(deps) {
         i += 1;
         continue;
       }
+      const profileIndex = consumeProfileSelectorFlag({
+        token,
+        args,
+        index: i,
+        options,
+        CliError,
+        requireFlagValue,
+      });
+      if (profileIndex !== null) {
+        i = profileIndex;
+        continue;
+      }
       if (token === '--indexer-url') {
         options.indexerUrl = requireFlagValue(args, i, '--indexer-url');
         i += 1;
@@ -129,6 +148,7 @@ function createParseClaimFlags(deps) {
     if (options.dryRun === options.execute) {
       throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');
     }
+    assertNoMixedSignerSelectors(options, CliError);
 
     return options;
   };

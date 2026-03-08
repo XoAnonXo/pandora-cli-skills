@@ -104,3 +104,19 @@ test('recipe run rejects unsafe external file recipes that delegate live or muta
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('recipe validate denies delegated remote scopes that are not granted by the gateway runtime', () => {
+  const result = parseJsonOutput(runCli([
+    '--output', 'json', 'recipe', 'validate',
+    '--id', 'mirror.close.all',
+  ], {
+    env: {
+      PANDORA_MCP_REMOTE_ACTIVE: '1',
+      PANDORA_MCP_GRANTED_SCOPES: 'capabilities:read,contracts:read,help:read,schema:read,operations:read',
+    },
+  }));
+
+  assert.equal(result.command, 'recipe.validate');
+  assert.equal(result.data.ok, false);
+  assert.ok(result.data.validation.denials.some((entry) => entry.code === 'RECIPE_REMOTE_SCOPE_DENIED'));
+});

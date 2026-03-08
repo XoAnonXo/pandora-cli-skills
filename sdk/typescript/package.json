@@ -1,27 +1,147 @@
 {
   "name": "@pandora/agent-sdk",
   "version": "0.1.0-alpha.1",
-  "description": "Pandora agent SDK alpha for local and remote tool execution.",
+  "description": "Standalone TypeScript/Node SDK for Pandora MCP backends and generated contract catalogs.",
   "main": "./index.js",
   "types": "./index.d.ts",
   "type": "commonjs",
+  "sideEffects": false,
   "files": [
     "index.js",
+    "index.mjs",
     "index.d.ts",
+    "backends.js",
+    "backends.mjs",
+    "backends.d.ts",
+    "catalog.js",
+    "catalog.mjs",
+    "catalog.d.ts",
+    "errors.js",
+    "errors.mjs",
+    "errors.d.ts",
+    "examples/**",
     "generated/**",
     "README.md"
   ],
   "exports": {
-    ".": "./index.js",
-    "./generated": "./generated/index.js",
-    "./generated/manifest": "./generated/manifest.json",
-    "./generated/command-descriptors": "./generated/command-descriptors.json",
-    "./generated/mcp-tool-definitions": "./generated/mcp-tool-definitions.json",
-    "./generated/contract-registry": "./generated/contract-registry.json"
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs",
+      "require": "./index.js",
+      "default": "./index.js"
+    },
+    "./backends": {
+      "types": "./backends.d.ts",
+      "import": "./backends.mjs",
+      "require": "./backends.js",
+      "default": "./backends.js"
+    },
+    "./catalog": {
+      "types": "./catalog.d.ts",
+      "import": "./catalog.mjs",
+      "require": "./catalog.js",
+      "default": "./catalog.js"
+    },
+    "./errors": {
+      "types": "./errors.d.ts",
+      "import": "./errors.mjs",
+      "require": "./errors.js",
+      "default": "./errors.js"
+    },
+    "./generated": {
+      "types": "./generated/index.d.ts",
+      "import": "./generated/index.mjs",
+      "require": "./generated/index.js",
+      "default": "./generated/index.js"
+    },
+    "./generated/index": {
+      "types": "./generated/index.d.ts",
+      "import": "./generated/index.mjs",
+      "require": "./generated/index.js",
+      "default": "./generated/index.js"
+    },
+    "./generated/manifest": {
+      "types": "./generated/manifest.d.ts",
+      "import": "./generated/manifest.mjs",
+      "require": "./generated/manifest.json",
+      "default": "./generated/manifest.json"
+    },
+    "./generated/command-descriptors": {
+      "types": "./generated/command-descriptors.d.ts",
+      "import": "./generated/command-descriptors.mjs",
+      "require": "./generated/command-descriptors.json",
+      "default": "./generated/command-descriptors.json"
+    },
+    "./generated/mcp-tool-definitions": {
+      "types": "./generated/mcp-tool-definitions.d.ts",
+      "import": "./generated/mcp-tool-definitions.mjs",
+      "require": "./generated/mcp-tool-definitions.json",
+      "default": "./generated/mcp-tool-definitions.json"
+    },
+    "./generated/contract-registry": {
+      "types": "./generated/contract-registry.d.ts",
+      "import": "./generated/contract-registry.mjs",
+      "require": "./generated/contract-registry.json",
+      "default": "./generated/contract-registry.json"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "backends": [
+        "./backends.d.ts"
+      ],
+      "catalog": [
+        "./catalog.d.ts"
+      ],
+      "errors": [
+        "./errors.d.ts"
+      ],
+      "generated": [
+        "./generated/index.d.ts"
+      ],
+      "generated/index": [
+        "./generated/index.d.ts"
+      ],
+      "generated/manifest": [
+        "./generated/manifest.d.ts"
+      ],
+      "generated/command-descriptors": [
+        "./generated/command-descriptors.d.ts"
+      ],
+      "generated/mcp-tool-definitions": [
+        "./generated/mcp-tool-definitions.d.ts"
+      ],
+      "generated/contract-registry": [
+        "./generated/contract-registry.d.ts"
+      ]
+    }
   },
   "engines": {
     "node": ">=18"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "pandora",
+    "mcp",
+    "sdk",
+    "typescript",
+    "nodejs",
+    "agent"
+  ],
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/XoAnonXo/pandora-cli-skills.git",
+    "directory": "sdk/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/XoAnonXo/pandora-cli-skills/issues"
+  },
+  "homepage": "https://github.com/XoAnonXo/pandora-cli-skills/tree/main/sdk/typescript#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1"
   }

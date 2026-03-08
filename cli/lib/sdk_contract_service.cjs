@@ -38,6 +38,10 @@ function sortObjectKeys(value) {
   return sorted;
 }
 
+function normalizeString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 function getToolXPandora(toolDefinition) {
   if (toolDefinition && isPlainObject(toolDefinition.xPandora)) {
     return toolDefinition.xPandora;
@@ -102,6 +106,82 @@ function sanitizeToolInputSchema(rawInputSchema) {
   return sortObjectKeys(inputSchema);
 }
 
+function getTrustDistribution(capabilitiesPayload) {
+  if (
+    !isPlainObject(capabilitiesPayload)
+    || !isPlainObject(capabilitiesPayload.trustDistribution)
+    || !isPlainObject(capabilitiesPayload.trustDistribution.distribution)
+  ) {
+    return {};
+  }
+  return capabilitiesPayload.trustDistribution.distribution;
+}
+
+function buildPublishedSdkSurfaceMetadata(capabilitiesPayload) {
+  const distribution = getTrustDistribution(capabilitiesPayload);
+  const rootPackage = isPlainObject(distribution.rootPackage) ? distribution.rootPackage : {};
+  const embeddedSdks = isPlainObject(distribution.embeddedSdks) ? distribution.embeddedSdks : {};
+  const surfaces = {};
+
+  if (Object.keys(rootPackage).length) {
+    surfaces.root = sortObjectKeys({
+      artifactSubpaths: {
+        bundle: 'sdk/generated/contract-registry.json',
+        commandDescriptors: 'sdk/generated/command-descriptors.json',
+        entrypoint: 'sdk/generated/index.js',
+        manifest: 'sdk/generated/manifest.json',
+        mcpToolDefinitions: 'sdk/generated/mcp-tool-definitions.json',
+        types: 'sdk/generated/index.d.ts',
+      },
+      binNames: sortStrings(rootPackage.binNames),
+      exportSubpaths: sortStrings(rootPackage.exportSubpaths),
+      format: 'node',
+      main: normalizeString(rootPackage.main),
+      name: normalizeString(rootPackage.name),
+      sourceProjectPath: 'package.json',
+      version: normalizeString(rootPackage.version),
+    });
+  }
+
+  if (isPlainObject(embeddedSdks.typescript)) {
+    const typescript = embeddedSdks.typescript;
+    surfaces.typescript = sortObjectKeys({
+      artifactSubpaths: {
+        bundle: 'generated/contract-registry.json',
+        commandDescriptors: 'generated/command-descriptors.json',
+        entrypoint: 'index.js',
+        manifest: 'generated/manifest.json',
+        mcpToolDefinitions: 'generated/mcp-tool-definitions.json',
+        types: 'index.d.ts',
+      },
+      exportSubpaths: sortStrings(typescript.exportSubpaths),
+      format: 'node',
+      name: normalizeString(typescript.packageName),
+      sourceProjectPath: normalizeString(typescript.packagePath),
+      version: normalizeString(typescript.version),
+    });
+  }
+
+  if (isPlainObject(embeddedSdks.python)) {
+    const python = embeddedSdks.python;
+    surfaces.python = sortObjectKeys({
+      artifactSubpaths: {
+        bundle: 'pandora_agent/generated/contract-registry.json',
+        commandDescriptors: 'pandora_agent/generated/command-descriptors.json',
+        manifest: 'pandora_agent/generated/manifest.json',
+        mcpToolDefinitions: 'pandora_agent/generated/mcp-tool-definitions.json',
+      },
+      format: 'python',
+      module: 'pandora_agent',
+      name: normalizeString(python.packageName),
+      sourceProjectPath: normalizeString(python.projectPath),
+      version: normalizeString(python.version),
+    });
+  }
+
+  return Object.keys(surfaces).length ? sortObjectKeys(surfaces) : null;
+}
+
 function buildGeneratedToolDefinition(toolDefinition) {
   const toolName = String(toolDefinition && toolDefinition.name ? toolDefinition.name : '').trim();
   if (!toolName) return null;
@@ -142,6 +222,50 @@ function buildGeneratedToolDefinition(toolDefinition) {
   });
 }
 
+function buildGeneratedToolDefinitions(remoteTransportActive, options = {}) {
+  const includeCompatibilityAliases = Boolean(options.includeCompatibilityAliases);
+  const aliasesOnly = Boolean(options.aliasesOnly);
+  return createMcpToolRegistry({ remoteTransportActive })
+    .listTools({ includeCompatibilityAliases })
+    .filter((definition) => {
+      if (!aliasesOnly) return true;
+      const xPandora = getToolXPandora(definition);
+      return Boolean(xPandora && xPandora.aliasOf);
+    })
+    .map((definition) => buildGeneratedToolDefinition(definition))
+    .filter(Boolean)
+    .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
+}
+
+function splitCommandDescriptorsByCompatibility(commandDescriptors) {
+  const canonical = {};
+  const compatibility = {};
+  for (const [commandName, descriptor] of Object.entries(commandDescriptors || {})) {
+    if (descriptor && descriptor.aliasOf) {
+      compatibility[commandName] = descriptor;
+      continue;
+    }
+    canonical[commandName] = descriptor;
+  }
+  return {
+    canonical: sortObjectKeys(canonical),
+    compatibility: sortObjectKeys(compatibility),
+  };
+}
+
+function buildCompatibilityCatalogSummary(commandDescriptors, mcpToolDefinitions) {
+  const descriptorNames = Object.keys(commandDescriptors || {});
+  const toolNames = (Array.isArray(mcpToolDefinitions) ? mcpToolDefinitions : [])
+    .map((definition) => String(definition && definition.name ? definition.name : '').trim())
+    .filter(Boolean);
+  return {
+    mode: 'compatibility-aliases',
+    aliasCommands: descriptorNames.length,
+    aliasTools: toolNames.length,
+    available: descriptorNames.length > 0 || toolNames.length > 0,
+  };
+}
+
 function buildSdkBackendMetadata(capabilitiesPayload) {
   const transports = capabilitiesPayload && isPlainObject(capabilitiesPayload.transports)
     ? capabilitiesPayload.transports
@@ -149,6 +273,7 @@ function buildSdkBackendMetadata(capabilitiesPayload) {
   const stdio = isPlainObject(transports.mcpStdio) ? transports.mcpStdio : {};
   const remote = isPlainObject(transports.mcpStreamableHttp) ? transports.mcpStreamableHttp : {};
   const sdk = isPlainObject(transports.sdk) ? transports.sdk : {};
+  const publishedSdkSurfaces = buildPublishedSdkSurfaceMetadata(capabilitiesPayload);
   return sortObjectKeys({
     local: {
       supported: true,
@@ -181,7 +306,12 @@ function buildSdkBackendMetadata(capabilitiesPayload) {
       supported: sdk.supported !== false,
       transport: 'sdk',
       backendType: 'generated-sdk',
-      notes: sortStrings(sdk.notes),
+      notes: sortStrings([
+        'Generated SDK catalogs default to canonical-only command and tool surfaces.',
+        'Compatibility aliases are available only through the explicit contractRegistry.compatibility surface.',
+        ...sortStrings(sdk.notes),
+      ]),
+      publishedPackages: publishedSdkSurfaces,
     },
   });
 }
@@ -195,12 +325,15 @@ function buildSdkContractComponents(options = {}) {
     ? options.remoteTransportUrl.trim()
     : null;
 
-  const commandDescriptors = sortObjectKeys(buildCommandDescriptors());
-  const mcpToolDefinitions = createMcpToolRegistry({ remoteTransportActive })
-    .listTools()
-    .map((definition) => buildGeneratedToolDefinition(definition))
-    .filter(Boolean)
-    .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
+  const allCommandDescriptors = sortObjectKeys(buildCommandDescriptors());
+  const splitDescriptors = splitCommandDescriptorsByCompatibility(allCommandDescriptors);
+  const commandDescriptors = splitDescriptors.canonical;
+  const compatibilityCommandDescriptors = splitDescriptors.compatibility;
+  const mcpToolDefinitions = buildGeneratedToolDefinitions(remoteTransportActive);
+  const compatibilityMcpToolDefinitions = buildGeneratedToolDefinitions(remoteTransportActive, {
+    includeCompatibilityAliases: true,
+    aliasesOnly: true,
+  });
   const schemaPayload = sortObjectKeys({
     ...cloneJson(buildSchemaPayload()),
     schemaVersion: SDK_CONTRACT_ARTIFACT_VERSION,
@@ -211,6 +344,8 @@ function buildSdkContractComponents(options = {}) {
     remoteTransportActive,
     remoteTransportUrl,
     generatedAtOverride: SDK_ARTIFACT_GENERATED_AT,
+    artifactNeutralProfileReadiness: true,
+    stableArtifactTrustDistribution: true,
   });
   const backends = buildSdkBackendMetadata(capabilitiesPayload);
 
@@ -218,8 +353,11 @@ function buildSdkContractComponents(options = {}) {
     packageVersion,
     remoteTransportActive,
     remoteTransportUrl,
+    allCommandDescriptors,
     commandDescriptors,
+    compatibilityCommandDescriptors,
     mcpToolDefinitions,
+    compatibilityMcpToolDefinitions,
     schemaPayload,
     capabilitiesPayload,
     backends,
@@ -244,7 +382,7 @@ function buildToolCatalog(commandDescriptors, mcpToolDefinitions) {
   return sortObjectKeys(byName);
 }
 
-function buildCatalogSummary(commandDescriptors, mcpToolDefinitions) {
+function buildCatalogSummary(commandDescriptors, mcpToolDefinitions, options = {}) {
   const descriptorNames = Object.keys(commandDescriptors);
   const toolNames = mcpToolDefinitions
     .map((definition) => String(definition && definition.name ? definition.name : '').trim())
@@ -270,6 +408,19 @@ function buildCatalogSummary(commandDescriptors, mcpToolDefinitions) {
     totalCommands: descriptorNames.length,
     totalMcpTools: toolNames.length,
     canonicalTools,
+    defaultCatalogMode: typeof options.defaultCatalogMode === 'string' ? options.defaultCatalogMode : 'canonical-only',
+    compatibilityRegistryPath:
+      options.compatibility && options.compatibility.available
+        ? 'compatibility'
+        : null,
+    compatibilityAliasCommands:
+      options.compatibility && Number.isInteger(options.compatibility.aliasCommands)
+        ? options.compatibility.aliasCommands
+        : 0,
+    compatibilityAliasTools:
+      options.compatibility && Number.isInteger(options.compatibility.aliasTools)
+        ? options.compatibility.aliasTools
+        : 0,
     topLevelCommands: descriptorNames.filter((name) => !name.includes('.')).length,
     aliases: descriptorNames.filter((name) => commandDescriptors[name] && commandDescriptors[name].aliasOf).length,
     mutatingTools: toolNames.filter(
@@ -288,20 +439,34 @@ function buildSdkContractArtifact(options = {}) {
   const {
     packageVersion,
     commandDescriptors,
+    compatibilityCommandDescriptors,
     mcpToolDefinitions,
+    compatibilityMcpToolDefinitions,
     schemaPayload,
     capabilitiesPayload,
     backends,
   } = buildSdkContractComponents(options);
+  const compatibility = {
+    mode: 'explicit',
+    commandDescriptors: compatibilityCommandDescriptors,
+    mcpToolDefinitions: compatibilityMcpToolDefinitions,
+    tools: buildToolCatalog(compatibilityCommandDescriptors, compatibilityMcpToolDefinitions),
+    summary: buildCompatibilityCatalogSummary(compatibilityCommandDescriptors, compatibilityMcpToolDefinitions),
+  };
+  const compatibilitySummary = compatibility.summary;
 
   return sortObjectKeys({
     artifactVersion: SDK_CONTRACT_ARTIFACT_VERSION,
     schemaVersion: SDK_CONTRACT_ARTIFACT_VERSION,
     packageVersion,
     commandDescriptorVersion: COMMAND_DESCRIPTOR_VERSION,
-    summary: buildCatalogSummary(commandDescriptors, mcpToolDefinitions),
+    summary: buildCatalogSummary(commandDescriptors, mcpToolDefinitions, {
+      defaultCatalogMode: 'canonical-only',
+      compatibility: compatibilitySummary,
+    }),
     tools: buildToolCatalog(commandDescriptors, mcpToolDefinitions),
     commandDescriptors,
+    compatibility,
     registryDigest:
       capabilitiesPayload && capabilitiesPayload.registryDigest ? capabilitiesPayload.registryDigest : {},
     backends,
@@ -316,6 +481,7 @@ function buildSdkContractArtifact(options = {}) {
 module.exports = {
   SDK_CONTRACT_ARTIFACT_VERSION,
   SDK_ARTIFACT_GENERATED_AT,
+  buildPublishedSdkSurfaceMetadata,
   buildSdkContractComponents,
   buildSdkContractArtifact,
 };

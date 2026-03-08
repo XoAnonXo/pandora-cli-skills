@@ -66,7 +66,9 @@ function createMcpProtocolService(options = {}) {
     : async (...args) => executor.executeJsonCommand(...args);
 
   function listTools(runtime = {}) {
-    const tools = registry.listTools();
+    const tools = registry.listTools({
+      includeCompatibilityAliases: Boolean(runtime && runtime.includeCompatibilityAliases),
+    });
     if (typeof runtime.filterToolDescriptor !== 'function') {
       return tools;
     }

@@ -22,6 +22,7 @@ const {
   buildRequiredAgentMarketValidation,
   assertAgentMarketValidation,
 } = require('./agent_market_prompt_service.cjs');
+const { materializeExecutionSigner } = require('./signers/execution_signer_service.cjs');
 
 const ERC20_ABI = [
   {
@@ -397,14 +398,51 @@ async function deployPandoraAmmMarket(options = {}) {
     preflight: options.agentPreflight,
   });
 
-  const privateKey = options.privateKey || process.env.PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
-  if (!privateKey) {
-    throw new Error('Missing private key for deployment execution.');
+  const privateKey = options.privateKey || process.env.PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY || null;
+  const hasProfileSelector = Boolean(
+    options.profile
+    || (typeof options.profileId === 'string' && options.profileId.trim())
+    || (typeof options.profileFile === 'string' && options.profileFile.trim())
+  );
+  if (!privateKey && !hasProfileSelector && !options.account && !options.walletClient) {
+    throw new Error('Missing signer credentials for deployment execution. Pass --private-key or --profile-id/--profile-file.');
   }
 
-  const account = options.account || runtime.privateKeyToAccount(privateKey);
   const publicClient = options.publicClient || runtime.createPublicClient({ chain, transport: runtime.http(rpcUrl) });
-  const walletClient = options.walletClient || runtime.createWalletClient({ account, chain, transport: runtime.http(rpcUrl) });
+  let account = options.account || null;
+  let walletClient = options.walletClient || null;
+  let materializedSigner = null;
+
+  if (!account || !walletClient) {
+    materializedSigner = await (options.materializeExecutionSigner || materializeExecutionSigner)({
+      privateKey,
+      profileId: options.profileId || null,
+      profileFile: options.profileFile || null,
+      profile: options.profile || null,
+      chain,
+      chainId,
+      rpcUrl,
+      viemRuntime: runtime,
+      env: options.env || process.env,
+      requireSigner: true,
+      mode: 'execute',
+      liveRequested: true,
+      mutating: true,
+      category: args.category,
+      command: options.command || 'deploy',
+      toolFamily: options.toolFamily || 'deploy',
+      metadata: {
+        source: options.source || 'pandora.deploy',
+        question: args.question,
+      },
+    });
+    if (!account) {
+      account = materializedSigner.account;
+    }
+    if (!walletClient) {
+      walletClient = materializedSigner.walletClient;
+    }
+  }
 
   const [operatorGasFee, protocolFee] = await Promise.all([
     publicClient.readContract({

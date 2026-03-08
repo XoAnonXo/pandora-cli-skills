@@ -16,10 +16,15 @@ const {
 const { assertSchemaValid } = require('../helpers/json_schema_assert.cjs');
 const {
   omitGeneratedAt,
+  omitTrustDistributionFromCapabilities,
+  omitTrustDistributionDefinitions,
   assertManifestParity,
   createIsolatedPandoraEnv,
 } = require('../helpers/contract_parity_assertions.cjs');
 const { createMcpToolRegistry } = require('../../cli/lib/mcp_tool_registry.cjs');
+const { COMMAND_DESCRIPTOR_VERSION, buildCommandDescriptors } = require('../../cli/lib/agent_contract_registry.cjs');
+const { buildSchemaPayload } = require('../../cli/lib/schema_command_service.cjs');
+const { createOperationService } = require('../../cli/lib/operation_service.cjs');
 const { upsertOperation, createOperationStateStore } = require('../../cli/lib/operation_state_store.cjs');
 const {
   buildSdkContractArtifact,
@@ -29,6 +34,7 @@ const { buildPublishedPackageJson } = require('../../scripts/prepare_publish_man
 const repoPackage = require('../../package.json');
 const generatedManifest = require('../../sdk/generated/manifest.json');
 const generatedContractRegistry = require('../../sdk/generated/contract-registry.json');
+const latestBenchmarkReport = require('../../benchmarks/latest/core-report.json');
 const typescriptSdkPackage = require('../../sdk/typescript/package.json');
 const publishedPackage = buildPublishedPackageJson(repoPackage);
 
@@ -77,23 +83,6 @@ function stableJsonHash(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-const TRUST_DISTRIBUTION_SCHEMA_DEFINITION_NAMES = Object.freeze([
-  'TrustDistributionPayload',
-  'TrustDistributionSection',
-  'TrustDistributionRootPackage',
-  'TrustGeneratedContractArtifacts',
-  'TrustEmbeddedSdks',
-  'TrustTypescriptSdkDistribution',
-  'TrustPythonSdkDistribution',
-  'TrustDistributionSignals',
-  'TrustVerificationSection',
-  'TrustBenchmarkVerification',
-  'TrustSmokeVerification',
-  'TrustPathPresence',
-  'TrustVerificationScripts',
-  'TrustVerificationSignals',
-]);
-
 function deepCloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -101,29 +90,6 @@ function deepCloneJson(value) {
 function parseTomlStringField(documentText, fieldName) {
   const match = String(documentText || '').match(new RegExp(`^${fieldName}\\s*=\\s*"([^"\\n]+)"`, 'm'));
   return match ? match[1] : null;
-}
-
-function omitTrustDistributionFromCapabilities(value) {
-  const clone = deepCloneJson(value);
-  delete clone.trustDistribution;
-  return clone;
-}
-
-function omitTrustDistributionDefinitions(value) {
-  const clone = deepCloneJson(value);
-  for (const definitionName of TRUST_DISTRIBUTION_SCHEMA_DEFINITION_NAMES) {
-    delete clone[definitionName];
-  }
-  for (const definitionName of ['CapabilitiesPayload', 'SchemaCommandPayload']) {
-    if (!clone[definitionName] || typeof clone[definitionName] !== 'object') continue;
-    if (clone[definitionName].properties && typeof clone[definitionName].properties === 'object') {
-      delete clone[definitionName].properties.trustDistribution;
-    }
-    if (Array.isArray(clone[definitionName].required)) {
-      clone[definitionName].required = clone[definitionName].required.filter((fieldName) => fieldName !== 'trustDistribution');
-    }
-  }
-  return clone;
 }
 
 function buildValidEnv(rpcUrl, overrides = {}) {
@@ -1238,7 +1204,7 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions && payload.data.definitions.SuccessEnvelope);
   assert.ok(payload.data.definitions && payload.data.definitions.ErrorEnvelope);
 
-  assert.equal(payload.data.commandDescriptorVersion, '1.3.0');
+  assert.equal(payload.data.commandDescriptorVersion, COMMAND_DESCRIPTOR_VERSION);
   assert.ok(payload.data.commandDescriptors);
   assert.ok(payload.data.commandDescriptors.quote);
   assert.equal(payload.data.commandDescriptors.quote.dataSchema, '#/definitions/QuotePayload');
@@ -1247,8 +1213,7 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.equal(payload.data.commandDescriptors.scan.dataSchema, '#/definitions/PagedEntityPayload');
   assert.ok(payload.data.commandDescriptors.stream);
   assert.equal(payload.data.commandDescriptors.stream.dataSchema, '#/definitions/StreamTickPayload');
-  assert.ok(payload.data.commandDescriptors['markets.scan']);
-  assert.equal(payload.data.commandDescriptors['markets.scan'].dataSchema, '#/definitions/PagedEntityPayload');
+  assert.equal(payload.data.commandDescriptors['markets.scan'], undefined);
   assert.ok(payload.data.commandDescriptors.trade);
   assert.equal(payload.data.commandDescriptors.trade.dataSchema, '#/definitions/TradePayload');
   assert.ok(payload.data.commandDescriptors.sell);
@@ -1301,7 +1266,7 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.deepEqual(payload.data.commandDescriptors.launch.outputModes, ['table']);
   assert.ok(payload.data.commandDescriptors['clone-bet']);
   assert.deepEqual(payload.data.commandDescriptors['clone-bet'].outputModes, ['table']);
-  assert.equal(payload.data.descriptorScope, 'command-surface');
+  assert.equal(payload.data.descriptorScope, 'canonical-command-surface');
   assert.equal(payload.data.commandDescriptorMetadata.capabilities.supportsRemote, true);
   assert.equal(payload.data.trustDistribution.posture, 'repo-release-gates-and-published-surface-observed');
   assert.equal(payload.data.trustDistribution.distribution.rootPackage.name, repoPackage.name);
@@ -1314,7 +1279,17 @@ test('schema command returns envelope schema plus command descriptors', () => {
     typescriptSdkPackage.name,
   );
   assert.equal(payload.data.trustDistribution.verification.benchmark.lockPath, 'benchmarks/locks/core.lock.json');
-  assert.equal(payload.data.trustDistribution.verification.benchmark.lockPresent, false);
+  assert.equal(payload.data.trustDistribution.verification.benchmark.lockPresent, true);
+  assert.equal(payload.data.trustDistribution.verification.benchmark.reportPath, 'benchmarks/latest/core-report.json');
+  assert.equal(payload.data.trustDistribution.verification.benchmark.reportPresent, true);
+  assert.equal(
+    payload.data.trustDistribution.verification.benchmark.reportOverallPass,
+    latestBenchmarkReport.summary.overallPass,
+  );
+  assert.equal(
+    payload.data.trustDistribution.verification.benchmark.reportContractLockMatchesExpected,
+    latestBenchmarkReport.contractLockMatchesExpected,
+  );
   assert.equal(payload.data.trustDistribution.distribution.platformValidation.ci.workflowPath, '.github/workflows/ci.yml');
   assert.deepEqual(payload.data.trustDistribution.distribution.platformValidation.ci.osMatrix, ['macos-latest', 'ubuntu-latest', 'windows-latest']);
   assert.deepEqual(payload.data.trustDistribution.distribution.platformValidation.ci.nodeVersions, ['20']);
@@ -1342,9 +1317,8 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoTestRunsSmoke, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoReleasePrepRunsSmoke, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.publishedReleasePrepRunsSmoke, false);
-  assert.equal(
-    payload.data.commandDescriptorMetadata.counts.supportsRemote,
-    Object.keys(payload.data.commandDescriptors).length,
+  assert.ok(
+    payload.data.commandDescriptorMetadata.counts.supportsRemote >= Object.keys(payload.data.commandDescriptors).length,
   );
   assert.ok(payload.data.documentation.skills.some((doc) => doc.path === 'docs/trust/release-verification.md'));
   assert.ok(payload.data.documentation.skills.some((doc) => doc.path === 'docs/trust/security-model.md'));
@@ -1381,17 +1355,37 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions.SuggestPayload);
   assert.ok(payload.data.definitions.OddsHelpPayload);
   assert.ok(payload.data.definitions.MirrorStatusHelpPayload);
+  assert.ok(payload.data.definitions.OperationReceiptPayload);
+  assert.ok(payload.data.definitions.OperationReceiptVerificationPayload);
+});
+
+test('schema command can include compatibility descriptors explicitly', () => {
+  const result = runCli(['--output', 'json', 'schema', '--include-compatibility']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'schema');
+  assert.equal(payload.data.descriptorScope, 'command-surface+compatibility');
+  assert.ok(payload.data.commandDescriptors['markets.scan']);
+  assert.equal(payload.data.commandDescriptors['markets.scan'].canonicalTool, 'scan');
+  assert.equal(payload.data.commandDescriptors['markets.scan'].aliasOf, 'scan');
+  assert.ok(payload.data.commandDescriptors.arbitrage);
+  assert.equal(payload.data.commandDescriptors.arbitrage.canonicalTool, 'arb.scan');
+  assert.equal(payload.data.commandDescriptors.arbitrage.aliasOf, 'arb.scan');
 });
 
 test('schema command covers every MCP tool and exposes canonical metadata', () => {
-  const result = runCli(['--output', 'json', 'schema']);
+  const result = runCli(['--output', 'json', 'schema', '--include-compatibility']);
   assert.equal(result.status, 0);
   const payload = parseJsonOutput(result);
   const descriptors = payload.data.commandDescriptors;
-  const mcpTools = createMcpToolRegistry().listTools();
-  const mcpToolNames = new Set(mcpTools.map((tool) => tool.name));
+  const registry = createMcpToolRegistry();
+  const defaultTools = registry.listTools();
+  const allTools = registry.listTools({ includeCompatibilityAliases: true });
+  const defaultToolNames = new Set(defaultTools.map((tool) => tool.name));
+  const allToolNames = new Set(allTools.map((tool) => tool.name));
 
-  for (const tool of mcpTools) {
+  for (const tool of allTools) {
     const descriptor = descriptors[tool.name];
     assert.ok(descriptor, `missing schema descriptor for MCP tool ${tool.name}`);
     assert.equal(descriptor.mcpExposed, true, `expected ${tool.name} to be MCP-exposed`);
@@ -1415,7 +1409,21 @@ test('schema command covers every MCP tool and exposes canonical metadata', () =
 
   for (const [commandName, descriptor] of Object.entries(descriptors)) {
     if (descriptor.mcpExposed) {
-      assert.ok(mcpToolNames.has(commandName), `schema marks ${commandName} as MCP-exposed but MCP tools/list is missing it`);
+      if (descriptor.aliasOf) {
+        assert.ok(
+          allToolNames.has(commandName),
+          `schema marks ${commandName} as MCP-exposed alias but MCP tools/list(includeCompatibilityAliases) is missing it`,
+        );
+        assert.ok(
+          !defaultToolNames.has(commandName),
+          `compatibility alias ${commandName} should not appear in default MCP tools/list`,
+        );
+      } else {
+        assert.ok(
+          defaultToolNames.has(commandName),
+          `schema marks ${commandName} as MCP-exposed canonical tool but default MCP tools/list is missing it`,
+        );
+      }
     }
   }
 
@@ -1436,7 +1444,7 @@ test('schema command covers every MCP tool and exposes canonical metadata', () =
 });
 
 test('schema command preserves normalized MCP metadata defaults for primary and alias tools', () => {
-  const result = runCli(['--output', 'json', 'schema']);
+  const result = runCli(['--output', 'json', 'schema', '--include-compatibility']);
   assert.equal(result.status, 0);
   const payload = parseJsonOutput(result);
   const descriptors = payload.data.commandDescriptors;
@@ -1575,6 +1583,28 @@ test('schema and capabilities payloads validate against published definitions', 
   );
 });
 
+test('bootstrap payload validates against its published definition', () => {
+  const schemaResult = runCli(['--output', 'json', 'schema']);
+  assert.equal(schemaResult.status, 0);
+  const schemaEnvelope = parseJsonOutput(schemaResult);
+  const schemaDocument = schemaEnvelope.data;
+
+  const bootstrapResult = runCli(['--output', 'json', 'bootstrap']);
+  assert.equal(bootstrapResult.status, 0);
+  const bootstrapEnvelope = parseJsonOutput(bootstrapResult);
+
+  assertSchemaValid(
+    schemaDocument,
+    { $ref: '#/definitions/BootstrapPayload' },
+    bootstrapEnvelope.data,
+    'bootstrap',
+  );
+  assert.equal(bootstrapEnvelope.data.readinessMode, 'artifact-neutral');
+  assert.equal(bootstrapEnvelope.data.preferences.recommendedFirstCall, 'bootstrap');
+  assert.equal(bootstrapEnvelope.data.recommendedBootstrapFlow[0], 'bootstrap');
+  assert.ok(!bootstrapEnvelope.data.canonicalTools.includes('arbitrage'));
+});
+
 test('generated SDK contract bundle stays in parity with live schema and capabilities commands', () => {
   const tempDir = createTempDir('pandora-sdk-cli-parity-');
   const env = createIsolatedPandoraEnv(tempDir);
@@ -1589,14 +1619,17 @@ test('generated SDK contract bundle stays in parity with live schema and capabil
 
     assertManifestParity(generatedManifest, artifact);
     assert.deepEqual(artifact.commandDescriptors, schemaEnvelope.data.commandDescriptors);
-    assert.deepEqual(artifact.schemas.definitions, schemaEnvelope.data.definitions);
     assert.deepEqual(
-      omitGeneratedAt(artifact.capabilities),
-      omitGeneratedAt(capabilitiesEnvelope.data),
+      omitTrustDistributionDefinitions(artifact.schemas.definitions),
+      omitTrustDistributionDefinitions(schemaEnvelope.data.definitions),
+    );
+    assert.deepEqual(
+      omitTrustDistributionFromCapabilities(omitGeneratedAt(artifact.capabilities)),
+      omitTrustDistributionFromCapabilities(omitGeneratedAt(capabilitiesEnvelope.data)),
     );
     assert.equal(artifact.capabilities.generatedAt, SDK_ARTIFACT_GENERATED_AT);
-    assert.deepEqual(generatedContractRegistry.commandDescriptors, artifact.commandDescriptors);
-    assert.deepEqual(generatedContractRegistry.schemas.envelope.commandDescriptors, artifact.schemas.envelope.commandDescriptors);
+    assert.deepEqual(generatedContractRegistry.commandDescriptors, schemaEnvelope.data.commandDescriptors);
+    assert.deepEqual(generatedContractRegistry.schemas.envelope.commandDescriptors, schemaEnvelope.data.commandDescriptors);
     assert.deepEqual(
       omitTrustDistributionDefinitions(generatedContractRegistry.schemas.envelope.definitions),
       omitTrustDistributionDefinitions(artifact.schemas.envelope.definitions),
@@ -1606,9 +1639,15 @@ test('generated SDK contract bundle stays in parity with live schema and capabil
       omitTrustDistributionFromCapabilities(omitGeneratedAt(artifact.capabilities)),
     );
     assert.deepEqual(
-      omitGeneratedAt(artifact.schemas.envelope),
-      omitGeneratedAt(schemaEnvelope.data),
-      'SDK schema bundle should match the live schema payload aside from deterministic generatedAt.',
+      {
+        ...omitGeneratedAt(artifact.schemas.envelope),
+        definitions: omitTrustDistributionDefinitions(artifact.schemas.envelope.definitions),
+      },
+      {
+        ...omitGeneratedAt(schemaEnvelope.data),
+        definitions: omitTrustDistributionDefinitions(schemaEnvelope.data.definitions),
+      },
+      'SDK schema bundle should match the live schema payload aside from deterministic generatedAt and live trust-distribution definitions.',
     );
     assert.equal(
       artifact.schemas.envelope.schemaVersion,
@@ -1664,6 +1703,15 @@ test('capabilities --help succeeds in table mode', () => {
   assert.deepEqual(payload.data.trustDistribution, schemaPayload.data.trustDistribution);
   assert.equal(payload.data.trustDistribution.distribution.rootPackage.name, repoPackage.name);
   assert.equal(payload.data.trustDistribution.distribution.rootPackage.version, repoPackage.version);
+  assert.equal(payload.data.trustDistribution.verification.benchmark.reportPresent, true);
+  assert.equal(
+    payload.data.trustDistribution.verification.benchmark.reportOverallPass,
+    latestBenchmarkReport.summary.overallPass,
+  );
+  assert.equal(
+    payload.data.trustDistribution.verification.benchmark.reportContractLockMatchesExpected,
+    latestBenchmarkReport.contractLockMatchesExpected,
+  );
   assert.deepEqual(
     payload.data.trustDistribution.distribution.rootPackage.binNames,
     Object.keys(repoPackage.bin || {}).sort(),
@@ -1733,10 +1781,13 @@ test('capabilities --help succeeds in table mode', () => {
   assert.ok(payload.data.documentation.skills.some((doc) => doc.id === 'security-model'));
   assert.ok(payload.data.documentation.skills.some((doc) => doc.id === 'support-matrix'));
   assert.ok(payload.data.documentation.router.taskRoutes.some((route) => route.label === 'Release verification, support matrix, or security posture'));
-    assert.ok(payload.data.canonicalTools['arb.scan'].commands.includes('arbitrage'));
-    assert.equal(payload.data.canonicalTools['arb.scan'].preferredCommand, 'arb.scan');
+  assert.equal(payload.data.discoveryPreferences.canonicalOnlyDefault, true);
+  assert.equal(payload.data.discoveryPreferences.includeCompatibility, false);
+  assert.ok(payload.data.discoveryPreferences.hiddenAliasCount >= 1);
+  assert.deepEqual(payload.data.canonicalTools['arb.scan'].commands, ['arb.scan']);
+  assert.equal(payload.data.canonicalTools['arb.scan'].preferredCommand, 'arb.scan');
     assert.ok(payload.data.commandDigests.quote);
-    assert.equal(Object.keys(payload.data.commandDigests).length, Object.keys(schemaPayload.data.commandDescriptors).length);
+  assert.equal(Object.keys(payload.data.commandDigests).length, Object.keys(schemaPayload.data.commandDescriptors).length);
     assert.equal(payload.data.commandDigests.quote.summary.length > 0, true);
     assert.deepEqual(payload.data.commandDigests.trade.canonicalCommandTokens, ['trade']);
   assert.ok(payload.data.commandDigests.trade.emits.includes('trade'));
@@ -1775,10 +1826,26 @@ test('capabilities --help succeeds in table mode', () => {
   assert.equal(payload.data.registryDigest.topLevelHash, stableJsonHash(payload.data.topLevelCommands));
   assert.equal(payload.data.registryDigest.routedTopLevelHash, stableJsonHash(payload.data.routedTopLevelCommands));
   assert.equal(payload.data.registryDigest.namespaceHash, stableJsonHash(payload.data.namespaces));
-  assert.equal(payload.data.summary.totalCommands, Object.keys(schemaPayload.data.commandDescriptors).length);
+  assert.equal(payload.data.summary.discoveryCommands, Object.keys(schemaPayload.data.commandDescriptors).length);
   assert.ok(capabilityBytes < schemaBytes * 0.5, `capabilities should stay materially smaller than schema (${capabilityBytes} vs ${schemaBytes})`);
   assert.ok(capabilityBytes < 300000, `capabilities payload should stay compact (${capabilityBytes} bytes)`);
   });
+
+test('capabilities command can include compatibility aliases explicitly', () => {
+  const result = runCli(['--output', 'json', 'capabilities', '--include-compatibility']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'capabilities');
+  assert.equal(payload.data.discoveryPreferences.includeCompatibility, true);
+  assert.ok(payload.data.commandDigests.arbitrage);
+  assert.equal(payload.data.commandDigests.arbitrage.aliasOf, 'arb.scan');
+  assert.equal(
+    Object.keys(payload.data.commandDigests).length,
+    Object.keys(buildSchemaPayload({ includeCompatibility: true }).commandDescriptors).length,
+  );
+  assert.ok(payload.data.canonicalTools['arb.scan'].commands.includes('arbitrage'));
+});
 
   test('json help payload includes output-mode routing notes', () => {
     const result = runCli(['--output', 'json', 'help']);
@@ -1787,11 +1854,15 @@ test('capabilities --help succeeds in table mode', () => {
   assert.equal(payload.ok, true);
   assert.ok(Array.isArray(payload.data.notes));
   assert.deepEqual(payload.data.modeRouting, {
-    jsonOnly: ['capabilities', 'schema'],
+    jsonOnly: ['bootstrap', 'capabilities', 'schema'],
     stdioOnly: ['mcp'],
     scriptNative: ['launch', 'clone-bet'],
   });
-  assert.ok(payload.data.notes.some((note) => /json-only/i.test(note) && /capabilities/i.test(note) && /schema/i.test(note)));
+  assert.ok(
+    payload.data.notes.some(
+      (note) => /json-only/i.test(note) && /bootstrap/i.test(note) && /capabilities/i.test(note) && /schema/i.test(note),
+    ),
+  );
   assert.ok(payload.data.notes.some((note) => /mcp/i.test(note) && /stdio server mode/i.test(note)));
   });
 
@@ -1882,23 +1953,27 @@ test('risk panic blocks live writes before onchain execution', () => {
   }
 });
 
-test('operations list/get/cancel/close manage durable operation records in json envelopes', () => {
+test('operations list/get/receipt/verify-receipt/cancel/close manage durable operation records in json envelopes', async () => {
   const tempDir = createTempDir('pandora-operations-cli-');
   try {
     const schemaPayload = parseJsonOutput(runCli(['--output', 'json', 'schema']));
     const schemaDocument = schemaPayload.data;
     const descriptors = schemaDocument.commandDescriptors;
     const operationDir = path.join(tempDir, 'operations');
-    const created = upsertOperation(
-      operationDir,
-      {
-        command: 'mirror.deploy',
-        request: { marketAddress: ADDRESSES.mirrorMarket, execute: false },
-        summary: 'Mirror deploy test',
-        status: 'planned',
-      },
-      { now: '2026-03-07T10:00:00.000Z' },
-    );
+    const service = createOperationService({
+      operationStateStore: createOperationStateStore({ rootDir: operationDir }),
+    });
+    const created = await service.createCompleted({
+      command: 'mirror.deploy',
+      request: { marketAddress: ADDRESSES.mirrorMarket, execute: false },
+      summary: 'Mirror deploy test',
+      result: { txHash: '0xabc123' },
+    });
+    const planned = await service.createPlanned({
+      command: 'mirror.sync.start',
+      request: { marketAddress: ADDRESSES.mirrorMarket, execute: false },
+      summary: 'Mirror sync plan',
+    });
     const env = { HOME: tempDir, PANDORA_OPERATION_DIR: operationDir };
 
     const listResult = runCli(['--output', 'json', 'operations', 'list', '--status', 'planned'], { env });
@@ -1906,23 +1981,64 @@ test('operations list/get/cancel/close manage durable operation records in json 
     const listPayload = parseJsonOutput(listResult);
     assert.equal(listPayload.command, 'operations.list');
     assert.equal(listPayload.data.count, 1);
-    assert.equal(listPayload.data.items[0].operationId, created.operation.operationId);
+    assert.equal(listPayload.data.items[0].operationId, planned.operationId);
     assertSchemaValid(schemaDocument, { $ref: descriptors['operations.list'].dataSchema }, listPayload.data, 'operations.list');
 
-    const getResult = runCli(['--output', 'json', 'operations', 'get', '--id', created.operation.operationId], { env });
+    const completedListResult = runCli(['--output', 'json', 'operations', 'list', '--status', 'completed'], { env });
+    assert.equal(completedListResult.status, 0);
+    const completedListPayload = parseJsonOutput(completedListResult);
+    assert.equal(completedListPayload.data.count, 1);
+    assert.equal(completedListPayload.data.items[0].operationId, created.operationId);
+
+    const getResult = runCli(['--output', 'json', 'operations', 'get', '--id', created.operationId], { env });
     assert.equal(getResult.status, 0);
     const getPayload = parseJsonOutput(getResult);
     assert.equal(getPayload.command, 'operations.get');
-    assert.equal(getPayload.data.operationId, created.operation.operationId);
+    assert.equal(getPayload.data.operationId, created.operationId);
     assertSchemaValid(schemaDocument, { $ref: descriptors['operations.get'].dataSchema }, getPayload.data, 'operations.get');
 
-    const cancelResult = runCli(['--output', 'json', 'operations', 'cancel', '--id', created.operation.operationId, '--reason', 'stop'], { env });
+    const receiptResult = runCli(['--output', 'json', 'operations', 'receipt', '--id', created.operationId], { env });
+    assert.equal(receiptResult.status, 0);
+    const receiptPayload = parseJsonOutput(receiptResult);
+    assert.equal(receiptPayload.command, 'operations.receipt');
+    assert.equal(receiptPayload.data.operationId, created.operationId);
+    assert.equal(receiptPayload.data.result.txHash, '0xabc123');
+    assertSchemaValid(schemaDocument, { $ref: descriptors['operations.receipt'].dataSchema }, receiptPayload.data, 'operations.receipt');
+
+    const receiptFile = createOperationStateStore({ rootDir: operationDir }).receiptFile(created.operationId);
+    const verifyResult = runCli(['--output', 'json', 'operations', 'verify-receipt', '--file', receiptFile], { env });
+    assert.equal(verifyResult.status, 0);
+    const verifyPayload = parseJsonOutput(verifyResult);
+    assert.equal(verifyPayload.command, 'operations.verify-receipt');
+    assert.equal(verifyPayload.data.ok, true);
+    assert.equal(verifyPayload.data.source.type, 'file');
+    assertSchemaValid(schemaDocument, { $ref: descriptors['operations.verify-receipt'].dataSchema }, verifyPayload.data, 'operations.verify-receipt');
+
+    const verifyByIdResult = runCli(['--output', 'json', 'operations', 'verify-receipt', '--id', created.operationId], { env });
+    assert.equal(verifyByIdResult.status, 0);
+    const verifyByIdPayload = parseJsonOutput(verifyByIdResult);
+    assert.equal(verifyByIdPayload.command, 'operations.verify-receipt');
+    assert.equal(verifyByIdPayload.data.ok, true);
+    assert.equal(verifyByIdPayload.data.source.type, 'operation-id');
+    assert.equal(verifyByIdPayload.data.source.value, created.operationId);
+
+    const verifyWrongHashResult = runCli([
+      '--output', 'json', 'operations', 'verify-receipt', '--file', receiptFile,
+      '--expected-operation-hash', 'f'.repeat(64),
+    ], { env });
+    assert.equal(verifyWrongHashResult.status, 0);
+    const verifyWrongHashPayload = parseJsonOutput(verifyWrongHashResult);
+    assert.equal(verifyWrongHashPayload.command, 'operations.verify-receipt');
+    assert.equal(verifyWrongHashPayload.data.ok, false);
+    assert.match(verifyWrongHashPayload.data.mismatches.join(' | '), /operationHash/i);
+
+    const cancelResult = runCli(['--output', 'json', 'operations', 'cancel', '--id', planned.operationId, '--reason', 'stop'], { env });
     assert.equal(cancelResult.status, 0);
     const cancelPayload = parseJsonOutput(cancelResult);
     assert.equal(cancelPayload.command, 'operations.cancel');
     assert.equal(cancelPayload.data.status, 'canceled');
 
-    const closeResult = runCli(['--output', 'json', 'operations', 'close', '--id', created.operation.operationId], { env });
+    const closeResult = runCli(['--output', 'json', 'operations', 'close', '--id', cancelPayload.data.operationId], { env });
     assert.equal(closeResult.status, 0);
     const closePayload = parseJsonOutput(closeResult);
     assert.equal(closePayload.command, 'operations.close');

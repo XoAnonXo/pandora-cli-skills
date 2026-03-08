@@ -7,19 +7,12 @@ from typing import Any, Dict, List
 from .errors import PandoraSdkError
 
 _GENERATED_DIR = Path(__file__).resolve().parent / 'generated'
-_SHARED_GENERATED_DIR = Path(__file__).resolve().parents[2] / 'generated'
-_PYTHON_PACKAGE_NAME = 'pandora-agent'
-_PYTHON_MODULE_NAME = 'pandora_agent'
-_PYTHON_GENERATED_DIR_NAME = 'generated'
 _PYTHON_ARTIFACT_KEYS = ('bundle', 'commandDescriptors', 'mcpToolDefinitions')
 
 
 def _resolve_generated_path(name: str) -> Path:
-    for base_dir in (_GENERATED_DIR, _SHARED_GENERATED_DIR):
-        candidate = base_dir / name
-        if candidate.is_file():
-            return candidate
-    return _GENERATED_DIR / name
+    artifact_name = str(name).strip()
+    return _GENERATED_DIR / artifact_name
 
 
 def _load_json(name: str) -> Dict[str, Any]:
@@ -60,12 +53,6 @@ def load_generated_manifest() -> Dict[str, Any]:
     raw_manifest = _load_json('manifest.json')
     manifest = dict(raw_manifest)
     manifest['artifacts'] = _normalize_manifest_artifacts(_as_dict(raw_manifest.get('artifacts')))
-    manifest['package'] = {
-        'format': 'python',
-        'generatedDir': _PYTHON_GENERATED_DIR_NAME,
-        'module': _PYTHON_MODULE_NAME,
-        'name': _PYTHON_PACKAGE_NAME,
-    }
     return manifest
 
 

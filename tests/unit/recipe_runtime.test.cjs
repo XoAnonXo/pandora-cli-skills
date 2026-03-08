@@ -39,7 +39,7 @@ function createRuntime(overrides = {}) {
       },
     },
     profileResolver: overrides.profileResolver || {
-      resolveProfile(options) {
+      async probeProfile(options) {
         return {
           profile: { id: options.profileId || 'market_observer_ro' },
           compatibility: { ok: true, violations: [] },
@@ -47,6 +47,7 @@ function createRuntime(overrides = {}) {
         };
       },
     },
+    remoteActive: overrides.remoteActive === true,
   });
 }
 
@@ -86,7 +87,7 @@ test('recipe registry validates recipe files', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('recipe runtime compiles inputs and validates against policy/profile services', () => {
+test('recipe runtime compiles inputs and validates against policy/profile services', async () => {
   const registry = createRecipeRegistryService();
   const runtime = createRuntime();
   const record = registry.getRecipe('mirror.sync.paper-safe');
@@ -98,7 +99,7 @@ test('recipe runtime compiles inputs and validates against policy/profile servic
     'mirror', 'sync', 'start', '--paper', '--market-address', '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   ]);
 
-  const validation = runtime.validateRecipeExecution(compiled, {
+  const validation = await runtime.validateRecipeExecution(compiled, {
     policyId: 'paper-trading',
   });
   assert.equal(validation.ok, true);
@@ -106,7 +107,7 @@ test('recipe runtime compiles inputs and validates against policy/profile servic
   assert.equal(validation.profileId, null);
 });
 
-test('recipe runtime blocks execution when policy or profile compatibility fails', () => {
+test('recipe runtime blocks execution when policy or profile compatibility fails', async () => {
   const registry = createRecipeRegistryService();
   const runtime = createRuntime({
     policyEvaluator: {
@@ -121,7 +122,7 @@ test('recipe runtime blocks execution when policy or profile compatibility fails
       },
     },
     profileResolver: {
-      resolveProfile() {
+      async probeProfile() {
         return {
           profile: { id: 'market_observer_ro' },
           compatibility: { ok: false, violations: [{ code: 'PROFILE_INCOMPATIBLE', message: 'bad' }] },
@@ -132,7 +133,7 @@ test('recipe runtime blocks execution when policy or profile compatibility fails
   });
   const record = registry.getRecipe('claim.all.finalized');
   const compiled = runtime.compileRecipe(record.recipe, {});
-  const result = runtime.runRecipe(compiled, {
+  const result = await runtime.runRecipe(compiled, {
     policyId: 'research-only',
     profileId: 'market_observer_ro',
   });
@@ -142,19 +143,19 @@ test('recipe runtime blocks execution when policy or profile compatibility fails
   assert.equal(result.validation.denials.length, 2);
 });
 
-test('recipe runtime returns delegated operation ids when the underlying command exposes them', () => {
+test('recipe runtime returns delegated operation ids when the underlying command exposes them', async () => {
   const registry = createRecipeRegistryService();
   const runtime = createRuntime();
   const record = registry.getRecipe('mirror.close.all');
   const compiled = runtime.compileRecipe(record.recipe, {});
-  const result = runtime.runRecipe(compiled, { policyId: 'paper-trading' });
+  const result = await runtime.runRecipe(compiled, { policyId: 'paper-trading' });
 
   assert.equal(result.ok, true);
   assert.equal(result.operationId, 'op-123');
   assert.equal(result.result.command, 'mirror');
 });
 
-test('recipe runtime rejects external file recipes that delegate mutating commands', () => {
+test('recipe runtime rejects external file recipes that delegate mutating commands', async () => {
   const runtime = createRuntime();
   const compiled = runtime.compileRecipe({
     id: 'custom.trade-live',
@@ -168,17 +169,17 @@ test('recipe runtime rejects external file recipes that delegate mutating comman
     firstParty: false,
   }, {}, { source: 'file', filePath: '/tmp/recipe.json' });
 
-  const result = runtime.runRecipe(compiled, {});
+  const result = await runtime.runRecipe(compiled, {});
   assert.equal(result.ok, false);
   assert.equal(result.result, null);
   assert.ok(result.validation.denials.some((entry) => entry.code === 'RECIPE_FILE_MUTATION_DENIED'));
   assert.ok(result.validation.denials.some((entry) => entry.code === 'RECIPE_PROFILE_REQUIRED'));
 });
 
-test('recipe runtime rejects delegated command mismatches and non-ready profiles', () => {
+test('recipe runtime rejects delegated command mismatches and non-ready profiles', async () => {
   const runtime = createRuntime({
     profileResolver: {
-      resolveProfile() {
+      async probeProfile() {
         return {
           profile: { id: 'prod_trader_a' },
           compatibility: { ok: true, violations: [] },
@@ -199,8 +200,103 @@ test('recipe runtime rejects delegated command mismatches and non-ready profiles
     firstParty: false,
   }, {}, { source: 'file', filePath: '/tmp/recipe.json' });
 
-  const validation = runtime.validateRecipeExecution(compiled, {});
+  const validation = await runtime.validateRecipeExecution(compiled, {});
   assert.equal(validation.ok, false);
   assert.ok(validation.denials.some((entry) => entry.code === 'RECIPE_COMMAND_MISMATCH'));
   assert.ok(validation.denials.some((entry) => entry.code === 'RECIPE_PROFILE_NOT_READY'));
+});
+
+test('recipe runtime denies remote execution for recipes that delegate remote-blocked long-running tools', async () => {
+  const registry = createRecipeRegistryService();
+  const runtime = createRuntime({ remoteActive: true });
+  const record = registry.getRecipe('mirror.sync.paper-safe');
+  const compiled = runtime.compileRecipe(record.recipe, {
+    'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  });
+
+  const validation = await runtime.validateRecipeExecution(compiled, {
+    policyId: 'paper-trading',
+  });
+  assert.equal(validation.ok, false);
+  assert.ok(validation.denials.some((entry) => entry.code === 'RECIPE_REMOTE_EXECUTION_DENIED'));
+  assert.ok(validation.denials.some((entry) => entry.code === 'RECIPE_REMOTE_LONG_RUNNING_DENIED'));
+});
+
+test('recipe runtime denies remote execution for delegated commands that are not MCP-exposed or remote-eligible', async () => {
+  const runtime = createRecipeRuntimeService({
+    commandDescriptors: {
+      'custom.readonly': {
+        mcpExposed: false,
+        remoteEligible: false,
+        mcpMutating: false,
+        requiresSecrets: false,
+        policyScopes: [],
+      },
+    },
+    commandExecutor: {
+      executeJsonCommand() {
+        throw new Error('should not execute');
+      },
+    },
+    policyEvaluator: {
+      evaluateExecution() {
+        return { ok: true, decision: 'allow', policyId: null, denials: [], warnings: [] };
+      },
+    },
+    profileResolver: {
+      async probeProfile() {
+        return { compatibility: { ok: true, violations: [] }, resolution: { ready: true } };
+      },
+    },
+    remoteActive: true,
+  });
+  const compiled = runtime.compileRecipe({
+    id: 'custom.remote-check',
+    tool: 'custom.readonly',
+    commandTemplate: ['custom', 'readonly'],
+    inputs: [],
+    defaultPolicy: null,
+    defaultProfile: null,
+    mutating: false,
+    safeByDefault: true,
+    firstParty: true,
+    supportsRemote: true,
+  }, {});
+
+  const validation = await runtime.validateRecipeExecution(compiled, {});
+  assert.equal(validation.ok, false);
+  assert.ok(validation.denials.some((entry) => entry.code === 'RECIPE_REMOTE_MCP_EXPOSURE_REQUIRED'));
+  assert.ok(validation.denials.some((entry) => entry.code === 'RECIPE_REMOTE_TOOL_NOT_ELIGIBLE'));
+});
+
+test('recipe runtime denies remote execution when delegated scopes exceed granted gateway scopes', async () => {
+  const previousScopes = process.env.PANDORA_MCP_GRANTED_SCOPES;
+  process.env.PANDORA_MCP_GRANTED_SCOPES = 'capabilities:read';
+  try {
+    const runtime = createRuntime({ remoteActive: true });
+    const compiled = runtime.compileRecipe({
+      id: 'custom.scope-check',
+      tool: 'scan',
+      commandTemplate: ['scan', '--limit', '5'],
+      inputs: [],
+      defaultPolicy: null,
+      defaultProfile: null,
+      mutating: false,
+      safeByDefault: true,
+      firstParty: true,
+      supportsRemote: true,
+    }, {});
+    const validation = await runtime.validateRecipeExecution(compiled, {});
+    assert.equal(validation.ok, false);
+    const scopeDenial = validation.denials.find((entry) => entry.code === 'RECIPE_REMOTE_SCOPE_DENIED');
+    assert.ok(scopeDenial);
+    assert.ok(Array.isArray(scopeDenial.missingScopes));
+    assert.ok(scopeDenial.missingScopes.includes('scan:read'));
+  } finally {
+    if (previousScopes === undefined) {
+      delete process.env.PANDORA_MCP_GRANTED_SCOPES;
+    } else {
+      process.env.PANDORA_MCP_GRANTED_SCOPES = previousScopes;
+    }
+  }
 });

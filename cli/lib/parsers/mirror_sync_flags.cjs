@@ -3,6 +3,7 @@ const {
   defaultMirrorWorkspacePath,
   validateMirrorUrl,
 } = require('./mirror_parser_guard.cjs');
+const { consumeProfileSelectorFlag } = require('./shared_profile_selector_flags.cjs');
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -86,6 +87,8 @@ function createParseMirrorSyncFlags(deps) {
       rpcUrl: null,
       polymarketRpcUrl: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
       funder: null,
       usdc: null,
       polymarketHost: null,
@@ -287,6 +290,20 @@ function createParseMirrorSyncFlags(deps) {
         options.privateKey = parsePrivateKeyFlag(requireFlagValue(rest, i, '--private-key'), '--private-key');
         i += 1;
         continue;
+      }
+      {
+        const nextIndex = consumeProfileSelectorFlag({
+          token,
+          args: rest,
+          index: i,
+          options,
+          CliError,
+          requireFlagValue,
+        });
+        if (nextIndex !== null) {
+          i = nextIndex;
+          continue;
+        }
       }
       if (token === '--funder') {
         options.funder = parseAddressFlag(requireFlagValue(rest, i, '--funder'), '--funder');

@@ -50,6 +50,36 @@ function legacyNestedFlagsAllowed() {
   return process.env.PANDORA_MCP_ALLOW_LEGACY_FLAGS === '1';
 }
 
+function compatibilityAliasDebugModeEnabled(options = {}) {
+  if (Boolean(options && options.compatibilityAliasDebugMode)) return true;
+  return process.env.PANDORA_MCP_INCLUDE_COMPATIBILITY_ALIASES === '1'
+    || process.env.PANDORA_MCP_DEBUG_COMPATIBILITY_ALIASES === '1';
+}
+
+function isCompatibilityAliasDefinition(definition) {
+  return Boolean(definition && (definition.compatibilityAlias || definition.aliasOf));
+}
+
+function compareToolDefinitions(left, right) {
+  const leftCompatibility = isCompatibilityAliasDefinition(left);
+  const rightCompatibility = isCompatibilityAliasDefinition(right);
+  if (leftCompatibility !== rightCompatibility) {
+    return leftCompatibility ? 1 : -1;
+  }
+
+  const leftPreferred = left && left.preferred !== false;
+  const rightPreferred = right && right.preferred !== false;
+  if (leftPreferred !== rightPreferred) {
+    return leftPreferred ? -1 : 1;
+  }
+
+  return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
+}
+
+function sortToolDefinitions(definitions) {
+  return (Array.isArray(definitions) ? definitions : []).slice().sort(compareToolDefinitions);
+}
+
 /**
  * Normalize a flag token to a CLI-prefixed name.
  * Leaves existing `--foo`/`-f` tokens unchanged and prefixes bare names.
@@ -597,6 +627,7 @@ function buildInvocationEnv(controlInputs) {
 function toToolDescriptor(definition, options = {}) {
   const descriptor = COMMAND_DESCRIPTORS[definition.name] || null;
   const canonicalTool = definition.canonicalTool || definition.aliasOf || definition.name;
+  const compatibilityAlias = isCompatibilityAliasDefinition(definition);
   const safeFlags = Array.isArray(definition.safeFlags) ? [...definition.safeFlags] : [];
   const executeFlags = Array.isArray(definition.executeFlags) ? [...definition.executeFlags] : [];
   const executeIntentRequired = Boolean(definition.mutating && safeFlags.length === 0);
@@ -629,7 +660,7 @@ function toToolDescriptor(definition, options = {}) {
     aliasOf: definition.aliasOf || null,
     preferred: descriptor ? Boolean(descriptor.preferred) : definition.preferred !== false,
     isCanonical: definition.name === canonicalTool,
-    compatibilityAlias: Boolean(definition.aliasOf),
+    compatibilityAlias,
     mutating: Boolean(definition.mutating),
     mcpMutating: descriptor ? Boolean(descriptor.mcpMutating) : Boolean(definition.mutating),
     longRunningBlocked: Boolean(definition.longRunningBlocked),
@@ -691,10 +722,12 @@ function toToolDescriptor(definition, options = {}) {
         'helpDataSchema',
         'canonicalTool',
         'canonicalCommandTokens',
-        'canonicalUsage',
-        'aliasOf',
-        'preferred',
-        'riskLevel',
+          'canonicalUsage',
+          'aliasOf',
+          'preferred',
+          'compatibilityAlias',
+          ...(compatibilityAlias ? ['compatibilityOptInRequired', 'defaultDiscoveryVisible', 'discoveryTier'] : []),
+          'riskLevel',
         'idempotency',
         'expectedLatencyMs',
         'requiresSecrets',
@@ -714,6 +747,11 @@ function toToolDescriptor(definition, options = {}) {
         ],
       },
   };
+  if (compatibilityAlias) {
+    xPandora.compatibilityOptInRequired = true;
+    xPandora.defaultDiscoveryVisible = false;
+    xPandora.discoveryTier = 'compatibility';
+  }
   const inputSchema = definition.inputSchema || {
     type: 'object',
     properties: {},
@@ -722,8 +760,8 @@ function toToolDescriptor(definition, options = {}) {
 
   return {
     name: definition.name,
-    description: definition.aliasOf
-      ? `${definition.description} Compatibility alias for ${xPandora.canonicalTool}; prefer ${xPandora.canonicalTool} (${xPandora.canonicalCommandTokens.join(' ')}).`
+    description: compatibilityAlias
+      ? `${definition.description} Compatibility alias for ${xPandora.canonicalTool}; hidden from default MCP discovery and intended only for explicit compatibility/debug workflows. Prefer ${xPandora.canonicalTool} (${xPandora.canonicalCommandTokens.join(' ')}).`
       : definition.description,
     inputSchema: {
       ...inputSchema,
@@ -734,14 +772,15 @@ function toToolDescriptor(definition, options = {}) {
 }
 
 /** @type {ToolDefinition[]} */
-const TOOL_DEFINITIONS = buildMcpToolDefinitions();
+const TOOL_DEFINITIONS = sortToolDefinitions(buildMcpToolDefinitions({ includeCompatibilityAliases: false }));
+const TOOL_DEFINITIONS_WITH_COMPATIBILITY = sortToolDefinitions(buildMcpToolDefinitions({ includeCompatibilityAliases: true }));
 const COMMAND_DESCRIPTORS = buildCommandDescriptors();
 
 /**
  * Registry for MCP-exposed Pandora tools with execution guardrails.
  *
  * @returns {{
- *   listTools: () => object[],
+ *   listTools: (options?: {includeCompatibilityAliases?: boolean}) => object[],
  *   prepareInvocation: (toolName: string, args?: ToolInvocationArgs) => {argv: string[], env?: object},
  *   hasTool: (toolName: string) => boolean
  * }} MCP tool registry API.
@@ -749,15 +788,18 @@ const COMMAND_DESCRIPTORS = buildCommandDescriptors();
 function createMcpToolRegistry(options = {}) {
   const remoteTransportActive = Boolean(options.remoteTransportActive);
   const remoteOnly = Boolean(options.remoteOnly);
-  const byName = new Map(TOOL_DEFINITIONS.map((definition) => [definition.name, definition]));
+  const compatibilityAliasDebugMode = compatibilityAliasDebugModeEnabled(options);
+  const byName = new Map(TOOL_DEFINITIONS_WITH_COMPATIBILITY.map((definition) => [definition.name, definition]));
 
   /**
    * List all MCP-exposed Pandora tools and their shared JSON contract.
    *
    * @returns {object[]} Tool descriptors.
    */
-  function listTools() {
-    return TOOL_DEFINITIONS
+  function listTools(options = {}) {
+    const includeCompatibilityAliases = compatibilityAliasDebugMode || Boolean(options && options.includeCompatibilityAliases);
+    const definitions = includeCompatibilityAliases ? TOOL_DEFINITIONS_WITH_COMPATIBILITY : TOOL_DEFINITIONS;
+    return definitions
       .filter((definition) => {
         if (!remoteOnly) return true;
         const descriptor = COMMAND_DESCRIPTORS[definition.name] || null;

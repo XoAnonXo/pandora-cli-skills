@@ -2,17 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
 PYPROJECT_VERSION_RE = re.compile(r'^\s*version\s*=\s*"([^"\n]+)"\s*$', re.MULTILINE)
 
 from pandora_agent import (
+    __version__,
     get_generated_artifact_dir,
     get_generated_artifact_path,
     list_generated_artifact_paths,
@@ -39,76 +34,7 @@ class _DummyBackend:
     def call_tool(self, name, args=None):  # pragma: no cover - helper only
         raise AssertionError('call_tool should not be used in catalog tests')
 
-
-def _read_python_package_version() -> str:
-    pyproject_text = (REPO_ROOT / 'sdk' / 'python' / 'pyproject.toml').read_text(encoding='utf-8')
-    match = PYPROJECT_VERSION_RE.search(pyproject_text)
-    if not match:
-        raise AssertionError('sdk/python/pyproject.toml is missing [project].version')
-    return match.group(1)
-
-
-def _read_root_package_version() -> str:
-    package_json = json.loads((REPO_ROOT / 'package.json').read_text(encoding='utf-8'))
-    return str(package_json['version'])
-
-
-def _read_typescript_package_version() -> str:
-    package_json = json.loads((REPO_ROOT / 'sdk' / 'typescript' / 'package.json').read_text(encoding='utf-8'))
-    return str(package_json['version'])
-
-
-def _build_manifest_versions() -> dict[str, str]:
-    script = """
-const { buildGeneratedArtifactFiles } = require('./scripts/lib/agent_contract_sdk_export.cjs');
-const pkg = require('./package.json');
-const typescriptPkg = require('./sdk/typescript/package.json');
-const files = buildGeneratedArtifactFiles({
-  packageVersion: pkg.version,
-  typescriptPackageVersion: typescriptPkg.version,
-  pythonPackageVersion: process.argv[1],
-});
-const manifests = {};
-for (const file of files) {
-  if (!file.relativePath.endsWith('/manifest.json')) continue;
-  manifests[file.relativePath] = JSON.parse(file.content).packageVersion;
-}
-process.stdout.write(JSON.stringify(manifests));
-"""
-    result = subprocess.run(
-        ['node', '-e', script, _read_python_package_version()],
-        cwd=str(REPO_ROOT),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(result.stdout)
-
-
 class GeneratedCatalogTests(unittest.TestCase):
-    def test_generator_emits_surface_specific_manifest_package_versions(self) -> None:
-        manifests = _build_manifest_versions()
-
-        self.assertEqual(manifests['sdk/generated/manifest.json'], _read_root_package_version())
-        self.assertEqual(manifests['sdk/typescript/generated/manifest.json'], _read_typescript_package_version())
-        self.assertEqual(manifests['sdk/python/pandora_agent/generated/manifest.json'], _read_python_package_version())
-        typescript_manifest = json.loads((REPO_ROOT / 'sdk' / 'typescript' / 'generated' / 'manifest.json').read_text(encoding='utf-8'))
-        python_manifest = json.loads((REPO_ROOT / 'sdk' / 'python' / 'pandora_agent' / 'generated' / 'manifest.json').read_text(encoding='utf-8'))
-        self.assertEqual(
-            typescript_manifest['backends']['packagedClients']['notes'],
-            [
-                'This generated manifest describes the standalone TypeScript SDK alpha package surface.',
-                'The standalone TypeScript SDK package ships its own generated contract artifacts and client entrypoints only.',
-            ],
-        )
-        self.assertEqual(
-            python_manifest['backends']['packagedClients']['notes'],
-            [
-                'This generated manifest describes the standalone Python SDK alpha package surface.',
-                'The standalone Python SDK package ships its own generated contract artifacts and client modules only.',
-            ],
-        )
-
     def test_python_manifest_lists_only_shipped_artifacts(self) -> None:
         manifest = load_generated_manifest()
 
@@ -124,12 +50,20 @@ class GeneratedCatalogTests(unittest.TestCase):
         self.assertEqual(
             manifest['package'],
             {
+                'artifactSubpaths': {
+                    'bundle': 'pandora_agent/generated/contract-registry.json',
+                    'commandDescriptors': 'pandora_agent/generated/command-descriptors.json',
+                    'manifest': 'pandora_agent/generated/manifest.json',
+                    'mcpToolDefinitions': 'pandora_agent/generated/mcp-tool-definitions.json',
+                },
                 'format': 'python',
-                'generatedDir': 'generated',
                 'module': 'pandora_agent',
                 'name': 'pandora-agent',
+                'sourceProjectPath': 'sdk/python/pyproject.toml',
+                'version': manifest['packageVersion'],
             },
         )
+        self.assertEqual(__version__, manifest['packageVersion'])
 
         artifact_dir = get_generated_artifact_dir()
         self.assertTrue(artifact_dir.is_dir())

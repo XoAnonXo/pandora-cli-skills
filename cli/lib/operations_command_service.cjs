@@ -1,3 +1,5 @@
+const fs = require('fs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunOperationsCommand requires deps.${name}()`);
@@ -13,6 +15,41 @@ function renderOperationTable(payload) {
   }
 }
 
+function renderReceiptTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log(`${payload.operationId}  ${payload.status}  ${payload.tool || '-'}  ${payload.receiptHash || '-'}`);
+}
+
+function renderReceiptVerificationTable(payload) {
+  const source = payload && payload.source && payload.source.value ? payload.source.value : '-';
+  // eslint-disable-next-line no-console
+  console.log(`${payload.ok ? 'ok' : 'invalid'}  ${payload.operationId || '-'}  ${source}  ${(payload.mismatches || []).length}`);
+}
+
+function readReceiptFromFile(filePath, CliError) {
+  try {
+    const document = fs.readFileSync(filePath, 'utf8');
+    const payload = JSON.parse(document);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new CliError('INVALID_ARGS', 'Receipt file must contain a JSON object.', {
+        file: filePath,
+      });
+    }
+    return payload;
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    if (error && error.code === 'ENOENT') {
+      throw new CliError('FILE_NOT_FOUND', `Receipt file not found: ${filePath}`, {
+        file: filePath,
+      });
+    }
+    throw new CliError('INVALID_ARGS', `Unable to read receipt file: ${filePath}`, {
+      file: filePath,
+      cause: error && error.message ? error.message : String(error),
+    });
+  }
+}
+
 function createRunOperationsCommand(deps) {
   const CliError = requireDep(deps, 'CliError');
   const includesHelpFlag = requireDep(deps, 'includesHelpFlag');
@@ -25,7 +62,7 @@ function createRunOperationsCommand(deps) {
     const action = args[0];
 
     if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] operations get|list|cancel|close [flags]';
+      const usage = 'pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'operations.help', commandHelpPayload(usage));
       } else {
@@ -50,6 +87,28 @@ function createRunOperationsCommand(deps) {
       const usage = 'pandora [--output table|json] operations list [--status <csv>] [--tool <name>] [--limit <n>]';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'operations.list.help', commandHelpPayload(usage));
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(`Usage: ${usage}`);
+      }
+      return;
+    }
+
+    if (action === 'receipt' && includesHelpFlag(args.slice(1))) {
+      const usage = 'pandora [--output table|json] operations receipt --id <operation-id>';
+      if (context.outputMode === 'json') {
+        emitSuccess(context.outputMode, 'operations.receipt.help', commandHelpPayload(usage));
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(`Usage: ${usage}`);
+      }
+      return;
+    }
+
+    if (action === 'verify-receipt' && includesHelpFlag(args.slice(1))) {
+      const usage = 'pandora [--output table|json] operations verify-receipt --id <operation-id>|--file <path> [--expected-operation-hash <hash>]';
+      if (context.outputMode === 'json') {
+        emitSuccess(context.outputMode, 'operations.verify-receipt.help', commandHelpPayload(usage));
       } else {
         // eslint-disable-next-line no-console
         console.log(`Usage: ${usage}`);
@@ -101,6 +160,46 @@ function createRunOperationsCommand(deps) {
         throw new CliError('OPERATION_LIST_FAILED', 'Operation listing service returned an invalid payload.');
       }
       emitSuccess(context.outputMode, 'operations.list', listing, renderOperationTable);
+      return;
+    }
+
+    if (options.action === 'receipt') {
+      const receipt = await service.getReceipt(options.id);
+      emitSuccess(context.outputMode, 'operations.receipt', receipt, renderReceiptTable);
+      return;
+    }
+
+    if (options.action === 'verify-receipt') {
+      const receipt = options.file
+        ? readReceiptFromFile(options.file, CliError)
+        : await service.getReceipt(options.id);
+      const verification = await service.verifyReceipt(receipt, {
+        ...(options.expectedOperationHash ? { expectedOperationHash: options.expectedOperationHash } : {}),
+      });
+      emitSuccess(
+        context.outputMode,
+        'operations.verify-receipt',
+        {
+          ok: Boolean(verification && verification.ok),
+          code: verification && Object.prototype.hasOwnProperty.call(verification, 'code') ? verification.code : null,
+          operationId: receipt && receipt.operationId ? receipt.operationId : null,
+          operationHash: receipt && receipt.operationHash ? receipt.operationHash : null,
+          expectedOperationHash: options.expectedOperationHash || null,
+          receiptHash: verification && verification.receiptHash ? verification.receiptHash : (receipt && receipt.receiptHash ? receipt.receiptHash : null),
+          signatureValid: Boolean(verification && verification.signatureValid),
+          signatureAlgorithm: verification && Object.prototype.hasOwnProperty.call(verification, 'signatureAlgorithm') ? verification.signatureAlgorithm : (receipt && receipt.verification ? receipt.verification.signatureAlgorithm || null : null),
+          publicKeyFingerprint: verification && Object.prototype.hasOwnProperty.call(verification, 'publicKeyFingerprint') ? verification.publicKeyFingerprint : (receipt && receipt.verification ? receipt.verification.publicKeyFingerprint || null : null),
+          keyId: verification && Object.prototype.hasOwnProperty.call(verification, 'keyId') ? verification.keyId : (receipt && receipt.verification ? receipt.verification.keyId || null : null),
+          mismatches: Array.isArray(verification && verification.mismatches) ? verification.mismatches : [],
+          source: {
+            type: options.file ? 'file' : 'operation-id',
+            value: options.file || options.id,
+          },
+          schemaVersion: '1.0.0',
+          generatedAt: new Date().toISOString(),
+        },
+        renderReceiptVerificationTable,
+      );
       return;
     }
 

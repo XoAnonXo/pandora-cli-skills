@@ -31,6 +31,12 @@ class PandoraAgentClient:
         self.backend.connect()
         return self
 
+    def __enter__(self) -> 'PandoraAgentClient':
+        return self.connect()
+
+    def __exit__(self, exc_type, exc, exc_tb) -> None:
+        self.close()
+
     def close(self) -> None:
         self.backend.close()
 
@@ -96,6 +102,16 @@ class PandoraAgentClient:
 
     def call_tool(self, name: str, args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return normalize_tool_envelope(self.call_tool_raw(name, args or {}))
+
+    def get_bootstrap_envelope(self, args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return self.call_tool('bootstrap', args or {})
+
+    def get_bootstrap(self, args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        envelope = self.get_bootstrap_envelope(args or {})
+        if 'data' in envelope:
+            data = envelope.get('data')
+            return data if isinstance(data, dict) else {'value': data}
+        return envelope
 
 
 def create_local_pandora_agent_client(**kwargs: Any) -> PandoraAgentClient:

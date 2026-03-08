@@ -2,6 +2,7 @@ const { DEFAULT_INDEXER_URL, DEFAULT_RPC_BY_CHAIN_ID } = require('./shared/const
 const { isSecureHttpUrlOrLocal } = require('./shared/utils.cjs');
 const { resolveForkRuntime } = require('./fork_runtime_service.cjs');
 const { createIndexerClient } = require('./indexer_client.cjs');
+const { materializeExecutionSigner } = require('./signers/execution_signer_service.cjs');
 
 const READ_BATCH_CONCURRENCY = 4;
 const INDEXER_MARKET_FIELDS = ['id', 'pollAddress', 'chainId'];
@@ -355,6 +356,9 @@ async function resolveRuntime(options = {}, runtimeOptions = {}) {
     rpcUrl,
     chain,
     privateKey: null,
+    profileId: options.profileId || null,
+    profileFile: options.profileFile || null,
+    profile: options.profile || null,
     usdc: null,
   };
 
@@ -379,22 +383,65 @@ async function resolveRuntime(options = {}, runtimeOptions = {}) {
   return runtime;
 }
 
-async function createClients(runtime, requireWallet = false) {
-  const { createPublicClient, createWalletClient, http, privateKeyToAccount } = await loadViemRuntime();
+async function createClients(runtime, requireWallet = false, executionContext = {}) {
+  const viemRuntime = await loadViemRuntime();
+  const { createPublicClient, http } = viemRuntime;
   const publicClient = createPublicClient({ chain: runtime.chain, transport: http(runtime.rpcUrl) });
   let account = null;
   let walletClient = null;
+  let signerMetadata = null;
+  let resolvedProfile = null;
 
-  if (runtime.privateKey) {
-    account = privateKeyToAccount(runtime.privateKey);
-    walletClient = createWalletClient({ account, chain: runtime.chain, transport: http(runtime.rpcUrl) });
+  try {
+    const materialized = await materializeExecutionSigner({
+      privateKey: runtime.privateKey,
+      profileId: runtime.profileId,
+      profileFile: runtime.profileFile,
+      profile: runtime.profile,
+      chain: runtime.chain,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+      viemRuntime,
+      env: process.env,
+      requireSigner: requireWallet,
+      mode: requireWallet ? 'execute' : 'read',
+      liveRequested: requireWallet,
+      mutating: requireWallet,
+      command: executionContext.command || null,
+      toolFamily: executionContext.toolFamily || null,
+      category: executionContext.category || null,
+      metadata: {
+        source: 'market-admin',
+        action: executionContext.command || null,
+      },
+    });
+    if (materialized) {
+      account = materialized.account || null;
+      walletClient = materialized.walletClient || null;
+      signerMetadata = materialized.signerMetadata || null;
+      resolvedProfile = materialized.resolvedProfile || null;
+    }
+  } catch (error) {
+    if (error && error.code === 'PROFILE_SIGNER_REQUIRED') {
+      throw createServiceError(
+        'MISSING_REQUIRED_FLAG',
+        'Missing signer credentials. Set PRIVATE_KEY/DEPLOYER_PRIVATE_KEY or pass --profile-id/--profile-file.',
+      );
+    }
+    if (error && error.code) {
+      throw createServiceError(error.code, error.message || 'Unable to materialize execution signer.', error.details);
+    }
+    throw error;
   }
 
   if (requireWallet && (!account || !walletClient)) {
-    throw createServiceError('MISSING_REQUIRED_FLAG', 'Missing private key. Set PRIVATE_KEY or pass --private-key.');
+    throw createServiceError(
+      'MISSING_REQUIRED_FLAG',
+      'Missing signer credentials. Set PRIVATE_KEY/DEPLOYER_PRIVATE_KEY or pass --profile-id/--profile-file.',
+    );
   }
 
-  return { publicClient, walletClient, account };
+  return { publicClient, walletClient, account, signerMetadata, resolvedProfile };
 }
 
 function hasBytecode(code) {
@@ -908,7 +955,11 @@ async function runResolve(options = {}) {
     chainId: runtime.chainId,
     rpcUrl: runtime.rpcUrl,
   };
-  const { publicClient, walletClient, account } = await createClients(runtime, options.execute);
+  const { publicClient, walletClient, account } = await createClients(runtime, options.execute, {
+    command: 'resolve',
+    toolFamily: 'resolve',
+    category: options.category || null,
+  });
   const pollAddress = normalizeAddress(options.pollAddress, 'pollAddress');
   const caller = normalizeOptionalAddress(account && account.address ? account.address : null);
   if (!options.execute) {
@@ -1202,7 +1253,11 @@ async function runLpAdd(options = {}) {
     return payload;
   }
 
-  const { publicClient, walletClient, account } = await createClients(runtime, true);
+  const { publicClient, walletClient, account } = await createClients(runtime, true, {
+    command: 'lp.add',
+    toolFamily: 'lp',
+    category: options.category || null,
+  });
   await ensureContractCode(publicClient, marketAddress, 'Market');
 
   let marketInIndexer = null;
@@ -1377,7 +1432,11 @@ async function runLpRemove(options = {}) {
     return payload;
   }
 
-  const { publicClient, walletClient, account } = await createClients(runtime, true);
+  const { publicClient, walletClient, account } = await createClients(runtime, true, {
+    command: 'lp.remove',
+    toolFamily: 'lp',
+    category: options.category || null,
+  });
   await ensureContractCode(publicClient, marketAddress, 'Market');
 
   const lpTokenDecimals = await readDecimals(publicClient, marketAddress, 18);
@@ -1490,14 +1549,16 @@ async function runLpRemoveAllMarkets(options = {}) {
     requirePrivateKey: options.execute,
     requireUsdc: false,
   });
-  const { privateKeyToAccount } = await loadViemRuntime();
+  const signerClients = options.wallet ? null : await createClients(runtime, false);
   const wallet =
     options.wallet ||
-    (runtime.privateKey ? privateKeyToAccount(runtime.privateKey).address.toLowerCase() : null);
+    (signerClients && signerClients.account && signerClients.account.address
+      ? signerClients.account.address.toLowerCase()
+      : null);
   if (!wallet) {
     throw createServiceError(
       'MISSING_REQUIRED_FLAG',
-      'lp remove --all-markets requires --wallet <address> or --private-key for wallet discovery.',
+      'lp remove --all-markets requires --wallet <address> or signer credentials (--private-key or --profile-id/--profile-file) for wallet discovery.',
     );
   }
   const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
@@ -1583,7 +1644,11 @@ async function runClaimSingle(options = {}) {
   const schemaVersion = '1.0.0';
   const generatedAt = new Date().toISOString();
   const runtime = options.resolvedRuntime || await resolveRuntime(options, { requirePrivateKey: options.execute, requireUsdc: false });
-  const { publicClient, walletClient, account } = options.sharedClients || await createClients(runtime, options.execute);
+  const { publicClient, walletClient, account } = options.sharedClients || await createClients(runtime, options.execute, {
+    command: 'claim',
+    toolFamily: 'claim',
+    category: options.category || null,
+  });
   const marketAddress = normalizeAddress(options.marketAddress, '--market-address');
   await ensureContractCode(publicClient, marketAddress, 'Market');
 
@@ -1628,7 +1693,7 @@ async function runClaimSingle(options = {}) {
   };
 
   if (!account) {
-    payload.diagnostics.push('No private key supplied; simulation-based claimability check skipped.');
+    payload.diagnostics.push('No signer credentials supplied; simulation-based claimability check skipped.');
     return payload;
   }
 
@@ -1677,14 +1742,16 @@ async function runClaim(options = {}) {
   const generatedAt = new Date().toISOString();
   const timeoutMs = normalizeTimeoutMs(options.timeoutMs);
   const runtime = await resolveRuntime(options, { requirePrivateKey: options.execute, requireUsdc: false });
-  const { privateKeyToAccount } = await loadViemRuntime();
+  const signerClients = options.wallet ? null : await createClients(runtime, false);
   const wallet =
     options.wallet ||
-    (runtime.privateKey ? privateKeyToAccount(runtime.privateKey).address.toLowerCase() : null);
+    (signerClients && signerClients.account && signerClients.account.address
+      ? signerClients.account.address.toLowerCase()
+      : null);
   if (!wallet) {
     throw createServiceError(
       'MISSING_REQUIRED_FLAG',
-      'claim --all requires --wallet <address> or --private-key for wallet discovery.',
+      'claim --all requires --wallet <address> or signer credentials (--private-key or --profile-id/--profile-file) for wallet discovery.',
     );
   }
   const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
@@ -1706,7 +1773,11 @@ async function runClaim(options = {}) {
     diagnostics.push('No candidate markets discovered for claim-all.');
   }
   const prefetchedMarketsByAddress = await fetchIndexerMarketsMap(indexerUrl, markets, timeoutMs);
-  const sharedClients = await createClients(runtime, options.execute);
+  const sharedClients = await createClients(runtime, options.execute, {
+    command: 'claim',
+    toolFamily: 'claim',
+    category: options.category || null,
+  });
   const batchConcurrency = options.execute ? 1 : READ_BATCH_CONCURRENCY;
   const items = await mapWithConcurrency(markets, batchConcurrency, async (marketAddress) => {
     try {

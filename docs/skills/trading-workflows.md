@@ -131,12 +131,12 @@ Claim should come after:
 pandora arb scan --output json --iterations 1 --source polymarket
 ```
 
-### Compatibility wrapper
+### Compatibility wrapper (legacy/debug only)
 ```bash
 pandora arbitrage --output json --limit 10
 ```
 
-Prefer `arb scan`. `arbitrage` remains the bounded wrapper.
+Prefer `arb scan`. Only use `arbitrage` when you must match an older caller's behavior or deliberately inspect the bounded compatibility wrapper.
 
 ## Related docs
 - discovery and canonical routing:

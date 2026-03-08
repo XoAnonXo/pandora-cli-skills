@@ -8,9 +8,16 @@ const path = require('path');
 
 const {
   OPERATION_SCHEMA_VERSION,
+  OPERATION_RECEIPT_SCHEMA_VERSION,
   createOperationService,
 } = require('../../cli/lib/operation_service.cjs');
-const { createOperationStateStore } = require('../../cli/lib/operation_state_store.cjs');
+const {
+  createOperationStateStore,
+  defaultOperationReceiptFile,
+} = require('../../cli/lib/operation_state_store.cjs');
+const {
+  defaultOperationReceiptVersionDir,
+} = require('../../cli/lib/operation_receipt_store.cjs');
 
 function createTempRoot(t) {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-operation-service-'));
@@ -182,4 +189,134 @@ test('operation service cancel/close reject unknown references cleanly', async (
     () => service.closeOperation('missing-op', 'archive'),
     (error) => error && error.code === 'OPERATION_NOT_FOUND',
   );
+});
+
+test('operation service emits deterministic receipts only for terminal operations', async (t) => {
+  const rootDir = createTempRoot(t);
+  const service = createOperationService({
+    operationStateStore: createOperationStateStore({ rootDir }),
+  });
+
+  const planned = await service.createPlanned({
+    command: 'mirror.deploy',
+    input: { marketId: 'poly-1' },
+  });
+  assert.equal(await service.maybeGetReceipt(planned.operationId), null);
+
+  const executing = await service.markExecuting(planned.operationId);
+  const completed = await service.markCompleted(executing.operationId, {
+    result: { txHash: '0xabc123' },
+  });
+  const receipt = await service.getReceipt(completed.operationId);
+
+  assert.equal(receipt.schemaVersion, OPERATION_RECEIPT_SCHEMA_VERSION);
+  assert.equal(receipt.operationId, completed.operationId);
+  assert.equal(receipt.operationHash, completed.operationHash);
+  assert.equal(receipt.status, 'completed');
+  assert.equal(receipt.result.txHash, '0xabc123');
+  assert.equal(receipt.verification.algorithm, 'sha256');
+  assert.equal(receipt.verification.signatureAlgorithm, 'ed25519');
+  assert.equal(typeof receipt.verification.signature, 'string');
+  assert.ok(receipt.verification.signature.length > 20);
+  assert.equal(typeof receipt.verification.publicKeyFingerprint, 'string');
+  assert.equal(receipt.verification.receiptHash, receipt.receiptHash);
+  const verification = await service.verifyReceipt(completed.operationId);
+  assert.equal(verification.ok, true);
+  assert.equal(verification.receiptHash, receipt.receiptHash);
+  assert.equal(verification.signatureValid, true);
+});
+
+test('operation service refreshes receipt content when terminal operation mutates', async (t) => {
+  const rootDir = createTempRoot(t);
+  const service = createOperationService({
+    operationStateStore: createOperationStateStore({ rootDir }),
+  });
+
+  const completed = await service.createCompleted({
+    command: 'claim',
+    input: { marketAddress: '0xabc' },
+    result: { usdcClaimed: '10.00' },
+  });
+  const firstReceipt = await service.getReceipt(completed.operationId);
+  const updated = await service.updateRecovery(completed.operationId, {
+    retryable: false,
+    nextStep: 'record-ledger',
+  });
+  const updatedReceipt = await service.getReceipt(updated.operationId);
+  const closed = await service.close(updated.operationId, {
+    closure: { reason: 'receipt finalization' },
+  });
+  const finalReceipt = await service.getReceipt(closed.operationId);
+  const latestReceiptPath = defaultOperationReceiptFile(closed.operationId, { rootDir });
+  const versionDir = defaultOperationReceiptVersionDir(closed.operationId, { rootDir });
+  const versionFiles = fs.readdirSync(versionDir).filter((entry) => entry.endsWith('.json')).sort();
+
+  assert.equal(finalReceipt.status, 'closed');
+  assert.equal(finalReceipt.recovery.nextStep, 'record-ledger');
+  assert.equal(finalReceipt.closure.reason, 'receipt finalization');
+  assert.notEqual(finalReceipt.receiptHash, firstReceipt.receiptHash);
+  assert.equal(firstReceipt.receiptVersion, 1);
+  assert.equal(updatedReceipt.receiptVersion > firstReceipt.receiptVersion, true);
+  assert.equal(finalReceipt.receiptVersion > updatedReceipt.receiptVersion, true);
+  assert.equal(updatedReceipt.supersedesReceiptHash, firstReceipt.receiptHash);
+  assert.equal(finalReceipt.supersedesReceiptHash, updatedReceipt.receiptHash);
+  assert.equal(finalReceipt.stateDigest !== firstReceipt.stateDigest, true);
+  assert.equal(fs.existsSync(latestReceiptPath), true);
+  assert.equal(versionFiles.length >= 3, true);
+
+  const storedLatestReceipt = JSON.parse(fs.readFileSync(latestReceiptPath, 'utf8'));
+  assert.equal(storedLatestReceipt.receiptHash, finalReceipt.receiptHash);
+
+  const storedVersionReceipts = versionFiles.map((entry) =>
+    JSON.parse(fs.readFileSync(path.join(versionDir, entry), 'utf8')),
+  );
+  assert.equal(
+    storedVersionReceipts.some((receipt) => receipt.receiptHash === firstReceipt.receiptHash && receipt.receiptVersion === 1),
+    true,
+  );
+  assert.equal(
+    storedVersionReceipts.some((receipt) => receipt.receiptHash === updatedReceipt.receiptHash && receipt.receiptVersion === updatedReceipt.receiptVersion),
+    true,
+  );
+  assert.equal(
+    storedVersionReceipts.some((receipt) => receipt.receiptHash === finalReceipt.receiptHash && receipt.receiptVersion === finalReceipt.receiptVersion),
+    true,
+  );
+
+  const tampered = JSON.parse(JSON.stringify(finalReceipt));
+  tampered.result.usdcClaimed = '999.00';
+  const verification = await service.verifyReceipt(tampered, {
+    expectedOperationHash: closed.operationHash,
+  });
+  assert.equal(verification.ok, false);
+  assert.match(verification.mismatches.join(' | '), /receiptHash mismatch|verification\.receiptHash mismatch/);
+});
+
+test('operation service transparently upgrades legacy unsigned receipts when they are fetched again', async (t) => {
+  const rootDir = createTempRoot(t);
+  const service = createOperationService({
+    operationStateStore: createOperationStateStore({ rootDir }),
+  });
+
+  const completed = await service.createCompleted({
+    command: 'trade',
+    input: { marketAddress: '0xabc', side: 'yes', amountUsdc: 25 },
+    result: { txHash: '0xdeadbeef' },
+  });
+  const receipt = await service.getReceipt(completed.operationId);
+  const receiptPath = path.join(rootDir, `${completed.operationId}.receipt.json`);
+  const legacy = JSON.parse(JSON.stringify(receipt));
+  delete legacy.verification.signatureAlgorithm;
+  delete legacy.verification.signature;
+  delete legacy.verification.publicKeyPem;
+  delete legacy.verification.publicKeyFingerprint;
+  delete legacy.verification.keyId;
+  fs.writeFileSync(receiptPath, JSON.stringify(legacy, null, 2), 'utf8');
+
+  const refreshed = await service.getReceipt(completed.operationId);
+  assert.equal(refreshed.verification.signatureAlgorithm, 'ed25519');
+  assert.equal(typeof refreshed.verification.signature, 'string');
+  const verification = await service.verifyReceipt(refreshed);
+  assert.equal(verification.ok, true);
+  assert.equal(verification.signatureValid, true);
 });

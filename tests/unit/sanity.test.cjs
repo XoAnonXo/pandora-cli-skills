@@ -2,36 +2,90 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const pkg = require(path.resolve(__dirname, '..', '..', 'package.json'));
+const ROOT = path.resolve(__dirname, '..', '..');
+const { buildPublishedPackageJson } = require(path.join(ROOT, 'scripts', 'prepare_publish_manifest.cjs'));
+const EXPECTED_PUBLISHED_SCRIPT_NAMES = [
+  'cli',
+  'init-env',
+  'doctor',
+  'setup',
+  'dry-run',
+  'execute',
+  'dry-run:clone',
+];
 
-test('package exposes pandora bin entrypoint', () => {
+function packDryRun() {
+  const output = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024 * 16,
+  });
+  const parsed = JSON.parse(output);
+  assert.ok(Array.isArray(parsed) && parsed.length > 0, 'npm pack --dry-run --json must return an array');
+  return parsed[parsed.length - 1];
+}
+
+test('package exposes pandora bin entrypoint and packed consumer surface', () => {
   assert.equal(pkg.name, 'pandora-cli-skills');
   assert.equal(pkg.bin.pandora, 'cli/pandora.cjs');
-  assert.ok(pkg.scripts['test:smoke']);
-  assert.ok(pkg.scripts['check:docs']);
   assert.equal(pkg.exports['./sdk/typescript'], './sdk/typescript/index.js');
   assert.equal(pkg.exports['./sdk/generated'], './sdk/generated/index.js');
   assert.equal(pkg.exports['./sdk/typescript/generated'], './sdk/typescript/generated/index.js');
-  assert.equal(pkg.exports['./sdk/typescript/generated/contract-registry'], './sdk/generated/contract-registry.json');
-  assert.ok(pkg.files.includes('cli/pandora.cjs'));
-  assert.ok(pkg.files.includes('cli/lib/**'));
-  assert.ok(pkg.files.includes('sdk/generated/**'));
-  assert.ok(pkg.files.includes('sdk/typescript/index.js'));
-  assert.ok(pkg.files.includes('sdk/typescript/generated/index.js'));
-  assert.ok(pkg.files.includes('sdk/typescript/generated/manifest.json'));
-  assert.ok(pkg.files.includes('sdk/python/pandora_agent/**'));
-  assert.ok(pkg.files.includes('!sdk/python/pandora_agent/generated/**'));
-  assert.ok(pkg.files.includes('sdk/python/pandora_agent/generated/manifest.json'));
-  assert.ok(pkg.files.includes('!sdk/python/pandora_agent/__pycache__/**'));
-  assert.ok(pkg.files.includes('!sdk/python/pandora_agent/**/*.pyc'));
-  assert.equal(pkg.files.includes('sdk/python/**'), false);
-  assert.ok(pkg.files.includes('scripts/create_market_launcher.ts'));
-  assert.ok(pkg.files.includes('scripts/create_polymarket_clone_and_bet.ts'));
-  assert.ok(pkg.files.includes('docs/skills/**'));
-  assert.ok(pkg.files.includes('docs/trust/**'));
-  assert.ok(pkg.files.includes('benchmarks/latest/core-report.json'));
-  assert.ok(pkg.files.includes('scripts/release/install_release.sh'));
+  assert.equal(pkg.exports['./sdk/typescript/generated/contract-registry'], './sdk/typescript/generated/contract-registry.json');
+  const packed = packDryRun();
+  const packedFiles = new Set((packed.files || []).map((entry) => entry.path));
+  const publishedPkg = buildPublishedPackageJson(pkg);
+
+  assert.deepEqual(
+    Object.keys(publishedPkg.scripts || {}).sort(),
+    [...EXPECTED_PUBLISHED_SCRIPT_NAMES].sort(),
+    'published manifest should expose only the minimal published script allowlist',
+  );
+  assert.equal(publishedPkg.devDependencies, undefined, 'published manifest should not ship devDependencies');
+  assert.equal(publishedPkg.bin?.pandora, 'cli/pandora.cjs');
+
+  for (const required of [
+    'package.json',
+    'cli/pandora.cjs',
+    'sdk/generated/index.js',
+    'sdk/generated/contract-registry.json',
+    'sdk/typescript/index.js',
+    'sdk/typescript/backends.js',
+    'sdk/typescript/catalog.js',
+    'sdk/typescript/errors.js',
+    'sdk/typescript/generated/contract-registry.json',
+    'sdk/python/pandora_agent/__init__.py',
+    'sdk/python/pandora_agent/generated/contract-registry.json',
+    'scripts/create_market_launcher.ts',
+    'scripts/create_polymarket_clone_and_bet.ts',
+    'scripts/release/install_release.sh',
+    'docs/skills/agent-quickstart.md',
+    'docs/trust/support-matrix.md',
+    'docs/benchmarks/README.md',
+    'benchmarks/latest/core-report.json',
+    'benchmarks/latest/core-bundle.json',
+    'benchmarks/latest/core-history.json',
+    'docs/benchmarks/history.json',
+  ]) {
+    assert.ok(packedFiles.has(required), `packed artifact missing ${required}`);
+  }
+
+  for (const forbiddenPrefix of [
+    'benchmarks/lib/',
+    'benchmarks/scenarios/',
+    'tests/',
+    'todos/',
+    'docs/roadmaps/',
+  ]) {
+    assert.equal(
+      Array.from(packedFiles).some((filePath) => filePath.startsWith(forbiddenPrefix)),
+      false,
+      `packed artifact should not include ${forbiddenPrefix}`,
+    );
+  }
 });
 
 test('doc router and scoped skills are present on disk', () => {
@@ -46,6 +100,13 @@ test('doc router and scoped skills are present on disk', () => {
   const tradingWorkflowsPath = path.join(root, 'docs', 'skills', 'trading-workflows.md');
   const portfolioCloseoutPath = path.join(root, 'docs', 'skills', 'portfolio-closeout.md');
   const policyProfilesPath = path.join(root, 'docs', 'skills', 'policy-profiles.md');
+  const benchmarkOverviewPath = path.join(root, 'docs', 'benchmarks', 'README.md');
+  const benchmarkScenarioCatalogPath = path.join(root, 'docs', 'benchmarks', 'scenario-catalog.md');
+  const benchmarkScorecardPath = path.join(root, 'docs', 'benchmarks', 'scorecard.md');
+  const benchmarkDocsHistoryPath = path.join(root, 'docs', 'benchmarks', 'history.json');
+  const benchmarkLatestReportPath = path.join(root, 'benchmarks', 'latest', 'core-report.json');
+  const benchmarkLatestBundlePath = path.join(root, 'benchmarks', 'latest', 'core-bundle.json');
+  const benchmarkLatestHistoryPath = path.join(root, 'benchmarks', 'latest', 'core-history.json');
   const releaseVerificationPath = path.join(root, 'docs', 'trust', 'release-verification.md');
   const securityModelPath = path.join(root, 'docs', 'trust', 'security-model.md');
   const supportMatrixPath = path.join(root, 'docs', 'trust', 'support-matrix.md');
@@ -60,6 +121,13 @@ test('doc router and scoped skills are present on disk', () => {
   assert.equal(fs.existsSync(tradingWorkflowsPath), true);
   assert.equal(fs.existsSync(portfolioCloseoutPath), true);
   assert.equal(fs.existsSync(policyProfilesPath), true);
+  assert.equal(fs.existsSync(benchmarkOverviewPath), true);
+  assert.equal(fs.existsSync(benchmarkScenarioCatalogPath), true);
+  assert.equal(fs.existsSync(benchmarkScorecardPath), true);
+  assert.equal(fs.existsSync(benchmarkDocsHistoryPath), true);
+  assert.equal(fs.existsSync(benchmarkLatestReportPath), true);
+  assert.equal(fs.existsSync(benchmarkLatestBundlePath), true);
+  assert.equal(fs.existsSync(benchmarkLatestHistoryPath), true);
   assert.equal(fs.existsSync(releaseVerificationPath), true);
   assert.equal(fs.existsSync(securityModelPath), true);
   assert.equal(fs.existsSync(supportMatrixPath), true);
@@ -74,14 +142,21 @@ test('doc router and scoped skills are present on disk', () => {
   const tradingWorkflowsText = fs.readFileSync(tradingWorkflowsPath, 'utf8');
   const portfolioCloseoutText = fs.readFileSync(portfolioCloseoutPath, 'utf8');
   const policyProfilesText = fs.readFileSync(policyProfilesPath, 'utf8');
+  const benchmarkOverviewText = fs.readFileSync(benchmarkOverviewPath, 'utf8');
+  const benchmarkScenarioCatalogText = fs.readFileSync(benchmarkScenarioCatalogPath, 'utf8');
+  const benchmarkScorecardText = fs.readFileSync(benchmarkScorecardPath, 'utf8');
+  const benchmarkDocsHistory = JSON.parse(fs.readFileSync(benchmarkDocsHistoryPath, 'utf8'));
+  const benchmarkLatestReport = JSON.parse(fs.readFileSync(benchmarkLatestReportPath, 'utf8'));
+  const benchmarkLatestBundle = JSON.parse(fs.readFileSync(benchmarkLatestBundlePath, 'utf8'));
+  const benchmarkLatestHistory = JSON.parse(fs.readFileSync(benchmarkLatestHistoryPath, 'utf8'));
   const releaseVerificationText = fs.readFileSync(releaseVerificationPath, 'utf8');
   const securityModelText = fs.readFileSync(securityModelPath, 'utf8');
   const supportMatrixText = fs.readFileSync(supportMatrixPath, 'utf8');
-  assert.match(readmeText, /SDK And Contract Export/);
+  assert.match(readmeText, /Standalone SDKs? And Contract Export/);
   assert.match(readmeText, /transports\.sdk/);
   assert.match(readmeText, /registryDigest\.descriptorHash/);
-  assert.match(shareableReadmeText, /SDK And Contract Export/);
-  assert.match(shareableReadmeText, /SDK alpha source\/artifact surfaces/i);
+  assert.match(shareableReadmeText, /Standalone SDKs? And Contract Export/);
+  assert.match(shareableReadmeText, /standalone SDK artifacts are built and verified in release flow/i);
   assert.match(skillText, /pandora --output json capabilities/);
   assert.match(skillText, /SDK alpha source\/artifact surfaces/i);
   assert.match(skillText, /docs\/skills\/command-reference\.md/);
@@ -115,6 +190,23 @@ test('doc router and scoped skills are present on disk', () => {
   assert.match(portfolioCloseoutText, /mirror close/);
   assert.match(policyProfilesText, /policy list/);
   assert.match(policyProfilesText, /profile list/);
+  assert.match(benchmarkOverviewText, /latest benchmark report/i);
+  assert.match(benchmarkOverviewText, /core-bundle\.json/);
+  assert.match(benchmarkOverviewText, /core-history\.json/);
+  assert.match(benchmarkOverviewText, /history\.json/);
+  assert.match(benchmarkOverviewText, /contractLockMatchesExpected === true/);
+  assert.match(benchmarkOverviewText, /Benchmark methodology, scenarios, or scorecards/);
+  assert.match(benchmarkOverviewText, /Benchmark scenario catalog and parity coverage/);
+  assert.match(benchmarkOverviewText, /Benchmark weighted scoring and score interpretation/);
+  assert.match(benchmarkScenarioCatalogText, /cli-capabilities-bootstrap/);
+  assert.match(benchmarkScenarioCatalogText, /Benchmark scenario catalog and parity coverage/);
+  assert.match(benchmarkScenarioCatalogText, /scorecard\.md/);
+  assert.match(benchmarkScorecardText, /weightedScore/i);
+  assert.equal(Array.isArray(benchmarkDocsHistory.entries), true);
+  assert.equal(benchmarkLatestBundle.latest.summary.overallPass, true);
+  assert.equal(Array.isArray(benchmarkLatestHistory.entries), true);
+  assert.equal(benchmarkLatestReport.summary.overallPass, true);
+  assert.equal(benchmarkLatestReport.contractLockMatchesExpected, true);
   assert.match(releaseVerificationText, /gh attestation verify/);
   assert.match(releaseVerificationText, /sbom\.spdx\.json/);
   assert.match(securityModelText, /Remote gateway auth model/);

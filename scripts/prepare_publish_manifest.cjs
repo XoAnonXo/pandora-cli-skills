@@ -10,6 +10,9 @@ const BACKUP_PATH = path.join(BACKUP_DIR, 'package.json.backup');
 const BENCHMARK_FIXTURE_PATHS = Object.freeze([
   path.join(ROOT_DIR, 'benchmarks', 'locks', 'core.lock.json'),
   path.join(ROOT_DIR, 'benchmarks', 'latest', 'core-report.json'),
+  path.join(ROOT_DIR, 'benchmarks', 'latest', 'core-bundle.json'),
+  path.join(ROOT_DIR, 'benchmarks', 'latest', 'core-history.json'),
+  path.join(ROOT_DIR, 'docs', 'benchmarks', 'history.json'),
 ]);
 
 const PUBLISHED_SCRIPT_NAMES = Object.freeze([
@@ -59,15 +62,6 @@ function buildPublishedPackageJson(pkg) {
     }
   }
 
-  if (typeof nextScripts['release:prep'] === 'string') {
-    nextScripts['release:prep'] = [
-      'npm run benchmark:check',
-      'npm run generate:sbom',
-      'npm run generate:sbom:spdx',
-      'node scripts/check_release_trust.cjs --require-sbom',
-    ].join(' && ');
-  }
-
   publishedPkg.scripts = nextScripts;
 
   if (Array.isArray(publishedPkg.files)) {
@@ -98,6 +92,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  BACKUP_DIR,
   BACKUP_PATH,
   PUBLISHED_FILE_DENYLIST,
   PUBLISHED_SCRIPT_NAMES,

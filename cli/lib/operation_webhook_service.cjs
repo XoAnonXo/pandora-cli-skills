@@ -50,6 +50,8 @@ function buildEmptyWebhookReport(now) {
     count: 0,
     successCount: 0,
     failureCount: 0,
+    permanentFailureCount: 0,
+    retryExhaustedCount: 0,
     results: [],
   });
 }
@@ -62,6 +64,8 @@ function buildFailureWebhookReport(now, error) {
     count: 1,
     successCount: 0,
     failureCount: 1,
+    permanentFailureCount: 1,
+    retryExhaustedCount: 0,
     results: [
       {
         target: 'operation-webhook',
@@ -101,6 +105,16 @@ function buildOperationWebhookContext(event, options = {}) {
   const sanitizedEvent = sanitizeOperationEventForWebhook(event);
   const generatedAt = (typeof options.now === 'function' ? options.now : () => new Date())().toISOString();
   const message = normalizeNullableString(options.message) || formatOperationLifecycleMessage(event, options);
+  const webhookTimeoutMs =
+    Number.isInteger(options.webhookTimeoutMs) && options.webhookTimeoutMs > 0 ? options.webhookTimeoutMs : 5_000;
+  const webhookRetries =
+    Number.isInteger(options.webhookRetries) && options.webhookRetries >= 0 ? options.webhookRetries : 3;
+  const deliveryPolicy = {
+    timeoutMs: webhookTimeoutMs,
+    maxAttempts: webhookRetries + 1,
+    signed: Boolean(options.webhookSecret),
+    retryStrategy: 'exponential-backoff',
+  };
 
   return freezeDeep({
     event: 'pandora.operation.lifecycle',
@@ -115,6 +129,8 @@ function buildOperationWebhookContext(event, options = {}) {
     runtimeHandle: event.runtimeHandle || null,
     source: event.source || 'local',
     summary: event.summary || null,
+    correlationId: event.correlationId || null,
+    deliveryPolicy,
     metadata: options.metadata && typeof options.metadata === 'object' ? { ...options.metadata } : null,
   });
 }
@@ -130,6 +146,9 @@ function createOperationWebhookService(deps = {}) {
   async function notifyLifecycleEvent(options, event, contextOptions = {}) {
     const context = buildOperationWebhookContext(event, {
       ...contextOptions,
+      webhookTimeoutMs: options && options.webhookTimeoutMs,
+      webhookRetries: options && options.webhookRetries,
+      webhookSecret: options && options.webhookSecret,
       now,
     });
 
@@ -144,6 +163,7 @@ function createOperationWebhookService(deps = {}) {
         operationId: event.operationId,
         phase: event.phase,
         context,
+        deliveryPolicy: context.deliveryPolicy,
         report: buildEmptyWebhookReport(now),
         error: null,
       });
@@ -161,6 +181,7 @@ function createOperationWebhookService(deps = {}) {
         operationId: event.operationId,
         phase: event.phase,
         context,
+        deliveryPolicy: context.deliveryPolicy,
         report: report || buildEmptyWebhookReport(now),
         error: null,
       });
@@ -176,6 +197,7 @@ function createOperationWebhookService(deps = {}) {
         operationId: event.operationId,
         phase: event.phase,
         context,
+        deliveryPolicy: context.deliveryPolicy,
         report,
         error: freezeDeep({
           code: normalizeNullableString(error && error.code),

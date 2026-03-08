@@ -5,6 +5,7 @@ const {
   SDK_CONTRACT_ARTIFACT_VERSION,
   buildSdkContractComponents,
   buildSdkContractArtifact,
+  buildPublishedSdkSurfaceMetadata,
 } = require('../../cli/lib/sdk_contract_service.cjs');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -25,6 +26,10 @@ const LEGACY_GENERATED_FILES = Object.freeze([
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function sortDeep(value) {
@@ -49,11 +54,50 @@ function serializeJson(value) {
   return `${JSON.stringify(sortDeep(value), null, 2)}\n`;
 }
 
-function buildManifestArtifact(contractRegistry, mcpToolDefinitions, packageVersion) {
+function buildPublishedSurfaceManifestMetadata(contractRegistry, versions = {}) {
+  const capabilities = isPlainObject(contractRegistry) && isPlainObject(contractRegistry.capabilities)
+    ? contractRegistry.capabilities
+    : {};
+  const surfaces = buildPublishedSdkSurfaceMetadata(capabilities);
+  const clone = isPlainObject(surfaces) ? JSON.parse(JSON.stringify(surfaces)) : {};
+  if (isPlainObject(clone.root) && normalizeString(versions.root)) {
+    clone.root.version = normalizeString(versions.root);
+  }
+  if (isPlainObject(clone.typescript) && normalizeString(versions.typescript)) {
+    clone.typescript.version = normalizeString(versions.typescript);
+  }
+  if (isPlainObject(clone.python) && normalizeString(versions.python)) {
+    clone.python.version = normalizeString(versions.python);
+  }
+  return sortDeep(clone);
+}
+
+function buildGeneratedPackageMetadata() {
+  return {
+    main: './index.js',
+    type: 'commonjs',
+    types: './index.d.ts',
+  };
+}
+
+function pickSurfaceMetadata(publishedSurfaces, surfaceName) {
+  if (!isPlainObject(publishedSurfaces)) return null;
+  const surface = publishedSurfaces[surfaceName];
+  return isPlainObject(surface) ? sortDeep(surface) : null;
+}
+
+function buildManifestArtifact(
+  contractRegistry,
+  mcpToolDefinitions,
+  packageVersion,
+  packageMetadata,
+  publishedSurfaces,
+  options = {},
+) {
   const commandDescriptors = isPlainObject(contractRegistry && contractRegistry.commandDescriptors)
     ? contractRegistry.commandDescriptors
     : {};
-  return sortDeep({
+  const manifest = {
     artifactVersion: SDK_CONTRACT_ARTIFACT_VERSION,
     schemaVersion: SDK_CONTRACT_ARTIFACT_VERSION,
     packageVersion,
@@ -62,9 +106,10 @@ function buildManifestArtifact(contractRegistry, mcpToolDefinitions, packageVers
         ? contractRegistry.schemaVersion
         : SDK_CONTRACT_ARTIFACT_VERSION,
     contractPackageVersion:
-      contractRegistry && typeof contractRegistry.packageVersion === 'string'
-        ? contractRegistry.packageVersion
-        : null,
+      normalizeString(options.contractPackageVersion)
+        || (contractRegistry && typeof contractRegistry.packageVersion === 'string'
+          ? contractRegistry.packageVersion
+          : null),
     contractCommandDescriptorVersion:
       contractRegistry && typeof contractRegistry.commandDescriptorVersion === 'string'
         ? contractRegistry.commandDescriptorVersion
@@ -97,11 +142,27 @@ function buildManifestArtifact(contractRegistry, mcpToolDefinitions, packageVers
       entrypoint: 'index.js',
       types: 'index.d.ts',
     },
-  });
+  };
+  if (isPlainObject(packageMetadata)) {
+    manifest.package = sortDeep(packageMetadata);
+  }
+  if (isPlainObject(publishedSurfaces)) {
+    manifest.publishedSurfaces = sortDeep(publishedSurfaces);
+  }
+  return sortDeep(manifest);
 }
 
-function buildTypescriptManifestArtifact(contractRegistry, mcpToolDefinitions, packageVersion) {
-  const manifest = buildManifestArtifact(contractRegistry, mcpToolDefinitions, packageVersion);
+function buildTypescriptManifestArtifact(contractRegistry, mcpToolDefinitions, packageVersion, publishedSurfaces) {
+  const manifest = buildManifestArtifact(
+    contractRegistry,
+    mcpToolDefinitions,
+    packageVersion,
+    pickSurfaceMetadata(publishedSurfaces, 'typescript'),
+    publishedSurfaces,
+    {
+      contractPackageVersion: publishedSurfaces && publishedSurfaces.root && publishedSurfaces.root.version,
+    },
+  );
   if (manifest.backends && manifest.backends.packagedClients) {
     manifest.backends.packagedClients = sortDeep({
       ...manifest.backends.packagedClients,
@@ -118,6 +179,9 @@ function buildPythonManifestArtifact(contractRegistry, mcpToolDefinitions, packa
   const commandDescriptors = isPlainObject(contractRegistry && contractRegistry.commandDescriptors)
     ? contractRegistry.commandDescriptors
     : {};
+  const publishedSurfaces = buildPublishedSurfaceManifestMetadata(contractRegistry, {
+    python: packageVersion,
+  });
   return sortDeep({
     artifactVersion: SDK_CONTRACT_ARTIFACT_VERSION,
     schemaVersion: SDK_CONTRACT_ARTIFACT_VERSION,
@@ -127,9 +191,10 @@ function buildPythonManifestArtifact(contractRegistry, mcpToolDefinitions, packa
         ? contractRegistry.schemaVersion
         : SDK_CONTRACT_ARTIFACT_VERSION,
     contractPackageVersion:
-      contractRegistry && typeof contractRegistry.packageVersion === 'string'
-        ? contractRegistry.packageVersion
-        : null,
+      normalizeString(publishedSurfaces && publishedSurfaces.root && publishedSurfaces.root.version)
+        || (contractRegistry && typeof contractRegistry.packageVersion === 'string'
+          ? contractRegistry.packageVersion
+          : null),
     contractCommandDescriptorVersion:
       contractRegistry && typeof contractRegistry.commandDescriptorVersion === 'string'
         ? contractRegistry.commandDescriptorVersion
@@ -171,19 +236,19 @@ function buildPythonManifestArtifact(contractRegistry, mcpToolDefinitions, packa
       commandDescriptors: 'command-descriptors.json',
       mcpToolDefinitions: 'mcp-tool-definitions.json',
     },
-    package: {
-      format: 'python',
-      generatedDir: 'generated',
-      module: 'pandora_agent',
-      name: 'pandora-agent',
-    },
+    package: pickSurfaceMetadata(publishedSurfaces, 'python'),
+    publishedSurfaces,
   });
 }
 
-function withPackagedClientNotes(contractRegistry, notes) {
+function withPackagedClientMetadata(contractRegistry, options = {}) {
   const clone = JSON.parse(JSON.stringify(contractRegistry));
+  const packageVersion = normalizeString(options.packageVersion);
+  if (packageVersion) {
+    clone.packageVersion = packageVersion;
+  }
   if (clone && clone.backends && clone.backends.packagedClients) {
-    clone.backends.packagedClients.notes = Array.isArray(notes) ? notes.slice() : [];
+    clone.backends.packagedClients.notes = Array.isArray(options.notes) ? options.notes.slice() : [];
   }
   return sortDeep(clone);
 }
@@ -221,17 +286,35 @@ function buildGeneratedArtifactFiles(options = {}) {
     .sort(sortByName)
     .map((definition) => sortDeep(definition));
   const contractRegistry = sortDeep(buildSdkContractArtifact({ packageVersion }));
-  const typescriptContractRegistry = withPackagedClientNotes(contractRegistry, [
-    'Generated TypeScript SDK alpha package is shipped in this build under sdk/typescript.',
-  ]);
-  const pythonContractRegistry = withPackagedClientNotes(contractRegistry, [
-    'Generated Python SDK alpha package is shipped in this build under sdk/python.',
-  ]);
-  const manifest = buildManifestArtifact(contractRegistry, mcpToolDefinitions, packageVersion);
+  const typescriptContractRegistry = withPackagedClientMetadata(contractRegistry, {
+    packageVersion: typescriptPackageVersion,
+    notes: [
+      'Generated TypeScript SDK alpha package is shipped in this build under sdk/typescript.',
+    ],
+  });
+  const pythonContractRegistry = withPackagedClientMetadata(contractRegistry, {
+    packageVersion: pythonPackageVersion,
+    notes: [
+      'Generated Python SDK alpha package is shipped in this build under sdk/python.',
+    ],
+  });
+  const publishedSurfaces = buildPublishedSurfaceManifestMetadata(contractRegistry, {
+    root: packageVersion,
+    typescript: typescriptPackageVersion,
+    python: pythonPackageVersion,
+  });
+  const manifest = buildManifestArtifact(
+    contractRegistry,
+    mcpToolDefinitions,
+    packageVersion,
+    pickSurfaceMetadata(publishedSurfaces, 'root'),
+    publishedSurfaces,
+  );
   const typescriptManifest = buildTypescriptManifestArtifact(
     typescriptContractRegistry,
     mcpToolDefinitions,
     typescriptPackageVersion,
+    publishedSurfaces,
   );
   const pythonManifest = buildPythonManifestArtifact(
     pythonContractRegistry,
@@ -240,6 +323,11 @@ function buildGeneratedArtifactFiles(options = {}) {
   );
 
   return [
+    {
+      relativePath: `${GENERATED_RELATIVE_DIR}/package.json`,
+      absolutePath: path.join(GENERATED_DIR, 'package.json'),
+      content: serializeJson(buildGeneratedPackageMetadata()),
+    },
     {
       relativePath: `${GENERATED_RELATIVE_DIR}/manifest.json`,
       absolutePath: path.join(GENERATED_DIR, 'manifest.json'),
@@ -293,7 +381,7 @@ function buildGeneratedArtifactFiles(options = {}) {
     {
       relativePath: `${TYPESCRIPT_GENERATED_RELATIVE_DIR}/index.js`,
       absolutePath: path.join(TYPESCRIPT_GENERATED_DIR, 'index.js'),
-      content: buildIndexModuleSource({ fallbackDir: '../../generated' }),
+      content: buildIndexModuleSource(),
     },
     {
       relativePath: `${TYPESCRIPT_GENERATED_RELATIVE_DIR}/index.d.ts`,

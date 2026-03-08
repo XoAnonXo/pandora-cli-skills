@@ -1,6 +1,7 @@
 const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
 const { parsePollCategoryFlag, DEFAULT_SPORTS_POLL_CATEGORY } = require('../shared/poll_categories.cjs');
 const { normalizeMirrorPathForMcp, parseMirrorTargetTimestamp, validateMirrorUrl } = require('./mirror_parser_guard.cjs');
+const { consumeProfileSelectorFlag } = require('./shared_profile_selector_flags.cjs');
 
 const MAX_UINT24 = 16_777_215;
 const DISTRIBUTION_SCALE = 1_000_000_000;
@@ -125,6 +126,8 @@ function createParseMirrorGoFlags(deps) {
       rpcUrl: null,
       polymarketRpcUrl: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
       funder: null,
       usdc: null,
       oracle: null,
@@ -303,6 +306,20 @@ function createParseMirrorGoFlags(deps) {
         options.privateKey = parsePrivateKeyFlag(requireFlagValue(args, i, '--private-key'), '--private-key');
         i += 1;
         continue;
+      }
+      {
+        const nextIndex = consumeProfileSelectorFlag({
+          token,
+          args,
+          index: i,
+          options,
+          CliError,
+          requireFlagValue,
+        });
+        if (nextIndex !== null) {
+          i = nextIndex;
+          continue;
+        }
       }
       if (token === '--funder') {
         options.funder = parseAddressFlag(requireFlagValue(args, i, '--funder'), '--funder');

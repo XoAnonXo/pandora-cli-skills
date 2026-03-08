@@ -80,6 +80,19 @@ Use this when an agent needs:
 - cancellation
 - explicit checkpoint visibility
 
+Terminal mutable operations also emit a durable receipt artifact beside the operation state store:
+- local CLI:
+  - `~/.pandora/operations/<operation-id>.receipt.json`
+- MCP/workspace-guarded runtime:
+  - `./.pandora/operations/<operation-id>.receipt.json`
+
+Use the receipt when you need:
+- a tamper-evident post-execution record
+- checkpoint digest verification
+- an audit artifact that complements release verification and benchmark evidence
+
+If you are operating through a hosted remote gateway, confirm receipt-routing support through `bootstrap`, `capabilities`, `schema`, or remote `/tools` before assuming a public receipt endpoint is enabled.
+
 ## Closeout order of operations
 1. inspect `portfolio`
 2. inspect `operations`

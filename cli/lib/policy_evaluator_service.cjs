@@ -2,6 +2,7 @@
 
 const { buildCommandDescriptors } = require('./agent_contract_registry.cjs');
 const { createPolicyRegistryService } = require('./policy_registry_service.cjs');
+const { createProfileResolverService } = require('./profile_resolver_service.cjs');
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -122,6 +123,20 @@ function normalizeCommandForDescriptor(command, commandDescriptors) {
   return commandDescriptors[normalized.split('.')[0]] ? normalized.split('.')[0] : null;
 }
 
+function canonicalizeCommandName(command, commandDescriptors) {
+  const descriptorKey = normalizeCommandForDescriptor(command, commandDescriptors);
+  if (!descriptorKey) return normalizeText(command);
+  const descriptor = commandDescriptors[descriptorKey] || null;
+  return normalizeText(descriptor && (descriptor.canonicalTool || descriptor.aliasOf || descriptorKey)) || descriptorKey;
+}
+
+function getCommandDescriptor(command, commandDescriptors) {
+  const canonicalCommand = canonicalizeCommandName(command, commandDescriptors);
+  if (canonicalCommand && commandDescriptors[canonicalCommand]) return commandDescriptors[canonicalCommand];
+  const descriptorKey = normalizeCommandForDescriptor(command, commandDescriptors);
+  return descriptorKey ? commandDescriptors[descriptorKey] || null : null;
+}
+
 function deriveSafeModeRequested(request, descriptor) {
   const safeFlags = descriptor && Array.isArray(descriptor.safeFlags) ? descriptor.safeFlags : [];
   return Boolean(
@@ -160,9 +175,10 @@ function deriveWebhookConfigured(request) {
 }
 
 function buildEvaluationContext(request, commandDescriptors) {
-  const command = String(request.command || '').trim();
-  const descriptorKey = normalizeCommandForDescriptor(command, commandDescriptors);
-  const descriptor = descriptorKey ? commandDescriptors[descriptorKey] || null : null;
+  const requestedCommand = String(request.command || '').trim();
+  const canonicalCommand = canonicalizeCommandName(requestedCommand, commandDescriptors);
+  const command = canonicalCommand || requestedCommand;
+  const descriptor = getCommandDescriptor(command, commandDescriptors);
   const explicitMode = normalizeText(request.mode);
   const normalizedMode = explicitMode ? explicitMode.toLowerCase() : null;
   const safeModeRequested = deriveSafeModeRequested(request, descriptor);
@@ -195,6 +211,8 @@ function buildEvaluationContext(request, commandDescriptors) {
   };
 
   return {
+    requestedCommand: requestedCommand || null,
+    canonicalCommand: command,
     command,
     descriptor,
     mode: normalizedMode
@@ -350,27 +368,68 @@ function evaluateRule(rule, context) {
   }
 }
 
+function compareRecommendationItems(left, right, keyField = 'id') {
+  if ((right.score || 0) !== (left.score || 0)) {
+    return (right.score || 0) - (left.score || 0);
+  }
+  const leftKey = String(left && left[keyField] ? left[keyField] : '');
+  const rightKey = String(right && right[keyField] ? right[keyField] : '');
+  return leftKey.localeCompare(rightKey);
+}
+
+function uniqueStrings(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).filter(Boolean)));
+}
+
+function buildToolRecommendation(toolName, commandDescriptors, reason, score = 0) {
+  const canonicalTool = canonicalizeCommandName(toolName, commandDescriptors);
+  if (!canonicalTool) return null;
+  const descriptor = getCommandDescriptor(canonicalTool, commandDescriptors);
+  return {
+    tool: canonicalTool,
+    summary: descriptor && descriptor.summary ? descriptor.summary : null,
+    reasons: uniqueStrings([reason]),
+    score,
+  };
+}
+
+function collectRemediationActions(outcomes) {
+  const actions = [];
+  for (const outcome of Array.isArray(outcomes) ? outcomes : []) {
+    const remediation = outcome && outcome.remediation ? outcome.remediation : null;
+    for (const action of Array.isArray(remediation && remediation.actions) ? remediation.actions : []) {
+      if (action && typeof action === 'object') actions.push(action);
+    }
+  }
+  return actions;
+}
+
+function finalizeToolRecommendations(candidates) {
+  const byTool = new Map();
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    if (!candidate || !candidate.tool) continue;
+    const current = byTool.get(candidate.tool);
+    if (!current) {
+      byTool.set(candidate.tool, candidate);
+      continue;
+    }
+    current.score = Math.max(current.score || 0, candidate.score || 0);
+    current.reasons = uniqueStrings([...(current.reasons || []), ...(candidate.reasons || [])]);
+    current.summary = current.summary || candidate.summary || null;
+  }
+  return Array.from(byTool.values())
+    .sort((left, right) => compareRecommendationItems(left, right, 'tool'))
+    .map((candidate, index) => ({
+      rank: index + 1,
+      ...candidate,
+    }));
+}
+
 function createPolicyEvaluatorService(options = {}) {
   const commandDescriptors = options.commandDescriptors || buildCommandDescriptors();
   const policyRegistry = options.policyRegistry || createPolicyRegistryService(options);
 
-  function evaluateExecution(request = {}) {
-    const policyId = String(request.policyId || '').trim() || null;
-    const policy = policyId ? policyRegistry.getPolicyPack(policyId, { compiled: true }) : null;
-    if (!policy) {
-      return {
-        ok: false,
-        decision: 'deny',
-        policyId,
-        denials: [{ code: 'POLICY_NOT_FOUND', message: policyId ? `Unknown policy pack: ${policyId}` : 'Policy pack is required.' }],
-        warnings: [],
-        violations: [{ code: 'POLICY_NOT_FOUND', message: policyId ? `Unknown policy pack: ${policyId}` : 'Policy pack is required.' }],
-        safeEquivalent: 'capabilities',
-        recommendedNextTool: 'policy.list',
-      };
-    }
-
-    const context = buildEvaluationContext(request, commandDescriptors);
+  function evaluateAgainstPolicy(policy, request = {}, context) {
     const denials = [];
     const warnings = [];
     for (const rule of Array.isArray(policy.compiledRules) ? policy.compiledRules : []) {
@@ -382,7 +441,6 @@ function createPolicyEvaluatorService(options = {}) {
         denials.push(outcome);
       }
     }
-
     return {
       ok: denials.length === 0,
       decision: denials.length
@@ -395,8 +453,253 @@ function createPolicyEvaluatorService(options = {}) {
       denials,
       warnings,
       violations: denials,
-      safeEquivalent: context.safeEquivalent || (context.liveRequested ? 'paper-trading' : null),
-      recommendedNextTool: denials.length ? context.recommendedPreflightTool || 'policy.get' : null,
+    };
+  }
+
+  function buildPolicyRecommendations(request, context, denials, selectedProfile, profileRecommendations) {
+    const actions = collectRemediationActions(denials);
+    const seeded = new Map();
+
+    function seed(policyId, score, reason) {
+      const normalized = normalizeText(policyId);
+      if (!normalized) return;
+      const current = seeded.get(normalized);
+      if (!current) {
+        seeded.set(normalized, { id: normalized, seedScore: score, reasons: [reason] });
+        return;
+      }
+      current.seedScore = Math.max(current.seedScore, score);
+      current.reasons = uniqueStrings([...(current.reasons || []), reason]);
+    }
+
+    const profileDefaultPolicy = selectedProfile
+      && selectedProfile.constraints
+      && selectedProfile.constraints.defaultPolicy
+      ? selectedProfile.constraints.defaultPolicy
+      : null;
+
+    const rankedBestPolicy = profileRecommendations
+      && profileRecommendations.decision
+      && profileRecommendations.decision.bestPolicyId
+      ? profileRecommendations.decision.bestPolicyId
+      : null;
+    if (rankedBestPolicy) {
+      seed(rankedBestPolicy, 115, 'Top-ranked policy from profile compatibility recommendations.');
+    }
+    for (const candidate of Array.isArray(profileRecommendations && profileRecommendations.policies)
+      ? profileRecommendations.policies.slice(0, 5)
+      : []) {
+      seed(
+        candidate.id,
+        100 - (Math.max(Number(candidate.rank) || 1, 1) - 1) * 5,
+        'Recommended by ranked profile compatibility.',
+      );
+    }
+    if (profileDefaultPolicy) {
+      seed(profileDefaultPolicy, 110, `Matches profile default policy for ${selectedProfile.profile.id}.`);
+    }
+    for (const action of actions) {
+      if (action.type === 'switch_policy_pack' && action.packId) {
+        seed(action.packId, 100, 'Referenced by policy remediation.');
+      }
+    }
+    if (request.policyId) {
+      seed(request.policyId, 40, 'Currently requested policy.');
+    }
+
+    return Array.from(seeded.values())
+      .map((candidate) => {
+        const policy = policyRegistry.getPolicyPack(candidate.id, { compiled: true });
+        if (!policy) {
+          return {
+            id: candidate.id,
+            score: candidate.seedScore - 100,
+            decision: 'missing',
+            reasons: uniqueStrings([...(candidate.reasons || []), 'Policy pack is not available in the current registry.']),
+          };
+        }
+        const evaluation = evaluateAgainstPolicy(policy, { ...request, policyId: candidate.id }, context);
+        const decisionScore = evaluation.ok
+          ? 120
+          : evaluation.decision === 'warn'
+            ? 80
+            : 20;
+        return {
+          id: candidate.id,
+          score: candidate.seedScore + decisionScore,
+          decision: evaluation.decision,
+          reasons: uniqueStrings([
+            ...(candidate.reasons || []),
+            evaluation.ok
+              ? 'Allows the requested context.'
+              : evaluation.decision === 'warn'
+                ? 'Allows the requested context with warnings.'
+                : 'Still denies the requested context.',
+          ]),
+        };
+      })
+      .sort((left, right) => compareRecommendationItems(left, right))
+      .map((candidate, index) => ({
+        rank: index + 1,
+        ...candidate,
+      }));
+  }
+
+  function buildEvaluationRecommendations(request, context, denials) {
+    const actions = collectRemediationActions(denials);
+    const resolver = createProfileResolverService({
+      env: request.env && typeof request.env === 'object' ? request.env : process.env,
+    });
+    const selectedProfile = (() => {
+      if (!request.profileId && !request.profileFile && !(request.profile && typeof request.profile === 'object')) {
+        return null;
+      }
+      try {
+        return resolver.resolveProfile({
+          profileId: request.profileId,
+          profileFile: request.profileFile,
+          profile: request.profile,
+          storeFile: request.storeFile,
+          command: context.command,
+          mode: request.mode,
+          chainId: request.chainId,
+          category: request.category,
+          policyId: request.policyId,
+          liveRequested: context.liveRequested,
+          mutating: context.mutating,
+        });
+      } catch (_error) {
+        return null;
+      }
+    })();
+
+    const profileRecommendations = resolver.recommendProfiles({
+      profileId: request.profileId,
+      profileFile: request.profileFile,
+      profile: request.profile,
+      storeFile: request.storeFile,
+      command: context.command,
+      mode: request.mode,
+      chainId: request.chainId,
+      category: request.category,
+      policyId: request.policyId,
+      liveRequested: context.liveRequested,
+      mutating: context.mutating,
+    });
+
+    const toolCandidates = [];
+    if (context.recommendedPreflightTool) {
+      toolCandidates.push(buildToolRecommendation(
+        context.recommendedPreflightTool,
+        commandDescriptors,
+        'Recommended preflight tool for this command.',
+        110,
+      ));
+    }
+    if (context.safeEquivalent && context.liveRequested) {
+      toolCandidates.push(buildToolRecommendation(
+        context.safeEquivalent,
+        commandDescriptors,
+        'Canonical safe equivalent for the requested live path.',
+        105,
+      ));
+    }
+    for (const action of actions) {
+      if (action.type === 'run_command' && action.command) {
+        toolCandidates.push(buildToolRecommendation(
+          action.command,
+          commandDescriptors,
+          'Referenced by policy remediation.',
+          100,
+        ));
+      }
+    }
+    if (request.policyId) {
+      toolCandidates.push(buildToolRecommendation('policy.get', commandDescriptors, 'Inspect the current policy contract and remediation.', 90));
+    } else {
+      toolCandidates.push(buildToolRecommendation('policy.list', commandDescriptors, 'Choose a policy pack before execution.', 90));
+    }
+    if (request.profileId || profileRecommendations.decision.bestProfileId) {
+      toolCandidates.push(buildToolRecommendation('profile.explain', commandDescriptors, 'Inspect ranked profile compatibility for the same context.', 85));
+    }
+
+    const nextTools = finalizeToolRecommendations([
+      ...toolCandidates,
+      ...(Array.isArray(profileRecommendations.nextTools) ? profileRecommendations.nextTools.map((item) => ({
+        tool: item.tool,
+        summary: item.summary,
+        reasons: item.reasons,
+        score: item.score || 0,
+      })) : []),
+    ]).slice(0, 5);
+
+    const policies = buildPolicyRecommendations(
+      request,
+      context,
+      denials,
+      selectedProfile,
+      profileRecommendations,
+    ).slice(0, 5);
+
+    return {
+      profiles: Array.isArray(profileRecommendations.profiles) ? profileRecommendations.profiles.slice(0, 5) : [],
+      policies,
+      nextTools,
+      decision: {
+        bestProfileId: profileRecommendations.decision ? profileRecommendations.decision.bestProfileId : null,
+        bestPolicyId: policies[0] ? policies[0].id : (profileRecommendations.decision ? profileRecommendations.decision.bestPolicyId : null),
+        bestTool: nextTools[0] ? nextTools[0].tool : null,
+      },
+    };
+  }
+
+  function evaluateExecution(request = {}) {
+    const policyId = String(request.policyId || '').trim() || null;
+    const policy = policyId ? policyRegistry.getPolicyPack(policyId, { compiled: true }) : null;
+    if (!policy) {
+      const recommendedNextTool = canonicalizeCommandName('policy.list', commandDescriptors) || 'policy.list';
+      return {
+        ok: false,
+        decision: 'deny',
+        policyId,
+        denials: [{ code: 'POLICY_NOT_FOUND', message: policyId ? `Unknown policy pack: ${policyId}` : 'Policy pack is required.' }],
+        warnings: [],
+        violations: [{ code: 'POLICY_NOT_FOUND', message: policyId ? `Unknown policy pack: ${policyId}` : 'Policy pack is required.' }],
+        safeEquivalent: 'capabilities',
+        recommendedNextTool,
+        recommendations: {
+          profiles: [],
+          policies: [],
+          nextTools: [{
+            rank: 1,
+            tool: recommendedNextTool,
+            summary: (getCommandDescriptor(recommendedNextTool, commandDescriptors) || {}).summary || null,
+            reasons: ['List available policy packs before retrying execution.'],
+            score: 100,
+          }],
+          decision: {
+            bestProfileId: null,
+            bestPolicyId: null,
+            bestTool: recommendedNextTool,
+          },
+        },
+      };
+    }
+
+    const context = buildEvaluationContext(request, commandDescriptors);
+    const evaluation = evaluateAgainstPolicy(policy, request, context);
+    const recommendations = request.__skipRecommendations === true
+      ? null
+      : buildEvaluationRecommendations(request, context, evaluation.denials);
+
+    return {
+      ...evaluation,
+      safeEquivalent: canonicalizeCommandName(context.safeEquivalent || (context.liveRequested ? 'paper-trading' : null), commandDescriptors),
+      recommendedNextTool: evaluation.denials.length
+        ? (recommendations && recommendations.decision ? recommendations.decision.bestTool : null)
+          || canonicalizeCommandName(context.recommendedPreflightTool || 'policy.get', commandDescriptors)
+        : null,
+      recommendations,
     };
   }
 

@@ -52,16 +52,52 @@ Start here, then open the smallest scoped doc that matches the task:
 - CLI mirror execute reruns use `--validation-ticket <ticket>`. MCP execute/live reruns use `agentPreflight = { validationTicket, validationDecision: "PASS", validationSummary }`.
 - `sports create run` does not expose a CLI `--validation-ticket`; agent-controlled execute uses `agentPreflight` / `PANDORA_AGENT_PREFLIGHT`.
 - `launch` / `clone-bet` still expose `--target-timestamp-offset-hours`; that legacy script flag is **not** the mirror timing model.
-- Prefer policy-scoped MCP access and the shipped read-only policy/profile artifacts over raw `--private-key` when operating live flows. Policy packs and named profiles are now shipped in alpha via `policy` / `profile`, but current CLI execution still commonly resolves secrets from flags/env and does not yet expose a universal `--profile` selector across mutating commands.
-- Do not assume every built-in signer profile is execution-ready. Current built-in runtime-ready profile: `market_observer_ro`. Built-in pending profiles: `prod_trader_a`, `dev_keystore_operator`, `desk_signer_service`. Implemented backends today: `read-only`, `local-env`. Placeholder planning backends: `external-signer`, `local-keystore`.
+- Prefer policy-scoped MCP access and the shipped read-only policy/profile artifacts over raw `--private-key` when operating live flows. Policy packs and named profiles are now shipped in alpha via `policy` / `profile`. Profile-directed execution already covers the highest-value signer-bearing paths:
+  - `trade`, `sell`, `lp add`, `lp remove`, `resolve`, `claim`
+  - `mirror deploy`, `mirror go`, `mirror sync once|run|start`
+  - `sports create run`
+  - `mirror deploy`, `mirror go`, `mirror sync once|run|start`
+  - sports live execution paths routed through the shared sports command/parser stack
+- Profile support is still not universal across every mutating family, so use `capabilities` / `schema` as the authority for the current command-level surface.
+- Do not collapse signer readiness into one “pending” bucket. Use `capabilities.data.policyProfiles.signerProfiles.statusAxes` plus:
+  - implementation fields: `implementedBackends`, `placeholderBackends`
+  - runtime fields: `readyBuiltinIds`, `degradedBuiltinIds`, `placeholderBuiltinIds`, `pendingBuiltinIds`
+  - backend rollup: `backendStatuses`
+  - today, all shipped signer backends are implemented: `read-only`, `local-env`, `local-keystore`, `external-signer`
+  - in the default runtime view, `market_observer_ro` is the only built-in profile reporting `ready`, and it is read-only
+  - `--runtime-local-readiness` actively probes local signer/network prerequisites and can promote built-in mutable profiles such as `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` to `ready` when their runtime requirements are satisfied
+  - in the current runtime, no built-in mutable profile is ready
+  - current built-in mutable profile states are:
+    - `prod_trader_a`: backend rollup `degraded`, per-profile `resolutionStatus` `missing-secrets`
+    - `dev_keystore_operator`: backend rollup `degraded`, per-profile `resolutionStatus` `missing-keystore`
+    - `desk_signer_service`: backend rollup `degraded`, per-profile `resolutionStatus` `missing-context`
+  - `degraded` means the backend is implemented, but the current process is still missing signer material, keystore access, external-signer context, network context, or other compatibility prerequisites
+  - use `bootstrap` for machine-usable policy/profile recommendations:
+    - `defaults.policyId` / `defaults.profileId`
+    - `policyProfiles.policyPacks.recommendedReadOnlyPolicyId` / `recommendedMutablePolicyId`
+    - `policyProfiles.signerProfiles.recommendedReadOnlyProfileId` / `recommendedMutableProfileId`
+    - `nextSteps[]`
+  - `bootstrap` returns canonical tools by default
+  - use `--include-compatibility` or remote `include_aliases=1` only for legacy/debug workflows or migration diffing
+  - use standalone exact-context commands when needed:
+    - `policy explain --id <policy-id> --command <tool> --mode <mode> --chain-id <id> --category <id|name> [--profile-id <id>]`
+    - `policy recommend --command <tool> --mode <mode> --chain-id <id> --category <id|name> [--profile-id <id>]`
+    - `profile recommend --command <tool> --mode <mode> --chain-id <id> --category <id|name> [--policy-id <id>]`
+  - use `profile list` for the compact readiness view and `profile explain --id <profile-id> [--command <tool>] [--mode <mode>] [--policy-id <id>] [--chain-id <id>] [--category <id|name>]` when you need the exact go/no-go answer via `requestedContext`, `usable`, `readiness`, `compatibility`, `remediation`, and `blockers`
 
 ## Capability routing
 - Machine-first discovery:
+  - run `pandora --output json bootstrap` for the canonical first-call summary
   - run `pandora --output json capabilities` for the compact runtime digest
   - run `pandora --output json schema` for the full contract surface
   - run `pandora --output json policy list` to inspect shipped policy packs
   - run `pandora --output json profile list` to inspect shipped profiles, `runtimeReady`, `resolutionStatus`, and backend readiness metadata
-  - when exposing Pandora to external agents, start with `capabilities/schema`, then intentionally host `pandora mcp http --auth-scopes ...`, then provision signing secrets only on that runtime if a selected tool actually requires them
+  - keep bootstrap/capabilities/schema planning on canonical tool names by default
+  - opt into compatibility aliases only for legacy/debug workflows; do not promote alias names back into normal agent routing
+  - use `bootstrap` first for defaults; use `policy explain`, `policy recommend`, and `profile recommend` only when you already know the exact command/mode/chain/category path you want evaluated
+  - run `pandora --output json profile explain --id <profile-id> [--command <tool>] [--mode <mode>] [--policy-id <id>] [--chain-id <id>] [--category <id|name>]` before mutable execution to inspect `explanation.requestedContext`, `explanation.usable`, `explanation.readiness`, `explanation.compatibility`, `explanation.remediation`, and `explanation.blockers`
+  - use `capabilities.data.policyProfiles.signerProfiles.backendStatuses` when you need the compact backend-level split between `implemented` / `placeholder` and `ready` / `degraded`
+  - when exposing Pandora to external agents, start with `bootstrap`, then `schema`, then intentionally host `pandora mcp http --auth-scopes ...`, then provision signing secrets only on that runtime if a selected tool actually requires them
 - in a repository checkout, use `npm run generate:sdk-contracts` when regenerating the shared JS export in `sdk/generated` plus the standalone SDK-local generated copies in `sdk/typescript/generated` and `sdk/python/pandora_agent/generated`
 - SDK alpha source/artifact surfaces are already shipped in this build under `sdk/typescript`, `sdk/python`, and `sdk/generated`
 - in the published root package, the shared JSON contract bundle lives once under `sdk/generated`; the embedded TypeScript/Python SDK loaders keep their own manifests and route heavy generated artifacts to the shared bundle
@@ -97,7 +133,7 @@ Start here, then open the smallest scoped doc that matches the task:
 ## Canonical command paths
 - Discovery:
   - `pandora scan` is the canonical enriched discovery path.
-  - `pandora markets scan` remains a backward-compatible alias.
+  - `pandora markets scan` remains a backward-compatible alias for legacy/debug workflows.
   - `pandora markets list|get` are the raw indexer browse surfaces.
 - Trading:
   - `pandora quote` is the canonical read-only pricing path.
@@ -106,20 +142,22 @@ Start here, then open the smallest scoped doc that matches the task:
   - `pandora claim` is the canonical redeem path.
 - Arbitrage:
   - `pandora arb scan` is the canonical arbitrage scan path.
-  - `pandora arbitrage` remains the bounded one-shot wrapper.
+  - `pandora arbitrage` remains the bounded one-shot wrapper for legacy/debug workflows.
 - Mirror:
   - `pandora mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close`
 - Agent-native:
-    - `pandora --output json capabilities`
-    - `pandora --output json schema`
-    - `pandora --output json policy list|get|lint`
-    - `pandora --output json profile list|get|validate`
-    - `pandora --output json recipe list|get|validate|run`
+  - `pandora --output json bootstrap`
+  - preferred first call for cold agents; canonical tools only by default
+  - `pandora --output json capabilities`
+  - `pandora --output json schema`
+  - `pandora --output json policy list|get|lint`
+  - `pandora --output json profile list|get|explain|validate`
+  - `pandora --output json recipe list|get|validate|run`
     - use `capabilities` for compact discovery/routing and `schema` for authoritative contract export when generating client types
     - for embedded SDK consumers, load the SDK-local manifest entrypoints first rather than assuming every language reads directly from `sdk/generated`
     - `pandora mcp`
     - `pandora mcp http ...` only for remote gateway hosting, not routine discovery
-    - `pandora operations get|list|cancel|close`
+    - `pandora operations get|list|receipt|verify-receipt|cancel|close`
 
 ## PollCategory enum
 Use this mapping anywhere a deploy-style flow explicitly exposes `--category`:

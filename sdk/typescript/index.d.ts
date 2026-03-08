@@ -1,11 +1,74 @@
+export interface PandoraRootPublishedSurface {
+  artifactSubpaths: {
+    bundle: string;
+    commandDescriptors: string;
+    entrypoint: string;
+    manifest: string;
+    mcpToolDefinitions: string;
+    types: string;
+  };
+  binNames: string[];
+  exportSubpaths: string[];
+  format: 'node';
+  main: string | null;
+  name: string;
+  sourceProjectPath: string;
+  version: string;
+}
+
+export interface PandoraTypescriptPublishedSurface {
+  artifactSubpaths: {
+    bundle: string;
+    commandDescriptors: string;
+    entrypoint: string;
+    manifest: string;
+    mcpToolDefinitions: string;
+    types: string;
+  };
+  exportSubpaths: string[];
+  format: 'node';
+  name: string;
+  sourceProjectPath: string;
+  version: string;
+}
+
+export interface PandoraPythonPublishedSurface {
+  artifactSubpaths: {
+    bundle: string;
+    commandDescriptors: string;
+    manifest: string;
+    mcpToolDefinitions: string;
+  };
+  format: 'python';
+  module: 'pandora_agent';
+  name: string;
+  sourceProjectPath: string;
+  version: string;
+}
+
+export interface PandoraPublishedSurfaces {
+  root: PandoraRootPublishedSurface;
+  typescript: PandoraTypescriptPublishedSurface;
+  python: PandoraPythonPublishedSurface;
+}
+
 export interface PandoraGeneratedManifest {
+  artifactVersion: string;
   schemaVersion: string | number;
   packageVersion: string;
+  contractVersion?: string | null;
+  contractPackageVersion?: string | null;
+  contractCommandDescriptorVersion?: string | null;
   generatedFrom: string;
   generator: string;
   commandDescriptorVersion: string;
   commandCount: number;
   mcpToolCount: number;
+  registryDigest?: Record<string, string>;
+  catalogSummary?: Record<string, unknown>;
+  backends?: Record<string, unknown>;
+  package?: PandoraRootPublishedSurface | PandoraTypescriptPublishedSurface | PandoraPythonPublishedSurface;
+  publishedSurfaces?: PandoraPublishedSurfaces;
   artifacts: Record<string, string>;
 }
 
@@ -14,6 +77,7 @@ export interface PandoraGeneratedMcpToolDefinition {
   command: string[];
   description: string;
   inputSchema: Record<string, unknown>;
+  xPandora?: PandoraCommandDescriptor | Record<string, unknown> | null;
   mutating?: boolean;
   safeFlags?: string[];
   executeFlags?: string[];
@@ -27,12 +91,16 @@ export interface PandoraGeneratedMcpToolDefinition {
   supportsRemote?: boolean;
   remoteEligible?: boolean;
   policyScopes?: string[];
+  canonicalCommandTokens?: string[];
+  canonicalUsage?: string | null;
+  metadataProvenance?: string | null;
 }
 
 export interface PandoraCommandDescriptor {
   aliasOf?: string | null;
   canonicalCommandTokens?: string[] | null;
   canonicalTool?: string | null;
+  canonicalUsage?: string | null;
   canRunConcurrent?: boolean;
   controlInputNames?: string[];
   dataSchema?: string | null;
@@ -89,6 +157,18 @@ export interface PandoraSignerProfileCapability extends PandoraCapabilityFeature
   sampleSecretBearingCommands?: string[];
   builtinIds?: string[];
   signerBackends?: string[];
+  implementedBackends?: string[];
+  placeholderBackends?: string[];
+  readyBuiltinIds?: string[];
+  pendingBuiltinIds?: string[];
+  degradedBuiltinIds?: string[];
+  placeholderBuiltinIds?: string[];
+  readyBuiltinCount?: number;
+  pendingBuiltinCount?: number;
+  degradedBuiltinCount?: number;
+  placeholderBuiltinCount?: number;
+  backendStatuses?: Record<string, unknown>;
+  statusAxes?: Record<string, unknown>;
 }
 
 export interface PandoraPolicyProfileCapabilities {
@@ -141,13 +221,33 @@ export interface PandoraRuntimeToolDefinition {
   [key: string]: unknown;
 }
 
+export interface PandoraCompatibilityCatalogSummary {
+  mode: 'compatibility-aliases';
+  commandCount: number;
+  mcpToolCount: number;
+  commandNames: string[];
+  toolNames: string[];
+}
+
+export interface PandoraCompatibilityCatalog {
+  mode: 'explicit';
+  commandDescriptors: Record<string, PandoraCommandDescriptor>;
+  mcpToolDefinitions: PandoraGeneratedMcpToolDefinition[];
+  tools: Record<string, PandoraToolContract>;
+  summary: PandoraCompatibilityCatalogSummary;
+}
+
 export interface PandoraContractRegistry {
+  artifactVersion?: string;
   schemaVersion: string;
   packageVersion: string;
   commandDescriptorVersion: string;
   summary: Record<string, unknown>;
+  backends?: Record<string, unknown>;
+  registryDigest?: Record<string, string>;
   tools: Record<string, PandoraToolContract>;
   commandDescriptors?: Record<string, PandoraCommandDescriptor>;
+  compatibility?: PandoraCompatibilityCatalog;
   schemas: {
     envelope: Record<string, unknown>;
     definitions: Record<string, unknown>;
@@ -209,6 +309,29 @@ export interface PandoraRemoteBackendOptions {
   clientVersion?: string;
 }
 
+export interface PandoraAgentClientFactoryOptions extends PandoraStdioBackendOptions {
+  backend?: PandoraMcpBackend;
+  catalog?: PandoraContractRegistry;
+  mode?: 'local' | 'remote';
+  url?: string | URL;
+  authToken?: string;
+  headers?: Record<string, string>;
+  fetch?: typeof fetch;
+}
+
+export interface PandoraGeneratedCatalogModule {
+  manifest: PandoraGeneratedManifest;
+  commandDescriptors: Record<string, PandoraCommandDescriptor>;
+  mcpToolDefinitions: PandoraGeneratedMcpToolDefinition[];
+  contractRegistry: PandoraContractRegistry;
+  loadGeneratedManifest(): PandoraGeneratedManifest;
+  loadGeneratedCommandDescriptors(): Record<string, PandoraCommandDescriptor>;
+  loadGeneratedMcpToolDefinitions(): PandoraGeneratedMcpToolDefinition[];
+  loadGeneratedContractRegistry(): PandoraContractRegistry;
+  loadGeneratedCapabilities(): PandoraContractRegistry['capabilities'];
+  loadGeneratedToolCatalog(): PandoraContractRegistry['tools'];
+}
+
 export declare class PandoraMcpBackend {
   connect(): Promise<void>;
   close(): Promise<void>;
@@ -245,6 +368,8 @@ export declare class PandoraAgentClient {
   callToolRaw(name: string, args?: Record<string, unknown>): Promise<PandoraCallToolRawResult>;
   callToolEnvelope(name: string, args?: Record<string, unknown>): Promise<Record<string, unknown>>;
   callToolData(name: string, args?: Record<string, unknown>): Promise<unknown>;
+  getBootstrapEnvelope(args?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  getBootstrap(args?: Record<string, unknown>): Promise<unknown>;
   callTool(name: string, args?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
@@ -252,6 +377,8 @@ export declare function loadGeneratedContractRegistry(): PandoraContractRegistry
 export declare function loadGeneratedManifest(): PandoraGeneratedManifest;
 export declare function loadGeneratedCommandDescriptors(): Record<string, PandoraCommandDescriptor>;
 export declare function loadGeneratedMcpToolDefinitions(): PandoraGeneratedMcpToolDefinition[];
+export declare function loadGeneratedCapabilities(): PandoraContractRegistry['capabilities'];
+export declare function loadGeneratedToolCatalog(): PandoraContractRegistry['tools'];
 export declare function normalizeStructuredEnvelope(result: PandoraCallToolRawResult): Record<string, unknown>;
 export declare function normalizeRuntimeToolDefinition(
   tool: Record<string, unknown>,
@@ -265,5 +392,10 @@ export declare function listPolicyScopedCommands(catalog?: PandoraContractRegist
 export declare function listSignerProfileCommands(catalog?: PandoraContractRegistry): string[];
 export declare function inspectPolicyScope(scope: string, catalog?: PandoraContractRegistry): PandoraPolicyScopeInspection;
 export declare function inspectToolPolicySurface(name: string, catalog?: PandoraContractRegistry): PandoraToolPolicySurface;
+export declare function createPandoraStdioBackend(options?: PandoraStdioBackendOptions): PandoraStdioBackend;
+export declare function createPandoraRemoteBackend(options: PandoraRemoteBackendOptions): PandoraRemoteBackend;
 export declare function createLocalPandoraAgentClient(options?: PandoraStdioBackendOptions & { catalog?: PandoraContractRegistry }): PandoraAgentClient;
 export declare function createRemotePandoraAgentClient(options: PandoraRemoteBackendOptions & { catalog?: PandoraContractRegistry }): PandoraAgentClient;
+export declare function createPandoraAgentClient(options?: PandoraAgentClientFactoryOptions): PandoraAgentClient;
+export declare function connectPandoraAgentClient(options?: PandoraAgentClientFactoryOptions): Promise<PandoraAgentClient>;
+export declare const generated: PandoraGeneratedCatalogModule;

@@ -1,6 +1,17 @@
 'use strict';
 
 const { createOperationStateStore } = require('./operation_state_store.cjs');
+const { createOperationReceiptStore } = require('./operation_receipt_store.cjs');
+const { createOperationWebhookDeliveryStore } = require('./operation_webhook_delivery_store.cjs');
+const {
+  OPERATION_RECEIPT_SCHEMA_VERSION,
+  buildOperationStateDigest,
+  buildOperationReceipt,
+  verifyOperationReceipt,
+  isReceiptEligibleStatus,
+  hasReceiptSignature,
+} = require('./operation_receipt_service.cjs');
+const { createOperationReceiptSigningService } = require('./operation_receipt_signing_service.cjs');
 const {
   OPERATION_STATE_SCHEMA_VERSION,
   OPERATION_STATES,
@@ -163,6 +174,30 @@ function resolveStore(deps = {}) {
   });
 }
 
+function resolveReceiptStore(deps, operationStateStore) {
+  if (deps.operationReceiptStore && typeof deps.operationReceiptStore.read === 'function' && typeof deps.operationReceiptStore.write === 'function') {
+    return deps.operationReceiptStore;
+  }
+  return createOperationReceiptStore({
+    rootDir: deps.rootDir || deps.dir || operationStateStore.rootDir,
+    operationStateStore,
+  });
+}
+
+function resolveWebhookDeliveryStore(deps, operationStateStore) {
+  if (
+    deps.operationWebhookDeliveryStore
+    && typeof deps.operationWebhookDeliveryStore.append === 'function'
+    && typeof deps.operationWebhookDeliveryStore.list === 'function'
+  ) {
+    return deps.operationWebhookDeliveryStore;
+  }
+  return createOperationWebhookDeliveryStore({
+    rootDir: deps.rootDir || deps.dir || operationStateStore.rootDir,
+    operationStateStore,
+  });
+}
+
 function normalizeReference(reference) {
   if (typeof reference === 'string' && reference.trim()) {
     return reference.trim();
@@ -322,11 +357,27 @@ async function emitLifecycle(deps, record, phase, details = {}) {
     ) {
       const targets = deps.getWebhookTargets();
       if (deps.operationWebhookService.hasTargets(targets)) {
-        await deps.operationWebhookService.notifyLifecycleEvent(targets, lifecycle.event, {
+        const delivery = await deps.operationWebhookService.notifyLifecycleEvent(targets, lifecycle.event, {
           metadata: {
             command: record.command || null,
           },
         });
+        if (
+          delivery
+          && deps.operationWebhookDeliveryStore
+          && typeof deps.operationWebhookDeliveryStore.append === 'function'
+        ) {
+          await deps.operationWebhookDeliveryStore.append(record.operationId, {
+            eventId: lifecycle.event.eventId || null,
+            phase: lifecycle.event.phase || null,
+            delivered: delivery.delivered === true,
+            skippedReason: delivery.skippedReason || null,
+            deliveryPolicy: delivery.deliveryPolicy || null,
+            context: delivery.context || null,
+            report: delivery.report || null,
+            error: delivery.error || null,
+          });
+        }
       }
     }
     return lifecycle;
@@ -355,6 +406,56 @@ function buildListFilters(filters = {}) {
 
 function createOperationService(deps = {}) {
   const store = resolveStore(deps);
+  const receiptStore = resolveReceiptStore(deps, store);
+  const webhookDeliveryStore = resolveWebhookDeliveryStore(deps, store);
+  const receiptSigningService = deps.receiptSigningService
+    || createOperationReceiptSigningService({
+      rootDir: deps.rootDir || deps.dir || store.rootDir,
+    });
+  const lifecycleDeps = {
+    ...deps,
+    operationWebhookDeliveryStore: webhookDeliveryStore,
+  };
+
+  async function syncReceipt(record, options = {}) {
+    if (!record || !isReceiptEligibleStatus(record.status)) return null;
+    const existing = await receiptStore.read(record.operationId);
+    const stateDigest = buildOperationStateDigest(record);
+    if (
+      existing
+      && existing.found
+      && existing.receipt
+      && existing.receipt.stateDigest === stateDigest
+      && hasReceiptSignature(existing.receipt)
+    ) {
+      return existing.receipt;
+    }
+    const receipt = buildOperationReceipt(record, {
+      ...options,
+      receiptSigningService,
+      rootDir: deps.rootDir || deps.dir || store.rootDir,
+      previousReceipt: existing && existing.receipt ? existing.receipt : null,
+    });
+    await receiptStore.write(record.operationId, receipt);
+    return receipt;
+  }
+
+  async function maybeReadReceipt(reference) {
+    const lookup = await receiptStore.read(reference);
+    if (!lookup || !lookup.found) {
+      return null;
+    }
+    if (hasReceiptSignature(lookup.receipt)) {
+      return lookup.receipt;
+    }
+    if (lookup.operation && isReceiptEligibleStatus(mapStoreStatusToPublic(lookup.operation.status))) {
+      const current = await loadPublicRecord(store, lookup.operation.operationId, {
+        includeCheckpoints: true,
+      });
+      return syncReceipt(current);
+    }
+    return lookup.receipt;
+  }
 
   async function createWithStatus(status, seed = {}) {
     const storeStatus = mapPublicStatusToStore(status);
@@ -368,10 +469,11 @@ function createOperationService(deps = {}) {
     const record = await loadPublicRecord(store, payload.operationId, {
       includeCheckpoints: true,
     });
-    await emitLifecycle(deps, record, record.status, {
+    await emitLifecycle(lifecycleDeps, record, record.status, {
       mode: seed.mode || null,
       action: 'create',
     });
+    await syncReceipt(record);
     return record;
   }
 
@@ -399,10 +501,11 @@ function createOperationService(deps = {}) {
     const record = await loadPublicRecord(store, lookup.operationId, {
       includeCheckpoints: true,
     });
-    await emitLifecycle(deps, record, record.status, {
+    await emitLifecycle(lifecycleDeps, record, record.status, {
       action: 'transition',
       requestedStatus: nextStatus,
     });
+    await syncReceipt(record);
     return record;
   }
 
@@ -416,10 +519,11 @@ function createOperationService(deps = {}) {
     const record = await loadPublicRecord(store, lookup.operationId, {
       includeCheckpoints: true,
     });
-    await emitLifecycle(deps, record, record.status, {
+    await emitLifecycle(lifecycleDeps, record, record.status, {
       action: 'checkpoint',
       checkpointIndex: appended && appended.checkpoint ? appended.checkpoint.index : null,
     });
+    await syncReceipt(record);
     return record;
   }
 
@@ -428,9 +532,11 @@ function createOperationService(deps = {}) {
     await store.patch(lookup.operationId, {
       result,
     });
-    return loadPublicRecord(store, lookup.operationId, {
+    const record = await loadPublicRecord(store, lookup.operationId, {
       includeCheckpoints: true,
     });
+    await syncReceipt(record);
+    return record;
   }
 
   async function updateRecovery(reference, recovery) {
@@ -438,9 +544,11 @@ function createOperationService(deps = {}) {
     await store.patch(lookup.operationId, {
       recovery,
     });
-    return loadPublicRecord(store, lookup.operationId, {
+    const record = await loadPublicRecord(store, lookup.operationId, {
       includeCheckpoints: true,
     });
+    await syncReceipt(record);
+    return record;
   }
 
   async function listOperations(filters = {}) {
@@ -463,6 +571,10 @@ function createOperationService(deps = {}) {
         offset: Number.isFinite(Number(filters.offset)) ? Math.floor(Number(filters.offset)) : 0,
       },
     };
+  }
+
+  async function listWebhookDeliveries(reference) {
+    return webhookDeliveryStore.list(reference);
   }
 
   async function cancelOperation(reference, reason) {
@@ -513,6 +625,7 @@ function createOperationService(deps = {}) {
       return maybeGet(reference, options);
     },
     listOperations,
+    listWebhookDeliveries,
     save(seed) {
       return createWithStatus(mapStoreStatusToPublic(seed && seed.status ? seed.status : 'planned'), seed);
     },
@@ -540,6 +653,38 @@ function createOperationService(deps = {}) {
     addCheckpoint,
     updateResult,
     updateRecovery,
+    maybeGetReceipt(reference) {
+      return maybeReadReceipt(reference);
+    },
+    async getReceipt(reference) {
+      const receipt = await maybeReadReceipt(reference);
+      if (!receipt) {
+        throw createOperationError('OPERATION_RECEIPT_NOT_FOUND', `Operation receipt not found: ${typeof reference === 'string' ? reference : JSON.stringify(reference)}`, {
+          reference,
+        });
+      }
+      return receipt;
+    },
+    async verifyReceipt(referenceOrReceipt, options = {}) {
+      const receipt = isPlainObject(referenceOrReceipt) && referenceOrReceipt.operationId
+        ? referenceOrReceipt
+        : await maybeReadReceipt(referenceOrReceipt);
+      if (!receipt) {
+        return {
+          ok: false,
+          code: 'OPERATION_RECEIPT_NOT_FOUND',
+          mismatches: ['receipt not found'],
+        };
+      }
+      return verifyOperationReceipt(receipt, {
+        ...options,
+        receiptSigningService,
+        rootDir: deps.rootDir || deps.dir || store.rootDir,
+      });
+ 
+    },
+    syncReceipt,
+    OPERATION_RECEIPT_SCHEMA_VERSION,
   };
 }
 
@@ -548,6 +693,7 @@ module.exports = {
   OPERATION_STATUSES,
   VALID_OPERATION_TRANSITIONS,
   TERMINAL_OPERATION_STATUSES: TERMINAL_OPERATION_STATUSES.slice(),
+  OPERATION_RECEIPT_SCHEMA_VERSION,
   createOperationError,
   createOperationService,
   mapPublicStatusToStore,

@@ -21,6 +21,8 @@ const {
 const {
   assertPolicyProfilePayloadConsistency,
   assertCommandDigestPolicyParity,
+  assertBootstrapPolicyProfileRecommendations,
+  assertCanonicalToolFirstCommandSet,
   assertToolPolicyScopeParity,
 } = require('../helpers/policy_profile_assertions.cjs');
 
@@ -274,22 +276,207 @@ test('stdio MCP can execute policy/profile discovery tools with structured envel
     const policyGetCall = await client.callTool({ name: 'policy.get', arguments: { id: 'research-only' } });
     const profileListCall = await client.callTool({ name: 'profile.list', arguments: {} });
     const profileGetCall = await client.callTool({ name: 'profile.get', arguments: { id: 'market_observer_ro' } });
+    const profileExplainCall = await client.callTool({ name: 'profile.explain', arguments: { id: 'market_observer_ro' } });
 
     const policyList = extractStructuredEnvelope(policyListCall);
     const policyGet = extractStructuredEnvelope(policyGetCall);
     const profileList = extractStructuredEnvelope(profileListCall);
     const profileGet = extractStructuredEnvelope(profileGetCall);
+    const profileExplain = extractStructuredEnvelope(profileExplainCall);
 
     assert.equal(policyList.ok, true);
     assert.equal(policyGet.ok, true);
     assert.equal(profileList.ok, true);
     assert.equal(profileGet.ok, true);
+    assert.equal(profileExplain.ok, true);
     assert.equal(policyList.data.userCount, 0);
     assert.ok(policyList.data.items.some((item) => item.id === 'research-only'));
     assert.equal(policyGet.data.item.id, 'research-only');
     assert.equal(profileList.data.fileCount, 0);
     assert.ok(profileList.data.items.some((item) => item.id === 'market_observer_ro'));
     assert.equal(profileGet.data.profile.defaultPolicy, 'research-only');
+    assert.equal(profileExplain.data.explanation.usable, true);
+    assert.equal(profileExplain.data.explanation.requestedContext.exact, false);
+    assert.deepEqual(
+      profileExplain.data.explanation.requestedContext.missingFlags,
+      ['--command', '--mode', '--chain-id', '--category', '--policy-id'],
+    );
+    assert.ok(
+      profileExplain.data.explanation.remediation.some((step) => step.code === 'PROVIDE_EXACT_CONTEXT'),
+    );
+  }, { env });
+});
+
+test('stdio MCP bootstrap and policy/profile discovery stay canonical-tool-first and machine-usable', async (t) => {
+  const { env } = createIsolatedPolicyProfileEnv(t);
+  const cliCapabilities = parseJsonOutput(runCli(['--output', 'json', 'capabilities'], { env }));
+
+  await withMcpClient(async (client) => {
+    const bootstrapCall = await client.callTool({ name: 'bootstrap', arguments: {} });
+    const list = await client.listTools();
+
+    const bootstrap = extractStructuredEnvelope(bootstrapCall);
+    const toolNames = list.tools.map((tool) => tool.name);
+
+    assert.equal(bootstrap.ok, true);
+    assertCanonicalToolFirstCommandSet(
+      cliCapabilities.data.commandDigests,
+      ['bootstrap', 'policy.list', 'policy.get', 'profile.get', 'profile.explain'],
+    );
+    assertBootstrapPolicyProfileRecommendations(
+      bootstrap.data,
+      cliCapabilities.data.commandDigests,
+      { expectedMutableProfileId: null },
+    );
+    assert.ok(toolNames.includes('bootstrap'));
+    assert.ok(toolNames.includes('profile.explain'));
+    assert.ok(toolNames.includes('policy.explain'));
+    assert.ok(toolNames.includes('policy.recommend'));
+    assert.ok(toolNames.includes('profile.recommend'));
+  }, { env });
+});
+
+test('stdio MCP profile.explain evaluates exact execution context and returns actionable remediation', async (t) => {
+  const { env } = createIsolatedPolicyProfileEnv(t);
+  await withMcpClient(async (client) => {
+    const incompatibleCall = await client.callTool({
+      name: 'profile.explain',
+      arguments: {
+        id: 'market_observer_ro',
+        command: 'trade.execute',
+        mode: 'execute',
+        'chain-id': '1',
+        category: 'Crypto',
+        'policy-id': 'execute-with-validation',
+      },
+    });
+    const readinessCall = await client.callTool({
+      name: 'profile.explain',
+      arguments: {
+        id: 'prod_trader_a',
+        command: 'trade.execute',
+        mode: 'execute',
+        'chain-id': '1',
+        category: 'Crypto',
+        'policy-id': 'execute-with-validation',
+      },
+    });
+
+    const incompatible = extractStructuredEnvelope(incompatibleCall);
+    const readiness = extractStructuredEnvelope(readinessCall);
+
+    assert.equal(incompatible.ok, true);
+    assert.equal(incompatible.data.explanation.requestedContext.exact, true);
+    assert.deepEqual(incompatible.data.explanation.requestedContext.missingFlags, []);
+    assert.equal(incompatible.data.explanation.requestedContext.requested.command, 'trade.execute');
+    assert.equal(incompatible.data.explanation.requestedContext.requested.mode, 'execute');
+    assert.equal(incompatible.data.explanation.requestedContext.requested.chainId, '1');
+    assert.equal(incompatible.data.explanation.requestedContext.requested.category, 'Crypto');
+    assert.equal(incompatible.data.explanation.requestedContext.requested.policyId, 'execute-with-validation');
+    assert.equal(incompatible.data.explanation.compatibility.ok, false);
+    assert.equal(incompatible.data.explanation.compatibility.toolFamily, 'trade');
+    assert.equal(incompatible.data.explanation.compatibility.categoryName, 'Crypto');
+    assert.ok(
+      incompatible.data.explanation.remediation.some(
+        (step) => step.code === 'PROFILE_READ_ONLY_MUTATION_DENIED'
+          && step.message.includes('--mode dry-run'),
+      ),
+    );
+    assert.ok(
+      incompatible.data.explanation.remediation.some(
+        (step) => step.code === 'PROFILE_POLICY_NOT_ALLOWED'
+          && step.suggestedPolicyId === 'research-only',
+      ),
+    );
+    assert.ok(
+      incompatible.data.explanation.remediation.some(
+        (step) => step.code === 'PROFILE_TOOL_FAMILY_NOT_ALLOWED'
+          && Array.isArray(step.allowedToolFamilies)
+          && step.allowedToolFamilies.includes('mirror'),
+      ),
+    );
+
+    assert.equal(readiness.ok, true);
+    assert.equal(readiness.data.explanation.requestedContext.exact, true);
+    assert.equal(readiness.data.explanation.compatibility.ok, true);
+    assert.equal(readiness.data.explanation.readiness.ready, false);
+    assert.ok(
+      readiness.data.explanation.remediation.some(
+        (step) => step.code === 'SET_SIGNER_SECRETS'
+          && Array.isArray(step.missingSecrets)
+          && step.missingSecrets.includes('PANDORA_PRIVATE_KEY'),
+      ),
+    );
+    assert.ok(
+      readiness.data.explanation.remediation.some(
+        (step) => step.code === 'SET_NETWORK_CONTEXT'
+          && Array.isArray(step.missingContext)
+          && step.missingContext.includes('RPC_URL'),
+      ),
+    );
+  }, { env });
+});
+
+test('stdio MCP policy/profile recommendation tools return canonical-tool-first machine-usable guidance', async (t) => {
+  const { env } = createIsolatedPolicyProfileEnv(t);
+  await withMcpClient(async (client) => {
+    const policyExplainCall = await client.callTool({
+      name: 'policy.explain',
+      arguments: {
+        id: 'research-only',
+        command: 'trade.execute',
+        mode: 'execute',
+        'chain-id': '1',
+        category: 'Crypto',
+        'profile-id': 'market_observer_ro',
+      },
+    });
+    const policyRecommendCall = await client.callTool({
+      name: 'policy.recommend',
+      arguments: {
+        command: 'trade.execute',
+        mode: 'execute',
+        'chain-id': '1',
+        category: 'Crypto',
+        'profile-id': 'prod_trader_a',
+      },
+    });
+    const profileRecommendCall = await client.callTool({
+      name: 'profile.recommend',
+      arguments: {
+        command: 'trade.execute',
+        mode: 'execute',
+        'chain-id': '1',
+        category: 'Crypto',
+        'policy-id': 'execute-with-validation',
+      },
+    });
+
+    const policyExplain = extractStructuredEnvelope(policyExplainCall);
+    const policyRecommend = extractStructuredEnvelope(policyRecommendCall);
+    const profileRecommend = extractStructuredEnvelope(profileRecommendCall);
+
+    assert.equal(policyExplain.ok, true);
+    assert.equal(policyExplain.data.explanation.requestedContext.canonicalTool, 'trade');
+    assert.ok(
+      policyExplain.data.explanation.remediation.some((step) => step.code === 'USE_CANONICAL_TOOL' && step.command === 'trade'),
+    );
+
+    assert.equal(policyRecommend.ok, true);
+    assert.equal(policyRecommend.data.requestedContext.canonicalTool, 'trade');
+    assert.equal(policyRecommend.data.exact, true);
+    assert.equal(typeof policyRecommend.data.recommendedPolicyId, 'string');
+    assert.ok(
+      policyRecommend.data.diagnostics.some((item) => item.code === 'USE_CANONICAL_TOOL' && item.command === 'trade'),
+    );
+
+    assert.equal(profileRecommend.ok, true);
+    assert.equal(profileRecommend.data.requestedContext.canonicalTool, 'trade');
+    assert.equal(profileRecommend.data.exact, true);
+    assert.ok(Object.prototype.hasOwnProperty.call(profileRecommend.data, 'recommendedProfileId'));
+    assert.ok(
+      profileRecommend.data.diagnostics.some((item) => item.code === 'USE_CANONICAL_TOOL' && item.command === 'trade'),
+    );
   }, { env });
 });
 

@@ -2,6 +2,7 @@
 
 This is the human-oriented scoped command and flag reference. For machine-authoritative command contracts, prefer:
 
+- `pandora --output json bootstrap`
 - `pandora --output json capabilities`
 - `pandora --output json schema`
 - `pandora <family> ... --help` for the freshest family-specific usage surface
@@ -17,6 +18,7 @@ Use the smaller workflow docs before falling back to this file:
 - Global output mode: `--output table|json` (default `table`)
 - Most commands support `--output table|json`
 - JSON-only commands:
+  - `pandora --output json bootstrap`
   - `pandora --output json capabilities`
   - `pandora --output json schema`
 - Dedicated stdio server mode:
@@ -35,28 +37,41 @@ Use the smaller workflow docs before falling back to this file:
   - `error.recovery = { action, command, retryable }`
 
 ## Credential and policy guidance
-- For non-signing bootstrap, start with `pandora --output json capabilities`, `schema`, `policy list`, `profile list`, or `pandora mcp`. None of those require signer material.
+- For non-signing bootstrap, start with `pandora --output json bootstrap`, then `schema`, `policy list`, `profile list`, or `pandora mcp`. None of those require signer material.
 - The command signatures below show the live parser surface, so signer-bearing flows still list `--private-key <hex>` where supported.
 - That does **not** mean raw command-line keys are the preferred operating model.
 - Prefer, in order:
   - read-only discovery via `capabilities`, `schema`, `policy`, and `profile`
   - policy-scoped MCP gateway access for agents
+  - named signer profiles via `--profile-id` or `--profile-file` on direct Pandora execution commands that support them
   - env / `.env` injection, ideally supplied by a secret manager or other runtime bootstrap you control
   - raw `--private-key` only for manual fallback or debugging
-- Policy packs and named signer profiles are shipped in alpha via `policy list|get|lint` and `profile list|get|validate`, but there is not yet a universal `--profile` selector across mutating commands. Use `pandora --output json capabilities` / `schema` to inspect current `policyScopes` and `requiresSecrets`.
+- Policy packs and named signer profiles are shipped in alpha via `policy list|get|lint` and `profile list|get|explain|validate`.
+- Recommendation and explain routing today is canonical-tool-first:
+  - use `bootstrap` first for the cold-start summary and safest defaults
+  - keep planning on canonical tool names by default
+  - use `policy explain`, `policy recommend`, and `profile recommend` when you need exact context-aware remediation or ranking for a specific command/mode/chain/category path
+  - use compatibility aliases only for legacy/debug workflows or migration diffing
+  - use `policy get` for pack inspection, `profile get` for raw profile state, and `profile explain` for exact go/no-go decisions
+- Direct Pandora signer-bearing commands such as `trade`, `sell`, `lp add`, `lp remove`, `resolve`, `claim`, `mirror deploy`, `mirror go`, `mirror sync once|run|start`, and `sports create run` now accept `--profile-id` / `--profile-file`.
+- Mirror deploy/go/sync flows and sports live execution paths now also accept profile selectors in current builds.
+- Polymarket and some automation families still commonly resolve signer material from env / `.env` / explicit flags. Use `pandora --output json capabilities` / `schema` to inspect current `policyScopes`, `requiresSecrets`, and per-command profile support.
 
 ## High-value command routing reference
 
 This section is intentionally condensed for retrieval. For the exhaustive live contract:
 
+- use `pandora --output json bootstrap` for the canonical first call
 - use `pandora --output json capabilities` for compact discovery
 - use `pandora --output json schema` for exact machine-readable inputs/outputs
 - use `pandora <family> ... --help` for the freshest family-specific usage surface
 - remember that listed `--private-key` flags describe compatibility surface, not preferred secret-handling guidance
+- compatibility aliases are listed below so humans can recognize them; they are not the preferred routing surface for new agents
 
 ```text
 pandora [--output table|json] --version
 pandora [--output table|json] help
+pandora [--output json] bootstrap [--include-compatibility]  # use --include-compatibility only for legacy/debug alias inspection
 pandora [--output table|json] init-env [--force] [--dotenv-path <path>] [--example <path>]
 pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
 pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
@@ -75,19 +90,19 @@ pandora [--output table|json] positions list [--wallet <address>] [--market-addr
 pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
 pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
 pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
-pandora [--output table|json] markets scan [scan flags]  # backward-compatible alias of scan
+pandora [--output table|json] markets scan [scan flags]  # backward-compatible alias of scan; legacy/debug only
 pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
-pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
-pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
-pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
+pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
+pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
+pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]
 pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
 pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
 pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--iterations <n>] [--interval-ms <ms>] [--indexer-url <url>] [--timeout-ms <ms>]
-pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
+pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]  # compatibility wrapper; legacy/debug only
 pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
 pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...
 pandora [--output table|json] policy list|get|lint [flags]
-pandora [--output table|json] profile list|get|validate [flags]
+pandora [--output table|json] profile list|get|explain|validate [flags]
 pandora [--output table|json] simulate mc|particle-filter|agents ...
 pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...
 pandora [--output table|json] polymarket check|approve|preflight|trade ...
@@ -95,16 +110,62 @@ pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-temp
 pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
 pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
 pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
-pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
-pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]
+pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
 pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
-pandora [--output table|json] operations get|list|cancel|close [flags]
+pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]  # terminal mutable operations also emit durable receipt artifacts beside the operation store
 pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
 pandora [--output json] schema
 pandora mcp
 pandora launch [--dotenv-path <path>] [--skip-dotenv] [script args...]
 pandora clone-bet [--dotenv-path <path>] [--skip-dotenv] [script args...]
 ```
+
+## Policy and profile decision surfaces
+
+- `pandora --output json bootstrap`
+  - canonical first call
+  - machine-usable recommendation fields live here today:
+    - `defaults.policyId` / `defaults.profileId`
+    - `policyProfiles.policyPacks.recommendedReadOnlyPolicyId` / `recommendedMutablePolicyId`
+    - `policyProfiles.signerProfiles.recommendedReadOnlyProfileId` / `recommendedMutableProfileId`
+    - `nextSteps[]`
+- `pandora --output json policy get --id <policy-id>`
+  - inspect one shipped or local policy pack
+- `pandora --output json policy explain --id <policy-id> --command <tool> [--mode <mode>] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]`
+  - exact policy decision surface for one already-selected canonical tool/context
+- `pandora --output json policy recommend --command <tool> [--mode <mode>] [--chain-id <id>] [--category <id|name>] [--profile-id <id>]`
+  - context-aware policy ranking after you already know the canonical tool and execution path
+- `pandora --output json profile get --id <profile-id> [--command <tool>] [--mode <mode>] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]`
+  - raw profile state plus optional compatibility annotation
+- `pandora --output json profile explain --id <profile-id> [--command <tool>] [--mode <mode>] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]`
+  - exact profile decision surface
+  - prefer canonical command names from `bootstrap`, `capabilities`, or `schema` when filling `--command`
+  - consume `explanation.requestedContext.exact` and `explanation.requestedContext.missingFlags` before trusting the answer
+  - consume `explanation.remediation[]` as the machine-usable action list
+  - treat `explanation.blockers` as the human-readable summary, not the primary automation field
+- `pandora --output json profile recommend [--command <tool>] [--mode <mode>] [--chain-id <id>] [--category <id|name>] [--policy-id <id>]`
+  - context-aware profile ranking after you already know the canonical tool and execution path
+
+## Operation receipts
+
+- terminal mutable operations automatically write a receipt JSON artifact beside the durable operation state store
+- default paths:
+  - local CLI:
+    - `~/.pandora/operations/<operation-id>.receipt.json`
+  - MCP/workspace-guarded runtime:
+    - `./.pandora/operations/<operation-id>.receipt.json`
+- receipt purpose:
+  - post-execution audit
+  - tamper-evident hash verification
+  - checkpoint binding for terminal operation state
+- local verification:
+  - `pandora --output json operations verify-receipt --id <operation-id>`
+  - `pandora --output json operations verify-receipt --file <path-to-receipt.json>`
+- remote gateway verification:
+  - `GET /operations/<operation-id>/receipt`
+  - `GET /operations/<operation-id>/receipt/verify`
+  - both require `operations:read`
 
 ## Mirror subcommands
 

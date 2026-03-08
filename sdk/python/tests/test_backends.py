@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import sys
+import io
 import unittest
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import urllib.error
+import urllib.request
 
 from pandora_agent.backends import HttpPandoraBackend, StdioPandoraBackend
 from pandora_agent.errors import PandoraSdkError
@@ -52,6 +51,38 @@ class BackendTests(unittest.TestCase):
 
         self.assertEqual(message['id'], 3)
         self.assertEqual(message['result'], {'tools': []})
+
+    def test_http_backend_preserves_gateway_error_payload_details(self) -> None:
+        backend = HttpPandoraBackend(url='http://127.0.0.1:8787/mcp', auth_token='test-token')
+        request = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize'}
+        payload = (
+            b'{"ok":false,"error":{"code":"FORBIDDEN","message":"Missing scope.","details":{"missingScopes":["schema:read"]}}}'
+        )
+        http_error = urllib.error.HTTPError(
+            backend.url,
+            403,
+            'Forbidden',
+            hdrs=None,
+            fp=io.BytesIO(payload),
+        )
+
+        original_urlopen = urllib.request.urlopen
+
+        def _raise_http_error(*args, **kwargs):
+            raise http_error
+
+        urllib.request.urlopen = _raise_http_error
+        try:
+            with self.assertRaises(PandoraSdkError) as context:
+                backend._post(request)
+        finally:
+            urllib.request.urlopen = original_urlopen
+
+        error = context.exception
+        self.assertEqual(error.code, 'FORBIDDEN')
+        self.assertEqual(error.details['status'], 403)
+        self.assertEqual(error.details['remoteDetails']['missingScopes'], ['schema:read'])
+        self.assertEqual(error.to_dict()['code'], 'FORBIDDEN')
 
 
 if __name__ == '__main__':

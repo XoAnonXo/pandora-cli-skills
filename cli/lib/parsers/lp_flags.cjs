@@ -1,3 +1,8 @@
+const {
+  consumeProfileSelectorFlag,
+  assertNoMixedSignerSelectors,
+} = require('./shared_profile_selector_flags.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseLpFlags requires deps.${name}()`);
@@ -52,6 +57,8 @@ function createParseLpFlags(deps) {
       forkRpcUrl: null,
       forkChainId: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
       usdc: null,
       deadlineSeconds: 1800,
       indexerUrl: null,
@@ -135,6 +142,18 @@ function createParseLpFlags(deps) {
         i += 1;
         continue;
       }
+      const profileIndex = consumeProfileSelectorFlag({
+        token,
+        args: rest,
+        index: i,
+        options,
+        CliError,
+        requireFlagValue,
+      });
+      if (profileIndex !== null) {
+        i = profileIndex;
+        continue;
+      }
       if (token === '--usdc') {
         options.usdc = parseAddressFlag(requireFlagValue(rest, i, '--usdc'), '--usdc');
         i += 1;
@@ -173,6 +192,7 @@ function createParseLpFlags(deps) {
       if (!options.wallet) {
         throw new CliError('MISSING_REQUIRED_FLAG', 'Missing wallet address. Use --wallet <address>.');
       }
+      assertNoMixedSignerSelectors(options, CliError);
       return options;
     }
 
@@ -204,6 +224,7 @@ function createParseLpFlags(deps) {
     if (options.dryRun === options.execute) {
       throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');
     }
+    assertNoMixedSignerSelectors(options, CliError);
 
     return options;
   };

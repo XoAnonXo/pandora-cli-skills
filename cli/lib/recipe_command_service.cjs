@@ -128,6 +128,7 @@ function createRunRecipeCommand(deps) {
       commandExecutor: createCommandExecutorService(),
       policyEvaluator: createPolicyEvaluatorService(),
       profileResolver: createProfileResolverService(),
+      remoteActive: process.env.PANDORA_MCP_REMOTE_ACTIVE === '1',
     });
     const compiled = runtime.compileRecipe(recipe, options.inputs, {
       source: record.source || (recipe.firstParty ? 'builtin' : 'file'),
@@ -135,7 +136,7 @@ function createRunRecipeCommand(deps) {
     });
 
     if (options.action === 'validate') {
-      const validation = runtime.validateRecipeExecution(compiled, {
+      const validation = await runtime.validateRecipeExecution(compiled, {
         policyId: options.policyId,
         profileId: options.profileId,
       });
@@ -154,7 +155,7 @@ function createRunRecipeCommand(deps) {
     }
 
     if (options.action === 'run') {
-      const result = runtime.runRecipe(compiled, {
+      const result = await runtime.runRecipe(compiled, {
         policyId: options.policyId,
         profileId: options.profileId,
         timeoutMs: options.timeoutMs,

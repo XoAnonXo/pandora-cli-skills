@@ -757,9 +757,14 @@ function createRunSportsCommand(deps) {
         chainId: planWithSource.marketTemplate.chainId,
         rpcUrl: planWithSource.marketTemplate.rpcUrl,
         privateKey: options.privateKey,
+        profileId: options.profileId || null,
+        profileFile: options.profileFile || null,
         usdc: planWithSource.marketTemplate.usdc,
         oracle: planWithSource.marketTemplate.oracle,
         factory: planWithSource.marketTemplate.factory,
+        command: 'sports.create.run',
+        toolFamily: 'sports',
+        source: 'sports.create.run',
       });
 
       emitSuccess(context.outputMode, parsed.command, {

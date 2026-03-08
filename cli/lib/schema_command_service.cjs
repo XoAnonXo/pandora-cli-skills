@@ -8,6 +8,9 @@ const {
 } = require('./agent_contract_registry.cjs');
 const { buildTrustDistributionMetadata } = require('./capabilities_command_service.cjs');
 const { buildSkillDocIndex } = require('./skill_doc_registry.cjs');
+const COMPATIBILITY_FLAG = '--include-compatibility';
+const COMPATIBILITY_QUERY_PARAM = 'include_aliases=1';
+const COMPATIBILITY_MODE_HINT = 'Compatibility aliases are hidden by default. Pass --include-compatibility or include_aliases=1 only for legacy/debug workflows.';
 
 function getJsonSchemaPrimitiveType(value) {
   if (Array.isArray(value)) return 'array';
@@ -36,6 +39,38 @@ function sortObjectKeys(record) {
     sorted[key] = source[key];
   }
   return sorted;
+}
+
+function countCompatibilityAliases(commandDescriptors) {
+  return Object.values(commandDescriptors || {}).filter((descriptor) => descriptor && descriptor.aliasOf).length;
+}
+
+function countCanonicalToolsWithCompatibilityAliases(commandDescriptors) {
+  const canonicalTools = new Set();
+  for (const descriptor of Object.values(commandDescriptors || {})) {
+    if (!(descriptor && descriptor.aliasOf)) continue;
+    if (typeof descriptor.canonicalTool === 'string' && descriptor.canonicalTool.trim()) {
+      canonicalTools.add(descriptor.canonicalTool.trim());
+    }
+  }
+  return canonicalTools.size;
+}
+
+function buildDiscoveryPreferences(allCommandDescriptors, visibleCommandDescriptors, options = {}) {
+  const totalAliasCount = countCompatibilityAliases(allCommandDescriptors);
+  const visibleAliasCount = countCompatibilityAliases(visibleCommandDescriptors);
+  return {
+    canonicalOnlyDefault: true,
+    includeCompatibility: Boolean(options && options.includeCompatibility),
+    aliasesHiddenByDefault: true,
+    compatibilityFlag: COMPATIBILITY_FLAG,
+    compatibilityQueryParam: COMPATIBILITY_QUERY_PARAM,
+    compatibilityModeHint: COMPATIBILITY_MODE_HINT,
+    visibleCommandCount: Object.keys(visibleCommandDescriptors || {}).length,
+    totalAliasCount,
+    hiddenAliasCount: Math.max(totalAliasCount - visibleAliasCount, 0),
+    canonicalToolsWithCompatibilityAliases: countCanonicalToolsWithCompatibilityAliases(allCommandDescriptors),
+  };
 }
 
 function stringArraySchema(enumValues = null) {
@@ -253,11 +288,12 @@ function buildCommandDescriptorMetadata(commandDescriptors) {
 }
 
 function buildSchemaHelpPayload() {
-  const commandDescriptorMetadata = buildCommandDescriptorMetadata(sortObjectKeys(buildCommandDescriptors()));
+  const commandDescriptorMetadata = buildCommandDescriptorMetadata(filterVisibleCommandDescriptors(buildCommandDescriptors()));
   return {
-    usage: 'pandora --output json schema',
+    usage: 'pandora --output json schema [--include-compatibility]',
     notes: [
       'Command descriptors and descriptor metadata are derived from the shared agent contract registry.',
+      'By default schema returns canonical command descriptors only. Pass --include-compatibility to include compatibility aliases for legacy/debug workflows.',
     ],
     commandCount: commandDescriptorMetadata.totalCommands,
     descriptorFields: commandDescriptorMetadata.fieldNames,
@@ -265,9 +301,26 @@ function buildSchemaHelpPayload() {
   };
 }
 
-function buildSchemaPayload() {
-  const commandDescriptors = sortObjectKeys(buildCommandDescriptors());
-  const commandDescriptorMetadata = buildCommandDescriptorMetadata(commandDescriptors);
+function filterVisibleCommandDescriptors(commandDescriptors, options = {}) {
+  const includeCompatibility = Boolean(
+    options
+    && (options.includeCompatibility === true || options.includeAllTools === true),
+  );
+  const entries = Object.entries(commandDescriptors || {}).filter(([, descriptor]) =>
+    includeCompatibility || !(descriptor && descriptor.aliasOf),
+  );
+  return sortObjectKeys(Object.fromEntries(entries));
+}
+
+function buildSchemaPayload(options = {}) {
+  const allCommandDescriptors = sortObjectKeys(buildCommandDescriptors());
+  const includeCompatibility = Boolean(
+    options
+    && (options.includeCompatibility === true || options.includeAllTools === true),
+  );
+  const commandDescriptors = filterVisibleCommandDescriptors(allCommandDescriptors, { includeCompatibility });
+  const commandDescriptorMetadata = buildCommandDescriptorMetadata(allCommandDescriptors);
+  const discoveryPreferences = buildDiscoveryPreferences(allCommandDescriptors, commandDescriptors, { includeCompatibility });
   const trustDistribution = buildTrustDistributionMetadata();
   const documentation = buildSkillDocIndex();
   return {
@@ -281,7 +334,8 @@ function buildSchemaPayload() {
       { $ref: '#/definitions/ErrorEnvelope' },
     ],
     commandDescriptorVersion: COMMAND_DESCRIPTOR_VERSION,
-    descriptorScope: 'command-surface',
+    descriptorScope: includeCompatibility ? 'command-surface+compatibility' : 'canonical-command-surface',
+    discoveryPreferences,
     commandDescriptors,
     commandDescriptorMetadata,
     capabilities: commandDescriptorMetadata.capabilities,
@@ -702,6 +756,12 @@ function buildSchemaPayload() {
           'lockPresent',
           'reportPath',
           'reportPresent',
+          'bundlePath',
+          'bundlePresent',
+          'historyPath',
+          'historyPresent',
+          'docsHistoryPath',
+          'docsHistoryPresent',
           'reportOverallPass',
           'reportContractLockMatchesExpected',
           'checkScriptPath',
@@ -716,6 +776,12 @@ function buildSchemaPayload() {
           lockPresent: { type: 'boolean' },
           reportPath: { type: 'string' },
           reportPresent: { type: 'boolean' },
+          bundlePath: { type: 'string' },
+          bundlePresent: { type: 'boolean' },
+          historyPath: { type: 'string' },
+          historyPresent: { type: 'boolean' },
+          docsHistoryPath: { type: 'string' },
+          docsHistoryPresent: { type: 'boolean' },
           reportOverallPass: { type: ['boolean', 'null'] },
           reportContractLockMatchesExpected: { type: ['boolean', 'null'] },
           checkScriptPath: { type: 'string' },
@@ -904,11 +970,16 @@ function buildSchemaPayload() {
           'description',
           'source',
           'commandDescriptorVersion',
+          'recommendedFirstCall',
+          'discoveryPreferences',
+          'readinessMode',
           'summary',
           'transports',
           'roadmapSignals',
+          'certification',
           'trustDistribution',
           'policyProfiles',
+          'principalTemplates',
           'operationProtocol',
           'versionCompatibility',
           'documentation',
@@ -927,10 +998,14 @@ function buildSchemaPayload() {
           description: { type: 'string' },
           source: { type: 'string' },
           commandDescriptorVersion: { type: 'string' },
+          recommendedFirstCall: { type: 'string' },
+          discoveryPreferences: { $ref: '#/definitions/DiscoveryPreferences' },
+          readinessMode: { enum: ['artifact-neutral', 'runtime-local'] },
           summary: {
             type: 'object',
             required: [
               'totalCommands',
+              'discoveryCommands',
               'topLevelCommands',
               'aliases',
               'mcpExposedCommands',
@@ -943,6 +1018,7 @@ function buildSchemaPayload() {
             ],
             properties: {
               totalCommands: { type: 'integer' },
+              discoveryCommands: { type: 'integer' },
               topLevelCommands: { type: 'integer' },
               routedTopLevelCommands: { type: 'integer' },
               aliases: { type: 'integer' },
@@ -985,6 +1061,7 @@ function buildSchemaPayload() {
             },
             additionalProperties: false,
           },
+          certification: { $ref: '#/definitions/CapabilitiesCertificationPayload' },
           trustDistribution: { $ref: '#/definitions/TrustDistributionPayload' },
           policyProfiles: {
             type: 'object',
@@ -995,15 +1072,34 @@ function buildSchemaPayload() {
             },
             additionalProperties: false,
           },
+          principalTemplates: { $ref: '#/definitions/CapabilitiesPrincipalTemplateSection' },
           operationProtocol: {
             type: 'object',
-            required: ['supported', 'status', 'notes', 'operationReadyCommands', 'jobCapableCommands'],
+            required: [
+              'supported',
+              'status',
+              'notes',
+              'operationReadyCommands',
+              'jobCapableCommands',
+              'receiptCommands',
+              'receiptCommandsSupported',
+              'receiptVerificationSupported',
+              'receiptIntegrityModel',
+              'receiptSignatureAlgorithm',
+              'signedReceipts',
+            ],
             properties: {
               supported: { type: 'boolean' },
               status: { enum: ['planned', 'partial'] },
               notes: { type: 'array', items: { type: 'string' } },
               operationReadyCommands: { type: 'array', items: { type: 'string' } },
               jobCapableCommands: { type: 'array', items: { type: 'string' } },
+              receiptCommands: { type: 'array', items: { type: 'string' } },
+              receiptCommandsSupported: { type: 'boolean' },
+              receiptVerificationSupported: { type: 'boolean' },
+              receiptIntegrityModel: { enum: ['hash-and-signature-verified-json'] },
+              receiptSignatureAlgorithm: { type: 'string', enum: ['ed25519'] },
+              signedReceipts: { type: 'boolean' },
             },
             additionalProperties: false,
           },
@@ -1042,11 +1138,13 @@ function buildSchemaPayload() {
             type: 'object',
             additionalProperties: {
               type: 'object',
-              required: ['outputModes', 'childCommands', 'mcpExposed', 'canonicalTool', 'aliasOf', 'preferred'],
+              required: ['outputModes', 'childCommands', 'mcpExposed', 'callableViaMcp', 'hasMcpChildren', 'canonicalTool', 'aliasOf', 'preferred'],
               properties: {
                 outputModes: stringArraySchema(['json', 'table']),
                 childCommands: { type: 'array', items: { type: 'string' } },
                 mcpExposed: { type: 'boolean' },
+                callableViaMcp: { type: 'boolean' },
+                hasMcpChildren: { type: 'boolean' },
                 canonicalTool: { type: ['string', 'null'] },
                 aliasOf: { type: ['string', 'null'] },
                 preferred: { type: 'boolean' },
@@ -1074,10 +1172,12 @@ function buildSchemaPayload() {
             type: 'object',
             additionalProperties: {
               type: 'object',
-              required: ['preferredCommand', 'commands'],
+              required: ['preferredCommand', 'commands', 'compatibilityAliasCount', 'compatibilityIncluded'],
               properties: {
                 preferredCommand: { type: 'string' },
                 commands: { type: 'array', items: { type: 'string' } },
+                compatibilityAliasCount: { type: 'integer' },
+                compatibilityIncluded: { type: 'boolean' },
               },
               additionalProperties: false,
             },
@@ -1093,15 +1193,19 @@ function buildSchemaPayload() {
           },
           registryDigest: {
             type: 'object',
-            required: ['descriptorHash', 'commandDigestHash', 'canonicalHash', 'topLevelHash', 'routedTopLevelHash', 'namespaceHash', 'documentationHash'],
+            required: ['descriptorHash', 'commandDigestHash', 'canonicalHash', 'topLevelHash', 'routedTopLevelHash', 'namespaceHash', 'documentationHash', 'policyProfilesHash', 'principalTemplatesHash', 'trustDistributionHash'],
             properties: {
               descriptorHash: { type: 'string' },
+              fullDescriptorHash: { type: 'string' },
               commandDigestHash: { type: 'string' },
               canonicalHash: { type: 'string' },
               topLevelHash: { type: 'string' },
               routedTopLevelHash: { type: 'string' },
               namespaceHash: { type: 'string' },
               documentationHash: { type: 'string' },
+              policyProfilesHash: { type: 'string' },
+              principalTemplatesHash: { type: 'string' },
+              trustDistributionHash: { type: 'string' },
             },
             additionalProperties: false,
           },
@@ -1180,22 +1284,629 @@ function buildSchemaPayload() {
           supported: { type: 'boolean' },
           status: { enum: ['active', 'inactive', 'planned', 'alpha', 'beta'] },
           notes: { type: 'array', items: { type: 'string' } },
+          recommendedBootstrapCommand: { type: ['string', 'null'] },
           endpoint: { type: ['string', 'null'] },
+          deploymentModel: { type: ['string', 'null'] },
+          publicManagedService: { type: ['boolean', 'null'] },
+          operatorDocsPath: { type: ['string', 'null'] },
+          operatorDocsPresent: { type: ['boolean', 'null'] },
+          operationsApiAvailable: { type: ['boolean', 'null'] },
+          webhookSupport: { type: ['boolean', 'null'] },
+          packages: {
+            type: 'object',
+            required: ['typescript', 'python'],
+            properties: {
+              typescript: { $ref: '#/definitions/CapabilitiesSdkPackageDescriptor' },
+              python: { $ref: '#/definitions/CapabilitiesSdkPackageDescriptor' },
+            },
+            additionalProperties: false,
+          },
+          generatedBundle: { $ref: '#/definitions/CapabilitiesSdkGeneratedBundle' },
+        },
+        additionalProperties: false,
+      },
+      APlusCertificationCheck: {
+        type: 'object',
+        required: ['id', 'title', 'status', 'expectation', 'actual', 'reason', 'evidencePaths', 'remediationCommands'],
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          status: { enum: ['pass', 'fail', 'not-evaluable'] },
+          expectation: { type: 'string' },
+          actual: { type: 'object' },
+          reason: { type: 'string' },
+          evidencePaths: { type: 'array', items: { type: 'string' } },
+          remediationCommands: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      APlusCertificationPayload: {
+        type: 'object',
+        required: [
+          'targetTier',
+          'status',
+          'eligible',
+          'readinessMode',
+          'passCount',
+          'failCount',
+          'notEvaluableCount',
+          'blockingCheckIds',
+          'blockers',
+          'nextCommands',
+          'notes',
+          'checks',
+        ],
+        properties: {
+          targetTier: { const: 'A+' },
+          status: { enum: ['certified', 'not-certified', 'not-evaluable'] },
+          eligible: { type: 'boolean' },
+          readinessMode: { enum: ['artifact-neutral', 'runtime-local'] },
+          passCount: { type: 'integer', minimum: 0 },
+          failCount: { type: 'integer', minimum: 0 },
+          notEvaluableCount: { type: 'integer', minimum: 0 },
+          blockingCheckIds: { type: 'array', items: { type: 'string' } },
+          blockers: { type: 'array', items: { type: 'string' } },
+          nextCommands: { type: 'array', items: { type: 'string' } },
+          notes: { type: 'array', items: { type: 'string' } },
+          checks: { type: 'array', items: { $ref: '#/definitions/APlusCertificationCheck' } },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesCertificationPayload: {
+        type: 'object',
+        required: ['aPlus'],
+        properties: {
+          aPlus: { $ref: '#/definitions/APlusCertificationPayload' },
+        },
+        additionalProperties: false,
+      },
+      DiscoveryPreferences: {
+        type: 'object',
+        required: [
+          'canonicalOnlyDefault',
+          'includeCompatibility',
+          'aliasesHiddenByDefault',
+          'compatibilityFlag',
+          'compatibilityQueryParam',
+          'compatibilityModeHint',
+          'visibleCommandCount',
+          'totalAliasCount',
+          'hiddenAliasCount',
+          'canonicalToolsWithCompatibilityAliases',
+        ],
+        properties: {
+          canonicalOnlyDefault: { type: 'boolean' },
+          includeCompatibility: { type: 'boolean' },
+          aliasesHiddenByDefault: { type: 'boolean' },
+          compatibilityFlag: { type: 'string' },
+          compatibilityQueryParam: { type: 'string' },
+          compatibilityModeHint: { type: 'string' },
+          visibleCommandCount: { type: 'integer' },
+          totalAliasCount: { type: 'integer' },
+          hiddenAliasCount: { type: 'integer' },
+          canonicalToolsWithCompatibilityAliases: { type: 'integer' },
+        },
+        additionalProperties: false,
+      },
+      BootstrapPrincipal: {
+        type: 'object',
+        required: ['id', 'grantedScopes', 'authRequired', 'transport', 'remoteTransportActive', 'remoteTransportUrl'],
+        properties: {
+          id: { type: ['string', 'null'] },
+          grantedScopes: { type: 'array', items: { type: 'string' } },
+          authRequired: { type: 'boolean' },
+          transport: { enum: ['cli-json', 'mcp-http'] },
+          remoteTransportActive: { type: 'boolean' },
+          remoteTransportUrl: { type: ['string', 'null'] },
+        },
+        additionalProperties: false,
+      },
+      BootstrapPreferences: {
+        type: 'object',
+        required: [
+          'canonicalOnlyDefault',
+          'includeCompatibility',
+          'aliasesHiddenByDefault',
+          'compatibilityFlag',
+          'compatibilityQueryParam',
+          'compatibilityModeHint',
+          'visibleCommandCount',
+          'totalAliasCount',
+          'hiddenAliasCount',
+          'canonicalToolsWithCompatibilityAliases',
+          'recommendedFirstCall',
+        ],
+        properties: {
+          canonicalOnlyDefault: { type: 'boolean' },
+          includeCompatibility: { type: 'boolean' },
+          aliasesHiddenByDefault: { type: 'boolean' },
+          compatibilityFlag: { type: 'string' },
+          compatibilityQueryParam: { type: 'string' },
+          compatibilityModeHint: { type: 'string' },
+          visibleCommandCount: { type: 'integer' },
+          totalAliasCount: { type: 'integer' },
+          hiddenAliasCount: { type: 'integer' },
+          canonicalToolsWithCompatibilityAliases: { type: 'integer' },
+          recommendedFirstCall: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      BootstrapNextCall: {
+        type: 'object',
+        required: ['tool', 'cliCommand', 'httpUrl', 'via', 'reason'],
+        properties: {
+          tool: { type: 'string' },
+          cliCommand: { type: 'string' },
+          httpUrl: { type: ['string', 'null'] },
+          via: { type: 'string' },
+          reason: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      BootstrapTrustSummary: {
+        type: ['object', 'null'],
+        properties: {
+          posture: { type: ['string', 'null'] },
+          notes: { type: 'array', items: { type: 'string' } },
+          verificationSignals: { type: ['object', 'null'], additionalProperties: true },
+          releaseGateSignals: { type: ['object', 'null'], additionalProperties: true },
+        },
+        additionalProperties: false,
+      },
+      BootstrapDefaults: {
+        type: 'object',
+        required: ['policyId', 'profileId', 'mode'],
+        properties: {
+          policyId: { type: ['string', 'null'] },
+          profileId: { type: ['string', 'null'] },
+          mode: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      BootstrapSummarySection: {
+        type: 'object',
+        required: ['recommendedStartingMode', 'totalCommands', 'canonicalToolCount', 'starterToolCount', 'policyCount', 'profileCount', 'recipeCount', 'remoteTransportStatus'],
+        properties: {
+          recommendedStartingMode: { type: 'string' },
+          totalCommands: { type: ['integer', 'null'] },
+          canonicalToolCount: { type: 'integer' },
+          starterToolCount: { type: 'integer' },
+          policyCount: { type: 'integer' },
+          profileCount: { type: 'integer' },
+          recipeCount: { type: 'integer' },
+          remoteTransportStatus: { type: ['string', 'null'] },
+        },
+        additionalProperties: false,
+      },
+      BootstrapCapabilitiesSummary: {
+        type: 'object',
+        required: ['totalCommands', 'topLevelCommands', 'routedTopLevelCommands', 'mcpExposedCommands', 'transports', 'registryDigest'],
+        properties: {
+          totalCommands: { type: ['integer', 'null'] },
+          topLevelCommands: { type: ['integer', 'null'] },
+          routedTopLevelCommands: { type: ['integer', 'null'] },
+          mcpExposedCommands: { type: ['integer', 'null'] },
+          transports: {
+            type: 'object',
+            required: ['cliJson', 'mcpStdio', 'mcpStreamableHttp', 'sdk'],
+            properties: {
+              cliJson: { type: ['string', 'null'] },
+              mcpStdio: { type: ['string', 'null'] },
+              mcpStreamableHttp: { type: ['string', 'null'] },
+              sdk: { type: ['string', 'null'] },
+            },
+            additionalProperties: false,
+          },
+          registryDigest: {
+            type: 'object',
+            required: ['descriptorHash', 'documentationHash'],
+            properties: {
+              descriptorHash: { type: ['string', 'null'] },
+              fullDescriptorHash: { type: ['string', 'null'] },
+              documentationHash: { type: ['string', 'null'] },
+            },
+            additionalProperties: true,
+          },
+        },
+        additionalProperties: false,
+      },
+      BootstrapSchemaSummary: {
+        type: 'object',
+        required: ['commandCount', 'descriptorFieldCount', 'descriptorFieldsSample'],
+        properties: {
+          commandCount: { type: ['integer', 'null'] },
+          descriptorFieldCount: { type: 'integer' },
+          descriptorFieldsSample: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      BootstrapDocItem: {
+        type: 'object',
+        required: ['id', 'path', 'title', 'summary', 'kind', 'canonicalTools'],
+        properties: {
+          id: { type: 'string' },
+          path: { type: 'string' },
+          title: { type: 'string' },
+          summary: { type: ['string', 'null'] },
+          kind: { type: ['string', 'null'] },
+          canonicalTools: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      BootstrapDocumentationSummary: {
+        type: 'object',
+        required: ['routerPath', 'routerTitle', 'contentHash', 'items'],
+        properties: {
+          routerPath: { type: ['string', 'null'] },
+          routerTitle: { type: ['string', 'null'] },
+          contentHash: { type: ['string', 'null'] },
+          items: { type: 'array', items: { $ref: '#/definitions/BootstrapDocItem' } },
+        },
+        additionalProperties: false,
+      },
+      BootstrapPolicyItem: {
+        type: 'object',
+        required: ['id', 'displayName', 'description', 'source', 'extends'],
+        properties: {
+          id: { type: 'string' },
+          displayName: { type: ['string', 'null'] },
+          description: { type: ['string', 'null'] },
+          source: { type: ['string', 'null'] },
+          extends: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      BootstrapPolicySummary: {
+        type: 'object',
+        required: ['count', 'builtinCount', 'userCount', 'recommendedReadOnlyPolicyId', 'recommendedMutablePolicyId', 'items'],
+        properties: {
+          count: { type: 'integer' },
+          builtinCount: { type: 'integer' },
+          userCount: { type: 'integer' },
+          recommendedReadOnlyPolicyId: { type: ['string', 'null'] },
+          recommendedMutablePolicyId: { type: ['string', 'null'] },
+          items: { type: 'array', items: { $ref: '#/definitions/BootstrapPolicyItem' } },
+        },
+        additionalProperties: false,
+      },
+      BootstrapProfileItem: {
+        type: 'object',
+        required: ['id', 'displayName', 'signerBackend', 'readOnly', 'builtin', 'source', 'defaultPolicy', 'allowedPolicies', 'runtimeReady', 'resolutionStatus', 'backendImplemented'],
+        properties: {
+          id: { type: 'string' },
+          displayName: { type: ['string', 'null'] },
+          signerBackend: { type: ['string', 'null'] },
+          readOnly: { type: 'boolean' },
+          builtin: { type: 'boolean' },
+          source: { type: ['string', 'null'] },
+          defaultPolicy: { type: ['string', 'null'] },
+          allowedPolicies: { type: 'array', items: { type: 'string' } },
+          runtimeReady: { type: 'boolean' },
+          resolutionStatus: { type: ['string', 'null'] },
+          backendImplemented: { type: ['boolean', 'null'] },
+        },
+        additionalProperties: false,
+      },
+      BootstrapProfileSummary: {
+        type: 'object',
+        required: ['count', 'builtInCount', 'fileCount', 'recommendedReadOnlyProfileId', 'recommendedMutableProfileId', 'readyBuiltinCount', 'readyMutableBuiltinCount', 'items'],
+        properties: {
+          count: { type: 'integer' },
+          builtInCount: { type: 'integer' },
+          fileCount: { type: 'integer' },
+          recommendedReadOnlyProfileId: { type: ['string', 'null'] },
+          recommendedMutableProfileId: { type: ['string', 'null'] },
+          readyBuiltinCount: { type: 'integer' },
+          readyMutableBuiltinCount: { type: 'integer' },
+          items: { type: 'array', items: { $ref: '#/definitions/BootstrapProfileItem' } },
+        },
+        additionalProperties: false,
+      },
+      BootstrapRecipeItem: {
+        type: 'object',
+        required: ['id', 'displayName', 'description', 'tool', 'defaultPolicy', 'defaultProfile', 'safeByDefault', 'operationExpected', 'supportsRemote', 'source'],
+        properties: {
+          id: { type: 'string' },
+          displayName: { type: ['string', 'null'] },
+          description: { type: ['string', 'null'] },
+          tool: { type: ['string', 'null'] },
+          defaultPolicy: { type: ['string', 'null'] },
+          defaultProfile: { type: ['string', 'null'] },
+          safeByDefault: { type: 'boolean' },
+          operationExpected: { type: 'boolean' },
+          supportsRemote: { type: 'boolean' },
+          source: { type: ['string', 'null'] },
+        },
+        additionalProperties: false,
+      },
+      BootstrapRecipeSummary: {
+        type: 'object',
+        required: ['count', 'builtinCount', 'userCount', 'safeByDefaultCount', 'operationExpectedCount', 'items'],
+        properties: {
+          count: { type: 'integer' },
+          builtinCount: { type: 'integer' },
+          userCount: { type: 'integer' },
+          safeByDefaultCount: { type: 'integer' },
+          operationExpectedCount: { type: 'integer' },
+          items: { type: 'array', items: { $ref: '#/definitions/BootstrapRecipeItem' } },
+        },
+        additionalProperties: false,
+      },
+      BootstrapSdkSummary: {
+        type: 'object',
+        required: ['status', 'notes', 'generatedBundle', 'packages'],
+        properties: {
+          status: { type: ['string', 'null'] },
+          notes: { type: 'array', items: { type: 'string' } },
+          recommendedBootstrapCommand: { type: ['string', 'null'] },
+          generatedBundle: {
+            oneOf: [{ $ref: '#/definitions/CapabilitiesSdkGeneratedBundle' }, { type: 'null' }],
+          },
+          packages: {
+            type: 'object',
+            required: ['typescript', 'python'],
+            properties: {
+              typescript: { oneOf: [{ $ref: '#/definitions/CapabilitiesSdkPackageDescriptor' }, { type: 'null' }] },
+              python: { oneOf: [{ $ref: '#/definitions/CapabilitiesSdkPackageDescriptor' }, { type: 'null' }] },
+            },
+            additionalProperties: false,
+          },
+        },
+        additionalProperties: false,
+      },
+      BootstrapToolSummary: {
+        type: 'object',
+        required: ['command', 'canonicalTool', 'aliasOf', 'summary', 'usage', 'outputModes', 'policyScopes', 'requiresSecrets', 'recommendedPreflightTool', 'safeEquivalent', 'supportsRemote'],
+        properties: {
+          command: { type: 'string' },
+          canonicalTool: { type: ['string', 'null'] },
+          aliasOf: { type: ['string', 'null'] },
+          summary: { type: ['string', 'null'] },
+          usage: { type: ['string', 'null'] },
+          outputModes: { type: 'array', items: { type: 'string' } },
+          policyScopes: { type: 'array', items: { type: 'string' } },
+          requiresSecrets: { type: 'boolean' },
+          recommendedPreflightTool: { type: ['string', 'null'] },
+          safeEquivalent: { type: ['string', 'null'] },
+          supportsRemote: { type: 'boolean' },
+        },
+        additionalProperties: false,
+      },
+      BootstrapWarning: {
+        type: 'object',
+        required: ['code', 'severity', 'message'],
+        properties: {
+          code: { type: 'string' },
+          severity: { type: 'string' },
+          message: { type: 'string' },
+          profileIds: { type: 'array', items: { type: 'string' } },
+          nextStepCommand: { type: ['string', 'null'] },
+        },
+        additionalProperties: false,
+      },
+      BootstrapNextStep: {
+        type: 'object',
+        required: ['id', 'type', 'title', 'reason'],
+        properties: {
+          id: { type: 'string' },
+          type: { type: 'string' },
+          title: { type: 'string' },
+          command: { type: ['string', 'null'] },
+          path: { type: ['string', 'null'] },
+          reason: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      BootstrapPayload: {
+        type: 'object',
+        required: [
+          'schemaVersion',
+          'generatedAt',
+          'title',
+          'description',
+          'source',
+          'commandDescriptorVersion',
+          'readinessMode',
+          'principal',
+          'preferences',
+          'defaults',
+          'summary',
+          'capabilities',
+          'schema',
+          'documentation',
+          'policies',
+          'profiles',
+          'recipes',
+          'sdk',
+          'canonicalTools',
+          'includedToolCommands',
+          'recommendedBootstrapFlow',
+          'tools',
+          'warnings',
+          'nextSteps',
+        ],
+        properties: {
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          source: { type: 'string' },
+          commandDescriptorVersion: { type: 'string' },
+          readinessMode: { enum: ['artifact-neutral', 'runtime-local'] },
+          principal: { $ref: '#/definitions/BootstrapPrincipal' },
+          preferences: { $ref: '#/definitions/BootstrapPreferences' },
+          defaults: { $ref: '#/definitions/BootstrapDefaults' },
+          summary: { $ref: '#/definitions/BootstrapSummarySection' },
+          capabilities: { $ref: '#/definitions/BootstrapCapabilitiesSummary' },
+          schema: { $ref: '#/definitions/BootstrapSchemaSummary' },
+          documentation: { $ref: '#/definitions/BootstrapDocumentationSummary' },
+          policies: { $ref: '#/definitions/BootstrapPolicySummary' },
+          profiles: { $ref: '#/definitions/BootstrapProfileSummary' },
+          recipes: { $ref: '#/definitions/BootstrapRecipeSummary' },
+          sdk: { $ref: '#/definitions/BootstrapSdkSummary' },
+          canonicalTools: { type: 'array', items: { type: 'string' } },
+          includedToolCommands: { type: 'array', items: { type: 'string' } },
+          recommendedBootstrapFlow: { type: 'array', items: { type: 'string' } },
+          tools: { type: 'array', items: { $ref: '#/definitions/BootstrapToolSummary' } },
+          warnings: { type: 'array', items: { $ref: '#/definitions/BootstrapWarning' } },
+          nextSteps: { type: 'array', items: { $ref: '#/definitions/BootstrapNextStep' } },
         },
         additionalProperties: false,
       },
       CapabilitiesGatewayDetails: {
         type: 'object',
-        required: ['capabilitiesPath', 'healthPath', 'mcpPath', 'operationsPath', 'advertisedBaseUrl', 'authRequired', 'grantedScopes'],
+        required: [
+          'bootstrapPath',
+          'capabilitiesPath',
+          'healthPath',
+          'readyPath',
+          'metricsPath',
+          'mcpPath',
+          'schemaPath',
+          'toolsPath',
+          'authPath',
+          'operationsPath',
+          'operationsReceiptPathTemplate',
+          'operationsReceiptVerifyPathTemplate',
+          'operationsDetachedReceiptVerifyPath',
+          'operationsWebhookPathTemplate',
+          'advertisedBaseUrl',
+          'authRequired',
+          'grantedScopes',
+        ],
         properties: {
           baseUrl: { type: ['string', 'null'] },
+          bootstrapPath: { type: 'string' },
           capabilitiesPath: { type: 'string' },
           healthPath: { type: 'string' },
+          readyPath: { type: 'string' },
+          metricsPath: { type: 'string' },
           mcpPath: { type: 'string' },
+          schemaPath: { type: 'string' },
+          toolsPath: { type: 'string' },
+          authPath: { type: 'string' },
           operationsPath: { type: 'string' },
+          operationsReceiptPathTemplate: { type: 'string' },
+          operationsReceiptVerifyPathTemplate: { type: 'string' },
+          operationsDetachedReceiptVerifyPath: { type: 'string' },
+          operationsWebhookPathTemplate: { type: 'string' },
           advertisedBaseUrl: { type: ['string', 'null'] },
           authRequired: { type: 'boolean' },
           grantedScopes: { type: 'array', items: { type: 'string' } },
+          principalId: { type: ['string', 'null'] },
+          principal: { $ref: '#/definitions/CapabilitiesGatewayPrincipalSummary' },
+          authManagement: { $ref: '#/definitions/CapabilitiesGatewayAuthManagementSummary' },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesGatewayPrincipalSummary: {
+        type: 'object',
+        required: ['principalId', 'status', 'scopes', 'sourceMode', 'current', 'runtimeReady', 'backendImplemented', 'rotation', 'revocation'],
+        properties: {
+          principalId: { type: 'string' },
+          label: { type: ['string', 'null'] },
+          principalType: { type: ['string', 'null'] },
+          principalTemplate: { type: ['string', 'null'] },
+          status: { type: 'string' },
+          scopes: { type: 'array', items: { type: 'string' } },
+          sourceMode: { type: 'string' },
+          sourceFile: { type: ['string', 'null'] },
+          createdAt: { type: ['string', 'null'] },
+          rotatedAt: { type: ['string', 'null'] },
+          revokedAt: { type: ['string', 'null'] },
+          lastAuthenticatedAt: { type: ['string', 'null'] },
+          tokenDigest: { type: ['string', 'null'] },
+          revokedTokenDigest: { type: ['string', 'null'] },
+          lastRotatedBy: { type: ['string', 'null'] },
+          lastRevokedBy: { type: ['string', 'null'] },
+          current: { type: 'boolean' },
+          backendImplemented: { type: 'boolean' },
+          runtimeReady: { type: 'boolean' },
+          rotation: {
+            type: 'object',
+            required: ['supported', 'persistent', 'mode'],
+            properties: {
+              supported: { type: 'boolean' },
+              persistent: { type: 'boolean' },
+              mode: { type: 'string' },
+            },
+            additionalProperties: false,
+          },
+          revocation: {
+            type: 'object',
+            required: ['supported', 'persistent', 'mode'],
+            properties: {
+              supported: { type: 'boolean' },
+              persistent: { type: 'boolean' },
+              mode: { type: 'string' },
+            },
+            additionalProperties: false,
+          },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesGatewayAuthManagementSummary: {
+        type: 'object',
+        required: [
+          'mode',
+          'principalCount',
+          'supportsLiveReload',
+          'supportsRotation',
+          'supportsRevocation',
+          'supportsProvisioning',
+          'supportsDeletion',
+          'persistence',
+          'principalsPath',
+          'currentPrincipalPath',
+          'createPrincipalPath',
+          'deletePrincipalPathTemplate',
+          'rotatePathTemplate',
+          'revokePathTemplate',
+        ],
+        properties: {
+          mode: { type: 'string' },
+          principalCount: { type: 'integer' },
+          supportsLiveReload: { type: 'boolean' },
+          supportsRotation: { type: 'boolean' },
+          supportsRevocation: { type: 'boolean' },
+          supportsProvisioning: { type: 'boolean' },
+          supportsDeletion: { type: 'boolean' },
+          persistence: { type: 'string' },
+          authTokensFile: { type: ['string', 'null'] },
+          authTokenFile: { type: ['string', 'null'] },
+          principalsPath: { type: 'string' },
+          currentPrincipalPath: { type: 'string' },
+          createPrincipalPath: { type: 'string' },
+          deletePrincipalPathTemplate: { type: 'string' },
+          rotatePathTemplate: { type: 'string' },
+          revokePathTemplate: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesSdkPackageDescriptor: {
+        type: 'object',
+        required: ['distributionStatus', 'vendoredInRootPackage'],
+        properties: {
+          name: { type: ['string', 'null'] },
+          version: { type: ['string', 'null'] },
+          repoPath: { type: ['string', 'null'] },
+          moduleName: { type: ['string', 'null'] },
+          distributionStatus: { type: 'string' },
+          vendoredInRootPackage: { type: 'boolean' },
+          publicationStatus: { type: ['string', 'null'] },
+          publicRegistryPublished: { type: ['boolean', 'null'] },
+          recommendedConsumption: { type: ['string', 'null'] },
+          releaseAssetPatterns: { type: 'array', items: { type: 'string' } },
+          installExamples: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesSdkGeneratedBundle: {
+        type: 'object',
+        properties: {
+          repoPath: { type: ['string', 'null'] },
+          bundlePath: { type: ['string', 'null'] },
+          artifactVersion: { type: ['string', 'null'] },
         },
         additionalProperties: false,
       },
@@ -1216,21 +1927,154 @@ function buildSchemaPayload() {
       },
       CapabilitiesSignerProfileSection: {
         type: 'object',
-        required: ['supported', 'status', 'notes', 'secretBearingCommandCount', 'sampleSecretBearingCommands'],
+        required: [
+          'supported',
+          'status',
+          'notes',
+          'statusAxes',
+          'secretBearingCommandCount',
+          'sampleSecretBearingCommands',
+          'backendStatuses',
+          'readyBuiltinCount',
+          'readyBuiltinIds',
+          'degradedBuiltinCount',
+          'degradedBuiltinIds',
+          'placeholderBuiltinCount',
+          'placeholderBuiltinIds',
+          'pendingBuiltinCount',
+          'pendingBuiltinIds',
+        ],
         properties: {
           supported: { type: 'boolean' },
           status: { enum: ['active', 'planned', 'alpha', 'beta'] },
           notes: { type: 'array', items: { type: 'string' } },
+          statusAxes: {
+            type: 'object',
+            required: ['implementation', 'runtime'],
+            properties: {
+              implementation: {
+                type: 'object',
+                required: ['implemented', 'placeholder'],
+                properties: {
+                  implemented: { type: 'string' },
+                  placeholder: { type: 'string' },
+                },
+                additionalProperties: false,
+              },
+              runtime: {
+                type: 'object',
+                required: ['ready', 'degraded', 'placeholder', 'unknown'],
+                properties: {
+                  ready: { type: 'string' },
+                  degraded: { type: 'string' },
+                  placeholder: { type: 'string' },
+                  unknown: { type: 'string' },
+                },
+                additionalProperties: false,
+              },
+            },
+            additionalProperties: false,
+          },
           secretBearingCommandCount: { type: 'integer', minimum: 0 },
           sampleSecretBearingCommands: { type: 'array', items: { type: 'string' } },
           builtinIds: { type: 'array', items: { type: 'string' } },
+          mutableBuiltinCount: { type: 'integer', minimum: 0 },
+          mutableBuiltinIds: { type: 'array', items: { type: 'string' } },
           signerBackends: { type: 'array', items: { type: 'string' } },
           implementedBackends: { type: 'array', items: { type: 'string' } },
           placeholderBackends: { type: 'array', items: { type: 'string' } },
+          backendStatuses: {
+            type: 'object',
+            additionalProperties: { $ref: '#/definitions/CapabilitiesSignerBackendStatus' },
+          },
           readyBuiltinCount: { type: 'integer', minimum: 0 },
           readyBuiltinIds: { type: 'array', items: { type: 'string' } },
+          readyMutableBuiltinCount: { type: 'integer', minimum: 0 },
+          readyMutableBuiltinIds: { type: 'array', items: { type: 'string' } },
+          degradedBuiltinCount: { type: 'integer', minimum: 0 },
+          degradedBuiltinIds: { type: 'array', items: { type: 'string' } },
+          degradedMutableBuiltinCount: { type: 'integer', minimum: 0 },
+          degradedMutableBuiltinIds: { type: 'array', items: { type: 'string' } },
+          placeholderBuiltinCount: { type: 'integer', minimum: 0 },
+          placeholderBuiltinIds: { type: 'array', items: { type: 'string' } },
           pendingBuiltinCount: { type: 'integer', minimum: 0 },
           pendingBuiltinIds: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesPrincipalTemplateSection: {
+        type: 'object',
+        required: ['supported', 'status', 'notes', 'templates'],
+        properties: {
+          supported: { type: 'boolean' },
+          status: { enum: ['active', 'planned', 'alpha', 'beta'] },
+          notes: { type: 'array', items: { type: 'string' } },
+          templates: {
+            type: 'array',
+            items: { $ref: '#/definitions/CapabilitiesPrincipalTemplate' },
+          },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesPrincipalTemplate: {
+        type: 'object',
+        required: [
+          'id',
+          'summary',
+          'authMode',
+          'mutating',
+          'signerRequired',
+          'canonicalTools',
+          'recommendedCommands',
+          'grantedScopes',
+          'optionalScopes',
+          'tokenRecordTemplate',
+          'notes',
+        ],
+        properties: {
+          id: { type: 'string' },
+          summary: { type: 'string' },
+          authMode: { enum: ['remote-gateway-token-record'] },
+          mutating: { type: 'boolean' },
+          signerRequired: { type: 'boolean' },
+          canonicalTools: { type: 'array', items: { type: 'string' } },
+          recommendedCommands: { type: 'array', items: { type: 'string' } },
+          grantedScopes: { type: 'array', items: { type: 'string' } },
+          optionalScopes: { type: 'array', items: { type: 'string' } },
+          tokenRecordTemplate: { $ref: '#/definitions/CapabilitiesPrincipalTemplateTokenRecord' },
+          notes: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesPrincipalTemplateTokenRecord: {
+        type: 'object',
+        required: ['id', 'tokenPlaceholder', 'scopes'],
+        properties: {
+          id: { type: 'string' },
+          tokenPlaceholder: { type: 'string' },
+          scopes: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      CapabilitiesSignerBackendStatus: {
+        type: 'object',
+        required: [
+          'implementationStatus',
+          'runtimeStatus',
+          'builtinProfileCount',
+          'readyBuiltinIds',
+          'degradedBuiltinIds',
+          'placeholderBuiltinIds',
+          'notes',
+        ],
+        properties: {
+          implementationStatus: { enum: ['implemented', 'placeholder'] },
+          runtimeStatus: { enum: ['ready', 'degraded', 'placeholder', 'unknown'] },
+          builtinProfileCount: { type: 'integer', minimum: 0 },
+          readyBuiltinIds: { type: 'array', items: { type: 'string' } },
+          degradedBuiltinIds: { type: 'array', items: { type: 'string' } },
+          placeholderBuiltinIds: { type: 'array', items: { type: 'string' } },
+          notes: { type: 'array', items: { type: 'string' } },
         },
         additionalProperties: false,
       },
@@ -2051,6 +2895,24 @@ function buildSchemaPayload() {
           generatedAt: { type: 'string', format: 'date-time' },
         },
       },
+      PolicyExplainPayload: {
+        type: 'object',
+        properties: {
+          id: { type: ['string', 'null'] },
+          source: { type: ['string', 'null'] },
+          builtin: { type: ['boolean', 'null'] },
+          filePath: { type: ['string', 'null'] },
+          item: { type: ['object', 'null'] },
+          summary: { type: ['object', 'null'] },
+          requestedContext: { type: ['object', 'null'] },
+          compatibility: { type: ['object', 'null'] },
+          explanation: { type: ['object', 'null'] },
+          blockers: { type: 'array', items: { type: ['object', 'string'] } },
+          remediation: { type: 'array', items: { type: 'object' } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
       PolicyListPayload: {
         type: 'object',
         properties: {
@@ -2059,6 +2921,24 @@ function buildSchemaPayload() {
           builtinCount: { type: 'integer' },
           userCount: { type: 'integer' },
           errors: { type: 'array', items: { type: 'object' } },
+          items: { type: 'array', items: { type: 'object' } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      PolicyRecommendPayload: {
+        type: 'object',
+        properties: {
+          requestedContext: { type: ['object', 'null'] },
+          exact: { type: ['boolean', 'null'] },
+          count: { type: ['integer', 'null'] },
+          builtinCount: { type: ['integer', 'null'] },
+          userCount: { type: ['integer', 'null'] },
+          compatibleCount: { type: ['integer', 'null'] },
+          recommendedPolicyId: { type: ['string', 'null'] },
+          recommendedReadOnlyPolicyId: { type: ['string', 'null'] },
+          recommendedMutablePolicyId: { type: ['string', 'null'] },
+          diagnostics: { type: 'array', items: { type: 'object' } },
           items: { type: 'array', items: { type: 'object' } },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
@@ -2082,6 +2962,26 @@ function buildSchemaPayload() {
           builtinCount: { type: 'integer' },
           userCount: { type: 'integer' },
           errors: { type: 'array', items: { type: 'object' } },
+          items: { type: 'array', items: { type: 'object' } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      ProfileRecommendPayload: {
+        type: 'object',
+        properties: {
+          profileStoreFile: { type: ['string', 'null'] },
+          profileStoreExists: { type: ['boolean', 'null'] },
+          requestedContext: { type: ['object', 'null'] },
+          exact: { type: ['boolean', 'null'] },
+          builtInCount: { type: ['integer', 'null'] },
+          fileCount: { type: ['integer', 'null'] },
+          count: { type: ['integer', 'null'] },
+          compatibleCount: { type: ['integer', 'null'] },
+          recommendedProfileId: { type: ['string', 'null'] },
+          recommendedReadOnlyProfileId: { type: ['string', 'null'] },
+          recommendedMutableProfileId: { type: ['string', 'null'] },
+          diagnostics: { type: 'array', items: { type: 'object' } },
           items: { type: 'array', items: { type: 'object' } },
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
@@ -2185,6 +3085,125 @@ function buildSchemaPayload() {
           generatedAt: { type: 'string', format: 'date-time' },
         },
       },
+      OperationReceiptPayload: {
+        type: 'object',
+        properties: {
+          receiptId: { type: 'string' },
+          receiptKind: { type: 'string' },
+          receiptVersion: { type: 'integer' },
+          operationId: { type: 'string' },
+          operationHash: { type: ['string', 'null'] },
+          command: { type: ['string', 'null'] },
+          canonicalCommand: { type: ['string', 'null'] },
+          canonicalTool: { type: ['string', 'null'] },
+          tool: { type: ['string', 'null'] },
+          action: { type: ['string', 'null'] },
+          status: { type: 'string' },
+          terminal: { type: 'boolean' },
+          createdAt: { type: ['string', 'null'], format: 'date-time' },
+          updatedAt: { type: ['string', 'null'], format: 'date-time' },
+          terminalAt: { type: ['string', 'null'], format: 'date-time' },
+          summary: { type: ['string', 'null'] },
+          description: { type: ['string', 'null'] },
+          policyPack: { type: ['string', 'null'] },
+          profile: { type: ['string', 'null'] },
+          environment: { type: ['string', 'null'] },
+          mode: { type: ['string', 'null'] },
+          scope: { type: ['string', 'null'] },
+          tags: { type: 'array', items: { type: 'string' } },
+          parentOperationId: { type: ['string', 'null'] },
+          validatedAt: { type: ['string', 'null'], format: 'date-time' },
+          queuedAt: { type: ['string', 'null'], format: 'date-time' },
+          executingAt: { type: ['string', 'null'], format: 'date-time' },
+          startedAt: { type: ['string', 'null'], format: 'date-time' },
+          completedAt: { type: ['string', 'null'], format: 'date-time' },
+          failedAt: { type: ['string', 'null'], format: 'date-time' },
+          canceledAt: { type: ['string', 'null'], format: 'date-time' },
+          cancelledAt: { type: ['string', 'null'], format: 'date-time' },
+          closedAt: { type: ['string', 'null'], format: 'date-time' },
+          target: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          input: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          request: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          result: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          recovery: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          error: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          cancellation: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          closure: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          metadata: { type: ['object', 'null'] },
+          context: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+          checkpointCount: { type: 'integer' },
+          latestCheckpoint: { type: ['object', 'null'] },
+          checkpoints: { type: 'array', items: { type: 'object' } },
+          stateDigest: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+          issuedAt: { type: 'string', format: 'date-time' },
+          sealedAt: { type: 'string', format: 'date-time' },
+          supersedesReceiptHash: { type: ['string', 'null'] },
+          checkpointDigest: { type: 'string' },
+          hashes: {
+            type: 'object',
+            properties: {
+              targetHash: { type: 'string' },
+              inputHash: { type: 'string' },
+              requestHash: { type: 'string' },
+              contextHash: { type: 'string' },
+              metadataHash: { type: 'string' },
+              resultHash: { type: 'string' },
+              recoveryHash: { type: 'string' },
+              errorHash: { type: 'string' },
+              cancellationHash: { type: 'string' },
+              closureHash: { type: 'string' },
+              checkpointsHash: { type: 'string' },
+            },
+            required: ['targetHash', 'inputHash', 'requestHash', 'contextHash', 'metadataHash', 'resultHash', 'recoveryHash', 'errorHash', 'cancellationHash', 'closureHash', 'checkpointsHash'],
+            additionalProperties: false,
+          },
+          verification: {
+            type: 'object',
+            properties: {
+              algorithm: { type: 'string' },
+              receiptHash: { type: 'string' },
+              checkpointDigest: { type: 'string' },
+              signatureAlgorithm: { type: 'string' },
+              signature: { type: 'string' },
+              publicKeyPem: { type: 'string' },
+              publicKeyFingerprint: { type: 'string' },
+              keyId: { type: 'string' },
+            },
+            required: ['algorithm', 'receiptHash', 'checkpointDigest', 'signatureAlgorithm', 'signature', 'publicKeyPem', 'publicKeyFingerprint', 'keyId'],
+            additionalProperties: false,
+          },
+          receiptHash: { type: 'string' },
+          schemaVersion: { type: 'string' },
+        },
+      },
+      OperationReceiptVerificationPayload: {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean' },
+          code: { type: ['string', 'null'] },
+          operationId: { type: ['string', 'null'] },
+          operationHash: { type: ['string', 'null'] },
+          expectedOperationHash: { type: ['string', 'null'] },
+          receiptHash: { type: ['string', 'null'] },
+          signatureValid: { type: 'boolean' },
+          signatureAlgorithm: { type: ['string', 'null'] },
+          publicKeyFingerprint: { type: ['string', 'null'] },
+          keyId: { type: ['string', 'null'] },
+          mismatches: { type: 'array', items: { type: 'string' } },
+          source: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', enum: ['file', 'operation-id', 'detached'] },
+              value: { type: ['string', 'null'] },
+            },
+            required: ['type', 'value'],
+            additionalProperties: false,
+          },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
       SchemaCommandPayload: {
         type: 'object',
         required: [
@@ -2209,7 +3228,8 @@ function buildSchemaPayload() {
           type: { const: 'object' },
           oneOf: { type: 'array', items: { type: 'object' } },
           commandDescriptorVersion: { type: 'string' },
-          descriptorScope: { enum: ['command-surface'] },
+          descriptorScope: { enum: ['canonical-command-surface', 'command-surface+compatibility'] },
+          discoveryPreferences: { $ref: '#/definitions/DiscoveryPreferences' },
           commandDescriptors: {
             type: 'object',
             additionalProperties: commandDescriptorMetadata.descriptorValueSchema,
@@ -2241,13 +3261,17 @@ function createRunSchemaCommand(deps) {
         emitSuccess(context.outputMode, 'schema.help', buildSchemaHelpPayload());
       } else {
         // eslint-disable-next-line no-console
-        console.log('Usage: pandora --output json schema');
+        console.log('Usage: pandora --output json schema [--include-compatibility]');
         // eslint-disable-next-line no-console
         console.log('');
         // eslint-disable-next-line no-console
         console.log('Notes:');
         // eslint-disable-next-line no-console
         console.log('  - schema payload is available only in --output json mode.');
+        // eslint-disable-next-line no-console
+        console.log('  - By default it returns canonical command descriptors only.');
+        // eslint-disable-next-line no-console
+        console.log('  - Pass --include-compatibility only for legacy/debug workflows that need alias descriptors.');
       }
       return;
     }
@@ -2258,13 +3282,21 @@ function createRunSchemaCommand(deps) {
       });
     }
 
-    if (Array.isArray(args) && args.length > 0) {
+    const includeCompatibility = Array.isArray(args) && args.includes('--include-compatibility');
+    const unsupportedArgs = Array.isArray(args)
+      ? args.filter((arg) => arg !== '--include-compatibility')
+      : [];
+
+    if (unsupportedArgs.length > 0) {
       throw new CliError('INVALID_ARGS', 'schema does not accept additional flags or positional arguments.', {
-        hints: ['Run `pandora --output json schema` without extra arguments.'],
+        hints: [
+          'Run `pandora --output json schema`.',
+          'Use `pandora --output json schema --include-compatibility` only when alias descriptors are required.',
+        ],
       });
     }
 
-    emitSuccess(context.outputMode, 'schema', buildSchemaPayload());
+    emitSuccess(context.outputMode, 'schema', buildSchemaPayload({ includeCompatibility }));
   }
 
   return { runSchemaCommand };

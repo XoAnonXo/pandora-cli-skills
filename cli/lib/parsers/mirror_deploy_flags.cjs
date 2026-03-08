@@ -1,6 +1,7 @@
 const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
 const { parsePollCategoryFlag, DEFAULT_SPORTS_POLL_CATEGORY } = require('../shared/poll_categories.cjs');
 const { normalizeMirrorPathForMcp, parseMirrorTargetTimestamp, validateMirrorUrl } = require('./mirror_parser_guard.cjs');
+const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
 
 const MAX_UINT24 = 16_777_215;
 const DISTRIBUTION_SCALE = 1_000_000_000;
@@ -114,6 +115,8 @@ function createParseMirrorDeployFlags(deps) {
       chainId: null,
       rpcUrl: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
       oracle: null,
       factory: null,
       usdc: null,
@@ -234,6 +237,20 @@ function createParseMirrorDeployFlags(deps) {
         options.privateKey = parsePrivateKeyFlag(requireFlagValue(args, i, '--private-key'), '--private-key');
         i += 1;
         continue;
+      }
+      {
+        const nextIndex = consumeProfileSelectorFlag({
+          token,
+          args,
+          index: i,
+          options,
+          CliError,
+          requireFlagValue,
+        });
+        if (nextIndex !== null) {
+          i = nextIndex;
+          continue;
+        }
       }
       if (token === '--oracle') {
         options.oracle = parseAddressFlag(requireFlagValue(args, i, '--oracle'), '--oracle');
@@ -405,6 +422,7 @@ function createParseMirrorDeployFlags(deps) {
         '--sources requires at least two non-empty URLs when explicitly provided.',
       );
     }
+    assertNoMixedSignerSelectors(options, CliError);
 
     return options;
   };

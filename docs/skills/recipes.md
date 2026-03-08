@@ -78,4 +78,6 @@ pandora --output json recipe run \
 
 - Use `--policy-id` to override the recipe default policy.
 - Use `--profile-id` to force profile compatibility checks before run.
+- Remote recipe execution is intentionally narrower than local recipe execution.
+- If a recipe delegates to a long-running or remote-blocked tool, `recipe run` now denies that execution over remote MCP/HTTP even when the recipe itself is marked safe-by-default.
 - Recipes are currently conservative and safe-by-default; built-in recipes do not force live execution.

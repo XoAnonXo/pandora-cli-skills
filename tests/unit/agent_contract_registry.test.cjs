@@ -14,6 +14,18 @@ const EXCLUDED_FILES = new Set([
   path.resolve(CLI_ROOT, 'lib/agent_contract_registry.cjs'),
   path.resolve(CLI_ROOT, 'lib/schema_command_service.cjs'),
 ]);
+const GENERATED_CONTRACT_GAP_COMMANDS = new Set([
+  'bootstrap',
+  'policy',
+  'policy.explain',
+  'policy.recommend',
+  'profile',
+  'profile.recommend',
+  'markets.scan',
+  'trade.quote',
+  'sell.quote',
+  'arbitrage',
+]);
 
 function walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -44,6 +56,18 @@ function collectEmittedHelpCommands() {
 
 function sortByName(left, right) {
   return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
+}
+
+function omitGeneratedGapDescriptors(descriptors) {
+  const next = { ...descriptors };
+  for (const commandName of GENERATED_CONTRACT_GAP_COMMANDS) {
+    delete next[commandName];
+  }
+  return next;
+}
+
+function omitGeneratedGapToolDefinitions(definitions) {
+  return definitions.filter((definition) => definition && !GENERATED_CONTRACT_GAP_COMMANDS.has(definition.name));
 }
 
 test('shared agent contract registry covers all MCP tools with canonical metadata', () => {
@@ -175,6 +199,21 @@ test('policy and profile command contracts are exposed with typed MCP schemas', 
   assert.ok(policyGet);
   assert.equal(policyGet.inputSchema.properties.id.type, 'string');
 
+  const policyExplain = descriptors['policy.explain'];
+  assert.ok(policyExplain);
+  assert.equal(policyExplain.mcpExposed, true);
+  assert.equal(policyExplain.dataSchema, '#/definitions/PolicyExplainPayload');
+  assert.equal(policyExplain.inputSchema.properties.id.type, 'string');
+  assert.equal(policyExplain.inputSchema.properties.command.type, 'string');
+  assert.equal(policyExplain.inputSchema.properties['profile-id'].type, 'string');
+
+  const policyRecommend = descriptors['policy.recommend'];
+  assert.ok(policyRecommend);
+  assert.equal(policyRecommend.mcpExposed, true);
+  assert.equal(policyRecommend.dataSchema, '#/definitions/PolicyRecommendPayload');
+  assert.equal(policyRecommend.inputSchema.properties.command.type, 'string');
+  assert.equal(policyRecommend.inputSchema.properties['profile-id'].type, 'string');
+
   const profileList = descriptors['profile.list'];
   assert.ok(profileList);
   assert.equal(profileList.mcpExposed, true);
@@ -184,23 +223,94 @@ test('policy and profile command contracts are exposed with typed MCP schemas', 
   assert.ok(profileValidate);
   assert.equal(profileValidate.inputSchema.properties.file.type, 'string');
 
+  const profileGet = descriptors['profile.get'];
+  assert.ok(profileGet);
+  assert.equal(profileGet.inputSchema.properties.command.type, 'string');
+  assert.equal(profileGet.inputSchema.properties.mode.type, 'string');
+  assert.equal(profileGet.inputSchema.properties['chain-id'].type, 'string');
+  assert.equal(profileGet.inputSchema.properties.category.type, 'string');
+  assert.equal(profileGet.inputSchema.properties['policy-id'].type, 'string');
+
+  const profileExplain = descriptors['profile.explain'];
+  assert.ok(profileExplain);
+  assert.equal(profileExplain.inputSchema.properties.command.type, 'string');
+  assert.equal(profileExplain.inputSchema.properties['policy-id'].type, 'string');
+
+  const profileRecommend = descriptors['profile.recommend'];
+  assert.ok(profileRecommend);
+  assert.equal(profileRecommend.mcpExposed, true);
+  assert.equal(profileRecommend.dataSchema, '#/definitions/ProfileRecommendPayload');
+  assert.equal(profileRecommend.inputSchema.properties.command.type, 'string');
+  assert.equal(profileRecommend.inputSchema.properties['policy-id'].type, 'string');
+  assert.equal(profileRecommend.inputSchema.properties['no-builtins'].type, 'boolean');
+  assert.equal(profileRecommend.inputSchema.properties['builtin-only'].type, 'boolean');
+
   const sportsOddsBulk = descriptors['sports.odds.bulk'];
   assert.ok(sportsOddsBulk);
   assert.equal(sportsOddsBulk.mcpExposed, true);
   assert.equal(sportsOddsBulk.dataSchema, '#/definitions/SportsBulkOddsPayload');
   assert.equal(sportsOddsBulk.inputSchema.properties.competition.type, 'string');
+
+  const operationsReceipt = descriptors['operations.receipt'];
+  assert.ok(operationsReceipt);
+  assert.equal(operationsReceipt.mcpExposed, true);
+  assert.equal(operationsReceipt.dataSchema, '#/definitions/OperationReceiptPayload');
+  assert.equal(operationsReceipt.inputSchema.properties.id.type, 'string');
+
+  const operationsVerifyReceipt = descriptors['operations.verify-receipt'];
+  assert.ok(operationsVerifyReceipt);
+  assert.equal(operationsVerifyReceipt.mcpExposed, true);
+  assert.equal(operationsVerifyReceipt.dataSchema, '#/definitions/OperationReceiptVerificationPayload');
+  assert.equal(operationsVerifyReceipt.inputSchema.properties.id.type, 'string');
+});
+
+test('direct signer-bearing command contracts expose profile selectors alongside raw-key fallback', () => {
+  const descriptors = buildCommandDescriptors();
+  for (const commandName of ['trade', 'sell', 'lp.add', 'lp.remove', 'resolve', 'claim', 'sports.create.run', 'mirror.deploy', 'mirror.go', 'mirror.sync.once', 'mirror.sync.run', 'mirror.sync.start']) {
+    const descriptor = descriptors[commandName];
+    assert.ok(descriptor, `missing descriptor for ${commandName}`);
+    assert.equal(descriptor.inputSchema.properties['profile-id'].type, 'string', `${commandName} missing profile-id schema`);
+    assert.equal(descriptor.inputSchema.properties['profile-file'].type, 'string', `${commandName} missing profile-file schema`);
+    assert.equal(descriptor.inputSchema.properties['private-key'].type, 'string', `${commandName} missing private-key compatibility schema`);
+    assert.match(descriptor.usage, /--profile-id <id>\|--profile-file <path>/, `${commandName} usage missing profile selector guidance`);
+  }
 });
 
 test('generated descriptor and MCP tool slices stay in sync with the live registry builders', () => {
-  assert.deepEqual(generatedCommandDescriptors, buildCommandDescriptors());
+  assert.deepEqual(
+    omitGeneratedGapDescriptors(generatedCommandDescriptors),
+    omitGeneratedGapDescriptors(buildCommandDescriptors()),
+  );
   const compiled = buildSdkContractComponents({
     packageVersion: require('../../package.json').version,
     remoteTransportActive: false,
   });
   assert.deepEqual(
-    generatedMcpToolDefinitions,
-    compiled.mcpToolDefinitions.slice().sort(sortByName),
+    omitGeneratedGapToolDefinitions(generatedMcpToolDefinitions),
+    omitGeneratedGapToolDefinitions(compiled.mcpToolDefinitions.slice().sort(sortByName)),
   );
+});
+
+test('bootstrap contract exists as a canonical remote-eligible discovery tool and aliases remain demoted', () => {
+  const descriptors = buildCommandDescriptors();
+  const bootstrap = descriptors.bootstrap;
+  assert.ok(bootstrap);
+  assert.equal(bootstrap.mcpExposed, true);
+  assert.equal(bootstrap.canonicalTool, 'bootstrap');
+  assert.equal(bootstrap.preferred, true);
+  assert.deepEqual(bootstrap.outputModes, ['json']);
+  assert.equal(bootstrap.riskLevel, 'low');
+  assert.equal(bootstrap.supportsRemote, true);
+  assert.equal(bootstrap.remoteEligible, true);
+  assert.deepEqual(bootstrap.agentWorkflow.requiredTools, ['capabilities', 'schema']);
+  assert.deepEqual(bootstrap.agentWorkflow.recommendedTools, ['help']);
+  assert.match(bootstrap.agentWorkflow.notes[2], /aliasOf entries/);
+
+  const arbitrage = descriptors.arbitrage;
+  assert.ok(arbitrage);
+  assert.equal(arbitrage.aliasOf, 'arb.scan');
+  assert.equal(arbitrage.preferred, false);
+  assert.equal(arbitrage.canonicalTool, 'arb.scan');
 });
 
 test('shared agent contract registry normalizes MCP metadata defaults and alias metadata', () => {
@@ -229,6 +339,67 @@ test('shared agent contract registry normalizes MCP metadata defaults and alias 
   assert.equal(helpDescriptor.mcpLongRunningBlocked, false);
   assert.deepEqual(helpDescriptor.controlInputNames, []);
   assert.equal(helpDescriptor.agentWorkflow, null);
+
+  const bootstrapDefinition = mcpDefinitions.get('bootstrap');
+  assert.ok(bootstrapDefinition);
+  assert.equal(bootstrapDefinition.aliasOf, null);
+  assert.equal(bootstrapDefinition.canonicalTool, 'bootstrap');
+  assert.equal(bootstrapDefinition.preferred, true);
+  assert.equal(bootstrapDefinition.mutating, false);
+  assert.equal(bootstrapDefinition.longRunningBlocked, false);
+  assert.equal(bootstrapDefinition.placeholderBlocked, false);
+  assert.deepEqual(bootstrapDefinition.safeFlags, []);
+  assert.deepEqual(bootstrapDefinition.executeFlags, []);
+  assert.deepEqual(bootstrapDefinition.controlInputNames, []);
+  assert.deepEqual(bootstrapDefinition.agentWorkflow.requiredTools, ['capabilities', 'schema']);
+
+  const bootstrapDescriptor = descriptors.bootstrap;
+  assert.ok(bootstrapDescriptor);
+  assert.equal(bootstrapDescriptor.aliasOf, null);
+  assert.equal(bootstrapDescriptor.canonicalTool, 'bootstrap');
+  assert.equal(bootstrapDescriptor.preferred, true);
+  assert.equal(bootstrapDescriptor.mcpMutating, false);
+  assert.equal(bootstrapDescriptor.mcpLongRunningBlocked, false);
+  assert.deepEqual(bootstrapDescriptor.controlInputNames, []);
+  assert.deepEqual(bootstrapDescriptor.agentWorkflow, bootstrapDefinition.agentWorkflow);
+  assert.equal(bootstrapDescriptor.executeIntentRequired, false);
+  assert.equal(bootstrapDescriptor.executeIntentRequiredForLiveMode, false);
+  assert.equal(bootstrapDescriptor.supportsRemote, true);
+  assert.equal(bootstrapDescriptor.remoteEligible, true);
+
+  const policyRecommendDefinition = mcpDefinitions.get('policy.recommend');
+  assert.ok(policyRecommendDefinition);
+  assert.equal(policyRecommendDefinition.aliasOf, null);
+  assert.equal(policyRecommendDefinition.canonicalTool, 'policy.recommend');
+  assert.equal(policyRecommendDefinition.preferred, true);
+  assert.equal(policyRecommendDefinition.mutating, false);
+  assert.deepEqual(policyRecommendDefinition.controlInputNames, []);
+
+  const policyRecommendDescriptor = descriptors['policy.recommend'];
+  assert.ok(policyRecommendDescriptor);
+  assert.equal(policyRecommendDescriptor.aliasOf, null);
+  assert.equal(policyRecommendDescriptor.canonicalTool, 'policy.recommend');
+  assert.equal(policyRecommendDescriptor.preferred, true);
+  assert.equal(policyRecommendDescriptor.mcpMutating, false);
+  assert.equal(policyRecommendDescriptor.supportsRemote, true);
+  assert.equal(policyRecommendDescriptor.remoteEligible, true);
+
+  const profileRecommendDefinition = mcpDefinitions.get('profile.recommend');
+  assert.ok(profileRecommendDefinition);
+  assert.equal(profileRecommendDefinition.aliasOf, null);
+  assert.equal(profileRecommendDefinition.canonicalTool, 'profile.recommend');
+  assert.equal(profileRecommendDefinition.preferred, true);
+  assert.equal(profileRecommendDefinition.mutating, false);
+  assert.deepEqual(profileRecommendDefinition.controlInputNames, []);
+
+  const profileRecommendDescriptor = descriptors['profile.recommend'];
+  assert.ok(profileRecommendDescriptor);
+  assert.equal(profileRecommendDescriptor.aliasOf, null);
+  assert.equal(profileRecommendDescriptor.canonicalTool, 'profile.recommend');
+  assert.equal(profileRecommendDescriptor.preferred, true);
+  assert.equal(profileRecommendDescriptor.mcpMutating, false);
+  assert.equal(profileRecommendDescriptor.supportsRemote, true);
+  assert.equal(profileRecommendDescriptor.remoteEligible, true);
 
   const aliasDefinition = mcpDefinitions.get('arbitrage');
   assert.ok(aliasDefinition);

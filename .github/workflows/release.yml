@@ -56,12 +56,60 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Release prep
+      - name: Install Python build frontend
+        run: python3 -m pip install --disable-pip-version-check --quiet "setuptools>=68" wheel build
+
+      - name: Verify release tag matches package version
+        id: release_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          EXPECTED_TAG="v${PACKAGE_VERSION}"
+
+          if [[ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]]; then
+            echo "Git tag ${GITHUB_REF_NAME} does not match package.json version ${PACKAGE_VERSION}." >&2
+            exit 1
+          fi
+
+          {
+            echo "package_name=${PACKAGE_NAME}"
+            echo "package_version=${PACKAGE_VERSION}"
+            echo "expected_tag=${EXPECTED_TAG}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify release drift prerequisites
+        run: node scripts/check_release_drift.cjs --tag "${GITHUB_REF_NAME}" --require-clean-tree
+
+      - name: Release prep (SDK parity, smoke, benchmark gate, trust checks)
         run: npm run release:prep
+
+      - name: Refresh benchmark publication JSON artifacts
+        id: benchmark_publication
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node scripts/build_benchmark_publication_bundle.cjs
+
+          {
+            echo "bundle_json=benchmarks/latest/core-bundle.json"
+            echo "history_json=benchmarks/latest/core-history.json"
+            echo "docs_history_json=docs/benchmarks/history.json"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Assert tracked worktree clean after release prep
+        run: node scripts/check_release_drift.cjs --tag "${GITHUB_REF_NAME}" --require-clean-tree
+
+      - name: Build standalone SDK artifacts
+        run: npm run release:build-sdk-artifacts
 
       - name: Build npm package and checksums
         id: pack
@@ -79,6 +127,84 @@ jobs:
             echo "checksum_file=$TARBALL.sha256"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Verify publish manifest restored after pack
+        run: node scripts/check_release_drift.cjs --tag "${GITHUB_REF_NAME}" --require-clean-tree
+
+      - name: Assert tracked worktree clean after npm pack
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+            echo "Tracked worktree changed during npm pack/prepack. Publish-safe manifest restoration is incomplete." >&2
+            git status --short --untracked-files=no >&2
+            git diff --stat -- . >&2 || true
+            exit 1
+          fi
+
+      - name: Verify benchmark publication bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f benchmarks/latest/core-report.json
+          test -f benchmarks/latest/core-bundle.json
+          test -f benchmarks/latest/core-history.json
+          test -f benchmarks/locks/core.lock.json
+          test -f docs/benchmarks/history.json
+          test -d docs/benchmarks
+
+      - name: Build benchmark publication bundle
+        id: benchmark_bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUNDLE_ROOT="dist/release/benchmarks"
+          BUNDLE_DIR="$BUNDLE_ROOT/benchmark-publication-bundle"
+          BUNDLE_FILE="$BUNDLE_ROOT/benchmark-publication-bundle.tar.gz"
+          BUNDLE_CHECKSUM_FILE="$BUNDLE_FILE.sha256"
+
+          rm -rf "$BUNDLE_DIR" "$BUNDLE_FILE" "$BUNDLE_CHECKSUM_FILE"
+          mkdir -p "$BUNDLE_DIR/benchmarks/latest" "$BUNDLE_DIR/benchmarks/locks" "$BUNDLE_DIR/docs"
+
+          cp benchmarks/latest/core-report.json "$BUNDLE_DIR/benchmarks/latest/core-report.json"
+          cp benchmarks/latest/core-bundle.json "$BUNDLE_DIR/benchmarks/latest/core-bundle.json"
+          cp benchmarks/latest/core-history.json "$BUNDLE_DIR/benchmarks/latest/core-history.json"
+          cp benchmarks/locks/core.lock.json "$BUNDLE_DIR/benchmarks/locks/core.lock.json"
+          cp -R docs/benchmarks "$BUNDLE_DIR/docs/benchmarks"
+
+          tar -czf "$BUNDLE_FILE" -C "$BUNDLE_ROOT" "$(basename "$BUNDLE_DIR")"
+          sha256sum "$BUNDLE_FILE" > "$BUNDLE_CHECKSUM_FILE"
+
+          {
+            echo "bundle_file=$BUNDLE_FILE"
+            echo "bundle_checksum_file=$BUNDLE_CHECKSUM_FILE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build benchmark publication manifest
+        id: benchmark_manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MANIFEST_FILE="dist/release/benchmarks/benchmark-publication-manifest.json"
+          node scripts/build_benchmark_publication_manifest.cjs \
+            --tarball "${{ steps.pack.outputs.tarball }}" \
+            --report benchmarks/latest/core-report.json \
+            --lock benchmarks/locks/core.lock.json \
+            --bundle benchmarks/latest/core-bundle.json \
+            --history benchmarks/latest/core-history.json \
+            --docsHistory docs/benchmarks/history.json \
+            --out "$MANIFEST_FILE"
+
+          sha256sum "$MANIFEST_FILE" > "${MANIFEST_FILE}.sha256"
+
+          {
+            echo "manifest_file=$MANIFEST_FILE"
+            echo "manifest_checksum_file=${MANIFEST_FILE}.sha256"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Generate SBOM and aggregate checksums
         id: sbom
         shell: bash
@@ -86,11 +212,55 @@ jobs:
           set -euo pipefail
 
           SBOM_FILE="sbom.spdx.json"
+          BENCHMARK_REPORT="benchmarks/latest/core-report.json"
+          BENCHMARK_BUNDLE_JSON="benchmarks/latest/core-bundle.json"
+          BENCHMARK_HISTORY_JSON="benchmarks/latest/core-history.json"
+          BENCHMARK_DOC_HISTORY_JSON="docs/benchmarks/history.json"
+          BENCHMARK_LOCK="benchmarks/locks/core.lock.json"
+          BENCHMARK_BUNDLE="${{ steps.benchmark_bundle.outputs.bundle_file }}"
+          BENCHMARK_BUNDLE_CHECKSUM="${{ steps.benchmark_bundle.outputs.bundle_checksum_file }}"
+          BENCHMARK_MANIFEST="${{ steps.benchmark_manifest.outputs.manifest_file }}"
+          BENCHMARK_MANIFEST_CHECKSUM="${{ steps.benchmark_manifest.outputs.manifest_checksum_file }}"
+          SDK_CHECKSUMS="dist/release/sdk/sdk-checksums.sha256"
+          SDK_MANIFEST="dist/release/sdk/sdk-release-manifest.json"
           node scripts/generate_sbom.cjs --format spdx --output "$SBOM_FILE"
           test -f "$SBOM_FILE"
+          test -f "$BENCHMARK_REPORT"
+          test -f "$BENCHMARK_BUNDLE_JSON"
+          test -f "$BENCHMARK_HISTORY_JSON"
+          test -f "$BENCHMARK_DOC_HISTORY_JSON"
+          test -f "$BENCHMARK_LOCK"
+          test -f "$BENCHMARK_BUNDLE"
+          test -f "$BENCHMARK_BUNDLE_CHECKSUM"
+          test -f "$BENCHMARK_MANIFEST"
+          test -f "$BENCHMARK_MANIFEST_CHECKSUM"
+          test -f "$SDK_CHECKSUMS"
+          test -f "$SDK_MANIFEST"
 
           sha256sum "$SBOM_FILE" > "$SBOM_FILE.sha256"
-          cat "${{ steps.pack.outputs.checksum_file }}" "$SBOM_FILE.sha256" > checksums.sha256
+          sha256sum "$BENCHMARK_REPORT" | sed 's|  benchmarks/latest/core-report.json$|  core-report.json|' > core-report.json.sha256
+          sha256sum "$BENCHMARK_BUNDLE_JSON" | sed 's|  benchmarks/latest/core-bundle.json$|  core-bundle.json|' > core-bundle.json.sha256
+          sha256sum "$BENCHMARK_HISTORY_JSON" | sed 's|  benchmarks/latest/core-history.json$|  core-history.json|' > core-history.json.sha256
+          sha256sum "$BENCHMARK_LOCK" | sed 's|  benchmarks/locks/core.lock.json$|  core.lock.json|' > core.lock.json.sha256
+          sha256sum "$BENCHMARK_BUNDLE" | sed 's|  .*/benchmark-publication-bundle.tar.gz$|  benchmark-publication-bundle.tar.gz|' > benchmark-publication-bundle.tar.gz.sha256
+          sha256sum "$BENCHMARK_MANIFEST" | sed 's|  .*/benchmark-publication-manifest.json$|  benchmark-publication-manifest.json|' > benchmark-publication-manifest.json.sha256
+          sha256sum "$SDK_CHECKSUMS" | sed 's|  dist/release/sdk/sdk-checksums.sha256$|  sdk-checksums.sha256|' > sdk-checksums.sha256.sha256
+          sha256sum "$SDK_MANIFEST" | sed 's|  dist/release/sdk/sdk-release-manifest.json$|  sdk-release-manifest.json|' > sdk-release-manifest.json.sha256
+          cat \
+            "${{ steps.pack.outputs.checksum_file }}" \
+            "$SBOM_FILE.sha256" \
+            core-report.json.sha256 \
+            core-bundle.json.sha256 \
+            core-history.json.sha256 \
+            core.lock.json.sha256 \
+            benchmark-publication-bundle.tar.gz.sha256 \
+            benchmark-publication-manifest.json.sha256 \
+            sdk-checksums.sha256.sha256 \
+            sdk-release-manifest.json.sha256 \
+            "$BENCHMARK_BUNDLE_CHECKSUM" \
+            "$BENCHMARK_MANIFEST_CHECKSUM" \
+            "$SDK_CHECKSUMS" \
+            > checksums.sha256
 
           {
             echo "sbom_file=$SBOM_FILE"
@@ -146,6 +316,46 @@ jobs:
 
           echo "bundle_asset=$BUNDLE_ASSET" >> "$GITHUB_OUTPUT"
 
+      - name: Generate GitHub benchmark bundle attestation
+        id: attest_benchmark_bundle
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: ${{ steps.benchmark_bundle.outputs.bundle_file }}
+
+      - name: Prepare benchmark bundle attestation asset
+        id: benchmark_bundle_attestation_asset
+        shell: bash
+        env:
+          BENCHMARK_BUNDLE_FILE: ${{ steps.benchmark_bundle.outputs.bundle_file }}
+          BUNDLE_PATH: ${{ steps.attest_benchmark_bundle.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+
+          BUNDLE_ASSET="${BENCHMARK_BUNDLE_FILE}.intoto.jsonl"
+          cp "$BUNDLE_PATH" "$BUNDLE_ASSET"
+
+          echo "bundle_asset=$BUNDLE_ASSET" >> "$GITHUB_OUTPUT"
+
+      - name: Generate GitHub benchmark manifest attestation
+        id: attest_benchmark_manifest
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: ${{ steps.benchmark_manifest.outputs.manifest_file }}
+
+      - name: Prepare benchmark manifest attestation asset
+        id: benchmark_manifest_attestation_asset
+        shell: bash
+        env:
+          BENCHMARK_MANIFEST_FILE: ${{ steps.benchmark_manifest.outputs.manifest_file }}
+          BUNDLE_PATH: ${{ steps.attest_benchmark_manifest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+
+          BUNDLE_ASSET="${BENCHMARK_MANIFEST_FILE}.intoto.jsonl"
+          cp "$BUNDLE_PATH" "$BUNDLE_ASSET"
+
+          echo "bundle_asset=$BUNDLE_ASSET" >> "$GITHUB_OUTPUT"
+
       - name: Sign tarball and verify signature (keyless)
         id: sign
         shell: bash
@@ -175,6 +385,73 @@ jobs:
             echo "certificate_file=$CERT_FILE"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Sign standalone SDK artifacts and verify signatures (keyless)
+        shell: bash
+        env:
+          CERT_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          artifacts=(
+            dist/release/sdk/npm/*.tgz
+            dist/release/sdk/python/*.whl
+            dist/release/sdk/python/*.tar.gz
+          )
+
+          if [[ ${#artifacts[@]} -eq 0 ]]; then
+            echo "No standalone SDK artifacts found to sign." >&2
+            exit 1
+          fi
+
+          for artifact in "${artifacts[@]}"; do
+            sig_file="${artifact}.sig"
+            cert_file="${artifact}.pem"
+
+            cosign sign-blob --yes \
+              --output-signature "$sig_file" \
+              --output-certificate "$cert_file" \
+              "$artifact"
+
+            cosign verify-blob \
+              --signature "$sig_file" \
+              --certificate "$cert_file" \
+              --certificate-identity "$CERT_IDENTITY" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$artifact" >/dev/null
+          done
+
+      - name: Publish npm package
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          npm publish "${{ steps.pack.outputs.tarball }}" --access public --provenance
+
+      - name: Verify npm publication parity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME="${{ steps.release_meta.outputs.package_name }}"
+          PACKAGE_VERSION="${{ steps.release_meta.outputs.package_version }}"
+          EXPECTED_TARBALL="$(basename "${{ steps.pack.outputs.tarball }}")"
+
+          for attempt in {1..12}; do
+            PUBLISHED_VERSION="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --json 2>/dev/null | tr -d '\"')"
+            PUBLISHED_TARBALL="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.tarball --json 2>/dev/null | tr -d '\"')"
+            if [[ "${PUBLISHED_VERSION}" == "${PACKAGE_VERSION}" && "${PUBLISHED_TARBALL}" == *"/${EXPECTED_TARBALL}" ]]; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "npm publish verification failed for ${PACKAGE_NAME}@${PACKAGE_VERSION}." >&2
+          npm view "${PACKAGE_NAME}" version dist.tarball --json >&2 || true
+          exit 1
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -185,7 +462,28 @@ jobs:
             sbom.spdx.json
             sbom.spdx.json.sha256
             ${{ steps.sbom_attestation_asset.outputs.bundle_asset }}
+            benchmarks/latest/core-report.json
+            benchmarks/latest/core-bundle.json
+            benchmarks/latest/core-history.json
+            benchmarks/locks/core.lock.json
+            ${{ steps.benchmark_bundle.outputs.bundle_file }}
+            ${{ steps.benchmark_bundle.outputs.bundle_checksum_file }}
+            ${{ steps.benchmark_bundle_attestation_asset.outputs.bundle_asset }}
+            ${{ steps.benchmark_manifest.outputs.manifest_file }}
+            ${{ steps.benchmark_manifest.outputs.manifest_checksum_file }}
+            ${{ steps.benchmark_manifest_attestation_asset.outputs.bundle_asset }}
             checksums.sha256
+            dist/release/sdk/sdk-checksums.sha256
+            dist/release/sdk/sdk-release-manifest.json
+            dist/release/sdk/npm/*.tgz
+            dist/release/sdk/npm/*.tgz.sig
+            dist/release/sdk/npm/*.tgz.pem
+            dist/release/sdk/python/*.whl
+            dist/release/sdk/python/*.whl.sig
+            dist/release/sdk/python/*.whl.pem
+            dist/release/sdk/python/*.tar.gz
+            dist/release/sdk/python/*.tar.gz.sig
+            dist/release/sdk/python/*.tar.gz.pem
             ${{ steps.attestation_asset.outputs.bundle_asset }}
             ${{ steps.sign.outputs.signature_file }}
             ${{ steps.sign.outputs.certificate_file }}
@@ -200,7 +498,28 @@ jobs:
             sbom.spdx.json
             sbom.spdx.json.sha256
             ${{ steps.sbom_attestation_asset.outputs.bundle_asset }}
+            benchmarks/latest/core-report.json
+            benchmarks/latest/core-bundle.json
+            benchmarks/latest/core-history.json
+            benchmarks/locks/core.lock.json
+            ${{ steps.benchmark_bundle.outputs.bundle_file }}
+            ${{ steps.benchmark_bundle.outputs.bundle_checksum_file }}
+            ${{ steps.benchmark_bundle_attestation_asset.outputs.bundle_asset }}
+            ${{ steps.benchmark_manifest.outputs.manifest_file }}
+            ${{ steps.benchmark_manifest.outputs.manifest_checksum_file }}
+            ${{ steps.benchmark_manifest_attestation_asset.outputs.bundle_asset }}
             checksums.sha256
+            dist/release/sdk/sdk-checksums.sha256
+            dist/release/sdk/sdk-release-manifest.json
+            dist/release/sdk/npm/*.tgz
+            dist/release/sdk/npm/*.tgz.sig
+            dist/release/sdk/npm/*.tgz.pem
+            dist/release/sdk/python/*.whl
+            dist/release/sdk/python/*.whl.sig
+            dist/release/sdk/python/*.whl.pem
+            dist/release/sdk/python/*.tar.gz
+            dist/release/sdk/python/*.tar.gz.sig
+            dist/release/sdk/python/*.tar.gz.pem
             ${{ steps.attestation_asset.outputs.bundle_asset }}
             ${{ steps.sign.outputs.signature_file }}
             ${{ steps.sign.outputs.certificate_file }}

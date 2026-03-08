@@ -11,37 +11,57 @@ For a faster task-focused path:
   - [`../trust/release-verification.md`](../trust/release-verification.md)
   - [`../trust/security-model.md`](../trust/security-model.md)
   - [`../trust/support-matrix.md`](../trust/support-matrix.md)
+  - [`../trust/operator-deployment.md`](../trust/operator-deployment.md)
 - trade/sell/claim workflows:
   - [`trading-workflows.md`](./trading-workflows.md)
 - portfolio and closeout workflows:
   - [`portfolio-closeout.md`](./portfolio-closeout.md)
 
 ## Agent-native entrypoints
+- `pandora --output json bootstrap`
+  - canonical first-call bootstrap payload for cold clients: principal/scopes, canonical tools, recommended next calls, policy/profile readiness, and docs/trust routing
 - `pandora --output json capabilities`
   - compact runtime discovery digest: canonical tool routing, risk/idempotency metadata, output modes, transport status
 - `pandora --output json schema`
   - emits machine-readable envelope schema and full command descriptors
 - `pandora --output json policy list|get|lint`
   - inspect the shipped policy packs and validate candidate custom packs
-- `pandora --output json profile list|get|validate`
+- `pandora --output json profile list|get|explain|validate`
   - inspect shipped/sample signer profiles, readiness, and validate candidate custom profiles
 - `pandora mcp`
   - runs MCP over stdio for direct tool execution
 - `pandora mcp http [--host <host>] [--port <port>] [--public-base-url <url>] [--auth-token <token>|--auth-token-file <path>] [--auth-scopes <csv>]`
   - runs the shipped remote streamable HTTP MCP gateway; inactive until started
   - if `--auth-token` / `--auth-token-file` are omitted, the gateway generates a bearer token and stores it at `~/.pandora/mcp-http/auth-token`
-- `pandora operations get|list|cancel|close`
+  - for multi-principal operator deployments, prefer `--auth-tokens-file <path>`
+  - remote discovery and observability endpoints are:
+    - `GET /auth`
+    - `GET /auth/current`
+    - `GET /auth/principals`
+    - `GET /bootstrap`
+    - `GET /capabilities`
+    - `GET /schema`
+    - `GET /tools`
+    - `GET /health`
+    - `GET /ready`
+    - `GET /metrics` (authenticated, requires bearer auth plus `capabilities:read`)
+    - `GET /operations/{operationId}/webhooks`
+    - `POST /auth/principals/{principalId}/rotate`
+    - `POST /auth/principals/{principalId}/revoke`
+  - compatibility aliases stay hidden by default on `/bootstrap` and `/tools`; opt in with `include_aliases=1` only for legacy/debug inspection or migration diffing
+  - use [`../trust/operator-deployment.md`](../trust/operator-deployment.md) for reverse-proxy, TLS, systemd, and container guidance
+- `pandora operations get|list|receipt|verify-receipt|cancel|close`
   - inspect and control persisted mutable-operation records
+  - terminal mutable operations also emit durable receipt artifacts in the operation store
 - `pandora --output json agent market autocomplete ...`
 - `pandora --output json agent market validate ...`
 
 ## SDK generation and contract export
-- SDK alpha source/artifact surfaces ship in this build:
-  - JavaScript/TypeScript SDK entrypoints under `sdk/typescript`
-  - TypeScript embedded loader/manifest under `sdk/typescript/generated`
-  - Python SDK source/package under `sdk/python`
-  - Python embedded manifest under `sdk/python/pandora_agent/generated`
-  - shared JS contract export under `sdk/generated`
+- SDK alpha surfaces ship in this build as standalone packages, and the repository/root package also vendors matching copies:
+  - TypeScript/Node SDK: standalone package identity `@pandora/agent-sdk`, repository path `sdk/typescript`, vendored root-package copy `pandora-cli-skills/sdk/typescript`
+  - Python SDK: standalone package identity `pandora-agent`, repository path `sdk/python`, module/import name `pandora_agent`
+  - shared JS contract export: standalone TypeScript subpath `@pandora/agent-sdk/generated`, repository/root bundle `sdk/generated`, vendored root-package subpath `pandora-cli-skills/sdk/generated`
+  - release flow builds and verifies standalone SDK artifacts for those identities; this doc does not claim public registry publication yet
 - `capabilities.data.transports.sdk` reports the shipping state; current builds return `supported=true` and `status="alpha"`.
 - Regenerate the vendored bundle with:
 
@@ -57,6 +77,7 @@ Run that only from a repository checkout. Installed packages already include the
   - `versionCompatibility` for transport and descriptor version notes
   - `registryDigest` for drift detection
   - `trustDistribution` for packaged trust signals, release scripts, and verification posture
+  - `principalTemplates` for shipped remote-gateway auth personas and least-privilege token-record templates
 - Use `schema` for authoritative codegen input:
   - top-level envelope definitions
   - exact per-command `inputSchema`
@@ -65,9 +86,18 @@ Run that only from a repository checkout. Installed packages already include the
   - `sdk/generated`
   - `sdk/typescript/generated`
   - `sdk/python/pandora_agent/generated`
-- In the published root package, `sdk/generated` remains the shared JS contract export surface and embedded SDK loaders/manifests route to it instead of duplicating the heavy JSON bundle.
+- Standalone SDK packages ship package-local generated artifacts.
+- In the published root package, `sdk/generated` remains the shared JS contract export surface and the vendored SDK manifests/loaders route back to it instead of duplicating the heavy JSON bundle.
 - The TypeScript SDK keeps its embedded manifest at `sdk/typescript/generated/manifest.json`.
 - The Python SDK keeps its embedded manifest at `sdk/python/pandora_agent/generated/manifest.json`.
+- Standalone-package consumers should treat the SDK packages as the primary delivery vehicle:
+  - TypeScript package identity: `@pandora/agent-sdk`
+  - TypeScript generated bundle subpath: `@pandora/agent-sdk/generated`
+  - Python package identity: `pandora-agent`
+- The root Pandora package still vendors matching copies:
+  - TypeScript client entrypoint: `pandora-cli-skills/sdk/typescript`
+  - shared static contract bundle: `pandora-cli-skills/sdk/generated`
+  - Python vendored source tree: `sdk/python` inside the repository or unpacked Pandora package tree
 - Rebuild generated clients when either of these changes:
   - `commandDescriptorVersion`
   - `capabilities.data.registryDigest.descriptorHash`
@@ -85,8 +115,9 @@ Run that only from a repository checkout. Installed packages already include the
   - provision signer material only on that gateway runtime if a selected tool actually requires secrets
 - Package-local generated artifact usage:
   - use `capabilities` / `schema` for live runtime discovery
-  - use the SDK package's own generated manifest/artifacts for installed local metadata
-  - for Python specifically, the shipped package-local manifest lives at `sdk/python/pandora_agent/generated/manifest.json`
+  - standalone TypeScript consumers should use the `@pandora/agent-sdk` package surface and `@pandora/agent-sdk/generated` when that package is installed from a validated artifact
+  - standalone Python consumers should use the `pandora-agent` package surface and its package-local `pandora_agent/generated` artifacts when installed from a validated artifact
+  - vendored root-package consumers should use `pandora-cli-skills/sdk/typescript`, `sdk/python`, and `sdk/generated`
 
 ## Policy scopes and signer profiles
 - Policy metadata is wired now:
@@ -103,32 +134,85 @@ Run that only from a repository checkout. Installed packages already include the
   - `pendingBuiltinIds`
 - Use the policy/profile command families directly:
   - `policy list|get|lint` for pack discovery, compiled-rule inspection, and custom-pack validation
-  - `profile list|get|validate` for profile discovery, backend readiness inspection, and custom-profile validation
-- Current builds do **not** expose a universal `--profile` selector across mutating commands. Live commands that require signing still commonly resolve credentials from flags/env during rollout.
+  - `profile list|get|explain|validate` for profile discovery, backend readiness inspection, explicit usability explanations, and custom-profile validation
+- Current builds do **not** expose a universal `--profile` selector across every mutating command family.
+- Direct Pandora signer-bearing commands now accept `--profile-id` / `--profile-file`:
+  - `trade`
+  - `sell`
+  - `lp add`
+  - `lp remove`
+  - `resolve`
+  - `claim`
+  - `mirror deploy`
+  - `mirror go`
+  - `mirror sync once|run|start`
+  - `sports create run`
+- Mirror deploy/go/sync flows and sports live execution paths now also accept profile selectors in current builds.
+- Polymarket and some automation families still commonly resolve credentials from flags/env; use `capabilities` or `schema` to confirm current support on the exact command family you plan to call.
 - Built-in sample profiles cover the `read-only`, `local-env`, `local-keystore`, and `external-signer` backend classes. Inspect concrete ids such as `market_observer_ro`, `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` with `profile get --id <profile-id>` before assuming a backend is operational.
 - In current builds, only `market_observer_ro` is built-in runtime-ready by default. Treat the other built-in mutable profiles as planning samples unless `profile get` reports them ready in your runtime.
 - Preferred operator pattern:
   - for agent access, mint narrow gateway tokens and grant only the tool scopes you intend to expose
   - for read-only bootstrap, start with the built-in `research-only` policy and `market_observer_ro` profile pattern
-  - for live signing, inject secrets through env, `.env`, or your own secret-manager wrapper before invoking Pandora
+  - for live signing on direct Pandora commands, mirror deployment/sync flows, and sports creation flows, prefer `--profile-id` / `--profile-file` when your runtime has a ready signer profile
+  - for other live families still rolling out profile support, inject secrets through env, `.env`, or your own secret-manager wrapper before invoking Pandora
   - avoid raw `--private-key` on command lines for recurring automation unless you explicitly need a manual fallback
 - Use `pandora --output json capabilities` or `pandora --output json schema` to answer:
   - which commands require secrets
   - which `policyScopes` a token must grant
   - which policy/profile alpha surfaces are shipped in the current build
 
+## Shipped principal templates
+
+Pandora now ships machine-readable principal templates in `capabilities.data.principalTemplates`.
+
+What they are:
+- least-privilege starter personas for `pandora mcp http --auth-tokens-file <path>`
+- reference token-record templates, not a hosted identity system
+- canonical-tool-first guidance for common remote-agent roles
+
+Current shipped template ids:
+- `read-only-researcher`
+- `operator`
+- `auditor`
+- `recipe-validator`
+- `benchmark-runner`
+
+What each template includes:
+- canonical commands/tools it is intended to call
+- exact granted scopes derived from live command descriptors
+- optional scopes you may add later
+- whether the persona is mutating
+- whether the persona expects signer material
+- a token-record template shape with `id`, `tokenPlaceholder`, and `scopes`
+
+Use them like this:
+1. read `capabilities.data.principalTemplates.templates`
+2. choose the narrowest template that matches the agent goal
+3. write an `--auth-tokens-file` JSON entry using that template's `tokenRecordTemplate`
+4. only widen scopes after `bootstrap`, `policy explain`, or `profile explain` says the target workflow needs more
+
+Important limits:
+- templates describe gateway bearer-token scope sets only
+- they do not provision signer profiles, policies, or secrets
+- `operator` is the only shipped template that intentionally grants mutation scopes
+- compatibility aliases are not used as template anchors; templates point to canonical commands only
+
 ## Minimal agent onboarding flow
 
 Use this as the concrete preferred sequence:
 
 1. Discover the contract:
+   - `pandora --output json bootstrap`
    - `pandora --output json capabilities`
    - `pandora --output json schema`
    - `pandora --output json policy list`
    - `pandora --output json profile list`
+   - keep routing on canonical tool names by default; use `--include-compatibility` or `include_aliases=1` only for legacy/debug workflows
 2. Inspect the target tool's `policyScopes` and `requiresSecrets` fields.
 3. Start `pandora mcp` for local stdio, or start the remote gateway only if the agent needs remote tool execution:
    - `pandora mcp http --auth-scopes <csv>`
+   - for multi-principal deployments, prefer `--auth-tokens-file <json>` generated from `capabilities.data.principalTemplates`
    - if you are embedding the shipped SDKs, keep using their package-local generated artifacts for static metadata and MCP only for execution
 4. Hand the agent the bearer token from `~/.pandora/mcp-http/auth-token` or your own supplied token.
 5. If the tool requires signing, provision env-based secrets on the gateway host itself. Gateway scopes authorize tool use; they do not replace signer material.
@@ -144,13 +228,32 @@ Use raw `--private-key` only for manual/operator fallback. It is not the preferr
   - if no auth token is supplied, the gateway generates one and stores it at `~/.pandora/mcp-http/auth-token`
   - use `--public-base-url` when the gateway is behind a proxy, TLS terminator, or non-routable bind host such as `0.0.0.0`
   - read-only scopes by default when no `--auth-scopes` override is supplied
-  - gateway endpoints:
+- gateway endpoints:
+    - `/bootstrap`
     - `/health`
+    - `/ready`
     - `/capabilities`
+    - `/metrics`
+    - `/schema`
+    - `/tools`
     - `/operations`
     - `/mcp`
+- health model:
+  - `GET /health`
+    - unauthenticated shallow liveness
+    - includes endpoint map and high-level request counters
+  - `GET /ready`
+    - unauthenticated structured readiness
+    - returns `503` when auth/protocol/operation-store dependencies are not ready
+  - `GET /metrics`
+    - authenticated JSON metrics
+    - includes request totals, in-flight counts, status buckets, route/method counts, auth failures, and operation read/write counters
+- response tracing:
+  - every gateway response includes `x-request-id`
+  - operation responses also include `x-pandora-operation-id` when available
+  - receipt responses include `x-pandora-receipt-hash` when available
 - Scope model:
-  - default gateway scopes are the non-mutating remote-eligible tool scopes plus `operations:read`
+  - default gateway scopes are the conservative bootstrap set: `capabilities:read,contracts:read,help:read,schema:read,operations:read`
   - remote-eligible mutating tools can still appear in tool discovery, but calls are rejected with `FORBIDDEN` unless the bearer token includes the required `xPandora.policyScopes`
   - use `pandora --output json schema` or MCP tool metadata to inspect a tool's declared `policyScopes`
   - for signer-bearing tools, prefer granting only the exact tool scopes plus `secrets:use` rather than handing an agent raw private-key material
@@ -171,6 +274,70 @@ JSON errors can include additive recovery guidance:
 - `error.recovery.retryable`
 
 Human-facing hints can still appear under `details.hints`.
+
+## Operation receipts
+
+Receipts are the runtime-side trust artifact for terminal mutable work.
+
+What generates a receipt:
+- terminal operations with status:
+  - `completed`
+  - `failed`
+  - `canceled`
+  - `closed`
+
+What a receipt gives an agent:
+- `operationId` and `operationHash`
+- canonical `command`, `tool`, and `action`
+- terminal timestamps
+- request/target/result/recovery/error payloads
+- `checkpointDigest`
+- `receiptHash` and `verification.receiptHash`
+
+Default receipt storage:
+- local CLI:
+  - `~/.pandora/operations/<operation-id>.receipt.json`
+- MCP/workspace-guarded runtime:
+  - `./.pandora/operations/<operation-id>.receipt.json`
+
+How to use receipts today:
+1. use `operations get` / `operations list` to find the terminal operation id
+2. fetch the receipt with `operations receipt --id <operation-id>` or read the on-disk receipt file directly
+3. verify integrity with `operations verify-receipt --id <operation-id>` or `--file <path>`
+4. treat the receipt as the post-execution audit companion to release verification and benchmark trust evidence
+
+Remote receipt fetch:
+- authenticated gateways expose:
+  - `GET /operations/<operation-id>/receipt`
+  - `GET /operations/<operation-id>/receipt/verify`
+- both require `operations:read`
+
+Webhook delivery semantics:
+- each outbound delivery receives a stable `deliveryId`
+- delivery reports distinguish:
+  - `delivered`
+  - `failed_retry_exhausted`
+  - `failed_permanent`
+- retries use bounded exponential backoff
+- retries are attempted only for timeouts, transport failures, `429`, and `5xx`
+- permanent `4xx` failures stop immediately
+- signed deliveries include:
+  - `x-pandora-signature`
+  - `x-pandora-signature-sha256`
+- delivery tracing headers include:
+  - `x-pandora-delivery-id`
+  - `x-pandora-generated-at`
+  - `x-pandora-event`
+  - `x-pandora-attempt`
+  - `x-pandora-correlation-id` when available
+
+Verification model:
+- receipt integrity is based on a stable-body `sha256` digest
+- compare:
+  - `receiptHash`
+  - `verification.receiptHash`
+  - `checkpointDigest`
+- a mismatch means the stored receipt body or checkpoint binding was modified after issuance
 
 ## Fork runtime
 Shared flags:

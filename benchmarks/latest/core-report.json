@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-08T08:39:17.607Z",
+  "generatedAt": "2026-03-08T18:22:00.105Z",
   "suite": "core",
   "runtime": {
     "packageVersion": "1.1.70"
@@ -132,46 +132,54 @@
     }
   },
   "contractLock": {
-    "commandDescriptorVersion": "1.3.0",
+    "commandDescriptorVersion": "1.4.0",
     "generatedManifestVersion": "1.0.0",
-    "generatedManifestCommandDescriptorVersion": "1.3.0",
+    "generatedManifestCommandDescriptorVersion": "1.4.0",
     "generatedManifestPackageVersion": "0.1.0-alpha.1",
     "generatedManifestRegistryDigest": {
-      "canonicalHash": "20084a8b370d78fc6ea6c8968a44f46fa94bb541f63f30056f452bd7c80daf28",
-      "commandDigestHash": "1b5c1089f6da372865c63a1bcf7c4067a89543adf37b43d5432e170e728910fe",
-      "descriptorHash": "0cdc173e36494551c6ae34115aeaf0ef0d73de9e09776546839cafccf36e4569",
-      "documentationHash": "1c519c482cd050b003086a1f1d60604bf9d414351ee58e1ae28e0177931dbe1f",
-      "namespaceHash": "a32c9f90304339f7c0de2c296880bef805de8650c45a210237a2fb01e1bc60f6",
-      "routedTopLevelHash": "3d5a6a94876eb387eaf4f655d44b736887642cbb145e14d03f3deaabf9880b52",
-      "topLevelHash": "c993a2966277d0ee3d34b79a3cbcbc61161a32d23044549a205a8c3b8debba46"
+      "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
+      "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
+      "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
+      "documentationHash": "ef5787779c7b59fcd129b18fb2080bce726e4bcb2612cd5e0933b67fa229972e",
+      "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
+      "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
+      "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
+      "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
+      "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
+      "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
+      "trustDistributionHash": "ccd220a0dd86eeb7ee2670e1a1d02eb095d3675e131701c607fce54b62497f57"
     },
     "registryDigest": {
-      "descriptorHash": "0cdc173e36494551c6ae34115aeaf0ef0d73de9e09776546839cafccf36e4569",
-      "commandDigestHash": "1b5c1089f6da372865c63a1bcf7c4067a89543adf37b43d5432e170e728910fe",
-      "canonicalHash": "20084a8b370d78fc6ea6c8968a44f46fa94bb541f63f30056f452bd7c80daf28",
-      "topLevelHash": "c993a2966277d0ee3d34b79a3cbcbc61161a32d23044549a205a8c3b8debba46",
-      "routedTopLevelHash": "3d5a6a94876eb387eaf4f655d44b736887642cbb145e14d03f3deaabf9880b52",
-      "namespaceHash": "a32c9f90304339f7c0de2c296880bef805de8650c45a210237a2fb01e1bc60f6",
-      "documentationHash": "1c519c482cd050b003086a1f1d60604bf9d414351ee58e1ae28e0177931dbe1f"
+      "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
+      "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
+      "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
+      "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
+      "topLevelHash": "ed221f5c0ef556c28baaa4fdf0ecb69df4fcafe77efdf7154f29098b5fa54d69",
+      "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
+      "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
+      "documentationHash": "ef5787779c7b59fcd129b18fb2080bce726e4bcb2612cd5e0933b67fa229972e",
+      "trustDistributionHash": "ccd220a0dd86eeb7ee2670e1a1d02eb095d3675e131701c607fce54b62497f57",
+      "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
+      "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740"
     },
-    "documentationContentHash": "945e3edee8b85d2b3a801b38581f602526962e1928d6af9d82bd0d2a318e1748",
-    "documentationRegistryHash": "1c519c482cd050b003086a1f1d60604bf9d414351ee58e1ae28e0177931dbe1f",
-    "schemaHash": "b592979c8d72666bd4d8b641917648c30e89a9157d53e3c6b13d148e0a5e39a8",
-    "capabilitiesLocalHash": "62b46ac41330a3ff7abf8a08c486b86a2a8de1fdfe829b34de7c48c25c1b165e",
-    "capabilitiesRemoteTemplateHash": "dfddd7b42270252ea5220b411a91aa57bc5b235c780a98471b3efba5d0eaa1c6",
+    "documentationContentHash": "7d0642a8b431a6b150ee311e4a0b38f4a0c00a5911ff44b372666d0457791f6a",
+    "documentationRegistryHash": "ef5787779c7b59fcd129b18fb2080bce726e4bcb2612cd5e0933b67fa229972e",
+    "schemaHash": "2589fc7a8fdc1cc03ae0cdc4c4f88f5dfae9aaad145e2b1dc708709dcedd59dd",
+    "capabilitiesLocalHash": "3cc080ef911edbb7921f27c58b0a5982c419e9e386abd92addcbd692fc1aebef",
+    "capabilitiesRemoteTemplateHash": "072901f6a7aa6cb4ef3d4541e6d07945ef7d9b50ce3e166a4abfcbe10ea08773",
     "generatedArtifactHashes": {
-      "generatedContractRegistry": "6903282ea2adafebbf02c764de6e54ca8d76359c675afbbc471310fad6f1acaa",
-      "generatedCommandDescriptors": "087f97f04e92e04b6a78a8ed27796ebd590b0962d02dd0a083ecbeed9cf4ed16",
-      "generatedMcpToolDefinitions": "e96d7b580a76b67898e17c25dd06bd6108fd51fdcf737f2733097548ffab45f3",
-      "generatedManifest": "dc548b42ed61a5fb490f65d63f13a40c6924159069f780b614921efc4d90a682",
-      "tsContractRegistry": "6903282ea2adafebbf02c764de6e54ca8d76359c675afbbc471310fad6f1acaa",
-      "tsCommandDescriptors": "087f97f04e92e04b6a78a8ed27796ebd590b0962d02dd0a083ecbeed9cf4ed16",
-      "tsMcpToolDefinitions": "e96d7b580a76b67898e17c25dd06bd6108fd51fdcf737f2733097548ffab45f3",
-      "tsManifest": "4f5b18a89ba729b8ce4ffe21b405e411d62f22b9818ffbad71a4fc4b10a78438",
-      "pyContractRegistry": "6903282ea2adafebbf02c764de6e54ca8d76359c675afbbc471310fad6f1acaa",
-      "pyCommandDescriptors": "087f97f04e92e04b6a78a8ed27796ebd590b0962d02dd0a083ecbeed9cf4ed16",
-      "pyMcpToolDefinitions": "e96d7b580a76b67898e17c25dd06bd6108fd51fdcf737f2733097548ffab45f3",
-      "pyManifest": "d2180ba22f8623cd1e0ed7234c2849254669b3642c4594ee050b89de41b9fead"
+      "generatedContractRegistry": "45efde78bac411e2d575d7b17c5e25aa2ceaf1f6510d10d99d7373995e7babe9",
+      "generatedCommandDescriptors": "2bcac578d6355d7adba01978aff77d61dd2c988a2f3679d1fd35a76e0d0f8130",
+      "generatedMcpToolDefinitions": "ee72c632cdc08f348a102a858c2d0c91f43c7617fe581799e3159df7ba2dc487",
+      "generatedManifest": "284d6c89119a467b857522e329b56ed5b57c657078c5e6bd424955319acb321d",
+      "tsContractRegistry": "45efde78bac411e2d575d7b17c5e25aa2ceaf1f6510d10d99d7373995e7babe9",
+      "tsCommandDescriptors": "2bcac578d6355d7adba01978aff77d61dd2c988a2f3679d1fd35a76e0d0f8130",
+      "tsMcpToolDefinitions": "ee72c632cdc08f348a102a858c2d0c91f43c7617fe581799e3159df7ba2dc487",
+      "tsManifest": "f259a3510aec2cd2a23d11c3f5f24ac74b728d49668e45108b8ff75620b04275",
+      "pyContractRegistry": "45efde78bac411e2d575d7b17c5e25aa2ceaf1f6510d10d99d7373995e7babe9",
+      "pyCommandDescriptors": "2bcac578d6355d7adba01978aff77d61dd2c988a2f3679d1fd35a76e0d0f8130",
+      "pyMcpToolDefinitions": "ee72c632cdc08f348a102a858c2d0c91f43c7617fe581799e3159df7ba2dc487",
+      "pyManifest": "0f8e3546e74ae86a62f5ff7fdfe84567dae21f1967c2447e2becd202295836fe"
     }
   },
   "expectedContractLockPath": "benchmarks/locks/core.lock.json",
@@ -200,7 +208,7 @@
         "matches": true,
         "hashCount": 1,
         "hashes": [
-          "2d67e1d98cc58e59168309a9768a3bd7e17a73d793bc51faad2410ad7ba362a2"
+          "7efba5c3ca2aa8c6d5dff5b984b182ddd5dabc502a1befa806d6099527de6479"
         ]
       },
       {
@@ -266,7 +274,7 @@
         "matches": true,
         "hashCount": 1,
         "hashes": [
-          "3d8f396079893aa3debdac3153f57ff85fae97db904b0dfee2f6d22dda78b5e8"
+          "a72599fbdd858ba62963ee6d0f80313ae5f29eac86274ae1ac124280d630347e"
         ]
       },
       {
@@ -290,7 +298,7 @@
         "matches": true,
         "hashCount": 1,
         "hashes": [
-          "693c1023694cd614a0c6b57b5ad53bf52293b51507ccbd481bf9b37095b4eb5c"
+          "2de4187eb14fb5a0880ea35dd7f5e0eeeb48730ade3885c10d740139d5b1ca1a"
         ]
       },
       {
@@ -311,7 +319,7 @@
         "matches": true,
         "hashCount": 1,
         "hashes": [
-          "2dff063786003d28e5a2dd67935c91784eca08c22426453f66a17e24991aaad1"
+          "1b45fa3747cb18a70145b6d57186c9ade1a6b5b590806405c86fd568aee060c8"
         ]
       }
     ],
@@ -331,7 +339,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 78,
+      "durationMs": 116,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -374,6 +382,11 @@
           "message": "expected agent-quickstart in documentation.router.startHere"
         },
         {
+          "id": "capabilities.router-benchmark-start",
+          "passed": true,
+          "message": "expected benchmark-overview in documentation.router.startHere"
+        },
+        {
           "id": "capabilities.router-interfaces",
           "passed": true,
           "message": "expected agent-interfaces in documentation.router.taskRoutes"
@@ -382,13 +395,73 @@
           "id": "capabilities.router-mirror",
           "passed": true,
           "message": "expected mirror-operations in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-benchmark-overview",
+          "passed": true,
+          "message": "expected benchmark-overview in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-benchmark-scenarios",
+          "passed": true,
+          "message": "expected benchmark-scenarios in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-benchmark-scorecard",
+          "passed": true,
+          "message": "expected benchmark-scorecard in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.docs-benchmark-overview",
+          "passed": true,
+          "message": "expected docs/benchmarks/README.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.docs-benchmark-scenarios",
+          "passed": true,
+          "message": "expected docs/benchmarks/scenario-catalog.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.docs-benchmark-scorecard",
+          "passed": true,
+          "message": "expected docs/benchmarks/scorecard.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.docs-support-matrix",
+          "passed": true,
+          "message": "expected docs/trust/support-matrix.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.recommended-first-call",
+          "passed": true,
+          "message": "expected recommendedFirstCall=bootstrap, received bootstrap"
+        },
+        {
+          "id": "capabilities.canonical-tools",
+          "passed": true,
+          "message": "expected canonicalTools map for canonical-first discovery"
+        },
+        {
+          "id": "capabilities.bootstrap-tool-set",
+          "passed": true,
+          "message": "expected canonical bootstrap tools bootstrap, capabilities, schema, policy.list, profile.get, recipe.list, missing none"
+        },
+        {
+          "id": "capabilities.alias-hidden-by-default",
+          "passed": true,
+          "message": "expected compatibility aliases to stay out of the top-level canonicalTools map by default"
+        },
+        {
+          "id": "capabilities.canonical-arb-entry",
+          "passed": true,
+          "message": "expected canonicalTools[\"arb.scan\"] to stay canonical-only by default while advertising hidden compatibility aliases until explicitly requested"
         }
       ],
       "score": {
         "latencyTargetMs": 5000,
         "latencyPass": true,
-        "totalChecks": 10,
-        "passedChecks": 10,
+        "totalChecks": 23,
+        "passedChecks": 23,
         "successScore": 100,
         "latencyScore": 100,
         "weighted": 100
@@ -399,7 +472,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "2d67e1d98cc58e59168309a9768a3bd7e17a73d793bc51faad2410ad7ba362a2",
+      "parityHash": "7efba5c3ca2aa8c6d5dff5b984b182ddd5dabc502a1befa806d6099527de6479",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -422,7 +495,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 86,
+      "durationMs": 106,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -465,6 +538,11 @@
           "message": "expected agent-quickstart in documentation.router.startHere"
         },
         {
+          "id": "capabilities.router-benchmark-start",
+          "passed": true,
+          "message": "expected benchmark-overview in documentation.router.startHere"
+        },
+        {
           "id": "capabilities.router-interfaces",
           "passed": true,
           "message": "expected agent-interfaces in documentation.router.taskRoutes"
@@ -473,13 +551,73 @@
           "id": "capabilities.router-mirror",
           "passed": true,
           "message": "expected mirror-operations in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-benchmark-overview",
+          "passed": true,
+          "message": "expected benchmark-overview in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-benchmark-scenarios",
+          "passed": true,
+          "message": "expected benchmark-scenarios in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-benchmark-scorecard",
+          "passed": true,
+          "message": "expected benchmark-scorecard in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.docs-benchmark-overview",
+          "passed": true,
+          "message": "expected docs/benchmarks/README.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.docs-benchmark-scenarios",
+          "passed": true,
+          "message": "expected docs/benchmarks/scenario-catalog.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.docs-benchmark-scorecard",
+          "passed": true,
+          "message": "expected docs/benchmarks/scorecard.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.docs-support-matrix",
+          "passed": true,
+          "message": "expected docs/trust/support-matrix.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.recommended-first-call",
+          "passed": true,
+          "message": "expected recommendedFirstCall=bootstrap, received bootstrap"
+        },
+        {
+          "id": "capabilities.canonical-tools",
+          "passed": true,
+          "message": "expected canonicalTools map for canonical-first discovery"
+        },
+        {
+          "id": "capabilities.bootstrap-tool-set",
+          "passed": true,
+          "message": "expected canonical bootstrap tools bootstrap, capabilities, schema, policy.list, profile.get, recipe.list, missing none"
+        },
+        {
+          "id": "capabilities.alias-hidden-by-default",
+          "passed": true,
+          "message": "expected compatibility aliases to stay out of the top-level canonicalTools map by default"
+        },
+        {
+          "id": "capabilities.canonical-arb-entry",
+          "passed": true,
+          "message": "expected canonicalTools[\"arb.scan\"] to stay canonical-only by default while advertising hidden compatibility aliases until explicitly requested"
         }
       ],
       "score": {
         "latencyTargetMs": 5000,
         "latencyPass": true,
-        "totalChecks": 10,
-        "passedChecks": 10,
+        "totalChecks": 23,
+        "passedChecks": 23,
         "successScore": 100,
         "latencyScore": 100,
         "weighted": 100
@@ -490,7 +628,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "2d67e1d98cc58e59168309a9768a3bd7e17a73d793bc51faad2410ad7ba362a2",
+      "parityHash": "7efba5c3ca2aa8c6d5dff5b984b182ddd5dabc502a1befa806d6099527de6479",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -513,7 +651,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 87,
+      "durationMs": 124,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -556,6 +694,11 @@
           "message": "expected agent-quickstart in documentation.router.startHere"
         },
         {
+          "id": "capabilities.router-benchmark-start",
+          "passed": true,
+          "message": "expected benchmark-overview in documentation.router.startHere"
+        },
+        {
           "id": "capabilities.router-interfaces",
           "passed": true,
           "message": "expected agent-interfaces in documentation.router.taskRoutes"
@@ -564,13 +707,73 @@
           "id": "capabilities.router-mirror",
           "passed": true,
           "message": "expected mirror-operations in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-benchmark-overview",
+          "passed": true,
+          "message": "expected benchmark-overview in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-benchmark-scenarios",
+          "passed": true,
+          "message": "expected benchmark-scenarios in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.router-benchmark-scorecard",
+          "passed": true,
+          "message": "expected benchmark-scorecard in documentation.router.taskRoutes"
+        },
+        {
+          "id": "capabilities.docs-benchmark-overview",
+          "passed": true,
+          "message": "expected docs/benchmarks/README.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.docs-benchmark-scenarios",
+          "passed": true,
+          "message": "expected docs/benchmarks/scenario-catalog.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.docs-benchmark-scorecard",
+          "passed": true,
+          "message": "expected docs/benchmarks/scorecard.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.docs-support-matrix",
+          "passed": true,
+          "message": "expected docs/trust/support-matrix.md in documentation.skills"
+        },
+        {
+          "id": "capabilities.recommended-first-call",
+          "passed": true,
+          "message": "expected recommendedFirstCall=bootstrap, received bootstrap"
+        },
+        {
+          "id": "capabilities.canonical-tools",
+          "passed": true,
+          "message": "expected canonicalTools map for canonical-first discovery"
+        },
+        {
+          "id": "capabilities.bootstrap-tool-set",
+          "passed": true,
+          "message": "expected canonical bootstrap tools bootstrap, capabilities, schema, policy.list, profile.get, recipe.list, missing none"
+        },
+        {
+          "id": "capabilities.alias-hidden-by-default",
+          "passed": true,
+          "message": "expected compatibility aliases to stay out of the top-level canonicalTools map by default"
+        },
+        {
+          "id": "capabilities.canonical-arb-entry",
+          "passed": true,
+          "message": "expected canonicalTools[\"arb.scan\"] to stay canonical-only by default while advertising hidden compatibility aliases until explicitly requested"
         }
       ],
       "score": {
         "latencyTargetMs": 7000,
         "latencyPass": true,
-        "totalChecks": 10,
-        "passedChecks": 10,
+        "totalChecks": 23,
+        "passedChecks": 23,
         "successScore": 100,
         "latencyScore": 100,
         "weighted": 100
@@ -581,7 +784,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "2d67e1d98cc58e59168309a9768a3bd7e17a73d793bc51faad2410ad7ba362a2",
+      "parityHash": "7efba5c3ca2aa8c6d5dff5b984b182ddd5dabc502a1befa806d6099527de6479",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -604,7 +807,7 @@
       ],
       "weight": 20,
       "passed": true,
-      "durationMs": 2,
+      "durationMs": 3,
       "checks": [
         {
           "id": "scope-denial.transport-error",
@@ -721,7 +924,7 @@
       ],
       "weight": 15,
       "passed": true,
-      "durationMs": 44,
+      "durationMs": 54,
       "checks": [
         {
           "id": "workspace-denial.transport-error",
@@ -775,7 +978,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 42,
+      "durationMs": 62,
       "checks": [
         {
           "id": "operations-list.ok",
@@ -833,7 +1036,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 64,
+      "durationMs": 94,
       "checks": [
         {
           "id": "schema.ok",
@@ -848,7 +1051,7 @@
         {
           "id": "schema.scope",
           "passed": true,
-          "message": "expected command-surface descriptorScope, received command-surface"
+          "message": "expected canonical-command-surface descriptorScope, received canonical-command-surface"
         },
         {
           "id": "schema.definitions",
@@ -884,13 +1087,53 @@
           "id": "schema.operations-get-descriptor",
           "passed": true,
           "message": "expected operations.get descriptor"
+        },
+        {
+          "id": "schema.bootstrap-payload-definition",
+          "passed": true,
+          "message": "expected BootstrapPayload definition"
+        },
+        {
+          "id": "schema.bootstrap-preferences-definition",
+          "passed": true,
+          "message": "expected BootstrapPreferences definition"
+        },
+        {
+          "id": "schema.bootstrap-preferences-fields",
+          "passed": true,
+          "message": "expected BootstrapPreferences to document canonicalOnlyDefault/includeCompatibility/aliasesHiddenByDefault/recommendedFirstCall"
+        },
+        {
+          "id": "schema.bootstrap-payload-canonical-arrays",
+          "passed": true,
+          "message": "expected BootstrapPayload to document canonicalTools, recommendedBootstrapFlow, and includedToolCommands arrays"
+        },
+        {
+          "id": "schema.bootstrap-include-compatibility-opt-in",
+          "passed": true,
+          "message": "expected bootstrap descriptor to advertise include-compatibility as the explicit alias opt-in"
+        },
+        {
+          "id": "schema.bootstrap-canonical",
+          "passed": true,
+          "message": "expected bootstrap descriptor to stay canonical and preferred"
+        },
+        {
+          "id": "schema.arb-scan-canonical",
+          "passed": true,
+          "message": "expected arb.scan descriptor to stay canonical and preferred"
+        },
+        {
+          "id": "schema.alias-hidden-by-default",
+          "passed": true,
+          "message": "expected compatibility aliases to stay out of the default canonical schema surface"
         }
       ],
       "score": {
         "latencyTargetMs": 5000,
         "latencyPass": true,
-        "totalChecks": 10,
-        "passedChecks": 10,
+        "totalChecks": 18,
+        "passedChecks": 18,
         "successScore": 100,
         "latencyScore": 100,
         "weighted": 100
@@ -901,7 +1144,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "3d8f396079893aa3debdac3153f57ff85fae97db904b0dfee2f6d22dda78b5e8",
+      "parityHash": "a72599fbdd858ba62963ee6d0f80313ae5f29eac86274ae1ac124280d630347e",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -925,7 +1168,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 80,
+      "durationMs": 101,
       "checks": [
         {
           "id": "schema.ok",
@@ -940,7 +1183,7 @@
         {
           "id": "schema.scope",
           "passed": true,
-          "message": "expected command-surface descriptorScope, received command-surface"
+          "message": "expected canonical-command-surface descriptorScope, received canonical-command-surface"
         },
         {
           "id": "schema.definitions",
@@ -976,13 +1219,53 @@
           "id": "schema.operations-get-descriptor",
           "passed": true,
           "message": "expected operations.get descriptor"
+        },
+        {
+          "id": "schema.bootstrap-payload-definition",
+          "passed": true,
+          "message": "expected BootstrapPayload definition"
+        },
+        {
+          "id": "schema.bootstrap-preferences-definition",
+          "passed": true,
+          "message": "expected BootstrapPreferences definition"
+        },
+        {
+          "id": "schema.bootstrap-preferences-fields",
+          "passed": true,
+          "message": "expected BootstrapPreferences to document canonicalOnlyDefault/includeCompatibility/aliasesHiddenByDefault/recommendedFirstCall"
+        },
+        {
+          "id": "schema.bootstrap-payload-canonical-arrays",
+          "passed": true,
+          "message": "expected BootstrapPayload to document canonicalTools, recommendedBootstrapFlow, and includedToolCommands arrays"
+        },
+        {
+          "id": "schema.bootstrap-include-compatibility-opt-in",
+          "passed": true,
+          "message": "expected bootstrap descriptor to advertise include-compatibility as the explicit alias opt-in"
+        },
+        {
+          "id": "schema.bootstrap-canonical",
+          "passed": true,
+          "message": "expected bootstrap descriptor to stay canonical and preferred"
+        },
+        {
+          "id": "schema.arb-scan-canonical",
+          "passed": true,
+          "message": "expected arb.scan descriptor to stay canonical and preferred"
+        },
+        {
+          "id": "schema.alias-hidden-by-default",
+          "passed": true,
+          "message": "expected compatibility aliases to stay out of the default canonical schema surface"
         }
       ],
       "score": {
         "latencyTargetMs": 5000,
         "latencyPass": true,
-        "totalChecks": 10,
-        "passedChecks": 10,
+        "totalChecks": 18,
+        "passedChecks": 18,
         "successScore": 100,
         "latencyScore": 100,
         "weighted": 100
@@ -993,7 +1276,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "3d8f396079893aa3debdac3153f57ff85fae97db904b0dfee2f6d22dda78b5e8",
+      "parityHash": "a72599fbdd858ba62963ee6d0f80313ae5f29eac86274ae1ac124280d630347e",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1017,7 +1300,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 80,
+      "durationMs": 105,
       "checks": [
         {
           "id": "schema.ok",
@@ -1032,7 +1315,7 @@
         {
           "id": "schema.scope",
           "passed": true,
-          "message": "expected command-surface descriptorScope, received command-surface"
+          "message": "expected canonical-command-surface descriptorScope, received canonical-command-surface"
         },
         {
           "id": "schema.definitions",
@@ -1068,13 +1351,53 @@
           "id": "schema.operations-get-descriptor",
           "passed": true,
           "message": "expected operations.get descriptor"
+        },
+        {
+          "id": "schema.bootstrap-payload-definition",
+          "passed": true,
+          "message": "expected BootstrapPayload definition"
+        },
+        {
+          "id": "schema.bootstrap-preferences-definition",
+          "passed": true,
+          "message": "expected BootstrapPreferences definition"
+        },
+        {
+          "id": "schema.bootstrap-preferences-fields",
+          "passed": true,
+          "message": "expected BootstrapPreferences to document canonicalOnlyDefault/includeCompatibility/aliasesHiddenByDefault/recommendedFirstCall"
+        },
+        {
+          "id": "schema.bootstrap-payload-canonical-arrays",
+          "passed": true,
+          "message": "expected BootstrapPayload to document canonicalTools, recommendedBootstrapFlow, and includedToolCommands arrays"
+        },
+        {
+          "id": "schema.bootstrap-include-compatibility-opt-in",
+          "passed": true,
+          "message": "expected bootstrap descriptor to advertise include-compatibility as the explicit alias opt-in"
+        },
+        {
+          "id": "schema.bootstrap-canonical",
+          "passed": true,
+          "message": "expected bootstrap descriptor to stay canonical and preferred"
+        },
+        {
+          "id": "schema.arb-scan-canonical",
+          "passed": true,
+          "message": "expected arb.scan descriptor to stay canonical and preferred"
+        },
+        {
+          "id": "schema.alias-hidden-by-default",
+          "passed": true,
+          "message": "expected compatibility aliases to stay out of the default canonical schema surface"
         }
       ],
       "score": {
         "latencyTargetMs": 7000,
         "latencyPass": true,
-        "totalChecks": 10,
-        "passedChecks": 10,
+        "totalChecks": 18,
+        "passedChecks": 18,
         "successScore": 100,
         "latencyScore": 100,
         "weighted": 100
@@ -1085,7 +1408,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "3d8f396079893aa3debdac3153f57ff85fae97db904b0dfee2f6d22dda78b5e8",
+      "parityHash": "a72599fbdd858ba62963ee6d0f80313ae5f29eac86274ae1ac124280d630347e",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1108,7 +1431,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 41,
+      "durationMs": 59,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1151,7 +1474,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "693c1023694cd614a0c6b57b5ad53bf52293b51507ccbd481bf9b37095b4eb5c",
+      "parityHash": "2de4187eb14fb5a0880ea35dd7f5e0eeeb48730ade3885c10d740139d5b1ca1a",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1179,7 +1502,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 45,
+      "durationMs": 58,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1222,7 +1545,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "693c1023694cd614a0c6b57b5ad53bf52293b51507ccbd481bf9b37095b4eb5c",
+      "parityHash": "2de4187eb14fb5a0880ea35dd7f5e0eeeb48730ade3885c10d740139d5b1ca1a",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1250,7 +1573,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 46,
+      "durationMs": 59,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1293,7 +1616,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "693c1023694cd614a0c6b57b5ad53bf52293b51507ccbd481bf9b37095b4eb5c",
+      "parityHash": "2de4187eb14fb5a0880ea35dd7f5e0eeeb48730ade3885c10d740139d5b1ca1a",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1382,7 +1705,7 @@
       ],
       "weight": 15,
       "passed": true,
-      "durationMs": 40,
+      "durationMs": 48,
       "checks": [
         {
           "id": "workspace-denial.transport-error",
@@ -1453,12 +1776,27 @@
         {
           "id": "tools-list.items",
           "passed": true,
-          "message": "expected at least 50 tools, received 95"
+          "message": "expected at least 50 tools, received 101"
         },
         {
           "id": "tools-list.help",
           "passed": true,
           "message": "expected help tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.bootstrap",
+          "passed": true,
+          "message": "expected bootstrap tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.capabilities",
+          "passed": true,
+          "message": "expected capabilities tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.schema",
+          "passed": true,
+          "message": "expected schema tool in MCP tool list"
         },
         {
           "id": "tools-list.mirror-plan",
@@ -1471,16 +1809,31 @@
           "message": "expected normalized xPandora metadata on listed tools"
         },
         {
-          "id": "tools-list.alias-metadata",
+          "id": "tools-list.canonical-arb",
           "passed": true,
-          "message": "expected arbitrage alias metadata in tool list"
+          "message": "expected canonical arb.scan tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.bootstrap-canonical",
+          "passed": true,
+          "message": "expected bootstrap to remain a canonical preferred tool in default MCP discovery"
+        },
+        {
+          "id": "tools-list.alias-hidden",
+          "passed": true,
+          "message": "expected compatibility aliases to stay hidden from default MCP tool discovery"
+        },
+        {
+          "id": "tools-list.no-listed-aliases",
+          "passed": true,
+          "message": "expected default MCP tool discovery to list only canonical/preferred tools, found compatibility aliases: "
         }
       ],
       "score": {
         "latencyTargetMs": 5000,
         "latencyPass": true,
-        "totalChecks": 7,
-        "passedChecks": 7,
+        "totalChecks": 13,
+        "passedChecks": 13,
         "successScore": 100,
         "latencyScore": 100,
         "weighted": 100
@@ -1490,7 +1843,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "2dff063786003d28e5a2dd67935c91784eca08c22426453f66a17e24991aaad1",
+      "parityHash": "1b45fa3747cb18a70145b6d57186c9ade1a6b5b590806405c86fd568aee060c8",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1514,7 +1867,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 10,
+      "durationMs": 11,
       "checks": [
         {
           "id": "tools-list.ok",
@@ -1529,12 +1882,27 @@
         {
           "id": "tools-list.items",
           "passed": true,
-          "message": "expected at least 50 tools, received 95"
+          "message": "expected at least 50 tools, received 101"
         },
         {
           "id": "tools-list.help",
           "passed": true,
           "message": "expected help tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.bootstrap",
+          "passed": true,
+          "message": "expected bootstrap tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.capabilities",
+          "passed": true,
+          "message": "expected capabilities tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.schema",
+          "passed": true,
+          "message": "expected schema tool in MCP tool list"
         },
         {
           "id": "tools-list.mirror-plan",
@@ -1547,16 +1915,31 @@
           "message": "expected normalized xPandora metadata on listed tools"
         },
         {
-          "id": "tools-list.alias-metadata",
+          "id": "tools-list.canonical-arb",
           "passed": true,
-          "message": "expected arbitrage alias metadata in tool list"
+          "message": "expected canonical arb.scan tool in MCP tool list"
+        },
+        {
+          "id": "tools-list.bootstrap-canonical",
+          "passed": true,
+          "message": "expected bootstrap to remain a canonical preferred tool in default MCP discovery"
+        },
+        {
+          "id": "tools-list.alias-hidden",
+          "passed": true,
+          "message": "expected compatibility aliases to stay hidden from default MCP tool discovery"
+        },
+        {
+          "id": "tools-list.no-listed-aliases",
+          "passed": true,
+          "message": "expected default MCP tool discovery to list only canonical/preferred tools, found compatibility aliases: "
         }
       ],
       "score": {
         "latencyTargetMs": 7000,
         "latencyPass": true,
-        "totalChecks": 7,
-        "passedChecks": 7,
+        "totalChecks": 13,
+        "passedChecks": 13,
         "successScore": 100,
         "latencyScore": 100,
         "weighted": 100
@@ -1566,7 +1949,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "2dff063786003d28e5a2dd67935c91784eca08c22426453f66a17e24991aaad1",
+      "parityHash": "1b45fa3747cb18a70145b6d57186c9ade1a6b5b590806405c86fd568aee060c8",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1589,7 +1972,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 45,
+      "durationMs": 68,
       "checks": [
         {
           "id": "operations-cancel.ok",
@@ -1633,7 +2016,8 @@
         },
         "after": {
           "operationIds": [
-            "benchmark-op-cancel"
+            "benchmark-op-cancel",
+            "benchmark-op-cancel.receipt"
           ]
         }
       }
@@ -1650,7 +2034,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 46,
+      "durationMs": 63,
       "checks": [
         {
           "id": "operations-close.ok",
@@ -1694,7 +2078,8 @@
         },
         "after": {
           "operationIds": [
-            "benchmark-op-close"
+            "benchmark-op-close",
+            "benchmark-op-close.receipt"
           ]
         }
       }

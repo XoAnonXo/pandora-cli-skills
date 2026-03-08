@@ -3,12 +3,7 @@
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
-let generated = null;
-try {
-  generated = require('./generated/index.js');
-} catch {
-  generated = require('../generated/index.js');
-}
+const generated = require('./generated/index.js');
 
 class PandoraSdkError extends Error {
   constructor(code, message, details = undefined) {
@@ -80,8 +75,17 @@ function parseStructuredEnvelope(result) {
     });
   }
   try {
-    return JSON.parse(textContent.text);
+    const parsed = JSON.parse(textContent.text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw createSdkError('PANDORA_SDK_INVALID_TOOL_RESULT', 'Tool text payload must decode to an object envelope.', {
+        parsedType: Array.isArray(parsed) ? 'array' : typeof parsed,
+      });
+    }
+    return parsed;
   } catch (error) {
+    if (error instanceof PandoraSdkError) {
+      throw error;
+    }
     throw createSdkError('PANDORA_SDK_INVALID_TOOL_RESULT', 'Tool text payload was not valid JSON.', {
       cause: error && error.message ? error.message : String(error),
     });
@@ -356,6 +360,16 @@ function loadGeneratedMcpToolDefinitions() {
   return loadGeneratedValue('loadGeneratedMcpToolDefinitions', 'mcpToolDefinitions');
 }
 
+function loadGeneratedCapabilities() {
+  const registry = loadGeneratedContractRegistry();
+  return asObject(registry && registry.capabilities) || {};
+}
+
+function loadGeneratedToolCatalog() {
+  const registry = loadGeneratedContractRegistry();
+  return asObject(registry && registry.tools) || {};
+}
+
 function normalizeRuntimeToolDefinition(tool, catalog = loadGeneratedContractRegistry()) {
   const rawTool = asObject(tool) || {};
   const name = typeof rawTool.name === 'string' && rawTool.name.trim()
@@ -420,9 +434,10 @@ function normalizeAuthorizationHeaders(headers = {}, authToken = null) {
 
 class PandoraMcpBackend {
   constructor(options = {}) {
+    const manifestVersion = loadGeneratedManifest().packageVersion || '0.0.0';
     this.clientInfo = {
       name: options.clientName || 'pandora-agent-sdk',
-      version: options.clientVersion || '0.1.0-alpha.1',
+      version: options.clientVersion || manifestVersion,
     };
     this.client = null;
     this.transport = null;
@@ -650,6 +665,14 @@ class PandoraAgentClient {
     return envelope;
   }
 
+  async getBootstrapEnvelope(args = {}) {
+    return this.callToolEnvelope('bootstrap', args);
+  }
+
+  async getBootstrap(args = {}) {
+    return this.callToolData('bootstrap', args);
+  }
+
   async callTool(name, args = {}) {
     return this.callToolEnvelope(name, args);
   }
@@ -669,13 +692,43 @@ function createRemotePandoraAgentClient(options = {}) {
   });
 }
 
-module.exports = {
+function createPandoraStdioBackend(options = {}) {
+  return new PandoraStdioBackend(options);
+}
+
+function createPandoraRemoteBackend(options = {}) {
+  return new PandoraRemoteBackend(options);
+}
+
+function createPandoraAgentClient(options = {}) {
+  const normalizedOptions = asObject(options) || {};
+  if (normalizedOptions.backend) {
+    return new PandoraAgentClient({
+      backend: normalizedOptions.backend,
+      catalog: normalizedOptions.catalog,
+    });
+  }
+  if (normalizedOptions.mode === 'remote' || normalizedOptions.url) {
+    return createRemotePandoraAgentClient(normalizedOptions);
+  }
+  return createLocalPandoraAgentClient(normalizedOptions);
+}
+
+async function connectPandoraAgentClient(options = {}) {
+  const client = createPandoraAgentClient(options);
+  await client.connect();
+  return client;
+}
+
+const api = {
   PandoraSdkError,
   PandoraToolCallError,
   loadGeneratedContractRegistry,
   loadGeneratedManifest,
   loadGeneratedCommandDescriptors,
   loadGeneratedMcpToolDefinitions,
+  loadGeneratedCapabilities,
+  loadGeneratedToolCatalog,
   normalizeStructuredEnvelope,
   normalizeRuntimeToolDefinition,
   getPolicyProfileCapabilities,
@@ -690,6 +743,15 @@ module.exports = {
   PandoraMcpBackend,
   PandoraStdioBackend,
   PandoraRemoteBackend,
+  createPandoraStdioBackend,
+  createPandoraRemoteBackend,
   createLocalPandoraAgentClient,
   createRemotePandoraAgentClient,
+  createPandoraAgentClient,
+  connectPandoraAgentClient,
+  generated,
 };
+
+api.default = api;
+
+module.exports = Object.freeze(api);

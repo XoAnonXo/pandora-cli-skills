@@ -75,9 +75,9 @@ pandora mirror plan \
 - choose at least two independent public resolution URLs from different hosts
 - keep the plan’s suggested `targetTimestamp`, or set `--target-timestamp <unix|iso>` explicitly when you have a justified override
 - pick the correct PollCategory (`Sports` / `1` for sports)
-- for any eventual live signing step, prefer env / `.env` values or another runtime bootstrap you control over raw `--private-key`
+- for any eventual live signing step, prefer a ready signer profile where the command family supports `--profile-id` / `--profile-file`; otherwise use env / `.env` values or another runtime bootstrap you control instead of raw `--private-key`
 - if you are exposing mirror flows through `pandora mcp http`, inspect the tool `policyScopes` first and grant only the exact scopes needed for the run
-- inspect `policy list|get` and `profile list|get` before live automation; current builds ship those catalogs in alpha, but mutating commands still commonly resolve secrets from env/direct flags during rollout
+- inspect `policy list|get` and `profile list|get` before live automation; direct Pandora commands such as `trade`, `sell`, `lp add`, `lp remove`, `resolve`, and `claim` already support profile selectors, and current mirror deployment/sync flows also accept `--profile-id` / `--profile-file`
 
 ### 4. Dry-run deploy or go
 ```bash

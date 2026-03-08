@@ -40,6 +40,7 @@ const ROUTED_TOP_LEVEL_COMMANDS = Object.freeze([
   'stream',
   'simulate',
   'capabilities',
+  'bootstrap',
   'schema',
   'launch',
   'clone-bet',
@@ -101,6 +102,7 @@ function createCommandRouter(deps = {}) {
     runStreamCommand,
     runSimulateCommand,
     runCapabilitiesCommand,
+    runBootstrapCommand,
     runScriptCommand,
   } = deps;
 
@@ -163,6 +165,7 @@ function createCommandRouter(deps = {}) {
   requireFn('runStreamCommand', runStreamCommand);
   requireFn('runSimulateCommand', runSimulateCommand);
   requireFn('runCapabilitiesCommand', runCapabilitiesCommand);
+  requireFn('runBootstrapCommand', runBootstrapCommand);
   requireFn('runSchemaCommand', deps.runSchemaCommand);
   requireFn('runScriptCommand', runScriptCommand);
 
@@ -274,6 +277,7 @@ function createCommandRouter(deps = {}) {
       stream: async (handlerArgs, handlerContext) => runStreamCommand(handlerArgs, handlerContext),
       simulate: async (handlerArgs, handlerContext) => runSimulateCommand(handlerArgs, handlerContext),
       capabilities: async (handlerArgs, handlerContext) => runCapabilitiesCommand(handlerArgs, handlerContext),
+      bootstrap: async (handlerArgs, handlerContext) => runBootstrapCommand(handlerArgs, handlerContext),
       schema: async (handlerArgs, handlerContext) => deps.runSchemaCommand(handlerArgs, handlerContext),
       launch: async (handlerArgs, handlerContext) => {
         if (handlerContext.outputMode === 'json') {

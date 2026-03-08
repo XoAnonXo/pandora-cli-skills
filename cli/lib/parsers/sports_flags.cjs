@@ -1,6 +1,7 @@
 const path = require('path');
 const { parsePollCategoryFlag, DEFAULT_SPORTS_POLL_CATEGORY } = require('../shared/poll_categories.cjs');
 const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
+const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -183,6 +184,8 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     chainId: null,
     rpcUrl: null,
     privateKey: null,
+    profileId: null,
+    profileFile: null,
     usdc: null,
     oracle: null,
     factory: null,
@@ -463,6 +466,20 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       i += 1;
       continue;
     }
+    {
+      const nextIndex = consumeProfileSelectorFlag({
+        token,
+        args,
+        index: i,
+        options,
+        CliError,
+        requireFlagValue,
+      });
+      if (nextIndex !== null) {
+        i = nextIndex;
+        continue;
+      }
+    }
     if (token === '--usdc') {
       options.usdc = parseAddressFlag(requireFlagValue(args, i, '--usdc'), '--usdc');
       i += 1;
@@ -559,6 +576,7 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       throw new CliError('INVALID_ARGS', '--distribution-yes + --distribution-no must equal 1000000000.');
     }
   }
+  assertNoMixedSignerSelectors(options, CliError);
 
   return options;
 }
