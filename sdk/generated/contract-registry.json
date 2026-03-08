@@ -935,11 +935,9 @@
     "certification": {
       "aPlus": {
         "blockers": [
-          "Standalone Python SDK is publicly published: The Python SDK is still release-artifact/vendored only.",
           "At least two mutable built-in signer profiles are runtime-ready: Artifact-neutral capabilities intentionally do not certify host-local signer readiness."
         ],
         "blockingCheckIds": [
-          "python-sdk-publication",
           "runtime-ready-mutable-profiles"
         ],
         "checks": [
@@ -987,8 +985,8 @@
           {
             "actual": {
               "packageName": "pandora-agent",
-              "publicRegistryPublished": false,
-              "publicationStatus": "artifact-verified-not-publicly-published",
+              "publicRegistryPublished": true,
+              "publicationStatus": "public-registry-published",
               "releaseAssetPatterns": [
                 "pandora_agent-*.whl",
                 "pandora_agent-*.tar.gz"
@@ -999,9 +997,9 @@
             ],
             "expectation": "A+ requires pandora-agent to be installable from a public package registry.",
             "id": "python-sdk-publication",
-            "reason": "The Python SDK is still release-artifact/vendored only.",
+            "reason": "The standalone Python SDK is publicly installable.",
             "remediationCommands": [],
-            "status": "fail",
+            "status": "pass",
             "title": "Standalone Python SDK is publicly published"
           },
           {
@@ -1178,7 +1176,7 @@
           }
         ],
         "eligible": false,
-        "failCount": 1,
+        "failCount": 0,
         "nextCommands": [
           "pandora --output json capabilities --runtime-local-readiness"
         ],
@@ -1188,9 +1186,9 @@
           "Artifact-neutral discovery can prove packaging and contract posture, but runtime-local signer readiness must be checked explicitly.",
           "A+ certification is denied whenever any required check fails or cannot yet be evaluated from the current runtime mode."
         ],
-        "passCount": 8,
+        "passCount": 9,
         "readinessMode": "artifact-neutral",
-        "status": "not-certified",
+        "status": "not-evaluable",
         "targetTier": "A+"
       }
     },
@@ -7793,7 +7791,7 @@
       "visibleCommandCount": 131
     },
     "documentation": {
-      "contentHash": "f964c1d8d9d88bf90d017b45dfb3e8ecee1ebc9bd18594358447426ca8943a2a",
+      "contentHash": "d78a9c3e9f83937b29b9daa17f2ce860f97b1a1aa901848ae3f086a3d394a6f6",
       "router": {
         "contentHash": "bfb8fc56a1c5f7ce488aaf63d132053e7d1bb2a2f4db5b51267125644fed9c18",
         "path": "SKILL.md",
@@ -8350,7 +8348,7 @@
             "mcp",
             "schema"
           ],
-          "contentHash": "e10e4583ea0e950fe6f994b14a342a043fe08f63e7d0bc22b3354622549b4cc3",
+          "contentHash": "b79ac6708a070272ca9cb105c44689840ed25e978d995a5e3fd11269a32c726e",
           "featured": false,
           "id": "support-matrix",
           "kind": "trust",
@@ -9699,7 +9697,7 @@
       "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
       "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
       "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
-      "documentationHash": "7ecef83cc4b7fb8f2a9959de934d21e2712623d4b22ee9b1030cdbd14efaf3c8",
+      "documentationHash": "ca693763a5fc792fb95226415a22491d2452983270d1c63b071df94e1e74f9d2",
       "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
       "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
       "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
@@ -10523,14 +10521,15 @@
           "python": {
             "distributionStatus": "vendored-alpha",
             "installExamples": [
+              "pip install pandora-agent==0.1.0a1",
               "pip install /path/to/downloaded/pandora_agent-<version>-py3-none-any.whl",
               "pip install /path/to/downloaded/pandora_agent-<version>.tar.gz"
             ],
             "moduleName": "pandora_agent",
             "name": "pandora-agent",
-            "publicRegistryPublished": false,
-            "publicationStatus": "artifact-verified-not-publicly-published",
-            "recommendedConsumption": "signed-github-release-artifact-until-public-registry",
+            "publicRegistryPublished": true,
+            "publicationStatus": "public-registry-published",
+            "recommendedConsumption": "public-pypi-package",
             "releaseAssetPatterns": [
               "pandora_agent-*.whl",
               "pandora_agent-*.tar.gz"
@@ -30506,7 +30505,7 @@
     "canonicalHash": "cc903def5a19777091b3f5ca971c050cf446f324e86c4762e8559e952e352818",
     "commandDigestHash": "92e34282056b39fad2d74f4e8646a56d5b7afffe2a0226eecf2773a84090f94d",
     "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
-    "documentationHash": "7ecef83cc4b7fb8f2a9959de934d21e2712623d4b22ee9b1030cdbd14efaf3c8",
+    "documentationHash": "ca693763a5fc792fb95226415a22491d2452983270d1c63b071df94e1e74f9d2",
     "fullDescriptorHash": "b1ad46eaa9d307edb443b65d83cefa4fd77be62b558424eb816c593221952d32",
     "namespaceHash": "8a5882d6107bd3e6fd935e9086feee46a3932601d2d85eb751f0a90bbd7de09d",
     "policyProfilesHash": "ada588884ee1bbe6ccb40729bc62a3228afa4e220a4be478a5538fc9b4c6fe59",
@@ -67739,7 +67738,7 @@
         "visibleCommandCount": 131
       },
       "documentation": {
-        "contentHash": "f964c1d8d9d88bf90d017b45dfb3e8ecee1ebc9bd18594358447426ca8943a2a",
+        "contentHash": "d78a9c3e9f83937b29b9daa17f2ce860f97b1a1aa901848ae3f086a3d394a6f6",
         "router": {
           "contentHash": "bfb8fc56a1c5f7ce488aaf63d132053e7d1bb2a2f4db5b51267125644fed9c18",
           "path": "SKILL.md",
@@ -68296,7 +68295,7 @@
               "mcp",
               "schema"
             ],
-            "contentHash": "e10e4583ea0e950fe6f994b14a342a043fe08f63e7d0bc22b3354622549b4cc3",
+            "contentHash": "b79ac6708a070272ca9cb105c44689840ed25e978d995a5e3fd11269a32c726e",
             "featured": false,
             "id": "support-matrix",
             "kind": "trust",
