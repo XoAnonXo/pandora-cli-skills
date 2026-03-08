@@ -86,7 +86,7 @@ function normalizeHistory(existingHistory, nextEntry) {
     && entry.suite === nextEntry.suite
   ));
   retained.push(nextEntry);
-  retained.sort((left, right) => String(left.generatedAt || '').localeCompare(String(right.generatedAt || '')));
+  retained.sort((left, right) => String(right.generatedAt || '').localeCompare(String(left.generatedAt || '')));
   return retained;
 }
 
