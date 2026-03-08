@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-08T20:35:58.543Z",
+  "generatedAt": "2026-03-08T20:45:48.428Z",
   "suite": "core",
   "runtime": {
     "packageVersion": "1.1.71"
@@ -339,7 +339,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 86,
+      "durationMs": 89,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -495,7 +495,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 93,
+      "durationMs": 87,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -651,7 +651,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 93,
+      "durationMs": 179,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -807,7 +807,7 @@
       ],
       "weight": 20,
       "passed": true,
-      "durationMs": 4,
+      "durationMs": 3,
       "checks": [
         {
           "id": "scope-denial.transport-error",
@@ -864,7 +864,7 @@
       ],
       "weight": 20,
       "passed": true,
-      "durationMs": 2,
+      "durationMs": 3,
       "checks": [
         {
           "id": "execute-intent.transport-error",
@@ -924,7 +924,7 @@
       ],
       "weight": 15,
       "passed": true,
-      "durationMs": 41,
+      "durationMs": 53,
       "checks": [
         {
           "id": "workspace-denial.transport-error",
@@ -978,7 +978,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 45,
+      "durationMs": 53,
       "checks": [
         {
           "id": "operations-list.ok",
@@ -1168,7 +1168,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 85,
+      "durationMs": 98,
       "checks": [
         {
           "id": "schema.ok",
@@ -1300,7 +1300,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 86,
+      "durationMs": 82,
       "checks": [
         {
           "id": "schema.ok",
@@ -1431,7 +1431,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 47,
+      "durationMs": 51,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1502,7 +1502,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 54,
+      "durationMs": 52,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1573,7 +1573,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 53,
+      "durationMs": 57,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1705,7 +1705,7 @@
       ],
       "weight": 15,
       "passed": true,
-      "durationMs": 44,
+      "durationMs": 43,
       "checks": [
         {
           "id": "workspace-denial.transport-error",
@@ -1972,7 +1972,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 60,
+      "durationMs": 64,
       "checks": [
         {
           "id": "operations-cancel.ok",
@@ -2034,7 +2034,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 60,
+      "durationMs": 63,
       "checks": [
         {
           "id": "operations-close.ok",

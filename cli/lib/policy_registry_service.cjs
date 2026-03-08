@@ -23,6 +23,14 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function compilePack(packId, bundle, stack = [], cache = new Map()) {
   if (cache.has(packId)) {
     return cache.get(packId);
@@ -123,7 +131,7 @@ function createPolicyRegistryService(options = {}) {
       });
       return normalizeValidatedPack(validation, { source: 'builtin' });
     });
-    return items.sort((left, right) => left.id.localeCompare(right.id));
+    return items.sort((left, right) => compareStableStrings(left.id, right.id));
   }
 
   function loadRegistryBundle() {
@@ -201,7 +209,7 @@ function createPolicyRegistryService(options = {}) {
     }
 
     const byId = new Map();
-    for (const item of [...builtins, ...stored].sort((left, right) => left.id.localeCompare(right.id))) {
+    for (const item of [...builtins, ...stored].sort((left, right) => compareStableStrings(left.id, right.id))) {
       byId.set(item.id, item);
     }
 

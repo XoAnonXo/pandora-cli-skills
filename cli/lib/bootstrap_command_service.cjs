@@ -19,11 +19,19 @@ const COMPATIBILITY_FLAG = '--include-compatibility';
 const COMPATIBILITY_QUERY_PARAM = 'include_aliases=1';
 const COMPATIBILITY_MODE_HINT = 'Compatibility aliases are hidden by default. Pass --include-compatibility or include_aliases=1 only for legacy/debug workflows.';
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function sortStrings(values) {
   return Array.from(new Set(Array.isArray(values) ? values : []))
     .map((value) => String(value || '').trim())
     .filter(Boolean)
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareStableStrings);
 }
 
 function dedupeStringsPreserveOrder(values) {
@@ -57,7 +65,7 @@ function toSortedItems(items, mapper) {
   return (Array.isArray(items) ? items : [])
     .map((item) => mapper(item))
     .filter(Boolean)
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort((left, right) => compareStableStrings(left.id, right.id));
 }
 
 function buildDocumentationSummary(documentation) {
@@ -193,7 +201,7 @@ async function buildProfileSummaryAsync(profileSet, profileResolver) {
     };
   })))
     .filter(Boolean)
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort((left, right) => compareStableStrings(left.id, right.id));
 
   const builtinItems = items.filter((item) => item.builtin);
   const mutableBuiltins = builtinItems.filter((item) => !item.readOnly);
@@ -288,7 +296,7 @@ function pickBootstrapToolCommands(capabilities, documentationSummary, includeAl
     : {};
 
   if (includeAllTools) {
-    return Object.keys(commandDigests).sort((left, right) => left.localeCompare(right));
+    return Object.keys(commandDigests).sort(compareStableStrings);
   }
 
   const canonicalTools = capabilities && capabilities.canonicalTools && typeof capabilities.canonicalTools === 'object'

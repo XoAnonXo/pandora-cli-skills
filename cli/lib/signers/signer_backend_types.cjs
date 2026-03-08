@@ -54,6 +54,14 @@ function normalizeOptionalString(value, fieldName, options = {}) {
   return text;
 }
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function normalizeStringList(value, fieldName) {
   if (value === undefined || value === null || value === '') {
     return [];
@@ -69,7 +77,7 @@ function normalizeStringList(value, fieldName) {
     seen.add(text);
     items.push(text);
   }
-  items.sort((left, right) => left.localeCompare(right));
+  items.sort(compareStableStrings);
   return items;
 }
 
@@ -88,7 +96,7 @@ function normalizeKnownValueList(value, fieldName, allowedValues) {
       throw new Error(`${fieldName} must contain only: ${allowedValues.join(', ')}.`);
     }
   }
-  return Object.freeze([...new Set(items)].sort((left, right) => left.localeCompare(right)));
+  return Object.freeze([...new Set(items)].sort(compareStableStrings));
 }
 
 function normalizeSignerBackendDefinition(input) {
@@ -100,7 +108,7 @@ function normalizeSignerBackendDefinition(input) {
   const aliases = normalizeStringList(input.aliases, 'definition.aliases')
     .map((entry) => normalizeSignerBackendId(entry, 'definition.aliases'))
     .filter((entry) => entry !== id);
-  const uniqueAliases = [...new Set(aliases)].sort((left, right) => left.localeCompare(right));
+  const uniqueAliases = [...new Set(aliases)].sort(compareStableStrings);
   const profileBackends = normalizeKnownValueList(
     input.profileBackends === undefined ? [id] : input.profileBackends,
     'definition.profileBackends',
@@ -284,7 +292,7 @@ function normalizeSignerBackendResolution(input, options = {}) {
     chainId: normalizeChainIdLike(input.chainId),
     missingSecrets: Object.freeze(missingSecrets),
     missingContext: Object.freeze(missingContext),
-    missing: Object.freeze([...new Set(missing)].sort((left, right) => left.localeCompare(right))),
+    missing: Object.freeze([...new Set(missing)].sort(compareStableStrings)),
     notes: Object.freeze(normalizeStringList(input.notes, 'resolution.notes')),
     secretMaterial: Object.prototype.hasOwnProperty.call(input, 'secretMaterial')
       ? (input.secretMaterial === null || isPlainObject(input.secretMaterial) ? input.secretMaterial : (() => {

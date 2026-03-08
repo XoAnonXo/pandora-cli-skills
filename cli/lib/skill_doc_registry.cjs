@@ -241,7 +241,15 @@ function sortStrings(values) {
   return Array.from(new Set(Array.isArray(values) ? values : []))
     .map((value) => String(value || '').trim())
     .filter(Boolean)
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareStableStrings);
+}
+
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
 }
 
 function hashText(value) {

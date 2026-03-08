@@ -25,6 +25,14 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function sortObjectKeysDeep(value) {
   if (Array.isArray(value)) {
     return value.map((entry) => sortObjectKeysDeep(entry));
@@ -33,7 +41,7 @@ function sortObjectKeysDeep(value) {
     return value;
   }
   const sorted = {};
-  for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+  for (const key of Object.keys(value).sort(compareStableStrings)) {
     sorted[key] = sortObjectKeysDeep(value[key]);
   }
   return sorted;
@@ -81,7 +89,7 @@ function normalizeStringList(value, fieldName) {
   if (value === undefined || value === null || value === '') return [];
   const items = Array.isArray(value) ? value : [value];
   const normalized = items.map((entry) => normalizeNonEmptyString(entry, fieldName));
-  return Array.from(new Set(normalized)).sort((left, right) => left.localeCompare(right));
+  return Array.from(new Set(normalized)).sort(compareStableStrings);
 }
 
 function normalizeChainAllowlist(value) {
@@ -116,7 +124,7 @@ function normalizeChainAllowlist(value) {
       normalized.push(nextValue);
     }
   }
-  return normalized.sort((left, right) => String(left).localeCompare(String(right)));
+  return normalized.sort((left, right) => compareStableStrings(String(left), String(right)));
 }
 
 function normalizeLabels(value) {
@@ -128,7 +136,7 @@ function normalizeLabels(value) {
     });
   }
   const normalized = {};
-  for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+  for (const key of Object.keys(value).sort(compareStableStrings)) {
     const labelKey = normalizeId(key, 'labels key');
     const rawValue = value[key];
     if (rawValue === undefined || rawValue === null || rawValue === '') continue;
@@ -152,7 +160,7 @@ function normalizeRiskCeilings(value) {
     });
   }
   const normalized = {};
-  for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+  for (const key of Object.keys(value).sort(compareStableStrings)) {
     const rawValue = value[key];
     if (rawValue === undefined || rawValue === null || rawValue === '') continue;
     const numeric = Number(rawValue);
@@ -179,7 +187,7 @@ function normalizeGenericSecretRef(value, fieldName = 'secretRef') {
     });
   }
   const normalized = {};
-  for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+  for (const key of Object.keys(value).sort(compareStableStrings)) {
     const rawValue = value[key];
     if (rawValue === undefined || rawValue === null || rawValue === '') continue;
     if (Array.isArray(rawValue)) {
@@ -375,7 +383,7 @@ function normalizeProfile(input, options = {}) {
   const allowedPolicies = normalizeStringList(input.allowedPolicies, 'allowedPolicies');
   if (defaultPolicy && !allowedPolicies.includes(defaultPolicy)) {
     allowedPolicies.push(defaultPolicy);
-    allowedPolicies.sort((left, right) => left.localeCompare(right));
+    allowedPolicies.sort(compareStableStrings);
   }
 
   return sortObjectKeysDeep({

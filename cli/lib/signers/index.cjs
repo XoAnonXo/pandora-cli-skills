@@ -11,6 +11,14 @@ const {
   normalizeSignerBackendRuntime,
 } = require('./signer_backend_types.cjs');
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function createSignerBackendRegistry(options = {}) {
   const definitionsById = new Map();
   const aliasesToId = new Map();
@@ -63,7 +71,7 @@ function createSignerBackendRegistry(options = {}) {
   }
 
   function list() {
-    return [...definitionsById.values()].sort((left, right) => left.id.localeCompare(right.id));
+    return [...definitionsById.values()].sort((left, right) => compareStableStrings(left.id, right.id));
   }
 
   function clearCache(id) {

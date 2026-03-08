@@ -17,6 +17,14 @@ const {
   getBuiltInProfiles,
 } = require('./profile_registry_service.cjs');
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function expandHome(filePath) {
   if (!filePath) return filePath;
   if (filePath === '~') return os.homedir();
@@ -148,7 +156,7 @@ function mergeProfileEntries(builtinEntries, fileEntries) {
   for (const entry of fileEntries) {
     byId.set(entry.id, entry);
   }
-  return Array.from(byId.values()).sort((left, right) => left.id.localeCompare(right.id));
+  return Array.from(byId.values()).sort((left, right) => compareStableStrings(left.id, right.id));
 }
 
 function createProfileStore(options = {}) {

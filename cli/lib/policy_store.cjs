@@ -33,6 +33,14 @@ function normalizeText(value) {
   return text ? text : null;
 }
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function defaultPolicyDir() {
   const configuredRoot = normalizeText(process.env.PANDORA_POLICY_DIR || process.env.PANDORA_POLICIES_DIR);
   if (configuredRoot) {
@@ -98,7 +106,7 @@ function listStoredPolicyFiles(rootDir) {
   const files = fs.readdirSync(dir)
     .filter((name) => name.endsWith(POLICY_FILE_EXTENSION))
     .map((name) => path.join(dir, name))
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareStableStrings);
   return { dir, files };
 }
 
