@@ -260,12 +260,10 @@ function normalizePublicationScenario(scenario) {
     dimensions: Array.isArray(scenario.dimensions) ? scenario.dimensions.slice() : [],
     weight: scenario.weight,
     passed: scenario.passed,
-    runtimeState: scenario.runtimeState || null,
     parityGroup: scenario.parityGroup || null,
     parityExpectedTransports: Array.isArray(scenario.parityExpectedTransports)
       ? scenario.parityExpectedTransports.slice()
       : [],
-    parityHash: scenario.parityHash || null,
     score: scenario.score || null,
     failure: scenario.failure || null,
     checks: Array.isArray(scenario.checks)
@@ -290,8 +288,6 @@ function normalizePublicationParity(parity) {
       actualTransports: Array.isArray(group && group.actualTransports) ? group.actualTransports.slice() : [],
       missingTransports: Array.isArray(group && group.missingTransports) ? group.missingTransports.slice() : [],
       matches: Boolean(group && group.matches),
-      hashCount: Number.isFinite(Number(group && group.hashCount)) ? Number(group.hashCount) : 0,
-      hashes: Array.isArray(group && group.hashes) ? group.hashes.slice() : [],
     }))
     : [];
   groups.sort((left, right) => String(left.groupId || '').localeCompare(String(right.groupId || '')));
