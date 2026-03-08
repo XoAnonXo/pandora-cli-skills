@@ -2085,5 +2085,5 @@
       }
     }
   ],
-  "writtenLockPath": "/Users/mac/Desktop/pandora-market-setup-shareable/benchmarks/locks/core.lock.json"
+  "writtenLockPath": "benchmarks/locks/core.lock.json"
 }
