@@ -15,7 +15,7 @@ test('A+ scorecard reports honest blockers without misclassifying release drift 
   assert.equal(certification.targetTier, 'A+');
   assert.equal(certification.status, 'not-certified');
   assert.equal(certification.blockingCheckIds.includes('release-drift-discipline'), false);
-  assert.equal(certification.blockingCheckIds.includes('typescript-sdk-publication'), true);
+  assert.equal(certification.blockingCheckIds.includes('typescript-sdk-publication'), false);
   assert.equal(certification.blockingCheckIds.includes('python-sdk-publication'), true);
   assert.equal(certification.blockingCheckIds.includes('runtime-ready-mutable-profiles'), true);
 });

@@ -221,16 +221,35 @@ test('published benchmark report strips passing check messages but keeps failing
   assert.equal(published.scenarios[0].checks[1].message, "actual failure detail");
 });
 
-test('public benchmark bundle avoids absolute machine-specific paths such as writtenLockPath', () => {
+test('public benchmark bundle avoids absolute machine-specific paths such as writtenLockPath', (t) => {
   const rootDir = path.resolve(__dirname, '..', '..');
-  const output = execFileSync(process.execPath, ['scripts/run_agent_benchmarks.cjs', '--suite', 'core', '--write-lock'], {
+  const tempDir = fs.mkdtempSync(path.join(rootDir, '.tmp-benchmark-run-'));
+  t.after(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+  const output = execFileSync(
+    process.execPath,
+    [
+      'scripts/run_agent_benchmarks.cjs',
+      '--suite',
+      'core',
+      '--write-lock',
+      '--out',
+      path.relative(rootDir, path.join(tempDir, 'core-report.json')),
+      '--lock-path',
+      path.relative(rootDir, path.join(tempDir, 'core.lock.json')),
+    ],
+    {
     cwd: rootDir,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-  });
+    },
+  );
   const report = JSON.parse(output);
-  assert.equal(report.writtenLockPath, 'benchmarks/locks/core.lock.json');
-  assert.equal(report.expectedContractLockPath, 'benchmarks/locks/core.lock.json');
+  assert.equal(path.isAbsolute(report.writtenLockPath), false);
+  assert.equal(path.isAbsolute(report.expectedContractLockPath), false);
+  assert.match(report.writtenLockPath, /\.tmp-benchmark-run-/);
+  assert.match(report.expectedContractLockPath, /\.tmp-benchmark-run-/);
 });
 
 test('benchmark trust failure messaging distinguishes benchmark refresh from publication history refresh', () => {

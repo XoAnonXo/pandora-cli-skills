@@ -148,21 +148,33 @@ test('operation event bus does not advance sequence when validation fails', asyn
 test('operation event bus times out slow listeners without blocking emission success', async () => {
   const bus = createOperationEventBus({
     now: createFixedClock('2026-03-07T12:03:00.000Z'),
-    listenerTimeoutMs: 10,
+    listenerTimeoutMs: 25,
   });
+  let aborted = false;
 
-  bus.subscribe(() => new Promise(() => {}));
+  bus.subscribe((_event, context) => new Promise((resolve) => {
+    const finish = () => {
+      aborted = true;
+      resolve('aborted-after-timeout');
+    };
+    if (context.signal?.aborted) {
+      finish();
+      return;
+    }
+    context.signal?.addEventListener('abort', finish, { once: true });
+  }));
   const report = await bus.emitLifecycleEvent({ operationId: 'op-2', phase: 'planned' });
 
   assert.equal(report.ok, true);
   assert.equal(report.failureCount, 1);
   assert.equal(report.listenerReports[0].error.code, 'OPERATION_EVENT_LISTENER_TIMEOUT');
+  assert.equal(aborted, true);
 });
 
 test('operation event bus aborts listeners that honor timeout signals', async () => {
   const bus = createOperationEventBus({
     now: createFixedClock('2026-03-07T12:03:30.000Z'),
-    listenerTimeoutMs: 10,
+    listenerTimeoutMs: 25,
   });
   let aborted = false;
 

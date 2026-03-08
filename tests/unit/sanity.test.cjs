@@ -19,7 +19,8 @@ const EXPECTED_PUBLISHED_SCRIPT_NAMES = [
 ];
 
 function packDryRun() {
-  const output = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+  const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const output = execFileSync(npmExecutable, ['pack', '--dry-run', '--json', '--ignore-scripts'], {
     cwd: ROOT,
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 16,

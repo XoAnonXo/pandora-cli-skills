@@ -89,6 +89,12 @@ test('release drift clean-tree mode rejects untracked files', (t) => {
   const result = spawnSync(process.execPath, ['scripts/check_release_drift.cjs', '--require-clean-tree'], {
     cwd: rootDir,
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      GITHUB_REF: '',
+      GITHUB_REF_NAME: '',
+      GITHUB_REF_TYPE: '',
+    },
   });
 
   assert.notEqual(result.status, 0);
@@ -101,6 +107,12 @@ test('release drift check passes on a clean repository snapshot', (t) => {
   const result = spawnSync(process.execPath, ['scripts/check_release_drift.cjs'], {
     cwd: rootDir,
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      GITHUB_REF: '',
+      GITHUB_REF_NAME: '',
+      GITHUB_REF_TYPE: '',
+    },
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);

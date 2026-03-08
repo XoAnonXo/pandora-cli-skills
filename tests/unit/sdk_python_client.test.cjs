@@ -13,6 +13,8 @@ const {
   parseJsonStdout,
 } = require('../helpers/sdk_consumer_runner.cjs');
 
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
+
 function havePython() {
   const probe = spawnSync('python3', ['--version'], { encoding: 'utf8' });
   return probe.status === 0;
@@ -104,17 +106,23 @@ test('standalone python sdk installs into an isolated target and stays usable fo
   const tempRoot = createTempDir('pandora-py-sdk-consumer-');
   const installTarget = path.join(tempRoot, 'site');
   const runtimeDir = path.join(tempRoot, 'runtime');
+  const packageCopyDir = path.join(tempRoot, 'sdk-python');
   t.after(() => removeDir(tempRoot));
 
-  const installResult = run('python3', ['-m', 'pip', 'install', '--no-deps', '--target', installTarget, './sdk/python'], {
-    cwd: process.cwd(),
+  fs.cpSync(path.join(REPO_ROOT, 'sdk', 'python'), packageCopyDir, {
+    recursive: true,
+    dereference: true,
+  });
+
+  const installResult = run('python3', ['-m', 'pip', 'install', '--no-deps', '--target', installTarget, packageCopyDir], {
+    cwd: REPO_ROOT,
     timeoutMs: 240_000,
     env: {
       ...process.env,
       PYTHONDONTWRITEBYTECODE: '1',
     },
   });
-  ensureExitCode(installResult, 0, 'pip install --target ./sdk/python');
+  ensureExitCode(installResult, 0, 'pip install --target isolated sdk/python copy');
 
   const runtimeEnv = {
     ...process.env,
@@ -128,7 +136,7 @@ test('standalone python sdk installs into an isolated target and stays usable fo
     "from pandora_agent import create_local_pandora_agent_client, load_generated_manifest, load_generated_contract_registry",
     "manifest = load_generated_manifest()",
     "registry = load_generated_contract_registry()",
-    "client = create_local_pandora_agent_client(command='node', args=['cli/pandora.cjs', 'mcp'], cwd='/Users/mac/Desktop/pandora-market-setup-shareable', env=dict(os.environ))",
+    `client = create_local_pandora_agent_client(command='node', args=['cli/pandora.cjs', 'mcp'], cwd=${JSON.stringify(REPO_ROOT)}, env=dict(os.environ))`,
     "client.connect()",
     "envelope = client.call_tool('capabilities')",
     "descriptors = client.get_command_descriptors()",
@@ -145,7 +153,7 @@ test('standalone python sdk installs into an isolated target and stays usable fo
     "}))",
   ].join('\n');
   const consumerRun = run('python3', ['-c', script], {
-    cwd: process.cwd(),
+    cwd: REPO_ROOT,
     env: runtimeEnv,
     timeoutMs: 120_000,
   });

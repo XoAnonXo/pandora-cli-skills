@@ -141,8 +141,12 @@ function expectedTarballName() {
   return `${sanitizePackageName(pkg.name)}-${pkg.version}.tgz`;
 }
 
+function resolveNpmExecutable() {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
 function runNpmPackDryRun() {
-  const output = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+  const output = execFileSync(resolveNpmExecutable(), ['pack', '--dry-run', '--json', '--ignore-scripts'], {
     cwd: ROOT_DIR,
     encoding: 'utf8',
     env: {
@@ -158,7 +162,7 @@ function runNpmPackDryRun() {
 }
 
 function runNpmSbomHelp() {
-  const output = execFileSync('npm', ['sbom', '--help'], {
+  const output = execFileSync(resolveNpmExecutable(), ['sbom', '--help'], {
     cwd: ROOT_DIR,
     encoding: 'utf8',
     env: {
