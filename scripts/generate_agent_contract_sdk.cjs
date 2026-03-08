@@ -54,6 +54,10 @@ function expectDeepEqual(label, actual, expected) {
   }
 }
 
+function normalizeTextForComparison(value) {
+  return String(value).replace(/\r\n/g, '\n');
+}
+
 function validateGeneratedSurfaceMetadata(files, expected) {
   const rootManifest = readGeneratedFile(files, 'sdk/generated/manifest.json');
   const rootRegistry = readGeneratedFile(files, 'sdk/generated/contract-registry.json');
@@ -154,7 +158,7 @@ function checkArtifacts(files) {
         throw error;
       }
     }
-    if (currentContent !== file.content) {
+    if (normalizeTextForComparison(currentContent) !== normalizeTextForComparison(file.content)) {
       staleFiles.push(file.relativePath);
     }
   }

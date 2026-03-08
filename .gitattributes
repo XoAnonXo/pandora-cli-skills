@@ -1,0 +1,3 @@
+sdk/generated/* text eol=lf
+sdk/typescript/generated/* text eol=lf
+sdk/python/pandora_agent/generated/* text eol=lf
