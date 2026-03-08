@@ -252,8 +252,12 @@ function compareStableStrings(left, right) {
   return 0;
 }
 
+function normalizeTextForHash(value) {
+  return String(value || '').replace(/\r\n/g, '\n');
+}
+
 function hashText(value) {
-  return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
+  return crypto.createHash('sha256').update(normalizeTextForHash(value), 'utf8').digest('hex');
 }
 
 function readRelativeFile(relativePath) {
