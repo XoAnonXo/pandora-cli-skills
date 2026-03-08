@@ -221,7 +221,17 @@ test('published benchmark report strips passing check messages but keeps failing
   assert.equal(published.scenarios[0].checks[1].message, "actual failure detail");
 });
 
-test.todo('public benchmark bundle avoids absolute machine-specific paths such as writtenLockPath');
+test('public benchmark bundle avoids absolute machine-specific paths such as writtenLockPath', () => {
+  const rootDir = path.resolve(__dirname, '..', '..');
+  const output = execFileSync(process.execPath, ['scripts/run_agent_benchmarks.cjs', '--suite', 'core', '--write-lock'], {
+    cwd: rootDir,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const report = JSON.parse(output);
+  assert.equal(report.writtenLockPath, 'benchmarks/locks/core.lock.json');
+  assert.equal(report.expectedContractLockPath, 'benchmarks/locks/core.lock.json');
+});
 
 test('benchmark trust failure messaging distinguishes benchmark refresh from publication history refresh', () => {
   const failures = [

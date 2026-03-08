@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-08T19:52:50.462Z",
+  "generatedAt": "2026-03-08T19:56:13.065Z",
   "suite": "core",
   "runtime": {
     "packageVersion": "1.1.71"
@@ -339,7 +339,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 87,
+      "durationMs": 86,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -495,7 +495,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 95,
+      "durationMs": 92,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -807,7 +807,7 @@
       ],
       "weight": 20,
       "passed": true,
-      "durationMs": 3,
+      "durationMs": 4,
       "checks": [
         {
           "id": "scope-denial.transport-error",
@@ -864,7 +864,7 @@
       ],
       "weight": 20,
       "passed": true,
-      "durationMs": 2,
+      "durationMs": 3,
       "checks": [
         {
           "id": "execute-intent.transport-error",
@@ -924,7 +924,7 @@
       ],
       "weight": 15,
       "passed": true,
-      "durationMs": 42,
+      "durationMs": 40,
       "checks": [
         {
           "id": "workspace-denial.transport-error",
@@ -978,7 +978,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 43,
+      "durationMs": 46,
       "checks": [
         {
           "id": "operations-list.ok",
@@ -1036,7 +1036,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 69,
+      "durationMs": 71,
       "checks": [
         {
           "id": "schema.ok",
@@ -1168,7 +1168,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 86,
+      "durationMs": 87,
       "checks": [
         {
           "id": "schema.ok",
@@ -1502,7 +1502,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 51,
+      "durationMs": 49,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1573,7 +1573,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 53,
+      "durationMs": 52,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1644,7 +1644,7 @@
       ],
       "weight": 20,
       "passed": true,
-      "durationMs": 4,
+      "durationMs": 3,
       "checks": [
         {
           "id": "execute-intent.transport-error",
@@ -1705,7 +1705,7 @@
       ],
       "weight": 15,
       "passed": true,
-      "durationMs": 42,
+      "durationMs": 48,
       "checks": [
         {
           "id": "workspace-denial.transport-error",
@@ -1867,7 +1867,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 11,
+      "durationMs": 10,
       "checks": [
         {
           "id": "tools-list.ok",
@@ -1972,7 +1972,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 64,
+      "durationMs": 60,
       "checks": [
         {
           "id": "operations-cancel.ok",
@@ -2034,7 +2034,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 63,
+      "durationMs": 74,
       "checks": [
         {
           "id": "operations-close.ok",
@@ -2085,5 +2085,5 @@
       }
     }
   ],
-  "writtenLockPath": "/Users/mac/Desktop/pandora-market-setup-shareable/benchmarks/locks/core.lock.json"
+  "writtenLockPath": "benchmarks/locks/core.lock.json"
 }

@@ -45,8 +45,9 @@ function parseArgs(argv) {
     : 95;
   if (options.writeLock) {
     const lockPath = writeSuiteLock(options.suite, report.contractLock, options.lockPath || defaultSuiteLockPath(options.suite));
-    report.writtenLockPath = lockPath;
-    report.expectedContractLockPath = path.relative(process.cwd(), lockPath);
+    const relativeLockPath = path.relative(process.cwd(), lockPath).split(path.sep).join("/");
+    report.writtenLockPath = relativeLockPath;
+    report.expectedContractLockPath = relativeLockPath;
     report.contractLockMatchesExpected = true;
     report.contractLockMismatches = [];
     if (report.summary && typeof report.summary === 'object') {
