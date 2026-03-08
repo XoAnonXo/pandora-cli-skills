@@ -46,7 +46,15 @@ Or from a locally built release artifact produced by the repository release flow
 pip install dist/release/sdk/python/*.whl
 ```
 
-Use the signed GitHub release wheel or sdist when working outside the repository. Use the repo path only when you intentionally want an in-tree checkout. Public PyPI publication is not claimed by this README until a release explicitly says so.
+If you publish manually from `sdk/python`, clear old build artifacts first:
+
+```bash
+rm -rf dist build pandora_agent.egg-info
+python3 -m build
+TWINE_USERNAME=__token__ TWINE_PASSWORD=... python3 -m twine upload dist/*
+```
+
+Use the signed GitHub release wheel or sdist when working outside the repository. Use the repo path only when you intentionally want an in-tree checkout. Public PyPI publication is live as `pandora-agent`.
 
 Vendored equivalent inside the Pandora CLI package:
 
