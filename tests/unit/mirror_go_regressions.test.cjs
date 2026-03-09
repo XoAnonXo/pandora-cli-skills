@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
+const path = require('path');
 
 const handleMirrorGo = require('../../cli/lib/mirror_handlers/go.cjs');
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
@@ -383,8 +384,9 @@ test('parseMirrorSyncFlags maps default state paths into the workspace in MCP mo
       'poly-1',
       '--paper',
     ]);
-    assert.ok(parsed.stateFile.startsWith(`${process.cwd()}/.pandora/mirror/`));
-    assert.ok(parsed.killSwitchFile.startsWith(`${process.cwd()}/.pandora/mirror/`));
+    const mirrorDir = path.join(process.cwd(), '.pandora', 'mirror');
+    assert.ok(parsed.stateFile.startsWith(`${mirrorDir}${path.sep}`));
+    assert.ok(parsed.killSwitchFile.startsWith(`${mirrorDir}${path.sep}`));
   });
 });
 

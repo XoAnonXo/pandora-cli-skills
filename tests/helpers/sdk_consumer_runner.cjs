@@ -13,12 +13,24 @@ function removeDir(dirPath) {
 }
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const spawnOptions = {
     cwd: options.cwd,
-    env: options.env,
+    env: options.env || process.env,
     encoding: 'utf8',
     timeout: options.timeoutMs || 180_000,
-  });
+  };
+
+  if (typeof options.shell === 'boolean') {
+    spawnOptions.shell = options.shell;
+  } else if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(String(command || ''))) {
+    spawnOptions.shell = true;
+  }
+
+  if (process.platform !== 'win32') {
+    spawnOptions.killSignal = 'SIGKILL';
+  }
+
+  const result = spawnSync(command, args, spawnOptions);
 
   return {
     status: result.status,

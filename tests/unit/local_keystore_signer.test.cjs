@@ -77,6 +77,11 @@ test('local keystore signer reports missing keystore files with resolved file me
 });
 
 test('local keystore signer blocks files with unsafe permissions before decrypting', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX file permission enforcement is unavailable on Windows.');
+    return;
+  }
+
   const filePath = createTempKeystore(t, { mode: 0o644 });
 
   const result = resolveLocalKeystoreSigner({

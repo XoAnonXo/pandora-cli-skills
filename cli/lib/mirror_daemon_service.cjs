@@ -37,6 +37,10 @@ function resolvePath(filePath) {
   return path.resolve(expandHome(String(filePath || '').trim()));
 }
 
+function resolveHomeDir() {
+  return process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
+}
+
 function sanitizeCliArgs(args = []) {
   const sanitized = [];
   for (let i = 0; i < args.length; i += 1) {
@@ -67,16 +71,16 @@ function sanitizeCliArgs(args = []) {
 
 function defaultPidFile(strategyHash) {
   const hash = normalizeStrategyHash(strategyHash);
-  return path.join(os.homedir(), '.pandora', 'mirror', 'daemon', `${hash}.json`);
+  return path.join(resolveHomeDir(), '.pandora', 'mirror', 'daemon', `${hash}.json`);
 }
 
 function defaultLogFile(strategyHash) {
   const hash = normalizeStrategyHash(strategyHash);
-  return path.join(os.homedir(), '.pandora', 'mirror', 'logs', `${hash}.log`);
+  return path.join(resolveHomeDir(), '.pandora', 'mirror', 'logs', `${hash}.log`);
 }
 
 function defaultPidDir() {
-  return path.join(os.homedir(), '.pandora', 'mirror', 'daemon');
+  return path.join(resolveHomeDir(), '.pandora', 'mirror', 'daemon');
 }
 
 function writeJsonFile(filePath, payload) {

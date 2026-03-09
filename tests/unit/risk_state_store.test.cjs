@@ -67,8 +67,10 @@ test('saveRiskState writes normalized state with private permissions', () => {
     assert.equal(loaded.state.guardrails.maxDailyLiveOps, 3);
     assert.equal(loaded.state.counters.liveOps, 3);
 
-    const mode = fs.statSync(riskFile).mode & 0o777;
-    assert.equal(mode, 0o600);
+    if (process.platform !== 'win32') {
+      const mode = fs.statSync(riskFile).mode & 0o777;
+      assert.equal(mode, 0o600);
+    }
   } finally {
     removeDir(tempDir);
   }
@@ -100,8 +102,10 @@ test('touchPanicStopFiles creates autopilot and mirror stop files', () => {
     assert.equal(files.length, 2);
     assert.equal(fs.existsSync(autopilotStopFile), true);
     assert.equal(fs.existsSync(mirrorStopFile), true);
-    const mode = fs.statSync(autopilotStopFile).mode & 0o777;
-    assert.equal(mode, 0o600);
+    if (process.platform !== 'win32') {
+      const mode = fs.statSync(autopilotStopFile).mode & 0o777;
+      assert.equal(mode, 0o600);
+    }
   } finally {
     removeDir(tempDir);
   }

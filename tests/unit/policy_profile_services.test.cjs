@@ -615,7 +615,12 @@ test('profile resolver requires explicit selection when a profile file contains 
   });
 });
 
-test('local-keystore profiles reject unsafe file permissions once keystore permission checks exist', () => {
+test('local-keystore profiles reject unsafe file permissions once keystore permission checks exist', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX file permission enforcement is unavailable on Windows.');
+    return;
+  }
+
   withTempDir('pandora-profile-keystore-perms-', (dir) => {
     const keystorePath = path.join(dir, 'operator-keystore.json');
     fs.writeFileSync(keystorePath, JSON.stringify({ encrypted: true }));

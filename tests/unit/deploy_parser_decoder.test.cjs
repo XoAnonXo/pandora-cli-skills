@@ -7,6 +7,7 @@ const { createParseMirrorDeployFlags } = require('../../cli/lib/parsers/mirror_d
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
 const { createParseSportsFlags } = require('../../cli/lib/parsers/sports_flags.cjs');
 const { parsePollCategory } = require('../../cli/lib/shared/poll_categories.cjs');
+const { assertMcpWorkspacePath } = require('../../cli/lib/shared/mcp_path_guard.cjs');
 
 class TestCliError extends Error {
   constructor(code, message) {
@@ -446,7 +447,7 @@ test('mirror go parser accepts profile selectors and keeps polymarket private-ke
     '--profile-file',
     '/tmp/profile.json',
   ]);
-  assert.match(withProfile.profileFile, /\/tmp\/profile\.json$/);
+  assert.equal(withProfile.profileFile, assertMcpWorkspacePath('/tmp/profile.json'));
 
   const mixed = parseMirrorGoFlags([
     '--polymarket-market-id',
