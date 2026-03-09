@@ -5,10 +5,14 @@ const crypto = require('crypto');
 
 const MIRROR_STATE_SCHEMA_VERSION = '1.0.0';
 
+function resolveHomeDir() {
+  return process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
+}
+
 function expandHome(filePath) {
   if (!filePath) return filePath;
-  if (filePath === '~') return os.homedir();
-  if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2));
+  if (filePath === '~') return resolveHomeDir();
+  if (filePath.startsWith('~/')) return path.join(resolveHomeDir(), filePath.slice(2));
   return filePath;
 }
 
@@ -20,11 +24,11 @@ function strategyHash(params) {
 
 function defaultStateFile(params) {
   const hash = strategyHash(params);
-  return path.join(os.homedir(), '.pandora', 'mirror', `${hash}.json`);
+  return path.join(resolveHomeDir(), '.pandora', 'mirror', `${hash}.json`);
 }
 
 function defaultKillSwitchFile() {
-  return path.join(os.homedir(), '.pandora', 'mirror', 'STOP');
+  return path.join(resolveHomeDir(), '.pandora', 'mirror', 'STOP');
 }
 
 function ensureStateShape(raw, hash) {
