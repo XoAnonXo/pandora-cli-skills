@@ -31,6 +31,12 @@ Current validated install paths:
 Preferred for external consumers:
 
 ```bash
+pip install pandora-agent==0.1.0a3
+```
+
+Or install from a signed GitHub release artifact:
+
+```bash
 pip install /path/to/downloaded/pandora_agent-<version>-py3-none-any.whl
 ```
 
@@ -54,7 +60,7 @@ python3 -m build
 TWINE_USERNAME=__token__ TWINE_PASSWORD=... python3 -m twine upload dist/*
 ```
 
-Use the signed GitHub release wheel or sdist when working outside the repository. Use the repo path only when you intentionally want an in-tree checkout. Public PyPI publication is live as `pandora-agent`.
+Use the public PyPI package for the normal external install path. Use the signed GitHub release wheel or sdist when you need an explicitly pinned audited artifact. Use the repo path only when you intentionally want an in-tree checkout. Public PyPI publication is live as `pandora-agent`.
 
 Vendored equivalent inside the Pandora CLI package:
 

@@ -5,10 +5,12 @@ Standalone alpha TypeScript/Node SDK for Pandora's MCP tool interface and genera
 ## Status and delivery
 - primary package identity: `@thisispandora/agent-sdk`
 - generated artifacts ship package-locally under `@thisispandora/agent-sdk/generated`
-- current external distribution path: signed GitHub release asset tarball for the tagged Pandora release
+- current external distribution paths:
+  - public npm package: `npm install @thisispandora/agent-sdk@alpha`
+  - signed GitHub release asset tarball for the tagged Pandora release
 - repository checkout path: `sdk/typescript` is for maintainers and in-tree development only
 - the Pandora CLI package also vendors a matching copy under `sdk/typescript` and `pandora-cli-skills/sdk/typescript` for parity and in-tree consumers
-- public npm publication is not claimed by this README until a release explicitly says so
+- public npm publication is live; the newest prerelease is published under the `alpha` dist-tag
 
 ## What it exposes
 - local stdio MCP execution via `pandora mcp`
@@ -23,6 +25,12 @@ Standalone alpha TypeScript/Node SDK for Pandora's MCP tool interface and genera
 Current validated install paths:
 
 Preferred for external consumers:
+
+```bash
+npm install @thisispandora/agent-sdk@alpha
+```
+
+Or install from a signed GitHub release tarball:
 
 ```bash
 npm install /path/to/downloaded/thisispandora-agent-sdk-<version>.tgz
@@ -40,7 +48,7 @@ Or build a local tarball from source:
 npm pack ./sdk/typescript
 ```
 
-Use the signed GitHub release tarball when working outside the repository. Use the repo path only when you intentionally want an in-tree checkout.
+Use the public npm package for the normal external install path. Use the signed GitHub release tarball when you need an explicitly pinned audited artifact. Use the repo path only when you intentionally want an in-tree checkout.
 
 Node `>=18` is required.
 

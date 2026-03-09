@@ -2,6 +2,8 @@
 
 Use this guide when you want to run `pandora mcp http` as a long-lived operator-hosted control-plane process.
 
+This guide is for shared hosted gateways. It is not required for self-custody users who want their own agent to execute with their own wallet on their own machine or server.
+
 This document is intentionally strict about what the current runtime actually supports.
 If a capability is not described here, do not assume it exists.
 
@@ -59,6 +61,19 @@ Current caveats on the shipped runtime:
 Plan deployment around those constraints.
 
 ## Recommended topology
+
+Recommended operating split:
+
+- self-custody live execution:
+  - user runs Pandora locally or on their own server
+  - user keeps signer material on that runtime
+- shared hosted gateway:
+  - discovery
+  - bootstrap
+  - schema and tool inspection
+  - recipes and recommendations
+  - audit, receipts, and planning
+  - read-only by default unless you intentionally adopt a BYO-signer or custodial model
 
 Use this shape in production-like environments:
 
@@ -205,6 +220,7 @@ Deployment rules:
 - prefer `--public-base-url https://pandora.example.com` even when the proxy forwards host/proto headers correctly
 - do not expose the gateway directly on a public `0.0.0.0` bind without a reverse proxy and TLS terminator
 - keep bearer tokens out of proxy access logs
+- do not place user signer material on the shared gateway unless you have explicitly decided to support hosted execution
 
 ## Docker reference
 

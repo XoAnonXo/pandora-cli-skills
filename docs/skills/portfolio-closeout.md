@@ -67,7 +67,9 @@ It is not a cross-venue atomic close.
 - the command runs `stop-daemons`, `withdraw-lp`, then `claim-winnings`
 - remaining Polymarket hedge inventory or settlement stays manual in this command version
 - use `lp simulate-remove --market-address <0x...> --all` when you want a dedicated LP-removal preview before executing
-- use `mirror pnl` for cross-venue scenario estimates and `mirror audit` for the classified runtime ledger
+- use `mirror pnl` for the canonical accounting-summary surface and `mirror audit` for the canonical ledger surface
+  - the default fields still expose approximate/operator P&L and operational/classified audit history
+  - add `--reconciled` on those same two commands when you want the normalized accounting attachment rather than moving to a separate closeout-only accounting command
 - `mirror close`, `mirror status --with-live`, `mirror pnl`, and `mirror audit` are operator surfaces, not tax-ready accounting exports
 
 ## Operations tracking
@@ -118,7 +120,13 @@ pandora mirror status --output json --strategy-hash <hash> --with-live
 pandora mirror pnl --output json --strategy-hash <hash>
 pandora mirror audit --output json --strategy-hash <hash> --with-live
 pandora polymarket balance --output json --funder <proxy-wallet>
+pandora polymarket positions --output json --funder <proxy-wallet> --condition-id <condition_id> --source auto
 ```
+
+Interpret those closeout accounting surfaces carefully:
+- `mirror pnl --reconciled` is the current accounting-summary attachment
+- `mirror audit --reconciled` is the current ledger-grade audit attachment
+- keep `history`, `export`, receipts, and token inventory checks in the loop when either command reports `reconciliation.mode = partial` or non-empty `reconciliation.missing`
 
 ### 2. Wait for Pandora finalization with prechecks instead of guessing
 ```bash
