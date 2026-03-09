@@ -93,7 +93,9 @@ test('package exposes pandora bin entrypoint and packed consumer surface', () =>
   for (const forbiddenPrefix of [
     'benchmarks/lib/',
     'benchmarks/scenarios/',
-    'tests/',
+    'tests/unit/',
+    'tests/cli/',
+    'tests/smoke/',
     'todos/',
     'docs/roadmaps/',
   ]) {

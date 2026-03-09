@@ -2312,7 +2312,7 @@ test('mirror sync live execution normalizes rebalance trades before onchain exec
       renderMirrorSyncTable: () => {},
       cliPath: '/Users/mac/Desktop/pandora-market-setup-shareable/cli/pandora.cjs',
     },
-    mirrorSyncUsage: 'pandora mirror sync once|run|start ...',
+    mirrorSyncUsage: 'pandora mirror sync once|run|start|stop|status ...',
   });
 
   assert.deepEqual(captured.callOrder, ['quote', 'guard', 'execute']);

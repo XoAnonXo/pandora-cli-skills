@@ -545,7 +545,7 @@ print(json.dumps({
     ensureExitCode(mirrorHelp, 0, 'pandora mirror --help');
     ensureOutputContains(
       mirrorHelp,
-      /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|calc\|simulate\|go\|sync\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl\|audit\|replay\|logs\|close/,
+      /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|calc\|simulate\|go\|sync\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl\|audit\|replay\|logs\|close/,
       'pandora mirror --help',
     );
 
@@ -555,7 +555,7 @@ print(json.dumps({
 
     const mirrorSyncHelp = runPandora(installedCli, ['mirror', 'sync', '--help'], { cwd: appDir, env: smokeEnv });
     ensureExitCode(mirrorSyncHelp, 0, 'pandora mirror sync --help');
-    ensureOutputContains(mirrorSyncHelp, /sync once\|run\|start/, 'pandora mirror sync --help');
+    ensureOutputContains(mirrorSyncHelp, /sync once\|run\|start.*stop.*status/s, 'pandora mirror sync --help');
 
     const policyHelp = runPandora(installedCli, ['policy', '--help'], { cwd: appDir, env: smokeEnv });
     ensureExitCode(policyHelp, 0, 'pandora policy --help');
