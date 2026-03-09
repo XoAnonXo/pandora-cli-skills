@@ -457,7 +457,20 @@ jobs:
             npm publish "$SDK_TARBALL" --access public --tag alpha --provenance
           fi
 
-          npm dist-tag add "${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION}" latest
+          CURRENT_LATEST=""
+          if CURRENT_LATEST_JSON="$(npm view "${SDK_PACKAGE_NAME}" dist-tags.latest --json 2>/dev/null)"; then
+            CURRENT_LATEST="$(printf '%s' "${CURRENT_LATEST_JSON}" | tr -d '\"')"
+          else
+            echo "Warning: failed to read standalone TypeScript SDK latest dist-tag. Continuing with best-effort dist-tag update." >&2
+          fi
+
+          if [[ -n "${CURRENT_LATEST}" && "${CURRENT_LATEST}" == "${SDK_PACKAGE_VERSION}" ]]; then
+            echo "Standalone TypeScript SDK latest dist-tag already points at ${SDK_PACKAGE_VERSION}. Skipping dist-tag update."
+          elif npm dist-tag add "${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION}" latest; then
+            echo "Standalone TypeScript SDK latest dist-tag moved to ${SDK_PACKAGE_VERSION}."
+          else
+            echo "Warning: failed to move standalone TypeScript SDK latest dist-tag to ${SDK_PACKAGE_VERSION}. Continuing without blocking the rest of the release." >&2
+          fi
 
       - name: Publish standalone Python SDK
         uses: pypa/gh-action-pypi-publish@release/v1
