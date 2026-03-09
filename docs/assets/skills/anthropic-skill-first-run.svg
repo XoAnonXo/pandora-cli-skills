@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="760" viewBox="0 0 1100 760" role="img" aria-labelledby="title desc">
+  <title id="title">Pandora Anthropic skill first-run map</title>
+  <desc id="desc">Diagram showing a first-run Pandora Anthropic skill prompt, the expected read-only guidance from Claude, and the safe validation commands that should follow before live execution.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f4ee; }
+      .card { fill: #fffdf9; stroke: #2d3142; stroke-width: 3; rx: 18; ry: 18; }
+      .prompt { fill: #214e34; }
+      .guide { fill: #3d5a80; }
+      .safe { fill: #d1883b; }
+      .warn { fill: #a33240; }
+      .ink { fill: #182026; font-family: "SF Pro Text", "Segoe UI", sans-serif; }
+      .title { font-size: 30px; font-weight: 700; }
+      .subtitle { font-size: 21px; font-weight: 700; }
+      .body { font-size: 17px; }
+      .small { font-size: 14px; }
+      .mono { font-size: 16px; font-family: "SFMono-Regular", "Menlo", monospace; }
+      .arrow { stroke: #2d3142; stroke-width: 4; fill: none; marker-end: url(#arrowhead); }
+      .check { fill: #214e34; }
+      .x { fill: #a33240; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2d3142" />
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1100" height="760" />
+
+  <text class="ink title" x="60" y="70">What Good First-Run Behavior Looks Like</text>
+  <text class="ink body" x="60" y="105">Use the first prompt to confirm the skill is loaded, routing correctly, and staying read-only until readiness checks pass.</text>
+
+  <rect class="card" x="60" y="155" width="300" height="200" />
+  <circle class="prompt" cx="100" cy="197" r="22" />
+  <text class="ink subtitle" x="138" y="204">Prompt Claude</text>
+  <text class="ink mono" x="92" y="255">Bootstrap Pandora safely</text>
+  <text class="ink mono" x="92" y="282">for an agent and tell me</text>
+  <text class="ink mono" x="92" y="309">what to call first.</text>
+  <text class="ink small" x="92" y="338">Any equivalent Pandora-specific prompt works.</text>
+
+  <rect class="card" x="400" y="155" width="300" height="200" />
+  <circle class="guide" cx="440" cy="197" r="22" />
+  <text class="ink subtitle" x="478" y="204">Expected guidance</text>
+  <text class="ink body" x="432" y="252">Read-only first</text>
+  <text class="ink body" x="432" y="282">Early entrypoints:</text>
+  <text class="ink mono" x="432" y="310">bootstrap</text>
+  <text class="ink mono" x="432" y="335">capabilities</text>
+  <text class="ink mono" x="432" y="360">schema</text>
+
+  <rect class="card" x="740" y="155" width="300" height="200" />
+  <circle class="safe" cx="780" cy="197" r="22" />
+  <text class="ink subtitle" x="818" y="204">Then validate locally</text>
+  <text class="ink mono" x="772" y="255">npx pandora --output json</text>
+  <text class="ink mono" x="772" y="282">bootstrap</text>
+  <text class="ink mono" x="772" y="322">capabilities</text>
+  <text class="ink mono" x="772" y="362">schema</text>
+
+  <path class="arrow" d="M360 255 H400" />
+  <path class="arrow" d="M700 255 H740" />
+
+  <rect class="card" x="60" y="430" width="470" height="250" />
+  <text class="ink subtitle" x="92" y="475">Signals the skill is behaving correctly</text>
+  <circle class="check" cx="110" cy="525" r="8" />
+  <text class="ink body" x="135" y="531">Routes to the smallest relevant Pandora workflow</text>
+  <circle class="check" cx="110" cy="570" r="8" />
+  <text class="ink body" x="135" y="576">Warns about signer readiness and validation tickets</text>
+  <circle class="check" cx="110" cy="615" r="8" />
+  <text class="ink body" x="135" y="621">Keeps secrets and mutation out of the first step</text>
+
+  <rect class="card" x="570" y="430" width="470" height="250" />
+  <text class="ink subtitle" x="602" y="475">Signals something is off</text>
+  <circle class="x" cx="620" cy="525" r="8" />
+  <text class="ink body" x="645" y="531">Asks for private keys before basic discovery commands</text>
+  <circle class="x" cx="620" cy="570" r="8" />
+  <text class="ink body" x="645" y="576">Jumps straight to buy, fund, or mirror execution</text>
+  <circle class="x" cx="620" cy="615" r="8" />
+  <text class="ink body" x="645" y="621">Gives generic advice without Pandora command routing</text>
+
+  <path class="arrow" d="M890 355 V395 H295 V430" />
+  <path class="arrow" d="M890 355 V430" />
+</svg>

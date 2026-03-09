@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="680" viewBox="0 0 1100 680" role="img" aria-labelledby="title desc">
+  <title id="title">Pandora Anthropic skill install flow</title>
+  <desc id="desc">Diagram showing how to build the Pandora Anthropic skill bundle, then upload the generated folder or zip to Claude.ai or place the generated folder in Claude Code, while avoiding the repository root.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f5f1e8; }
+      .panel { fill: #fffdf8; stroke: #293241; stroke-width: 3; rx: 18; ry: 18; }
+      .accent { fill: #d67d2f; }
+      .accent2 { fill: #2a9d8f; }
+      .danger { fill: #b23a48; }
+      .ink { fill: #1f2933; font-family: "SF Pro Text", "Segoe UI", sans-serif; }
+      .title { font-size: 30px; font-weight: 700; }
+      .subtitle { font-size: 18px; font-weight: 600; }
+      .body { font-size: 16px; }
+      .small { font-size: 14px; }
+      .mono { font-size: 16px; font-family: "SFMono-Regular", "Menlo", monospace; }
+      .arrow { stroke: #293241; stroke-width: 4; fill: none; marker-end: url(#arrowhead); }
+      .line { stroke: #293241; stroke-width: 2; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#293241" />
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1100" height="680" />
+
+  <text class="ink title" x="60" y="70">Install The Pandora Anthropic Skill</text>
+  <text class="ink body" x="60" y="105">Build the generated skill artifact first. Claude.ai wants the ZIP. Claude Code wants the generated folder.</text>
+
+  <rect class="panel" x="60" y="150" width="300" height="180" />
+  <circle class="accent" cx="102" cy="194" r="22" />
+  <text class="ink subtitle" x="140" y="200">1. Build the bundle</text>
+  <text class="ink mono" x="95" y="252">npm run pack:anthropic-skill</text>
+  <line class="line" x1="95" y1="266" x2="325" y2="266" />
+  <text class="ink body" x="95" y="297">Creates both:</text>
+  <text class="ink mono" x="95" y="325">dist/pandora-skill/</text>
+  <text class="ink mono" x="95" y="350">dist/pandora-skill.zip</text>
+
+  <rect class="panel" x="400" y="150" width="300" height="180" />
+  <circle class="accent2" cx="442" cy="194" r="22" />
+  <text class="ink subtitle" x="480" y="200">2. Pick the generated artifact</text>
+  <text class="ink body" x="435" y="246">Use the right artifact for the target:</text>
+  <text class="ink mono" x="435" y="281">Claude.ai  -&gt; dist/pandora-skill.zip</text>
+  <text class="ink mono" x="435" y="316">Claude Code -&gt; dist/pandora-skill/</text>
+  <text class="ink small" x="435" y="351">Both come from the same build command.</text>
+
+  <rect class="panel" x="740" y="150" width="300" height="180" />
+  <circle class="danger" cx="782" cy="194" r="22" />
+  <text class="ink subtitle" x="820" y="200">3. Avoid the wrong upload</text>
+  <text class="ink body" x="775" y="250">Do not upload the repo root.</text>
+  <text class="ink body" x="775" y="280">Claude needs the generated skill</text>
+  <text class="ink body" x="775" y="305">folder itself, not all source files.</text>
+  <text class="ink mono" x="775" y="340">pandora-market-setup-shareable/</text>
+
+  <path class="arrow" d="M360 240 H400" />
+  <path class="arrow" d="M700 240 H740" />
+
+  <rect class="panel" x="60" y="400" width="455" height="210" />
+  <text class="ink subtitle" x="90" y="445">Claude.ai path</text>
+  <text class="ink body" x="90" y="480">Settings → Capabilities</text>
+  <text class="ink body" x="90" y="510">Confirm code execution and file creation.</text>
+  <text class="ink body" x="90" y="545">Customize → Skills → + → Upload a skill</text>
+  <text class="ink mono" x="90" y="580">dist/pandora-skill.zip</text>
+  <text class="ink small" x="90" y="610">Best for account-level testing and Anthropic upload flow.</text>
+
+  <rect class="panel" x="585" y="400" width="455" height="210" />
+  <text class="ink subtitle" x="615" y="445">Claude Code path</text>
+  <text class="ink body" x="615" y="485">Copy the generated folder into your Claude Code skills directory.</text>
+  <text class="ink mono" x="615" y="520">dist/pandora-skill/</text>
+  <text class="ink mono" x="615" y="550">.../skills/pandora-skill/</text>
+  <text class="ink body" x="615" y="585">Restart or refresh skills if needed.</text>
+  <text class="ink small" x="615" y="615">Best for local development against a Pandora checkout or MCP runtime.</text>
+
+  <path class="arrow" d="M550 330 V375" />
+  <path class="arrow" d="M550 375 H285 V400" />
+  <path class="arrow" d="M550 375 H812 V400" />
+</svg>

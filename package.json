@@ -60,6 +60,7 @@
     "references/checklist.md",
     "references/contracts.md",
     "references/creation-script.md",
+    "docs/assets/**",
     "docs/benchmarks/**",
     "docs/skills/**",
     "docs/trust/**",

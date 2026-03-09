@@ -4,10 +4,15 @@ Use this guide when you want to install the Pandora Anthropic skill in Claude.ai
 
 This guide is about the skill artifact, not the repo root.
 
+![Pandora Anthropic skill install flow](../assets/skills/anthropic-skill-install-flow.svg)
+
 - Build the skill artifact with `npm run pack:anthropic-skill`.
-- Upload `dist/pandora-skill/` or `dist/pandora-skill.zip`.
+- Upload `dist/pandora-skill.zip` in Claude.ai.
+- Install `dist/pandora-skill/` in Claude Code.
 - Do **not** upload the repo root directly as a skill.
 - Keep Pandora itself installed separately when you want live CLI or MCP access.
+
+The visual above is the shortest install rule: build the generated bundle, install the generated bundle, and keep the repository root out of the upload path.
 
 ## What The Skill Does
 
@@ -30,7 +35,7 @@ It is not a replacement for the Pandora CLI or MCP runtime. Think of it this way
 
 Have these ready:
 
-1. A generated Anthropic skill folder or zip from `npm run pack:anthropic-skill`
+1. A generated Anthropic skill zip for Claude.ai or generated skill folder for Claude Code from `npm run pack:anthropic-skill`
 2. A Pandora runtime only if you want live bootstrap, MCP, or execution
 3. A read-only-first plan for any workflow that could later touch secrets or signer material
 
@@ -40,11 +45,14 @@ If you only want to review the skill, you do not need live secrets.
 
 1. Open Claude.ai.
 2. Go to `Settings`.
-3. Open `Capabilities`.
-4. Open `Skills`.
-5. Choose `Upload skill`.
-6. Select the generated Anthropic skill folder or zip.
-7. Confirm the skill is enabled.
+3. Open `Capabilities` and confirm `Code execution and file creation` is enabled.
+4. Open `Customize`.
+5. Open `Skills`.
+6. Click `+`, then choose `Upload a skill`.
+7. Select `dist/pandora-skill.zip`.
+8. Confirm the skill appears in your Skills list and is enabled.
+
+Claude.ai currently expects the generated zip, not the unpacked folder.
 
 After upload, start with read-only prompts first.
 
@@ -71,12 +79,16 @@ Use these prompts to confirm the skill is loading and giving the right kind of g
 - `Check whether my Pandora signer profile is ready for live execution.`
 - `I need local MCP versus hosted HTTP MCP guidance for Pandora.`
 
+![Pandora Anthropic skill first-run map](../assets/skills/anthropic-skill-first-run.svg)
+
 Good first-run behavior should include:
 
 - read-only-first guidance
 - `bootstrap`, `capabilities`, and `schema` as early entrypoints
 - warnings about validation tickets, resolution sources, and signer readiness
 - routing to the smallest relevant Pandora workflow doc or command family
+
+Use the visual as a quick smell test: if Claude skips straight to secrets or execution, the install may be wrong or the prompt may be too broad.
 
 ## Safe First Workflow
 

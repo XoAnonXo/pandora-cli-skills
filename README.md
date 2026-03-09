@@ -45,7 +45,7 @@ If you want Claude.ai or Claude Code to use Pandora as a skill, start here:
 - [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
 
 Use the generated Anthropic skill bundle from the packaging flow. Do **not** zip and upload the repo root as a skill.
-Build it with `npm run pack:anthropic-skill`, then use `dist/pandora-skill/` or `dist/pandora-skill.zip`.
+Build it with `npm run pack:anthropic-skill`, then upload `dist/pandora-skill.zip` in Claude.ai or install `dist/pandora-skill/` in Claude Code.
 
 ### Detailed setup
 
