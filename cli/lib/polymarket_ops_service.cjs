@@ -48,6 +48,16 @@ const ERC20_ABI = [
     ],
     outputs: [{ type: 'bool' }],
   },
+  {
+    type: 'function',
+    name: 'transfer',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
 ];
 
 const CTF_ABI = [
@@ -141,13 +151,204 @@ function formatUnits6(raw) {
   return fractionText ? `${sign}${whole.toString()}.${fractionText}` : `${sign}${whole.toString()}`;
 }
 
+function buildUsdcBalanceSnapshot(address, readResult) {
+  const raw = toBigIntOrNull(readResult && readResult.value);
+  return {
+    address: address || null,
+    readOk: Boolean(readResult && readResult.ok),
+    raw: raw === null ? null : raw.toString(),
+    formatted: formatUnits6(raw),
+    error: readResult && readResult.error ? readResult.error : null,
+  };
+}
+
+async function readUsdcBalanceSnapshot(publicClient, usdcAddress, address) {
+  if (!address) {
+    return buildUsdcBalanceSnapshot(null, {
+      ok: false,
+      value: null,
+      error: 'Address unavailable.',
+    });
+  }
+  const result = await safeReadContract(publicClient, {
+    address: usdcAddress,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: [address],
+  });
+  return buildUsdcBalanceSnapshot(address, result);
+}
+
+function cloneJsonCompatible(value) {
+  return value && typeof value === 'object'
+    ? JSON.parse(JSON.stringify(value))
+    : value;
+}
+
+function buildSignedUsdcDelta(rawValue) {
+  const raw = toBigIntOrNull(rawValue);
+  if (raw === null) return null;
+  return formatUnits6(raw);
+}
+
+function normalizeFundingTransferOptions(action, runtime, signerAddress, options = {}) {
+  const explicitToAddress = normalizeAddress(options.to, 'to');
+  if (action === 'deposit') {
+    return {
+      action,
+      fromAddress: signerAddress || null,
+      toAddress: explicitToAddress || runtime.funderAddress || null,
+      manualProxyActionRequired: false,
+    };
+  }
+
+  return {
+    action,
+    fromAddress: runtime.funderAddress || null,
+    toAddress: explicitToAddress || signerAddress || null,
+    manualProxyActionRequired: Boolean(runtime.funderAddress && signerAddress && runtime.funderAddress !== signerAddress),
+  };
+}
+
+async function maybeSimulateUsdcTransfer(publicClient, accountAddress, runtime, toAddress, amountRaw) {
+  if (!publicClient || !accountAddress || !toAddress || amountRaw === null) {
+    return {
+      attempted: false,
+      ok: false,
+      gasEstimate: null,
+      request: null,
+      error: null,
+    };
+  }
+  try {
+    const simulation = await publicClient.simulateContract({
+      account: accountAddress,
+      address: runtime.usdcAddress,
+      abi: ERC20_ABI,
+      functionName: 'transfer',
+      args: [toAddress, amountRaw],
+    });
+    return {
+      attempted: true,
+      ok: true,
+      gasEstimate:
+        simulation && simulation.request && simulation.request.gas !== undefined && simulation.request.gas !== null
+          ? simulation.request.gas.toString()
+          : null,
+      request: simulation && simulation.request ? simulation.request : null,
+      error: null,
+    };
+  } catch (err) {
+    return {
+      attempted: true,
+      ok: false,
+      gasEstimate: null,
+      request: null,
+      error: coerceErrorMessage(err),
+    };
+  }
+}
+
+function buildFundingPayloadBase(action, runtime, rpcSelection, signerAddress, transfer, amountUsdc, amountRaw, balances) {
+  const sourceBalanceRaw = toBigIntOrNull(balances && balances.from && balances.from.raw);
+  const destinationBalanceRaw = toBigIntOrNull(balances && balances.to && balances.to.raw);
+  const sourceSufficient = sourceBalanceRaw === null ? null : sourceBalanceRaw >= amountRaw;
+  const sourceAfterRaw = sourceBalanceRaw === null ? null : sourceBalanceRaw - amountRaw;
+  const destinationAfterRaw = destinationBalanceRaw === null ? null : destinationBalanceRaw + amountRaw;
+
+  return {
+    schemaVersion: POLYMARKET_OPS_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    mode: 'dry-run',
+    status: 'planned',
+    action,
+    runtime: {
+      rpcUrl: rpcSelection.selectedRpcUrl || runtime.configuredRpcUrl || null,
+      configuredRpcUrl: runtime.configuredRpcUrl || null,
+      rpcSource: rpcSelection.source || runtime.rpcSource || null,
+      host: runtime.host,
+      signerAddress: signerAddress || null,
+      funderAddress: runtime.funderAddress || null,
+      ownerAddress: transfer.fromAddress || runtime.funderAddress || signerAddress || null,
+      usdcAddress: runtime.usdcAddress,
+    },
+    rpcSelection: cloneJsonCompatible(rpcSelection),
+    signerAddress: signerAddress || null,
+    funderAddress: runtime.funderAddress || null,
+    fromAddress: transfer.fromAddress || null,
+    toAddress: transfer.toAddress || null,
+    amountUsdc,
+    amountRaw: amountRaw.toString(),
+    balances,
+    txPlan: {
+      contractAddress: runtime.usdcAddress,
+      functionName: 'transfer',
+      args: [transfer.toAddress || null, amountRaw.toString()],
+      fromAddress: transfer.fromAddress || null,
+    },
+    preflight: {
+      manualProxyActionRequired: transfer.manualProxyActionRequired,
+      sourceBalanceSufficient: sourceSufficient,
+      sourceBalanceAfterRaw: sourceAfterRaw === null ? null : sourceAfterRaw.toString(),
+      sourceBalanceAfter: formatUnits6(sourceAfterRaw),
+      destinationBalanceAfterRaw: destinationAfterRaw === null ? null : destinationAfterRaw.toString(),
+      destinationBalanceAfter: formatUnits6(destinationAfterRaw),
+      sourceDelta: buildSignedUsdcDelta(-amountRaw),
+      destinationDelta: buildSignedUsdcDelta(amountRaw),
+      transferGasEstimate: null,
+      simulationAttempted: false,
+      simulationOk: null,
+      simulationError: null,
+      executeSupported: transfer.manualProxyActionRequired !== true,
+    },
+    tx: null,
+    diagnostics: [],
+  };
+}
+
 function coerceErrorMessage(err) {
   if (err && typeof err.message === 'string') return err.message;
   return String(err);
 }
 
+function normalizeRpcUrlCandidates(value) {
+  if (value === null || value === undefined || value === '') return [];
+  const normalized = [];
+  const rawEntries = Array.isArray(value) ? value : String(value).split(',');
+  for (const entry of rawEntries) {
+    const candidate = String(entry || '').trim();
+    if (candidate) normalized.push(candidate);
+  }
+  return Array.from(new Set(normalized));
+}
+
 function safeCodeToBoolean(code) {
   return String(code || '').trim().toLowerCase() !== '0x';
+}
+
+function resolveRpcInput(options = {}, env = process.env) {
+  const sources = [
+    { value: options.rpcUrl, source: 'options.rpcUrl' },
+    { value: env.POLYMARKET_RPC_URL, source: 'env.POLYMARKET_RPC_URL' },
+    { value: env.RPC_URL, source: 'env.RPC_URL' },
+  ];
+
+  for (const candidate of sources) {
+    if (candidate.value !== null && candidate.value !== undefined) {
+      const normalized = String(candidate.value).trim();
+      if (normalized) {
+        return {
+          configuredRpcUrl: normalized,
+          source: candidate.source,
+        };
+      }
+    }
+  }
+
+  return {
+    configuredRpcUrl: null,
+    source: null,
+  };
 }
 
 function resolveSpenders(options = {}, env = process.env) {
@@ -171,7 +372,7 @@ function resolveSpenders(options = {}, env = process.env) {
 
 function resolveRuntime(options = {}) {
   const env = options.env || process.env;
-  const rpcUrl = options.rpcUrl || env.POLYMARKET_RPC_URL || env.RPC_URL || null;
+  const rpcInput = resolveRpcInput(options, env);
   const privateKey = options.privateKey || env.POLYMARKET_PRIVATE_KEY || null;
   const funderAddress = normalizeAddress(options.funder || env.POLYMARKET_FUNDER, 'funder');
   const usdcAddress = normalizeAddress(options.usdcAddress || env.POLYMARKET_USDC_E_ADDRESS, 'usdcAddress')
@@ -187,7 +388,11 @@ function resolveRuntime(options = {}) {
   }
 
   return {
-    rpcUrl: rpcUrl ? String(rpcUrl).trim() : null,
+    rpcUrl: null,
+    configuredRpcUrl: rpcInput.configuredRpcUrl,
+    rpcSource: rpcInput.source,
+    rpcCandidates: normalizeRpcUrlCandidates(rpcInput.configuredRpcUrl),
+    selectedRpcUrl: null,
     privateKey,
     funderAddress,
     host,
@@ -218,17 +423,103 @@ async function deriveSignerAddress(runtime, deps = {}) {
 
 async function createPublicClient(runtime, deps = {}) {
   if (deps.publicClient) return deps.publicClient;
-  if (!runtime.rpcUrl) return null;
-  const { createPublicClient, http } = await loadViemRuntime(deps);
-  return createPublicClient({ transport: http(runtime.rpcUrl) });
+  const rpcSelection = await ensureRpcSelection(runtime, deps);
+  return rpcSelection.publicClient || null;
 }
 
 async function createWalletClient(runtime, signerAddress, deps = {}) {
   if (deps.walletClient) return deps.walletClient;
-  if (!runtime.rpcUrl || !runtime.privateKey || !signerAddress) return null;
+  if (!runtime.privateKey || !signerAddress) return null;
+  const rpcSelection = await ensureRpcSelection(runtime, deps);
+  if (!rpcSelection.selectedRpcUrl) return null;
+  if (runtime._walletClient && runtime._walletClientSignerAddress === signerAddress) {
+    return runtime._walletClient;
+  }
   const { createWalletClient, http, privateKeyToAccount } = await loadViemRuntime(deps);
   const account = privateKeyToAccount(runtime.privateKey);
-  return createWalletClient({ account, transport: http(runtime.rpcUrl) });
+  const walletClient = createWalletClient({ account, transport: http(rpcSelection.selectedRpcUrl) });
+  runtime._walletClient = walletClient;
+  runtime._walletClientSignerAddress = signerAddress;
+  return walletClient;
+}
+
+async function ensureRpcSelection(runtime, deps = {}) {
+  if (runtime._rpcSelection) return runtime._rpcSelection;
+
+  const candidateUrls = Array.isArray(runtime.rpcCandidates) ? runtime.rpcCandidates.slice() : [];
+  if (deps.publicClient) {
+    const selectedRpcUrl = runtime.selectedRpcUrl || (candidateUrls.length === 1 ? candidateUrls[0] : null);
+    runtime.rpcUrl = selectedRpcUrl;
+    runtime.selectedRpcUrl = selectedRpcUrl;
+    runtime._rpcSelection = {
+      source: runtime.rpcSource || 'deps.publicClient',
+      configuredRpcUrl: runtime.configuredRpcUrl || null,
+      candidateUrls,
+      selectedRpcUrl,
+      fallbackUsed: Boolean(selectedRpcUrl && candidateUrls.indexOf(selectedRpcUrl) > 0),
+      attempts: [],
+      publicClient: deps.publicClient,
+    };
+    return runtime._rpcSelection;
+  }
+
+  if (!candidateUrls.length) {
+    runtime.rpcUrl = null;
+    runtime.selectedRpcUrl = null;
+    runtime._rpcSelection = {
+      source: runtime.rpcSource || null,
+      configuredRpcUrl: runtime.configuredRpcUrl || null,
+      candidateUrls,
+      selectedRpcUrl: null,
+      fallbackUsed: false,
+      attempts: [],
+      publicClient: null,
+    };
+    return runtime._rpcSelection;
+  }
+
+  const { createPublicClient: createViemPublicClient, http } = await loadViemRuntime(deps);
+  const attempts = [];
+
+  for (let index = 0; index < candidateUrls.length; index += 1) {
+    const rpcUrl = candidateUrls[index];
+    const publicClient = createViemPublicClient({ transport: http(rpcUrl) });
+    const chain = await safeGetChainId(publicClient);
+    attempts.push({
+      order: index + 1,
+      rpcUrl,
+      ok: Boolean(chain.ok),
+      chainId: chain.ok ? Number(chain.value) : null,
+      error: chain.ok ? null : chain.error,
+    });
+    if (chain.ok) {
+      runtime.rpcUrl = rpcUrl;
+      runtime.selectedRpcUrl = rpcUrl;
+      runtime._rpcSelection = {
+        source: runtime.rpcSource || null,
+        configuredRpcUrl: runtime.configuredRpcUrl || null,
+        candidateUrls,
+        selectedRpcUrl: rpcUrl,
+        fallbackUsed: index > 0,
+        attempts,
+        publicClient,
+      };
+      return runtime._rpcSelection;
+    }
+  }
+
+  runtime.rpcUrl = null;
+  runtime.selectedRpcUrl = null;
+  runtime._rpcSelection = {
+    source: runtime.rpcSource || null,
+    configuredRpcUrl: runtime.configuredRpcUrl || null,
+    candidateUrls,
+    selectedRpcUrl: null,
+    fallbackUsed: false,
+    attempts,
+    publicClient: null,
+  };
+  return runtime._rpcSelection;
 }
 
 async function resolveWriteGasOverrides(chainId, publicClient) {
@@ -356,9 +647,16 @@ function computeApprovalDiff(input = {}) {
 }
 
 async function collectOnchainState(runtime, signerAddress, deps = {}) {
-  const publicClient = await createPublicClient(runtime, deps);
+  const rpcSelection = await ensureRpcSelection(runtime, deps);
+  const publicClient = rpcSelection.publicClient;
   const ownerAddress = runtime.funderAddress || signerAddress || null;
-  const chain = await safeGetChainId(publicClient);
+  const selectedAttempt = Array.isArray(rpcSelection.attempts)
+    ? rpcSelection.attempts.find((item) => item.ok && item.rpcUrl === rpcSelection.selectedRpcUrl)
+    : null;
+  const chain =
+    selectedAttempt && selectedAttempt.chainId !== null
+      ? { ok: true, value: selectedAttempt.chainId, error: null }
+      : await safeGetChainId(publicClient);
   const funderCode = runtime.funderAddress
     ? await safeGetBytecode(publicClient, runtime.funderAddress)
     : { ok: false, value: null, error: null };
@@ -407,6 +705,7 @@ async function collectOnchainState(runtime, signerAddress, deps = {}) {
 
   return {
     ownerAddress,
+    rpcSelection,
     chain,
     funderCode,
     funderOwnerCheck,
@@ -546,11 +845,46 @@ function evaluateOwnership(runtime, signerAddress, onchainState) {
   };
 }
 
+function buildRpcSelectionPayload(runtime, onchainState) {
+  const selection =
+    onchainState && onchainState.rpcSelection && typeof onchainState.rpcSelection === 'object'
+      ? onchainState.rpcSelection
+      : runtime && runtime._rpcSelection && typeof runtime._rpcSelection === 'object'
+        ? runtime._rpcSelection
+        : {};
+  const attempts = Array.isArray(selection.attempts)
+    ? selection.attempts.map((entry) => ({
+        order: entry.order,
+        rpcUrl: entry.rpcUrl,
+        ok: Boolean(entry.ok),
+        chainId: entry.chainId === null || entry.chainId === undefined ? null : Number(entry.chainId),
+        error: entry.error || null,
+      }))
+    : [];
+  const candidateUrls = Array.isArray(selection.candidateUrls)
+    ? selection.candidateUrls.slice()
+    : Array.isArray(runtime.rpcCandidates)
+      ? runtime.rpcCandidates.slice()
+      : [];
+  const selectedRpcUrl = selection.selectedRpcUrl || runtime.selectedRpcUrl || null;
+
+  return {
+    source: selection.source || runtime.rpcSource || null,
+    configuredRpcUrl: selection.configuredRpcUrl || runtime.configuredRpcUrl || null,
+    candidateUrls,
+    selectedRpcUrl: selectedRpcUrl || null,
+    fallbackUsed: Boolean(selectedRpcUrl && candidateUrls.indexOf(selectedRpcUrl) > 0),
+    attempts,
+  };
+}
+
 function buildCheckPayload(runtime, signerAddress, onchainState, approvalDiff, apiSanity) {
   const ownership = evaluateOwnership(runtime, signerAddress, onchainState);
   const chainId = onchainState.chain && onchainState.chain.ok ? onchainState.chain.value : null;
   const rpcOk = Boolean(onchainState.chain && onchainState.chain.ok);
   const usdcBalanceRaw = toBigIntOrNull(onchainState.usdcBalance && onchainState.usdcBalance.value);
+  const rpcSelection = buildRpcSelectionPayload(runtime, onchainState);
+  const unhealthyRpcAttempts = rpcSelection.attempts.filter((entry) => !entry.ok);
 
   const readyForLive =
     rpcOk &&
@@ -569,7 +903,9 @@ function buildCheckPayload(runtime, signerAddress, onchainState, approvalDiff, a
     chainExpected: POLYGON_CHAIN_ID,
     readyForLive,
     runtime: {
-      rpcUrl: runtime.rpcUrl,
+      rpcUrl: rpcSelection.selectedRpcUrl,
+      configuredRpcUrl: rpcSelection.configuredRpcUrl,
+      rpcSource: rpcSelection.source,
       host: runtime.host,
       signerAddress: signerAddress || null,
       funderAddress: runtime.funderAddress || null,
@@ -578,6 +914,7 @@ function buildCheckPayload(runtime, signerAddress, onchainState, approvalDiff, a
       ctfAddress: runtime.ctfAddress,
       spenders: runtime.spenders,
     },
+    rpcSelection,
     ownership,
     balances: {
       usdc: {
@@ -590,6 +927,12 @@ function buildCheckPayload(runtime, signerAddress, onchainState, approvalDiff, a
     approvals: approvalDiff,
     apiKeySanity: apiSanity,
     diagnostics: [
+      rpcSelection.fallbackUsed
+        ? `RPC fallback used ${rpcSelection.selectedRpcUrl} after ${unhealthyRpcAttempts.length} failed endpoint(s).`
+        : null,
+      !rpcOk && unhealthyRpcAttempts.length > 0
+        ? `RPC check failed across ${unhealthyRpcAttempts.length} configured endpoint(s).`
+        : null,
       !rpcOk && onchainState.chain && onchainState.chain.error ? `RPC check failed: ${onchainState.chain.error}` : null,
       chainId !== null && chainId !== POLYGON_CHAIN_ID
         ? `Connected chainId ${chainId}; expected Polygon ${POLYGON_CHAIN_ID}.`
@@ -772,6 +1115,7 @@ async function runPolymarketApprove(options = {}, deps = {}) {
 function buildPreflightChecks(checkPayload) {
   const checks = [];
   const runtime = checkPayload.runtime || {};
+  const rpcSelection = checkPayload.rpcSelection || {};
   const ownership = checkPayload.ownership || {};
   const usdcRaw = toBigIntOrNull(checkPayload.balances && checkPayload.balances.usdc && checkPayload.balances.usdc.raw);
   const apiSanity = checkPayload.apiKeySanity || {};
@@ -780,7 +1124,13 @@ function buildPreflightChecks(checkPayload) {
     code: 'RPC_CONNECTED',
     ok: Boolean(checkPayload.chainOk),
     message: 'RPC endpoint must be reachable.',
-    details: { rpcUrl: runtime.rpcUrl || null },
+    details: {
+      rpcUrl: runtime.rpcUrl || null,
+      configuredRpcUrl: rpcSelection.configuredRpcUrl || runtime.configuredRpcUrl || null,
+      source: rpcSelection.source || runtime.rpcSource || null,
+      candidateUrls: Array.isArray(rpcSelection.candidateUrls) ? rpcSelection.candidateUrls : [],
+      attempts: Array.isArray(rpcSelection.attempts) ? rpcSelection.attempts : [],
+    },
   });
   checks.push({
     code: 'POLYGON_CHAIN',
@@ -858,6 +1208,237 @@ async function runPolymarketPreflight(options = {}, deps = {}) {
   return payload;
 }
 
+async function runPolymarketBalance(options = {}, deps = {}) {
+  const runtime = resolveRuntime(options);
+  const signerAddress = await deriveSignerAddress(runtime, deps);
+  const rpcSelection = await ensureRpcSelection(runtime, deps);
+  const publicClient = rpcSelection.publicClient;
+  const requestedWallet = normalizeAddress(options.wallet, 'wallet');
+  const ownerAddress = requestedWallet || runtime.funderAddress || signerAddress || null;
+  const roleEntries = requestedWallet
+    ? [{ role: 'wallet', address: requestedWallet }]
+    : [
+        { role: 'signer', address: signerAddress || null },
+        { role: 'funder', address: runtime.funderAddress || null },
+        { role: 'owner', address: ownerAddress || null },
+      ];
+
+  const balances = {};
+  const diagnostics = [];
+  for (const entry of roleEntries) {
+    if (!entry.address) {
+      balances[entry.role] = buildUsdcBalanceSnapshot(null, {
+        ok: false,
+        value: null,
+        error: 'Address unavailable.',
+      });
+      continue;
+    }
+    balances[entry.role] = await readUsdcBalanceSnapshot(publicClient, runtime.usdcAddress, entry.address);
+  }
+
+  if (!rpcSelection.selectedRpcUrl) {
+    diagnostics.push('RPC URL is not configured; balance reads may be unavailable.');
+  }
+  if (!requestedWallet && !runtime.funderAddress) {
+    diagnostics.push('POLYMARKET_FUNDER is not configured; funder balance is unavailable.');
+  }
+  if (!requestedWallet && !signerAddress) {
+    diagnostics.push('Signer private key is not configured; signer balance is unavailable.');
+  }
+  if (!ownerAddress) {
+    diagnostics.push('No wallet address was resolved for Polymarket balance checks.');
+  }
+
+  return {
+    schemaVersion: POLYMARKET_OPS_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    mode: 'read',
+    status: 'ready',
+    action: 'balance',
+    runtime: {
+      rpcUrl: rpcSelection.selectedRpcUrl || runtime.configuredRpcUrl || null,
+      configuredRpcUrl: runtime.configuredRpcUrl || null,
+      rpcSource: rpcSelection.source || runtime.rpcSource || null,
+      host: runtime.host,
+      signerAddress: signerAddress || null,
+      funderAddress: runtime.funderAddress || null,
+      ownerAddress,
+      usdcAddress: runtime.usdcAddress,
+    },
+    rpcSelection: buildRpcSelectionPayload(runtime, { rpcSelection }),
+    requestedWallet: requestedWallet || null,
+    balances,
+    diagnostics,
+  };
+}
+
+async function runPolymarketFundingTransfer(action, options = {}, deps = {}) {
+  const execute = options.execute === true;
+  const runtime = resolveRuntime(options);
+  const signerAddress = await deriveSignerAddress(runtime, deps);
+  const rpcSelection = await ensureRpcSelection(runtime, deps);
+  const publicClient = rpcSelection.publicClient;
+  const transfer = normalizeFundingTransferOptions(action, runtime, signerAddress, options);
+
+  if (!transfer.toAddress) {
+    throw createServiceError(
+      'MISSING_REQUIRED_INPUT',
+      action === 'deposit'
+        ? 'Deposit target unavailable. Configure POLYMARKET_FUNDER/--funder or pass --to <address>.'
+        : 'Withdraw destination unavailable. Configure a signer private key or pass --to <address>.',
+      {
+        action,
+        signerAddress,
+        funderAddress: runtime.funderAddress || null,
+      },
+    );
+  }
+  if (!transfer.fromAddress) {
+    throw createServiceError(
+      'MISSING_REQUIRED_INPUT',
+      action === 'deposit'
+        ? 'Deposit source unavailable. Provide signer credentials with --private-key or POLYMARKET_PRIVATE_KEY.'
+        : 'Withdraw source unavailable. Configure POLYMARKET_FUNDER/--funder.',
+      {
+        action,
+        signerAddress,
+        funderAddress: runtime.funderAddress || null,
+      },
+    );
+  }
+
+  const { parseUnits } = await loadViemRuntime(deps);
+  const amountUsdc = Number(options.amountUsdc);
+  const amountRaw = parseUnits(String(options.amountUsdc), 6);
+  const balances = {
+    from: await readUsdcBalanceSnapshot(publicClient, runtime.usdcAddress, transfer.fromAddress),
+    to: await readUsdcBalanceSnapshot(publicClient, runtime.usdcAddress, transfer.toAddress),
+  };
+  const payload = buildFundingPayloadBase(
+    action,
+    runtime,
+    buildRpcSelectionPayload(runtime, { rpcSelection }),
+    signerAddress,
+    transfer,
+    amountUsdc,
+    amountRaw,
+    balances,
+  );
+
+  if (transfer.manualProxyActionRequired) {
+    payload.diagnostics.push('Signer and funder differ; proxy-originated transfer requires manual execution from the funder wallet.');
+  }
+  if (balances.from.error) {
+    payload.diagnostics.push(`Source balance read failed: ${balances.from.error}`);
+  }
+  if (balances.to.error) {
+    payload.diagnostics.push(`Destination balance read failed: ${balances.to.error}`);
+  }
+
+  const simulation = await maybeSimulateUsdcTransfer(
+    publicClient,
+    signerAddress && signerAddress === transfer.fromAddress ? signerAddress : null,
+    runtime,
+    transfer.toAddress,
+    amountRaw,
+  );
+  payload.preflight.transferGasEstimate = simulation.gasEstimate;
+  payload.preflight.simulationAttempted = simulation.attempted;
+  payload.preflight.simulationOk = simulation.attempted ? simulation.ok : null;
+  payload.preflight.simulationError = simulation.error;
+  if (simulation.error) {
+    payload.diagnostics.push(`Transfer simulation failed: ${simulation.error}`);
+  }
+
+  if (!execute) {
+    return payload;
+  }
+
+  if (!signerAddress) {
+    throw createServiceError(
+      'MISSING_REQUIRED_INPUT',
+      'Execute mode requires a signer private key (POLYMARKET_PRIVATE_KEY or --private-key).',
+      {
+        action,
+        fromAddress: transfer.fromAddress,
+        toAddress: transfer.toAddress,
+      },
+    );
+  }
+  if (transfer.fromAddress !== signerAddress) {
+    throw createServiceError(
+      'POLYMARKET_PROXY_TRANSFER_REQUIRES_MANUAL_EXECUTION',
+      'Execute mode cannot submit a transfer from a proxy/funder wallet that differs from the signer address.',
+      {
+        action,
+        signerAddress,
+        fromAddress: transfer.fromAddress,
+        toAddress: transfer.toAddress,
+        hint: 'Use --dry-run output and execute the equivalent ERC20 transfer from the funder/proxy wallet.',
+      },
+    );
+  }
+  if (payload.preflight.sourceBalanceSufficient === false) {
+    throw createServiceError(
+      'POLYMARKET_INSUFFICIENT_USDC_BALANCE',
+      `USDC.e balance is insufficient for ${action}.`,
+      {
+        action,
+        requiredRaw: amountRaw.toString(),
+        requiredFormatted: formatUnits6(amountRaw),
+        balance: balances.from,
+      },
+    );
+  }
+
+  const walletClient = await createWalletClient(runtime, signerAddress, deps);
+  if (!walletClient || !publicClient) {
+    throw createServiceError('RPC_CLIENT_UNAVAILABLE', 'Unable to initialize wallet/public clients for execute mode.');
+  }
+
+  const chainIdResult = await safeGetChainId(publicClient);
+  const chainId = chainIdResult.ok ? Number(chainIdResult.value) : null;
+  const gasOverrides = await resolveWriteGasOverrides(chainId, publicClient);
+
+  let txHash;
+  if (simulation.request) {
+    txHash = await walletClient.writeContract({
+      ...simulation.request,
+      ...gasOverrides,
+    });
+  } else {
+    txHash = await walletClient.writeContract({
+      address: runtime.usdcAddress,
+      abi: ERC20_ABI,
+      functionName: 'transfer',
+      args: [transfer.toAddress, amountRaw],
+      ...gasOverrides,
+    });
+  }
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+  payload.mode = 'execute';
+  payload.status = 'submitted';
+  payload.tx = {
+    txHash,
+    status: receipt && receipt.status ? receipt.status : null,
+    blockNumber:
+      receipt && receipt.blockNumber !== undefined && receipt.blockNumber !== null
+        ? receipt.blockNumber.toString()
+        : null,
+  };
+  return payload;
+}
+
+async function runPolymarketDeposit(options = {}, deps = {}) {
+  return runPolymarketFundingTransfer('deposit', options, deps);
+}
+
+async function runPolymarketWithdraw(options = {}, deps = {}) {
+  return runPolymarketFundingTransfer('withdraw', options, deps);
+}
+
 module.exports = {
   POLYMARKET_OPS_SCHEMA_VERSION,
   POLYMARKET_POLYGON_DEFAULTS,
@@ -865,4 +1446,7 @@ module.exports = {
   runPolymarketCheck,
   runPolymarketApprove,
   runPolymarketPreflight,
+  runPolymarketBalance,
+  runPolymarketDeposit,
+  runPolymarketWithdraw,
 };

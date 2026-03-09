@@ -74,7 +74,7 @@ The GitHub release workflow is the one-shot publication path.
 Push:
 
 - the commit
-- the version tag (for example `v1.1.72`)
+- the version tag (for example `v1.1.73`)
 
 That workflow is responsible for publishing:
 

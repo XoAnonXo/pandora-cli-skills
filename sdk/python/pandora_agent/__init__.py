@@ -21,10 +21,14 @@ from .policies import (
     load_generated_policy_profiles,
 )
 
+_manifest_version = str(load_generated_manifest().get('packageVersion') or '').strip()
+
 try:
-    __version__ = _importlib_metadata.version('pandora-agent')
+    _installed_version = _importlib_metadata.version('pandora-agent')
 except _importlib_metadata.PackageNotFoundError:  # pragma: no cover - source-tree fallback
-    __version__ = str(load_generated_manifest().get('packageVersion') or '0.0.0')
+    _installed_version = ''
+
+__version__ = _manifest_version or _installed_version or '0.0.0'
 
 __all__ = [
     'CommandPolicyInspection',

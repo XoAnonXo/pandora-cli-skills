@@ -26,7 +26,7 @@ For a faster task-focused path:
   - emits machine-readable envelope schema and full command descriptors
 - `pandora --output json policy list|get|lint`
   - inspect the shipped policy packs and validate candidate custom packs
-- `pandora --output json profile list|get|explain|validate`
+- `pandora --output json profile list|get|explain|recommend|validate`
   - inspect shipped/sample signer profiles, readiness, and validate candidate custom profiles
 - `pandora mcp`
   - runs MCP over stdio for direct tool execution
@@ -53,6 +53,10 @@ For a faster task-focused path:
 - `pandora operations get|list|receipt|verify-receipt|cancel|close`
   - inspect and control persisted mutable-operation records
   - terminal mutable operations also emit durable receipt artifacts in the operation store
+- `pandora [--output json] mirror status|pnl|audit`
+  - `mirror status` is the operator dashboard surface
+  - `mirror pnl` is the dedicated cross-venue scenario model
+  - `mirror audit` is the classified persisted runtime ledger
 - `pandora --output json agent market autocomplete ...`
 - `pandora --output json agent market validate ...`
 
@@ -61,7 +65,7 @@ For a faster task-focused path:
   - TypeScript/Node SDK: standalone package identity `@thisispandora/agent-sdk`, repository path `sdk/typescript`, vendored root-package copy `pandora-cli-skills/sdk/typescript`
   - Python SDK: standalone package identity `pandora-agent`, repository path `sdk/python`, module/import name `pandora_agent`
   - shared JS contract export: standalone TypeScript subpath `@thisispandora/agent-sdk/generated`, repository/root bundle `sdk/generated`, vendored root-package subpath `pandora-cli-skills/sdk/generated`
-  - release flow builds and verifies standalone SDK artifacts for those identities; this doc does not claim public registry publication yet
+  - release flow builds and verifies standalone SDK artifacts for those identities, and the current public packages are `@thisispandora/agent-sdk` and `pandora-agent`
 - `capabilities.data.transports.sdk` reports the shipping state; current builds return `supported=true` and `status="alpha"`.
 - Regenerate the vendored bundle with:
 
@@ -134,7 +138,7 @@ Run that only from a repository checkout. Installed packages already include the
   - `pendingBuiltinIds`
 - Use the policy/profile command families directly:
   - `policy list|get|lint` for pack discovery, compiled-rule inspection, and custom-pack validation
-  - `profile list|get|explain|validate` for profile discovery, backend readiness inspection, explicit usability explanations, and custom-profile validation
+  - `profile list|get|explain|recommend|validate` for profile discovery, backend readiness inspection, exact-context recommendations, explicit usability explanations, and custom-profile validation
 - Current builds do **not** expose a universal `--profile` selector across every mutating command family.
 - Direct Pandora signer-bearing commands now accept `--profile-id` / `--profile-file`:
   - `trade`
@@ -150,7 +154,7 @@ Run that only from a repository checkout. Installed packages already include the
 - Mirror deploy/go/sync flows and sports live execution paths now also accept profile selectors in current builds.
 - Polymarket and some automation families still commonly resolve credentials from flags/env; use `capabilities` or `schema` to confirm current support on the exact command family you plan to call.
 - Built-in sample profiles cover the `read-only`, `local-env`, `local-keystore`, and `external-signer` backend classes. Inspect concrete ids such as `market_observer_ro`, `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` with `profile get --id <profile-id>` before assuming a backend is operational.
-- In current builds, only `market_observer_ro` is built-in runtime-ready by default. Treat the other built-in mutable profiles as planning samples unless `profile get` reports them ready in your runtime.
+- In current builds, only `market_observer_ro` is built-in runtime-ready by default in artifact-neutral mode. Use `pandora --output json capabilities --runtime-local-readiness` or `npm run check:final-readiness:runtime-local` on the target host when you need certified local mutable readiness.
 - Preferred operator pattern:
   - for agent access, mint narrow gateway tokens and grant only the tool scopes you intend to expose
   - for read-only bootstrap, start with the built-in `research-only` policy and `market_observer_ro` profile pattern
@@ -419,12 +423,49 @@ Error envelope:
   - `{ ok: true, command: "mirror.browse", data: { schemaVersion, generatedAt, source, filters, count, items[], diagnostics[] } }`
 - `mirror.go`:
   - `{ ok: true, command: "mirror.go", data: { schemaVersion, generatedAt, mode, plan, deploy, verify, sync, polymarketPreflight, suggestedSyncCommand, trustManifest, diagnostics[] } }`
+- `mirror.sync`:
+  - `{ ok: true, command: "mirror.sync", data: { schemaVersion, stateSchemaVersion, generatedAt, strategyHash, mode, executeLive, parameters, stateFile, killSwitchFile, iterationsRequested, iterationsCompleted, stoppedReason, state, actionCount, actions[], snapshots[], webhookReports[], diagnostics[] } }`
+- `mirror.sync.start|stop|status`:
+  - `{ ok: true, command: "mirror.sync.*", data: { schemaVersion, operationId, strategyHash, found?, pidFile, pid, alive, status, wasAlive?, signalSent?, forceKilled?, exitObserved?, metadata } }`
+- `mirror.status`:
+  - `{ ok: true, command: "mirror.status", data: { schemaVersion, generatedAt, stateFile, strategyHash, selector, trustManifest, live, runtime, state } }`
 - `mirror.close`:
   - `{ ok: true, command: "mirror.close", data: { schemaVersion, generatedAt, mode, target, steps[], summary, diagnostics[] } }`
 - `autopilot`:
   - `{ ok: true, command: "autopilot", data: { schemaVersion, generatedAt, strategyHash, mode, executeLive, stateFile, killSwitchFile, parameters, state, actionCount, actions[], snapshots[], webhookReports[] } }`
 - `operations.get` / `operations.cancel` / `operations.close`:
   - `{ ok: true, command: "operations.*", data: { operationId, operationHash, tool, action, command, summary, status, createdAt, updatedAt, cancelable, closable, checkpoints[], metadata, result, recovery, error } }`
+
+Mirror runtime notes:
+- `mirror go` and `mirror.sync.*` stay in paper mode unless `--execute-live` or `--execute` is supplied.
+- `mirror.sync` action entries expose separate `rebalance` and `hedge` legs. The cross-venue path is not atomic and there is no atomic settlement field.
+- `mirror.go --auto-sync` still returns that same separate-leg sync payload; it does not convert the cross-venue path into an atomic execution contract.
+- `mirror.sync` enforces a close-window guard via `--min-time-to-close-sec`.
+  - default requested floor: `1800`
+  - effective floor: `max(--min-time-to-close-sec, ceil(--interval-ms / 1000) * 2)`
+  - startup refusal code when expiry is already too near: `MIRROR_EXPIRY_TOO_CLOSE`
+- `--strict-close-time-delta` promotes `CLOSE_TIME_DELTA` from diagnostic-only to blocking; otherwise the Pandora close window remains the hard gate.
+- `mirror.sync.snapshots[].metrics.reserveSource`, `mirror.sync.snapshots[].actionPlan.reserveSource`, and the attached reserve context expose reserve provenance.
+  - `onchain:outcome-token-balances` means runtime refreshed Pandora reserves directly from on-chain outcome token balances before sizing
+  - `verify-payload` means sizing used the verify payload reserve snapshot
+- `mirror.sync.snapshots[].metrics.reserveReadAt`, `reserveReadError`, `rebalanceSizingMode`, `rebalanceSizingBasis`, and `rebalanceTargetUsdc` expose whether the rebalance path used atomic target sizing or a fallback/incremental mode.
+- `mirror.sync.snapshots[].strictGate.checks[]` carries execution gates such as `POLYMARKET_SOURCE_FRESH`, `CLOSE_TIME_DELTA`, and `MIN_TIME_TO_EXPIRY`.
+- Paper mode may reuse cached `polymarket:cache` source snapshots; live mode blocks cached source data through `POLYMARKET_SOURCE_FRESH`.
+- Live Polygon preflight uses `--polymarket-rpc-url` first, then `POLYMARKET_RPC_URL`, then `--rpc-url`; comma-separated RPC fallbacks are tried in order.
+- `mirror.sync.start|status` metadata is the daemon-health surface.
+  - key fields are `status`, top-level `alive`, `metadata.pidAlive`, `checkedAt`, `pidFile`, and `logFile`
+  - stop payloads also add `signalSent`, `forceKilled`, and `exitObserved`
+- `mirror.status.runtime` carries `health`, `daemon`, `lastAction`, `lastError`, `pendingAction`, and recent `alerts`.
+- `runtime.health.status` is the operator rollup and can be `running`, `idle`, `blocked`, `degraded`, `stale`, or `error`.
+  - `blocked` covers fail-closed runtime cases such as `PENDING_ACTION_LOCK*` and `LAST_ACTION_REQUIRES_REVIEW`
+  - `stale` means daemon metadata still reports alive while the heartbeat exceeded threshold
+- `mirror status --with-live` is the live diagnostic surface for a persisted mirror state.
+  - `live.verifyDiagnostics` carries verify-time feed and matching warnings
+  - `live.polymarketPosition.diagnostics` carries balance/open-order visibility warnings instead of hard-failing when that view is partial
+  - `--drift-trigger-bps`, `--hedge-trigger-usdc`, `--indexer-url`, `--timeout-ms`, and Polymarket host/mock overrides shape that live diagnostic projection path
+  - `live.sourceMarket`, `live.pandoraMarket`, `live.netPnlApproxUsdc`, `live.pnlApprox`, and `live.netDeltaApprox` provide the operator snapshot around those diagnostics
+  - `live.netPnlApproxUsdc` is cumulative LP fees approx minus cumulative hedge cost approx; `live.pnlApprox` adds marked Polymarket inventory; `live.pnlScenarios` projects current token payouts under each outcome
+  - these values are operator diagnostics, not realized closeout proceeds, a complete audit ledger, or tax-ready accounting
 
 ### Trading and LP
 - `quote`:
@@ -439,6 +480,8 @@ Error envelope:
   - `{ ok: true, command: "lp", data: { action: "add"|"remove", mode, txPlan, tx? } }`
 - `lp positions`:
   - `{ ok: true, command: "lp", data: { action: "positions", mode: "read", wallet, count, items[] } }`
+- `lp simulate-remove`:
+  - `{ ok: true, command: "lp", data: { action: "simulate-remove", mode: "preview", marketAddress, wallet, lpTokens, sharesToBurnRaw, preview, diagnostics[] } }`
 
 ### Quant/model
 - `simulate.mc`:

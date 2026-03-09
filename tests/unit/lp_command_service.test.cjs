@@ -97,7 +97,7 @@ test('runLpCommand loads env via shared parser and forwards shared indexer timeo
   assert.equal(observed.emitted.command, 'lp');
 });
 
-test('runLpCommand help output includes --all remove mode', async () => {
+test('runLpCommand help output includes remove-all mode and separate simulate-remove preview usage', async () => {
   let helpUsage = null;
   const runLpCommand = createRunLpCommand({
     includesHelpFlag: () => true,
@@ -125,6 +125,12 @@ test('runLpCommand help output includes --all remove mode', async () => {
 
   assert.equal(typeof helpUsage, 'string');
   assert.match(helpUsage, /--lp-tokens <n>\|--all/);
+  assert.match(helpUsage, /simulate-remove/);
+  const lines = helpUsage.split('\n');
+  assert.equal(lines.length >= 2, true);
+  assert.match(lines[1], /lp simulate-remove/);
+  assert.doesNotMatch(lines[1], /--dry-run\|--execute/);
+  assert.doesNotMatch(lines[1], /--all-markets/);
 });
 
 test('buildLpOperationContext creates remove-all-markets operation metadata', () => {

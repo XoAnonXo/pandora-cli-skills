@@ -370,4 +370,5 @@ module.exports = {
   stopDaemon,
   daemonStatus,
   listDaemonPidFiles,
+  findPidFilesByMarketAddress,
 };

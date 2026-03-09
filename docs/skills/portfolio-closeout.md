@@ -63,6 +63,13 @@ pandora mirror close --output json \
 - claim/redeem eligibility inspection
 - closeout summary
 
+It is not a cross-venue atomic close.
+- the command runs `stop-daemons`, `withdraw-lp`, then `claim-winnings`
+- remaining Polymarket hedge inventory or settlement stays manual in this command version
+- use `lp simulate-remove --market-address <0x...> --all` when you want a dedicated LP-removal preview before executing
+- use `mirror pnl` for cross-venue scenario estimates and `mirror audit` for the classified runtime ledger
+- `mirror close`, `mirror status --with-live`, `mirror pnl`, and `mirror audit` are operator surfaces, not tax-ready accounting exports
+
 ## Operations tracking
 
 Use operations for persisted mutable workflows:
@@ -100,6 +107,51 @@ If you are operating through a hosted remote gateway, confirm receipt-routing su
 4. dry-run `lp remove --all-markets`
 5. dry-run `mirror close` for mirrored positions
 6. execute only the flows that are actually claimable or withdrawable
+
+## Resolve and claim runbook for mirrors
+
+`mirror close` does not auto-resolve Pandora and does not auto-redeem Polymarket inventory.
+
+### 1. Inspect the final operator dashboard
+```bash
+pandora mirror status --output json --strategy-hash <hash> --with-live
+pandora mirror pnl --output json --strategy-hash <hash>
+pandora mirror audit --output json --strategy-hash <hash> --with-live
+pandora polymarket balance --output json --funder <proxy-wallet>
+```
+
+### 2. Wait for Pandora finalization with prechecks instead of guessing
+```bash
+pandora resolve --output json \
+  --poll-address 0x... \
+  --answer yes \
+  --reason "Official final result" \
+  --dry-run \
+  --watch
+```
+
+Use this when `resolve` is still too early. The dry-run precheck is the current surface for finalization progress such as remaining epochs and claimability.
+
+### 3. Promote to execute once the market becomes executable
+```bash
+pandora resolve --output json \
+  --poll-address 0x... \
+  --answer yes \
+  --reason "Official final result" \
+  --execute \
+  --watch
+```
+
+### 4. Claim after resolution
+```bash
+pandora claim --output json --market-address 0x... --dry-run
+pandora claim --output json --market-address 0x... --execute
+```
+
+### 5. Finish Polygon-side cleanup separately
+- use `pandora polymarket balance` to confirm whether the proxy or signer still holds USDC.e or outcome tokens
+- use `pandora polymarket withdraw --amount-usdc <n>` when you need a preview of moving remaining proxy collateral back to the signer; if the proxy differs from the signer, follow the dry-run plan and execute the ERC20 transfer from the proxy wallet manually
+- use venue-native redemption flows when the remaining work is Polymarket token settlement rather than Pandora claim
 
 ## Related docs
 - buy/sell workflows:

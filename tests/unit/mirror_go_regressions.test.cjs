@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const http = require('http');
 
 const handleMirrorGo = require('../../cli/lib/mirror_handlers/go.cjs');
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
@@ -123,6 +124,31 @@ function withMcpMode(fn) {
   }
 }
 
+async function startRpcHealthServer(chainIdHex = '0x89') {
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      let id = 1;
+      try {
+        const parsed = JSON.parse(body || '{}');
+        id = parsed && parsed.id !== undefined ? parsed.id : 1;
+      } catch {}
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ jsonrpc: '2.0', id, result: chainIdHex }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  return {
+    url: `http://127.0.0.1:${port}`,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
 function buildGoOptions(overrides = {}) {
   return {
     polymarketMarketId: 'poly-1',
@@ -179,9 +205,9 @@ test('parseMirrorGoFlags accepts --polymarket-rpc-url and enforces companion liv
     '--polymarket-market-id',
     'poly-1',
     '--polymarket-rpc-url',
-    'https://polygon-bor-rpc.publicnode.com',
+    'https://polygon-bor-rpc.publicnode.com, https://polygon-rpc.com,https://polygon-bor-rpc.publicnode.com',
   ]);
-  assert.equal(parsed.polymarketRpcUrl, 'https://polygon-bor-rpc.publicnode.com');
+  assert.equal(parsed.polymarketRpcUrl, 'https://polygon-bor-rpc.publicnode.com,https://polygon-rpc.com');
 
   assert.throws(
     () => parseMirrorGoFlags(['--polymarket-market-id', 'poly-1', '--execute-live']),
@@ -407,75 +433,80 @@ test('mirror go reuses trusted manifest pair and skips deploy', async () => {
 
 test('mirror go preflight prefers --polymarket-rpc-url over main --rpc-url', async () => {
   let preflightInput = null;
+  const rpc = await startRpcHealthServer();
 
-  await handleMirrorGo({
-    shared: {
-      rest: ['--polymarket-market-id', 'poly-1'],
-      timeoutMs: 5000,
-      indexerUrl: 'https://indexer.test',
-    },
-    context: { outputMode: 'json' },
-    mirrorGoUsage: 'mirror go usage',
-    deps: {
-      CliError: TestCliError,
-      includesHelpFlag: () => false,
-      emitSuccess: () => null,
-      commandHelpPayload: () => ({}),
-      maybeLoadTradeEnv: () => null,
-      resolveIndexerUrl: (url) => url,
-      parseMirrorGoFlags: () =>
-        buildGoOptions({
-          autoSync: true,
-          syncOnce: true,
-          polymarketRpcUrl: 'https://polygon-rpc.example',
-          rpcUrl: 'https://ethereum-rpc.example',
+  try {
+    await handleMirrorGo({
+      shared: {
+        rest: ['--polymarket-market-id', 'poly-1'],
+        timeoutMs: 5000,
+        indexerUrl: 'https://indexer.test',
+      },
+      context: { outputMode: 'json' },
+      mirrorGoUsage: 'mirror go usage',
+      deps: {
+        CliError: TestCliError,
+        includesHelpFlag: () => false,
+        emitSuccess: () => null,
+        commandHelpPayload: () => ({}),
+        maybeLoadTradeEnv: () => null,
+        resolveIndexerUrl: (url) => url,
+        parseMirrorGoFlags: () =>
+          buildGoOptions({
+            autoSync: true,
+            syncOnce: true,
+            polymarketRpcUrl: rpc.url,
+            rpcUrl: 'https://ethereum-rpc.example',
+          }),
+        buildMirrorPlan: async () => ({
+          sourceMarket: { marketId: 'poly-1', slug: 'poly-slug-1' },
+          planDigest: 'digest-1',
         }),
-      buildMirrorPlan: async () => ({
-        sourceMarket: { marketId: 'poly-1', slug: 'poly-slug-1' },
-        planDigest: 'digest-1',
-      }),
-      deployMirror: async () => ({
-        schemaVersion: '1.0.0',
-        generatedAt: new Date().toISOString(),
-        pandora: {
-          marketAddress: TEST_MARKET,
-          pollAddress: TEST_POLL,
+        deployMirror: async () => ({
+          schemaVersion: '1.0.0',
+          generatedAt: new Date().toISOString(),
+          pandora: {
+            marketAddress: TEST_MARKET,
+            pollAddress: TEST_POLL,
+          },
+        }),
+        resolveTrustedDeployPair: () => {
+          throw new Error('resolveTrustedDeployPair should not be called in this test.');
         },
-      }),
-      resolveTrustedDeployPair: () => {
-        throw new Error('resolveTrustedDeployPair should not be called in this test.');
+        findMirrorPair: () => ({ filePath: '/tmp/mirror-pairs.json', pair: null }),
+        defaultMirrorManifestFile: () => '/tmp/mirror-pairs.json',
+        hasContractCodeAtAddress: async () => true,
+        verifyMirror: async () => ({
+          pandora: { marketAddress: TEST_MARKET, rules: 'rules' },
+          sourceMarket: { description: 'source' },
+          gateResult: { ok: true },
+        }),
+        runLivePolymarketPreflightForMirror: async (input) => {
+          preflightInput = input;
+          return { ok: true };
+        },
+        runMirrorSync: async () => ({
+          schemaVersion: '1.0.0',
+          generatedAt: new Date().toISOString(),
+          mode: 'once',
+          executeLive: true,
+          actionCount: 0,
+        }),
+        buildQuotePayload: async () => ({}),
+        executeTradeOnchain: async () => ({}),
+        assertLiveWriteAllowed: async () => null,
+        renderMirrorSyncTickLine: () => null,
+        coerceMirrorServiceError: (error) => error,
+        renderMirrorGoTable: () => null,
       },
-      findMirrorPair: () => ({ filePath: '/tmp/mirror-pairs.json', pair: null }),
-      defaultMirrorManifestFile: () => '/tmp/mirror-pairs.json',
-      hasContractCodeAtAddress: async () => true,
-      verifyMirror: async () => ({
-        pandora: { marketAddress: TEST_MARKET, rules: 'rules' },
-        sourceMarket: { description: 'source' },
-        gateResult: { ok: true },
-      }),
-      runLivePolymarketPreflightForMirror: async (input) => {
-        preflightInput = input;
-        return { ok: true };
-      },
-      runMirrorSync: async () => ({
-        schemaVersion: '1.0.0',
-        generatedAt: new Date().toISOString(),
-        mode: 'once',
-        executeLive: true,
-        actionCount: 0,
-      }),
-      buildQuotePayload: async () => ({}),
-      executeTradeOnchain: async () => ({}),
-      assertLiveWriteAllowed: async () => null,
-      renderMirrorSyncTickLine: () => null,
-      coerceMirrorServiceError: (error) => error,
-      renderMirrorGoTable: () => null,
-    },
-  });
+    });
 
-  assert.ok(preflightInput);
-  assert.equal(preflightInput.rpcUrl, 'https://polygon-rpc.example');
-  assert.equal(preflightInput.polymarketRpcUrl, 'https://polygon-rpc.example');
+    assert.ok(preflightInput);
+    assert.equal(preflightInput.rpcUrl, rpc.url);
+    assert.equal(preflightInput.polymarketRpcUrl, rpc.url);
+  } finally {
+    await rpc.close();
+  }
 });
 
 test('mirror go surfaces MIRROR_GO_VERIFY_PENDING when deploy succeeded but verify lags', async () => {

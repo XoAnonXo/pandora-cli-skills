@@ -1776,10 +1776,20 @@ function buildMirrorSyncStrategy(options) {
     polymarketMarketId: options.polymarketMarketId,
     polymarketSlug: options.polymarketSlug,
     executeLive: options.executeLive,
+    rebalanceSizingMode: options.rebalanceSizingMode,
+    priceSource: options.priceSource,
     driftTriggerBps: options.driftTriggerBps,
     hedgeEnabled: options.hedgeEnabled,
     hedgeRatio: options.hedgeRatio,
     hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+    maxRebalanceUsdc: options.maxRebalanceUsdc,
+    maxHedgeUsdc: options.maxHedgeUsdc,
+    maxOpenExposureUsdc: options.maxOpenExposureUsdc,
+    maxTradesPerDay: options.maxTradesPerDay,
+    cooldownMs: options.cooldownMs,
+    depthSlippageBps: options.depthSlippageBps,
+    minTimeToCloseSec: options.minTimeToCloseSec,
+    strictCloseTimeDelta: Boolean(options.strictCloseTimeDelta),
     forceGate: options.forceGate,
     skipGateChecks:
       Array.isArray(options.skipGateChecks) && options.skipGateChecks.length
@@ -1817,6 +1827,8 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
   args.push('--drift-trigger-bps', String(options.driftTriggerBps));
   args.push('--hedge-trigger-usdc', String(options.hedgeTriggerUsdc));
   args.push('--hedge-ratio', String(options.hedgeRatio));
+  if (options.rebalanceSizingMode) args.push('--rebalance-mode', String(options.rebalanceSizingMode));
+  if (options.priceSource) args.push('--price-source', String(options.priceSource));
   args.push('--max-rebalance-usdc', String(options.maxRebalanceUsdc));
   args.push('--max-hedge-usdc', String(options.maxHedgeUsdc));
   if (Number.isFinite(options.maxOpenExposureUsdc) && options.maxOpenExposureUsdc !== Number.POSITIVE_INFINITY) {
@@ -1829,6 +1841,9 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
   args.push('--depth-slippage-bps', String(options.depthSlippageBps));
   if (options.minTimeToCloseSec !== 1800) {
     args.push('--min-time-to-close-sec', String(options.minTimeToCloseSec));
+  }
+  if (options.strictCloseTimeDelta) {
+    args.push('--strict-close-time-delta');
   }
   if (Number.isFinite(options.iterations) && options.iterations > 0) {
     args.push('--iterations', String(options.iterations));
@@ -2780,12 +2795,20 @@ function renderMirrorSyncDaemonTable(data) {
 
 function renderMirrorStatusTable(data) {
   const state = data.state || {};
+  const runtime = data.runtime || {};
+  const runtimeHealth = runtime.health || {};
+  const daemon = runtime.daemon || {};
+  const lastAction = runtime.lastAction || {};
+  const lastError = runtime.lastError || {};
   printTable(
     ['Field', 'Value'],
     [
       ['strategyHash', data.strategyHash || state.strategyHash || ''],
       ['stateFile', data.stateFile || ''],
       ['lastTickAt', state.lastTickAt || ''],
+      ['runtimeHealth', runtimeHealth.status || ''],
+      ['daemonStatus', daemon.status || (daemon.found === false ? 'not-found' : '')],
+      ['daemonPid', daemon.pid === undefined || daemon.pid === null ? '' : daemon.pid],
       ['dailySpendUsdc', state.dailySpendUsdc === undefined ? '' : state.dailySpendUsdc],
       ['tradesToday', state.tradesToday === undefined ? '' : state.tradesToday],
       ['currentHedgeUsdc', state.currentHedgeUsdc === undefined ? '' : state.currentHedgeUsdc],
@@ -2795,6 +2818,28 @@ function renderMirrorStatusTable(data) {
     ],
   );
 
+  if (data.runtime) {
+    console.log('');
+    printTable(
+      ['Runtime Field', 'Value'],
+      [
+        ['healthStatus', runtimeHealth.status || ''],
+        ['healthCode', runtimeHealth.code || ''],
+        ['healthMessage', runtimeHealth.message || ''],
+        ['lastTickAt', runtimeHealth.lastTickAt || ''],
+        ['heartbeatAgeMs', runtimeHealth.heartbeatAgeMs === undefined || runtimeHealth.heartbeatAgeMs === null ? '' : runtimeHealth.heartbeatAgeMs],
+        ['lastActionStatus', lastAction.status || ''],
+        ['lastActionStartedAt', lastAction.startedAt || ''],
+        ['lastActionCompletedAt', lastAction.completedAt || ''],
+        ['lastErrorCode', lastError.code || ''],
+        ['lastErrorAt', lastError.at || ''],
+        ['daemonAlive', daemon.alive ? 'yes' : 'no'],
+        ['daemonPidFile', daemon.pidFile || ''],
+        ['daemonLogFile', daemon.logFile || ''],
+      ],
+    );
+  }
+
   if (!data.live) {
     return;
   }
@@ -2803,6 +2848,7 @@ function renderMirrorStatusTable(data) {
   printTable(
     ['Live Field', 'Value'],
     [
+      ['crossVenueStatus', data.live.crossVenue && data.live.crossVenue.status ? data.live.crossVenue.status : ''],
       ['pandoraYesPct', data.live.pandoraYesPct],
       ['sourceYesPct', data.live.sourceYesPct],
       ['driftBps', data.live.driftBps],
@@ -2814,14 +2860,62 @@ function renderMirrorStatusTable(data) {
       ['netPnlApproxUsdc', data.live.netPnlApproxUsdc],
       ['netDeltaApprox', data.live.netDeltaApprox === undefined ? '' : data.live.netDeltaApprox],
       ['pnlApprox', data.live.pnlApprox === undefined ? '' : data.live.pnlApprox],
+      ['recommendedAction', data.live.actionability && data.live.actionability.recommendedAction ? data.live.actionability.recommendedAction : ''],
       [
         'polymarketPosition',
         data.live.polymarketPosition
-          ? `yes=${data.live.polymarketPosition.yesBalance ?? 'n/a'} no=${data.live.polymarketPosition.noBalance ?? 'n/a'} openOrders=${data.live.polymarketPosition.openOrdersCount ?? 'n/a'} estUsd=${data.live.polymarketPosition.estimatedValueUsd ?? 'n/a'}`
+          ? `yes=${data.live.polymarketPosition.yesBalance ?? 'n/a'} no=${data.live.polymarketPosition.noBalance ?? 'n/a'} openOrders=${data.live.polymarketPosition.openOrdersCount ?? 'n/a'} openOrdersUsd=${data.live.polymarketPosition.openOrdersNotionalUsd ?? 'n/a'} estUsd=${data.live.polymarketPosition.estimatedValueUsd ?? 'n/a'}`
           : '',
       ],
     ],
   );
+
+  if (data.live.crossVenue) {
+    console.log('');
+    printTable(
+      ['Cross-Venue Field', 'Value'],
+      [
+        ['gateOk', data.live.crossVenue.gateOk ? 'yes' : 'no'],
+        ['failedChecks', Array.isArray(data.live.crossVenue.failedChecks) ? data.live.crossVenue.failedChecks.join(', ') : ''],
+        ['matchConfidence', data.live.crossVenue.matchConfidence === undefined ? '' : data.live.crossVenue.matchConfidence],
+        ['ruleHashMatch', data.live.crossVenue.ruleHashMatch === null ? '' : data.live.crossVenue.ruleHashMatch ? 'yes' : 'no'],
+        ['closeTimeDeltaSec', data.live.crossVenue.closeTimeDeltaSec === undefined ? '' : data.live.crossVenue.closeTimeDeltaSec],
+        ['sourceType', data.live.crossVenue.sourceType || ''],
+      ],
+    );
+  }
+
+  if (data.live.actionableDiagnostics && data.live.actionableDiagnostics.length) {
+    console.log('');
+    printTable(
+      ['Diagnostic', 'Severity', 'Action'],
+      data.live.actionableDiagnostics.map((item) => [
+        item.code || '',
+        item.severity || '',
+        item.action || '',
+      ]),
+    );
+  }
+
+  if (data.live.pnlScenarios && data.live.pnlScenarios.resolutionScenarios) {
+    const resolution = data.live.pnlScenarios.resolutionScenarios;
+    console.log('');
+    printTable(
+      ['Outcome', 'InventoryPayoutUsd', 'FeesPlusInventoryPnlApproxUsdc'],
+      [
+        [
+          'yes',
+          resolution.yes && resolution.yes.hedgeInventoryPayoutUsd !== undefined ? resolution.yes.hedgeInventoryPayoutUsd : '',
+          resolution.yes && resolution.yes.feesPlusInventoryPnlApproxUsdc !== undefined ? resolution.yes.feesPlusInventoryPnlApproxUsdc : '',
+        ],
+        [
+          'no',
+          resolution.no && resolution.no.hedgeInventoryPayoutUsd !== undefined ? resolution.no.hedgeInventoryPayoutUsd : '',
+          resolution.no && resolution.no.feesPlusInventoryPnlApproxUsdc !== undefined ? resolution.no.feesPlusInventoryPnlApproxUsdc : '',
+        ],
+      ],
+    );
+  }
 }
 
 function renderMirrorCloseTable(data) {
@@ -4908,8 +5002,8 @@ async function executeTradeOnchain(options) {
   const amountRaw = isSell
     ? parseUnits(String(options.amount), 18)
     : parseUnits(String(options.amountUsdc), 6);
-  const minSharesOutRaw = options.minSharesOutRaw === null ? 0n : options.minSharesOutRaw;
-  const minAmountOutRaw = options.minAmountOutRaw === null ? 0n : options.minAmountOutRaw;
+  const minSharesOutRaw = options.minSharesOutRaw == null ? 0n : options.minSharesOutRaw;
+  const minAmountOutRaw = options.minAmountOutRaw == null ? 0n : options.minAmountOutRaw;
   const explorerBase = 'https://etherscan.io/tx/';
   const toExplorerUrl = (hash) => (hash ? `${explorerBase}${hash}` : null);
   const decodeTradeError = async (error, code, fallbackMessage, details = {}) => {
@@ -5018,6 +5112,7 @@ async function executeTradeOnchain(options) {
   let approveTxHash = null;
   let approveGasEstimate = null;
   let approveStatus = null;
+  let approveNonce = null;
   if (allowance < amountRaw) {
     let approveSimulation;
     try {
@@ -5031,7 +5126,15 @@ async function executeTradeOnchain(options) {
       approveGasEstimate =
         approveSimulation && approveSimulation.request && approveSimulation.request.gas
           ? approveSimulation.request.gas.toString()
-        : null;
+          : null;
+      approveNonce = await publicClient.getTransactionCount({
+        address: account.address,
+        blockTag: 'pending',
+      });
+      approveSimulation.request = {
+        ...approveSimulation.request,
+        nonce: approveNonce,
+      };
     } catch (error) {
       await decodeTradeError(error, 'APPROVE_SIMULATION_FAILED', `${isSell ? 'Outcome token' : 'USDC'} approve simulation failed.`, {
         stage: 'approve-simulate',
@@ -5054,6 +5157,7 @@ async function executeTradeOnchain(options) {
   let tradeTxHash = null;
   let tradeGasEstimate = null;
   let tradeStatus = null;
+  let tradeNonce = null;
   try {
     const tradeSimulation = await publicClient.simulateContract({
       account,
@@ -5066,6 +5170,14 @@ async function executeTradeOnchain(options) {
       tradeSimulation && tradeSimulation.request && tradeSimulation.request.gas
         ? tradeSimulation.request.gas.toString()
         : null;
+    tradeNonce = await publicClient.getTransactionCount({
+      address: account.address,
+      blockTag: 'pending',
+    });
+    tradeSimulation.request = {
+      ...tradeSimulation.request,
+      nonce: tradeNonce,
+    };
     tradeTxHash = await walletClient.writeContract(tradeSimulation.request);
     const tradeReceipt = await publicClient.waitForTransactionReceipt({ hash: tradeTxHash });
     tradeStatus = tradeReceipt && tradeReceipt.status ? tradeReceipt.status : null;
@@ -5098,10 +5210,12 @@ async function executeTradeOnchain(options) {
     approveTxUrl: toExplorerUrl(approveTxHash),
     approveGasEstimate,
     approveStatus,
+    approveNonce,
     tradeTxHash,
     tradeTxUrl: toExplorerUrl(tradeTxHash),
     tradeGasEstimate,
     tradeStatus,
+    tradeNonce,
     status: tradeStatus || 'confirmed',
   };
 }
@@ -6279,6 +6393,14 @@ const parseMirrorStatusFlagsFromModule = createLazyFactoryRunner('./lib/parsers/
   ...sharedParserDeps,
   defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
 }));
+const parseMirrorPnlFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorPnlFlags', () => ({
+  ...sharedParserDeps,
+  defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
+}));
+const parseMirrorAuditFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorAuditFlags', () => ({
+  ...sharedParserDeps,
+  defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
+}));
 const parseMirrorCloseFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorCloseFlags', () => sharedParserDeps);
 const parseMirrorLpExplainFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorLpExplainFlags', () => sharedParserDeps);
 const parseMirrorSimulateFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorSimulateFlags', () => ({
@@ -6311,6 +6433,7 @@ const parseResolveFlagsFromModule = createLazyFactoryRunner('./lib/parsers/resol
   parseAddressFlag,
   requireFlagValue,
   parseInteger,
+  parsePositiveInteger,
   isValidPrivateKey,
   isSecureHttpUrlOrLocal,
 }));
@@ -6968,15 +7091,216 @@ function resolveTrustedDeployPair(options = {}) {
   };
 }
 
+function deriveMirrorStatusLiveStatus(params = {}) {
+  if (params.gateOk === false || params.lifecycleActive === false || params.notExpired === false) {
+    return 'blocked';
+  }
+  if (params.expiryWarn || params.driftTriggered || params.hedgeTriggered) {
+    return 'attention';
+  }
+  return 'ok';
+}
+
+function buildMirrorStatusDiagnostics(params = {}) {
+  const diagnostics = [];
+  const {
+    gateOk,
+    failedChecks,
+    driftBps,
+    driftTriggerBps,
+    hedgeGapUsdc,
+    hedgeTriggerUsdc,
+    hedgeTriggered,
+    rebalanceSide,
+    hedgeSide,
+    minTimeToExpirySec,
+    expiryWarn,
+    matchConfidence,
+    currentHedgeUsdc,
+    targetHedgeUsdc,
+  } = params;
+
+  if (gateOk === false) {
+    diagnostics.push({
+      code: 'VERIFY_GATES_FAILED',
+      severity: 'error',
+      message: 'Mirror verification gates failed.',
+      action: 'inspect-verify-gates',
+      details: {
+        failedChecks: Array.isArray(failedChecks) ? failedChecks : [],
+      },
+    });
+  }
+
+  if (Number.isFinite(driftBps) && Number.isFinite(driftTriggerBps) && driftBps >= driftTriggerBps) {
+    diagnostics.push({
+      code: 'DRIFT_TRIGGERED',
+      severity: driftBps >= driftTriggerBps * 2 ? 'error' : 'warn',
+      message: `Cross-venue drift ${driftBps}bps exceeds trigger ${driftTriggerBps}bps.`,
+      action: rebalanceSide ? `rebalance-${rebalanceSide}` : 'rebalance',
+      details: {
+        driftBps,
+        driftTriggerBps,
+        rebalanceSide: rebalanceSide || null,
+      },
+    });
+  }
+
+  if (hedgeTriggered && Number.isFinite(Math.abs(Number(hedgeGapUsdc)))) {
+    diagnostics.push({
+      code: 'HEDGE_GAP_TRIGGERED',
+      severity: Math.abs(hedgeGapUsdc) >= hedgeTriggerUsdc * 2 ? 'error' : 'warn',
+      message: `Tracked hedge gap ${Math.abs(hedgeGapUsdc)} USDC exceeds trigger ${hedgeTriggerUsdc} USDC.`,
+      action: hedgeSide ? `hedge-${hedgeSide}` : 'hedge',
+      details: {
+        hedgeGapUsdc,
+        currentHedgeUsdc,
+        targetHedgeUsdc,
+        hedgeTriggerUsdc,
+        hedgeSide: hedgeSide || null,
+      },
+    });
+  }
+
+  if (expiryWarn) {
+    diagnostics.push({
+      code: 'EXPIRY_NEAR',
+      severity: 'warn',
+      message: `Mirror pair expiry is near (${minTimeToExpirySec}s remaining on the tighter venue).`,
+      action: 'tighten-monitoring',
+      details: {
+        minTimeToExpirySec,
+      },
+    });
+  }
+
+  if (matchConfidence !== null && matchConfidence < 0.97) {
+    diagnostics.push({
+      code: 'MATCH_CONFIDENCE_SOFT_WARN',
+      severity: 'info',
+      message: `Question similarity confidence is ${matchConfidence}.`,
+      action: 'spot-check-market-match',
+      details: {
+        matchConfidence,
+      },
+    });
+  }
+
+  if (!diagnostics.length) {
+    diagnostics.push({
+      code: 'MONITOR_ONLY',
+      severity: 'info',
+      message: 'No rebalance or hedge action is currently implied by status thresholds.',
+      action: 'monitor',
+      details: {},
+    });
+  }
+
+  return diagnostics;
+}
+
+function buildMirrorStatusActionability(params = {}) {
+  const diagnostics = buildMirrorStatusDiagnostics(params);
+  const primary = diagnostics[0];
+  const blocked = diagnostics.some((item) => item.severity === 'error' && item.code === 'VERIFY_GATES_FAILED');
+  const hasTradeAction = diagnostics.some((item) => item.code === 'DRIFT_TRIGGERED' || item.code === 'HEDGE_GAP_TRIGGERED');
+  return {
+    status: blocked ? 'blocked' : hasTradeAction ? 'action-needed' : params.expiryWarn ? 'attention' : 'monitor',
+    urgency: blocked ? 'high' : hasTradeAction ? 'medium' : params.expiryWarn ? 'medium' : 'low',
+    recommendedAction: primary && primary.action ? primary.action : 'monitor',
+    diagnostics,
+  };
+}
+
+function buildMirrorStatusPnlScenarios(params = {}) {
+  const {
+    reserveYesUsdc,
+    reserveNoUsdc,
+    sourceYesPct,
+    cumulativeLpFeesApproxUsdc,
+    cumulativeHedgeCostApproxUsdc,
+    netPnlApproxUsdc,
+    positionSummary,
+    pnlApprox,
+  } = params;
+  const feeScenarioPayload =
+    Number.isFinite(reserveYesUsdc) && Number.isFinite(reserveNoUsdc)
+      ? buildMirrorHedgeCalc({
+          reserveYesUsdc,
+          reserveNoUsdc,
+          polymarketYesPct: sourceYesPct,
+          hedgeRatio: 1,
+        })
+      : null;
+
+  const estimatedValueUsd = Number.isFinite(Number(positionSummary && positionSummary.estimatedValueUsd))
+    ? Number(positionSummary.estimatedValueUsd)
+    : null;
+  const yesBalance = Number.isFinite(Number(positionSummary && positionSummary.yesBalance))
+    ? Number(positionSummary.yesBalance)
+    : null;
+  const noBalance = Number.isFinite(Number(positionSummary && positionSummary.noBalance))
+    ? Number(positionSummary.noBalance)
+    : null;
+
+  const buildResolutionRow = (label, payoutValueUsd) => ({
+    outcome: label,
+    hedgeInventoryPayoutUsd: payoutValueUsd,
+    markToMarketMoveUsd:
+      estimatedValueUsd !== null && payoutValueUsd !== null
+        ? round(payoutValueUsd - estimatedValueUsd, 6)
+        : null,
+    feesPlusInventoryPnlApproxUsdc:
+      Number.isFinite(netPnlApproxUsdc) && payoutValueUsd !== null
+        ? round(netPnlApproxUsdc + payoutValueUsd, 6)
+        : null,
+  });
+
+  return {
+    baseline: {
+      scope: 'fees-plus-marked-polymarket-inventory',
+      cumulativeLpFeesApproxUsdc,
+      cumulativeHedgeCostApproxUsdc,
+      netPnlApproxUsdc,
+      markedPolymarketInventoryUsd: estimatedValueUsd,
+      openOrdersNotionalUsd:
+        Number.isFinite(Number(positionSummary && positionSummary.openOrdersNotionalUsd))
+          ? Number(positionSummary.openOrdersNotionalUsd)
+          : null,
+      markToMarketPnlApproxUsdc: Number.isFinite(pnlApprox) ? pnlApprox : netPnlApproxUsdc,
+    },
+    feeVolumeScenarios:
+      feeScenarioPayload && Array.isArray(feeScenarioPayload.scenarios)
+        ? feeScenarioPayload.scenarios
+        : [],
+    resolutionScenarios: {
+      scope: 'fees-plus-polymarket-token-payout-only',
+      yes: buildResolutionRow('yes', yesBalance),
+      no: buildResolutionRow('no', noBalance),
+    },
+  };
+}
+
 async function toMirrorStatusLivePayload(verifyPayload, state, options) {
   const pandoraYesPct = verifyPayload && verifyPayload.pandora ? Number(verifyPayload.pandora.yesPct) : null;
   const sourceYesPct = verifyPayload && verifyPayload.sourceMarket ? Number(verifyPayload.sourceMarket.yesPct) : null;
+  const pandoraNoPct = Number.isFinite(pandoraYesPct) ? round(100 - pandoraYesPct, 6) : null;
+  const sourceNoPct =
+    verifyPayload && verifyPayload.sourceMarket && Number.isFinite(Number(verifyPayload.sourceMarket.noPct))
+      ? Number(verifyPayload.sourceMarket.noPct)
+      : Number.isFinite(sourceYesPct)
+        ? round(100 - sourceYesPct, 6)
+        : null;
   const driftBps =
     Number.isFinite(sourceYesPct) && Number.isFinite(pandoraYesPct)
       ? Math.round(Math.abs(sourceYesPct - pandoraYesPct) * 10000) / 100
       : null;
   const reserveYesUsdc = verifyPayload && verifyPayload.pandora ? Number(verifyPayload.pandora.reserveYes) : null;
   const reserveNoUsdc = verifyPayload && verifyPayload.pandora ? Number(verifyPayload.pandora.reserveNo) : null;
+  const reserveTotalUsdc =
+    Number.isFinite(reserveYesUsdc) && Number.isFinite(reserveNoUsdc)
+      ? round(reserveYesUsdc + reserveNoUsdc, 6)
+      : null;
   const deltaLpUsdc =
     Number.isFinite(reserveYesUsdc) && Number.isFinite(reserveNoUsdc)
       ? Math.round((reserveYesUsdc - reserveNoUsdc) * 1e6) / 1e6
@@ -6984,12 +7308,25 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
   const targetHedgeUsdc = deltaLpUsdc === null ? null : Math.round((-deltaLpUsdc) * 1e6) / 1e6;
   const currentHedgeUsdc = Number.isFinite(Number(state.currentHedgeUsdc)) ? Number(state.currentHedgeUsdc) : 0;
   const hedgeGapUsdc = targetHedgeUsdc === null ? null : Math.round((targetHedgeUsdc - currentHedgeUsdc) * 1e6) / 1e6;
+  const hedgeGapAbsUsdc = hedgeGapUsdc === null ? null : round(Math.abs(hedgeGapUsdc), 6);
+  const rebalanceSide =
+    Number.isFinite(sourceYesPct) && Number.isFinite(pandoraYesPct)
+      ? sourceYesPct > pandoraYesPct
+        ? 'yes'
+        : 'no'
+      : null;
+  const hedgeSide = hedgeGapUsdc === null ? null : hedgeGapUsdc > 0 ? 'yes' : hedgeGapUsdc < 0 ? 'no' : null;
+  const hedgeCoverageRatio =
+    Number.isFinite(targetHedgeUsdc) && Math.abs(targetHedgeUsdc) > 0
+      ? round(currentHedgeUsdc / targetHedgeUsdc, 6)
+      : null;
 
   const gateChecks = verifyPayload && verifyPayload.gateResult && Array.isArray(verifyPayload.gateResult.checks)
     ? verifyPayload.gateResult.checks
     : [];
   const lifecycleCheck = gateChecks.find((item) => item.code === 'LIFECYCLE_ACTIVE');
   const notExpiredCheck = gateChecks.find((item) => item.code === 'NOT_EXPIRED');
+  const closeTimeCheck = gateChecks.find((item) => item.code === 'CLOSE_TIME_DELTA');
 
   const cumulativeLpFeesApproxUsdc = Number.isFinite(Number(state.cumulativeLpFeesApproxUsdc))
     ? Number(state.cumulativeLpFeesApproxUsdc)
@@ -7040,6 +7377,58 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
     verifyPayload && verifyPayload.expiry && Number.isFinite(Number(verifyPayload.expiry.minTimeToExpirySec))
       ? Number(verifyPayload.expiry.minTimeToExpirySec)
       : null;
+  const closeTimeDeltaSec =
+    closeTimeCheck && closeTimeCheck.meta && Number.isFinite(Number(closeTimeCheck.meta.closeDeltaSeconds))
+      ? Number(closeTimeCheck.meta.closeDeltaSeconds)
+      : null;
+  const gateOk = Boolean(verifyPayload && verifyPayload.gateResult && verifyPayload.gateResult.ok);
+  const failedChecks =
+    verifyPayload && verifyPayload.gateResult && Array.isArray(verifyPayload.gateResult.failedChecks)
+      ? verifyPayload.gateResult.failedChecks
+      : [];
+  const ruleHashMatch =
+    verifyPayload && verifyPayload.ruleHashLeft && verifyPayload.ruleHashRight
+      ? verifyPayload.ruleHashLeft === verifyPayload.ruleHashRight
+      : null;
+  const driftTriggered = driftBps !== null ? driftBps >= options.driftTriggerBps : false;
+  const hedgeTriggered = hedgeGapUsdc !== null ? Math.abs(hedgeGapUsdc) >= options.hedgeTriggerUsdc : false;
+  const expiryWarn = Boolean(verifyPayload && verifyPayload.expiry && verifyPayload.expiry.warn);
+  const crossVenueStatus = deriveMirrorStatusLiveStatus({
+    gateOk,
+    lifecycleActive: lifecycleCheck ? Boolean(lifecycleCheck.ok) : null,
+    notExpired: notExpiredCheck ? Boolean(notExpiredCheck.ok) : null,
+    expiryWarn,
+    driftTriggered,
+    hedgeTriggered,
+  });
+  const actionability = buildMirrorStatusActionability({
+    gateOk,
+    failedChecks,
+    driftBps,
+    driftTriggerBps: options.driftTriggerBps,
+    hedgeGapUsdc,
+    hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+    hedgeTriggered,
+    rebalanceSide,
+    hedgeSide,
+    minTimeToExpirySec,
+    expiryWarn,
+    matchConfidence: verifyPayload && Number.isFinite(Number(verifyPayload.matchConfidence))
+      ? Number(verifyPayload.matchConfidence)
+      : null,
+    currentHedgeUsdc,
+    targetHedgeUsdc,
+  });
+  const pnlScenarios = buildMirrorStatusPnlScenarios({
+    reserveYesUsdc,
+    reserveNoUsdc,
+    sourceYesPct,
+    cumulativeLpFeesApproxUsdc,
+    cumulativeHedgeCostApproxUsdc,
+    netPnlApproxUsdc,
+    positionSummary,
+    pnlApprox,
+  });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -7047,15 +7436,18 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
     sourceYesPct: Number.isFinite(sourceYesPct) ? sourceYesPct : null,
     driftBps,
     driftTriggerBps: options.driftTriggerBps,
-    driftTriggered: driftBps !== null ? driftBps >= options.driftTriggerBps : false,
+    driftTriggered,
     reserveYesUsdc: Number.isFinite(reserveYesUsdc) ? reserveYesUsdc : null,
     reserveNoUsdc: Number.isFinite(reserveNoUsdc) ? reserveNoUsdc : null,
+    reserveTotalUsdc,
     deltaLpUsdc,
     targetHedgeUsdc,
     currentHedgeUsdc,
     hedgeGapUsdc,
+    hedgeGapAbsUsdc,
     hedgeTriggerUsdc: options.hedgeTriggerUsdc,
-    hedgeTriggered: hedgeGapUsdc !== null ? Math.abs(hedgeGapUsdc) >= options.hedgeTriggerUsdc : false,
+    hedgeTriggered,
+    hedgeCoverageRatio,
     lifecycleActive: lifecycleCheck ? Boolean(lifecycleCheck.ok) : null,
     notExpired: notExpiredCheck ? Boolean(notExpiredCheck.ok) : null,
     minTimeToExpirySec,
@@ -7073,11 +7465,66 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
           : Number.isFinite(Number(positionSummary.openOrdersCount))
             ? Math.trunc(Number(positionSummary.openOrdersCount))
             : null,
+      openOrdersNotionalUsd: Number.isFinite(Number(positionSummary.openOrdersNotionalUsd))
+        ? Number(positionSummary.openOrdersNotionalUsd)
+        : null,
       estimatedValueUsd: Number.isFinite(Number(positionSummary.estimatedValueUsd))
         ? Number(positionSummary.estimatedValueUsd)
         : null,
+      positionDeltaApprox: Number.isFinite(Number(positionSummary.positionDeltaApprox))
+        ? Number(positionSummary.positionDeltaApprox)
+        : null,
+      prices:
+        positionSummary && positionSummary.prices && typeof positionSummary.prices === 'object'
+          ? {
+              yes: Number.isFinite(Number(positionSummary.prices.yes)) ? Number(positionSummary.prices.yes) : null,
+              no: Number.isFinite(Number(positionSummary.prices.no)) ? Number(positionSummary.prices.no) : null,
+            }
+          : { yes: null, no: null },
       diagnostics: Array.isArray(positionSummary.diagnostics) ? positionSummary.diagnostics : [],
     },
+    crossVenue: {
+      status: crossVenueStatus,
+      gateOk,
+      failedChecks,
+      matchConfidence: Number.isFinite(Number(verifyPayload && verifyPayload.matchConfidence))
+        ? Number(verifyPayload.matchConfidence)
+        : null,
+      ruleHashMatch,
+      closeTimeDeltaSec,
+      expiryWarn,
+      sourceType:
+        verifyPayload && verifyPayload.sourceMarket && verifyPayload.sourceMarket.source
+          ? String(verifyPayload.sourceMarket.source)
+          : null,
+      pandora: {
+        active: verifyPayload && verifyPayload.pandora ? Boolean(verifyPayload.pandora.active) : null,
+        resolved: verifyPayload && verifyPayload.pandora ? Boolean(verifyPayload.pandora.resolved) : null,
+        yesPct: Number.isFinite(pandoraYesPct) ? pandoraYesPct : null,
+        noPct: pandoraNoPct,
+        reserveTotalUsdc,
+      },
+      source: {
+        active: verifyPayload && verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.active) : null,
+        resolved: verifyPayload && verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.resolved) : null,
+        yesPct: Number.isFinite(sourceYesPct) ? sourceYesPct : null,
+        noPct: sourceNoPct,
+      },
+    },
+    hedgeStatus: {
+      rebalanceSide,
+      hedgeSide,
+      targetHedgeUsdc,
+      currentHedgeUsdc,
+      hedgeGapUsdc,
+      hedgeGapAbsUsdc,
+      hedgeCoverageRatio,
+      triggerUsdc: options.hedgeTriggerUsdc,
+      triggered: hedgeTriggered,
+    },
+    actionability,
+    actionableDiagnostics: actionability.diagnostics,
+    pnlScenarios,
     gateResult: verifyPayload.gateResult,
     matchConfidence: verifyPayload.matchConfidence,
     verifyDiagnostics: verifyPayload.diagnostics || [],
@@ -7085,8 +7532,11 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
       marketId: verifyPayload.sourceMarket && verifyPayload.sourceMarket.marketId ? verifyPayload.sourceMarket.marketId : null,
       slug: verifyPayload.sourceMarket && verifyPayload.sourceMarket.slug ? verifyPayload.sourceMarket.slug : null,
       question: verifyPayload.sourceMarket && verifyPayload.sourceMarket.question ? verifyPayload.sourceMarket.question : null,
+      source: verifyPayload.sourceMarket && verifyPayload.sourceMarket.source ? verifyPayload.sourceMarket.source : null,
       active: verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.active) : null,
       resolved: verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.resolved) : null,
+      yesPct: Number.isFinite(sourceYesPct) ? sourceYesPct : null,
+      noPct: sourceNoPct,
       closeTimestamp: verifyPayload.sourceMarket && verifyPayload.sourceMarket.closeTimestamp !== undefined
         ? verifyPayload.sourceMarket.closeTimestamp
         : null,
@@ -7097,6 +7547,10 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
       question: verifyPayload.pandora && verifyPayload.pandora.question ? verifyPayload.pandora.question : null,
       active: verifyPayload.pandora ? Boolean(verifyPayload.pandora.active) : null,
       resolved: verifyPayload.pandora ? Boolean(verifyPayload.pandora.resolved) : null,
+      yesPct: Number.isFinite(pandoraYesPct) ? pandoraYesPct : null,
+      noPct: pandoraNoPct,
+      reserveYesUsdc: Number.isFinite(reserveYesUsdc) ? reserveYesUsdc : null,
+      reserveNoUsdc: Number.isFinite(reserveNoUsdc) ? reserveNoUsdc : null,
       closeTimestamp: verifyPayload.pandora && verifyPayload.pandora.closeTimestamp !== undefined
         ? verifyPayload.pandora.closeTimestamp
         : null,
@@ -7183,6 +7637,8 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   parseMirrorDeployFlags: parseMirrorDeployFlagsFromModule,
   parseMirrorVerifyFlags: parseMirrorVerifyFlagsFromModule,
   parseMirrorStatusFlags: parseMirrorStatusFlagsFromModule,
+  parseMirrorPnlFlags: parseMirrorPnlFlagsFromModule,
+  parseMirrorAuditFlags: parseMirrorAuditFlagsFromModule,
   parseMirrorSyncFlags: parseMirrorSyncFlagsFromModule,
   parseMirrorSyncDaemonSelectorFlags: parseMirrorSyncDaemonSelectorFlagsFromModule,
   parseMirrorGoFlags: parseMirrorGoFlagsFromModule,
@@ -7216,6 +7672,7 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   mirrorStrategyHash,
   buildMirrorSyncDaemonCliArgs,
   buildQuotePayload,
+  enforceTradeRiskGuards,
   executeTradeOnchain,
   assertLiveWriteAllowed,
   hasWebhookTargets,

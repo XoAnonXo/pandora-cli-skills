@@ -276,6 +276,139 @@ test('direct signer-bearing command contracts expose profile selectors alongside
   }
 });
 
+test('mirror contract descriptors expose separate-leg sync truth, reserve provenance, and fallback knobs', () => {
+  const descriptors = buildCommandDescriptors();
+
+  assert.match(
+    descriptors['mirror.go'].summary,
+    /separate Pandora rebalance and Polymarket hedge legs/i,
+  );
+  assert.match(
+    descriptors['mirror.go'].inputSchema.properties['polymarket-rpc-url'].description,
+    /comma-separated fallbacks/i,
+  );
+  assert.deepEqual(
+    descriptors['mirror.go'].inputSchema.properties['rebalance-mode'].enum,
+    ['atomic', 'incremental'],
+  );
+  assert.deepEqual(
+    descriptors['mirror.go'].inputSchema.properties['price-source'].enum,
+    ['on-chain', 'indexer'],
+  );
+  assert.equal(
+    descriptors['mirror.go'].inputSchema.properties['depth-slippage-bps'].type,
+    'integer',
+  );
+  assert.equal(
+    descriptors['mirror.go'].inputSchema.properties['min-time-to-close-sec'].type,
+    'integer',
+  );
+  assert.equal(
+    descriptors['mirror.go'].inputSchema.properties['strict-close-time-delta'].type,
+    'boolean',
+  );
+  assert.match(
+    descriptors['mirror.go'].usage,
+    /--depth-slippage-bps <n>.*--min-time-to-close-sec <n>.*--strict-close-time-delta/,
+  );
+
+  assert.match(
+    descriptors['mirror.sync'].summary,
+    /separate Pandora rebalance and Polymarket hedge legs/i,
+  );
+  assert.match(
+    descriptors['mirror.sync.once'].usage,
+    /--strict-close-time-delta/,
+  );
+  assert.match(
+    descriptors['mirror.sync.once'].summary,
+    /separate Pandora rebalance and Polymarket hedge legs/i,
+  );
+  assert.match(
+    descriptors['mirror.sync.once'].inputSchema.properties['strict-close-time-delta'].description,
+    /diagnostic to blocking/i,
+  );
+  assert.match(
+    descriptors['mirror.sync.once'].inputSchema.properties['polymarket-rpc-url'].description,
+    /comma-separated fallbacks/i,
+  );
+  assert.deepEqual(
+    descriptors['mirror.sync.once'].inputSchema.properties['rebalance-mode'].enum,
+    ['atomic', 'incremental'],
+  );
+  assert.deepEqual(
+    descriptors['mirror.sync.once'].inputSchema.properties['price-source'].enum,
+    ['on-chain', 'indexer'],
+  );
+  assert.deepEqual(
+    descriptors['mirror.sync.run'].inputSchema.properties['rebalance-mode'].enum,
+    ['atomic', 'incremental'],
+  );
+  assert.deepEqual(
+    descriptors['mirror.sync.start'].inputSchema.properties['price-source'].enum,
+    ['on-chain', 'indexer'],
+  );
+
+  assert.match(
+    descriptors['mirror.sync.status'].summary,
+    /health\/status metadata/i,
+  );
+
+  assert.match(
+    descriptors['mirror.status'].summary,
+    /graceful fallback behavior/i,
+  );
+  assert.match(
+    descriptors['mirror.status'].usage,
+    /--indexer-url <url>/,
+  );
+  assert.match(
+    descriptors['mirror.status'].usage,
+    /--polymarket-host <url>/,
+  );
+  assert.match(
+    descriptors['mirror.status'].inputSchema.properties['with-live'].description,
+    /diagnostics instead of hard failure/i,
+  );
+  assert.equal(
+    descriptors['mirror.status'].dataSchema,
+    '#/definitions/MirrorStatusPayload',
+  );
+  assert.match(
+    descriptors['mirror.pnl'].summary,
+    /scenario P&L surface/i,
+  );
+  assert.match(
+    descriptors['mirror.pnl'].usage,
+    /--indexer-url <url>/,
+  );
+  assert.equal(
+    descriptors['mirror.pnl'].dataSchema,
+    '#/definitions/MirrorPnlPayload',
+  );
+  assert.match(
+    descriptors['mirror.audit'].summary,
+    /audit ledger/i,
+  );
+  assert.match(
+    descriptors['mirror.audit'].inputSchema.properties['with-live'].description,
+    /live cross-venue context/i,
+  );
+  assert.equal(
+    descriptors['mirror.audit'].dataSchema,
+    '#/definitions/MirrorAuditPayload',
+  );
+  assert.ok(descriptors['lp.simulate-remove']);
+  assert.equal(
+    descriptors['lp.simulate-remove'].dataSchema,
+    '#/definitions/LpPayload',
+  );
+  assert.match(
+    descriptors.lp.usage,
+    /lp simulate-remove --market-address <address>/,
+  );
+});
+
 test('generated descriptor and MCP tool slices stay in sync with the live registry builders', () => {
   assert.deepEqual(
     omitGeneratedGapDescriptors(generatedCommandDescriptors),

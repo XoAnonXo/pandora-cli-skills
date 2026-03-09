@@ -30,6 +30,26 @@ function buildMirrorSyncDeps(deps) {
   };
 }
 
+function parseSecureUrlList(value, flagName, CliError, isSecureHttpUrlOrLocal) {
+  const rawEntries = String(value || '').split(',');
+  const normalized = [];
+  for (const entry of rawEntries) {
+    const candidate = String(entry || '').trim();
+    if (!candidate) {
+      throw new CliError('INVALID_FLAG_VALUE', `${flagName} must not contain empty RPC URL entries.`);
+    }
+    if (!isSecureHttpUrlOrLocal(candidate)) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `${flagName} must use https:// (or http://localhost/127.0.0.1 for local testing).`,
+      );
+    }
+    normalized.push(candidate);
+  }
+
+  return Array.from(new Set(normalized)).join(',');
+}
+
 /**
  * Creates the mirror sync flags parser.
  * @param {object} deps
@@ -67,6 +87,8 @@ function createParseMirrorSyncFlags(deps) {
       executeLive: false,
       hedgeEnabled: true,
       hedgeRatio: 1,
+      rebalanceSizingMode: 'atomic',
+      priceSource: 'on-chain',
       intervalMs: 5_000,
       driftTriggerBps: 150,
       hedgeTriggerUsdc: 10,
@@ -77,6 +99,7 @@ function createParseMirrorSyncFlags(deps) {
       cooldownMs: 60_000,
       depthSlippageBps: 100,
       minTimeToCloseSec: 1800,
+      strictCloseTimeDelta: false,
       iterations: null,
       stream: false,
       stateFile: null,
@@ -172,6 +195,24 @@ function createParseMirrorSyncFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--rebalance-mode') {
+        const value = String(requireFlagValue(rest, i, '--rebalance-mode')).trim().toLowerCase();
+        if (value !== 'atomic' && value !== 'incremental') {
+          throw new CliError('INVALID_FLAG_VALUE', '--rebalance-mode must be atomic|incremental.');
+        }
+        options.rebalanceSizingMode = value;
+        i += 1;
+        continue;
+      }
+      if (token === '--price-source') {
+        const value = String(requireFlagValue(rest, i, '--price-source')).trim().toLowerCase();
+        if (value !== 'on-chain' && value !== 'indexer') {
+          throw new CliError('INVALID_FLAG_VALUE', '--price-source must be on-chain|indexer.');
+        }
+        options.priceSource = value;
+        i += 1;
+        continue;
+      }
       if (token === '--max-rebalance-usdc') {
         options.maxRebalanceUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--max-rebalance-usdc'), '--max-rebalance-usdc');
         i += 1;
@@ -216,10 +257,11 @@ function createParseMirrorSyncFlags(deps) {
           requireFlagValue(rest, i, '--min-time-to-close-sec'),
           '--min-time-to-close-sec',
         );
-        if (options.minTimeToCloseSec < 60) {
-          throw new CliError('INVALID_FLAG_VALUE', '--min-time-to-close-sec must be >= 60.');
-        }
         i += 1;
+        continue;
+      }
+      if (token === '--strict-close-time-delta') {
+        options.strictCloseTimeDelta = true;
         continue;
       }
       if (token === '--iterations') {
@@ -263,26 +305,22 @@ function createParseMirrorSyncFlags(deps) {
         continue;
       }
       if (token === '--rpc-url') {
-        const rpcUrl = requireFlagValue(rest, i, '--rpc-url');
-        if (!isSecureHttpUrlOrLocal(rpcUrl)) {
-          throw new CliError(
-            'INVALID_FLAG_VALUE',
-            '--rpc-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
-          );
-        }
-        options.rpcUrl = rpcUrl;
+        options.rpcUrl = parseSecureUrlList(
+          requireFlagValue(rest, i, '--rpc-url'),
+          '--rpc-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-rpc-url') {
-        const polymarketRpcUrl = requireFlagValue(rest, i, '--polymarket-rpc-url');
-        if (!isSecureHttpUrlOrLocal(polymarketRpcUrl)) {
-          throw new CliError(
-            'INVALID_FLAG_VALUE',
-            '--polymarket-rpc-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
-          );
-        }
-        options.polymarketRpcUrl = polymarketRpcUrl;
+        options.polymarketRpcUrl = parseSecureUrlList(
+          requireFlagValue(rest, i, '--polymarket-rpc-url'),
+          '--polymarket-rpc-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
@@ -442,6 +480,7 @@ function createParseMirrorSyncFlags(deps) {
         hedgeEnabled: options.hedgeEnabled,
         hedgeRatio: options.hedgeRatio,
         hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+        strictCloseTimeDelta: options.strictCloseTimeDelta,
         forceGate: options.forceGate,
         skipGateChecks:
           Array.isArray(options.skipGateChecks) && options.skipGateChecks.length

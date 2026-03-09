@@ -88,20 +88,18 @@ test('executeHedgeLeg submits sell-side hedge when runtime sell depth proves saf
   });
 
   assert.equal(actualHedgeUsdc, 3);
-  assert.deepEqual(calls, [
-    {
-      host: 'https://clob.polymarket.com',
-      mockUrl: 'https://mock.invalid',
-      tokenId: 'yes-token-id',
-      side: 'sell',
-      amountUsd: 3,
-      privateKey: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      funder: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-      apiKey: null,
-      apiSecret: null,
-      apiPassphrase: null,
-    },
-  ]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].host, 'https://clob.polymarket.com');
+  assert.equal(calls[0].mockUrl, 'https://mock.invalid');
+  assert.equal(calls[0].tokenId, 'yes-token-id');
+  assert.equal(calls[0].side, 'sell');
+  assert.equal(calls[0].amountUsd, 3);
+  assert.equal(calls[0].privateKey, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  assert.equal(calls[0].funder, '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+  assert.equal(calls[0].apiKey, null);
+  assert.equal(calls[0].apiSecret, null);
+  assert.equal(calls[0].apiPassphrase, null);
+  assert.ok(!Object.prototype.hasOwnProperty.call(calls[0], 'rpcUrl') || calls[0].rpcUrl === null);
   assert.equal(action.hedge.tokenSide, 'yes');
   assert.equal(action.hedge.side, 'sell');
   assert.equal(action.hedge.executionMode, 'sell-inventory');

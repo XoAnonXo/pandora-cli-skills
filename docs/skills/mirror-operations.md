@@ -1,15 +1,51 @@
 # Mirror Operations Guide
 
-Use this guide for `mirror browse|plan|deploy|verify|go|sync|status|close`.
+Use this guide for `mirror browse|plan|deploy|verify|go|sync|status|pnl|audit|close`.
 
 ## Non-negotiable operator rules
 - `mirror plan|deploy|go` do **not** use a generic `+1h` assumption.
 - `mirror plan` computes a sports-aware suggested `targetTimestamp`.
 - Keep that suggested timestamp unless you have a better close-time estimate.
 - Use `--target-timestamp <unix|iso>` only when you intentionally need to override the plan’s suggested close time.
+- `mirror go|sync` stay in paper/simulated mode unless you explicitly pass `--execute-live` or `--execute`.
+- `mirror sync` simulates or executes Pandora rebalance and Polymarket hedge as separate legs. It is not atomic across venues.
+- `mirror go --auto-sync` still inherits the same separate-leg sync semantics; it does not turn the cross-venue path into an atomic transaction.
 - `mirror deploy|go` require at least **two independent public resolution URLs from different hosts** in `--sources`.
 - Polymarket, Gamma, and CLOB URLs are discovery inputs only and are **not** valid `--sources`.
 - Fresh execute mode is validation-gated. The exact final `question`, `rules`, `sources`, and `targetTimestamp` must be validated before live deployment.
+- `mirror sync` enforces a close-window guard via `--min-time-to-close-sec`.
+  - default requested floor: `1800` seconds
+  - effective floor: `max(--min-time-to-close-sec, ceil(--interval-ms / 1000) * 2)`
+  - startup refusal code when expiry is already too near: `MIRROR_EXPIRY_TOO_CLOSE`
+- `--strict-close-time-delta` promotes `CLOSE_TIME_DELTA` from diagnostic-only to blocking.
+  - without it, Polymarket close-time mismatch stays informational
+  - Pandora trading time remains the hard close-window gate
+- Live sync blocks cached Polymarket source snapshots.
+  - paper/dry-run may reuse `polymarket:cache` and surfaces that choice in diagnostics
+  - live mode requires fresh source data and fails the `POLYMARKET_SOURCE_FRESH` gate otherwise
+- Use `--polymarket-rpc-url` when Polygon preflight or hedge RPC should differ from the main Pandora `--rpc-url`.
+  - comma-separated RPC fallbacks are tried in order during live preflight
+  - live preflight precedence is `--polymarket-rpc-url`, then `POLYMARKET_RPC_URL`, then `--rpc-url`
+- Runtime reserve provenance is explicit in sync payloads.
+  - `snapshots[].metrics.reserveSource`, `snapshots[].actionPlan.reserveSource`, and the reserve context payload tell you whether sizing used `verify-payload` reserves or `onchain:outcome-token-balances`
+  - `reserveReadAt` / `reserveReadError` show when the runtime reserve refresh happened and whether it degraded
+  - `rebalanceSizingMode`, `rebalanceSizingBasis`, and `rebalanceTargetUsdc` show whether the sync leg used atomic target sizing or an incremental fallback
+- Prefer `--rebalance-mode atomic --price-source on-chain` for live mirror sync.
+  - `atomic` sizes the Pandora rebalance leg against the current source-vs-Pandora target price in one move when reserves are available
+  - `incremental` is a fallback/debug mode that sizes by observed drift instead of solving for the target price
+  - `on-chain` refreshes Pandora outcome-token balances before sizing; live mode now fails closed if that reserve refresh is unavailable
+  - `indexer` reuses verify payload reserves and is mainly for paper/debug runs
+- Live mode also rejects stale polled Polymarket data, not just explicit cache snapshots.
+  - short-interval sports sync expects websocket-backed source prices
+  - if the source is too old or stream-backed prices were expected but not available, the `POLYMARKET_SOURCE_FRESH` gate blocks execution
+
+## Polymarket funding and proxy wallet
+
+- `POLYMARKET_FUNDER` / `--funder` must point at the Polymarket proxy wallet (Gnosis Safe), not the signer EOA.
+- Live CLOB collateral is Polygon USDC.e on that proxy wallet.
+- Use `pandora polymarket balance --funder <proxy>` before live sync to inspect signer and proxy balances.
+- Use `pandora polymarket deposit --amount-usdc <n> --dry-run|--execute` to move USDC.e from signer to proxy. `pandora polymarket withdraw` can preview moving funds back or to `--to`, but execute mode only works when the signer controls the source wallet; proxy-originated withdrawals typically require manual execution from the proxy wallet.
+- Treat proxy funding as a separate prerequisite from ETH-mainnet Pandora capital. A healthy Pandora signer balance does not mean the Polygon hedge wallet is funded.
 
 ## Validation contract
 
@@ -96,6 +132,8 @@ pandora mirror go \
   --polymarket-slug <slug> \
   --liquidity-usdc 10 \
   --category Sports \
+  --rebalance-mode atomic \
+  --price-source on-chain \
   --paper
 ```
 
@@ -116,17 +154,49 @@ pandora mirror verify \
 ```bash
 pandora mirror sync run --market-address <pandora-market> --polymarket-slug <slug> --paper
 pandora mirror status --strategy-hash <hash> --with-live
+pandora polymarket balance --funder <proxy-wallet>
 ```
 
 ### 8. Close out deterministically
 ```bash
 pandora mirror close --pandora-market-address <0x...> --polymarket-market-id <id> --dry-run
+pandora mirror pnl --strategy-hash <hash>
+pandora mirror pnl --market-address <pandora_market> --polymarket-market-id <poly_market_id>
+pandora mirror audit --strategy-hash <hash> --with-live
+pandora mirror audit --market-address <pandora_market> --polymarket-market-id <poly_market_id>
 ```
 
 ## Sync and daemon notes
 - `mirror sync run|once|start` use the same mirror payload assumptions built during deploy/go.
+- `mirror sync run` is the foreground loop.
+  - `--stream|--no-stream` only applies to `run`
+  - `--daemon` is a `run`/family concept; use `mirror sync start` for the detached path
 - `mirror sync stop|status` can target `--strategy-hash <hash>` or an explicit `--pid-file <path>`.
+- `mirror sync status` is the daemon-health surface.
+  - key metadata fields are `status`, `alive`, `checkedAt`, `pidFile`, `logFile`, and `metadata.pidAlive`
+  - stop responses also add `signalSent`, `forceKilled`, and `exitObserved`
+- `mirror status` is the persisted-state dashboard for a strategy hash or state file.
+  - `runtime.health.status` can be `running`, `idle`, `blocked`, `degraded`, `stale`, or `error`
+  - start with `runtime.health.code`, `runtime.health.message`, `runtime.health.heartbeatAgeMs`, `runtime.pendingAction`, `runtime.lastAction`, and `runtime.lastError`
+  - `blocked` states such as `PENDING_ACTION_LOCK*` or `LAST_ACTION_REQUIRES_REVIEW` are fail-closed; reconcile before restarting or sending another live trade
+  - `stale` means daemon metadata still reports alive but the heartbeat aged past threshold; inspect pid/log state before trusting it
+- `mirror status --with-live` is the live diagnostic surface for an existing mirror.
+  - `live.verifyDiagnostics` carries verify-time feed/match warnings
+  - `live.polymarketPosition.diagnostics` carries balance/open-order visibility warnings instead of hard-failing when that view is partial
+  - `--drift-trigger-bps`, `--hedge-trigger-usdc`, `--indexer-url`, `--timeout-ms`, and Polymarket host/mock overrides all apply to this live diagnostic projection path
+  - the live payload also includes `sourceMarket`, `pandoraMarket`, `netPnlApproxUsdc`, `pnlApprox`, and `netDeltaApprox`
+  - `netPnlApproxUsdc` is cumulative LP fees approx minus cumulative hedge cost approx; `pnlApprox` adds marked Polymarket inventory; `pnlScenarios` projects current token payouts under each outcome
+  - these are operator estimates, not realized closeout proceeds, a full cross-chain trade ledger, or tax-ready accounting
+  - use `history`, `export`, `operations` receipts, and `polymarket balance` when you need reconciliation beyond the status dashboard
+- `mirror pnl` is the dedicated cross-venue scenario surface.
+  - it promotes the `mirror status --with-live` scenario model into a compact summary with `netPnlApproxUsdc`, `pnlApprox`, `netDeltaApprox`, `hedgeGapUsdc`, and projected resolution outcomes
+  - it also supports selector-first lookup when you do not have a persisted state file yet
+- `mirror audit` is the classified mirror execution ledger.
+  - it prefers the append-only mirror audit log when present and falls back to persisted action/alert state only when the ledger does not exist yet
+  - use `--with-live` when you need current cross-venue context attached next to the persisted or append-only history
 - `mirror close` is the deterministic closeout path for stop -> withdraw LP -> claim style cleanup.
+  - it runs `stop-daemons`, `withdraw-lp`, then `claim-winnings` in order
+  - it does **not** automatically settle remaining Polymarket hedge inventory; that remains manual in this command version
 
 ## Compatibility aliases
 - mode aliases:

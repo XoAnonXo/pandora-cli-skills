@@ -15,6 +15,131 @@ function requireStringDep(deps, name) {
   return value;
 }
 
+function parseAddressFlagValue(CliError, value, flagName) {
+  const normalized = String(value || '').trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(normalized)) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a valid address.`);
+  }
+  return normalized.toLowerCase();
+}
+
+function requireFlagValue(args, index, flagName, CliError) {
+  const value = args[index + 1];
+  if (typeof value !== 'string' || value.startsWith('--')) {
+    throw new CliError('MISSING_REQUIRED_FLAG', `Missing value for ${flagName}.`);
+  }
+  return value;
+}
+
+function parsePositiveNumberFlag(value, flagName, CliError) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a positive number.`);
+  }
+  return numeric;
+}
+
+function parsePolymarketFundingFlags(actionArgs, actionLabel, CliError, parsePolymarketSharedFlags) {
+  const options = {
+    amountUsdc: null,
+    to: null,
+    dryRun: false,
+    execute: false,
+    rpcUrl: null,
+    privateKey: null,
+    funder: null,
+    fork: false,
+    forkRpcUrl: null,
+    forkChainId: null,
+  };
+
+  const sharedArgs = [];
+  for (let i = 0; i < actionArgs.length; i += 1) {
+    const token = actionArgs[i];
+    if (token === '--amount-usdc') {
+      options.amountUsdc = parsePositiveNumberFlag(
+        requireFlagValue(actionArgs, i, '--amount-usdc', CliError),
+        '--amount-usdc',
+        CliError,
+      );
+      i += 1;
+      continue;
+    }
+    if (token === '--to') {
+      options.to = parseAddressFlagValue(
+        CliError,
+        requireFlagValue(actionArgs, i, '--to', CliError),
+        '--to',
+      );
+      i += 1;
+      continue;
+    }
+    if (token === '--dry-run') {
+      options.dryRun = true;
+      continue;
+    }
+    if (token === '--execute') {
+      options.execute = true;
+      continue;
+    }
+    sharedArgs.push(token);
+  }
+
+  if (options.dryRun === options.execute) {
+    throw new CliError('INVALID_ARGS', `polymarket ${actionLabel} requires exactly one mode: --dry-run or --execute.`);
+  }
+  if (options.amountUsdc === null) {
+    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing --amount-usdc <amount>.');
+  }
+
+  const shared = parsePolymarketSharedFlags(sharedArgs, actionLabel);
+  return {
+    ...options,
+    rpcUrl: shared.rpcUrl,
+    privateKey: shared.privateKey,
+    funder: shared.funder,
+    fork: shared.fork,
+    forkRpcUrl: shared.forkRpcUrl,
+    forkChainId: shared.forkChainId,
+  };
+}
+
+function parsePolymarketBalanceFlags(actionArgs, CliError, parsePolymarketSharedFlags) {
+  const options = {
+    wallet: null,
+    rpcUrl: null,
+    privateKey: null,
+    funder: null,
+    fork: false,
+    forkRpcUrl: null,
+    forkChainId: null,
+  };
+  const sharedArgs = [];
+  for (let i = 0; i < actionArgs.length; i += 1) {
+    const token = actionArgs[i];
+    if (token === '--wallet') {
+      options.wallet = parseAddressFlagValue(
+        CliError,
+        requireFlagValue(actionArgs, i, '--wallet', CliError),
+        '--wallet',
+      );
+      i += 1;
+      continue;
+    }
+    sharedArgs.push(token);
+  }
+  const shared = parsePolymarketSharedFlags(sharedArgs, 'balance');
+  return {
+    ...options,
+    rpcUrl: shared.rpcUrl,
+    privateKey: shared.privateKey,
+    funder: shared.funder,
+    fork: shared.fork,
+    forkRpcUrl: shared.forkRpcUrl,
+    forkChainId: shared.forkChainId,
+  };
+}
+
 /**
  * Creates `polymarket` command runner.
  * @param {object} deps
@@ -43,6 +168,17 @@ function createRunPolymarketCommand(deps) {
   const renderSingleEntityTable = requireDep(deps, 'renderSingleEntityTable');
   const defaultEnvFile = requireStringDep(deps, 'defaultEnvFile');
   const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
+  const opsService = typeof deps.runPolymarketBalance === 'function'
+    && typeof deps.runPolymarketDeposit === 'function'
+    && typeof deps.runPolymarketWithdraw === 'function'
+      ? null
+      : require('./polymarket_ops_service.cjs');
+  const runPolymarketBalance =
+    typeof deps.runPolymarketBalance === 'function' ? deps.runPolymarketBalance : opsService.runPolymarketBalance;
+  const runPolymarketDeposit =
+    typeof deps.runPolymarketDeposit === 'function' ? deps.runPolymarketDeposit : opsService.runPolymarketDeposit;
+  const runPolymarketWithdraw =
+    typeof deps.runPolymarketWithdraw === 'function' ? deps.runPolymarketWithdraw : opsService.runPolymarketWithdraw;
 
   function toCliError(err, fallbackCode, fallbackMessage) {
     if (err && err.code) {
@@ -74,7 +210,7 @@ function createRunPolymarketCommand(deps) {
     const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] polymarket check|approve|preflight|trade ...';
+      const usage = 'pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ...';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'polymarket.help', commandHelpPayload(usage));
       } else {
@@ -90,6 +226,12 @@ function createRunPolymarketCommand(deps) {
         console.log('  approve --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]');
         // eslint-disable-next-line no-console
         console.log('  preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]');
+        // eslint-disable-next-line no-console
+        console.log('  balance [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]');
+        // eslint-disable-next-line no-console
+        console.log('  deposit --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]');
+        // eslint-disable-next-line no-console
+        console.log('  withdraw --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]');
         // eslint-disable-next-line no-console
         console.log(
           '  trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
@@ -202,6 +344,91 @@ function createRunPolymarketCommand(deps) {
         forkRpcUrl: runtime.rpcUrl || null,
       };
       emitSuccess(context.outputMode, 'polymarket.preflight', payload, renderPolymarketPreflightTable);
+      return;
+    }
+
+    if (action === 'balance') {
+      if (includesHelpFlag(actionArgs)) {
+        const usage =
+          'pandora [--output table|json] polymarket balance [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
+        if (context.outputMode === 'json') {
+          emitSuccess(context.outputMode, 'polymarket.balance.help', commandHelpPayload(usage));
+        } else {
+          // eslint-disable-next-line no-console
+          console.log(`Usage: ${usage}`);
+        }
+        return;
+      }
+
+      const options = parsePolymarketBalanceFlags(actionArgs, CliError, parsePolymarketSharedFlags);
+      const runtime = resolvePolymarketForkRuntime(options);
+      if (runtime.mode === 'fork') {
+        options.rpcUrl = runtime.rpcUrl;
+      }
+      let payload;
+      try {
+        payload = await runPolymarketBalance(options);
+      } catch (err) {
+        throw toCliError(err, 'POLYMARKET_BALANCE_FAILED', 'Polymarket balance failed.');
+      }
+      payload.runtime = {
+        ...(payload.runtime && typeof payload.runtime === 'object' ? payload.runtime : {}),
+        mode: runtime.mode,
+        forkChainId: runtime.chainId,
+        forkRpcUrl: runtime.rpcUrl || null,
+      };
+      emitSuccess(context.outputMode, 'polymarket.balance', payload, renderSingleEntityTable);
+      return;
+    }
+
+    if (action === 'deposit' || action === 'withdraw') {
+      if (includesHelpFlag(actionArgs)) {
+        const usage = action === 'withdraw'
+          ? 'pandora [--output table|json] polymarket withdraw --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]  # execute only when signer controls the source wallet'
+          : 'pandora [--output table|json] polymarket deposit --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
+        if (context.outputMode === 'json') {
+          emitSuccess(context.outputMode, `polymarket.${action}.help`, commandHelpPayload(usage));
+        } else {
+          // eslint-disable-next-line no-console
+          console.log(`Usage: ${usage}`);
+          if (action === 'withdraw') {
+            // eslint-disable-next-line no-console
+            console.log('Note: execute mode only works when the signer controls the source wallet. Proxy-originated withdrawals usually need manual execution from the proxy wallet.');
+          }
+        }
+        return;
+      }
+
+      const options = parsePolymarketFundingFlags(actionArgs, action, CliError, parsePolymarketSharedFlags);
+      if (options.execute && assertLiveWriteAllowed) {
+        await assertLiveWriteAllowed(`polymarket.${action}.execute`, {
+          notionalUsdc: options.amountUsdc,
+          runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+        });
+      }
+      const runtime = resolvePolymarketForkRuntime(options);
+      if (runtime.mode === 'fork') {
+        options.rpcUrl = runtime.rpcUrl;
+      }
+      let payload;
+      try {
+        payload = action === 'deposit'
+          ? await runPolymarketDeposit(options)
+          : await runPolymarketWithdraw(options);
+      } catch (err) {
+        throw toCliError(
+          err,
+          action === 'deposit' ? 'POLYMARKET_DEPOSIT_FAILED' : 'POLYMARKET_WITHDRAW_FAILED',
+          `Polymarket ${action} failed.`,
+        );
+      }
+      payload.runtime = {
+        ...(payload.runtime && typeof payload.runtime === 'object' ? payload.runtime : {}),
+        mode: runtime.mode,
+        forkChainId: runtime.chainId,
+        forkRpcUrl: runtime.rpcUrl || null,
+      };
+      emitSuccess(context.outputMode, `polymarket.${action}`, payload, renderSingleEntityTable);
       return;
     }
 
@@ -365,7 +592,7 @@ function createRunPolymarketCommand(deps) {
       return;
     }
 
-    throw new CliError('INVALID_ARGS', 'polymarket requires subcommand: check|approve|preflight|trade');
+    throw new CliError('INVALID_ARGS', 'polymarket requires subcommand: check|approve|preflight|balance|deposit|withdraw|trade');
   };
 }
 

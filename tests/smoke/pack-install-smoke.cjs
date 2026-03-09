@@ -545,7 +545,7 @@ print(json.dumps({
     ensureExitCode(mirrorHelp, 0, 'pandora mirror --help');
     ensureOutputContains(
       mirrorHelp,
-      /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|simulate\|go\|sync\|status\|close/,
+      /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|simulate\|go\|sync\|status\|pnl\|audit\|close/,
       'pandora mirror --help',
     );
 

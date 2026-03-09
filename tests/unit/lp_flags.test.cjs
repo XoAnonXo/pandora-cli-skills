@@ -114,3 +114,24 @@ test('parseLpFlags rejects --all-markets combined with --market-address', () => 
     },
   );
 });
+
+test('parseLpFlags accepts simulate-remove preview mode without dry-run/execute', () => {
+  const parseLpFlags = buildParser();
+  const options = parseLpFlags(['simulate-remove', '--market-address', TEST_MARKET, '--lp-tokens', '12.5']);
+  assert.equal(options.action, 'simulate-remove');
+  assert.equal(options.lpTokens, 12.5);
+  assert.equal(options.dryRun, false);
+  assert.equal(options.execute, false);
+});
+
+test('parseLpFlags rejects simulate-remove with execute flags', () => {
+  const parseLpFlags = buildParser();
+  assert.throws(
+    () => parseLpFlags(['simulate-remove', '--market-address', TEST_MARKET, '--lp-tokens', '12.5', '--dry-run']),
+    (error) => {
+      assert.equal(error.code, 'INVALID_ARGS');
+      assert.match(error.message, /preview-only/i);
+      return true;
+    },
+  );
+});

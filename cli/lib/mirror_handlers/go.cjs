@@ -1,3 +1,5 @@
+const { normalizeMirrorRebalanceTradeOptions, selectHealthyPolymarketRpc } = require('./sync.cjs');
+
 /**
  * Handle `mirror go` command execution.
  * Orchestrates plan -> deploy -> verify -> optional sync/trade flow and emits a combined payload.
@@ -5,6 +7,10 @@
  * @returns {Promise<void>}
  */
 module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGoUsage }) {
+  const selectPolymarketRpc =
+    deps && typeof deps.selectHealthyPolymarketRpc === 'function'
+      ? deps.selectHealthyPolymarketRpc
+      : selectHealthyPolymarketRpc;
   const {
     CliError,
     includesHelpFlag,
@@ -23,6 +29,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     runLivePolymarketPreflightForMirror,
     runMirrorSync,
     buildQuotePayload,
+    enforceTradeRiskGuards,
     executeTradeOnchain,
     assertLiveWriteAllowed,
     renderMirrorSyncTickLine,
@@ -243,12 +250,35 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     if (options.autoSync) {
       if (options.executeLive) {
         try {
-          polymarketPreflight = await runLivePolymarketPreflightForMirror({
-            rpcUrl: options.polymarketRpcUrl || options.rpcUrl,
+          const rpcSelection = await selectPolymarketRpc({
             polymarketRpcUrl: options.polymarketRpcUrl,
+            rpcUrl: options.rpcUrl,
+            timeoutMs: shared.timeoutMs,
+            env: process.env,
+          });
+          if (rpcSelection.attempts.length && !rpcSelection.selectedRpcUrl) {
+            throw new CliError(
+              'POLYMARKET_RPC_UNREACHABLE',
+              'Unable to reach a Polygon RPC endpoint for Polymarket preflight.',
+              rpcSelection,
+            );
+          }
+          const selectedPolymarketRpcUrl =
+            rpcSelection.selectedRpcUrl || options.polymarketRpcUrl || options.rpcUrl || null;
+          polymarketPreflight = await runLivePolymarketPreflightForMirror({
+            rpcUrl: selectedPolymarketRpcUrl || options.rpcUrl,
+            polymarketRpcUrl: selectedPolymarketRpcUrl,
             privateKey: options.privateKey,
             funder: options.funder,
           });
+          if (rpcSelection.attempts.length) {
+            const existingDiagnostics = Array.isArray(polymarketPreflight.diagnostics) ? polymarketPreflight.diagnostics : [];
+            polymarketPreflight = {
+              ...polymarketPreflight,
+              rpcSelection,
+              diagnostics: existingDiagnostics.concat(rpcSelection.diagnostics),
+            };
+          }
         } catch (err) {
           throw coerceMirrorServiceError(err, 'MIRROR_GO_PREFLIGHT_FAILED');
         }
@@ -261,6 +291,8 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         executeLive: options.executeLive,
         hedgeEnabled: !options.noHedge,
         hedgeRatio: options.hedgeRatio,
+        rebalanceSizingMode: options.rebalanceSizingMode,
+        priceSource: options.priceSource,
         intervalMs: options.syncIntervalMs,
         driftTriggerBps: options.driftTriggerBps,
         hedgeTriggerUsdc: options.hedgeTriggerUsdc,
@@ -273,7 +305,9 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
           ? options.maxTradesPerDay
           : Number.MAX_SAFE_INTEGER,
         cooldownMs: options.cooldownMs,
-        depthSlippageBps: 100,
+        depthSlippageBps: options.depthSlippageBps,
+        minTimeToCloseSec: options.minTimeToCloseSec,
+        strictCloseTimeDelta: options.strictCloseTimeDelta,
         iterations: options.syncOnce ? 1 : null,
         stateFile: null,
         killSwitchFile: null,
@@ -306,26 +340,17 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
       try {
         syncPayload = await runMirrorSync(syncOptions, {
           rebalanceFn: async (executionOptions) => {
-            const tradeOptions = {
-              marketAddress: executionOptions.marketAddress,
-              side: executionOptions.side,
-              amountUsdc: executionOptions.amountUsdc,
-              yesPct: null,
-              slippageBps: 150,
-              dryRun: false,
-              execute: true,
-              minSharesOutRaw: null,
-              maxAmountUsdc: executionOptions.amountUsdc,
-              minProbabilityPct: null,
-              maxProbabilityPct: null,
-              allowUnquotedExecute: true,
+            const tradeOptions = normalizeMirrorRebalanceTradeOptions(executionOptions, {
               chainId: options.chainId,
               rpcUrl: options.rpcUrl,
+              fork: options.fork,
+              forkRpcUrl: options.forkRpcUrl,
+              forkChainId: options.forkChainId,
               privateKey: options.privateKey,
               profileId: options.profileId || null,
               profileFile: options.profileFile || null,
               usdc: options.usdc,
-            };
+            });
             if (typeof assertLiveWriteAllowed === 'function') {
               await assertLiveWriteAllowed('mirror.go.sync.execute', {
                 notionalUsdc: executionOptions.amountUsdc,
@@ -333,6 +358,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
               });
             }
             const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
+            enforceTradeRiskGuards(tradeOptions, quote);
             const execution = await executeTradeOnchain(tradeOptions);
             return {
               ...execution,
@@ -362,6 +388,22 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         options.polymarketRpcUrl ? `--polymarket-rpc-url ${options.polymarketRpcUrl}` : null,
         `--drift-trigger-bps ${options.driftTriggerBps}`,
         `--hedge-trigger-usdc ${options.hedgeTriggerUsdc}`,
+        `--hedge-ratio ${options.hedgeRatio}`,
+        `--rebalance-mode ${options.rebalanceSizingMode}`,
+        `--price-source ${options.priceSource}`,
+        !options.hedgeEnabled ? '--no-hedge' : null,
+        `--max-rebalance-usdc ${options.maxRebalanceUsdc}`,
+        `--max-hedge-usdc ${options.maxHedgeUsdc}`,
+        Number.isFinite(options.maxOpenExposureUsdc) && options.maxOpenExposureUsdc !== Number.POSITIVE_INFINITY
+          ? `--max-open-exposure-usdc ${options.maxOpenExposureUsdc}`
+          : null,
+        Number.isFinite(options.maxTradesPerDay) && options.maxTradesPerDay !== Number.MAX_SAFE_INTEGER
+          ? `--max-trades-per-day ${options.maxTradesPerDay}`
+          : null,
+        `--cooldown-ms ${options.cooldownMs}`,
+        `--depth-slippage-bps ${options.depthSlippageBps}`,
+        options.minTimeToCloseSec !== 1800 ? `--min-time-to-close-sec ${options.minTimeToCloseSec}` : null,
+        options.strictCloseTimeDelta ? '--strict-close-time-delta' : null,
         options.forceGate
           ? '--skip-gate'
           : Array.isArray(options.skipGateChecks) && options.skipGateChecks.length

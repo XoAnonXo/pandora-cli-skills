@@ -100,18 +100,19 @@ pandora [--output table|json] export --wallet <address> --format csv|json [--cha
 pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--iterations <n>] [--interval-ms <ms>] [--indexer-url <url>] [--timeout-ms <ms>]
 pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]  # compatibility wrapper; legacy/debug only
 pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
-pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...
+pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|pnl|audit|close ...
 pandora [--output table|json] policy list|get|lint [flags]
 pandora [--output table|json] profile list|get|explain|validate [flags]
 pandora [--output table|json] simulate mc|particle-filter|agents ...
 pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...
-pandora [--output table|json] polymarket check|approve|preflight|trade ...
+pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ...
 pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
 pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
 pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
 pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
-pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]
+pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--watch] [--watch-interval-ms <ms>] [--watch-timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]
 pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+pandora [--output table|json] lp simulate-remove --market-address <address> [--wallet <address>] [--lp-tokens <n>|--all] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]
 pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
 pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]  # terminal mutable operations also emit durable receipt artifacts beside the operation store
 pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
@@ -172,16 +173,46 @@ pandora clone-bet [--dotenv-path <path>] [--skip-dotenv] [script args...]
 ```text
 browse --min-yes-pct <n> --max-yes-pct <n> --min-volume-24h <n> [--closes-after <date>|--end-date-after <date|72h>] [--closes-before <date>|--end-date-before <date|72h>] [--question-contains <text>|--keyword <text>] [--slug <text>] [--category sports|crypto|politics|entertainment] [--exclude-sports] [--sort-by volume24h|liquidity|endDate] [--limit <n>] [--chain-id <id>] [--polymarket-tag-id <id>] [--polymarket-tag-ids <csv>] [--sport-tag-id <id>] [--sport-tag-ids <csv>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 plan   --source polymarket --polymarket-market-id <id>|--polymarket-slug <slug> [--chain-id <id>] [--target-slippage-bps <n>] [--turnover-target <n>] [--depth-slippage-bps <n>] [--safety-multiplier <n>] [--min-liquidity-usdc <n>] [--max-liquidity-usdc <n>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
-deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <0-100>] [--distribution-no-pct <0-100>] [--rules <text>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--min-close-lead-seconds <n>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
+deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]
 verify --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--trust-deploy] [--manifest-file <path>] [--include-similarity] [--with-rules] [--allow-rule-mismatch] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 lp-explain --liquidity-usdc <n> [--source-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>]
 hedge-calc [--reserve-yes-usdc <n> --reserve-no-usdc <n>] [--excess-yes-usdc <n>] [--excess-no-usdc <n>] [--polymarket-yes-pct <0-100>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--volume-scenarios <csv>] [--pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>]
 simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--polymarket-yes-pct <0-100>]
-go     --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>]
-sync run|once|start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <n>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
-status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>]
+go     --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]
+sync run|once|start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
+status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
 close  --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]
 ```
+
+Mirror runtime notes:
+- `mirror go` and `mirror sync` stay in paper/simulated mode unless you explicitly pass `--execute-live` or `--execute`.
+- Live `mirror sync` requires both `--max-open-exposure-usdc` and `--max-trades-per-day`.
+- `mirror sync` runs Pandora rebalance and Polymarket hedge as separate legs; cross-venue settlement is not atomic.
+- `mirror go --auto-sync` inherits the same separate-leg sync semantics and forwards `--strict-close-time-delta` to the sync daemon when requested.
+- `mirror sync` surfaces reserve provenance via `snapshots[].metrics.reserveSource`, `snapshots[].actionPlan.reserveSource`, and executed action payloads.
+  - `onchain:outcome-token-balances` means runtime refreshed Pandora reserves from on-chain outcome token balances before sizing.
+  - `verify-payload` means sizing used the verify payload reserve snapshot.
+- `mirror sync` also surfaces `rebalanceSizingMode`, `rebalanceSizingBasis`, and `rebalanceTargetUsdc` so atomic-vs-incremental sizing truth is explicit in payloads.
+- `mirror go` and `mirror sync` accept `--rebalance-mode atomic|incremental` and `--price-source on-chain|indexer`.
+  - use `atomic + on-chain` for the intended live path
+  - use `incremental` or `indexer` only when you intentionally want fallback/debug behavior
+- `--min-time-to-close-sec` defaults to `1800`, and the runtime raises the effective floor to `max(--min-time-to-close-sec, ceil(--interval-ms / 1000) * 2)`.
+- Startup refusal for a too-small close window returns `MIRROR_EXPIRY_TOO_CLOSE`.
+- `--strict-close-time-delta` promotes `CLOSE_TIME_DELTA` from diagnostic-only to blocking; otherwise the Pandora close window remains the hard gate.
+- Paper mode can reuse cached or stale Polymarket snapshots. Live mode blocks cached and stale sources through the `POLYMARKET_SOURCE_FRESH` gate.
+- short-interval sports sync also expects websocket-backed Polymarket prices; if only stale polled prices are available, live mode blocks instead of trading on outdated source prices.
+- `--polymarket-rpc-url` is the preferred Polygon preflight/hedge RPC override and accepts comma-separated fallbacks. Precedence is `--polymarket-rpc-url`, then `POLYMARKET_RPC_URL`, then `--rpc-url`.
+- `mirror sync status` returns daemon-health metadata such as `status`, `alive`, `checkedAt`, `pidFile`, `logFile`, and `metadata.pidAlive`.
+- `mirror status` always includes `runtime.health`, `runtime.daemon`, `runtime.lastAction`, `runtime.lastError`, `runtime.pendingAction`, and recent `runtime.alerts` when strategy metadata can be resolved.
+- `runtime.health.status` is the operator rollup and can be `running`, `idle`, `blocked`, `degraded`, `stale`, or `error`.
+  - start with `runtime.health.code`, `runtime.health.message`, `runtime.health.heartbeatAgeMs`, `runtime.pendingAction`, `runtime.lastAction`, and `runtime.lastError`
+  - blocked states such as `PENDING_ACTION_LOCK*` or `LAST_ACTION_REQUIRES_REVIEW` are fail-closed; reconcile before restarting live execution
+- `mirror status --with-live` adds `crossVenue`, `hedgeStatus`, `actionability`, `actionableDiagnostics`, `pnlScenarios`, `verifyDiagnostics`, `polymarketPosition.diagnostics`, `sourceMarket`, `pandoraMarket`, `netPnlApproxUsdc`, `pnlApprox`, and `netDeltaApprox`, and degrades partial live visibility into diagnostics instead of hard failures.
+- `mirror pnl` promotes that live scenario model into a dedicated cross-venue summary surface and can run selector-first without a persisted state file.
+- `mirror audit` prefers the append-only mirror audit log, falls back to persisted execution state plus alerts when needed, and can attach live context with `--with-live`.
+- `live.netPnlApproxUsdc` is cumulative LP fees approx minus cumulative hedge cost approx. `live.pnlApprox` adds marked Polymarket inventory on top, and `live.pnlScenarios` projects current token payouts under each outcome.
+- These status and P&L fields are operator diagnostics, not realized accounting, a full trade ledger, or a substitute for `history`, `export`, `operations` receipts, or post-close reconciliation.
+- `mirror close` runs `stop-daemons`, `withdraw-lp`, then `claim-winnings`. Polymarket hedge settlement remains manual in this command version.
 
 ## Polymarket subcommands
 
@@ -189,8 +220,25 @@ close  --pandora-market-address <address>|--market-address <address> --polymarke
 check [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
 approve --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
 preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
+balance [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
+deposit --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
+withdraw --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
 trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
 ```
+
+- `POLYMARKET_FUNDER` / `--funder` must identify the Polymarket proxy wallet (Gnosis Safe), not the signer EOA.
+- `balance` is the quick proxy/signer funding surface for live mirror hedges.
+- `deposit` moves Polygon USDC.e from signer to proxy by default. `withdraw` can preview moving collateral back from proxy to signer (or to `--to`), but execute mode only works when the signer controls the source wallet; proxy-originated withdrawals usually require manual execution from the proxy wallet.
+- `deposit` / `withdraw` are funding transfers, not CLOB order placement.
+- `polymarket check|approve|preflight|balance|deposit|withdraw|trade --rpc-url` accepts comma-separated Polygon RPC fallbacks and tries them in order.
+- Explicit `--rpc-url` still wins over `POLYMARKET_RPC_URL`, which still wins over `RPC_URL`.
+
+## Resolve notes
+
+- `resolve --watch` repeatedly runs dry-run prechecks until the market becomes executable.
+- Combine `--watch --execute` to submit automatically once finalization opens.
+- The dry-run precheck is the surface to read `currentEpoch`, `finalizationEpoch`, `epochsUntilFinalization`, and `claimable` instead of guessing from a revert.
+- For mirror exits, the preferred order is `mirror close --dry-run`, then `resolve --dry-run --watch` or `resolve --execute --watch`, then `claim --dry-run|--execute`.
 
 ## Simulate and model subcommands
 
@@ -326,7 +374,21 @@ pandora mirror plan --source polymarket --polymarket-market-id <id> --with-rules
 pandora mirror deploy --polymarket-slug <slug> --liquidity-usdc 10 --category Sports --sources <url1> <url2> --dry-run
 pandora mirror go --polymarket-slug <slug> --liquidity-usdc 10 --category Sports --paper
 pandora mirror sync once --pandora-market-address <0x...> --polymarket-market-id <id> --paper --hedge-ratio 1.0
+pandora mirror sync status --strategy-hash <hash>
+pandora mirror status --strategy-hash <hash> --with-live
+pandora mirror pnl --strategy-hash <hash>
+pandora mirror pnl --market-address <pandora_market> --polymarket-market-id <poly_market_id>
+pandora mirror audit --strategy-hash <hash> --with-live
+pandora mirror audit --market-address <pandora_market> --polymarket-market-id <poly_market_id>
 pandora mirror close --pandora-market-address <0x...> --polymarket-market-id <id> --dry-run
+```
+
+### Resolve and Polymarket
+```bash
+pandora polymarket balance --funder 0x...
+pandora polymarket deposit --amount-usdc 250 --dry-run --funder 0x...
+pandora resolve --poll-address 0x... --answer yes --reason "Official final result" --dry-run --watch
+pandora resolve --poll-address 0x... --answer yes --reason "Official final result" --execute --watch
 ```
 
 ### Legacy script wrappers

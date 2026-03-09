@@ -19,7 +19,7 @@ function requireNumericDep(deps, name) {
 }
 
 /**
- * Creates parser for `lp add|remove|positions` command flags.
+ * Creates parser for `lp add|remove|positions|simulate-remove` command flags.
  * @param {object} deps
  * @returns {(args: string[]) => object}
  */
@@ -36,8 +36,8 @@ function createParseLpFlags(deps) {
 
   return function parseLpFlags(args) {
     const action = args[0];
-    if (!action || !['add', 'remove', 'positions'].includes(action)) {
-      throw new CliError('INVALID_ARGS', 'lp requires subcommand add|remove|positions.');
+    if (!action || !['add', 'remove', 'positions', 'simulate-remove'].includes(action)) {
+      throw new CliError('INVALID_ARGS', 'lp requires subcommand add|remove|positions|simulate-remove.');
     }
 
     const rest = args.slice(1);
@@ -191,6 +191,26 @@ function createParseLpFlags(deps) {
     if (action === 'positions') {
       if (!options.wallet) {
         throw new CliError('MISSING_REQUIRED_FLAG', 'Missing wallet address. Use --wallet <address>.');
+      }
+      assertNoMixedSignerSelectors(options, CliError);
+      return options;
+    }
+
+    if (action === 'simulate-remove') {
+      if (!options.marketAddress) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market address. Use --market-address <address>.');
+      }
+      if (options.allMarkets) {
+        throw new CliError('INVALID_ARGS', '--all-markets is not supported for lp simulate-remove.');
+      }
+      if (options.lpTokens === null && !options.lpAll) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing LP token amount. Use --lp-tokens <amount> or --all.');
+      }
+      if (options.lpTokens !== null && options.lpAll) {
+        throw new CliError('INVALID_ARGS', 'Use only one simulate-remove mode: --lp-tokens <amount> or --all.');
+      }
+      if (options.dryRun || options.execute) {
+        throw new CliError('INVALID_ARGS', 'lp simulate-remove is preview-only and does not accept --dry-run or --execute.');
       }
       assertNoMixedSignerSelectors(options, CliError);
       return options;

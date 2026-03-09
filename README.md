@@ -31,7 +31,7 @@ Node.js `>=18` required.
 - [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md)
   - portfolio inspection, history/export, LP exits, claim-all, and mirror closeout
 - [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md)
-  - mirror deploy/go safety, timing, validation, sync, and closeout guidance
+  - mirror deploy/go safety, timing, validation, sync close-window guards, live diagnostics, daemon health, and closeout guidance
 - [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
   - schema, MCP, JSON envelopes, recovery hints, fork runtime, and error codes
 - [`docs/skills/policy-profiles.md`](./docs/skills/policy-profiles.md)
@@ -181,6 +181,20 @@ Populate `.env` or process env with only the fields your live workflow actually 
 - `FACTORY`
 - `USDC`
 
+For Polymarket and live mirror hedging, also configure only the fields that path actually needs:
+- `POLYMARKET_PRIVATE_KEY`
+- `POLYMARKET_FUNDER`
+- `POLYMARKET_RPC_URL`
+- `POLYMARKET_API_KEY`
+- `POLYMARKET_API_SECRET`
+- `POLYMARKET_API_PASSPHRASE`
+- `POLYMARKET_HOST`
+
+Operator notes:
+- `POLYMARKET_FUNDER` / `--funder` must be the Polymarket proxy wallet (Gnosis Safe), not the signer EOA.
+- Polymarket CLOB collateral is Polygon USDC.e. Use `pandora polymarket balance --funder <proxy>` to inspect signer/proxy balances and `pandora polymarket deposit` to move USDC.e from signer to proxy. `pandora polymarket withdraw` can preview proxy-to-signer transfers, but execute mode only works when the signer controls the source wallet; proxy-originated withdrawals usually require manual execution from the proxy wallet itself.
+- `pandora mirror status --with-live` is an operator dashboard. `netPnlApproxUsdc`, `pnlApprox`, and `pnlScenarios` are scenario or mark-to-market approximations, not realized accounting or a tax-ready audit trail.
+
 ## Standalone SDKs And Contract Export
 
 Current shipped consumer paths:
@@ -283,6 +297,9 @@ Run that only from a repository checkout. The published npm package ships the ge
 - Polymarket, Gamma, and CLOB URLs are discovery inputs only and are not valid `--sources`.
 - Validation is exact-payload: validate the final `question`, `rules`, `sources`, and `targetTimestamp` before execute mode.
 - CLI mirror execute reruns use `--validation-ticket`; MCP execute/live reruns use `agentPreflight`.
+- `mirror sync` is still separate-leg execution, not an atomic cross-venue settlement path. Prefer `--rebalance-mode atomic --price-source on-chain` when you want the single-rebalance sizing path.
+- `mirror status --with-live` is the cross-venue status and hedge-gap dashboard, but its P&L fields remain approximate scenario surfaces rather than realized closeout accounting.
+- `mirror close` stops daemons and unwinds the Pandora side, but it does not auto-resolve or auto-settle Polymarket inventory. Use `pandora resolve --watch` after close when finalization is not yet open.
 
 ## PollCategory mapping
 - `Politics=0`

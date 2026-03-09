@@ -13,6 +13,25 @@ function requireNumericDep(deps, name) {
   return value;
 }
 
+function parseSecureUrlList(value, flagName, CliError, isSecureHttpUrlOrLocal) {
+  const rawEntries = String(value || '').split(',');
+  const normalized = [];
+  for (const entry of rawEntries) {
+    const candidate = String(entry || '').trim();
+    if (!candidate) {
+      throw new CliError('INVALID_FLAG_VALUE', `${flagName} must not contain empty RPC URL entries.`);
+    }
+    if (!isSecureHttpUrlOrLocal(candidate)) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `${flagName} must use https:// (or http://localhost/127.0.0.1 for local testing).`,
+      );
+    }
+    normalized.push(candidate);
+  }
+  return Array.from(new Set(normalized)).join(',');
+}
+
 /**
  * Creates parser for shared polymarket auth/network flags.
  * @param {object} deps
@@ -39,14 +58,12 @@ function createParsePolymarketSharedFlags(deps) {
     for (let i = 0; i < args.length; i += 1) {
       const token = args[i];
       if (token === '--rpc-url') {
-        const rpcUrl = requireFlagValue(args, i, '--rpc-url');
-        if (!isSecureHttpUrlOrLocal(rpcUrl)) {
-          throw new CliError(
-            'INVALID_FLAG_VALUE',
-            '--rpc-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
-          );
-        }
-        options.rpcUrl = rpcUrl;
+        options.rpcUrl = parseSecureUrlList(
+          requireFlagValue(args, i, '--rpc-url'),
+          '--rpc-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
@@ -132,6 +149,126 @@ function createParsePolymarketApproveFlags(deps) {
     }
 
     const shared = parsePolymarketSharedFlags(sharedArgs, 'approve');
+    options.rpcUrl = shared.rpcUrl;
+    options.privateKey = shared.privateKey;
+    options.funder = shared.funder;
+    options.fork = shared.fork;
+    options.forkRpcUrl = shared.forkRpcUrl;
+    options.forkChainId = shared.forkChainId;
+    return options;
+  };
+}
+
+/**
+ * Creates parser for `polymarket balance`.
+ * @param {object} deps
+ * @returns {(args: string[]) => object}
+ */
+function createParsePolymarketBalanceFlags(deps) {
+  const requireFlagValue = requireDep(deps, 'requireFlagValue');
+  const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
+  const parsePolymarketSharedFlags = requireDep(deps, 'parsePolymarketSharedFlags');
+
+  return function parsePolymarketBalanceFlags(args) {
+    const options = {
+      wallet: null,
+      rpcUrl: null,
+      privateKey: null,
+      funder: null,
+      fork: false,
+      forkRpcUrl: null,
+      forkChainId: null,
+    };
+
+    const sharedArgs = [];
+    for (let i = 0; i < args.length; i += 1) {
+      const token = args[i];
+      if (token === '--wallet') {
+        options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
+        i += 1;
+        continue;
+      }
+      sharedArgs.push(token);
+    }
+
+    const shared = parsePolymarketSharedFlags(sharedArgs, 'balance');
+    options.rpcUrl = shared.rpcUrl;
+    options.privateKey = shared.privateKey;
+    options.funder = shared.funder;
+    options.fork = shared.fork;
+    options.forkRpcUrl = shared.forkRpcUrl;
+    options.forkChainId = shared.forkChainId;
+    return options;
+  };
+}
+
+/**
+ * Creates parser for `polymarket deposit|withdraw`.
+ * @param {object} deps
+ * @returns {(args: string[], actionLabel?: string) => object}
+ */
+function createParsePolymarketFundingFlags(deps) {
+  const CliError = requireDep(deps, 'CliError');
+  const requireFlagValue = requireDep(deps, 'requireFlagValue');
+  const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
+  const parsePositiveNumber = requireDep(deps, 'parsePositiveNumber');
+  const parsePolymarketSharedFlags = requireDep(deps, 'parsePolymarketSharedFlags');
+
+  return function parsePolymarketFundingFlags(args, actionLabel = 'deposit') {
+    const options = {
+      amountUsdc: null,
+      to: null,
+      dryRun: false,
+      execute: false,
+      rpcUrl: null,
+      privateKey: null,
+      funder: null,
+      fork: false,
+      forkRpcUrl: null,
+      forkChainId: null,
+    };
+
+    const sharedArgs = [];
+    for (let i = 0; i < args.length; i += 1) {
+      const token = args[i];
+      if (token === '--amount-usdc' || token === '--amount') {
+        options.amountUsdc = parsePositiveNumber(
+          requireFlagValue(args, i, token),
+          token,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--to') {
+        options.to = parseAddressFlag(requireFlagValue(args, i, '--to'), '--to');
+        i += 1;
+        continue;
+      }
+      if (token === '--dry-run') {
+        options.dryRun = true;
+        continue;
+      }
+      if (token === '--execute') {
+        options.execute = true;
+        continue;
+      }
+      sharedArgs.push(token);
+    }
+
+    if (options.dryRun === options.execute) {
+      throw new CliError(
+        'INVALID_ARGS',
+        `polymarket ${actionLabel} requires exactly one mode: --dry-run or --execute.`,
+      );
+    }
+    if (options.amountUsdc === null) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'Missing amount. Use --amount <amount> or --amount-usdc <amount>.',
+      );
+    }
+
+    const shared = parsePolymarketSharedFlags(sharedArgs, actionLabel);
     options.rpcUrl = shared.rpcUrl;
     options.privateKey = shared.privateKey;
     options.funder = shared.funder;
@@ -288,5 +425,7 @@ function createParsePolymarketTradeFlags(deps) {
 module.exports = {
   createParsePolymarketSharedFlags,
   createParsePolymarketApproveFlags,
+  createParsePolymarketBalanceFlags,
+  createParsePolymarketFundingFlags,
   createParsePolymarketTradeFlags,
 };

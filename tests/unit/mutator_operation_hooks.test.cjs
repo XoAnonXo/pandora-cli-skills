@@ -257,6 +257,13 @@ test('mirror sync start keeps strategyHash but surfaces hook-created operationId
       resolveTrustedDeployPair: () => {
         throw new Error('not used');
       },
+      verifyMirror: async () => ({
+        expiry: {
+          pandoraTimeToExpirySec: 7200,
+          sourceTimeToExpirySec: 7200,
+          minTimeToExpirySec: 7200,
+        },
+      }),
       runLivePolymarketPreflightForMirror: async () => {
         throw new Error('not used');
       },
@@ -354,6 +361,13 @@ test('mirror sync start uses strategyHash as checkpoint correlation id when no c
       resolveTrustedDeployPair: () => {
         throw new Error('not used');
       },
+      verifyMirror: async () => ({
+        expiry: {
+          pandoraTimeToExpirySec: 7200,
+          sourceTimeToExpirySec: 7200,
+          minTimeToExpirySec: 7200,
+        },
+      }),
       runLivePolymarketPreflightForMirror: async () => {
         throw new Error('not used');
       },
@@ -450,6 +464,13 @@ test('mirror sync start falls back to strategyHash when create hook returns no i
       resolveTrustedDeployPair: () => {
         throw new Error('not used');
       },
+      verifyMirror: async () => ({
+        expiry: {
+          pandoraTimeToExpirySec: 7200,
+          sourceTimeToExpirySec: 7200,
+          minTimeToExpirySec: 7200,
+        },
+      }),
       runLivePolymarketPreflightForMirror: async () => {
         throw new Error('not used');
       },

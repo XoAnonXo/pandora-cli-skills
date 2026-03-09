@@ -43,7 +43,7 @@ Use the smallest scoped doc that matches the task:
   - TypeScript/Node SDK: standalone package identity `@thisispandora/agent-sdk`, repository path `sdk/typescript`, vendored root-package copy `pandora-cli-skills/sdk/typescript`
   - Python SDK: standalone package identity `pandora-agent`, repository path `sdk/python`, module name `pandora_agent`
   - shared contract bundle: standalone TypeScript subpath `@thisispandora/agent-sdk/generated`, repository/root bundle `sdk/generated`, vendored root-package subpath `pandora-cli-skills/sdk/generated`
-  - release flow builds and verifies standalone SDK artifacts for those identities; this doc does not claim public registry publication yet
+  - release flow builds and verifies standalone SDK artifacts for those identities; the current public packages are `@thisispandora/agent-sdk` and `pandora-agent`
 - Package layout matters:
   - shared JS contract export: `sdk/generated`
   - TypeScript embedded loader/manifest: `sdk/typescript/generated`
@@ -155,10 +155,10 @@ Notes:
 | Market discovery | `scan`, `markets list|get`, `polls list|get`, `positions list`, `events list|get` | `scan` is the enriched discovery path; `markets scan` is a compatibility alias for legacy/debug workflows. |
 | Sports data and consensus | `sports books list`, `sports events list|live`, `sports odds snapshot|bulk`, `sports consensus` | Focused on sportsbook inputs and operator-safe market prep. |
 | Market creation planning | `sports create plan`, `mirror plan`, `mirror browse` | `mirror plan` computes the sports-aware suggested `targetTimestamp`. |
-| Market deployment and verification | `mirror deploy`, `mirror verify`, `mirror go`, `resolve` | Mirror execute paths require payload validation and valid resolution sources. |
+| Market deployment and verification | `mirror deploy`, `mirror verify`, `mirror go`, `resolve` | Mirror execute paths require payload validation and valid resolution sources. `resolve` also supports `--watch` when you need to wait for finalization instead of polling epochs manually. |
 | Trading and exits | `quote`, `trade`, `sell`, `claim` | `trade` is buy-side; `sell` is explicit sell-side. |
-| LP operations | `lp add|remove|positions`, `mirror lp-explain`, `mirror hedge-calc`, `mirror simulate` | LP explain/simulate are read-only modeling tools. |
-| Mirror sync and hedge operations | `mirror sync once|run|start|stop|status`, `mirror close`, `polymarket check|approve|preflight|trade` | `mirror close` is the deterministic closeout path. |
+| LP operations | `lp add|remove|positions`, `lp simulate-remove`, `mirror lp-explain`, `mirror hedge-calc`, `mirror simulate` | LP explain/simulate are read-only modeling tools. `lp simulate-remove` is the dedicated LP removal preview path. |
+| Mirror sync and hedge operations | `mirror sync once|run|start|stop|status`, `mirror status`, `mirror pnl`, `mirror audit`, `mirror close`, `polymarket check|approve|preflight|balance|deposit|withdraw|trade` | Default execution stays in paper mode until live flags are supplied. Sync remains separate-leg, not atomic; payloads expose `reserveSource` and rebalance sizing truth. Use `mirror sync status` for daemon health, `mirror status --with-live` for feed/position diagnostics with graceful fallback, `mirror pnl` for dedicated cross-venue scenario estimates, `mirror audit` for the classified persisted runtime ledger, `polymarket balance|deposit` for signer/proxy funding on Polygon USDC.e, and treat `polymarket withdraw` execute mode as signer-controlled only unless the proxy itself submits the transfer. |
 | Monitoring and automation | `watch`, `stream prices|events`, `autopilot run|once`, `risk show|panic`, `lifecycle start|status|resolve` | `stream` is NDJSON-only. |
 | Durable operation tracking | `operations get|list|receipt|verify-receipt|cancel|close` | Use for inspecting and controlling persisted mutable-operation records. Terminal mutable operations also emit local receipt artifacts for post-execution audit, and authenticated gateways expose receipt fetch/verify endpoints. |
 | Analytics and export | `portfolio`, `history`, `export`, `leaderboard`, `analyze`, `suggest` | `portfolio` and `history` are operator analytics, not full accounting ledgers. |
@@ -166,6 +166,11 @@ Notes:
 | Quant/model tooling | `simulate mc|particle-filter|agents`, `model calibrate|correlation|diagnose|score brier` | Separate from trading/runtime execution. |
 | Agent-native integration | `bootstrap`, `capabilities`, `schema`, `policy list|get|lint`, `profile list|get|explain|validate`, `mcp`, `agent market autocomplete`, `agent market validate` | Start with `bootstrap`; open `agent-interfaces.md` for exact envelope and MCP details. |
 | Legacy script launchers | `launch`, `clone-bet` | Legacy wrappers, documented separately because their timing model differs from mirror. |
+
+Mirror and resolve operator notes:
+- `POLYMARKET_FUNDER` / `--funder` is the Polymarket proxy wallet (Gnosis Safe), not the signer EOA.
+- `mirror status --with-live` is the operator dashboard, but its P&L fields remain scenario or mark-to-market approximations rather than realized ledger accounting.
+- `mirror close` does not auto-resolve Pandora or auto-settle Polymarket inventory; use `resolve --watch` plus `claim` as the post-close follow-up path.
 
 ## Canonical paths and aliases
 

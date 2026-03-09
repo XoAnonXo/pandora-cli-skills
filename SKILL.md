@@ -1,7 +1,7 @@
 ---
 name: pandora-cli-skills
 summary: Index and operator guide for Pandora CLI capabilities, mirror operations, and agent-native interfaces.
-version: 1.1.72
+version: 1.1.73
 ---
 
 # Pandora CLI & Skills
@@ -22,7 +22,7 @@ Start here, then open the smallest scoped doc that matches the task:
 - [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md)
   - portfolio inspection, history/export, LP exits, claim-all, operations, and mirror closeout
 - [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md)
-  - mirror timing, validation, independent-source rules, deploy/go workflow, sync, and closeout guidance
+  - mirror timing, validation, independent-source rules, deploy/go workflow, sync close-window guards, live diagnostics, daemon health, and closeout guidance
 - [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
   - schema, MCP, JSON envelopes, recovery hints, fork runtime, streams, and error codes
 - [`docs/skills/policy-profiles.md`](./docs/skills/policy-profiles.md)
@@ -54,6 +54,10 @@ Start here, then open the smallest scoped doc that matches the task:
 - CLI mirror execute reruns use `--validation-ticket <ticket>`. MCP execute/live reruns use `agentPreflight = { validationTicket, validationDecision: "PASS", validationSummary }`.
 - `sports create run` does not expose a CLI `--validation-ticket`; agent-controlled execute uses `agentPreflight` / `PANDORA_AGENT_PREFLIGHT`.
 - `launch` / `clone-bet` still expose `--target-timestamp-offset-hours`; that legacy script flag is **not** the mirror timing model.
+- For live Polymarket hedges, `POLYMARKET_FUNDER` / `--funder` must point at the proxy wallet (Gnosis Safe) that holds Polygon USDC.e collateral, not the signer EOA.
+- Use `pandora polymarket balance|deposit|withdraw` for proxy funding and balance inspection instead of ad hoc transfer scripts. `withdraw --execute` only works when the signer controls the source wallet; Safe/proxy-originated transfers normally require manual execution from the proxy wallet.
+- Treat `pandora mirror status --with-live` as an operator dashboard. `netPnlApproxUsdc`, `pnlApprox`, and `pnlScenarios` are scenario or mark-to-market approximations, not realized ledger accounting.
+- `pandora resolve --watch` is the current finalization wait path; `mirror close` does not auto-resolve for you.
 - Prefer policy-scoped MCP access and the shipped read-only policy/profile artifacts over raw `--private-key` when operating live flows. Policy packs and named profiles are now shipped in alpha via `policy` / `profile`. Profile-directed execution already covers the highest-value signer-bearing paths:
   - `trade`, `sell`, `lp add`, `lp remove`, `resolve`, `claim`
   - `mirror deploy`, `mirror go`, `mirror sync once|run|start`
@@ -153,7 +157,7 @@ Start here, then open the smallest scoped doc that matches the task:
   - `pandora --output json capabilities`
   - `pandora --output json schema`
   - `pandora --output json policy list|get|lint`
-  - `pandora --output json profile list|get|explain|validate`
+  - `pandora --output json profile list|get|explain|recommend|validate`
   - `pandora --output json recipe list|get|validate|run`
     - use `capabilities` for compact discovery/routing and `schema` for authoritative contract export when generating client types
     - for embedded SDK consumers, load the SDK-local manifest entrypoints first rather than assuming every language reads directly from `sdk/generated`

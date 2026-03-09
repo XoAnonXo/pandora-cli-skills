@@ -1,5 +1,5 @@
 const { DEFAULT_INDEXER_URL, DEFAULT_RPC_BY_CHAIN_ID } = require('./shared/constants.cjs');
-const { isSecureHttpUrlOrLocal } = require('./shared/utils.cjs');
+const { isSecureHttpUrlOrLocal, round } = require('./shared/utils.cjs');
 const { resolveForkRuntime } = require('./fork_runtime_service.cjs');
 const { createIndexerClient } = require('./indexer_client.cjs');
 const { materializeExecutionSigner } = require('./signers/execution_signer_service.cjs');
@@ -757,6 +757,47 @@ async function readCalcRemoveLiquidity(publicClient, marketAddress, sharesRaw) {
   return null;
 }
 
+function toDecimalNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function buildRemoveLiquidityPreviewPayload(formatUnits, preview) {
+  if (!preview) return null;
+  const collateralOutUsdc =
+    preview.collateralOutRaw !== null ? formatUnits(BigInt(preview.collateralOutRaw), 6) : null;
+  const yesOut = preview.yesOutRaw !== null ? formatUnits(BigInt(preview.yesOutRaw), 18) : null;
+  const noOut = preview.noOutRaw !== null ? formatUnits(BigInt(preview.noOutRaw), 18) : null;
+  const collateralOutNumber = toDecimalNumber(collateralOutUsdc);
+  const yesOutNumber = toDecimalNumber(yesOut);
+  const noOutNumber = toDecimalNumber(noOut);
+  const yesScenarioValueUsdc =
+    collateralOutNumber === null || yesOutNumber === null ? null : round(collateralOutNumber + yesOutNumber, 6);
+  const noScenarioValueUsdc =
+    collateralOutNumber === null || noOutNumber === null ? null : round(collateralOutNumber + noOutNumber, 6);
+
+  return {
+    collateralOutRaw: preview.collateralOutRaw,
+    collateralOutUsdc,
+    yesOutRaw: preview.yesOutRaw,
+    yesOut,
+    noOutRaw: preview.noOutRaw,
+    noOut,
+    scenarioValues: {
+      yesUsdc: yesScenarioValueUsdc,
+      noUsdc: noScenarioValueUsdc,
+      minUsdc:
+        yesScenarioValueUsdc === null || noScenarioValueUsdc === null
+          ? null
+          : round(Math.min(yesScenarioValueUsdc, noScenarioValueUsdc), 6),
+      maxUsdc:
+        yesScenarioValueUsdc === null || noScenarioValueUsdc === null
+          ? null
+          : round(Math.max(yesScenarioValueUsdc, noScenarioValueUsdc), 6),
+    },
+  };
+}
+
 async function graphqlRequest(indexerUrl, query, variables, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -1101,17 +1142,7 @@ async function runLpPositions(options = {}) {
     if (typeof lpTokenBalanceRaw === 'bigint' && lpTokenBalanceRaw > 0n) {
       const calc = await readCalcRemoveLiquidity(publicClient, marketAddress, lpTokenBalanceRaw);
       if (calc) {
-        preview = {
-          collateralOutRaw: calc.collateralOutRaw,
-          collateralOutUsdc:
-            calc.collateralOutRaw !== null ? formatUnits(BigInt(calc.collateralOutRaw), 6) : null,
-          yesOutRaw: calc.yesOutRaw,
-          yesOut:
-            calc.yesOutRaw !== null ? formatUnits(BigInt(calc.yesOutRaw), 18) : null,
-          noOutRaw: calc.noOutRaw,
-          noOut:
-            calc.noOutRaw !== null ? formatUnits(BigInt(calc.noOutRaw), 18) : null,
-        };
+        preview = buildRemoveLiquidityPreviewPayload(formatUnits, calc);
       } else {
         itemDiagnostics.push('calcRemoveLiquidity unavailable for this market ABI.');
       }
@@ -1474,15 +1505,7 @@ async function runLpRemove(options = {}) {
   payload.preflight = {
     account: account.address,
     chainId: runtime.chainId,
-    preview: preview
-      ? {
-          collateralOutRaw: preview.collateralOutRaw,
-          collateralOutUsdc:
-            preview.collateralOutRaw !== null ? formatUnits(BigInt(preview.collateralOutRaw), 6) : null,
-          yesOutRaw: preview.yesOutRaw,
-          noOutRaw: preview.noOutRaw,
-        }
-      : null,
+    preview: buildRemoveLiquidityPreviewPayload(formatUnits, preview),
   };
 
   let simulation;
@@ -1520,6 +1543,84 @@ async function runLpRemove(options = {}) {
   }
 }
 
+async function runLpSimulateRemove(options = {}) {
+  const schemaVersion = '1.0.0';
+  const generatedAt = new Date().toISOString();
+  const runtime = await resolveRuntime(options, {
+    requirePrivateKey: false,
+    requireUsdc: false,
+  });
+  const { publicClient, account } = await createClients(runtime, false, {
+    command: 'lp.simulate-remove',
+    toolFamily: 'lp',
+    category: options.category || null,
+  });
+  const marketAddress = normalizeAddress(options.marketAddress, '--market-address');
+  await ensureContractCode(publicClient, marketAddress, 'Market');
+  const { parseUnits, formatUnits } = await loadViemRuntime();
+  const lpTokenDecimals = await readDecimals(publicClient, marketAddress, 18);
+  const wallet = options.wallet
+    ? normalizeAddress(options.wallet, '--wallet')
+    : account && account.address
+      ? account.address.toLowerCase()
+      : null;
+  const diagnostics = [];
+
+  let sharesToBurnRaw;
+  let lpTokens = options.lpTokens;
+  if (options.lpAll) {
+    if (!wallet) {
+      throw createServiceError(
+        'MISSING_REQUIRED_FLAG',
+        'lp simulate-remove --all requires --wallet <address> or signer credentials for wallet discovery.',
+      );
+    }
+    const balanceRaw = await publicClient.readContract({
+      address: marketAddress,
+      abi: LP_TOKEN_ABI,
+      functionName: 'balanceOf',
+      args: [wallet],
+    });
+    if (typeof balanceRaw !== 'bigint' || balanceRaw <= 0n) {
+      throw createServiceError('LP_REMOVE_ZERO_BALANCE', 'No LP token balance available to preview with --all.', {
+        marketAddress,
+        wallet,
+      });
+    }
+    sharesToBurnRaw = balanceRaw;
+    lpTokens = formatUnits(balanceRaw, lpTokenDecimals);
+    diagnostics.push('Using full LP token balance (--all) from on-chain balanceOf(wallet).');
+  } else {
+    sharesToBurnRaw = parseUnits(String(options.lpTokens), lpTokenDecimals);
+  }
+
+  const preview = await readCalcRemoveLiquidity(publicClient, marketAddress, sharesToBurnRaw);
+  const previewPayload = buildRemoveLiquidityPreviewPayload(formatUnits, preview);
+  if (!previewPayload) {
+    diagnostics.push('calcRemoveLiquidity unavailable for this market ABI.');
+  }
+
+  return {
+    schemaVersion,
+    generatedAt,
+    mode: 'preview',
+    status: previewPayload ? 'ready' : 'unavailable',
+    runtime: {
+      mode: runtime.mode,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+    },
+    action: 'simulate-remove',
+    marketAddress,
+    wallet,
+    lpTokens,
+    lpTokenDecimals,
+    sharesToBurnRaw: sharesToBurnRaw.toString(),
+    preview: previewPayload,
+    diagnostics,
+  };
+}
+
 /**
  * Dispatch LP admin action (`positions`, `add`, `remove`).
  * @param {object} [options]
@@ -1532,13 +1633,16 @@ async function runLp(options = {}) {
   if (options.action === 'add') {
     return runLpAdd(options);
   }
+  if (options.action === 'simulate-remove') {
+    return runLpSimulateRemove(options);
+  }
   if (options.action === 'remove') {
     if (options.allMarkets) {
       return runLpRemoveAllMarkets(options);
     }
     return runLpRemove(options);
   }
-  throw createServiceError('INVALID_ARGS', 'lp requires action add|remove|positions.');
+  throw createServiceError('INVALID_ARGS', 'lp requires action add|remove|positions|simulate-remove.');
 }
 
 async function runLpRemoveAllMarkets(options = {}) {
@@ -1832,4 +1936,5 @@ module.exports = {
   runClaim,
   readPollResolutionState,
   buildOutcomeTokenVisibility,
+  buildRemoveLiquidityPreviewPayload,
 };

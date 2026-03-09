@@ -1,4 +1,148 @@
+const path = require('path');
 const { createAsyncOperationBridge } = require('../shared/operation_bridge.cjs');
+const { loadState: loadMirrorState } = require('../mirror_state_store.cjs');
+const { buildMirrorRuntimeTelemetry } = require('../mirror_sync/state.cjs');
+const { buildMirrorRebalanceTradeOptions } = require('../mirror_sync/rebalance_trade.cjs');
+const { DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC } = require('../trade_market_type_service.cjs');
+const POLYMARKET_CHAIN_ID = 137;
+
+function normalizeMirrorRebalanceTradeOptions(executionOptions, runtimeOptions) {
+  const tradeOptions = buildMirrorRebalanceTradeOptions(executionOptions, runtimeOptions);
+  const deadlineSeconds = Number(tradeOptions && tradeOptions.deadlineSeconds);
+  return {
+    amount: null,
+    fork: Boolean(runtimeOptions && runtimeOptions.fork),
+    forkRpcUrl:
+      runtimeOptions && typeof runtimeOptions.forkRpcUrl === 'string' && runtimeOptions.forkRpcUrl.trim()
+        ? runtimeOptions.forkRpcUrl
+        : null,
+    forkChainId:
+      runtimeOptions && Number.isInteger(runtimeOptions.forkChainId)
+        ? runtimeOptions.forkChainId
+        : null,
+    profile: runtimeOptions && runtimeOptions.profile ? runtimeOptions.profile : null,
+    minAmountOutRaw: null,
+    deadlineSeconds: Number.isFinite(deadlineSeconds) && deadlineSeconds > 0
+      ? deadlineSeconds
+      : DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC,
+    ...tradeOptions,
+  };
+}
+
+function normalizeRpcUrlCandidates(value) {
+  const rawValues = Array.isArray(value) ? value : String(value || '').split(',');
+  const candidates = rawValues
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(candidates));
+}
+
+function parseJsonRpcChainId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  if (/^0x[0-9a-f]+$/i.test(text)) {
+    return Number.parseInt(text, 16);
+  }
+  const numeric = Number(text);
+  return Number.isFinite(numeric) ? Math.trunc(numeric) : null;
+}
+
+async function probePolymarketRpcCandidate(rpcUrl, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_chainId',
+        params: [],
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    if (payload && payload.error) {
+      throw new Error(payload.error.message || 'JSON-RPC error.');
+    }
+    const chainId = parseJsonRpcChainId(payload && payload.result);
+    if (chainId !== POLYMARKET_CHAIN_ID) {
+      throw new Error(`unexpected chain id ${chainId === null ? 'unknown' : chainId}; expected ${POLYMARKET_CHAIN_ID}`);
+    }
+    return { chainId };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function selectHealthyPolymarketRpc(options = {}) {
+  const candidates = normalizeRpcUrlCandidates(
+    options.polymarketRpcUrl || (options.env && options.env.POLYMARKET_RPC_URL) || options.rpcUrl || null,
+  );
+  const attempts = [];
+  const diagnostics = [];
+  if (!candidates.length) {
+    return {
+      selectedRpcUrl: null,
+      fallbackUsed: false,
+      attempts,
+      diagnostics,
+    };
+  }
+
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 4_000;
+  for (let index = 0; index < candidates.length; index += 1) {
+    const rpcUrl = candidates[index];
+    try {
+      const probe = await probePolymarketRpcCandidate(rpcUrl, timeoutMs);
+      attempts.push({
+        rpcUrl,
+        ok: true,
+        chainId: probe.chainId,
+        order: index + 1,
+      });
+      const fallbackUsed = index > 0;
+      diagnostics.push(
+        fallbackUsed
+          ? `Polymarket RPC fallback selected ${rpcUrl} after ${index} failed attempt(s).`
+          : `Polymarket RPC connectivity check succeeded on primary endpoint ${rpcUrl}.`,
+      );
+      return {
+        selectedRpcUrl: rpcUrl,
+        fallbackUsed,
+        attempts,
+        diagnostics,
+      };
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      attempts.push({
+        rpcUrl,
+        ok: false,
+        error: message,
+        order: index + 1,
+      });
+      diagnostics.push(`Polymarket RPC attempt ${index + 1} failed for ${rpcUrl}: ${message}`);
+    }
+  }
+
+  return {
+    selectedRpcUrl: null,
+    fallbackUsed: false,
+    attempts,
+    diagnostics,
+  };
+}
 
 /**
  * Handle `mirror sync` command execution (`run|once|start|stop|status`).
@@ -7,6 +151,10 @@ const { createAsyncOperationBridge } = require('../shared/operation_bridge.cjs')
  * @returns {Promise<void>}
  */
 module.exports = async function handleMirrorSync({ shared, context, deps, mirrorSyncUsage }) {
+  const selectPolymarketRpc =
+    deps && typeof deps.selectHealthyPolymarketRpc === 'function'
+      ? deps.selectHealthyPolymarketRpc
+      : selectHealthyPolymarketRpc;
   const {
     CliError,
     includesHelpFlag,
@@ -22,9 +170,11 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     buildMirrorSyncDaemonCliArgs,
     startMirrorDaemon,
     resolveTrustedDeployPair,
+    verifyMirror,
     runLivePolymarketPreflightForMirror,
     runMirrorSync,
     buildQuotePayload,
+    enforceTradeRiskGuards,
     executeTradeOnchain,
     assertLiveWriteAllowed,
     hasWebhookTargets,
@@ -71,6 +221,43 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     };
   }
 
+  function resolveRuntimeStateFile(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+    if (payload.stateFile) return payload.stateFile;
+    if (payload.metadata && payload.metadata.stateFile) return payload.metadata.stateFile;
+    if (payload.strategyHash) {
+      return path.join(
+        process.env.HOME || process.env.USERPROFILE || '.',
+        '.pandora',
+        'mirror',
+        `${payload.strategyHash}.json`,
+      );
+    }
+    return null;
+  }
+
+  function attachRuntimeTelemetry(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return payload;
+    }
+    const stateFile = resolveRuntimeStateFile(payload);
+    if (!stateFile) {
+      return {
+        ...payload,
+        runtime: null,
+      };
+    }
+    const loaded = loadMirrorState(stateFile, payload.strategyHash || null);
+    return {
+      ...payload,
+      runtime: buildMirrorRuntimeTelemetry({
+        state: loaded.state,
+        stateFile: loaded.filePath,
+        daemonStatus: payload,
+      }),
+    };
+  }
+
   if (includesHelpFlag(shared.rest)) {
     if (context.outputMode === 'json') {
       emitSuccess(
@@ -103,6 +290,14 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
               'Polymarket CLOB settles against Polygon USDC.e collateral. Ensure USDC.e balance/allowances are configured on the proxy wallet.',
             inventoryRecycle:
               'Sync can recycle tracked hedge inventory by selling the opposite token when runtime depth proves the sell path is safe; otherwise it falls back to buy-side hedging.',
+            rpcFallback:
+              '--polymarket-rpc-url and POLYMARKET_RPC_URL accept comma-separated Polygon RPC fallbacks tried in order during live preflight.',
+          },
+          statusTelemetry: {
+            health: 'runtime.health reports daemon/runtime status, heartbeat freshness, and pending-action blockers.',
+            lastTrade: 'runtime.lastTrade reports the most recent rebalance/hedge execution summary.',
+            errors: 'runtime.errorCount and runtime.summary.errorCount report aggregated runtime error alerts.',
+            nextAction: 'runtime.nextAction and runtime.summary.nextAction report the operator follow-up the daemon needs next.',
           },
           staleCacheFallback:
             'When Polymarket is unreachable, mirror commands reuse cached snapshots from ~/.pandora/polymarket. Live mode blocks cached sources.',
@@ -120,6 +315,8 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       console.log('POLYMARKET_FUNDER must be your Polymarket proxy wallet (Gnosis Safe), not your EOA wallet address.');
       console.log('Polymarket CLOB collateral is Polygon USDC.e; ensure proxy wallet USDC.e balance and approvals are configured.');
       console.log('Hedge inventory can be recycled with sell-side orders only when runtime depth proves the sell path is safe; otherwise sync keeps buy-side hedging.');
+      console.log('Polymarket RPC preflight accepts comma-separated --polymarket-rpc-url / POLYMARKET_RPC_URL fallbacks and tries them in order.');
+      console.log('Daemon status payloads expose runtime.health, runtime.lastTrade, runtime.errorCount, and runtime.nextAction for operator health checks.');
       console.log(
         'Polymarket outage fallback: cached snapshots under ~/.pandora/polymarket are reused; live mode blocks cached sources.',
       );
@@ -150,7 +347,12 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       found: payload && payload.found,
       alive: payload && payload.alive,
     });
-    emitSuccess(context.outputMode, 'mirror.sync.stop', finalizePayload(payload), renderMirrorSyncDaemonTable);
+    emitSuccess(
+      context.outputMode,
+      'mirror.sync.stop',
+      finalizePayload(attachRuntimeTelemetry(payload)),
+      renderMirrorSyncDaemonTable,
+    );
     return;
   }
 
@@ -176,7 +378,12 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       found: payload && payload.found,
       alive: payload && payload.alive,
     });
-    emitSuccess(context.outputMode, 'mirror.sync.status', finalizePayload(payload), renderMirrorSyncDaemonTable);
+    emitSuccess(
+      context.outputMode,
+      'mirror.sync.status',
+      finalizePayload(attachRuntimeTelemetry(payload)),
+      renderMirrorSyncDaemonTable,
+    );
     return;
   }
 
@@ -232,7 +439,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       {
         ...options,
         mode: 'run',
-        stream: true,
+        stream: Boolean(options.stream),
         trustDeploy,
       },
       shared,
@@ -278,6 +485,11 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       found: true,
       alive: Boolean(payload.pidAlive),
       status: payload.status || (payload.pidAlive ? 'running' : 'unknown'),
+      startupVerification: {
+        delegatedToDaemon: true,
+        executeLive: Boolean(options.executeLive),
+        reason: 'Startup verification and live preflight run inside the daemon child so start remains non-blocking.',
+      },
     };
     if (trustManifest) {
       daemonPayload.trustManifest = trustManifest;
@@ -296,7 +508,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     emitSuccess(
       context.outputMode,
       isStartAction ? 'mirror.sync.start' : 'mirror.sync',
-      finalizePayload(daemonPayload),
+      finalizePayload(attachRuntimeTelemetry(daemonPayload)),
       renderMirrorSyncDaemonTable,
     );
     return;
@@ -314,12 +526,34 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
 
   if (options.executeLive) {
     try {
-      polymarketPreflight = await runLivePolymarketPreflightForMirror({
-        rpcUrl: options.polymarketRpcUrl || options.rpcUrl,
+      const rpcSelection = await selectPolymarketRpc({
         polymarketRpcUrl: options.polymarketRpcUrl,
+        rpcUrl: options.rpcUrl,
+        timeoutMs: shared.timeoutMs,
+        env: process.env,
+      });
+      if (rpcSelection.attempts.length && !rpcSelection.selectedRpcUrl) {
+        throw new CliError(
+          'POLYMARKET_RPC_UNREACHABLE',
+          'Unable to reach a Polygon RPC endpoint for Polymarket preflight.',
+          rpcSelection,
+        );
+      }
+      const selectedPolymarketRpcUrl = rpcSelection.selectedRpcUrl || options.polymarketRpcUrl || options.rpcUrl || null;
+      polymarketPreflight = await runLivePolymarketPreflightForMirror({
+        rpcUrl: selectedPolymarketRpcUrl || options.rpcUrl,
+        polymarketRpcUrl: selectedPolymarketRpcUrl,
         privateKey: options.privateKey,
         funder: options.funder,
       });
+      if (rpcSelection.attempts.length) {
+        const existingDiagnostics = Array.isArray(polymarketPreflight.diagnostics) ? polymarketPreflight.diagnostics : [];
+        polymarketPreflight = {
+          ...polymarketPreflight,
+          rpcSelection,
+          diagnostics: existingDiagnostics.concat(rpcSelection.diagnostics),
+        };
+      }
     } catch (err) {
       throw coerceMirrorServiceError(err, 'MIRROR_SYNC_PREFLIGHT_FAILED');
     }
@@ -343,26 +577,17 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       },
       {
         rebalanceFn: async (executionOptions) => {
-          const tradeOptions = {
-            marketAddress: executionOptions.marketAddress,
-            side: executionOptions.side,
-            amountUsdc: executionOptions.amountUsdc,
-            yesPct: null,
-            slippageBps: 150,
-            dryRun: false,
-            execute: true,
-            minSharesOutRaw: null,
-            maxAmountUsdc: executionOptions.amountUsdc,
-            minProbabilityPct: null,
-            maxProbabilityPct: null,
-            allowUnquotedExecute: true,
+          const tradeOptions = normalizeMirrorRebalanceTradeOptions(executionOptions, {
             chainId: options.chainId,
             rpcUrl: options.rpcUrl,
+            fork: options.fork,
+            forkRpcUrl: options.forkRpcUrl,
+            forkChainId: options.forkChainId,
             privateKey: options.privateKey,
             profileId: options.profileId || null,
             profileFile: options.profileFile || null,
             usdc: options.usdc,
-          };
+          });
           if (typeof assertLiveWriteAllowed === 'function') {
             await assertLiveWriteAllowed('mirror.sync.execute', {
               notionalUsdc: executionOptions.amountUsdc,
@@ -370,6 +595,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
             });
           }
           const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
+          enforceTradeRiskGuards(tradeOptions, quote);
           const execution = await executeTradeOnchain(tradeOptions);
           return {
             ...execution,
@@ -423,5 +649,14 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     payload.diagnostics = [...existingDiagnostics, deprecatedForceGateWarning];
   }
 
-  emitSuccess(context.outputMode, 'mirror.sync', finalizePayload(payload), renderMirrorSyncTable);
+  emitSuccess(
+    context.outputMode,
+    'mirror.sync',
+    finalizePayload(attachRuntimeTelemetry(payload)),
+    renderMirrorSyncTable,
+  );
 };
+
+module.exports.normalizeMirrorRebalanceTradeOptions = normalizeMirrorRebalanceTradeOptions;
+module.exports.selectHealthyPolymarketRpc = selectHealthyPolymarketRpc;
+module.exports.probePolymarketRpcCandidate = probePolymarketRpcCandidate;
