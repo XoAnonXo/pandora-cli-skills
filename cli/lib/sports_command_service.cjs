@@ -40,6 +40,12 @@ function toPositiveIntOrNull(value) {
   return Math.trunc(numeric);
 }
 
+function resolveFallbackReadTimeoutMs(timeoutMs) {
+  const numeric = toPositiveIntOrNull(timeoutMs);
+  if (!numeric) return null;
+  return Math.max(numeric, 250);
+}
+
 function normalizeBookToken(value) {
   return String(value || '')
     .trim()
@@ -532,7 +538,8 @@ async function resolveSportsScoreEntries(providerRegistry, options = {}) {
           to: options.kickoffBefore,
           status: options.liveOnly ? 'live' : null,
           limit: options.limit,
-          timeoutMs: options.timeoutMs,
+          // Keep degraded schedule reads viable even when callers use an aggressive status timeout.
+          timeoutMs: resolveFallbackReadTimeoutMs(options.timeoutMs),
         });
         const fallbackEvents = Array.isArray(fallbackSchedule.events) ? fallbackSchedule.events : [];
         event = fallbackEvents.find((item) => String(item && item.id) === String(options.eventId)) || null;

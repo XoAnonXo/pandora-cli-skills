@@ -10,6 +10,7 @@ const {
   getSuiteExpectation,
   validateScenarioManifest,
   compareContractLock,
+  createPublishedBenchmarkReport,
 } = require('../../benchmarks/lib/runner.cjs');
 const { getAssertion } = require('../../benchmarks/lib/assertions.cjs');
 const {
@@ -197,7 +198,6 @@ test('committed public benchmark bundle is internally consistent and self-descri
 
 
 test('published benchmark report strips passing check messages but keeps failing ones', () => {
-  const { createPublishedBenchmarkReport } = require('../../benchmarks/lib/runner.cjs');
   const report = {
     schemaVersion: "1.0.0",
     suite: "core",
@@ -219,6 +219,47 @@ test('published benchmark report strips passing check messages but keeps failing
   const published = createPublishedBenchmarkReport(report);
   assert.equal(published.scenarios[0].checks[0].message, null);
   assert.equal(published.scenarios[0].checks[1].message, "actual failure detail");
+});
+
+test('published benchmark report normalizes suite publication paths to forward slashes', () => {
+  const report = {
+    schemaVersion: '1.0.0',
+    suite: 'core',
+    runtime: { packageVersion: '1.1.74' },
+    summary: {
+      scenarioCount: 1,
+      passedCount: 1,
+      failedCount: 0,
+      latencyPassRate: 1,
+      failedParityGroupCount: 0,
+      overallPass: true,
+    },
+    contractLock: {},
+    expectedContractLockPath: 'benchmarks\\locks\\core.lock.json',
+    contractLockMatchesExpected: true,
+    contractLockMismatches: [],
+    parity: { groups: [], failedGroups: [] },
+    scenarios: [{
+      id: 's',
+      title: 'Scenario',
+      description: 'desc',
+      transport: 'cli-json',
+      dimensions: ['bootstrap'],
+      weight: 1,
+      passed: true,
+      runtimeState: null,
+      parityGroup: null,
+      parityExpectedTransports: [],
+      parityHash: null,
+      score: { weighted: 100 },
+      failure: null,
+      checks: [],
+    }],
+  };
+  const published = createPublishedBenchmarkReport(report);
+  assert.equal(published.expectedContractLockPath, 'benchmarks/locks/core.lock.json');
+  assert.equal(published.publication.reportPath, 'benchmarks/latest/core-report.json');
+  assert.equal(published.publication.suiteLockPath, 'benchmarks/locks/core.lock.json');
 });
 
 test('public benchmark bundle avoids absolute machine-specific paths such as writtenLockPath', (t) => {

@@ -341,6 +341,7 @@ test('sports scores falls back to schedule data when event-status refresh times 
       };
     }
     if (url.startsWith('/events?')) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
       return {
         body: {
           events: [
@@ -400,6 +401,7 @@ test('sports scores falls back to schedule data when event-status refresh times 
   assert.equal(Array.isArray(payload.data.diagnostics), true);
   assert.ok(payload.data.diagnostics.length >= 1);
   assert.ok(payload.data.diagnostics.some((item) => item && item.eventId === 'nba-bos-cle-2026-03-08'));
+  assert.ok(mock.requests.some((request) => String(request.url).startsWith('/events?')));
 
   const tableResult = await runCliAsync(
     [

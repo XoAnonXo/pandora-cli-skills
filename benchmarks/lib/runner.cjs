@@ -93,12 +93,21 @@ function loadScenarioSuite(suite = DEFAULT_SUITE) {
     .map((name) => JSON.parse(fs.readFileSync(path.join(suiteDir, name), 'utf8')));
 }
 
+function normalizeRepoRelativePath(filePath) {
+  return path.relative(REPO_ROOT, filePath).split(path.sep).join('/');
+}
+
+function normalizePublicationPath(value, fallback) {
+  const raw = String(value || fallback || '').trim();
+  return raw ? raw.replace(/\\/g, '/') : '';
+}
+
 function defaultSuiteLockPath(suite = DEFAULT_SUITE) {
   return path.join(LOCK_ROOT, `${suite}.lock.json`);
 }
 
 function defaultSuiteLockId(suite = DEFAULT_SUITE) {
-  return path.relative(REPO_ROOT, defaultSuiteLockPath(suite));
+  return normalizeRepoRelativePath(defaultSuiteLockPath(suite));
 }
 
 function defaultSuiteReportPath(suite = DEFAULT_SUITE) {
@@ -106,7 +115,7 @@ function defaultSuiteReportPath(suite = DEFAULT_SUITE) {
 }
 
 function defaultSuiteReportId(suite = DEFAULT_SUITE) {
-  return path.relative(REPO_ROOT, defaultSuiteReportPath(suite));
+  return normalizeRepoRelativePath(defaultSuiteReportPath(suite));
 }
 
 function getSuiteExpectation(suite = DEFAULT_SUITE) {
@@ -333,7 +342,10 @@ function createPublishedBenchmarkReport(report) {
   const contractLock = clone && clone.contractLock && typeof clone.contractLock === 'object'
     ? sortJsonValue(clone.contractLock)
     : {};
-  const expectedContractLockPath = String(clone && clone.expectedContractLockPath || defaultSuiteLockId(suite)).trim() || defaultSuiteLockId(suite);
+  const expectedContractLockPath = normalizePublicationPath(
+    clone && clone.expectedContractLockPath,
+    defaultSuiteLockId(suite),
+  ) || defaultSuiteLockId(suite);
   const summary = clone && clone.summary && typeof clone.summary === 'object'
     ? sortJsonValue(clone.summary)
     : {};
