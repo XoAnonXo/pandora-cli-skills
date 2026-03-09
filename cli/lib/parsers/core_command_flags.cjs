@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
 
 function requireFn(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -45,6 +46,14 @@ function createCoreCommandFlagParsers(deps) {
   const defaultIndexerTimeoutMs = requireValue(deps, 'defaultIndexerTimeoutMs');
   const defaultExpiringSoonHours = requireValue(deps, 'defaultExpiringSoonHours');
 
+  function resolveMcpWorkspacePath(next, flagName) {
+    assertMcpWorkspacePath(next, {
+      flagName,
+      errorFactory: (code, message, details) => new CliError(code, message, details),
+    });
+    return path.resolve(process.cwd(), next);
+  }
+
   function parseScriptEnvFlags(args) {
     let envFile = defaultEnvFile;
     let useEnvFile = true;
@@ -54,7 +63,7 @@ function createCoreCommandFlagParsers(deps) {
       const token = args[i];
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         i += 1;
         continue;
       }
@@ -82,7 +91,7 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         i += 1;
         continue;
       }
@@ -133,14 +142,14 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         i += 1;
         continue;
       }
 
       if (token === '--example') {
         const next = requireFlagValue(args, i, '--example');
-        exampleFile = path.resolve(process.cwd(), next);
+        exampleFile = resolveMcpWorkspacePath(next, '--example');
         i += 1;
         continue;
       }
@@ -183,14 +192,14 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         i += 1;
         continue;
       }
 
       if (token === '--example') {
         const next = requireFlagValue(args, i, '--example');
-        exampleFile = path.resolve(process.cwd(), next);
+        exampleFile = resolveMcpWorkspacePath(next, '--example');
         i += 1;
         continue;
       }
@@ -214,7 +223,7 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--dotenv-path' || token === '--env-file') {
         const next = requireFlagValue(args, i, '--dotenv-path');
-        envFile = path.resolve(process.cwd(), next);
+        envFile = resolveMcpWorkspacePath(next, '--dotenv-path');
         envFileExplicit = true;
         i += 1;
         continue;
@@ -363,6 +372,8 @@ function createCoreCommandFlagParsers(deps) {
       expiringSoonHours: defaultExpiringSoonHours,
       expand: false,
       withOdds: false,
+      minTvlUsdc: null,
+      hedgeable: false,
     };
     let expiringSoonHoursExplicit = false;
 
@@ -422,6 +433,11 @@ function createCoreCommandFlagParsers(deps) {
         i += 1;
         continue;
       }
+      if (token === '--type') {
+        options.where.marketType = requireFlagValue(args, i, '--type');
+        i += 1;
+        continue;
+      }
 
       if (token === '--where-json') {
         options.where = mergeWhere(options.where, requireFlagValue(args, i, '--where-json'), '--where-json');
@@ -460,6 +476,15 @@ function createCoreCommandFlagParsers(deps) {
         options.withOdds = true;
         continue;
       }
+      if (token === '--min-tvl') {
+        options.minTvlUsdc = parsePositiveNumber(requireFlagValue(args, i, '--min-tvl'), '--min-tvl');
+        i += 1;
+        continue;
+      }
+      if (token === '--hedgeable') {
+        options.hedgeable = true;
+        continue;
+      }
 
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for markets list: ${token}`);
     }
@@ -473,9 +498,13 @@ function createCoreCommandFlagParsers(deps) {
 
   function parseQuoteFlags(args) {
     const options = {
+      mode: 'buy',
       marketAddress: null,
       side: null,
       amountUsdc: null,
+      amountsUsdc: [],
+      amount: null,
+      amounts: [],
       yesPct: null,
       slippageBps: 100,
     };
@@ -495,8 +524,38 @@ function createCoreCommandFlagParsers(deps) {
         continue;
       }
 
+      if (token === '--mode') {
+        const mode = requireFlagValue(args, i, '--mode').toLowerCase();
+        if (mode !== 'buy' && mode !== 'sell') {
+          throw new CliError('INVALID_FLAG_VALUE', '--mode must be buy|sell.');
+        }
+        options.mode = mode;
+        i += 1;
+        continue;
+      }
+
       if (token === '--amount-usdc' || token === '--amount') {
-        options.amountUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        const parsedAmount = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        if (token === '--amount-usdc') {
+          options.amountUsdc = parsedAmount;
+        } else {
+          options.amount = parsedAmount;
+        }
+        i += 1;
+        continue;
+      }
+      if (token === '--shares') {
+        options.amount = parsePositiveNumber(requireFlagValue(args, i, '--shares'), '--shares');
+        i += 1;
+        continue;
+      }
+      if (token === '--amounts') {
+        const raw = parseCsvList(requireFlagValue(args, i, '--amounts'), '--amounts');
+        if (options.mode === 'sell') {
+          options.amounts = raw.map((value) => parsePositiveNumber(value, '--amounts'));
+        } else {
+          options.amountsUsdc = raw.map((value) => parsePositiveNumber(value, '--amounts'));
+        }
         i += 1;
         continue;
       }
@@ -525,8 +584,32 @@ function createCoreCommandFlagParsers(deps) {
     if (!options.side) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing side. Use --side yes|no.');
     }
-    if (options.amountUsdc === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount>.');
+    if (options.mode === 'buy') {
+      if (options.amountUsdc === null && options.amount !== null) {
+        options.amountUsdc = options.amount;
+      }
+      if (!options.amountsUsdc.length && options.amounts.length) {
+        options.amountsUsdc = [...options.amounts];
+      }
+      if (options.amountUsdc === null && (!Array.isArray(options.amountsUsdc) || !options.amountsUsdc.length)) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount> or --amounts <csv>.');
+      }
+      if (options.amountUsdc === null && Array.isArray(options.amountsUsdc) && options.amountsUsdc.length) {
+        options.amountUsdc = options.amountsUsdc[0];
+      }
+    } else {
+      if (options.amount === null && options.amountUsdc !== null) {
+        options.amount = options.amountUsdc;
+      }
+      if (!options.amounts.length && options.amountsUsdc.length) {
+        options.amounts = [...options.amountsUsdc];
+      }
+      if (options.amount === null && (!Array.isArray(options.amounts) || !options.amounts.length)) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing token amount. Use --shares <amount> or --amounts <csv>.');
+      }
+      if (options.amount === null && Array.isArray(options.amounts) && options.amounts.length) {
+        options.amount = options.amounts[0];
+      }
     }
 
     return options;
@@ -700,6 +783,7 @@ function createCoreCommandFlagParsers(deps) {
       includeEvents: true,
       withLp: false,
       rpcUrl: null,
+      allChains: false,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -714,6 +798,11 @@ function createCoreCommandFlagParsers(deps) {
       if (token === '--chain-id') {
         options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
         i += 1;
+        continue;
+      }
+      if (token === '--all-chains') {
+        options.chainId = null;
+        options.allChains = true;
         continue;
       }
 
@@ -1121,6 +1210,7 @@ function createCoreCommandFlagParsers(deps) {
       minLiquidityUsd: 1000,
       maxCloseDiffHours: 24,
       similarityThreshold: 0.86,
+      minTokenScore: 0.12,
       crossVenueOnly: true,
       withRules: false,
       includeSimilarity: false,
@@ -1154,7 +1244,7 @@ function createCoreCommandFlagParsers(deps) {
         continue;
       }
       if (token === '--min-spread-pct') {
-        options.minSpreadPct = parsePositiveNumber(requireFlagValue(args, i, '--min-spread-pct'), '--min-spread-pct');
+        options.minSpreadPct = parseNumber(requireFlagValue(args, i, '--min-spread-pct'), '--min-spread-pct');
         i += 1;
         continue;
       }
@@ -1178,6 +1268,14 @@ function createCoreCommandFlagParsers(deps) {
         );
         if (options.similarityThreshold < 0 || options.similarityThreshold > 1) {
           throw new CliError('INVALID_FLAG_VALUE', '--similarity-threshold must be between 0 and 1.');
+        }
+        i += 1;
+        continue;
+      }
+      if (token === '--min-token-score') {
+        options.minTokenScore = parseNumber(requireFlagValue(args, i, '--min-token-score'), '--min-token-score');
+        if (options.minTokenScore < 0 || options.minTokenScore > 1) {
+          throw new CliError('INVALID_FLAG_VALUE', '--min-token-score must be between 0 and 1.');
         }
         i += 1;
         continue;
@@ -1215,6 +1313,10 @@ function createCoreCommandFlagParsers(deps) {
       }
 
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for arbitrage: ${token}`);
+    }
+
+    if (options.minSpreadPct < 0) {
+      throw new CliError('INVALID_FLAG_VALUE', '--min-spread-pct must be >= 0.');
     }
 
     return options;

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cli-schema-bootstrap",
+  "title": "CLI schema bootstrap",
+  "description": "CLI JSON schema bootstrap exposes the exhaustive agent-facing contract descriptor surface.",
+  "transport": "cli-json",
+  "assertionId": "schema-bootstrap",
+  "parityGroup": "schema-bootstrap",
+  "parityExpectedTransports": ["cli-json", "mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 5000,
+  "weight": 10,
+  "dimensions": ["bootstrap", "contract", "schema", "parity"],
+  "request": {
+    "args": ["--output", "json", "schema"]
+  }
+}

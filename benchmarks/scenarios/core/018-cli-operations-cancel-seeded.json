@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cli-operations-cancel-seeded",
+  "title": "CLI seeded operation cancel",
+  "description": "CLI operations cancel transitions an executing seeded operation into canceled state.",
+  "transport": "cli-json",
+  "assertionId": "operations-cancel-seeded",
+  "expectedOperationId": "benchmark-op-cancel",
+  "seedOperations": [
+    {
+      "operationId": "benchmark-op-cancel",
+      "tool": "mirror.sync",
+      "command": "mirror.sync.run",
+      "status": "executing",
+      "summary": "Seeded cancel benchmark operation",
+      "request": { "marketAddress": "benchmark-market" },
+      "createdAt": "2026-03-08T00:00:00.000Z",
+      "updatedAt": "2026-03-08T00:00:00.000Z"
+    }
+  ],
+  "targetLatencyMs": 5000,
+  "weight": 8,
+  "dimensions": ["operations", "lifecycle", "state"],
+  "request": {
+    "args": ["--output", "json", "operations", "cancel", "--id", "benchmark-op-cancel", "--reason", "benchmark-cancel"]
+  }
+}

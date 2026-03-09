@@ -2,6 +2,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { loadSportsModelInput } = require('./sports_model_input_service.cjs');
+const { isMcpMode } = require('./shared/mcp_path_guard.cjs');
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -11,18 +13,23 @@ function requireDep(deps, name) {
 }
 
 const SPORTS_USAGE =
-  'pandora [--output table|json] sports books list|events list|events live|odds snapshot|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]';
-const BULK_ODDS_CACHE_SCHEMA_VERSION = '1.0.0';
-const DEFAULT_BULK_ODDS_CACHE_TTL_MS = 60_000;
+  'pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]';
+const BULK_ODDS_CACHE_SCHEMA_VERSION = '1.1.0';
+const BULK_ODDS_TTL_GT_24H_MS = 5 * 60_000;
+const BULK_ODDS_TTL_GT_1H_MS = 60_000;
+const BULK_ODDS_TTL_LIVE_OR_NEAR_MS = 30_000;
 
 function defaultStateFile() {
+  if (isMcpMode()) {
+    return path.resolve(process.cwd(), '.pandora', 'sports', 'sports_sync_state.json');
+  }
   const home = process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
   return path.join(home, '.pandora', 'sports_sync_state.json');
 }
 
-function defaultBulkOddsCacheFile() {
+function defaultBulkOddsCacheDir() {
   const home = process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
-  return path.join(home, '.pandora', 'sports_bulk_odds_cache.json');
+  return path.join(home, '.pandora', 'cache', 'odds');
 }
 
 function toPositiveIntOrNull(value) {
@@ -41,6 +48,16 @@ function normalizeBookToken(value) {
 
 function normalizeEventId(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+function normalizeCacheToken(value, fallback = 'unknown') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return normalized || fallback;
 }
 
 function computeStrategyHash(options) {
@@ -75,130 +92,319 @@ function writeJsonFile(filePath, payload) {
   }
 }
 
-function buildBulkOddsCacheKey(options, marketType) {
-  const provider = String(options.provider || 'auto').toLowerCase();
-  const competition = String(options.competition || '').trim().toLowerCase();
-  return `${provider}|${competition}|${String(marketType || 'soccer_winner').toLowerCase()}`;
+function buildBulkOddsSnapshotKey(provider, marketType) {
+  return `${normalizeCacheToken(provider, 'auto')}|${normalizeCacheToken(marketType, 'soccer_winner')}`;
 }
 
-function getBulkOddsCacheTtlMs(options) {
-  return (
-    toPositiveIntOrNull(options.bulkOddsCacheTtlMs)
-    || toPositiveIntOrNull(process.env.SPORTS_BULK_ODDS_CACHE_TTL_MS)
-    || DEFAULT_BULK_ODDS_CACHE_TTL_MS
-  );
+function parseDateMs(value) {
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function getBulkOddsCacheFile(options) {
-  return options.bulkOddsCacheFile || process.env.SPORTS_BULK_ODDS_CACHE_FILE || defaultBulkOddsCacheFile();
-}
+function deriveBulkOddsTtlPolicy(event, nowMs = Date.now()) {
+  const status = String(event && event.status ? event.status : '')
+    .trim()
+    .toLowerCase();
+  const kickoffMs = parseDateMs(event && event.startTime);
 
-function readBulkOddsCacheEntry(cacheFile, cacheKey) {
-  const payload = readJsonFile(cacheFile);
-  if (!payload || typeof payload !== 'object') return null;
-  const entries = payload.entries && typeof payload.entries === 'object' ? payload.entries : {};
-  const entry = entries[cacheKey];
-  if (!entry || typeof entry !== 'object') return null;
-  const expiresAt = Number(entry.expiresAtMs || 0);
-  if (!Number.isFinite(expiresAt) || Date.now() >= expiresAt) return null;
-  return entry;
-}
-
-function writeBulkOddsCacheEntry(cacheFile, cacheKey, entry) {
-  const existing = readJsonFile(cacheFile);
-  const payload = existing && typeof existing === 'object'
-    ? existing
-    : { schemaVersion: BULK_ODDS_CACHE_SCHEMA_VERSION, entries: {} };
-  if (!payload.entries || typeof payload.entries !== 'object') {
-    payload.entries = {};
+  if (status.includes('live') || status.includes('inplay') || status.includes('in-play')) {
+    return {
+      state: 'live',
+      ttlMs: BULK_ODDS_TTL_LIVE_OR_NEAR_MS,
+      kickoffAt: event && event.startTime ? event.startTime : null,
+    };
   }
 
-  payload.schemaVersion = BULK_ODDS_CACHE_SCHEMA_VERSION;
-  payload.entries[cacheKey] = entry;
-
-  const nowMs = Date.now();
-  const keys = Object.keys(payload.entries);
-  for (const key of keys) {
-    const row = payload.entries[key];
-    if (!row || typeof row !== 'object' || Number(row.expiresAtMs || 0) <= nowMs) {
-      delete payload.entries[key];
-    }
+  if (kickoffMs === null) {
+    return {
+      state: 'unknown',
+      ttlMs: BULK_ODDS_TTL_GT_1H_MS,
+      kickoffAt: null,
+    };
   }
 
-  const remainingKeys = Object.keys(payload.entries);
-  if (remainingKeys.length > 24) {
-    remainingKeys
-      .sort((a, b) => Number(payload.entries[b].cachedAtMs || 0) - Number(payload.entries[a].cachedAtMs || 0))
-      .slice(24)
-      .forEach((key) => {
-        delete payload.entries[key];
-      });
+  const untilKickoffMs = kickoffMs - nowMs;
+  if (untilKickoffMs > 24 * 60 * 60_000) {
+    return {
+      state: 'prematch',
+      ttlMs: BULK_ODDS_TTL_GT_24H_MS,
+      kickoffAt: new Date(kickoffMs).toISOString(),
+    };
   }
-
-  writeJsonFile(cacheFile, payload);
+  if (untilKickoffMs > 60 * 60_000) {
+    return {
+      state: 'prematch',
+      ttlMs: BULK_ODDS_TTL_GT_1H_MS,
+      kickoffAt: new Date(kickoffMs).toISOString(),
+    };
+  }
+  return {
+    state: 'near-live',
+    ttlMs: BULK_ODDS_TTL_LIVE_OR_NEAR_MS,
+    kickoffAt: new Date(kickoffMs).toISOString(),
+  };
 }
 
-function findEventOddsInBulkSnapshot(snapshot, eventId) {
-  const targetId = normalizeEventId(eventId);
-  if (!targetId) return null;
+function resolveBulkOddsCacheFile(options, competition, marketType = 'soccer_winner') {
+  if (options.bulkOddsCacheFile || process.env.SPORTS_BULK_ODDS_CACHE_FILE) {
+    return options.bulkOddsCacheFile || process.env.SPORTS_BULK_ODDS_CACHE_FILE;
+  }
+  const baseDir = options.bulkOddsCacheDir || process.env.SPORTS_BULK_ODDS_CACHE_DIR || defaultBulkOddsCacheDir();
+  const competitionToken = normalizeCacheToken(competition, 'competition');
+  const marketToken = normalizeCacheToken(marketType, 'soccer_winner');
+  return path.join(baseDir, `${competitionToken}__${marketToken}.json`);
+}
+
+function normalizeCachePayload(payload, competition) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return {
+      schemaVersion: BULK_ODDS_CACHE_SCHEMA_VERSION,
+      competitionId: String(competition || '').toLowerCase(),
+      snapshots: {},
+    };
+  }
+  return {
+    schemaVersion: BULK_ODDS_CACHE_SCHEMA_VERSION,
+    competitionId: String(payload.competitionId || competition || '').toLowerCase(),
+    snapshots: payload.snapshots && typeof payload.snapshots === 'object' ? payload.snapshots : {},
+  };
+}
+
+function enrichCompetitionSnapshotRows(snapshot, nowMs = Date.now()) {
   const odds = Array.isArray(snapshot && snapshot.odds) ? snapshot.odds : [];
-  return odds.find((row) => normalizeEventId(row && row.event && row.event.id) === targetId) || null;
+  const rows = [];
+  for (const row of odds) {
+    const eventId = normalizeEventId(row && row.event && row.event.id);
+    if (!eventId) continue;
+    const ttl = deriveBulkOddsTtlPolicy(row && row.event ? row.event : {}, nowMs);
+    rows.push({
+      eventId,
+      ttlMs: ttl.ttlMs,
+      state: ttl.state,
+      kickoffAt: ttl.kickoffAt,
+      cachedAtMs: nowMs,
+      expiresAtMs: nowMs + ttl.ttlMs,
+      payload: row,
+    });
+  }
+  return rows;
 }
 
-function withBulkSource(payload, bulkMeta) {
+function withOddsSource(payload, sourceMeta) {
   const source = payload && payload.source && typeof payload.source === 'object' ? payload.source : {};
   return {
     ...payload,
     source: {
       ...source,
-      bulk: bulkMeta,
+      cache: {
+        source: sourceMeta.source,
+        hit: Boolean(sourceMeta.hit),
+        miss: Boolean(sourceMeta.miss),
+        ttlMs: Number.isFinite(sourceMeta.ttlMs) ? Number(sourceMeta.ttlMs) : null,
+        file: sourceMeta.file || null,
+      },
+      ...(sourceMeta.competitionId
+        ? {
+            bulk: {
+              used: Boolean(sourceMeta.used),
+              cacheHit: Boolean(sourceMeta.hit),
+              competitionId: sourceMeta.competitionId,
+              file: sourceMeta.file || null,
+              ttlMs: Number.isFinite(sourceMeta.ttlMs) ? Number(sourceMeta.ttlMs) : null,
+            },
+          }
+        : {}),
     },
   };
+}
+
+function pickCacheSnapshot(cachePayload, providerMode, marketType) {
+  const snapshots = cachePayload && cachePayload.snapshots ? cachePayload.snapshots : {};
+  const marketSuffix = `|${normalizeCacheToken(marketType, 'soccer_winner')}`;
+  const mode = normalizeCacheToken(providerMode, 'auto');
+  const directKey = `${mode}${marketSuffix}`;
+  if (snapshots[directKey]) {
+    return { key: directKey, snapshot: snapshots[directKey] };
+  }
+
+  const keys = Object.keys(snapshots).filter((key) => key.endsWith(marketSuffix));
+  if (!keys.length) return null;
+  keys.sort((a, b) => Number(snapshots[b].cachedAtMs || 0) - Number(snapshots[a].cachedAtMs || 0));
+  return { key: keys[0], snapshot: snapshots[keys[0]] };
+}
+
+function compactSnapshotRows(rows, nowMs = Date.now()) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => Number(row && row.expiresAtMs) > nowMs);
+}
+
+function findCachedEventRow(snapshot, eventId, nowMs = Date.now()) {
+  const targetId = normalizeEventId(eventId);
+  if (!targetId) return null;
+  const rows = compactSnapshotRows(snapshot && snapshot.rows, nowMs);
+  return rows.find((row) => normalizeEventId(row && row.eventId) === targetId) || null;
+}
+
+function writeCompetitionSnapshot(cacheFile, competition, snapshotKey, snapshot) {
+  const payload = normalizeCachePayload(readJsonFile(cacheFile), competition);
+  payload.schemaVersion = BULK_ODDS_CACHE_SCHEMA_VERSION;
+  payload.competitionId = String(competition || '').toLowerCase();
+  payload.snapshots[snapshotKey] = snapshot;
+
+  const nowMs = Date.now();
+  for (const [key, value] of Object.entries(payload.snapshots)) {
+    const rows = compactSnapshotRows(value && value.rows, nowMs);
+    if (!rows.length) {
+      delete payload.snapshots[key];
+      continue;
+    }
+    payload.snapshots[key] = {
+      ...value,
+      rows,
+    };
+  }
+
+  writeJsonFile(cacheFile, payload);
+}
+
+function buildBulkCompetitionPayload(snapshot, sourceMeta, competition, marketType = 'soccer_winner') {
+  const rows = compactSnapshotRows(snapshot && snapshot.rows, Date.now());
+  const ttlValues = rows
+    .map((row) => Number(row && row.ttlMs))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const ttlMs = ttlValues.length ? Math.min(...ttlValues) : null;
+  return {
+    schemaVersion: snapshot && snapshot.schemaVersion ? snapshot.schemaVersion : BULK_ODDS_CACHE_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    provider: snapshot && snapshot.provider ? snapshot.provider : null,
+    mode: snapshot && snapshot.mode ? snapshot.mode : null,
+    competitionId: String(competition || '').toLowerCase(),
+    marketType,
+    count: rows.length,
+    odds: rows.map((row) => row.payload),
+    source: {
+      provider: snapshot && snapshot.provider ? snapshot.provider : null,
+      cache: {
+        source: sourceMeta.source,
+        hit: Boolean(sourceMeta.hit),
+        miss: Boolean(sourceMeta.miss),
+        ttlMs,
+        file: sourceMeta.file || null,
+      },
+      bulk: {
+        used: true,
+        cacheHit: Boolean(sourceMeta.hit),
+        competitionId: String(competition || '').toLowerCase(),
+        file: sourceMeta.file || null,
+        ttlMs,
+      },
+    },
+  };
+}
+
+async function fetchCompetitionSnapshot(providerRegistry, options, competition, marketType = 'soccer_winner') {
+  const bulkSnapshot = await providerRegistry.listCompetitionOdds({
+    providerMode: options.provider,
+    competitionId: competition,
+    marketType,
+    timeoutMs: options.timeoutMs,
+    limit: options.limit,
+    from: options.kickoffAfter,
+    to: options.kickoffBefore,
+  });
+  const cachedAtMs = Date.now();
+  const rows = enrichCompetitionSnapshotRows(bulkSnapshot, cachedAtMs);
+  return {
+    schemaVersion: bulkSnapshot && bulkSnapshot.schemaVersion ? bulkSnapshot.schemaVersion : BULK_ODDS_CACHE_SCHEMA_VERSION,
+    provider: bulkSnapshot && bulkSnapshot.provider ? bulkSnapshot.provider : options.provider || 'auto',
+    mode: bulkSnapshot && bulkSnapshot.mode ? bulkSnapshot.mode : options.provider || 'auto',
+    marketType,
+    cachedAtMs,
+    rows,
+  };
+}
+
+async function resolveCompetitionOddsPayload(providerRegistry, options, marketType = 'soccer_winner') {
+  const competition = String(options.competition || '').trim();
+  const cacheFile = resolveBulkOddsCacheFile(options, competition, marketType);
+  const cachePayload = normalizeCachePayload(readJsonFile(cacheFile), competition);
+  const cacheSelection = pickCacheSnapshot(cachePayload, options.provider, marketType);
+  if (cacheSelection && cacheSelection.snapshot) {
+    const validRows = compactSnapshotRows(cacheSelection.snapshot.rows, Date.now());
+    if (validRows.length) {
+      const hydrated = { ...cacheSelection.snapshot, rows: validRows };
+      writeCompetitionSnapshot(cacheFile, competition, cacheSelection.key, hydrated);
+      return buildBulkCompetitionPayload(
+        hydrated,
+        { source: 'cache', hit: true, miss: false, file: cacheFile },
+        competition,
+        marketType,
+      );
+    }
+  }
+
+  const fetched = await fetchCompetitionSnapshot(providerRegistry, options, competition, marketType);
+  const snapshotKey = buildBulkOddsSnapshotKey(fetched.provider || options.provider || 'auto', marketType);
+  writeCompetitionSnapshot(cacheFile, competition, snapshotKey, fetched);
+  return buildBulkCompetitionPayload(
+    fetched,
+    { source: 'api', hit: false, miss: true, file: cacheFile },
+    competition,
+    marketType,
+  );
 }
 
 async function resolveEventOddsPayload(providerRegistry, options, eventId, marketType = 'soccer_winner') {
   const competition = String(options.competition || '').trim();
   if (!competition) {
-    return providerRegistry.getEventOdds(eventId, marketType, {
+    const payload = await providerRegistry.getEventOdds(eventId, marketType, {
       providerMode: options.provider,
       timeoutMs: options.timeoutMs,
       limit: options.limit,
       from: options.kickoffAfter,
       to: options.kickoffBefore,
     });
+    return withOddsSource(payload, {
+      source: 'api',
+      hit: false,
+      miss: false,
+      ttlMs: null,
+      file: null,
+      used: false,
+    });
   }
 
-  const cacheFile = getBulkOddsCacheFile(options);
-  const cacheTtlMs = getBulkOddsCacheTtlMs(options);
-  const cacheKey = buildBulkOddsCacheKey(options, marketType);
-  const cached = readBulkOddsCacheEntry(cacheFile, cacheKey);
-  if (cached && cached.snapshot) {
-    const cachedMatch = findEventOddsInBulkSnapshot(cached.snapshot, eventId);
-    if (cachedMatch) {
-      return withBulkSource(cachedMatch, {
-        used: true,
-        cacheHit: true,
-        cacheKey,
+  const cacheFile = resolveBulkOddsCacheFile(options, competition, marketType);
+  const cachePayload = normalizeCachePayload(readJsonFile(cacheFile), competition);
+  const cacheSelection = pickCacheSnapshot(cachePayload, options.provider, marketType);
+  if (cacheSelection && cacheSelection.snapshot) {
+    const cachedRow = findCachedEventRow(cacheSelection.snapshot, eventId, Date.now());
+    if (cachedRow && cachedRow.payload) {
+      writeCompetitionSnapshot(
         cacheFile,
-        cachedAt: new Date(Number(cached.cachedAtMs)).toISOString(),
-        expiresAt: new Date(Number(cached.expiresAtMs)).toISOString(),
+        competition,
+        cacheSelection.key,
+        {
+          ...cacheSelection.snapshot,
+          rows: compactSnapshotRows(cacheSelection.snapshot.rows, Date.now()),
+        },
+      );
+      return withOddsSource(cachedRow.payload, {
+        source: 'cache',
+        hit: true,
+        miss: false,
+        ttlMs: cachedRow.ttlMs,
+        file: cacheFile,
         competitionId: competition.toLowerCase(),
-        count: Number(cached.snapshot.count || 0),
+        used: true,
       });
     }
   }
 
-  let bulkSnapshot;
+  let fetched;
   try {
-    bulkSnapshot = await providerRegistry.listCompetitionOdds({
-      providerMode: options.provider,
-      competitionId: competition,
-      marketType,
-      timeoutMs: options.timeoutMs,
-      limit: options.limit,
-      from: options.kickoffAfter,
-      to: options.kickoffBefore,
-    });
+    fetched = await fetchCompetitionSnapshot(providerRegistry, options, competition, marketType);
+    const snapshotKey = buildBulkOddsSnapshotKey(fetched.provider || options.provider || 'auto', marketType);
+    writeCompetitionSnapshot(cacheFile, competition, snapshotKey, fetched);
   } catch (err) {
     const fallbackFromBulkError = await providerRegistry.getEventOdds(eventId, marketType, {
       providerMode: options.provider,
@@ -207,32 +413,28 @@ async function resolveEventOddsPayload(providerRegistry, options, eventId, marke
       from: options.kickoffAfter,
       to: options.kickoffBefore,
     });
-    return withBulkSource(fallbackFromBulkError, {
-      used: false,
-      cacheHit: false,
-      fallback: 'event-odds-endpoint',
-      reason: 'bulk-fetch-failed',
+    return withOddsSource(fallbackFromBulkError, {
+      source: 'api',
+      hit: false,
+      miss: true,
+      ttlMs: null,
+      file: cacheFile,
       competitionId: competition.toLowerCase(),
+      used: false,
       errorCode: err && err.code ? String(err.code) : 'SPORTS_LIST_COMPETITION_ODDS_FAILED',
     });
   }
-  writeBulkOddsCacheEntry(cacheFile, cacheKey, {
-    cachedAtMs: Date.now(),
-    expiresAtMs: Date.now() + cacheTtlMs,
-    snapshot: bulkSnapshot,
-  });
 
-  const bulkMatch = findEventOddsInBulkSnapshot(bulkSnapshot, eventId);
-  if (bulkMatch) {
-    return withBulkSource(bulkMatch, {
-      used: true,
-      cacheHit: false,
-      cacheKey,
-      cacheFile,
-      cachedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + cacheTtlMs).toISOString(),
+  const row = findCachedEventRow(fetched, eventId, Date.now());
+  if (row && row.payload) {
+    return withOddsSource(row.payload, {
+      source: 'api',
+      hit: false,
+      miss: true,
+      ttlMs: row.ttlMs,
+      file: cacheFile,
       competitionId: competition.toLowerCase(),
-      count: Number(bulkSnapshot.count || 0),
+      used: true,
     });
   }
 
@@ -243,12 +445,14 @@ async function resolveEventOddsPayload(providerRegistry, options, eventId, marke
     from: options.kickoffAfter,
     to: options.kickoffBefore,
   });
-  return withBulkSource(fallback, {
-    used: false,
-    cacheHit: false,
-    fallback: 'event-odds-endpoint',
+  return withOddsSource(fallback, {
+    source: 'api',
+    hit: false,
+    miss: true,
+    ttlMs: null,
+    file: cacheFile,
     competitionId: competition.toLowerCase(),
-    count: Number(bulkSnapshot.count || 0),
+    used: false,
   });
 }
 
@@ -332,6 +536,20 @@ function renderSportsTable(payload) {
     return;
   }
 
+  if (Array.isArray(payload.odds)) {
+    console.table(
+      payload.odds.map((item) => ({
+        eventId: item && item.event ? item.event.id : null,
+        home: item && item.event ? item.event.homeTeam : null,
+        away: item && item.event ? item.event.awayTeam : null,
+        kickoffAt: item && item.event ? item.event.startTime : null,
+        status: item && item.event ? item.event.status : null,
+        books: item ? item.bookCount : null,
+      })),
+    );
+    return;
+  }
+
   if (payload.timing && payload.timing.creationWindow) {
     console.log(`Creation window: ${payload.timing.creationWindow.status} (open=${payload.timing.creationWindow.opensAt}, close=${payload.timing.creationWindow.closesAt})`);
   }
@@ -357,6 +575,18 @@ function createRunSportsCommand(deps) {
   const detectConcurrentSyncConflict = requireDep(deps, 'detectConcurrentSyncConflict');
   const buildSportsResolvePlan = requireDep(deps, 'buildSportsResolvePlan');
   const deployPandoraAmmMarket = requireDep(deps, 'deployPandoraAmmMarket');
+  const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
+
+  function toCliError(err, fallbackCode, fallbackMessage) {
+    if (err && err.code) {
+      return new CliError(err.code, err.message || fallbackMessage, err.details);
+    }
+    return new CliError(
+      fallbackCode,
+      fallbackMessage,
+      { cause: err && err.message ? err.message : String(err) },
+    );
+  }
 
   return async function runSportsCommand(args, context) {
     if (!args.length || includesHelpFlag(args)) {
@@ -410,25 +640,31 @@ function createRunSportsCommand(deps) {
       emitSuccess(context.outputMode, parsed.command, {
         ...payload,
         source: {
+          ...(payload.source && typeof payload.source === 'object' ? payload.source : {}),
           provider: payload.provider,
-          ...(payload.source && payload.source.bulk ? { bulk: payload.source.bulk } : {}),
           consensus,
         },
       }, renderSportsTable);
       return;
     }
 
+    if (parsed.command === 'sports.odds.bulk') {
+      const payload = await resolveCompetitionOddsPayload(providerRegistry, options, 'soccer_winner');
+      emitSuccess(context.outputMode, parsed.command, payload, renderSportsTable);
+      return;
+    }
+
     if (parsed.command === 'sports.consensus') {
       let quotes;
       let diagnostics = [];
-      let bulk = null;
+      let source = null;
       if (Array.isArray(options.checksJson)) {
         quotes = options.checksJson;
       } else {
         const odds = await resolveEventOddsPayload(providerRegistry, options, options.eventId, 'soccer_winner');
         quotes = toConsensusQuotes(odds, options.selection, options.bookPriority || odds.preferredBooks);
         diagnostics = [`quotes:${quotes.length}`];
-        bulk = odds.source && odds.source.bulk ? odds.source.bulk : null;
+        source = odds.source && typeof odds.source === 'object' ? odds.source : null;
       }
 
       const consensus = computeSportsConsensus(quotes, {
@@ -440,73 +676,99 @@ function createRunSportsCommand(deps) {
       emitSuccess(context.outputMode, parsed.command, {
         eventId: options.eventId,
         method: options.consensus,
-        source: { ...(bulk ? { bulk } : {}), consensus },
+        source: { ...(source || {}), consensus },
         diagnostics,
       }, renderSportsTable);
       return;
     }
 
     if (parsed.command === 'sports.create.plan' || parsed.command === 'sports.create.run') {
+      let modelInput = null;
+      try {
+        modelInput = loadSportsModelInput(options);
+      } catch (err) {
+        throw toCliError(err, 'INVALID_FLAG_VALUE', 'Invalid sports model input.');
+      }
       const odds = await resolveEventOddsPayload(providerRegistry, options, options.eventId, 'soccer_winner');
       const status = await providerRegistry.getEventStatus(options.eventId);
       const event = {
         ...(odds.event || {}),
         status: status.status || (odds.event && odds.event.status) || 'unknown',
       };
-      const plan = buildSportsCreatePlan({ event, oddsPayload: odds, options });
+      const plan = buildSportsCreatePlan({ event, oddsPayload: odds, options, modelInput });
+      const planWithSource = {
+        ...plan,
+        source: {
+          ...(plan.source && typeof plan.source === 'object' ? plan.source : {}),
+          ...(odds.source && odds.source.cache ? { cache: odds.source.cache } : {}),
+          ...(odds.source && odds.source.bulk ? { bulk: odds.source.bulk } : {}),
+        },
+      };
 
       if (parsed.command === 'sports.create.plan') {
-        emitSuccess(context.outputMode, parsed.command, plan, renderSportsTable);
+        emitSuccess(context.outputMode, parsed.command, planWithSource, renderSportsTable);
         return;
       }
 
-      if (options.execute && !plan.safety.canExecuteCreate) {
+      if (options.execute && !planWithSource.safety.canExecuteCreate) {
         throw new CliError('SPORTS_CREATE_BLOCKED', 'sports create run blocked by conservative timing/coverage gates.', {
           eventId: options.eventId,
-          blockedReasons: plan.safety.blockedReasons,
-          timing: plan.timing,
-          source: plan.source,
+          blockedReasons: planWithSource.safety.blockedReasons,
+          timing: planWithSource.timing,
+          source: planWithSource.source,
         });
       }
 
-      if (plan.marketTemplate.marketType === 'parimutuel') {
+      if (planWithSource.marketTemplate.marketType === 'parimutuel') {
         if (options.execute) {
           throw new CliError('UNSUPPORTED_OPERATION', 'sports create run --execute currently supports AMM only.', {
             hints: ['Use sports create plan for parimutuel planning, or launch script for manual execute path.'],
           });
         }
         emitSuccess(context.outputMode, parsed.command, {
-          ...plan,
+          ...planWithSource,
           mode: 'dry-run',
           diagnostics: ['Parimutuel execution is currently planning-only in sports v1.'],
         }, renderSportsTable);
         return;
       }
 
+      if (options.execute && assertLiveWriteAllowed) {
+        await assertLiveWriteAllowed('sports.create.run.execute', {
+          notionalUsdc: planWithSource.marketTemplate.liquidityUsdc,
+          runtimeMode: 'live',
+        });
+      }
+
       const deployment = await deployPandoraAmmMarket({
-        question: plan.marketTemplate.question,
-        rules: plan.marketTemplate.rules,
-        sources: plan.marketTemplate.sources,
-        targetTimestamp: plan.marketTemplate.targetTimestamp,
-        liquidityUsdc: plan.marketTemplate.liquidityUsdc,
-        distributionYes: plan.marketTemplate.distributionYes,
-        distributionNo: plan.marketTemplate.distributionNo,
-        feeTier: plan.marketTemplate.feeTier,
-        maxImbalance: plan.marketTemplate.maxImbalance,
-        arbiter: plan.marketTemplate.arbiter,
-        category: plan.marketTemplate.category,
-        minCloseLeadSeconds: plan.marketTemplate.minCloseLeadSeconds,
+        question: planWithSource.marketTemplate.question,
+        rules: planWithSource.marketTemplate.rules,
+        sources: planWithSource.marketTemplate.sources,
+        targetTimestamp: planWithSource.marketTemplate.targetTimestamp,
+        liquidityUsdc: planWithSource.marketTemplate.liquidityUsdc,
+        distributionYes: planWithSource.marketTemplate.distributionYes,
+        distributionNo: planWithSource.marketTemplate.distributionNo,
+        feeTier: planWithSource.marketTemplate.feeTier,
+        maxImbalance: planWithSource.marketTemplate.maxImbalance,
+        arbiter: planWithSource.marketTemplate.arbiter,
+        category: planWithSource.marketTemplate.category,
+        minCloseLeadSeconds: planWithSource.marketTemplate.minCloseLeadSeconds,
         execute: Boolean(options.execute),
-        chainId: plan.marketTemplate.chainId,
-        rpcUrl: plan.marketTemplate.rpcUrl,
+        chainId: planWithSource.marketTemplate.chainId,
+        rpcUrl: planWithSource.marketTemplate.rpcUrl,
         privateKey: options.privateKey,
-        usdc: plan.marketTemplate.usdc,
-        oracle: plan.marketTemplate.oracle,
-        factory: plan.marketTemplate.factory,
+        profileId: options.profileId || null,
+        profileFile: options.profileFile || null,
+        usdc: planWithSource.marketTemplate.usdc,
+        oracle: planWithSource.marketTemplate.oracle,
+        factory: planWithSource.marketTemplate.factory,
+        command: 'sports.create.run',
+        toolFamily: 'sports',
+        source: 'sports.create.run',
       });
 
       emitSuccess(context.outputMode, parsed.command, {
-        ...plan,
+        ...planWithSource,
         mode: options.execute ? 'execute' : 'dry-run',
         runtime: {
           mode: 'live',
@@ -635,8 +897,8 @@ function createRunSportsCommand(deps) {
           executionMode: options.paper ? 'paper' : 'execute',
         },
         source: {
+          ...(odds.source && typeof odds.source === 'object' ? odds.source : {}),
           provider: options.provider,
-          ...(odds.source && odds.source.bulk ? { bulk: odds.source.bulk } : {}),
           consensus,
         },
         event: odds.event,

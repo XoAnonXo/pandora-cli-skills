@@ -75,6 +75,10 @@ function defaultLogFile(strategyHash) {
   return path.join(os.homedir(), '.pandora', 'mirror', 'logs', `${hash}.log`);
 }
 
+function defaultPidDir() {
+  return path.join(os.homedir(), '.pandora', 'mirror', 'daemon');
+}
+
 function writeJsonFile(filePath, payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
@@ -136,6 +140,24 @@ function resolvePidFile(options = {}) {
     'MISSING_REQUIRED_FLAG',
     'mirror sync daemon lifecycle requires --pid-file <path> or --strategy-hash <hash>.',
   );
+}
+
+function listDaemonPidFiles() {
+  const dir = defaultPidDir();
+  if (!fs.existsSync(dir)) return [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+    .map((entry) => path.join(dir, entry.name));
+}
+
+function findPidFilesByMarketAddress(marketAddress) {
+  const needle = String(marketAddress || '').trim().toLowerCase();
+  return listDaemonPidFiles().filter((filePath) => {
+    const metadata = readJsonFile(filePath);
+    if (!metadata) return false;
+    return String(metadata.pandoraMarketAddress || '').trim().toLowerCase() === needle;
+  });
 }
 
 function startDaemon(options = {}) {
@@ -205,6 +227,39 @@ function startDaemon(options = {}) {
 }
 
 async function stopDaemon(options = {}) {
+  if (options.all || options.marketAddress) {
+    const pidFiles = options.all ? listDaemonPidFiles() : findPidFilesByMarketAddress(options.marketAddress);
+    const results = [];
+    for (const pidFile of pidFiles) {
+      try {
+        const item = await stopDaemon({ pidFile, stopTimeoutMs: options.stopTimeoutMs });
+        results.push({
+          ok: true,
+          pidFile,
+          result: item,
+        });
+      } catch (err) {
+        results.push({
+          ok: false,
+          pidFile,
+          error: {
+            code: err && err.code ? err.code : 'MIRROR_DAEMON_STOP_FAILED',
+            message: err && err.message ? err.message : String(err),
+            details: err && err.details ? err.details : null,
+          },
+        });
+      }
+    }
+    return {
+      schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
+      mode: options.all ? 'all' : 'market',
+      selector: options.all ? null : String(options.marketAddress || '').toLowerCase(),
+      count: results.length,
+      successCount: results.filter((item) => item.ok).length,
+      failureCount: results.filter((item) => !item.ok).length,
+      items: results,
+    };
+  }
   const pidFile = resolvePidFile(options);
   const metadata = readJsonFile(pidFile);
   if (!metadata) {
@@ -253,6 +308,7 @@ async function stopDaemon(options = {}) {
 
   return {
     schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
+    operationId: updated.strategyHash || null,
     strategyHash: updated.strategyHash || null,
     pidFile,
     pid,
@@ -271,11 +327,12 @@ function daemonStatus(options = {}) {
   const metadata = readJsonFile(pidFile);
 
   if (!metadata) {
-    return {
-      schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
-      found: false,
-      pidFile,
-      strategyHash: options.strategyHash ? normalizeStrategyHash(options.strategyHash) : null,
+      return {
+        schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
+        found: false,
+        pidFile,
+        operationId: options.strategyHash ? normalizeStrategyHash(options.strategyHash) : null,
+        strategyHash: options.strategyHash ? normalizeStrategyHash(options.strategyHash) : null,
       pid: null,
       alive: false,
       status: 'not-found',
@@ -293,11 +350,12 @@ function daemonStatus(options = {}) {
   };
   writeJsonFile(pidFile, updated);
 
-  return {
-    schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
-    found: true,
-    pidFile,
-    strategyHash: updated.strategyHash || null,
+    return {
+      schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
+      found: true,
+      pidFile,
+      operationId: updated.strategyHash || null,
+      strategyHash: updated.strategyHash || null,
     pid,
     alive,
     status: updated.status,
@@ -311,4 +369,6 @@ module.exports = {
   startDaemon,
   stopDaemon,
   daemonStatus,
+  listDaemonPidFiles,
+  findPidFilesByMarketAddress,
 };

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const http = require('http');
+const { EventEmitter } = require('events');
 
 const { normalizeQuestion, questionSimilarity } = require('../../cli/lib/arbitrage_service.cjs');
 const { buildSuggestions } = require('../../cli/lib/suggest_service.cjs');
@@ -36,6 +37,10 @@ const {
   readTradingCredsFromEnv,
   normalizePolymarketPositionSummary,
 } = require('../../cli/lib/polymarket_trade_adapter.cjs');
+const {
+  fetchPolymarketMarkets,
+  subscribePolymarketMarketFeed,
+} = require('../../cli/lib/polymarket_adapter.cjs');
 const { buildPlanDigest } = require('../../cli/lib/mirror_service.cjs');
 const {
   computeApprovalDiff,
@@ -43,8 +48,16 @@ const {
   runPolymarketPreflight,
   POLYMARKET_OPS_SCHEMA_VERSION,
 } = require('../../cli/lib/polymarket_ops_service.cjs');
+const { formatDecodedContractError } = require('../../cli/lib/contract_error_decoder.cjs');
 const { runMirrorSync } = require('../../cli/lib/mirror_sync_service.cjs');
+const {
+  assessMirrorSourceFreshness,
+  buildMirrorSourceSubscriptionRequest,
+} = require('../../cli/lib/mirror_sync/source_freshness.cjs');
+const { readPandoraOnchainReserveContext } = require('../../cli/lib/mirror_sync/reserve_source.cjs');
 const { createRunMirrorCommand } = require('../../cli/lib/mirror_command_service.cjs');
+const handleMirrorSync = require('../../cli/lib/mirror_handlers/sync.cjs');
+const handleMirrorGo = require('../../cli/lib/mirror_handlers/go.cjs');
 const { resolveForkRuntime } = require('../../cli/lib/fork_runtime_service.cjs');
 const { createErrorRecoveryService } = require('../../cli/lib/error_recovery_service.cjs');
 const { createParseTradeFlags } = require('../../cli/lib/parsers/trade_flags.cjs');
@@ -52,10 +65,15 @@ const { createParseWatchFlags } = require('../../cli/lib/parsers/watch_flags.cjs
 const { createParseAutopilotFlags } = require('../../cli/lib/parsers/autopilot_flags.cjs');
 const { createParseMirrorDeployFlags } = require('../../cli/lib/parsers/mirror_deploy_flags.cjs');
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
+const { createParseMirrorBrowseFlags } = require('../../cli/lib/parsers/mirror_remaining_flags.cjs');
+const { createParseLifecycleFlags } = require('../../cli/lib/parsers/lifecycle_flags.cjs');
+const { createParseOddsFlags } = require('../../cli/lib/parsers/odds_flags.cjs');
+const { createParsePolymarketSharedFlags } = require('../../cli/lib/parsers/polymarket_flags.cjs');
 const {
   createParseMirrorSyncFlags,
   createParseMirrorSyncDaemonSelectorFlags,
 } = require('../../cli/lib/parsers/mirror_sync_flags.cjs');
+const { parseArbScanFlags, buildArbOpportunities } = require('../../cli/lib/arb_command_service.cjs');
 const {
   buildTickPlan,
   buildTickSnapshot,
@@ -66,9 +84,18 @@ const {
   applyGateBypassPolicy,
   normalizeSkipGateChecks,
   evaluateSnapshot,
+  evaluateStrictGates,
+  resolveMinimumTimeToCloseSec,
+  runStartupVerify,
 } = require('../../cli/lib/mirror_sync/gates.cjs');
 const { buildIdempotencyKey } = require('../../cli/lib/mirror_sync/execution.cjs');
-const { ensureStateIdentity } = require('../../cli/lib/mirror_sync/state.cjs');
+const { DEFAULT_MIRROR_MIN_CLOSE_LEAD_SECONDS } = require('../../cli/lib/shared/mirror_timing.cjs');
+const {
+  ensureStateIdentity,
+  buildMirrorRuntimeTelemetry,
+  buildPendingActionFilePath,
+  readPendingActionLock,
+} = require('../../cli/lib/mirror_sync/state.cjs');
 
 class ParserCliError extends Error {
   constructor(code, message, details = null) {
@@ -161,6 +188,19 @@ function parserIsSecureHttpUrlOrLocal(value) {
   return /^https:\/\//.test(value) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(value);
 }
 
+function parserParseDateLikeFlag(value, flagName) {
+  const text = String(value || '').trim();
+  if (/^-?\d+(\.\d+)?$/.test(text)) {
+    throw new ParserCliError('INVALID_FLAG_VALUE', `${flagName} must be an ISO date/time string.`);
+  }
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00Z` : text;
+  const parsed = Date.parse(normalized);
+  if (!Number.isFinite(parsed)) {
+    throw new ParserCliError('INVALID_FLAG_VALUE', `${flagName} must be an ISO date/time string.`);
+  }
+  return text;
+}
+
 function parserParseMirrorSyncGateSkipList(value, flagName) {
   const checks = String(value)
     .split(',')
@@ -190,8 +230,10 @@ function buildParserDeps(overrides = {}) {
     parseInteger: parserParseInteger,
     parseNonNegativeInteger: parserParseNonNegativeInteger,
     parseProbabilityPercent: parserParseProbabilityPercent,
+    parseDateLikeFlag: parserParseDateLikeFlag,
     parseOutcomeSide: parserParseOutcomeSide,
     parseNumber: parserParseNumber,
+    isValidPrivateKey: (value) => /^0x[a-fA-F0-9]{64}$/.test(String(value)),
     parseWebhookFlagIntoOptions: () => null,
     isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
     parseMirrorSyncGateSkipList: parserParseMirrorSyncGateSkipList,
@@ -200,8 +242,84 @@ function buildParserDeps(overrides = {}) {
   };
 }
 
+function withMcpMode(fn) {
+  const original = process.env.PANDORA_MCP_MODE;
+  process.env.PANDORA_MCP_MODE = '1';
+  try {
+    return fn();
+  } finally {
+    if (original === undefined) {
+      delete process.env.PANDORA_MCP_MODE;
+    } else {
+      process.env.PANDORA_MCP_MODE = original;
+    }
+  }
+}
+
 const TEST_WALLET = '0x1111111111111111111111111111111111111111';
 const TEST_MARKET = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const TEST_PRIVATE_KEY = `0x${'1'.repeat(64)}`;
+const TEST_USDC = '0x3333333333333333333333333333333333333333';
+const POLYMARKET_TEST_SPENDERS = {
+  exchange: '0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e',
+  negRiskExchange: '0xc5d563a36ae78145c45a50134d48a1215220f80a',
+  negRiskAdapter: '0xd91e80cf2e7be2e162c6513ced06f1dd0da35296',
+};
+
+function buildPolymarketOpsTestViemRuntime(options = {}) {
+  const signerAddress = String(options.signerAddress || TEST_WALLET).toLowerCase();
+  const funderAddress = String(options.funderAddress || signerAddress).toLowerCase();
+  const allowanceValue =
+    options.allowanceValue === null || options.allowanceValue === undefined
+      ? 1n << 200n
+      : BigInt(options.allowanceValue);
+  const usdcBalanceRaw =
+    options.usdcBalanceRaw === null || options.usdcBalanceRaw === undefined
+      ? 2_500_000n
+      : BigInt(options.usdcBalanceRaw);
+  const safeOwner = options.safeOwner !== false;
+  const deadRpcUrls = new Set(
+    (Array.isArray(options.deadRpcUrls) ? options.deadRpcUrls : []).map((entry) => String(entry)),
+  );
+
+  return {
+    http(url) {
+      return { url };
+    },
+    privateKeyToAccount() {
+      return { address: signerAddress };
+    },
+    createPublicClient({ transport }) {
+      const rpcUrl = transport && transport.url ? String(transport.url) : '';
+      return {
+        async getChainId() {
+          if (deadRpcUrls.has(rpcUrl)) {
+            throw new Error(`RPC down for ${rpcUrl}`);
+          }
+          return 137;
+        },
+        async getBytecode({ address }) {
+          return String(address || '').toLowerCase() === funderAddress ? '0x6001600101' : '0x';
+        },
+        async readContract({ functionName }) {
+          if (functionName === 'balanceOf') {
+            return usdcBalanceRaw;
+          }
+          if (functionName === 'allowance') {
+            return allowanceValue;
+          }
+          if (functionName === 'isApprovedForAll') {
+            return true;
+          }
+          if (functionName === 'isOwner') {
+            return safeOwner;
+          }
+          throw new Error(`Unsupported readContract function ${functionName}`);
+        },
+      };
+    },
+  };
+}
 
 test('normalizeQuestion strips punctuation and stopwords', () => {
   const value = normalizeQuestion('Will, the Arsenal win the PL?!');
@@ -211,6 +329,35 @@ test('normalizeQuestion strips punctuation and stopwords', () => {
 test('questionSimilarity is high for equivalent phrasing', () => {
   const score = questionSimilarity('Will Arsenal win the PL?', 'Arsenal to win Premier League');
   assert.ok(score > 0.6);
+});
+
+test('mirror browse parser validates URL override flags', () => {
+  const parseMirrorBrowseFlags = createParseMirrorBrowseFlags(buildParserDeps());
+
+  assert.throws(
+    () => parseMirrorBrowseFlags(['--polymarket-gamma-url', 'http://example.com/gamma']),
+    (error) => error && error.code === 'INVALID_FLAG_VALUE',
+  );
+});
+
+test('createParsePolymarketSharedFlags accepts comma-separated rpc fallback chains', () => {
+  const parsePolymarketSharedFlags = createParsePolymarketSharedFlags(buildParserDeps());
+  const parsed = parsePolymarketSharedFlags(
+    ['--rpc-url', 'https://primary.example, https://secondary.example,https://primary.example'],
+    'check',
+  );
+  assert.equal(parsed.rpcUrl, 'https://primary.example,https://secondary.example');
+});
+
+test('mirror sync selector parser blocks pid files outside workspace in MCP mode', () => {
+  const parseMirrorSyncDaemonSelectorFlags = createParseMirrorSyncDaemonSelectorFlags(buildParserDeps());
+
+  withMcpMode(() => {
+    assert.throws(
+      () => parseMirrorSyncDaemonSelectorFlags(['--pid-file', '/tmp/mirror.pid'], 'stop'),
+      (error) => error && error.code === 'MCP_FILE_ACCESS_BLOCKED',
+    );
+  });
 });
 
 test('buildSuggestions returns bounded deterministic suggestions', () => {
@@ -255,6 +402,12 @@ test('evaluateMarket throws deterministic error without provider', async () => {
       return true;
     },
   );
+});
+
+test('contract error formatter maps known trade-size selector to actionable hint', () => {
+  const message = formatDecodedContractError({ data: '0x7e2d7787' });
+  assert.match(message, /trade too large/i);
+  assert.match(message, /--max-imbalance/i);
 });
 
 test('autopilot state helpers are deterministic', () => {
@@ -1024,6 +1177,523 @@ test('browsePolymarketMarkets filters mock payload deterministically', async () 
   }
 });
 
+test('fetchPolymarketMarkets prefers game_start_time over midnight endDateIso for sports rows', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    async json() {
+      return [
+        {
+          conditionId: 'gamma-sports-1',
+          question: 'Will Everton beat Burnley?',
+          slug: 'everton-v-burnley-home',
+          endDateIso: '2030-03-09T00:00:00Z',
+          game_start_time: '2030-03-09T23:00:00Z',
+          liquidityNum: '15000',
+          volumeNum: '25000',
+          outcomes: '["Yes","No"]',
+          outcomePrices: '["0.61","0.39"]',
+        },
+      ];
+    },
+  });
+
+  try {
+    const payload = await fetchPolymarketMarkets({ limit: 10, timeoutMs: 1000 });
+    assert.equal(payload.source, 'polymarket:gamma');
+    assert.equal(payload.count, 1);
+    assert.equal(
+      payload.items[0].closeTimestamp,
+      Math.floor(Date.parse('2030-03-09T23:00:00Z') / 1000),
+    );
+    assert.equal(
+      payload.items[0].eventStartTimestamp,
+      Math.floor(Date.parse('2030-03-09T23:00:00Z') / 1000),
+    );
+    assert.equal(
+      payload.items[0].sourceCloseTimestamp,
+      Math.floor(Date.parse('2030-03-09T00:00:00Z') / 1000),
+    );
+    assert.equal(payload.items[0].timestampSource, 'game_start_time');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('fetchPolymarketMarkets annotates live-feed freshness when websocket prices refresh sports rows', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    async json() {
+      return [
+        {
+          conditionId: 'gamma-feed-1',
+          question: 'Will Everton beat Burnley?',
+          slug: 'everton-v-burnley-home',
+          endDateIso: '2030-03-09T00:00:00Z',
+          game_start_time: '2030-03-09T23:00:00Z',
+          liquidityNum: '15000',
+          volumeNum: '25000',
+          tokens: [
+            { outcome: 'Yes', price: '0.61', token_id: 'feed-yes-1' },
+            { outcome: 'No', price: '0.39', token_id: 'feed-no-1' },
+          ],
+        },
+      ];
+    },
+  });
+
+  class FakeSocket extends EventEmitter {
+    constructor() {
+      super();
+      this.sent = [];
+      setImmediate(() => this.emit('open'));
+    }
+
+    send(payload) {
+      this.sent.push(JSON.parse(payload));
+      setImmediate(() => {
+        this.emit('message', JSON.stringify({
+          type: 'price_change',
+          asset_id: 'feed-yes-1',
+          best_bid: '0.63',
+          best_ask: '0.65',
+        }));
+        this.emit('message', JSON.stringify({
+          type: 'price_change',
+          asset_id: 'feed-no-1',
+          best_bid: '0.35',
+          best_ask: '0.37',
+        }));
+      });
+    }
+
+    close() {}
+  }
+
+  try {
+    const payload = await fetchPolymarketMarkets({
+      limit: 10,
+      timeoutMs: 1000,
+      maxAgeMs: 10_000,
+      webSocketFactory: () => new FakeSocket(),
+    });
+
+    assert.equal(payload.source, 'polymarket:feed');
+    assert.equal(payload.sourceFreshness.transport, 'stream');
+    assert.equal(payload.sourceFreshness.usedLivePrices, true);
+    assert.equal(payload.sourceFreshness.fresh, true);
+    assert.equal(payload.subscription.supported, true);
+    assert.equal(payload.subscription.attempted, true);
+    assert.equal(payload.subscription.connected, true);
+    assert.equal(payload.items[0].sourceFreshness.transport, 'stream');
+    assert.equal(payload.items[0].sourceFreshness.usedLivePrices, true);
+    assert.equal(payload.items[0].sourceFreshness.fresh, true);
+    assert.equal(payload.items[0].yesPct > 60, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('fetchPolymarketMarkets preserves poll freshness metadata when live feed is disabled', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    async json() {
+      return [
+        {
+          conditionId: 'gamma-poll-1',
+          question: 'Will bitcoin trade above 120k in 2026?',
+          slug: 'bitcoin-price-120k-2026',
+          endDateIso: '2030-03-09T18:00:00Z',
+          liquidityNum: '15000',
+          volumeNum: '25000',
+          outcomes: '["Yes","No"]',
+          outcomePrices: '["0.55","0.45"]',
+        },
+      ];
+    },
+  });
+
+  try {
+    const payload = await fetchPolymarketMarkets({
+      limit: 10,
+      timeoutMs: 1000,
+      disableLiveFeed: true,
+      maxAgeMs: 10_000,
+    });
+
+    assert.equal(payload.source, 'polymarket:gamma');
+    assert.equal(payload.sourceFreshness.transport, 'poll');
+    assert.equal(payload.sourceFreshness.usedLivePrices, false);
+    assert.equal(payload.sourceFreshness.fresh, true);
+    assert.equal(payload.subscription.attempted, false);
+    assert.equal(payload.items[0].sourceFreshness.transport, 'poll');
+    assert.equal(payload.items[0].sourceFreshness.fresh, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('subscribePolymarketMarketFeed streams incremental price updates for subscribed token ids', async () => {
+  const statusEvents = [];
+  const priceEvents = [];
+
+  class FakeSocket extends EventEmitter {
+    constructor() {
+      super();
+      setImmediate(() => this.emit('open'));
+    }
+
+    send() {
+      setImmediate(() => {
+        this.emit('message', JSON.stringify({
+          type: 'price_change',
+          asset_id: 'sub-yes-1',
+          best_bid: '0.58',
+          best_ask: '0.60',
+        }));
+      });
+    }
+
+    close() {}
+  }
+
+  const subscription = subscribePolymarketMarketFeed({
+    assetIds: ['sub-yes-1'],
+    webSocketFactory: () => new FakeSocket(),
+    onStatus: (event) => {
+      statusEvents.push(event.event);
+    },
+    onPrice: (event) => {
+      priceEvents.push(event);
+    },
+  });
+
+  await subscription.ready;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const snapshot = subscription.getSnapshot();
+  subscription.close();
+
+  assert.equal(statusEvents.includes('open'), true);
+  assert.equal(priceEvents.length, 1);
+  assert.equal(snapshot.priceByAssetId.get('sub-yes-1') > 0.58, true);
+  assert.equal(typeof snapshot.observedAt, 'string');
+});
+
+test('mirror source freshness policy tightens sports max age and recommends stream on short live intervals', () => {
+  const sportsSource = {
+    source: 'polymarket:feed',
+    timestampSource: 'game_start_time',
+    eventStartTimestamp: Math.floor(Date.parse('2030-03-09T23:00:00Z') / 1000),
+    sourceCloseTimestamp: Math.floor(Date.parse('2030-03-09T00:00:00Z') / 1000),
+    yesTokenId: 'sports-yes',
+    noTokenId: 'sports-no',
+    sourceFreshness: {
+      transport: 'poll',
+      observedAt: new Date(Date.now() - 20_000).toISOString(),
+    },
+  };
+  const nonSportsSource = {
+    source: 'polymarket:gamma',
+    yesTokenId: 'crypto-yes',
+    noTokenId: 'crypto-no',
+    sourceFreshness: {
+      transport: 'poll',
+      observedAt: new Date(Date.now() - 20_000).toISOString(),
+    },
+  };
+
+  const sportsAssessment = assessMirrorSourceFreshness(sportsSource, {
+    executeLive: true,
+    intervalMs: 5_000,
+    nowMs: Date.now(),
+  });
+  const nonSportsAssessment = assessMirrorSourceFreshness(nonSportsSource, {
+    executeLive: true,
+    intervalMs: 30_000,
+    nowMs: Date.now(),
+  });
+  const subscriptionRequest = buildMirrorSourceSubscriptionRequest(sportsSource, {
+    executeLive: true,
+    intervalMs: 5_000,
+  });
+
+  assert.equal(sportsAssessment.sportsLike, true);
+  assert.equal(sportsAssessment.streamPreferred, true);
+  assert.equal(sportsAssessment.fresh, false);
+  assert.equal(nonSportsAssessment.sportsLike, false);
+  assert.equal(nonSportsAssessment.maxAgeMs > sportsAssessment.maxAgeMs, true);
+  assert.equal(subscriptionRequest.enabled, true);
+  assert.deepEqual(subscriptionRequest.assetIds, ['sports-yes', 'sports-no']);
+});
+
+test('browsePolymarketMarkets uses gamma events endpoint for tag-id sports discovery', async () => {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push(req.url || '/');
+    const parsed = new URL(req.url || '/', 'http://127.0.0.1');
+    const tagId = parsed.searchParams.get('tag_id');
+
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+
+    if (parsed.pathname !== '/events') {
+      res.end(JSON.stringify({ events: [] }));
+      return;
+    }
+
+    if (tagId === '82') {
+      res.end(
+        JSON.stringify({
+          events: [
+            {
+              id: 'evt-82',
+              slug: 'everton-v-burnley',
+              title: 'Everton vs Burnley',
+              markets: [
+                {
+                  condition_id: 'sports-c1',
+                  market_slug: 'everton-v-burnley-home',
+                  question: 'Will Everton beat Burnley?',
+                  end_date_iso: '2030-03-09T16:00:00Z',
+                  game_start_time: '2030-03-09T23:00:00Z',
+                  active: true,
+                  closed: false,
+                  volume24hr: 500000,
+                  tokens: [
+                    { outcome: 'Yes', price: '0.605', token_id: 'yes-sports-1' },
+                    { outcome: 'No', price: '0.395', token_id: 'no-sports-1' },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+
+    if (tagId === '100350') {
+      res.end(
+        JSON.stringify({
+          events: [
+            {
+              id: 'evt-100350',
+              slug: 'leeds-v-sunderland',
+              title: 'Leeds vs Sunderland',
+              markets: [
+                {
+                  // Duplicate condition id should be deduped across tag-id scans.
+                  condition_id: 'sports-c1',
+                  market_slug: 'duplicate-market-ignored',
+                  question: 'Duplicate row should be ignored',
+                  end_date_iso: '2030-03-09T16:00:00Z',
+                  active: true,
+                  closed: false,
+                  volume24hr: 1,
+                  tokens: [
+                    { outcome: 'Yes', price: '0.5', token_id: 'dup-yes' },
+                    { outcome: 'No', price: '0.5', token_id: 'dup-no' },
+                  ],
+                },
+                {
+                  condition_id: 'sports-c2',
+                  market_slug: 'leeds-v-sunderland-home',
+                  question: 'Will Leeds beat Sunderland?',
+                  end_date_iso: '2030-03-09T16:00:00Z',
+                  active: true,
+                  closed: false,
+                  volume24hr: 400000,
+                  tokens: [
+                    { outcome: 'Yes', price: '0.495', token_id: 'yes-sports-2' },
+                    { outcome: 'No', price: '0.505', token_id: 'no-sports-2' },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+
+    res.end(JSON.stringify({ events: [] }));
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const gammaUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const payload = await browsePolymarketMarkets({
+      gammaUrl,
+      polymarketTagIds: [82, 100350],
+      limit: 10,
+    });
+
+    assert.equal(payload.source, 'polymarket:gamma-events');
+    assert.deepEqual(payload.filters.polymarketTagIds, [82, 100350]);
+    assert.equal(payload.count, 2);
+    assert.equal(payload.items[0].eventSlug, 'everton-v-burnley');
+    assert.equal(payload.items[1].eventSlug, 'leeds-v-sunderland');
+    assert.equal(payload.items[0].eventTitle, 'Everton vs Burnley');
+    assert.equal(payload.items[0].eventId, 'evt-82');
+    assert.equal(
+      payload.items[0].closeTimestamp,
+      Math.floor(Date.parse('2030-03-09T23:00:00Z') / 1000),
+    );
+
+    const eventRequests = requests.filter((entry) => String(entry).startsWith('/events?'));
+    assert.equal(eventRequests.length, 2);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('browsePolymarketMarkets supports category/keyword/date filters with explicit sorting', async () => {
+  const nowMs = Date.now();
+  const toIso = (offsetHours) => new Date(nowMs + offsetHours * 60 * 60 * 1000).toISOString();
+
+  const server = http.createServer((req, res) => {
+    const parsed = new URL(req.url || '/', 'http://127.0.0.1');
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    if (parsed.pathname !== '/markets') {
+      res.end(JSON.stringify({ markets: [] }));
+      return;
+    }
+
+    res.end(
+      JSON.stringify({
+        markets: [
+          {
+            condition_id: 'm-sports',
+            market_slug: 'everton-v-burnley-home',
+            question: 'Will Everton beat Burnley?',
+            end_date_iso: toIso(12),
+            active: true,
+            closed: false,
+            volume24hr: 9000,
+            liquidity: 9000,
+            tags: [{ id: 82, slug: 'soccer' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.60', token_id: 'sports-yes' },
+              { outcome: 'No', price: '0.40', token_id: 'sports-no' },
+            ],
+          },
+          {
+            condition_id: 'm-crypto-high-vol',
+            market_slug: 'bitcoin-etf-approval-2026',
+            question: 'Will Bitcoin ETF approval happen in 2026?',
+            end_date_iso: toIso(24),
+            active: true,
+            closed: false,
+            volume24hr: 8000,
+            liquidity: 1000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.45', token_id: 'c1-yes' },
+              { outcome: 'No', price: '0.55', token_id: 'c1-no' },
+            ],
+          },
+          {
+            condition_id: 'm-crypto-high-liq',
+            market_slug: 'bitcoin-price-120k-2026',
+            question: 'Will bitcoin trade above 120k in 2026?',
+            end_date_iso: toIso(18),
+            active: true,
+            closed: false,
+            volume24hr: 2000,
+            liquidity: 7000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.55', token_id: 'c2-yes' },
+              { outcome: 'No', price: '0.45', token_id: 'c2-no' },
+            ],
+          },
+          {
+            condition_id: 'm-crypto-extreme',
+            market_slug: 'bitcoin-over-300k',
+            question: 'Will bitcoin exceed 300k?',
+            end_date_iso: toIso(10),
+            active: true,
+            closed: false,
+            volume24hr: 10000,
+            liquidity: 1000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.95', token_id: 'c3-yes' },
+              { outcome: 'No', price: '0.05', token_id: 'c3-no' },
+            ],
+          },
+          {
+            condition_id: 'm-crypto-far',
+            market_slug: 'bitcoin-long-dated',
+            question: 'Will bitcoin close above 200k by 2028?',
+            end_date_iso: toIso(120),
+            active: true,
+            closed: false,
+            volume24hr: 11000,
+            liquidity: 11000,
+            tags: [{ slug: 'crypto' }],
+            tokens: [
+              { outcome: 'Yes', price: '0.50', token_id: 'c4-yes' },
+              { outcome: 'No', price: '0.50', token_id: 'c4-no' },
+            ],
+          },
+        ],
+      }),
+    );
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const gammaUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const byVolume = await browsePolymarketMarkets({
+      gammaUrl,
+      minYesPct: 15,
+      maxYesPct: 85,
+      closesBefore: toIso(72),
+      keyword: 'bitcoin',
+      categories: ['crypto'],
+      excludeSports: true,
+      sortBy: 'volume24h',
+      limit: 10,
+    });
+
+    assert.equal(byVolume.count, 2);
+    assert.equal(byVolume.items[0].slug, 'bitcoin-etf-approval-2026');
+    assert.equal(byVolume.items[1].slug, 'bitcoin-price-120k-2026');
+    assert.ok(Array.isArray(byVolume.items[0].categories));
+    assert.ok(byVolume.items[0].categories.includes('crypto'));
+    assert.equal(byVolume.filters.excludeSports, true);
+    assert.deepEqual(byVolume.filters.categories, ['crypto']);
+    assert.equal(byVolume.filters.sortBy, 'volume24h');
+
+    const byLiquidity = await browsePolymarketMarkets({
+      gammaUrl,
+      minYesPct: 15,
+      maxYesPct: 85,
+      closesBefore: toIso(72),
+      keyword: 'bitcoin',
+      categories: ['crypto'],
+      excludeSports: true,
+      sortBy: 'liquidity',
+      limit: 10,
+    });
+
+    assert.equal(byLiquidity.count, 2);
+    assert.equal(byLiquidity.items[0].slug, 'bitcoin-price-120k-2026');
+    assert.equal(byLiquidity.items[1].slug, 'bitcoin-etf-approval-2026');
+    assert.equal(byLiquidity.filters.sortBy, 'liquidity');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('computeApprovalDiff deterministically marks missing allowance/operator checks', () => {
   const payload = computeApprovalDiff({
     ownerAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -1128,6 +1798,385 @@ test('runPolymarketCheck returns deterministic payload structure without RPC', a
   assert.equal(payload.apiKeySanity.status, 'skipped');
 });
 
+test('runPolymarketCheck falls back across configured rpc candidates in order', async () => {
+  const primaryRpcUrl = 'https://primary-rpc.example';
+  const secondaryRpcUrl = 'https://secondary-rpc.example';
+  const payload = await runPolymarketCheck(
+    {
+      rpcUrl: `${primaryRpcUrl},${secondaryRpcUrl}`,
+      privateKey: TEST_PRIVATE_KEY,
+      funder: TEST_WALLET,
+      env: { POLYMARKET_SKIP_API_KEY_SANITY: '1' },
+    },
+    {
+      viemRuntime: buildPolymarketOpsTestViemRuntime({
+        signerAddress: TEST_WALLET,
+        funderAddress: TEST_WALLET,
+        deadRpcUrls: [primaryRpcUrl],
+      }),
+    },
+  );
+
+  assert.equal(payload.chainOk, true);
+  assert.equal(payload.chainId, 137);
+  assert.equal(payload.runtime.rpcUrl, secondaryRpcUrl);
+  assert.equal(payload.rpcSelection.configuredRpcUrl, `${primaryRpcUrl},${secondaryRpcUrl}`);
+  assert.deepEqual(payload.rpcSelection.candidateUrls, [primaryRpcUrl, secondaryRpcUrl]);
+  assert.equal(payload.rpcSelection.selectedRpcUrl, secondaryRpcUrl);
+  assert.equal(payload.rpcSelection.fallbackUsed, true);
+  assert.deepEqual(
+    payload.rpcSelection.attempts.map((entry) => [entry.order, entry.rpcUrl, entry.ok]),
+    [
+      [1, primaryRpcUrl, false],
+      [2, secondaryRpcUrl, true],
+    ],
+  );
+  assert.equal(
+    payload.diagnostics.some((entry) => entry.includes(`RPC fallback used ${secondaryRpcUrl}`)),
+    true,
+  );
+});
+
+test('runPolymarketPreflight reports exhausted rpc candidates when every fallback fails', async () => {
+  const primaryRpcUrl = 'https://primary-rpc.example';
+  const secondaryRpcUrl = 'https://secondary-rpc.example';
+
+  await assert.rejects(
+    () =>
+      runPolymarketPreflight(
+        {
+          rpcUrl: `${primaryRpcUrl},${secondaryRpcUrl}`,
+          privateKey: TEST_PRIVATE_KEY,
+          funder: TEST_WALLET,
+          env: { POLYMARKET_SKIP_API_KEY_SANITY: '1' },
+        },
+        {
+          viemRuntime: buildPolymarketOpsTestViemRuntime({
+            signerAddress: TEST_WALLET,
+            funderAddress: TEST_WALLET,
+            deadRpcUrls: [primaryRpcUrl, secondaryRpcUrl],
+          }),
+        },
+      ),
+    (error) => {
+      assert.equal(error && error.code, 'POLYMARKET_PREFLIGHT_FAILED');
+      assert.deepEqual(error.details.check.rpcSelection.candidateUrls, [primaryRpcUrl, secondaryRpcUrl]);
+      assert.equal(error.details.check.rpcSelection.selectedRpcUrl, null);
+      assert.deepEqual(
+        error.details.check.rpcSelection.attempts.map((entry) => [entry.rpcUrl, entry.ok]),
+        [
+          [primaryRpcUrl, false],
+          [secondaryRpcUrl, false],
+        ],
+      );
+      assert.equal(error.details.failedChecks.includes('RPC_CONNECTED'), true);
+      assert.equal(
+        error.details.check.diagnostics.some((entry) => entry.includes('configured endpoint(s)')),
+        true,
+      );
+      return true;
+    },
+  );
+});
+
+test('mirror sync live execution normalizes rebalance trades before onchain execution', async () => {
+  const captured = {
+    callOrder: [],
+  };
+  const quotePayload = {
+    quoteAvailable: true,
+    odds: { yesPct: 54, noPct: 46 },
+    estimate: { estimatedShares: 46.296296, minSharesOut: 45.601852 },
+  };
+  let emittedPayload = null;
+
+  await handleMirrorSync({
+    shared: {
+      rest: ['once'],
+      timeoutMs: 1000,
+    },
+    context: {
+      outputMode: 'json',
+    },
+    deps: {
+      CliError: ParserCliError,
+      includesHelpFlag: () => false,
+      emitSuccess: (_mode, _command, payload) => {
+        emittedPayload = payload;
+      },
+      maybeLoadTradeEnv: () => {},
+      resolveIndexerUrl: (value) => value || 'https://indexer.example/graphql',
+      parseMirrorSyncDaemonSelectorFlags: () => {
+        throw new Error('selector flags should not be read for once mode');
+      },
+      stopMirrorDaemon: async () => {
+        throw new Error('stopMirrorDaemon should not run for once mode');
+      },
+      mirrorDaemonStatus: () => {
+        throw new Error('mirrorDaemonStatus should not run for once mode');
+      },
+      parseMirrorSyncFlags: () => ({
+        mode: 'once',
+        stream: false,
+        daemon: false,
+        executeLive: true,
+        trustDeploy: false,
+        pandoraMarketAddress: TEST_MARKET,
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: null,
+        chainId: 1,
+        rpcUrl: 'https://rpc.example',
+        fork: false,
+        forkRpcUrl: null,
+        forkChainId: null,
+        privateKey: TEST_PRIVATE_KEY,
+        profileId: null,
+        profileFile: null,
+        usdc: TEST_USDC,
+        failOnWebhookError: false,
+      }),
+      buildMirrorSyncStrategy: () => ({}),
+      mirrorStrategyHash: () => 'strategy-hash',
+      buildMirrorSyncDaemonCliArgs: () => [],
+      startMirrorDaemon: async () => {
+        throw new Error('startMirrorDaemon should not run for once mode');
+      },
+      resolveTrustedDeployPair: () => {
+        throw new Error('resolveTrustedDeployPair should not run without trustDeploy');
+      },
+      selectHealthyPolymarketRpc: async () => ({
+        selectedRpcUrl: 'https://polygon-rpc.example',
+        fallbackUsed: false,
+        attempts: [{ rpcUrl: 'https://polygon-rpc.example', ok: true, order: 1, chainId: 137 }],
+        diagnostics: [],
+      }),
+      runLivePolymarketPreflightForMirror: async () => ({ ok: true }),
+      runMirrorSync: async (_options, runtimeDeps) => {
+        const result = await runtimeDeps.rebalanceFn({
+          marketAddress: TEST_MARKET,
+          side: 'yes',
+          amountUsdc: 25,
+        });
+        captured.rebalanceResult = result;
+        return {
+          mode: 'once',
+          strategyHash: 'strategy-hash',
+          actionCount: 1,
+          actions: [{ status: 'executed', rebalance: { result } }],
+          snapshots: [],
+          diagnostics: [],
+          state: { tradesToday: 1, idempotencyKeys: [] },
+        };
+      },
+      buildQuotePayload: async (_indexerUrl, tradeOptions) => {
+        captured.callOrder.push('quote');
+        captured.quoteTradeOptions = tradeOptions;
+        return quotePayload;
+      },
+      enforceTradeRiskGuards: (tradeOptions, quote) => {
+        captured.callOrder.push('guard');
+        captured.guardTradeOptions = tradeOptions;
+        captured.guardQuote = quote;
+      },
+      executeTradeOnchain: async (tradeOptions) => {
+        captured.callOrder.push('execute');
+        captured.executionTradeOptions = tradeOptions;
+        return {
+          ok: true,
+          marketType: 'amm',
+          tradeSignature: 'buy(bool,uint256,uint256,uint256)',
+          ammDeadlineEpoch: '1710000900',
+        };
+      },
+      assertLiveWriteAllowed: async () => {},
+      hasWebhookTargets: () => false,
+      sendWebhookNotifications: async () => ({ failureCount: 0 }),
+      coerceMirrorServiceError: (error) => error,
+      renderMirrorSyncTickLine: () => {},
+      renderMirrorSyncDaemonTable: () => {},
+      renderMirrorSyncTable: () => {},
+      cliPath: '/Users/mac/Desktop/pandora-market-setup-shareable/cli/pandora.cjs',
+    },
+    mirrorSyncUsage: 'pandora mirror sync once|run|start ...',
+  });
+
+  assert.deepEqual(captured.callOrder, ['quote', 'guard', 'execute']);
+  assert.equal(captured.guardTradeOptions, captured.executionTradeOptions);
+  assert.equal(captured.quoteTradeOptions, captured.executionTradeOptions);
+  assert.equal(captured.executionTradeOptions.mode, 'buy');
+  assert.equal(captured.executionTradeOptions.amount, null);
+  assert.equal(captured.executionTradeOptions.minAmountOutRaw, null);
+  assert.equal(captured.executionTradeOptions.allowUnquotedExecute, true);
+  assert.equal(captured.executionTradeOptions.maxAmountUsdc, 25);
+  assert.equal(captured.executionTradeOptions.fork, false);
+  assert.equal(captured.executionTradeOptions.forkRpcUrl, null);
+  assert.equal(captured.executionTradeOptions.forkChainId, null);
+  assert.equal(captured.executionTradeOptions.deadlineSeconds, 900);
+  assert.equal(captured.guardQuote, quotePayload);
+  assert.equal(captured.rebalanceResult.quote, quotePayload);
+  assert.equal(captured.rebalanceResult.ammDeadlineEpoch, '1710000900');
+  assert.equal(emittedPayload.actions[0].rebalance.result.quote, quotePayload);
+});
+
+test('mirror go auto-sync live execution reuses normalized rebalance trade shape', async () => {
+  const captured = {
+    callOrder: [],
+  };
+  const quotePayload = {
+    quoteAvailable: true,
+    odds: { yesPct: 61, noPct: 39 },
+    estimate: { estimatedShares: 24.590164, minSharesOut: 24.221311 },
+  };
+  let emittedPayload = null;
+
+  await handleMirrorGo({
+    shared: {
+      rest: [],
+      timeoutMs: 1000,
+    },
+    context: {
+      outputMode: 'json',
+    },
+    deps: {
+      CliError: ParserCliError,
+      includesHelpFlag: () => false,
+      emitSuccess: (_mode, _command, payload) => {
+        emittedPayload = payload;
+      },
+      commandHelpPayload: () => ({}),
+      maybeLoadTradeEnv: () => {},
+      resolveIndexerUrl: (value) => value || 'https://indexer.example/graphql',
+      parseMirrorGoFlags: () => ({
+        executeLive: true,
+        autoSync: true,
+        syncOnce: true,
+        noHedge: true,
+        hedgeRatio: 1,
+        syncIntervalMs: 1000,
+        driftTriggerBps: 25,
+        hedgeTriggerUsdc: 10,
+        maxRebalanceUsdc: 50,
+        maxHedgeUsdc: 20,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        chainId: 1,
+        rpcUrl: 'https://rpc.example',
+        polymarketRpcUrl: null,
+        privateKey: TEST_PRIVATE_KEY,
+        profileId: null,
+        profileFile: null,
+        funder: '0x2222222222222222222222222222222222222222',
+        usdc: TEST_USDC,
+        polymarketHost: 'https://clob.polymarket.com',
+        polymarketGammaUrl: null,
+        polymarketGammaMockUrl: null,
+        polymarketMockUrl: 'https://polymarket.example/mock',
+        forceGate: false,
+        skipGateChecks: [],
+        trustDeploy: false,
+        liquidityUsdc: 100,
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: null,
+        manifestFile: null,
+        withRules: false,
+        includeSimilarity: false,
+        fork: false,
+        forkRpcUrl: null,
+        forkChainId: null,
+      }),
+      buildMirrorPlan: async () => ({
+        sourceMarket: {
+          marketId: 'poly-cond-1',
+          slug: 'poly-slug',
+        },
+      }),
+      deployMirror: async () => ({
+        pandora: {
+          marketAddress: TEST_MARKET,
+          pollAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        },
+      }),
+      resolveTrustedDeployPair: () => {
+        throw new Error('resolveTrustedDeployPair should not run without trustDeploy');
+      },
+      findMirrorPair: () => null,
+      defaultMirrorManifestFile: () => null,
+      hasContractCodeAtAddress: async () => true,
+      verifyMirror: async () => ({
+        pandora: { marketAddress: TEST_MARKET },
+        sourceMarket: { marketId: 'poly-cond-1', slug: 'poly-slug' },
+      }),
+      selectHealthyPolymarketRpc: async () => ({
+        selectedRpcUrl: 'https://polygon-rpc.example',
+        fallbackUsed: false,
+        attempts: [{ rpcUrl: 'https://polygon-rpc.example', ok: true, order: 1, chainId: 137 }],
+        diagnostics: [],
+      }),
+      runLivePolymarketPreflightForMirror: async () => ({ ok: true }),
+      runMirrorSync: async (_options, runtimeDeps) => {
+        const result = await runtimeDeps.rebalanceFn({
+          marketAddress: TEST_MARKET,
+          side: 'no',
+          amountUsdc: 15,
+        });
+        captured.rebalanceResult = result;
+        return {
+          mode: 'once',
+          strategyHash: 'go-sync-hash',
+          actionCount: 1,
+          actions: [{ status: 'executed', rebalance: { result } }],
+          snapshots: [],
+          diagnostics: [],
+          state: { tradesToday: 1, idempotencyKeys: [] },
+        };
+      },
+      buildQuotePayload: async (_indexerUrl, tradeOptions) => {
+        captured.callOrder.push('quote');
+        captured.quoteTradeOptions = tradeOptions;
+        return quotePayload;
+      },
+      enforceTradeRiskGuards: (tradeOptions, quote) => {
+        captured.callOrder.push('guard');
+        captured.guardTradeOptions = tradeOptions;
+        captured.guardQuote = quote;
+      },
+      executeTradeOnchain: async (tradeOptions) => {
+        captured.callOrder.push('execute');
+        captured.executionTradeOptions = tradeOptions;
+        return {
+          ok: true,
+          marketType: 'amm',
+          tradeSignature: 'buy(bool,uint256,uint256,uint256)',
+          ammDeadlineEpoch: '1710000905',
+        };
+      },
+      assertLiveWriteAllowed: async () => {},
+      renderMirrorSyncTickLine: () => {},
+      coerceMirrorServiceError: (error) => error,
+      renderMirrorGoTable: () => {},
+    },
+    mirrorGoUsage: 'pandora mirror go ...',
+  });
+
+  assert.deepEqual(captured.callOrder, ['quote', 'guard', 'execute']);
+  assert.equal(captured.guardTradeOptions, captured.executionTradeOptions);
+  assert.equal(captured.quoteTradeOptions, captured.executionTradeOptions);
+  assert.equal(captured.executionTradeOptions.mode, 'buy');
+  assert.equal(captured.executionTradeOptions.amount, null);
+  assert.equal(captured.executionTradeOptions.minAmountOutRaw, null);
+  assert.equal(captured.executionTradeOptions.allowUnquotedExecute, true);
+  assert.equal(captured.executionTradeOptions.maxAmountUsdc, 15);
+  assert.equal(captured.executionTradeOptions.fork, false);
+  assert.equal(captured.executionTradeOptions.forkRpcUrl, null);
+  assert.equal(captured.executionTradeOptions.forkChainId, null);
+  assert.equal(captured.executionTradeOptions.deadlineSeconds, 900);
+  assert.equal(captured.guardQuote, quotePayload);
+  assert.equal(captured.rebalanceResult.quote, quotePayload);
+  assert.equal(captured.rebalanceResult.ammDeadlineEpoch, '1710000905');
+  assert.equal(emittedPayload.sync.actions[0].rebalance.result.quote, quotePayload);
+});
+
 test('runMirrorSync live mode prioritizes CLI hedge credentials over env defaults', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-live-creds-'));
   const stateFile = path.join(tempDir, 'mirror-state.json');
@@ -1160,6 +2209,8 @@ test('runMirrorSync live mode prioritizes CLI hedge credentials over env default
         depthSlippageBps: 100,
         stateFile,
         killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketRpcUrl: 'https://primary-rpc.example,https://secondary-rpc.example',
         polymarketHost: 'https://clob.polymarket.com',
         polymarketMockUrl: null,
         privateKey,
@@ -1179,6 +2230,9 @@ test('runMirrorSync live mode prioritizes CLI hedge credentials over env default
             yesPct: 40,
             yesTokenId: 'yes-token',
             noTokenId: 'no-token',
+            sourceFreshness: {
+              observedAt: new Date().toISOString(),
+            },
           },
           pandora: {
             yesPct: 40,
@@ -1194,6 +2248,14 @@ test('runMirrorSync live mode prioritizes CLI hedge credentials over env default
           yesDepth: { midPrice: 0.4, worstPrice: 0.41 },
           noDepth: { midPrice: 0.6, worstPrice: 0.61 },
         }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 2,
+          reserveNoUsdc: 8,
+          pandoraYesPct: 40,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
         hedgeFn: async (options) => {
           capturedHedgeOptions = options;
           return {
@@ -1208,6 +2270,7 @@ test('runMirrorSync live mode prioritizes CLI hedge credentials over env default
     assert.equal(payload.actionCount, 1);
     assert.equal(payload.actions[0].status, 'executed');
     assert.equal(Boolean(capturedHedgeOptions), true);
+    assert.equal(capturedHedgeOptions.rpcUrl, 'https://primary-rpc.example,https://secondary-rpc.example');
     assert.equal(capturedHedgeOptions.privateKey, privateKey);
     assert.equal(capturedHedgeOptions.funder, funder);
   } finally {
@@ -1215,7 +2278,409 @@ test('runMirrorSync live mode prioritizes CLI hedge credentials over env default
   }
 });
 
-test('runMirrorSync does not increment tradesToday when no legs execute', async () => {
+test('runMirrorSync paper mode uses on-chain reserves for atomic rebalance planning', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-onchain-paper-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: null,
+        executeLive: false,
+        trustDeploy: false,
+        hedgeEnabled: false,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 150,
+        hedgeTriggerUsdc: 10_000,
+        maxRebalanceUsdc: 40,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            yesPct: 60,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+          },
+          pandora: {
+            yesPct: 60,
+            reserveYes: 5,
+            reserveNo: 5,
+          },
+          expiry: { minTimeToExpirySec: 7200 },
+        }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 8,
+          reserveNoUsdc: 2,
+          pandoraYesPct: 20,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+      },
+    );
+
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions[0].status, 'simulated');
+    assert.equal(payload.snapshots[0].metrics.reserveSource, 'onchain:outcome-token-balances');
+    assert.equal(payload.snapshots[0].metrics.reserveYesUsdc, 8);
+    assert.equal(payload.snapshots[0].metrics.reserveNoUsdc, 2);
+    assert.equal(payload.snapshots[0].metrics.reserveReadAt, '2026-03-01T10:00:00.000Z');
+    assert.equal(payload.snapshots[0].metrics.pandoraYesPct, 20);
+    assert.equal(payload.snapshots[0].metrics.driftTriggered, true);
+    assert.equal(payload.snapshots[0].metrics.plannedRebalanceUsdc > 0, true);
+    assert.equal(payload.actions[0].rebalance.amountUsdc > 0, true);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync live mode executes rebalance from on-chain reserve drift, not verify payload reserves', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-onchain-live-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  let capturedRebalance = null;
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: null,
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: false,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 150,
+        hedgeTriggerUsdc: 10_000,
+        maxRebalanceUsdc: 40,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            yesPct: 60,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+          },
+          pandora: {
+            yesPct: 60,
+            reserveYes: 5,
+            reserveNo: 5,
+          },
+          expiry: { minTimeToExpirySec: 7200 },
+        }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 8,
+          reserveNoUsdc: 2,
+          pandoraYesPct: 20,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        rebalanceFn: async (executionOptions) => {
+          capturedRebalance = executionOptions;
+          return { ok: true, txHash: '0xrebalance' };
+        },
+      },
+    );
+
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions[0].status, 'executed');
+    assert.equal(payload.snapshots[0].metrics.reserveSource, 'onchain:outcome-token-balances');
+    assert.equal(payload.snapshots[0].metrics.driftTriggered, true);
+    assert.equal(Boolean(capturedRebalance), true);
+    assert.equal(capturedRebalance.amountUsdc > 0, true);
+    assert.equal(payload.actions[0].rebalance.amountUsdc, capturedRebalance.amountUsdc);
+    assert.equal(payload.actions[0].rebalance.result.txHash, '0xrebalance');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync live mode fails closed when on-chain reserve refresh is unavailable', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-onchain-fail-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+
+  try {
+    await assert.rejects(
+      () =>
+        runMirrorSync(
+          {
+            mode: 'once',
+            indexerUrl: 'https://example.invalid/graphql',
+            timeoutMs: 1000,
+            pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            polymarketMarketId: 'poly-cond-1',
+            executeLive: true,
+            trustDeploy: false,
+            hedgeEnabled: false,
+            hedgeRatio: 1,
+            intervalMs: 5000,
+            driftTriggerBps: 150,
+            hedgeTriggerUsdc: 10_000,
+            maxRebalanceUsdc: 40,
+            maxHedgeUsdc: 10,
+            maxOpenExposureUsdc: 100,
+            maxTradesPerDay: 10,
+            cooldownMs: 1000,
+            depthSlippageBps: 100,
+            stateFile,
+            killSwitchFile,
+            rpcUrl: 'https://rpc.example',
+            polymarketHost: 'https://clob.polymarket.com',
+            priceSource: 'on-chain',
+          },
+          {
+            verifyFn: async () => ({
+              matchConfidence: 0.99,
+              gateResult: { ok: true, failedChecks: [], checks: [] },
+              sourceMarket: { source: 'polymarket:gamma', marketId: 'poly-cond-1', yesPct: 60 },
+              pandora: { yesPct: 60, reserveYes: 5, reserveNo: 5 },
+              expiry: { minTimeToExpirySec: 7200, pandoraTimeToExpirySec: 7200 },
+            }),
+            readPandoraReserveContext: async () => {
+              throw new Error('rpc timeout');
+            },
+            rebalanceFn: async () => ({ ok: true, txHash: '0xrebalance' }),
+          },
+        ),
+      (err) => {
+        assert.equal(err.code, 'MIRROR_ONCHAIN_RESERVES_UNAVAILABLE');
+        assert.match(err.message, /could not read Pandora reserves on-chain/i);
+        return true;
+      },
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync live mode blocks stale polled sports source data before executing', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-stale-source-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  let executed = false;
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: false,
+        hedgeRatio: 1,
+        intervalMs: 5_000,
+        driftTriggerBps: 150,
+        hedgeTriggerUsdc: 10_000,
+        maxRebalanceUsdc: 40,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        priceSource: 'indexer',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: { ok: true, failedChecks: [], checks: [] },
+          sourceMarket: {
+            source: 'polymarket:gamma',
+            marketId: 'poly-cond-1',
+            yesPct: 60,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            timestampSource: 'game_start_time',
+            eventStartTimestamp: Math.floor(Date.parse('2030-03-09T23:00:00Z') / 1000),
+            sourceCloseTimestamp: Math.floor(Date.parse('2030-03-09T00:00:00Z') / 1000),
+            sourceFreshness: {
+              transport: 'poll',
+              observedAt: new Date(Date.now() - 20_000).toISOString(),
+            },
+          },
+          pandora: { yesPct: 20, reserveYes: 8, reserveNo: 2 },
+          expiry: {
+            minTimeToExpirySec: 7200,
+            pandoraTimeToExpirySec: 7200,
+            sourceTimeToExpirySec: 7200,
+          },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        rebalanceFn: async () => {
+          executed = true;
+          return { ok: true, txHash: '0xrebalance' };
+        },
+      },
+    );
+
+    assert.equal(executed, false);
+    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.actions.length, 0);
+    assert.equal(payload.snapshots[0].action.status, 'blocked');
+    assert.equal(payload.snapshots[0].action.failedChecks.includes('POLYMARKET_SOURCE_FRESH'), true);
+    const freshnessCheck = payload.snapshots[0].strictGate.checks.find((check) => check.code === 'POLYMARKET_SOURCE_FRESH');
+    assert.equal(Boolean(freshnessCheck), true);
+    assert.equal(freshnessCheck.ok, false);
+    assert.equal(freshnessCheck.details.freshness.streamPreferred, true);
+    assert.equal(freshnessCheck.details.freshness.transport, 'poll');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync live mode blocks fresh polled sports source data when stream transport is still required', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-stream-required-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  let executed = false;
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: false,
+        hedgeRatio: 1,
+        intervalMs: 5_000,
+        driftTriggerBps: 150,
+        hedgeTriggerUsdc: 10_000,
+        maxRebalanceUsdc: 40,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        priceSource: 'indexer',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: { ok: true, failedChecks: [], checks: [] },
+          sourceMarket: {
+            source: 'polymarket:gamma',
+            marketId: 'poly-cond-1',
+            yesPct: 60,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            timestampSource: 'game_start_time',
+            eventStartTimestamp: Math.floor(Date.parse('2030-03-09T23:00:00Z') / 1000),
+            sourceCloseTimestamp: Math.floor(Date.parse('2030-03-09T00:00:00Z') / 1000),
+            sourceFreshness: {
+              transport: 'poll',
+              observedAt: new Date(Date.now() - 5_000).toISOString(),
+            },
+          },
+          pandora: { yesPct: 20, reserveYes: 8, reserveNo: 2 },
+          expiry: {
+            minTimeToExpirySec: 7200,
+            pandoraTimeToExpirySec: 7200,
+            sourceTimeToExpirySec: 7200,
+          },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        rebalanceFn: async () => {
+          executed = true;
+          return { ok: true, txHash: '0xrebalance' };
+        },
+      },
+    );
+
+    assert.equal(executed, false);
+    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.snapshots[0].action.status, 'blocked');
+    assert.equal(payload.snapshots[0].action.failedChecks.includes('POLYMARKET_SOURCE_FRESH'), true);
+    const freshnessCheck = payload.snapshots[0].strictGate.checks.find((check) => check.code === 'POLYMARKET_SOURCE_FRESH');
+    assert.equal(Boolean(freshnessCheck), true);
+    assert.equal(freshnessCheck.ok, false);
+    assert.equal(freshnessCheck.details.freshness.fresh, true);
+    assert.equal(freshnessCheck.details.freshness.reason, 'stream-recommended-for-short-interval-sports');
+    assert.equal(freshnessCheck.details.requiresStream, true);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync leaves tradesToday unchanged when no sync legs are planned', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-no-exec-'));
   const stateFile = path.join(tempDir, 'mirror-state.json');
   const killSwitchFile = path.join(tempDir, 'STOP');
@@ -1243,6 +2708,7 @@ test('runMirrorSync does not increment tradesToday when no legs execute', async 
         depthSlippageBps: 100,
         stateFile,
         killSwitchFile,
+        rpcUrl: 'https://rpc.example',
         polymarketHost: 'https://clob.polymarket.com',
         privateKey: `0x${'1'.repeat(64)}`,
         funder: '0x2222222222222222222222222222222222222222',
@@ -1261,9 +2727,13 @@ test('runMirrorSync does not increment tradesToday when no legs execute', async 
             yesPct: 80,
             yesTokenId: 'yes-token',
             noTokenId: 'no-token',
+            sourceFreshness: {
+              transport: 'poll',
+              observedAt: new Date().toISOString(),
+            },
           },
           pandora: {
-            yesPct: 40,
+            yesPct: 80,
             reserveYes: 2,
             reserveNo: 8,
           },
@@ -1274,17 +2744,22 @@ test('runMirrorSync does not increment tradesToday when no legs execute', async 
           yesDepth: { midPrice: 0.4, worstPrice: 0.41 },
           noDepth: { midPrice: 0.6, worstPrice: 0.61 },
         }),
-        rebalanceFn: async () => {
-          throw new Error('simulated rebalance failure');
-        },
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 2,
+          reserveNoUsdc: 8,
+          pandoraYesPct: 80,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        rebalanceFn: async () => ({ ok: true }),
       },
     );
 
-    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actionCount, 0);
     assert.equal(payload.state.tradesToday, 0);
     assert.equal(Array.isArray(payload.state.idempotencyKeys), true);
     assert.equal(payload.state.idempotencyKeys.length, 0);
-    assert.equal(payload.actions[0].status, 'failed');
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1318,6 +2793,559 @@ test('runMirrorSync handles thrown hedgeFn errors without consuming idempotency'
         depthSlippageBps: 100,
         stateFile,
         killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        privateKey: `0x${'1'.repeat(64)}`,
+        funder: '0x2222222222222222222222222222222222222222',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            yesPct: 80,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            sourceFreshness: {
+              transport: 'poll',
+              observedAt: new Date().toISOString(),
+            },
+          },
+          pandora: {
+            yesPct: 40,
+            reserveYes: 2,
+            reserveNo: 8,
+          },
+          expiry: { minTimeToExpirySec: 7200 },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 2,
+          reserveNoUsdc: 8,
+          pandoraYesPct: 40,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        rebalanceFn: async () => ({ ok: true }),
+        hedgeFn: async () => {
+          throw new Error('hedge transport failed');
+        },
+      },
+    );
+
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions[0].status, 'failed');
+    assert.equal(payload.state.tradesToday, 0);
+    assert.equal(payload.state.idempotencyKeys.length, 0);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync blocks live execution when the last action still requires manual review', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-manual-review-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  let rebalanceCalls = 0;
+  let hedgeCalls = 0;
+
+  try {
+    saveMirrorState(stateFile, {
+      strategyHash: 'manual-review-hash',
+      lastExecution: {
+        mode: 'live',
+        status: 'executed',
+        idempotencyKey: 'prior-live-action',
+        startedAt: '2026-03-09T10:00:00.000Z',
+        completedAt: '2026-03-09T10:00:05.000Z',
+        lockNonce: 'prior-live-lock',
+        requiresManualReview: true,
+      },
+      tradesToday: 1,
+      idempotencyKeys: [],
+      alerts: [],
+    });
+
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: true,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 10000,
+        hedgeTriggerUsdc: 1,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        privateKey: `0x${'1'.repeat(64)}`,
+        funder: '0x2222222222222222222222222222222222222222',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            yesPct: 80,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            sourceFreshness: {
+              transport: 'poll',
+              observedAt: new Date().toISOString(),
+            },
+          },
+          pandora: {
+            yesPct: 40,
+            reserveYes: 2,
+            reserveNo: 8,
+          },
+          expiry: {
+            pandoraTimeToExpirySec: 7200,
+            sourceTimeToExpirySec: 7200,
+            minTimeToExpirySec: 7200,
+          },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 2,
+          reserveNoUsdc: 8,
+          pandoraYesPct: 40,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        rebalanceFn: async () => {
+          rebalanceCalls += 1;
+          return { ok: true };
+        },
+        hedgeFn: async () => {
+          hedgeCalls += 1;
+          return { ok: true };
+        },
+      },
+    );
+
+    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.snapshots[0].action.status, 'blocked');
+    assert.equal(payload.snapshots[0].action.code, 'LAST_ACTION_REQUIRES_REVIEW');
+    assert.equal(rebalanceCalls, 0);
+    assert.equal(hedgeCalls, 0);
+    assert.equal(payload.state.lastExecution.requiresManualReview, true);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync blocks live execution when the persisted last action is still pending', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-pending-state-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  let rebalanceCalls = 0;
+  let hedgeCalls = 0;
+
+  try {
+    saveMirrorState(stateFile, {
+      strategyHash: 'pending-state-hash',
+      lastExecution: {
+        mode: 'live',
+        status: 'pending',
+        idempotencyKey: 'prior-live-action',
+        startedAt: '2026-03-09T10:00:00.000Z',
+        lockNonce: 'prior-live-lock',
+      },
+      tradesToday: 1,
+      idempotencyKeys: [],
+      alerts: [],
+    });
+
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: true,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 10000,
+        hedgeTriggerUsdc: 1,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        privateKey: `0x${'1'.repeat(64)}`,
+        funder: '0x2222222222222222222222222222222222222222',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            yesPct: 80,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            sourceFreshness: {
+              transport: 'poll',
+              observedAt: new Date().toISOString(),
+            },
+          },
+          pandora: {
+            yesPct: 40,
+            reserveYes: 2,
+            reserveNo: 8,
+          },
+          expiry: {
+            pandoraTimeToExpirySec: 7200,
+            sourceTimeToExpirySec: 7200,
+            minTimeToExpirySec: 7200,
+          },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 2,
+          reserveNoUsdc: 8,
+          pandoraYesPct: 40,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        rebalanceFn: async () => {
+          rebalanceCalls += 1;
+          return { ok: true };
+        },
+        hedgeFn: async () => {
+          hedgeCalls += 1;
+          return { ok: true };
+        },
+      },
+    );
+
+    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.snapshots[0].action.status, 'blocked');
+    assert.equal(payload.snapshots[0].action.code, 'PENDING_ACTION_STATE');
+    assert.equal(rebalanceCalls, 0);
+    assert.equal(hedgeCalls, 0);
+    assert.equal(payload.state.lastExecution.requiresManualReview, true);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync treats orphaned pending-action locks as zombie manual-review blocks', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-zombie-lock-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  const lockFile = buildPendingActionFilePath(stateFile);
+
+  try {
+    saveMirrorState(stateFile, {
+      strategyHash: 'zombie-lock-hash',
+      tradesToday: 0,
+      idempotencyKeys: [],
+      alerts: [],
+    });
+    fs.writeFileSync(
+      lockFile,
+      JSON.stringify(
+        {
+          schemaVersion: '1.0.0',
+          status: 'pending',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          pid: 99999999,
+          idempotencyKey: 'prior-live-action',
+          lockNonce: 'zombie-lock-nonce',
+        },
+        null,
+        2,
+      ),
+    );
+
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: true,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 10000,
+        hedgeTriggerUsdc: 1,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        privateKey: `0x${'1'.repeat(64)}`,
+        funder: '0x2222222222222222222222222222222222222222',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            yesPct: 80,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            sourceFreshness: {
+              transport: 'poll',
+              observedAt: new Date().toISOString(),
+            },
+          },
+          pandora: {
+            yesPct: 40,
+            reserveYes: 2,
+            reserveNo: 8,
+          },
+          expiry: {
+            pandoraTimeToExpirySec: 7200,
+            sourceTimeToExpirySec: 7200,
+            minTimeToExpirySec: 7200,
+          },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 2,
+          reserveNoUsdc: 8,
+          pandoraYesPct: 40,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        rebalanceFn: async () => {
+          throw new Error('rebalanceFn should not run while zombie lock is present');
+        },
+        hedgeFn: async () => {
+          throw new Error('hedgeFn should not run while zombie lock is present');
+        },
+      },
+    );
+
+    const pendingLock = readPendingActionLock(stateFile);
+    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.snapshots[0].action.status, 'blocked');
+    assert.equal(payload.snapshots[0].action.code, 'PENDING_ACTION_LOCK_ZOMBIE');
+    assert.equal(pendingLock.status, 'zombie');
+    assert.equal(pendingLock.requiresManualReview, true);
+    assert.equal(pendingLock.lockNonce, 'zombie-lock-nonce');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync retains manual review when pending-action nonce changes during live completion', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-lock-conflict-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  const lockFile = buildPendingActionFilePath(stateFile);
+  let hedgeCalls = 0;
+
+  try {
+    const firstPayload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: true,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 10000,
+        hedgeTriggerUsdc: 1,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        privateKey: `0x${'1'.repeat(64)}`,
+        funder: '0x2222222222222222222222222222222222222222',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            yesPct: 80,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            sourceFreshness: {
+              transport: 'poll',
+              observedAt: new Date().toISOString(),
+            },
+          },
+          pandora: {
+            yesPct: 40,
+            reserveYes: 2,
+            reserveNo: 8,
+          },
+          expiry: {
+            pandoraTimeToExpirySec: 7200,
+            sourceTimeToExpirySec: 7200,
+            minTimeToExpirySec: 7200,
+          },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 2,
+          reserveNoUsdc: 8,
+          pandoraYesPct: 40,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        rebalanceFn: async () => {
+          throw new Error('rebalanceFn should not run in the hedge-only conflict scenario');
+        },
+        hedgeFn: async () => {
+          hedgeCalls += 1;
+          fs.writeFileSync(
+            lockFile,
+            JSON.stringify(
+              {
+                schemaVersion: '1.0.0',
+                status: 'reconciliation-required',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                pid: process.pid,
+                idempotencyKey: 'foreign-live-action',
+                lockNonce: 'foreign-lock-nonce',
+                requiresManualReview: true,
+              },
+              null,
+              2,
+            ),
+          );
+          return { ok: true };
+        },
+      },
+    );
+
+    assert.equal(hedgeCalls, 1);
+    assert.equal(firstPayload.actionCount, 1);
+    assert.equal(firstPayload.actions[0].status, 'executed');
+    assert.equal(firstPayload.actions[0].requiresManualReview, true);
+    assert.equal(firstPayload.actions[0].lockConflict.code, 'PENDING_ACTION_LOCK_CONFLICT');
+    assert.equal(firstPayload.state.lastExecution.requiresManualReview, true);
+    assert.equal(readPendingActionLock(stateFile).lockNonce, 'foreign-lock-nonce');
+    saveMirrorState(stateFile, {
+      ...firstPayload.state,
+      currentHedgeUsdc: 0,
+      tradesToday: 0,
+      idempotencyKeys: [],
+    });
+
+    const secondPayload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: true,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 10000,
+        hedgeTriggerUsdc: 1,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
         polymarketHost: 'https://clob.polymarket.com',
         privateKey: `0x${'1'.repeat(64)}`,
         funder: '0x2222222222222222222222222222222222222222',
@@ -1342,24 +3370,205 @@ test('runMirrorSync handles thrown hedgeFn errors without consuming idempotency'
             reserveYes: 2,
             reserveNo: 8,
           },
-          expiry: { minTimeToExpirySec: 7200 },
+          expiry: {
+            pandoraTimeToExpirySec: 7200,
+            sourceTimeToExpirySec: 7200,
+            minTimeToExpirySec: 7200,
+          },
         }),
         depthFn: async () => ({
           depthWithinSlippageUsd: 1000,
           yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
           noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
         }),
-        rebalanceFn: async () => ({ ok: true }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 2,
+          reserveNoUsdc: 8,
+          pandoraYesPct: 40,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        rebalanceFn: async () => {
+          throw new Error('rebalanceFn should not run while conflicting pending action remains');
+        },
         hedgeFn: async () => {
-          throw new Error('hedge transport failed');
+          throw new Error('hedgeFn should not run while conflicting pending action remains');
         },
       },
     );
 
-    assert.equal(payload.actionCount, 1);
-    assert.equal(payload.actions[0].status, 'failed');
-    assert.equal(payload.state.tradesToday, 0);
-    assert.equal(payload.state.idempotencyKeys.length, 0);
+    assert.equal(secondPayload.actionCount, 0);
+    assert.equal(secondPayload.snapshots[0].action.status, 'blocked');
+    assert.equal(secondPayload.snapshots[0].action.code, 'PENDING_ACTION_LOCK_REVIEW');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync run mode continues after transient tick verification failures', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-sync-tick-retry-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+
+  const verifyPayload = {
+    matchConfidence: 0.99,
+    gateResult: {
+      ok: true,
+      failedChecks: [],
+      checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+    },
+    sourceMarket: {
+      source: 'polymarket',
+      marketId: 'poly-cond-1',
+      yesPct: 60,
+      yesTokenId: 'yes-token',
+      noTokenId: 'no-token',
+    },
+    pandora: {
+      yesPct: 55,
+      reserveYes: 5,
+      reserveNo: 5,
+    },
+    expiry: { minTimeToExpirySec: 7200 },
+  };
+
+  let verifyCallCount = 0;
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'run',
+        iterations: 3,
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: false,
+        trustDeploy: false,
+        hedgeEnabled: false,
+        hedgeRatio: 1,
+        intervalMs: 1,
+        driftTriggerBps: 10000,
+        hedgeTriggerUsdc: 1000,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+      },
+      {
+        verifyFn: async () => {
+          verifyCallCount += 1;
+          if (verifyCallCount === 2) {
+            const error = new Error('temporary indexer timeout');
+            error.code = 'INDEXER_TIMEOUT';
+            throw error;
+          }
+          return verifyPayload;
+        },
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 4.5,
+          reserveNoUsdc: 5.5,
+          pandoraYesPct: 55,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        sleep: async () => {},
+      },
+    );
+
+    assert.equal(payload.iterationsCompleted, 3);
+    assert.equal(payload.snapshots.length, 3);
+    assert.equal(payload.diagnostics.length, 1);
+    assert.equal(payload.diagnostics[0].code, 'INDEXER_TIMEOUT');
+    assert.equal(payload.diagnostics[0].scope, 'tick');
+    assert.equal(payload.snapshots[1].action.status, 'error');
+    assert.equal(payload.snapshots[1].error.code, 'INDEXER_TIMEOUT');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync once mode still fails fast on tick errors', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-sync-once-fail-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+
+  const verifyPayload = {
+    matchConfidence: 0.99,
+    gateResult: {
+      ok: true,
+      failedChecks: [],
+      checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+    },
+    sourceMarket: {
+      source: 'polymarket',
+      marketId: 'poly-cond-1',
+      yesPct: 60,
+      yesTokenId: 'yes-token',
+      noTokenId: 'no-token',
+    },
+    pandora: {
+      yesPct: 55,
+      reserveYes: 5,
+      reserveNo: 5,
+    },
+    expiry: { minTimeToExpirySec: 7200 },
+  };
+
+  try {
+    await assert.rejects(
+      runMirrorSync(
+        {
+          mode: 'once',
+          indexerUrl: 'https://example.invalid/graphql',
+          timeoutMs: 1000,
+          pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          polymarketMarketId: 'poly-cond-1',
+          executeLive: false,
+          trustDeploy: false,
+          hedgeEnabled: false,
+          hedgeRatio: 1,
+          intervalMs: 1,
+          driftTriggerBps: 10000,
+          hedgeTriggerUsdc: 1000,
+          maxRebalanceUsdc: 25,
+          maxHedgeUsdc: 10,
+          maxOpenExposureUsdc: 100,
+          maxTradesPerDay: 10,
+          cooldownMs: 1000,
+          depthSlippageBps: 100,
+          stateFile,
+          killSwitchFile,
+          polymarketHost: 'https://clob.polymarket.com',
+        },
+        {
+          verifyFn: async () => verifyPayload,
+          depthFn: async () => {
+            const error = new Error('depth fetch unavailable');
+            error.code = 'DEPTH_FETCH_FAILED';
+            throw error;
+          },
+          sleep: async () => {},
+        },
+      ),
+      (error) => {
+        assert.equal(error.code, 'DEPTH_FETCH_FAILED');
+        return true;
+      },
+    );
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1495,6 +3704,86 @@ test('createParseTradeFlags enforces secure --rpc-url and drops dead funder fiel
   );
 });
 
+test('createParseTradeFlags supports sell mode with share-based inputs', () => {
+  const parseTradeFlags = createParseTradeFlags(
+    buildParserDeps({
+      parseBigIntString: (value) => value,
+    }),
+  );
+
+  const options = parseTradeFlags([
+    '--market-address',
+    TEST_MARKET,
+    '--side',
+    'no',
+    '--mode',
+    'sell',
+    '--shares',
+    '12.5',
+    '--dry-run',
+    '--min-amount-out-raw',
+    '42',
+  ]);
+
+  assert.equal(options.mode, 'sell');
+  assert.equal(options.amount, 12.5);
+  assert.equal(options.amountUsdc, null);
+  assert.equal(options.minAmountOutRaw, '42');
+});
+
+test('createParseMirrorBrowseFlags parses relative end-date windows and new browse selectors', () => {
+  const parseMirrorBrowseFlags = createParseMirrorBrowseFlags(
+    buildParserDeps({
+      parseDateLikeFlag: parserParseDateLikeFlag,
+    }),
+  );
+
+  const startedAt = Date.now();
+  const options = parseMirrorBrowseFlags([
+    '--end-date-after',
+    '1h',
+    '--end-date-before',
+    '72h',
+    '--keyword',
+    'bitcoin',
+    '--slug',
+    'etf',
+    '--category',
+    'crypto,politics',
+    '--sort-by',
+    'liquidity',
+    '--limit',
+    '7',
+  ]);
+
+  assert.equal(options.keyword, 'bitcoin');
+  assert.equal(options.slug, 'etf');
+  assert.deepEqual(options.categories, ['crypto', 'politics']);
+  assert.equal(options.sortBy, 'liquidity');
+  assert.equal(options.limit, 7);
+  assert.ok(Number.isFinite(Date.parse(options.closesAfter)));
+  assert.ok(Number.isFinite(Date.parse(options.closesBefore)));
+  assert.ok(Date.parse(options.closesAfter) >= startedAt + 45 * 60 * 1000);
+  assert.ok(Date.parse(options.closesBefore) >= startedAt + 70 * 60 * 60 * 1000);
+});
+
+test('createParseMirrorBrowseFlags rejects contradictory sports filters', () => {
+  const parseMirrorBrowseFlags = createParseMirrorBrowseFlags(
+    buildParserDeps({
+      parseDateLikeFlag: parserParseDateLikeFlag,
+    }),
+  );
+
+  assert.throws(
+    () => parseMirrorBrowseFlags(['--category', 'sports', '--exclude-sports']),
+    (error) => {
+      assert.equal(error.code, 'INVALID_ARGS');
+      assert.match(error.message, /cannot be combined/i);
+      return true;
+    },
+  );
+});
+
 test('resolveForkRuntime supports attach-only fork mode with strict env/flag precedence', () => {
   const live = resolveForkRuntime(
     { chainId: 146 },
@@ -1581,6 +3870,20 @@ test('createParseMirrorDeployFlags parses min-close and gamma flags', () => {
   assert.equal(options.polymarketGammaMockUrl, 'http://localhost:4010/gamma');
 });
 
+test('createParseMirrorDeployFlags parses explicit --target-timestamp from ISO values', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildParserDeps());
+
+  const options = parseMirrorDeployFlags([
+    '--plan-file',
+    '/tmp/plan.json',
+    '--dry-run',
+    '--target-timestamp',
+    '2030-03-10T04:00:00Z',
+  ]);
+
+  assert.equal(options.targetTimestamp, Math.floor(Date.parse('2030-03-10T04:00:00Z') / 1000));
+});
+
 test('createParseMirrorDeployFlags enforces secure --rpc-url and drops dead allowRuleMismatch field', () => {
   const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildParserDeps());
 
@@ -1611,6 +3914,41 @@ test('createParseMirrorDeployFlags enforces secure --rpc-url and drops dead allo
   );
 });
 
+test('createParseMirrorDeployFlags rejects explicit empty or underspecified --sources early', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildParserDeps());
+
+  assert.throws(
+    () =>
+      parseMirrorDeployFlags([
+        '--plan-file',
+        '/tmp/plan.json',
+        '--dry-run',
+        '--sources',
+        '',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /at least two non-empty urls/i);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      parseMirrorDeployFlags([
+        '--plan-file',
+        '/tmp/plan.json',
+        '--dry-run',
+        '--sources',
+        'https://example.com/one',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      return true;
+    },
+  );
+});
+
 test('mirror sync gates normalize and selectively bypass failed checks', () => {
   assert.deepEqual(
     normalizeSkipGateChecks([' depth_coverage ', 'unknown_check', 'MAX_TRADES_PER_DAY', 'DEPTH_COVERAGE']),
@@ -1632,6 +3970,219 @@ test('mirror sync gates normalize and selectively bypass failed checks', () => {
   assert.deepEqual(gated.failedChecks, ['MAX_OPEN_EXPOSURE']);
   assert.deepEqual(gated.bypassedFailedChecks, ['DEPTH_COVERAGE']);
   assert.deepEqual(gated.skipGateChecksApplied, ['DEPTH_COVERAGE']);
+});
+
+test('mirror sync close-time delta is diagnostic by default and strict only when requested', () => {
+  const baseContext = {
+    verifyPayload: {
+      gateResult: {
+        ok: false,
+        failedChecks: ['CLOSE_TIME_DELTA'],
+        checks: [{ code: 'CLOSE_TIME_DELTA', ok: false, meta: { closeDeltaSeconds: 14_400 } }],
+      },
+      sourceMarket: { source: 'polymarket' },
+    },
+    executeLive: false,
+    state: {
+      currentHedgeUsdc: 0,
+      tradesToday: 0,
+    },
+    plannedHedgeUsdc: 0,
+    plannedSpendUsdc: 0,
+    plannedHedgeSignedUsdc: 0,
+    tradingTimeToExpirySec: 300,
+    pandoraTimeToExpirySec: 300,
+    sourceTimeToExpirySec: 120,
+    minTimeToExpirySec: 120,
+    minimumTimeToCloseSec: 30,
+    depthWithinSlippageUsd: 0,
+    hedgeDepthWithinSlippageUsd: null,
+    depthSlippageBps: 100,
+    maxOpenExposureUsdc: null,
+    maxTradesPerDay: 1,
+  };
+
+  const diagnosticGate = evaluateStrictGates({
+    ...baseContext,
+    strictCloseTimeDelta: false,
+  });
+  assert.equal(diagnosticGate.ok, true);
+  assert.deepEqual(diagnosticGate.failedChecks, []);
+  assert.equal(
+    diagnosticGate.checks.find((item) => item.code === 'MATCH_AND_RULES').ok,
+    true,
+  );
+  assert.equal(
+    diagnosticGate.checks.find((item) => item.code === 'CLOSE_TIME_DELTA').details.diagnosticOnly,
+    true,
+  );
+
+  const strictGate = evaluateStrictGates({
+    ...baseContext,
+    strictCloseTimeDelta: true,
+  });
+  assert.equal(strictGate.ok, false);
+  assert.deepEqual(strictGate.failedChecks, ['CLOSE_TIME_DELTA']);
+  assert.equal(
+    strictGate.checks.find((item) => item.code === 'CLOSE_TIME_DELTA').details.strictCloseTimeDelta,
+    true,
+  );
+});
+
+test('mirror sync startup verify uses the effective trading window with small configured minimums', async () => {
+  assert.equal(
+    resolveMinimumTimeToCloseSec({
+      minTimeToCloseSec: 5,
+      intervalMs: 1_000,
+    }),
+    5,
+  );
+
+  const createServiceError = (code, message, details) => Object.assign(new Error(message), { code, details });
+  const buildVerifyRequest = () => ({});
+
+  await assert.rejects(
+    runStartupVerify({
+      verifyFn: async () => ({
+        expiry: {
+          pandoraTimeToExpirySec: 4,
+          sourceTimeToExpirySec: 300,
+          minTimeToExpirySec: 4,
+        },
+      }),
+      options: {},
+      minimumTimeToCloseSec: 5,
+      buildVerifyRequest,
+      createServiceError,
+    }),
+    (error) => {
+      assert.equal(error.code, 'MIRROR_EXPIRY_TOO_CLOSE');
+      assert.equal(error.details.startupPandoraTimeToExpirySec, 4);
+      assert.equal(error.details.startupSourceTimeToExpirySec, 300);
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    runStartupVerify({
+      verifyFn: async () => ({
+        expiry: {
+          pandoraTimeToExpirySec: 300,
+          sourceTimeToExpirySec: 4,
+          minTimeToExpirySec: 4,
+        },
+      }),
+      options: {},
+      minimumTimeToCloseSec: 5,
+      buildVerifyRequest,
+      createServiceError,
+    }),
+    (error) => {
+      assert.equal(error.code, 'MIRROR_EXPIRY_TOO_CLOSE');
+      assert.equal(error.details.startupPandoraTimeToExpirySec, 300);
+      assert.equal(error.details.startupSourceTimeToExpirySec, 4);
+      assert.equal(error.details.startupMinTimeToExpirySec, 4);
+      return true;
+    },
+  );
+
+  await assert.doesNotReject(() =>
+    runStartupVerify({
+      verifyFn: async () => ({
+        expiry: {
+          pandoraTimeToExpirySec: 300,
+          sourceTimeToExpirySec: 300,
+          minTimeToExpirySec: 300,
+        },
+      }),
+      options: {},
+      minimumTimeToCloseSec: 5,
+      buildVerifyRequest,
+      createServiceError,
+    }),
+  );
+});
+
+test('buildVerifyRequest keeps sports close-lead default independent from min-time-to-close', () => {
+  const payload = buildVerifyRequest({
+    executeLive: true,
+    stream: false,
+    minTimeToCloseSec: 1800,
+  });
+
+  assert.equal(payload.minCloseLeadSeconds, DEFAULT_MIRROR_MIN_CLOSE_LEAD_SECONDS);
+});
+
+test('readPandoraOnchainReserveContext fails closed when reserve metadata is unavailable', async () => {
+  await assert.rejects(
+    () =>
+      readPandoraOnchainReserveContext(
+        {
+          rpcUrl: 'https://primary-rpc.example',
+          marketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+        {
+          publicClient: {
+            readContract: async ({ functionName }) => {
+              if (functionName === 'yesToken') return '0x1111111111111111111111111111111111111111';
+              if (functionName === 'noToken') return '0x2222222222222222222222222222222222222222';
+              if (functionName === 'decimals' || functionName === 'tradingFee') {
+                throw Object.assign(new Error('unavailable'), { code: 'RPC_FAIL' });
+              }
+              if (functionName === 'balanceOf') return 1_000_000n;
+              throw new Error(`unexpected function ${functionName}`);
+            },
+          },
+          viemRuntime: {
+            formatUnits: (value, decimals) => Number(value) / 10 ** decimals,
+          },
+        },
+      ),
+    (error) => {
+      assert.equal(error.code, 'MIRROR_ONCHAIN_RESERVES_UNAVAILABLE');
+      assert.equal(Array.isArray(error.details.attempts), true);
+      assert.equal(error.details.attempts[0].code, 'MIRROR_ONCHAIN_RESERVE_METADATA_UNAVAILABLE');
+      return true;
+    },
+  );
+});
+
+test('readPandoraOnchainReserveContext marks fallback only when a secondary rpc succeeds', async () => {
+  const primaryRpcUrl = 'https://primary-rpc.example';
+  const secondaryRpcUrl = 'https://secondary-rpc.example';
+  let currentRpcUrl = null;
+  const context = await readPandoraOnchainReserveContext(
+    {
+      rpcUrl: `${primaryRpcUrl},${secondaryRpcUrl}`,
+      marketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    },
+    {
+      viemRuntime: {
+        createPublicClient: ({ transport }) => {
+          currentRpcUrl = transport.url;
+          return {
+            readContract: async ({ functionName }) => {
+              if (currentRpcUrl === primaryRpcUrl) {
+                throw Object.assign(new Error('primary down'), { code: 'RPC_DOWN' });
+              }
+              if (functionName === 'yesToken') return '0x1111111111111111111111111111111111111111';
+              if (functionName === 'noToken') return '0x2222222222222222222222222222222222222222';
+              if (functionName === 'decimals') return 6;
+              if (functionName === 'tradingFee') return 3000;
+              if (functionName === 'balanceOf') return 5_000_000n;
+              throw new Error(`unexpected function ${functionName}`);
+            },
+          };
+        },
+        http: (url) => ({ url }),
+        formatUnits: (value, decimals) => Number(value) / 10 ** decimals,
+      },
+    },
+  );
+
+  assert.equal(context.rpcUrl, secondaryRpcUrl);
+  assert.equal(context.fallbackUsed, true);
+  assert.equal(context.source, 'onchain:outcome-token-balances:fallback');
 });
 
 test('mirror sync planning helpers build deterministic strategy payloads', () => {
@@ -1763,7 +4314,196 @@ test('createParseMirrorGoFlags treats bare --skip-gate as force gate mode', () =
   assert.deepEqual(options.skipGateChecks, []);
 });
 
-test('createParseMirrorSyncFlags supports --market-address alias and default files', () => {
+test('createParseMirrorGoFlags rejects explicit empty or underspecified --sources early', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildParserDeps());
+
+  assert.throws(
+    () =>
+      parseMirrorGoFlags([
+        '--polymarket-market-id',
+        'poly-1',
+        '--sources',
+        '',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /at least two non-empty urls/i);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      parseMirrorGoFlags([
+        '--polymarket-market-id',
+        'poly-1',
+        '--sources',
+        'https://example.com/one',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      return true;
+    },
+  );
+});
+
+test('createParseMirrorGoFlags parses explicit --target-timestamp overrides', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildParserDeps());
+
+  const options = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--target-timestamp',
+    '2030-03-10T04:00:00Z',
+  ]);
+
+  assert.equal(options.targetTimestamp, Math.floor(Date.parse('2030-03-10T04:00:00Z') / 1000));
+});
+
+test('createParseLifecycleFlags validates start|status|resolve contracts', () => {
+  const parseLifecycleFlags = createParseLifecycleFlags({
+    CliError: ParserCliError,
+    requireFlagValue: parserRequireFlagValue,
+  });
+
+  const startOptions = parseLifecycleFlags(['start', '--config', './lifecycle.json']);
+  assert.equal(startOptions.action, 'start');
+  assert.equal(startOptions.configPath, './lifecycle.json');
+  assert.equal(startOptions.id, null);
+
+  const statusOptions = parseLifecycleFlags(['status', '--id', 'lc-123']);
+  assert.equal(statusOptions.action, 'status');
+  assert.equal(statusOptions.id, 'lc-123');
+  assert.equal(statusOptions.confirm, false);
+
+  const resolveOptions = parseLifecycleFlags(['resolve', '--id', 'lc-123', '--confirm']);
+  assert.equal(resolveOptions.action, 'resolve');
+  assert.equal(resolveOptions.id, 'lc-123');
+  assert.equal(resolveOptions.confirm, true);
+});
+
+test('createParseLifecycleFlags requires explicit --confirm on resolve', () => {
+  const parseLifecycleFlags = createParseLifecycleFlags({
+    CliError: ParserCliError,
+    requireFlagValue: parserRequireFlagValue,
+  });
+
+  assert.throws(
+    () => parseLifecycleFlags(['resolve', '--id', 'lc-123']),
+    (error) => {
+      assert.equal(error.code, 'MISSING_REQUIRED_FLAG');
+      assert.match(error.message, /requires --confirm/i);
+      return true;
+    },
+  );
+});
+
+test('createParseOddsFlags rejects insecure remote URLs for connector hosts', () => {
+  const parseOddsFlags = createParseOddsFlags({
+    CliError: ParserCliError,
+    requireFlagValue: parserRequireFlagValue,
+    parsePositiveInteger: parserParsePositiveInteger,
+    parseCsvList: (value) => String(value).split(',').map((item) => item.trim()).filter(Boolean),
+    isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
+  });
+
+  assert.throws(
+    () => parseOddsFlags([
+      'record',
+      '--competition',
+      'soccer_epl',
+      '--interval',
+      '60',
+      '--polymarket-host',
+      'http://example.com',
+    ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /--polymarket-host must use https/i);
+      return true;
+    },
+  );
+});
+
+test('createParseOddsFlags accepts secure/localhost connector URLs', () => {
+  const parseOddsFlags = createParseOddsFlags({
+    CliError: ParserCliError,
+    requireFlagValue: parserRequireFlagValue,
+    parsePositiveInteger: parserParsePositiveInteger,
+    parseCsvList: (value) => String(value).split(',').map((item) => item.trim()).filter(Boolean),
+    isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
+  });
+
+  const parsed = parseOddsFlags([
+    'record',
+    '--competition',
+    'soccer_epl',
+    '--interval',
+    '60',
+    '--polymarket-host',
+    'https://clob.polymarket.com',
+    '--polymarket-mock-url',
+    'http://127.0.0.1:7777',
+  ]);
+
+  assert.equal(parsed.action, 'record');
+  assert.equal(parsed.options.polymarketHost, 'https://clob.polymarket.com');
+  assert.equal(parsed.options.polymarketMockUrl, 'http://127.0.0.1:7777');
+});
+
+test('arb scan helpers parse ndjson options and emit deterministic spread math', () => {
+  const options = parseArbScanFlags(
+    [
+      'scan',
+      '--markets',
+      'm1,m2,m3',
+      '--output',
+      'ndjson',
+      '--min-net-spread-pct',
+      '3',
+      '--fee-pct-per-leg',
+      '0.5',
+      '--amount-usdc',
+      '200',
+      '--iterations',
+      '2',
+      '--interval-ms',
+      '1000',
+    ],
+    {
+      CliError: ParserCliError,
+      requireFlagValue: parserRequireFlagValue,
+      parseCsvList: (value) => value.split(',').map((item) => item.trim()).filter(Boolean),
+      parseNumber: parserParseNumber,
+      parsePositiveNumber: parserParsePositiveNumber,
+      parsePositiveInteger: parserParsePositiveInteger,
+    },
+  );
+
+  assert.deepEqual(options.markets, ['m1', 'm2', 'm3']);
+  assert.equal(options.output, 'ndjson');
+  assert.equal(options.minNetSpreadPct, 3);
+  assert.equal(options.feePctPerLeg, 0.5);
+
+  const opportunities = buildArbOpportunities({
+    marketSnapshots: [
+      { id: 'm1', yesPct: 40 },
+      { id: 'm2', yesPct: 52 },
+      { id: 'm3', yesPct: 49 },
+    ],
+    minNetSpreadPct: 3,
+    feePctPerLeg: 0.5,
+    amountUsdc: 200,
+  });
+
+  assert.equal(opportunities.length, 2);
+  assert.equal(opportunities[0].pair, 'm1|m2');
+  assert.equal(opportunities[0].grossSpreadPct, 12);
+  assert.equal(opportunities[0].netSpreadPct, 11);
+  assert.equal(opportunities[0].profitUsdc, 22);
+});
+
+test('createParseMirrorSyncFlags supports --market-address alias, small close windows, and strict close delta mode', () => {
   let capturedDefaultStateInput = null;
   const parseMirrorSyncFlags = createParseMirrorSyncFlags(
     buildParserDeps({
@@ -1781,17 +4521,118 @@ test('createParseMirrorSyncFlags supports --market-address alias and default fil
     TEST_MARKET,
     '--polymarket-market-id',
     'poly-1',
+    '--min-time-to-close-sec',
+    '5',
+    '--strict-close-time-delta',
     '--skip-gate',
     'close_time_delta,oracle_price_drift',
   ]);
 
   assert.equal(options.pandoraMarketAddress, TEST_MARKET);
+  assert.equal(options.minTimeToCloseSec, 5);
+  assert.equal(options.strictCloseTimeDelta, true);
   assert.equal(options.forceGate, false);
   assert.deepEqual(options.skipGateChecks, ['CLOSE_TIME_DELTA', 'ORACLE_PRICE_DRIFT']);
   assert.equal(options.stateFile, '/tmp/mirror-state.json');
   assert.equal(options.killSwitchFile, '/tmp/mirror-stop');
+  assert.equal(capturedDefaultStateInput.strictCloseTimeDelta, true);
   assert.equal(capturedDefaultStateInput.forceGate, false);
   assert.deepEqual(capturedDefaultStateInput.skipGateChecks, ['CLOSE_TIME_DELTA', 'ORACLE_PRICE_DRIFT']);
+});
+
+test('createParseMirrorSyncFlags defaults to atomic on-chain pricing and accepts explicit sizing controls', () => {
+  const parseMirrorSyncFlags = createParseMirrorSyncFlags(
+    buildParserDeps({
+      defaultMirrorStateFile: () => '/tmp/mirror-state.json',
+      defaultMirrorKillSwitchFile: () => '/tmp/mirror-stop',
+    }),
+  );
+
+  const defaults = parseMirrorSyncFlags([
+    'once',
+    '--market-address',
+    TEST_MARKET,
+    '--polymarket-market-id',
+    'poly-1',
+    '--paper',
+  ]);
+  assert.equal(defaults.rebalanceSizingMode, 'atomic');
+  assert.equal(defaults.priceSource, 'on-chain');
+
+  const explicit = parseMirrorSyncFlags([
+    'once',
+    '--market-address',
+    TEST_MARKET,
+    '--polymarket-market-id',
+    'poly-1',
+    '--paper',
+    '--rebalance-mode',
+    'incremental',
+    '--price-source',
+    'indexer',
+  ]);
+  assert.equal(explicit.rebalanceSizingMode, 'incremental');
+  assert.equal(explicit.priceSource, 'indexer');
+});
+
+test('createParseMirrorGoFlags defaults to atomic on-chain pricing and accepts explicit sizing controls', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildParserDeps());
+
+  const defaults = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--paper',
+  ]);
+  assert.equal(defaults.rebalanceSizingMode, 'atomic');
+  assert.equal(defaults.priceSource, 'on-chain');
+
+  const explicit = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--paper',
+    '--rebalance-mode',
+    'incremental',
+    '--price-source',
+    'indexer',
+  ]);
+  assert.equal(explicit.rebalanceSizingMode, 'incremental');
+  assert.equal(explicit.priceSource, 'indexer');
+
+  const safety = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--paper',
+    '--depth-slippage-bps',
+    '250',
+    '--min-time-to-close-sec',
+    '5',
+    '--strict-close-time-delta',
+  ]);
+  assert.equal(safety.depthSlippageBps, 250);
+  assert.equal(safety.minTimeToCloseSec, 5);
+  assert.equal(safety.strictCloseTimeDelta, true);
+});
+
+test('createParseMirrorSyncFlags accepts comma-delimited --rpc-url fallback lists', () => {
+  const parseMirrorSyncFlags = createParseMirrorSyncFlags(
+    buildParserDeps({
+      defaultMirrorStateFile: () => '/tmp/mirror-state.json',
+      defaultMirrorKillSwitchFile: () => '/tmp/mirror-stop',
+    }),
+  );
+
+  const options = parseMirrorSyncFlags([
+    'run',
+    '--market-address',
+    TEST_MARKET,
+    '--polymarket-market-id',
+    'poly-1',
+    '--paper',
+    '--rpc-url',
+    'https://mainnet.example, https://backup.example,https://mainnet.example',
+  ]);
+
+  assert.equal(options.rpcUrl, 'https://mainnet.example,https://backup.example');
 });
 
 test('createParseMirrorSyncDaemonSelectorFlags normalizes strategy hash', () => {
@@ -1809,6 +4650,8 @@ test('createParseMirrorSyncDaemonSelectorFlags normalizes strategy hash', () => 
 });
 
 test('createRunMirrorCommand routes status through shared parser output', async () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-status-unit-home-'));
+  const previousHome = process.env.HOME;
   const observed = {
     parseIndexerArgs: null,
     parseStatusArgs: null,
@@ -1843,8 +4686,8 @@ test('createRunMirrorCommand routes status through shared parser output', async 
     parseMirrorStatusFlags: (args) => {
       observed.parseStatusArgs = args;
       return {
-        stateFile: '/tmp/mirror-status.json',
-        strategyHash: null,
+        stateFile: null,
+        strategyHash: '0123456789abcdef',
         withLive: false,
         trustDeploy: false,
         manifestFile: null,
@@ -1861,13 +4704,6 @@ test('createRunMirrorCommand routes status through shared parser output', async 
         polymarketMockUrl: null,
       };
     },
-    loadMirrorState: () => ({
-      filePath: '/tmp/mirror-status.json',
-      state: {
-        schemaVersion: '1.0.0',
-        strategyHash: '0123456789abcdef',
-      },
-    }),
     resolveTrustedDeployPair: () => {
       throw new Error('resolveTrustedDeployPair should not be called in this test.');
     },
@@ -1882,25 +4718,161 @@ test('createRunMirrorCommand routes status through shared parser output', async 
     renderMirrorStatusTable: () => {},
   });
 
-  await runMirrorCommand(
-    ['status', '--dotenv-path', '/tmp/.env', '--strategy-hash', '0123456789abcdef'],
-    { outputMode: 'json' },
-  );
+  try {
+    process.env.HOME = tempHome;
+    await runMirrorCommand(
+      ['status', '--dotenv-path', '/tmp/.env', '--strategy-hash', '0123456789abcdef'],
+      { outputMode: 'json' },
+    );
 
-  assert.deepEqual(observed.parseIndexerArgs, [
-    '--dotenv-path',
-    '/tmp/.env',
-    '--strategy-hash',
-    '0123456789abcdef',
-  ]);
-  assert.deepEqual(observed.parseStatusArgs, shared.rest);
-  assert.equal(observed.maybeLoadIndexerEnvCalls, 1);
-  assert.equal(observed.maybeLoadTradeEnvCalls, 0);
-  assert.equal(observed.emitted.length, 1);
-  assert.equal(observed.emitted[0][1], 'mirror.status');
+    assert.deepEqual(observed.parseIndexerArgs, [
+      '--dotenv-path',
+      '/tmp/.env',
+      '--strategy-hash',
+      '0123456789abcdef',
+    ]);
+    assert.deepEqual(observed.parseStatusArgs, shared.rest);
+    assert.equal(observed.maybeLoadIndexerEnvCalls, 1);
+    assert.equal(observed.maybeLoadTradeEnvCalls, 0);
+    assert.equal(observed.emitted.length, 1);
+    assert.equal(observed.emitted[0][1], 'mirror.status');
+    assert.equal(observed.emitted[0][2].runtime.health.status, 'idle');
+    assert.equal(observed.emitted[0][2].runtime.daemon.found, false);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
-test('createRunMirrorCommand sync help reports run|once|start usage and daemon selectors', async () => {
+test('buildMirrorRuntimeTelemetry reads daemon metadata for mirror status dashboard', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-runtime-home-'));
+  const previousHome = process.env.HOME;
+  const strategyHash = 'feedfacecafebeef';
+  const stateFile = path.join(tempHome, '.pandora', 'mirror', `${strategyHash}.json`);
+  const pidFile = path.join(tempHome, '.pandora', 'mirror', 'daemon', `${strategyHash}.json`);
+
+  fs.mkdirSync(path.dirname(pidFile), { recursive: true });
+  fs.writeFileSync(
+    pidFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash,
+        pid: process.pid,
+        pidAlive: true,
+        status: 'running',
+        checkedAt: '2026-03-09T00:00:00.000Z',
+        startedAt: '2026-03-08T23:55:00.000Z',
+        stateFile,
+        logFile: path.join(tempHome, '.pandora', 'mirror', 'logs', `${strategyHash}.log`),
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    process.env.HOME = tempHome;
+    const telemetry = buildMirrorRuntimeTelemetry({
+      stateFile,
+      state: {
+        strategyHash,
+        lastTickAt: new Date().toISOString(),
+      },
+    });
+
+    assert.equal(telemetry.health.status, 'running');
+    assert.equal(telemetry.daemon.found, true);
+    assert.equal(telemetry.daemon.alive, true);
+    assert.equal(telemetry.daemon.strategyHash, strategyHash);
+    assert.equal(telemetry.daemon.pid, process.pid);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('buildMirrorRuntimeTelemetry exposes direct operator health fields for daemon status', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-runtime-summary-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+
+  try {
+    const telemetry = buildMirrorRuntimeTelemetry({
+      stateFile,
+      now: new Date('2026-03-09T00:05:20.000Z'),
+      daemonStatus: {
+        found: true,
+        alive: true,
+        status: 'running',
+        strategyHash: 'summary-hash',
+        pid: process.pid,
+        metadata: {
+          checkedAt: '2026-03-09T00:05:10.000Z',
+          startedAt: '2026-03-08T22:05:10.000Z',
+          stateFile,
+        },
+      },
+      state: {
+        strategyHash: 'summary-hash',
+        lastTickAt: '2026-03-09T00:05:15.000Z',
+        lastExecution: {
+          mode: 'live',
+          status: 'executed',
+          idempotencyKey: 'live-trade-1',
+          startedAt: '2026-03-09T00:04:00.000Z',
+          completedAt: '2026-03-09T00:04:30.000Z',
+          rebalance: {
+            side: 'yes',
+            amountUsdc: 125,
+          },
+          hedge: {
+            tokenSide: 'no',
+            amountUsdc: 80,
+          },
+        },
+        alerts: [
+          {
+            level: 'warn',
+            code: 'HEARTBEAT_SLOW',
+            message: 'Heartbeat lagged once.',
+            count: 2,
+            timestamp: '2026-03-09T00:04:45.000Z',
+          },
+          {
+            level: 'error',
+            code: 'HEDGE_EXECUTION_FAILED',
+            message: 'Most recent hedge failed.',
+            count: 3,
+            timestamp: '2026-03-09T00:05:00.000Z',
+          },
+        ],
+      },
+    });
+
+    assert.equal(telemetry.health.status, 'degraded');
+    assert.equal(telemetry.errorCount, 3);
+    assert.equal(telemetry.warningCount, 2);
+    assert.equal(telemetry.summary.errorCount, 3);
+    assert.equal(telemetry.summary.warningCount, 2);
+    assert.equal(telemetry.nextAction.code, 'INSPECT_LAST_ERROR');
+    assert.equal(telemetry.summary.nextAction.code, 'INSPECT_LAST_ERROR');
+    assert.equal(telemetry.lastTrade.status, 'executed');
+    assert.equal(telemetry.lastTrade.completedAt, '2026-03-09T00:04:30.000Z');
+    assert.equal(telemetry.summary.lastTradeAt, '2026-03-09T00:04:30.000Z');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('createRunMirrorCommand sync help reports full usage and daemon selectors', async () => {
   const observed = {
     emitted: [],
   };
@@ -1924,8 +4896,7 @@ test('createRunMirrorCommand sync help reports run|once|start usage and daemon s
   assert.equal(observed.emitted.length, 1);
   assert.equal(observed.emitted[0][1], 'mirror.sync.help');
   const payload = observed.emitted[0][2];
-  assert.match(payload.usage, /mirror sync run\|once\|start/);
-  assert.equal(/run\|once\|start\|stop\|status/.test(payload.usage), false);
+  assert.match(payload.usage, /mirror sync once\|run\|start/);
   assert.match(payload.usage, /--telegram-chat-id <id>/);
   assert.match(payload.daemonLifecycle.stop, /--pid-file <path>\|--strategy-hash <hash>/);
   assert.match(payload.daemonLifecycle.status, /--pid-file <path>\|--strategy-hash <hash>/);
@@ -1946,11 +4917,36 @@ test('error recovery service returns hints for all mapped codes', () => {
     'POLYMARKET_CHECK_FAILED',
     'POLYMARKET_MARKET_RESOLUTION_FAILED',
     'MIRROR_DEPLOY_FAILED',
+    'MIRROR_GO_VERIFY_PENDING',
     'MIRROR_SYNC_FAILED',
+    'LIFECYCLE_EXISTS',
+    'LIFECYCLE_NOT_FOUND',
+    'CONFIG_FILE_NOT_FOUND',
+    'ODDS_RECORD_FAILED',
+    'ODDS_HISTORY_FAILED',
+    'ARB_SCAN_FAILED',
+    'SIMULATE_MC_FAILED',
+    'SIMULATE_PARTICLE_FILTER_FAILED',
+    'SIMULATE_AGENTS_FAILED',
+    'MODEL_SCORE_BRIER_FAILED',
+    'MODEL_CALIBRATE_FAILED',
+    'MODEL_CORRELATION_FAILED',
+    'MODEL_DIAGNOSE_FAILED',
+    'FORECAST_READ_FAILED',
+    'FORECAST_WRITE_FAILED',
+    'BRIER_INVALID_INPUT',
+    'MCP_FILE_ACCESS_BLOCKED',
     'MCP_EXECUTE_INTENT_REQUIRED',
     'MCP_LONG_RUNNING_MODE_BLOCKED',
     'MCP_TOOL_FAILED',
     'UNKNOWN_TOOL',
+    'ERR_RISK_LIMIT',
+    'RISK_PANIC_ACTIVE',
+    'RISK_KILL_SWITCH_ACTIVE',
+    'RISK_GUARDRAIL_BLOCKED',
+    'RISK_STATE_READ_FAILED',
+    'RISK_STATE_WRITE_FAILED',
+    'RISK_STATE_INVALID',
     'MISSING_REQUIRED_FLAG',
     'MISSING_FLAG_VALUE',
     'INVALID_FLAG_VALUE',
@@ -2000,4 +4996,41 @@ test('error recovery service builds deterministic command hints for key flows', 
 
   const mcpRetry = recovery.getRecoveryForError({ code: 'MCP_EXECUTE_INTENT_REQUIRED' });
   assert.equal(mcpRetry.command, 'pandora mcp');
+
+  const lifecycleExists = recovery.getRecoveryForError({
+    code: 'LIFECYCLE_EXISTS',
+    details: { id: 'lc-abc' },
+  });
+  assert.equal(lifecycleExists.command, 'pandora lifecycle status --id lc-abc');
+
+  const configMissing = recovery.getRecoveryForError({
+    code: 'CONFIG_FILE_NOT_FOUND',
+    details: { configPath: '/tmp/lifecycle.json' },
+  });
+  assert.equal(configMissing.command, 'pandora lifecycle start --config /tmp/lifecycle.json');
+
+  const invalidLifecyclePhase = recovery.getRecoveryForError({
+    code: 'LIFECYCLE_INVALID_PHASE',
+    details: { id: 'lc-abc' },
+  });
+  assert.equal(invalidLifecyclePhase.command, 'pandora lifecycle status --id lc-abc');
+  assert.equal(invalidLifecyclePhase.retryable, false);
+
+  const oddsHistory = recovery.getRecoveryForError({
+    code: 'ODDS_HISTORY_FAILED',
+    details: { eventId: 'evt-1' },
+  });
+  assert.equal(oddsHistory.command, 'pandora odds history --event-id evt-1 --output json');
+
+  const arbRetry = recovery.getRecoveryForError({ code: 'ARB_SCAN_FAILED' });
+  assert.equal(arbRetry.command, 'pandora arb scan --markets <market-a>,<market-b> --output json --iterations 1');
+
+  const mirrorSourcesRetry = recovery.getRecoveryForError({
+    code: 'MIRROR_SOURCES_REQUIRED',
+    details: { planFile: '/tmp/mirror-plan.json', requiredMinimum: 2 },
+  });
+  assert.equal(
+    mirrorSourcesRetry.command,
+    'pandora mirror deploy --dry-run --plan-file /tmp/mirror-plan.json --sources <url1> <url2>',
+  );
 });

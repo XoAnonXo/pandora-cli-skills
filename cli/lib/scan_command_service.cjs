@@ -4,11 +4,15 @@
  * @type {string}
  */
 const SCAN_USAGE =
-  'pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]';
+  'pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]';
 
 const SCAN_NOTES = [
+  'scan is the canonical enriched market discovery command; `markets scan` remains a backward-compatible alias.',
+  'Use `markets list` when you want the raw indexer browse view without forcing enriched payload semantics.',
   'scan always returns expanded market payloads with odds included.',
   '--with-odds is accepted for backward compatibility and is effectively a no-op.',
+  '--min-tvl applies a client-side filter against current TVL in USDC units.',
+  '--hedgeable keeps only markets that have a matched Polymarket leg (cross-venue similarity pass).',
   '--active|--resolved|--expiring-soon are client-side lifecycle filters over fetched indexer pages.',
   'scan is indexer-backed (no direct chain reads), so freshness follows indexer sync state.',
 ];
@@ -29,6 +33,7 @@ function createRunScanCommand(deps) {
     fetchMarketsListPage,
     buildMarketsEnrichmentContext,
     buildMarketsListPayload,
+    filterHedgeableMarkets,
     renderScanTable,
   } = deps;
 
@@ -55,15 +60,33 @@ function createRunScanCommand(deps) {
     const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
 
     const options = parseMarketsListFlags(shared.rest);
+    options.expand = true;
     options.withOdds = true;
 
-    const { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
+    let hedgeableDiagnostics = [];
+    let { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
+    if (options.hedgeable && typeof filterHedgeableMarkets === 'function') {
+      const filtered = await filterHedgeableMarkets({
+        indexerUrl,
+        timeoutMs: shared.timeoutMs,
+        options,
+        items,
+      });
+      items = Array.isArray(filtered && filtered.items) ? filtered.items : items;
+      if (typeof filtered.unfilteredCount === 'number') {
+        unfilteredCount = filtered.unfilteredCount;
+      }
+      if (Array.isArray(filtered && filtered.diagnostics)) {
+        hedgeableDiagnostics = filtered.diagnostics;
+      }
+    }
     const enrichmentContext = await buildMarketsEnrichmentContext(indexerUrl, items, options, shared.timeoutMs);
     const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, {
       includeEnrichedItems: true,
       scanMode: true,
       enrichmentContext,
       unfilteredCount,
+      externalDiagnostics: hedgeableDiagnostics,
     });
 
     emitSuccess(context.outputMode, 'scan', payload, renderScanTable);

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cli-operations-close-seeded",
+  "title": "CLI seeded operation close",
+  "description": "CLI operations close transitions a terminal seeded operation into closed state.",
+  "transport": "cli-json",
+  "assertionId": "operations-close-seeded",
+  "expectedOperationId": "benchmark-op-close",
+  "seedOperations": [
+    {
+      "operationId": "benchmark-op-close",
+      "tool": "mirror.close",
+      "command": "mirror.close",
+      "status": "completed",
+      "summary": "Seeded close benchmark operation",
+      "request": { "marketAddress": "benchmark-market" },
+      "createdAt": "2026-03-08T00:00:00.000Z",
+      "updatedAt": "2026-03-08T00:00:00.000Z"
+    }
+  ],
+  "targetLatencyMs": 5000,
+  "weight": 8,
+  "dimensions": ["operations", "lifecycle", "state"],
+  "request": {
+    "args": ["--output", "json", "operations", "close", "--id", "benchmark-op-close", "--reason", "benchmark-close"]
+  }
+}

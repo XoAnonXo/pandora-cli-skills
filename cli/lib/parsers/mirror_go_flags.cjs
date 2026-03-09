@@ -1,8 +1,105 @@
+const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
+const { parsePollCategoryFlag, DEFAULT_SPORTS_POLL_CATEGORY } = require('../shared/poll_categories.cjs');
+const { normalizeMirrorPathForMcp, parseMirrorTargetTimestamp, validateMirrorUrl } = require('./mirror_parser_guard.cjs');
+const { consumeProfileSelectorFlag } = require('./shared_profile_selector_flags.cjs');
+
+const MAX_UINT24 = 16_777_215;
+const DISTRIBUTION_SCALE = 1_000_000_000;
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseMirrorGoFlags requires deps.${name}()`);
   }
   return deps[name];
+}
+
+function normalizeSources(entries) {
+  const values = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const parts = String(entry || '').split(/[\n,]/g);
+    for (const part of parts) {
+      const normalized = String(part || '').trim();
+      if (normalized) values.push(normalized);
+    }
+  }
+  return values;
+}
+
+function preserveExplicitZero(value) {
+  // Keep explicit zero truthy so downstream `value || default` fallbacks do not overwrite it.
+  return value === 0 ? Object(0) : value;
+}
+
+function parseUint24Like(value, flagName, CliError, parseInteger) {
+  const parsed = parseInteger(value, flagName);
+  if (parsed < 0 || parsed > MAX_UINT24) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be an integer between 0 and ${MAX_UINT24}.`);
+  }
+  return preserveExplicitZero(parsed);
+}
+
+function parseDistributionUnits(value, flagName, CliError, parseInteger) {
+  const parsed = parseInteger(value, flagName);
+  if (parsed < 0 || parsed > DISTRIBUTION_SCALE) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be an integer between 0 and ${DISTRIBUTION_SCALE}.`);
+  }
+  return parsed;
+}
+
+function parseDistributionPercent(value, flagName, CliError) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be between 0 and 100.`);
+  }
+  return parsed;
+}
+
+function parseSecureUrlList(value, flagName, CliError, isSecureHttpUrlOrLocal) {
+  const rawEntries = String(value || '').split(',');
+  const normalized = [];
+  for (const entry of rawEntries) {
+    const candidate = String(entry || '').trim();
+    if (!candidate) {
+      throw new CliError('INVALID_FLAG_VALUE', `${flagName} must not contain empty RPC URL entries.`);
+    }
+    if (!isSecureHttpUrlOrLocal(candidate)) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `${flagName} must use https:// (or http://localhost/127.0.0.1 for local testing).`,
+      );
+    }
+    normalized.push(candidate);
+  }
+
+  return Array.from(new Set(normalized)).join(',');
+}
+
+function finalizeDistribution(options, CliError) {
+  const hasRaw = options.distributionYes !== null || options.distributionNo !== null;
+  const hasPct = options.distributionYesPct !== null || options.distributionNoPct !== null;
+
+  if (hasRaw && hasPct) {
+    throw new CliError(
+      'INVALID_ARGS',
+      'Use either raw distribution flags (--distribution-yes/--distribution-no) or percentage flags (--distribution-yes-pct/--distribution-no-pct), not both.',
+    );
+  }
+
+  if (hasPct) {
+    const hasYesPct = options.distributionYesPct !== null;
+    const hasNoPct = options.distributionNoPct !== null;
+    if (hasYesPct && hasNoPct) {
+      const total = options.distributionYesPct + options.distributionNoPct;
+      if (Math.abs(total - 100) > 1e-9) {
+        throw new CliError('INVALID_ARGS', '--distribution-yes-pct + --distribution-no-pct must equal 100.');
+      }
+    }
+
+    const yesPct = hasYesPct ? options.distributionYesPct : 100 - options.distributionNoPct;
+    const distributionYes = Math.round(yesPct * (DISTRIBUTION_SCALE / 100));
+    options.distributionYes = distributionYes;
+    options.distributionNo = DISTRIBUTION_SCALE - distributionYes;
+  }
 }
 
 /**
@@ -28,8 +125,8 @@ function createParseMirrorGoFlags(deps) {
       polymarketSlug: null,
       liquidityUsdc: null,
       feeTier: 3000,
-      maxImbalance: 10_000,
-      category: 3,
+      maxImbalance: MAX_UINT24,
+      category: DEFAULT_SPORTS_POLL_CATEGORY,
       arbiter: null,
       paper: true,
       executeLive: false,
@@ -39,20 +136,35 @@ function createParseMirrorGoFlags(deps) {
       driftTriggerBps: 150,
       hedgeTriggerUsdc: 10,
       hedgeRatio: 1,
+      rebalanceSizingMode: 'atomic',
+      priceSource: 'on-chain',
       noHedge: false,
       maxRebalanceUsdc: 25,
       maxHedgeUsdc: 50,
       maxOpenExposureUsdc: null,
       maxTradesPerDay: null,
       cooldownMs: 60_000,
+      depthSlippageBps: 100,
+      minTimeToCloseSec: 1800,
+      strictCloseTimeDelta: false,
       chainId: null,
       rpcUrl: null,
+      polymarketRpcUrl: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
       funder: null,
       usdc: null,
       oracle: null,
       factory: null,
+      distributionYes: null,
+      distributionNo: null,
+      distributionYesPct: null,
+      distributionNoPct: null,
       sources: [],
+      sourcesProvided: false,
+      validationTicket: null,
+      targetTimestamp: null,
       manifestFile: null,
       trustDeploy: false,
       forceGate: false,
@@ -92,7 +204,12 @@ function createParseMirrorGoFlags(deps) {
         continue;
       }
       if (token === '--max-imbalance') {
-        options.maxImbalance = parsePositiveInteger(requireFlagValue(args, i, '--max-imbalance'), '--max-imbalance');
+        options.maxImbalance = parseUint24Like(
+          requireFlagValue(args, i, '--max-imbalance'),
+          '--max-imbalance',
+          CliError,
+          parseInteger,
+        );
         i += 1;
         continue;
       }
@@ -102,7 +219,7 @@ function createParseMirrorGoFlags(deps) {
         continue;
       }
       if (token === '--category') {
-        options.category = parseInteger(requireFlagValue(args, i, '--category'), '--category');
+        options.category = parsePollCategoryFlag(requireFlagValue(args, i, '--category'), '--category', CliError);
         i += 1;
         continue;
       }
@@ -146,6 +263,24 @@ function createParseMirrorGoFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--rebalance-mode') {
+        const value = String(requireFlagValue(args, i, '--rebalance-mode')).trim().toLowerCase();
+        if (value !== 'atomic' && value !== 'incremental') {
+          throw new CliError('INVALID_FLAG_VALUE', '--rebalance-mode must be atomic|incremental.');
+        }
+        options.rebalanceSizingMode = value;
+        i += 1;
+        continue;
+      }
+      if (token === '--price-source') {
+        const value = String(requireFlagValue(args, i, '--price-source')).trim().toLowerCase();
+        if (value !== 'on-chain' && value !== 'indexer') {
+          throw new CliError('INVALID_FLAG_VALUE', '--price-source must be on-chain|indexer.');
+        }
+        options.priceSource = value;
+        i += 1;
+        continue;
+      }
       if (token === '--no-hedge') {
         options.noHedge = true;
         continue;
@@ -181,20 +316,48 @@ function createParseMirrorGoFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--depth-slippage-bps') {
+        options.depthSlippageBps = parsePositiveInteger(requireFlagValue(args, i, '--depth-slippage-bps'), '--depth-slippage-bps');
+        if (options.depthSlippageBps > 10_000) {
+          throw new CliError('INVALID_FLAG_VALUE', '--depth-slippage-bps must be <= 10000.');
+        }
+        i += 1;
+        continue;
+      }
+      if (token === '--min-time-to-close-sec') {
+        options.minTimeToCloseSec = parsePositiveInteger(
+          requireFlagValue(args, i, '--min-time-to-close-sec'),
+          '--min-time-to-close-sec',
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--strict-close-time-delta') {
+        options.strictCloseTimeDelta = true;
+        continue;
+      }
       if (token === '--chain-id') {
         options.chainId = parseInteger(requireFlagValue(args, i, '--chain-id'), '--chain-id');
         i += 1;
         continue;
       }
       if (token === '--rpc-url') {
-        const rpcUrl = requireFlagValue(args, i, '--rpc-url');
-        if (!isSecureHttpUrlOrLocal(rpcUrl)) {
-          throw new CliError(
-            'INVALID_FLAG_VALUE',
-            '--rpc-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
-          );
-        }
-        options.rpcUrl = rpcUrl;
+        options.rpcUrl = parseSecureUrlList(
+          requireFlagValue(args, i, '--rpc-url'),
+          '--rpc-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-rpc-url') {
+        options.polymarketRpcUrl = parseSecureUrlList(
+          requireFlagValue(args, i, '--polymarket-rpc-url'),
+          '--polymarket-rpc-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
@@ -202,6 +365,20 @@ function createParseMirrorGoFlags(deps) {
         options.privateKey = parsePrivateKeyFlag(requireFlagValue(args, i, '--private-key'), '--private-key');
         i += 1;
         continue;
+      }
+      {
+        const nextIndex = consumeProfileSelectorFlag({
+          token,
+          args,
+          index: i,
+          options,
+          CliError,
+          requireFlagValue,
+        });
+        if (nextIndex !== null) {
+          i = nextIndex;
+          continue;
+        }
       }
       if (token === '--funder') {
         options.funder = parseAddressFlag(requireFlagValue(args, i, '--funder'), '--funder');
@@ -223,6 +400,44 @@ function createParseMirrorGoFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--distribution-yes') {
+        options.distributionYes = parseDistributionUnits(
+          requireFlagValue(args, i, '--distribution-yes'),
+          '--distribution-yes',
+          CliError,
+          parseInteger,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--distribution-no') {
+        options.distributionNo = parseDistributionUnits(
+          requireFlagValue(args, i, '--distribution-no'),
+          '--distribution-no',
+          CliError,
+          parseInteger,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--distribution-yes-pct') {
+        options.distributionYesPct = parseDistributionPercent(
+          requireFlagValue(args, i, '--distribution-yes-pct'),
+          '--distribution-yes-pct',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--distribution-no-pct') {
+        options.distributionNoPct = parseDistributionPercent(
+          requireFlagValue(args, i, '--distribution-no-pct'),
+          '--distribution-no-pct',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
       if (token === '--sources') {
         let j = i + 1;
         const entries = [];
@@ -233,12 +448,31 @@ function createParseMirrorGoFlags(deps) {
         if (!entries.length) {
           throw new CliError('MISSING_FLAG_VALUE', 'Missing value for --sources');
         }
+        options.sourcesProvided = true;
         options.sources.push(...entries);
         i = j - 1;
         continue;
       }
+      if (token === '--validation-ticket') {
+        options.validationTicket = requireFlagValue(args, i, '--validation-ticket');
+        i += 1;
+        continue;
+      }
+      if (token === '--target-timestamp') {
+        options.targetTimestamp = parseMirrorTargetTimestamp(
+          requireFlagValue(args, i, '--target-timestamp'),
+          '--target-timestamp',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
       if (token === '--manifest-file') {
-        options.manifestFile = requireFlagValue(args, i, '--manifest-file');
+        options.manifestFile = normalizeMirrorPathForMcp(
+          requireFlagValue(args, i, '--manifest-file'),
+          '--manifest-file',
+          CliError,
+        );
         i += 1;
         continue;
       }
@@ -263,29 +497,42 @@ function createParseMirrorGoFlags(deps) {
         continue;
       }
       if (token === '--polymarket-host') {
-        const polymarketHost = requireFlagValue(args, i, '--polymarket-host');
-        if (!isSecureHttpUrlOrLocal(polymarketHost)) {
-          throw new CliError(
-            'INVALID_FLAG_VALUE',
-            '--polymarket-host must use https:// (or http://localhost/127.0.0.1 for local testing).',
-          );
-        }
-        options.polymarketHost = polymarketHost;
+        options.polymarketHost = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-host'),
+          '--polymarket-host',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-url') {
-        options.polymarketGammaUrl = requireFlagValue(args, i, '--polymarket-gamma-url');
+        options.polymarketGammaUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-url'),
+          '--polymarket-gamma-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-mock-url') {
-        options.polymarketGammaMockUrl = requireFlagValue(args, i, '--polymarket-gamma-mock-url');
+        options.polymarketGammaMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-mock-url'),
+          '--polymarket-gamma-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-mock-url') {
-        options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+        options.polymarketMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-mock-url'),
+          '--polymarket-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
@@ -317,19 +564,45 @@ function createParseMirrorGoFlags(deps) {
         'mirror go accepts only one mode flag: --paper/--dry-run or --execute-live/--execute.',
       );
     }
-    if (![500, 3000, 10000].includes(options.feeTier)) {
-      throw new CliError('INVALID_FLAG_VALUE', '--fee-tier must be one of 500, 3000, 10000.');
+    if (options.feeTier < MIN_AMM_FEE_TIER || options.feeTier > MAX_AMM_FEE_TIER) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `--fee-tier must be between ${MIN_AMM_FEE_TIER} and ${MAX_AMM_FEE_TIER} (max 5%).`,
+      );
+    }
+    finalizeDistribution(options, CliError);
+    if (
+      (options.distributionYes === null && options.distributionNo !== null) ||
+      (options.distributionYes !== null && options.distributionNo === null)
+    ) {
+      throw new CliError('INVALID_ARGS', 'Provide both --distribution-yes and --distribution-no together.');
+    }
+    if (
+      options.distributionYes !== null &&
+      options.distributionNo !== null &&
+      options.distributionYes + options.distributionNo !== DISTRIBUTION_SCALE
+    ) {
+      throw new CliError('INVALID_ARGS', '--distribution-yes + --distribution-no must equal 1000000000.');
     }
     if (options.hedgeRatio > 2) {
       throw new CliError('INVALID_FLAG_VALUE', '--hedge-ratio must be <= 2.');
     }
     if (options.executeLive) {
-      if (options.maxOpenExposureUsdc === null) {
-        throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-open-exposure-usdc.');
+      const missing = [];
+      if (options.maxOpenExposureUsdc === null) missing.push('--max-open-exposure-usdc');
+      if (options.maxTradesPerDay === null) missing.push('--max-trades-per-day');
+      if (missing.length) {
+        throw new CliError(
+          'MISSING_REQUIRED_FLAG',
+          `Live mode requires companion risk flags: ${missing.join(', ')}.`,
+        );
       }
-      if (options.maxTradesPerDay === null) {
-        throw new CliError('MISSING_REQUIRED_FLAG', 'Live mode requires --max-trades-per-day.');
-      }
+    }
+    if (options.sourcesProvided && normalizeSources(options.sources).length < 2) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        '--sources requires at least two non-empty URLs when explicitly provided.',
+      );
     }
 
     return options;

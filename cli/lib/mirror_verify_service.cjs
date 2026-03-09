@@ -1,8 +1,10 @@
 const crypto = require('crypto');
 const { createIndexerClient } = require('./indexer_client.cjs');
 const { resolvePolymarketMarket } = require('./polymarket_trade_adapter.cjs');
+const { fetchPolymarketMarkets } = require('./polymarket_adapter.cjs');
 const { questionSimilarityBreakdown } = require('./similarity_service.cjs');
 const { round, toOptionalNumber } = require('./shared/utils.cjs');
+const { resolveMirrorGateCloseTimestamp } = require('./shared/mirror_timing.cjs');
 
 const MIRROR_VERIFY_SCHEMA_VERSION = '1.0.0';
 const USDC_DECIMALS = 6;
@@ -161,6 +163,91 @@ async function fetchPandoraMarketContext(options = {}) {
   };
 }
 
+function buildPandoraMatchCandidates(markets, pollsMap) {
+  const rows = [];
+
+  for (const market of Array.isArray(markets) ? markets : []) {
+    const pollAddress = String(market && market.pollAddress ? market.pollAddress : '').trim();
+    const poll = pollsMap.get(pollAddress.toLowerCase()) || pollsMap.get(pollAddress);
+    const question = poll && poll.question ? String(poll.question) : null;
+    if (!question) continue;
+
+    rows.push({
+      marketAddress: market.id,
+      pollAddress: market.pollAddress,
+      question,
+      status: toOptionalNumber(poll && poll.status),
+      rules: poll && poll.rules ? String(poll.rules) : null,
+      yesPct: derivePandoraYesPct(market),
+      closeTimestamp: toOptionalNumber(market.marketCloseTimestamp),
+      chainId: toOptionalNumber(market.chainId),
+      marketType: market.marketType || null,
+    });
+  }
+
+  return rows;
+}
+
+function scorePandoraMatchCandidates(sourceQuestion, candidates) {
+  const rows = (Array.isArray(candidates) ? candidates : []).map((candidate) => ({
+    ...candidate,
+    similarity: questionSimilarityBreakdown(sourceQuestion, candidate.question),
+  }));
+
+  rows.sort((a, b) => (b.similarity.score || 0) - (a.similarity.score || 0));
+
+  const diagnostics = [];
+  const best = rows[0] || null;
+  if (!best) diagnostics.push('No Pandora candidate markets with poll questions were found.');
+
+  return {
+    generatedAt: new Date().toISOString(),
+    best,
+    candidateCount: rows.length,
+    diagnostics,
+  };
+}
+
+async function preloadPandoraMatchCandidates(options = {}) {
+  const client = createIndexerClient(options.indexerUrl, options.timeoutMs);
+
+  const page = await client.list({
+    queryName: 'marketss',
+    filterType: 'marketsFilter',
+    fields: ['id', 'chainId', 'marketType', 'pollAddress', 'marketCloseTimestamp', 'yesChance', 'reserveYes', 'reserveNo'],
+    variables: {
+      where: {
+        ...(options.chainId !== null && options.chainId !== undefined ? { chainId: options.chainId } : {}),
+      },
+      orderBy: 'createdAt',
+      orderDirection: 'desc',
+      before: null,
+      after: null,
+      limit: Math.max(25, Math.min(Number(options.limit) || 150, 500)),
+    },
+  });
+
+  const markets = Array.isArray(page.items) ? page.items : [];
+  const pollIds = Array.from(
+    new Set(
+      markets
+        .map((market) => String(market && market.pollAddress ? market.pollAddress : '').trim())
+        .filter(Boolean),
+    ),
+  );
+
+  const pollsMap = await client.getManyByIds({
+    queryName: 'polls',
+    fields: ['id', 'question', 'status', 'deadlineEpoch', 'rules'],
+    ids: pollIds,
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    candidates: buildPandoraMatchCandidates(markets, pollsMap),
+  };
+}
+
 function buildGateChecks({
   similarity,
   confidenceThreshold,
@@ -248,14 +335,55 @@ function buildGateChecks({
 async function verifyMirrorPair(options = {}) {
   const diagnostics = [];
   const nowSec = Number.isFinite(Number(options.nowSec)) ? Number(options.nowSec) : Math.floor(Date.now() / 1000);
+  const observedAtIso = new Date(nowSec * 1000).toISOString();
 
-  const [pandora, polymarket] = await Promise.all([
-    fetchPandoraMarketContext({
-      indexerUrl: options.indexerUrl,
-      timeoutMs: options.timeoutMs,
-      marketAddress: options.pandoraMarketAddress,
-    }),
-    resolvePolymarketMarket({
+  async function resolveSourceMarket() {
+    const preferLiveFeed = options.enableRealtimeSourceFeed === true || Boolean(options.executeLive || options.stream);
+    if (preferLiveFeed) {
+      try {
+        const payload = await fetchPolymarketMarkets({
+          host: options.polymarketHost,
+          gammaHost: options.polymarketGammaUrl,
+          gammaMockUrl: options.polymarketGammaMockUrl,
+          mockUrl: options.polymarketMockUrl,
+          timeoutMs: options.timeoutMs,
+          limit: Math.max(150, Number.isFinite(Number(options.sourceLookupLimit)) ? Number(options.sourceLookupLimit) : 150),
+          maxAgeMs: options.sourceMaxAgeMs,
+          feedTimeoutMs: options.feedTimeoutMs,
+        });
+        const items = Array.isArray(payload && payload.items) ? payload.items : [];
+        const idNeedle = String(options.polymarketMarketId || '').trim().toLowerCase();
+        const slugNeedle = String(options.polymarketSlug || '').trim().toLowerCase();
+        const matched = items.find((item) => {
+          const marketId = String(item && item.marketId ? item.marketId : '').trim().toLowerCase();
+          const slug = String(item && item.slug ? item.slug : '').trim().toLowerCase();
+          return (idNeedle && marketId === idNeedle) || (slugNeedle && slug === slugNeedle);
+        });
+        if (matched) {
+          return {
+            ...matched,
+            sourceFreshness:
+              matched && matched.sourceFreshness && typeof matched.sourceFreshness === 'object'
+                ? matched.sourceFreshness
+                : {
+                    observedAt: observedAtIso,
+                    transport: preferLiveFeed ? 'stream' : 'poll',
+                    reason: 'realtime-lookup',
+                  },
+            diagnostics: (Array.isArray(matched.diagnostics) ? matched.diagnostics : []).concat(
+              Array.isArray(payload && payload.diagnostics) ? payload.diagnostics : [],
+            ),
+          };
+        }
+        diagnostics.push('Realtime Polymarket source lookup did not find the requested market; falling back to direct market resolution.');
+      } catch (err) {
+        diagnostics.push(
+          `Realtime Polymarket source lookup failed; falling back to direct market resolution (${err && err.message ? err.message : String(err)}).`,
+        );
+      }
+    }
+
+    const fallback = await resolvePolymarketMarket({
       host: options.polymarketHost,
       gammaUrl: options.polymarketGammaUrl,
       gammaMockUrl: options.polymarketGammaMockUrl,
@@ -263,8 +391,42 @@ async function verifyMirrorPair(options = {}) {
       timeoutMs: options.timeoutMs,
       marketId: options.polymarketMarketId,
       slug: options.polymarketSlug,
+    });
+
+    if (!fallback || typeof fallback !== 'object') {
+      return fallback;
+    }
+
+    return {
+      ...fallback,
+      sourceFreshness:
+        fallback.sourceFreshness && typeof fallback.sourceFreshness === 'object'
+          ? fallback.sourceFreshness
+          : {
+              observedAt: observedAtIso,
+              transport: 'poll',
+              reason: preferLiveFeed ? 'direct-resolution-live-fallback' : 'direct-resolution',
+            },
+    };
+  }
+
+  const [pandora, polymarket] = await Promise.all([
+    fetchPandoraMarketContext({
+      indexerUrl: options.indexerUrl,
+      timeoutMs: options.timeoutMs,
+      marketAddress: options.pandoraMarketAddress,
     }),
+    resolveSourceMarket(),
   ]);
+
+  const sourceCloseResolution = resolveMirrorGateCloseTimestamp(polymarket, options.minCloseLeadSeconds);
+  const gateSourceMarket = {
+    ...polymarket,
+    closeTimestamp:
+      sourceCloseResolution && Number.isFinite(Number(sourceCloseResolution.closeTimestamp))
+        ? Number(sourceCloseResolution.closeTimestamp)
+        : polymarket.closeTimestamp,
+  };
 
   const similarity = questionSimilarityBreakdown(pandora.question, polymarket.question);
   const leftRuleHash = hashRules(pandora.rules);
@@ -278,7 +440,7 @@ async function verifyMirrorPair(options = {}) {
     ruleHashes: { left: leftRuleHash, right: rightRuleHash },
     allowRuleMismatch: Boolean(options.allowRuleMismatch),
     pandora,
-    polymarket,
+    polymarket: gateSourceMarket,
     strictCloseDiffSeconds: 2 * 60 * 60,
     nowSec,
   });
@@ -287,7 +449,7 @@ async function verifyMirrorPair(options = {}) {
   for (const item of polymarket.diagnostics || []) diagnostics.push(item);
 
   const pandoraTimeToExpirySec = Number.isFinite(pandora.closeTimestamp) ? pandora.closeTimestamp - nowSec : null;
-  const sourceTimeToExpirySec = Number.isFinite(polymarket.closeTimestamp) ? polymarket.closeTimestamp - nowSec : null;
+  const sourceTimeToExpirySec = Number.isFinite(gateSourceMarket.closeTimestamp) ? gateSourceMarket.closeTimestamp - nowSec : null;
   const minTimeCandidates = [pandoraTimeToExpirySec, sourceTimeToExpirySec].filter((value) => Number.isFinite(value));
   const minTimeToExpirySec = minTimeCandidates.length ? Math.min(...minTimeCandidates) : null;
   if (minTimeToExpirySec !== null && minTimeToExpirySec < 3600) {
@@ -318,78 +480,23 @@ async function verifyMirrorPair(options = {}) {
       checks,
     },
     pandora,
-    sourceMarket: polymarket,
+    sourceMarket: {
+      ...polymarket,
+      rawCloseTimestamp: polymarket && polymarket.closeTimestamp !== undefined ? polymarket.closeTimestamp : null,
+      closeTimestamp: gateSourceMarket.closeTimestamp,
+      effectiveCloseTimestamp: Number.isFinite(Number(gateSourceMarket.closeTimestamp))
+        ? Number(gateSourceMarket.closeTimestamp)
+        : null,
+      timing: sourceCloseResolution ? sourceCloseResolution.timing : null,
+    },
     similarityChecks: options.includeSimilarity ? [similarity] : undefined,
     diagnostics,
   };
 }
 
 async function findBestPandoraMatch(options = {}) {
-  const diagnostics = [];
-  const client = createIndexerClient(options.indexerUrl, options.timeoutMs);
-
-  const page = await client.list({
-    queryName: 'marketss',
-    filterType: 'marketsFilter',
-    fields: ['id', 'chainId', 'marketType', 'pollAddress', 'marketCloseTimestamp', 'yesChance', 'reserveYes', 'reserveNo'],
-    variables: {
-      where: {
-        ...(options.chainId !== null && options.chainId !== undefined ? { chainId: options.chainId } : {}),
-      },
-      orderBy: 'createdAt',
-      orderDirection: 'desc',
-      before: null,
-      after: null,
-      limit: Math.max(25, Math.min(Number(options.limit) || 150, 500)),
-    },
-  });
-
-  const markets = Array.isArray(page.items) ? page.items : [];
-  const pollIds = Array.from(
-    new Set(
-      markets
-        .map((market) => String(market && market.pollAddress ? market.pollAddress : '').trim())
-        .filter(Boolean),
-    ),
-  );
-
-  const pollsMap = await client.getManyByIds({
-    queryName: 'polls',
-    fields: ['id', 'question', 'status', 'deadlineEpoch', 'rules'],
-    ids: pollIds,
-  });
-
-  const rows = [];
-  for (const market of markets) {
-    const poll = pollsMap.get(String(market.pollAddress || '').toLowerCase()) || pollsMap.get(String(market.pollAddress || ''));
-    const question = poll && poll.question ? String(poll.question) : null;
-    if (!question) continue;
-
-    const similarity = questionSimilarityBreakdown(options.sourceQuestion, question);
-    rows.push({
-      marketAddress: market.id,
-      pollAddress: market.pollAddress,
-      question,
-      similarity,
-      status: toOptionalNumber(poll && poll.status),
-      rules: poll && poll.rules ? String(poll.rules) : null,
-      yesPct: derivePandoraYesPct(market),
-      closeTimestamp: toOptionalNumber(market.marketCloseTimestamp),
-      chainId: toOptionalNumber(market.chainId),
-      marketType: market.marketType || null,
-    });
-  }
-
-  rows.sort((a, b) => (b.similarity.score || 0) - (a.similarity.score || 0));
-  const best = rows[0] || null;
-  if (!best) diagnostics.push('No Pandora candidate markets with poll questions were found.');
-
-  return {
-    generatedAt: new Date().toISOString(),
-    best,
-    candidateCount: rows.length,
-    diagnostics,
-  };
+  const candidateSet = options.candidateSet || (await preloadPandoraMatchCandidates(options));
+  return scorePandoraMatchCandidates(options.sourceQuestion, candidateSet && candidateSet.candidates);
 }
 
 module.exports = {
@@ -400,5 +507,6 @@ module.exports = {
   questionSimilarityBreakdown,
   fetchPandoraMarketContext,
   verifyMirrorPair,
+  preloadPandoraMatchCandidates,
   findBestPandoraMatch,
 };

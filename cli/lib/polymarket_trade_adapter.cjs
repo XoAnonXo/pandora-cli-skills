@@ -49,6 +49,28 @@ function toTimestampSeconds(value) {
   return numeric > 1e12 ? Math.floor(numeric / 1000) : Math.floor(numeric);
 }
 
+function resolvePolymarketEventStartTimestampValue(row) {
+  if (!row || typeof row !== 'object') return null;
+  return row.game_start_time || row.gameStartTime || null;
+}
+
+function resolvePolymarketCloseFallbackValue(row) {
+  if (!row || typeof row !== 'object') return null;
+  return (
+    row.end_date_iso ||
+    row.endDateIso ||
+    row.endDate ||
+    row.end_date ||
+    row.accepting_orders_timestamp ||
+    row.closeTime ||
+    null
+  );
+}
+
+function resolvePolymarketEventTimestamp(row) {
+  return resolvePolymarketEventStartTimestampValue(row) || resolvePolymarketCloseFallbackValue(row);
+}
+
 function normalizeHostList(hostInput) {
   const rawValues = Array.isArray(hostInput) ? hostInput : String(hostInput || '').split(',');
   const hosts = rawValues
@@ -405,17 +427,18 @@ function normalizeMarketRow(row) {
     ).trim() || null,
     slug: String((row && (row.market_slug || row.marketSlug || row.slug)) || '').trim() || null,
     question: extractQuestionText(row),
+    eventId: toStringOrNull(row && (row.event_id || row.eventId)),
+    eventSlug: toStringOrNull(row && (row.event_slug || row.eventSlug)),
+    eventTitle: toStringOrNull(row && (row.event_title || row.eventTitle)),
     description: rulesSections.length ? rulesSections.join('\n\n') : null,
-    closeTimestamp: toTimestampSeconds(
-      row &&
-        (row.end_date_iso ||
-          row.endDate ||
-          row.end_date ||
-          row.endDateIso ||
-          row.accepting_orders_timestamp ||
-          row.game_start_time ||
-          row.closeTime),
-    ),
+    eventStartTimestamp: toTimestampSeconds(resolvePolymarketEventStartTimestampValue(row)),
+    sourceCloseTimestamp: toTimestampSeconds(resolvePolymarketCloseFallbackValue(row)),
+    timestampSource: resolvePolymarketEventStartTimestampValue(row)
+      ? 'game_start_time'
+      : resolvePolymarketCloseFallbackValue(row)
+        ? 'end_date_iso'
+        : null,
+    closeTimestamp: toTimestampSeconds(resolvePolymarketEventTimestamp(row)),
     yesPct: tokens.yes,
     noPct: tokens.no,
     yesTokenId: tokens.yesTokenId,
@@ -479,6 +502,14 @@ function parseMarketsPayload(payload) {
   return [];
 }
 
+function parseEventsPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.events)) return payload.events;
+  if (payload && payload.data && Array.isArray(payload.data.events)) return payload.data.events;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  return [];
+}
+
 async function fetchJson(url, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -530,6 +561,15 @@ function buildGammaUrl(baseUrl, params) {
   return url.toString();
 }
 
+function buildGammaEventsUrl(baseUrl, params) {
+  const url = new URL(`${baseUrl}/events`);
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === null || value === undefined || value === '') continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url.toString();
+}
+
 async function fetchGammaRows(params, options = {}, diagnostics = []) {
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const gammaUrl = normalizeGammaBaseUrl(options.gammaUrl);
@@ -541,6 +581,298 @@ async function fetchGammaRows(params, options = {}, diagnostics = []) {
     diagnostics.push(`Gamma request failed (${targetUrl}): ${formatNetworkError(err)}`);
     return [];
   }
+}
+
+function makeMarketDedupeKey(row) {
+  return (
+    normalizeText(
+      row &&
+        (row.condition_id ||
+          row.conditionId ||
+          row.question_id ||
+          row.questionId ||
+          row.market_id ||
+          row.marketId ||
+          row.id ||
+          row.slug),
+    ) || null
+  );
+}
+
+function flattenEventMarkets(events) {
+  const output = [];
+  const seen = new Set();
+
+  for (const event of Array.isArray(events) ? events : []) {
+    const markets = Array.isArray(event && event.markets) ? event.markets : [];
+    for (const market of markets) {
+      if (!market || typeof market !== 'object') continue;
+      const dedupeKey = makeMarketDedupeKey(market);
+      if (dedupeKey && seen.has(dedupeKey)) continue;
+      if (dedupeKey) seen.add(dedupeKey);
+      output.push({
+        ...market,
+        event_id: event && event.id !== undefined ? event.id : null,
+        event_slug: event && event.slug ? event.slug : null,
+        event_title: event && event.title ? event.title : null,
+        event_tags: Array.isArray(event && event.tags) ? event.tags : [],
+      });
+    }
+  }
+
+  return output;
+}
+
+function normalizeTagIdList(input) {
+  const values = Array.isArray(input) ? input : [];
+  const normalized = [];
+  for (const value of values) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) continue;
+    const asInt = Math.trunc(numeric);
+    if (asInt <= 0) continue;
+    normalized.push(asInt);
+  }
+  return Array.from(new Set(normalized));
+}
+
+const BROWSE_ALLOWED_CATEGORIES = new Set(['sports', 'crypto', 'politics', 'entertainment']);
+const BROWSE_DEFAULT_SPORT_TAG_IDS = Object.freeze([82, 100350]);
+const BROWSE_SPORT_KEYWORDS = [
+  'sport',
+  'soccer',
+  'football',
+  'premier league',
+  'epl',
+  'nba',
+  'nfl',
+  'nhl',
+  'mlb',
+  'tennis',
+  'cricket',
+  'mma',
+  'ufc',
+  'formula 1',
+  'f1',
+];
+const BROWSE_CRYPTO_KEYWORDS = [
+  'crypto',
+  'bitcoin',
+  'btc',
+  'ethereum',
+  'eth',
+  'solana',
+  'defi',
+  'blockchain',
+  'altcoin',
+  'memecoin',
+];
+const BROWSE_POLITICS_KEYWORDS = [
+  'politic',
+  'election',
+  'president',
+  'prime minister',
+  'senate',
+  'congress',
+  'government',
+  'parliament',
+  'campaign',
+];
+const BROWSE_ENTERTAINMENT_KEYWORDS = [
+  'entertain',
+  'movie',
+  'film',
+  'music',
+  'album',
+  'artist',
+  'tv',
+  'celebrity',
+  'oscar',
+  'emmy',
+  'grammy',
+  'box office',
+];
+
+function normalizeBrowseCategoryList(input) {
+  const values = Array.isArray(input) ? input : [input];
+  const normalized = [];
+  for (const value of values) {
+    const text = String(value || '').trim().toLowerCase();
+    if (!text || !BROWSE_ALLOWED_CATEGORIES.has(text)) continue;
+    normalized.push(text);
+  }
+  return Array.from(new Set(normalized));
+}
+
+function normalizeBrowseSortBy(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text || text === 'volume24h' || text === 'volume24husd' || text === 'volume') return 'volume24h';
+  if (text === 'liquidity' || text === 'liquidityusd') return 'liquidity';
+  if (text === 'enddate' || text === 'end-date' || text === 'close' || text === 'close-time' || text === 'closetimestamp') {
+    return 'endDate';
+  }
+  return 'volume24h';
+}
+
+function collectTagEntries(row) {
+  const entries = [];
+  const eventTags = row && Array.isArray(row.event_tags) ? row.event_tags : [];
+  const directTags = row && Array.isArray(row.tags) ? row.tags : [];
+  entries.push(...eventTags);
+  entries.push(...directTags);
+  if (row && row.tag_id !== undefined) entries.push({ id: row.tag_id });
+  if (row && row.tagId !== undefined) entries.push({ id: row.tagId });
+  return entries;
+}
+
+function readTagId(tag) {
+  if (tag === null || tag === undefined) return null;
+  if (typeof tag === 'number' && Number.isFinite(tag)) {
+    const asInt = Math.trunc(tag);
+    return asInt > 0 ? asInt : null;
+  }
+  if (typeof tag === 'string' && /^\d+$/.test(tag.trim())) {
+    const asInt = Math.trunc(Number(tag.trim()));
+    return asInt > 0 ? asInt : null;
+  }
+  if (typeof tag === 'object') {
+    const candidate = tag.id !== undefined ? tag.id : tag.tag_id !== undefined ? tag.tag_id : tag.tagId;
+    return readTagId(candidate);
+  }
+  return null;
+}
+
+function readTagTextValues(tag) {
+  if (tag === null || tag === undefined) return [];
+  if (typeof tag === 'string') return [tag];
+  if (typeof tag === 'number') return [String(tag)];
+  if (typeof tag !== 'object') return [];
+  return [
+    tag.slug,
+    tag.name,
+    tag.label,
+    tag.title,
+    tag.group,
+    tag.topic,
+    tag.category,
+    tag.shortName,
+    tag.short_name,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+}
+
+function includesKeyword(textPool, keywords) {
+  return textPool.some((text) => keywords.some((keyword) => text.includes(keyword)));
+}
+
+function classifyBrowseCategories(item) {
+  const row = item && item.raw && typeof item.raw === 'object' ? item.raw : {};
+  const tagEntries = collectTagEntries(row);
+  const tagIds = [];
+  const tagText = [];
+  const seenText = new Set();
+  const seenTagIds = new Set();
+
+  for (const entry of tagEntries) {
+    const tagId = readTagId(entry);
+    if (tagId !== null && !seenTagIds.has(tagId)) {
+      seenTagIds.add(tagId);
+      tagIds.push(tagId);
+    }
+    for (const text of readTagTextValues(entry)) {
+      const normalized = normalizeText(text);
+      if (!normalized || seenText.has(normalized)) continue;
+      seenText.add(normalized);
+      tagText.push(normalized);
+    }
+  }
+
+  const textPool = tagText.concat(
+    [item && item.eventTitle, item && item.eventSlug, item && item.slug, item && item.question]
+      .map((value) => normalizeText(value))
+      .filter(Boolean),
+  );
+
+  const categories = new Set();
+  if (tagIds.some((value) => BROWSE_DEFAULT_SPORT_TAG_IDS.includes(value)) || includesKeyword(textPool, BROWSE_SPORT_KEYWORDS)) {
+    categories.add('sports');
+  }
+  if (includesKeyword(textPool, BROWSE_CRYPTO_KEYWORDS)) {
+    categories.add('crypto');
+  }
+  if (includesKeyword(textPool, BROWSE_POLITICS_KEYWORDS)) {
+    categories.add('politics');
+  }
+  if (includesKeyword(textPool, BROWSE_ENTERTAINMENT_KEYWORDS)) {
+    categories.add('entertainment');
+  }
+
+  return {
+    categories: Array.from(categories),
+    tagIds,
+  };
+}
+
+async function fetchGammaRowsByTagIds(params, options = {}, diagnostics = []) {
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const gammaUrl = normalizeGammaBaseUrl(options.gammaUrl);
+  const tagIds = normalizeTagIdList(params && params.tagIds);
+  if (!tagIds.length) return [];
+
+  if (options.gammaMockUrl) {
+    try {
+      const payload = await fetchJson(options.gammaMockUrl, timeoutMs);
+      const events = parseEventsPayload(payload);
+      return flattenEventMarkets(events);
+    } catch (err) {
+      diagnostics.push(`Gamma sports-events request failed (${options.gammaMockUrl}): ${formatNetworkError(err)}`);
+      return [];
+    }
+  }
+
+  const allRows = [];
+  const perTagResults = await Promise.all(
+    tagIds.map(async (tagId) => {
+      const queryParams = {
+        ...(params || {}),
+        tag_id: tagId,
+      };
+      delete queryParams.tagIds;
+      const targetUrl = buildGammaEventsUrl(gammaUrl, queryParams);
+      try {
+        const payload = await fetchJson(targetUrl, timeoutMs);
+        const events = parseEventsPayload(payload);
+        return {
+          rows: flattenEventMarkets(events),
+          error: null,
+        };
+      } catch (err) {
+        return {
+          rows: [],
+          error: `Gamma sports-events request failed (${targetUrl}): ${formatNetworkError(err)}`,
+        };
+      }
+    }),
+  );
+
+  for (const result of perTagResults) {
+    if (result.error) {
+      diagnostics.push(result.error);
+      continue;
+    }
+    allRows.push(...result.rows);
+  }
+
+  const deduped = [];
+  const seen = new Set();
+  for (const row of allRows) {
+    const dedupeKey = makeMarketDedupeKey(row);
+    if (dedupeKey && seen.has(dedupeKey)) continue;
+    if (dedupeKey) seen.add(dedupeKey);
+    deduped.push(row);
+  }
+  return deduped;
 }
 
 function extractConditionId(row) {
@@ -998,21 +1330,44 @@ async function browsePolymarketMarkets(options = {}) {
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const requestedLimit = Number.isInteger(Number(options.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 10;
   const scanLimit = Math.max(requestedLimit * 5, 100);
+  const requestedTagIds = normalizeTagIdList(options.polymarketTagIds);
+  const categoryFilters = normalizeBrowseCategoryList(options.categories);
+  const autoSportsTagIds = requestedTagIds.length === 0 && categoryFilters.includes('sports') ? [...BROWSE_DEFAULT_SPORT_TAG_IDS] : [];
+  const polymarketTagIds = requestedTagIds.length ? requestedTagIds : autoSportsTagIds;
+  if (autoSportsTagIds.length) {
+    diagnostics.push(`No explicit sports tag ids provided; using defaults: ${autoSportsTagIds.join(', ')}.`);
+  }
+  const useSportsEventsEndpoint = polymarketTagIds.length > 0;
 
   let rows = [];
+  let sourceType = options.mockUrl ? 'polymarket:mock' : 'polymarket:gamma';
   if (options.mockUrl) {
     const payload = await fetchMockPayload(options.mockUrl, timeoutMs);
     rows = parseMarketsPayload(payload);
   } else {
-    rows = await fetchGammaRows(
-      {
-        active: true,
-        closed: false,
-        limit: Math.min(scanLimit, 500),
-      },
-      options,
-      diagnostics,
-    );
+    if (useSportsEventsEndpoint) {
+      rows = await fetchGammaRowsByTagIds(
+        {
+          tagIds: polymarketTagIds,
+          active: true,
+          closed: false,
+          limit: Math.min(scanLimit, 500),
+        },
+        options,
+        diagnostics,
+      );
+      sourceType = 'polymarket:gamma-events';
+    } else {
+      rows = await fetchGammaRows(
+        {
+          active: true,
+          closed: false,
+          limit: Math.min(scanLimit, 500),
+        },
+        options,
+        diagnostics,
+      );
+    }
   }
 
   const minYesPct = toOptionalNumber(options.minYesPct);
@@ -1021,24 +1376,93 @@ async function browsePolymarketMarkets(options = {}) {
   const closesAfter = toTimestampSeconds(options.closesAfter);
   const closesBefore = toTimestampSeconds(options.closesBefore);
   const questionContains = normalizeText(options.questionContains);
+  const keyword = normalizeText(options.keyword);
+  const slugContains = normalizeText(options.slug);
+  const excludeSports = Boolean(options.excludeSports);
+  const sortBy = normalizeBrowseSortBy(options.sortBy);
 
   const normalized = rows.map((row) => normalizeMarketRow(row));
-  const filtered = normalized.filter((item) => {
+  const enriched = normalized.map((item) => {
+    const classification = classifyBrowseCategories(item);
+    return {
+      ...item,
+      categories: classification.categories,
+      tagIds: classification.tagIds,
+    };
+  });
+
+  const filtered = enriched.filter((item) => {
     if (item.active === false || item.resolved) return false;
-    if (minYesPct !== null && toOptionalNumber(item.yesPct) !== null && toOptionalNumber(item.yesPct) < minYesPct) return false;
-    if (maxYesPct !== null && toOptionalNumber(item.yesPct) !== null && toOptionalNumber(item.yesPct) > maxYesPct) return false;
+    const yesPct = toOptionalNumber(item.yesPct);
+    if ((minYesPct !== null || maxYesPct !== null) && yesPct === null) return false;
+    if (minYesPct !== null && yesPct < minYesPct) return false;
+    if (maxYesPct !== null && yesPct > maxYesPct) return false;
     if ((toOptionalNumber(item.volume24hUsd) || 0) < minVolume24h) return false;
     if (closesAfter !== null && toIntegerOrNull(item.closeTimestamp) !== null && toIntegerOrNull(item.closeTimestamp) < closesAfter) return false;
     if (closesBefore !== null && toIntegerOrNull(item.closeTimestamp) !== null && toIntegerOrNull(item.closeTimestamp) > closesBefore) return false;
     if (questionContains && !normalizeText(item.question).includes(questionContains)) return false;
+    if (slugContains) {
+      const slugHaystack = [item.slug, item.eventSlug].map((value) => normalizeText(value)).filter(Boolean).join(' ');
+      if (!slugHaystack.includes(slugContains)) return false;
+    }
+    if (keyword) {
+      const keywordHaystack = [item.question, item.slug, item.eventSlug, item.eventTitle]
+        .map((value) => normalizeText(value))
+        .filter(Boolean)
+        .join(' ');
+      if (!keywordHaystack.includes(keyword)) return false;
+    }
+    if (excludeSports && Array.isArray(item.categories) && item.categories.includes('sports')) return false;
+    if (categoryFilters.length) {
+      const hasCategory = Array.isArray(item.categories) && item.categories.some((value) => categoryFilters.includes(value));
+      if (!hasCategory) return false;
+    }
     return true;
   });
 
-  filtered.sort((left, right) => (toOptionalNumber(right.volume24hUsd) || 0) - (toOptionalNumber(left.volume24hUsd) || 0));
+  filtered.sort((left, right) => {
+    const leftVolume = toOptionalNumber(left.volume24hUsd) || 0;
+    const rightVolume = toOptionalNumber(right.volume24hUsd) || 0;
+    const leftLiquidity = toOptionalNumber(left.liquidityUsd) || 0;
+    const rightLiquidity = toOptionalNumber(right.liquidityUsd) || 0;
+    const leftClose = toIntegerOrNull(left.closeTimestamp);
+    const rightClose = toIntegerOrNull(right.closeTimestamp);
+
+    if (sortBy === 'liquidity') {
+      if (rightLiquidity !== leftLiquidity) return rightLiquidity - leftLiquidity;
+      if (rightVolume !== leftVolume) return rightVolume - leftVolume;
+      if (leftClose === null && rightClose === null) return 0;
+      if (leftClose === null) return 1;
+      if (rightClose === null) return -1;
+      return leftClose - rightClose;
+    }
+
+    if (sortBy === 'endDate') {
+      if (leftClose === null && rightClose === null) {
+        if (rightVolume !== leftVolume) return rightVolume - leftVolume;
+        return rightLiquidity - leftLiquidity;
+      }
+      if (leftClose === null) return 1;
+      if (rightClose === null) return -1;
+      if (leftClose !== rightClose) return leftClose - rightClose;
+      if (rightVolume !== leftVolume) return rightVolume - leftVolume;
+      return rightLiquidity - leftLiquidity;
+    }
+
+    if (rightVolume !== leftVolume) return rightVolume - leftVolume;
+    if (rightLiquidity !== leftLiquidity) return rightLiquidity - leftLiquidity;
+    if (leftClose === null && rightClose === null) return 0;
+    if (leftClose === null) return 1;
+    if (rightClose === null) return -1;
+    return leftClose - rightClose;
+  });
 
   const items = filtered.slice(0, requestedLimit).map((item) => ({
     marketId: item.marketId,
     slug: item.slug,
+    eventId: item.eventId,
+    eventSlug: item.eventSlug,
+    eventTitle: item.eventTitle,
     question: item.question,
     closeTimestamp: item.closeTimestamp,
     yesPct: item.yesPct,
@@ -1047,17 +1471,18 @@ async function browsePolymarketMarkets(options = {}) {
     liquidityUsd: round(item.liquidityUsd, 6),
     active: item.active,
     resolved: item.resolved,
+    categories: Array.isArray(item.categories) ? item.categories : [],
     url: item.url,
-    sourceType: item.source || (options.mockUrl ? 'polymarket:mock' : 'polymarket:gamma'),
+    sourceType: item.source || sourceType,
   }));
 
   const gammaApiError =
-    diagnostics.find((line) => /^Gamma request failed/i.test(String(line || ''))) || null;
+    diagnostics.find((line) => /^Gamma( sports-events)? request failed/i.test(String(line || ''))) || null;
 
   return {
     schemaVersion: '1.0.0',
     generatedAt: new Date().toISOString(),
-    source: options.mockUrl ? 'polymarket:mock' : 'polymarket:gamma',
+    source: sourceType,
     filters: {
       minYesPct,
       maxYesPct,
@@ -1065,7 +1490,13 @@ async function browsePolymarketMarkets(options = {}) {
       closesAfter,
       closesBefore,
       questionContains: options.questionContains || null,
+      keyword: options.keyword || null,
+      slug: options.slug || null,
+      categories: categoryFilters,
+      excludeSports,
+      sortBy,
       limit: requestedLimit,
+      polymarketTagIds,
     },
     count: items.length,
     items,

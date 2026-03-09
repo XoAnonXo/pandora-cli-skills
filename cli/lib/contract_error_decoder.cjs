@@ -30,10 +30,35 @@ const CONTRACT_ERROR_ABI = [
   },
   {
     type: 'error',
+    name: 'InvalidRulesLength',
+    inputs: [],
+  },
+  {
+    type: 'error',
     name: 'InvalidOutcome',
     inputs: [],
   },
+  {
+    type: 'error',
+    name: 'MarketClosed',
+    inputs: [],
+  },
+  {
+    type: 'error',
+    name: 'MarketNotResolved',
+    inputs: [],
+  },
+  {
+    type: 'error',
+    name: 'ZeroAmount',
+    inputs: [],
+  },
 ];
+
+const REVERT_SELECTOR_HINTS = {
+  '0x43d04f60': 'Rules text exceeds the oracle limit. Shorten --rules or pass a shorter plan payload.',
+  '0x7e2d7787': 'Trade too large for the AMM price-swing guard. Reduce trade size or deploy with a higher --max-imbalance (0 disables the guard).',
+};
 
 function isHexData(value) {
   return /^0x[0-9a-fA-F]*$/.test(String(value || ''));
@@ -120,12 +145,19 @@ function formatDecodedContractError(decoded) {
     return `SlippageExceeded: expected=${decoded.args.expected}, actual=${decoded.args.actual}`;
   }
   if (decoded.errorName === 'PriceSwingExceeded' && decoded.args) {
-    return `PriceSwingExceeded: before=${decoded.args.before}, after=${decoded.args.after}`;
+    return `PriceSwingExceeded: trade is too large for the configured max imbalance guard. Increase --max-imbalance or reduce size. before=${decoded.args.before}, after=${decoded.args.after}`;
+  }
+  if (decoded.errorName === 'InvalidRulesLength') {
+    return 'InvalidRulesLength: rules text exceeds the oracle limit. Shorten --rules and retry.';
   }
   if (decoded.errorName) {
     return decoded.errorName;
   }
   if (decoded.data) {
+    const selector = String(decoded.data).slice(0, 10).toLowerCase();
+    if (REVERT_SELECTOR_HINTS[selector]) {
+      return `${REVERT_SELECTOR_HINTS[selector]} (selector ${selector})`;
+    }
     return `Contract reverted (${decoded.data})`;
   }
   return null;

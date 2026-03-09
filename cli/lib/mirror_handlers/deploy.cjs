@@ -15,6 +15,7 @@ module.exports = async function handleMirrorDeploy({ shared, context, deps }) {
     deployMirror,
     coerceMirrorServiceError,
     renderMirrorDeployTable,
+    assertLiveWriteAllowed,
   } = deps;
 
   if (includesHelpFlag(shared.rest)) {
@@ -23,12 +24,12 @@ module.exports = async function handleMirrorDeploy({ shared, context, deps }) {
         context.outputMode,
         'mirror.deploy.help',
         commandHelpPayload(
-          'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--manifest-file <path>] [--min-close-lead-seconds <n>]',
+          'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--min-close-lead-seconds <n>]',
         ),
       );
     } else {
       console.log(
-        'Usage: pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier 500|3000|10000] [--max-imbalance <n>] [--arbiter <address>] [--category <n>] [--manifest-file <path>] [--min-close-lead-seconds <n>]',
+        'Usage: pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--min-close-lead-seconds <n>]',
       );
     }
     return;
@@ -37,6 +38,12 @@ module.exports = async function handleMirrorDeploy({ shared, context, deps }) {
   maybeLoadTradeEnv(shared);
   const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
   const options = parseMirrorDeployFlags(shared.rest);
+  if (options.execute && typeof assertLiveWriteAllowed === 'function') {
+    await assertLiveWriteAllowed('mirror.deploy.execute', {
+      notionalUsdc: options.liquidityUsdc,
+      runtimeMode: 'live',
+    });
+  }
   let payload;
   try {
     payload = await deployMirror({

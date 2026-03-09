@@ -1,3 +1,8 @@
+const path = require('path');
+const { parsePollCategoryFlag, DEFAULT_SPORTS_POLL_CATEGORY } = require('../shared/poll_categories.cjs');
+const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
+const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseSportsFlags requires deps.${name}()`);
@@ -5,6 +10,8 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
+const MAX_UINT24 = 16_777_215;
+const DISTRIBUTION_SCALE = 1_000_000_000;
 const PROVIDERS = new Set(['auto', 'primary', 'backup']);
 const MARKET_TYPES = new Set(['amm', 'parimutuel']);
 const RISK_PROFILES = new Set(['conservative', 'balanced', 'aggressive']);
@@ -56,6 +63,63 @@ function parseJson(value, flagName, CliError) {
   }
 }
 
+function preserveExplicitZero(value) {
+  // Keep explicit zero truthy so downstream `value || default` fallbacks do not overwrite it.
+  return value === 0 ? Object(0) : value;
+}
+
+function parseUint24Like(value, flagName, CliError, parseInteger) {
+  const parsed = parseInteger(value, flagName);
+  if (parsed < 0 || parsed > MAX_UINT24) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be an integer between 0 and ${MAX_UINT24}.`);
+  }
+  return preserveExplicitZero(parsed);
+}
+
+function parseDistributionUnits(value, flagName, CliError, parseInteger) {
+  const parsed = parseInteger(value, flagName);
+  if (parsed < 0 || parsed > DISTRIBUTION_SCALE) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be an integer between 0 and ${DISTRIBUTION_SCALE}.`);
+  }
+  return parsed;
+}
+
+function parseDistributionPercent(value, flagName, CliError) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be between 0 and 100.`);
+  }
+  return parsed;
+}
+
+function finalizeDistribution(options, CliError) {
+  const hasRaw = options.distributionYes !== null || options.distributionNo !== null;
+  const hasPct = options.distributionYesPct !== null || options.distributionNoPct !== null;
+
+  if (hasRaw && hasPct) {
+    throw new CliError(
+      'INVALID_ARGS',
+      'Use either raw distribution flags (--distribution-yes/--distribution-no) or percentage flags (--distribution-yes-pct/--distribution-no-pct), not both.',
+    );
+  }
+
+  if (hasPct) {
+    const hasYesPct = options.distributionYesPct !== null;
+    const hasNoPct = options.distributionNoPct !== null;
+    if (hasYesPct && hasNoPct) {
+      const total = options.distributionYesPct + options.distributionNoPct;
+      if (Math.abs(total - 100) > 1e-9) {
+        throw new CliError('INVALID_ARGS', '--distribution-yes-pct + --distribution-no-pct must equal 100.');
+      }
+    }
+
+    const yesPct = hasYesPct ? options.distributionYesPct : 100 - options.distributionNoPct;
+    const distributionYes = Math.round(yesPct * (DISTRIBUTION_SCALE / 100));
+    options.distributionYes = distributionYes;
+    options.distributionNo = DISTRIBUTION_SCALE - distributionYes;
+  }
+}
+
 function parseBaseSportsFlags(args, deps, defaults = {}) {
   const {
     CliError,
@@ -64,11 +128,20 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     parsePrivateKeyFlag,
     parsePositiveInteger,
     parsePositiveNumber,
+    parseInteger,
     parseNumber,
     parseCsvList,
     parseDateLikeFlag,
     isSecureHttpUrlOrLocal,
   } = deps;
+
+  function resolveMcpWorkspacePath(rawPath, flagName) {
+    assertMcpWorkspacePath(rawPath, {
+      flagName,
+      errorFactory: (code, message, details) => new CliError(code, message, details),
+    });
+    return path.resolve(String(rawPath || ''));
+  }
 
   const options = {
     provider: 'auto',
@@ -88,6 +161,8 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     curveOffset: 30000,
     distributionYes: null,
     distributionNo: null,
+    distributionYesPct: null,
+    distributionNoPct: null,
     creationWindowOpenMin: 1440,
     creationWindowCloseMin: 90,
     syncCadencePrematchMs: 30000,
@@ -103,17 +178,19 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     paper: true,
     liquidityUsdc: 100,
     feeTier: 3000,
-    maxImbalance: 10000,
+    maxImbalance: MAX_UINT24,
     minCloseLeadSeconds: 5400,
     targetTimestampOffsetHours: 1,
     chainId: null,
     rpcUrl: null,
     privateKey: null,
+    profileId: null,
+    profileFile: null,
     usdc: null,
     oracle: null,
     factory: null,
     arbiter: null,
-    category: 3,
+    category: DEFAULT_SPORTS_POLL_CATEGORY,
     stateFile: null,
     checksJson: null,
     checksFile: null,
@@ -121,6 +198,8 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     reason: null,
     settleDelayMs: 600000,
     consecutiveChecksRequired: 2,
+    modelFile: null,
+    modelStdin: false,
     now: null,
     nowMs: null,
     ...defaults,
@@ -225,12 +304,40 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       continue;
     }
     if (token === '--distribution-yes') {
-      options.distributionYes = parsePositiveInteger(requireFlagValue(args, i, '--distribution-yes'), '--distribution-yes');
+      options.distributionYes = parseDistributionUnits(
+        requireFlagValue(args, i, '--distribution-yes'),
+        '--distribution-yes',
+        CliError,
+        parseInteger,
+      );
       i += 1;
       continue;
     }
     if (token === '--distribution-no') {
-      options.distributionNo = parsePositiveInteger(requireFlagValue(args, i, '--distribution-no'), '--distribution-no');
+      options.distributionNo = parseDistributionUnits(
+        requireFlagValue(args, i, '--distribution-no'),
+        '--distribution-no',
+        CliError,
+        parseInteger,
+      );
+      i += 1;
+      continue;
+    }
+    if (token === '--distribution-yes-pct') {
+      options.distributionYesPct = parseDistributionPercent(
+        requireFlagValue(args, i, '--distribution-yes-pct'),
+        '--distribution-yes-pct',
+        CliError,
+      );
+      i += 1;
+      continue;
+    }
+    if (token === '--distribution-no-pct') {
+      options.distributionNoPct = parseDistributionPercent(
+        requireFlagValue(args, i, '--distribution-no-pct'),
+        '--distribution-no-pct',
+        CliError,
+      );
       i += 1;
       continue;
     }
@@ -318,7 +425,12 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       continue;
     }
     if (token === '--max-imbalance') {
-      options.maxImbalance = parsePositiveInteger(requireFlagValue(args, i, '--max-imbalance'), '--max-imbalance');
+      options.maxImbalance = parseUint24Like(
+        requireFlagValue(args, i, '--max-imbalance'),
+        '--max-imbalance',
+        CliError,
+        parseInteger,
+      );
       i += 1;
       continue;
     }
@@ -354,6 +466,20 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       i += 1;
       continue;
     }
+    {
+      const nextIndex = consumeProfileSelectorFlag({
+        token,
+        args,
+        index: i,
+        options,
+        CliError,
+        requireFlagValue,
+      });
+      if (nextIndex !== null) {
+        i = nextIndex;
+        continue;
+      }
+    }
     if (token === '--usdc') {
       options.usdc = parseAddressFlag(requireFlagValue(args, i, '--usdc'), '--usdc');
       i += 1;
@@ -375,12 +501,12 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       continue;
     }
     if (token === '--category') {
-      options.category = parsePositiveInteger(requireFlagValue(args, i, '--category'), '--category');
+      options.category = parsePollCategoryFlag(requireFlagValue(args, i, '--category'), '--category', CliError);
       i += 1;
       continue;
     }
     if (token === '--state-file') {
-      options.stateFile = requireFlagValue(args, i, '--state-file');
+      options.stateFile = resolveMcpWorkspacePath(requireFlagValue(args, i, '--state-file'), '--state-file');
       i += 1;
       continue;
     }
@@ -390,8 +516,17 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       continue;
     }
     if (token === '--checks-file') {
-      options.checksFile = requireFlagValue(args, i, '--checks-file');
+      options.checksFile = resolveMcpWorkspacePath(requireFlagValue(args, i, '--checks-file'), '--checks-file');
       i += 1;
+      continue;
+    }
+    if (token === '--model-file') {
+      options.modelFile = requireFlagValue(args, i, '--model-file');
+      i += 1;
+      continue;
+    }
+    if (token === '--model-stdin') {
+      options.modelStdin = true;
       continue;
     }
     if (token === '--poll-address') {
@@ -431,14 +566,17 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     throw new CliError('UNKNOWN_FLAG', `Unknown flag for sports: ${token}`);
   }
 
+  finalizeDistribution(options, CliError);
+
   if (options.distributionYes !== null || options.distributionNo !== null) {
     if (!Number.isInteger(options.distributionYes) || !Number.isInteger(options.distributionNo)) {
       throw new CliError('INVALID_ARGS', 'Both --distribution-yes and --distribution-no are required when setting distribution.');
     }
-    if (options.distributionYes + options.distributionNo !== 1_000_000_000) {
+    if (options.distributionYes + options.distributionNo !== DISTRIBUTION_SCALE) {
       throw new CliError('INVALID_ARGS', '--distribution-yes + --distribution-no must equal 1000000000.');
     }
   }
+  assertNoMixedSignerSelectors(options, CliError);
 
   return options;
 }
@@ -494,6 +632,13 @@ function createParseSportsFlags(deps) {
       }
       return { scope, action, command: 'sports.odds.snapshot', options };
     }
+    if (scope === 'odds' && action === 'bulk') {
+      const options = parseBaseSportsFlags(rest, baseDeps, {});
+      if (!options.competition) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'sports odds bulk requires --competition <id|slug>.');
+      }
+      return { scope, action, command: 'sports.odds.bulk', options };
+    }
     if (scope === 'consensus') {
       const options = parseBaseSportsFlags(args.slice(1), baseDeps, {});
       if (!options.eventId && !options.checksJson) {
@@ -529,7 +674,7 @@ function createParseSportsFlags(deps) {
 
     throw new CliError(
       'INVALID_USAGE',
-      'sports requires one of: books list | events list|live | odds snapshot | consensus | create plan|run | sync once|run|start|stop|status | resolve plan',
+      'sports requires one of: books list | events list|live | odds snapshot|bulk | consensus | create plan|run | sync once|run|start|stop|status | resolve plan',
     );
   };
 }

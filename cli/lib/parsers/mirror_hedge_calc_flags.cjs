@@ -1,3 +1,6 @@
+const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
+const { normalizeMirrorPathForMcp, validateMirrorUrl } = require('./mirror_parser_guard.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseMirrorHedgeCalcFlags requires deps.${name}()`);
@@ -20,6 +23,7 @@ function createParseMirrorHedgeCalcFlags(deps) {
   const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
   const parseCsvNumberList = requireDep(deps, 'parseCsvNumberList');
   const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
+  const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
 
   return function parseMirrorHedgeCalcFlags(args) {
     const options = {
@@ -116,27 +120,51 @@ function createParseMirrorHedgeCalcFlags(deps) {
         continue;
       }
       if (token === '--manifest-file') {
-        options.manifestFile = requireFlagValue(args, i, '--manifest-file');
+        options.manifestFile = normalizeMirrorPathForMcp(
+          requireFlagValue(args, i, '--manifest-file'),
+          '--manifest-file',
+          CliError,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-host') {
-        options.polymarketHost = requireFlagValue(args, i, '--polymarket-host');
+        options.polymarketHost = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-host'),
+          '--polymarket-host',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-url') {
-        options.polymarketGammaUrl = requireFlagValue(args, i, '--polymarket-gamma-url');
+        options.polymarketGammaUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-url'),
+          '--polymarket-gamma-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-gamma-mock-url') {
-        options.polymarketGammaMockUrl = requireFlagValue(args, i, '--polymarket-gamma-mock-url');
+        options.polymarketGammaMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-gamma-mock-url'),
+          '--polymarket-gamma-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
       if (token === '--polymarket-mock-url') {
-        options.polymarketMockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+        options.polymarketMockUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--polymarket-mock-url'),
+          '--polymarket-mock-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
         i += 1;
         continue;
       }
@@ -171,8 +199,11 @@ function createParseMirrorHedgeCalcFlags(deps) {
         'mirror hedge-calc requires reserve inputs (--reserve-yes-usdc/--reserve-no-usdc) or market selectors.',
       );
     }
-    if (![500, 3000, 10000].includes(options.feeTier)) {
-      throw new CliError('INVALID_FLAG_VALUE', '--fee-tier must be one of 500, 3000, 10000.');
+    if (options.feeTier < MIN_AMM_FEE_TIER || options.feeTier > MAX_AMM_FEE_TIER) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `--fee-tier must be between ${MIN_AMM_FEE_TIER} and ${MAX_AMM_FEE_TIER} (max 5%).`,
+      );
     }
     if (options.hedgeRatio > 5) {
       throw new CliError('INVALID_FLAG_VALUE', '--hedge-ratio must be <= 5.');

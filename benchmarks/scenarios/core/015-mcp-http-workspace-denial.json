@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-http-workspace-denial",
+  "title": "Remote MCP workspace path denial",
+  "description": "Remote MCP rejects workspace-constrained file paths outside the benchmark workspace boundary.",
+  "transport": "mcp-http",
+  "assertionId": "workspace-path-denial",
+  "parityGroup": "workspace-path-denial",
+  "parityExpectedTransports": ["mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 7000,
+  "weight": 15,
+  "dimensions": ["safety", "workspace", "mcp", "remote-parity"],
+  "request": {
+    "tool": "mirror.deploy",
+    "arguments": {
+      "plan-file": "/tmp/pandora-benchmark-outside-plan.json",
+      "dry-run": true
+    },
+    "authScopes": ["*"]
+  }
+}

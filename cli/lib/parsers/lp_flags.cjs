@@ -1,3 +1,8 @@
+const {
+  consumeProfileSelectorFlag,
+  assertNoMixedSignerSelectors,
+} = require('./shared_profile_selector_flags.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseLpFlags requires deps.${name}()`);
@@ -14,7 +19,7 @@ function requireNumericDep(deps, name) {
 }
 
 /**
- * Creates parser for `lp add|remove|positions` command flags.
+ * Creates parser for `lp add|remove|positions|simulate-remove` command flags.
  * @param {object} deps
  * @returns {(args: string[]) => object}
  */
@@ -31,8 +36,8 @@ function createParseLpFlags(deps) {
 
   return function parseLpFlags(args) {
     const action = args[0];
-    if (!action || !['add', 'remove', 'positions'].includes(action)) {
-      throw new CliError('INVALID_ARGS', 'lp requires subcommand add|remove|positions.');
+    if (!action || !['add', 'remove', 'positions', 'simulate-remove'].includes(action)) {
+      throw new CliError('INVALID_ARGS', 'lp requires subcommand add|remove|positions|simulate-remove.');
     }
 
     const rest = args.slice(1);
@@ -42,6 +47,8 @@ function createParseLpFlags(deps) {
       wallet: null,
       amountUsdc: null,
       lpTokens: null,
+      lpAll: false,
+      allMarkets: false,
       chainId: null,
       dryRun: false,
       execute: false,
@@ -50,6 +57,8 @@ function createParseLpFlags(deps) {
       forkRpcUrl: null,
       forkChainId: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
       usdc: null,
       deadlineSeconds: 1800,
       indexerUrl: null,
@@ -76,6 +85,14 @@ function createParseLpFlags(deps) {
       if (token === '--lp-tokens') {
         options.lpTokens = parsePositiveNumber(requireFlagValue(rest, i, '--lp-tokens'), '--lp-tokens');
         i += 1;
+        continue;
+      }
+      if (token === '--all') {
+        options.lpAll = true;
+        continue;
+      }
+      if (token === '--all-markets') {
+        options.allMarkets = true;
         continue;
       }
       if (token === '--chain-id') {
@@ -125,6 +142,18 @@ function createParseLpFlags(deps) {
         i += 1;
         continue;
       }
+      const profileIndex = consumeProfileSelectorFlag({
+        token,
+        args: rest,
+        index: i,
+        options,
+        CliError,
+        requireFlagValue,
+      });
+      if (profileIndex !== null) {
+        i = profileIndex;
+        continue;
+      }
       if (token === '--usdc') {
         options.usdc = parseAddressFlag(requireFlagValue(rest, i, '--usdc'), '--usdc');
         i += 1;
@@ -163,21 +192,59 @@ function createParseLpFlags(deps) {
       if (!options.wallet) {
         throw new CliError('MISSING_REQUIRED_FLAG', 'Missing wallet address. Use --wallet <address>.');
       }
+      assertNoMixedSignerSelectors(options, CliError);
       return options;
     }
 
-    if (!options.marketAddress) {
+    if (action === 'simulate-remove') {
+      if (!options.marketAddress) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market address. Use --market-address <address>.');
+      }
+      if (options.allMarkets) {
+        throw new CliError('INVALID_ARGS', '--all-markets is not supported for lp simulate-remove.');
+      }
+      if (options.lpTokens === null && !options.lpAll) {
+        throw new CliError('MISSING_REQUIRED_FLAG', 'Missing LP token amount. Use --lp-tokens <amount> or --all.');
+      }
+      if (options.lpTokens !== null && options.lpAll) {
+        throw new CliError('INVALID_ARGS', 'Use only one simulate-remove mode: --lp-tokens <amount> or --all.');
+      }
+      if (options.dryRun || options.execute) {
+        throw new CliError('INVALID_ARGS', 'lp simulate-remove is preview-only and does not accept --dry-run or --execute.');
+      }
+      assertNoMixedSignerSelectors(options, CliError);
+      return options;
+    }
+
+    if (action === 'remove' && options.allMarkets && options.marketAddress) {
+      throw new CliError('INVALID_ARGS', '--all-markets cannot be combined with --market-address.');
+    }
+    if (action === 'remove' && options.allMarkets && options.lpTokens !== null) {
+      throw new CliError('INVALID_ARGS', '--all-markets cannot be combined with --lp-tokens.');
+    }
+    if (!options.marketAddress && !(action === 'remove' && options.allMarkets)) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market address. Use --market-address <address>.');
     }
     if (action === 'add' && options.amountUsdc === null) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing liquidity amount. Use --amount-usdc <amount>.');
     }
-    if (action === 'remove' && options.lpTokens === null) {
-      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing LP token amount. Use --lp-tokens <amount>.');
+    if (action === 'remove' && options.lpTokens === null && !options.lpAll) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'Missing LP token amount. Use --lp-tokens <amount> or --all.');
+    }
+    if (action === 'remove' && options.lpTokens !== null && options.lpAll) {
+      throw new CliError('INVALID_ARGS', 'Use only one remove mode: --lp-tokens <amount> or --all.');
+    }
+    if (action !== 'remove' && options.allMarkets) {
+      throw new CliError('INVALID_ARGS', '--all-markets is only supported for lp remove.');
+    }
+    if (action === 'remove' && options.allMarkets) {
+      options.lpAll = true;
+      options.lpTokens = null;
     }
     if (options.dryRun === options.execute) {
       throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');
     }
+    assertNoMixedSignerSelectors(options, CliError);
 
     return options;
   };

@@ -1,6 +1,11 @@
 const { DEFAULT_INDEXER_URL, DEFAULT_RPC_BY_CHAIN_ID } = require('./shared/constants.cjs');
-const { isSecureHttpUrlOrLocal } = require('./shared/utils.cjs');
+const { isSecureHttpUrlOrLocal, round } = require('./shared/utils.cjs');
 const { resolveForkRuntime } = require('./fork_runtime_service.cjs');
+const { createIndexerClient } = require('./indexer_client.cjs');
+const { materializeExecutionSigner } = require('./signers/execution_signer_service.cjs');
+
+const READ_BATCH_CONCURRENCY = 4;
+const INDEXER_MARKET_FIELDS = ['id', 'pollAddress', 'chainId'];
 
 const ERC20_ABI = [
   {
@@ -67,6 +72,17 @@ const PREDICTION_AMM_ABI = [
   },
 ];
 
+const OUTCOME_TOKEN_REF_ABI_CANDIDATES = [
+  [
+    { type: 'function', name: 'yesToken', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+    { type: 'function', name: 'noToken', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  ],
+  [
+    { type: 'function', name: 'yesTokenAddress', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+    { type: 'function', name: 'noTokenAddress', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  ],
+];
+
 const CALC_REMOVE_LIQUIDITY_ABI_CANDIDATES = [
   [
     {
@@ -112,6 +128,114 @@ const RESOLVE_MARKET_ABI = [
     inputs: [{ name: 'outcome', type: 'bool' }],
     outputs: [],
   },
+];
+
+const CLAIM_MARKET_ABI_CANDIDATES = [
+  [
+    {
+      type: 'function',
+      name: 'redeemWinnings',
+      stateMutability: 'nonpayable',
+      inputs: [],
+      outputs: [{ type: 'uint256' }],
+    },
+  ],
+  [
+    {
+      type: 'function',
+      name: 'redeemWinnings',
+      stateMutability: 'nonpayable',
+      inputs: [],
+      outputs: [],
+    },
+  ],
+];
+
+const POLL_STATUS_READ_CANDIDATES = [
+  { fn: 'getStatus', abi: [{ type: 'function', name: 'getStatus', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }] },
+  { fn: 'status', abi: [{ type: 'function', name: 'status', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }] },
+  { fn: 'marketState', abi: [{ type: 'function', name: 'marketState', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }] },
+];
+
+const POLL_FINALIZED_READ_CANDIDATES = [
+  {
+    fn: 'getFinalizedStatus',
+    kind: 'status-answer-epoch',
+    abi: [
+      {
+        type: 'function',
+        name: 'getFinalizedStatus',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ type: 'uint8' }, { type: 'uint8' }, { type: 'uint32' }],
+      },
+    ],
+  },
+  {
+    fn: 'getFinalizedStatus',
+    kind: 'bool-answer-epoch',
+    abi: [
+      {
+        type: 'function',
+        name: 'getFinalizedStatus',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ type: 'bool' }, { type: 'uint8' }, { type: 'uint32' }],
+      },
+    ],
+  },
+  { fn: 'getFinalizedStatus', abi: [{ type: 'function', name: 'getFinalizedStatus', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] }] },
+  { fn: 'isFinalized', abi: [{ type: 'function', name: 'isFinalized', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] }] },
+  { fn: 'finalized', abi: [{ type: 'function', name: 'finalized', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] }] },
+];
+
+const POLL_ANSWER_READ_CANDIDATES = [
+  { fn: 'answer', abi: [{ type: 'function', name: 'answer', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }] },
+  { fn: 'getAnswer', abi: [{ type: 'function', name: 'getAnswer', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }] },
+  { fn: 'outcome', abi: [{ type: 'function', name: 'outcome', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }] },
+];
+
+const POLL_FINALIZATION_EPOCH_READ_CANDIDATES = [
+  {
+    fn: 'getFinalizationEpoch',
+    abi: [{ type: 'function', name: 'getFinalizationEpoch', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+  {
+    fn: 'finalizationEpoch',
+    abi: [{ type: 'function', name: 'finalizationEpoch', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+  {
+    fn: 'deadlineEpoch',
+    abi: [{ type: 'function', name: 'deadlineEpoch', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+];
+
+const POLL_CURRENT_EPOCH_READ_CANDIDATES = [
+  {
+    fn: 'getCurrentEpoch',
+    abi: [{ type: 'function', name: 'getCurrentEpoch', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+  {
+    fn: 'currentEpoch',
+    abi: [{ type: 'function', name: 'currentEpoch', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+];
+
+const POLL_EPOCH_LENGTH_READ_CANDIDATES = [
+  {
+    fn: 'getEpochLength',
+    abi: [{ type: 'function', name: 'getEpochLength', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+  {
+    fn: 'epochLength',
+    abi: [{ type: 'function', name: 'epochLength', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+  },
+];
+
+const POLL_OPERATOR_READ_CANDIDATES = [
+  { fn: 'arbiter', abi: [{ type: 'function', name: 'arbiter', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] },
+  { fn: 'operator', abi: [{ type: 'function', name: 'operator', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] },
+  { fn: 'owner', abi: [{ type: 'function', name: 'owner', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] },
 ];
 
 function createServiceError(code, message, details = undefined) {
@@ -232,6 +356,9 @@ async function resolveRuntime(options = {}, runtimeOptions = {}) {
     rpcUrl,
     chain,
     privateKey: null,
+    profileId: options.profileId || null,
+    profileFile: options.profileFile || null,
+    profile: options.profile || null,
     usdc: null,
   };
 
@@ -256,22 +383,65 @@ async function resolveRuntime(options = {}, runtimeOptions = {}) {
   return runtime;
 }
 
-async function createClients(runtime, requireWallet = false) {
-  const { createPublicClient, createWalletClient, http, privateKeyToAccount } = await loadViemRuntime();
+async function createClients(runtime, requireWallet = false, executionContext = {}) {
+  const viemRuntime = await loadViemRuntime();
+  const { createPublicClient, http } = viemRuntime;
   const publicClient = createPublicClient({ chain: runtime.chain, transport: http(runtime.rpcUrl) });
   let account = null;
   let walletClient = null;
+  let signerMetadata = null;
+  let resolvedProfile = null;
 
-  if (runtime.privateKey) {
-    account = privateKeyToAccount(runtime.privateKey);
-    walletClient = createWalletClient({ account, chain: runtime.chain, transport: http(runtime.rpcUrl) });
+  try {
+    const materialized = await materializeExecutionSigner({
+      privateKey: runtime.privateKey,
+      profileId: runtime.profileId,
+      profileFile: runtime.profileFile,
+      profile: runtime.profile,
+      chain: runtime.chain,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+      viemRuntime,
+      env: process.env,
+      requireSigner: requireWallet,
+      mode: requireWallet ? 'execute' : 'read',
+      liveRequested: requireWallet,
+      mutating: requireWallet,
+      command: executionContext.command || null,
+      toolFamily: executionContext.toolFamily || null,
+      category: executionContext.category || null,
+      metadata: {
+        source: 'market-admin',
+        action: executionContext.command || null,
+      },
+    });
+    if (materialized) {
+      account = materialized.account || null;
+      walletClient = materialized.walletClient || null;
+      signerMetadata = materialized.signerMetadata || null;
+      resolvedProfile = materialized.resolvedProfile || null;
+    }
+  } catch (error) {
+    if (error && error.code === 'PROFILE_SIGNER_REQUIRED') {
+      throw createServiceError(
+        'MISSING_REQUIRED_FLAG',
+        'Missing signer credentials. Set PRIVATE_KEY/DEPLOYER_PRIVATE_KEY or pass --profile-id/--profile-file.',
+      );
+    }
+    if (error && error.code) {
+      throw createServiceError(error.code, error.message || 'Unable to materialize execution signer.', error.details);
+    }
+    throw error;
   }
 
   if (requireWallet && (!account || !walletClient)) {
-    throw createServiceError('MISSING_REQUIRED_FLAG', 'Missing private key. Set PRIVATE_KEY or pass --private-key.');
+    throw createServiceError(
+      'MISSING_REQUIRED_FLAG',
+      'Missing signer credentials. Set PRIVATE_KEY/DEPLOYER_PRIVATE_KEY or pass --profile-id/--profile-file.',
+    );
   }
 
-  return { publicClient, walletClient, account };
+  return { publicClient, walletClient, account, signerMetadata, resolvedProfile };
 }
 
 function hasBytecode(code) {
@@ -300,6 +470,226 @@ async function decodeAndWrapError(err, fallbackCode, fallbackMessage) {
   });
 }
 
+async function tryReadContractAny(publicClient, address, candidates = []) {
+  for (const candidate of candidates) {
+    try {
+      const value = await publicClient.readContract({
+        address,
+        abi: candidate.abi,
+        functionName: candidate.fn,
+        args: [],
+      });
+      return { ok: true, fn: candidate.fn, value, candidate };
+    } catch {
+      // continue
+    }
+  }
+  return { ok: false, fn: null, value: null, candidate: null };
+}
+
+function normalizeOptionalBigInt(value) {
+  try {
+    if (typeof value === 'bigint') return value;
+    if (value === null || value === undefined) return null;
+    const str = String(value).trim();
+    if (!str) return null;
+    return BigInt(str);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeOptionalAddress(value) {
+  const raw = String(value || '').trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
+  return raw.toLowerCase();
+}
+
+function normalizePollAnswer(value) {
+  const asBig = normalizeOptionalBigInt(value);
+  if (asBig === null) return null;
+  if (asBig === 1n) return 'yes';
+  if (asBig === 0n) return 'no';
+  if (asBig === 2n) return 'invalid';
+  return String(asBig);
+}
+
+function deriveOutcomePositionSide(yesRaw, noRaw) {
+  const hasYes = typeof yesRaw === 'bigint' && yesRaw > 0n;
+  const hasNo = typeof noRaw === 'bigint' && noRaw > 0n;
+  if (hasYes && hasNo) return 'both';
+  if (hasYes) return 'yes';
+  if (hasNo) return 'no';
+  return 'flat';
+}
+
+function buildOutcomeTokenVisibility(params) {
+  const {
+    refs,
+    yesRaw,
+    noRaw,
+    yesDecimals,
+    noDecimals,
+    resolution,
+    formatUnits,
+  } = params;
+
+  const normalizedYesRaw = typeof yesRaw === 'bigint' ? yesRaw : 0n;
+  const normalizedNoRaw = typeof noRaw === 'bigint' ? noRaw : 0n;
+  const yesBalance = formatUnits(normalizedYesRaw, yesDecimals);
+  const noBalance = formatUnits(normalizedNoRaw, noDecimals);
+  const positionSide = deriveOutcomePositionSide(normalizedYesRaw, normalizedNoRaw);
+  const claimableOutcome =
+    resolution && resolution.claimable && (resolution.pollAnswer === 'yes' || resolution.pollAnswer === 'no')
+      ? resolution.pollAnswer
+      : null;
+  const claimableRaw =
+    claimableOutcome === 'yes'
+      ? normalizedYesRaw
+      : claimableOutcome === 'no'
+        ? normalizedNoRaw
+        : null;
+  const claimableAmount = claimableRaw === null
+    ? null
+    : claimableOutcome === 'yes'
+      ? yesBalance
+      : noBalance;
+
+  return {
+    source: refs.source,
+    yesToken: refs.yesToken,
+    noToken: refs.noToken,
+    yesBalanceRaw: normalizedYesRaw.toString(),
+    noBalanceRaw: normalizedNoRaw.toString(),
+    yesBalance,
+    noBalance,
+    claimableUsdc: claimableAmount,
+    marketResolved: resolution ? resolution.pollFinalized : null,
+    finalizesInEpochs: resolution ? resolution.epochsUntilFinalization : null,
+    hasInventory: positionSide !== 'flat',
+    positionSide,
+    claimable: resolution ? Boolean(resolution.claimable) : null,
+    claimableOutcome,
+    claimableAmountRaw: claimableRaw === null ? null : claimableRaw.toString(),
+    claimableAmount,
+    hasClaimableInventory: claimableRaw === null ? (resolution ? false : null) : claimableRaw > 0n,
+    resolution: resolution
+      ? {
+          ...(resolution.pollAddress ? { pollAddress: resolution.pollAddress } : {}),
+          marketState: resolution.marketState,
+          pollFinalized: resolution.pollFinalized,
+          pollAnswer: resolution.pollAnswer,
+          finalizationEpoch: resolution.finalizationEpoch,
+          currentEpoch: resolution.currentEpoch,
+          epochsUntilFinalization: resolution.epochsUntilFinalization,
+          claimable: resolution.claimable,
+          operator: resolution.operator,
+          readSources: resolution.readSources,
+        }
+      : null,
+    yes: {
+      token: refs.yesToken,
+      decimals: yesDecimals,
+      balanceRaw: normalizedYesRaw.toString(),
+      balance: yesBalance,
+    },
+    no: {
+      token: refs.noToken,
+      decimals: noDecimals,
+      balanceRaw: normalizedNoRaw.toString(),
+      balance: noBalance,
+    },
+  };
+}
+
+function deriveCurrentEpochFromTimestamp(timestamp, epochLengthSeconds = 300n) {
+  const ts = normalizeOptionalBigInt(timestamp);
+  if (ts === null) return null;
+  const epochLength = normalizeOptionalBigInt(epochLengthSeconds);
+  if (epochLength === null || epochLength <= 0n) return null;
+  return ts / epochLength;
+}
+
+async function readPollResolutionState(publicClient, pollAddress) {
+  const statusRead = await tryReadContractAny(publicClient, pollAddress, POLL_STATUS_READ_CANDIDATES);
+  const finalizedRead = await tryReadContractAny(publicClient, pollAddress, POLL_FINALIZED_READ_CANDIDATES);
+  const answerRead = await tryReadContractAny(publicClient, pollAddress, POLL_ANSWER_READ_CANDIDATES);
+  const finalizationEpochRead = await tryReadContractAny(
+    publicClient,
+    pollAddress,
+    POLL_FINALIZATION_EPOCH_READ_CANDIDATES,
+  );
+  const operatorRead = await tryReadContractAny(publicClient, pollAddress, POLL_OPERATOR_READ_CANDIDATES);
+  const currentEpochRead = await tryReadContractAny(publicClient, pollAddress, POLL_CURRENT_EPOCH_READ_CANDIDATES);
+  const epochLengthRead = await tryReadContractAny(publicClient, pollAddress, POLL_EPOCH_LENGTH_READ_CANDIDATES);
+
+  let currentEpoch = currentEpochRead.ok ? normalizeOptionalBigInt(currentEpochRead.value) : null;
+  if (currentEpoch === null) {
+    try {
+      const block = await publicClient.getBlock({ blockTag: 'latest' });
+      const epochLength = epochLengthRead.ok ? normalizeOptionalBigInt(epochLengthRead.value) : 300n;
+      currentEpoch = deriveCurrentEpochFromTimestamp(block && block.timestamp, epochLength === null ? 300n : epochLength);
+    } catch {
+      currentEpoch = null;
+    }
+  }
+
+  const statusNumeric = statusRead.ok ? Number(statusRead.value) : null;
+  let finalizedBool = null;
+  let finalizedAnswer = null;
+  let finalizedEpoch = null;
+  if (finalizedRead.ok) {
+    const kind = finalizedRead.candidate && finalizedRead.candidate.kind ? finalizedRead.candidate.kind : null;
+    if (kind === 'status-answer-epoch' || kind === 'bool-answer-epoch') {
+      const tuple = Array.isArray(finalizedRead.value) ? finalizedRead.value : null;
+      if (tuple && tuple.length >= 3) {
+        if (kind === 'status-answer-epoch') {
+          const statusRaw = normalizeOptionalBigInt(tuple[0]);
+          finalizedBool = statusRaw === null ? null : statusRaw >= 2n;
+        } else {
+          finalizedBool = Boolean(tuple[0]);
+        }
+        finalizedAnswer = normalizePollAnswer(tuple[1]);
+        finalizedEpoch = normalizeOptionalBigInt(tuple[2]);
+      }
+    } else {
+      finalizedBool = Boolean(finalizedRead.value);
+    }
+  }
+  const answer = answerRead.ok ? normalizePollAnswer(answerRead.value) : finalizedAnswer;
+  const finalizationEpoch = finalizationEpochRead.ok ? normalizeOptionalBigInt(finalizationEpochRead.value) : finalizedEpoch;
+  const epochsUntilFinalization =
+    (finalizationEpoch === null || currentEpoch === null)
+      ? null
+      : finalizationEpoch > currentEpoch
+        ? Number(finalizationEpoch - currentEpoch)
+        : 0;
+  const claimable =
+    answer !== null &&
+    ((finalizedBool === true) || (epochsUntilFinalization !== null && epochsUntilFinalization <= 0));
+
+  return {
+    pollAddress,
+    marketState: Number.isFinite(statusNumeric) ? statusNumeric : null,
+    pollFinalized: finalizedBool,
+    pollAnswer: answer,
+    finalizationEpoch: finalizationEpoch === null ? null : finalizationEpoch.toString(),
+    currentEpoch: currentEpoch === null ? null : currentEpoch.toString(),
+    epochsUntilFinalization,
+    claimable,
+    operator: operatorRead.ok ? normalizeOptionalAddress(operatorRead.value) : null,
+    readSources: {
+      status: statusRead.fn,
+      finalized: finalizedRead.fn,
+      answer: answerRead.fn,
+      finalizationEpoch: finalizationEpochRead.fn,
+      currentEpoch: currentEpochRead.fn,
+      epochLength: epochLengthRead.fn,
+      operator: operatorRead.fn,
+    },
+  };
+}
+
 async function readDecimals(publicClient, address, fallback = 18) {
   try {
     const value = await publicClient.readContract({
@@ -314,6 +704,27 @@ async function readDecimals(publicClient, address, fallback = 18) {
   } catch {
     return fallback;
   }
+}
+
+async function readOutcomeTokenRefs(publicClient, marketAddress) {
+  for (const abi of OUTCOME_TOKEN_REF_ABI_CANDIDATES) {
+    try {
+      const yesFn = abi[0].name;
+      const noFn = abi[1].name;
+      const [yesToken, noToken] = await Promise.all([
+        publicClient.readContract({ address: marketAddress, abi, functionName: yesFn, args: [] }),
+        publicClient.readContract({ address: marketAddress, abi, functionName: noFn, args: [] }),
+      ]);
+      const yes = normalizeOptionalAddress(yesToken);
+      const no = normalizeOptionalAddress(noToken);
+      if (yes && no) {
+        return { yesToken: yes, noToken: no, source: `${yesFn}/${noFn}` };
+      }
+    } catch {
+      // try next pair
+    }
+  }
+  return null;
 }
 
 /**
@@ -344,6 +755,47 @@ async function readCalcRemoveLiquidity(publicClient, marketAddress, sharesRaw) {
     }
   }
   return null;
+}
+
+function toDecimalNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function buildRemoveLiquidityPreviewPayload(formatUnits, preview) {
+  if (!preview) return null;
+  const collateralOutUsdc =
+    preview.collateralOutRaw !== null ? formatUnits(BigInt(preview.collateralOutRaw), 6) : null;
+  const yesOut = preview.yesOutRaw !== null ? formatUnits(BigInt(preview.yesOutRaw), 18) : null;
+  const noOut = preview.noOutRaw !== null ? formatUnits(BigInt(preview.noOutRaw), 18) : null;
+  const collateralOutNumber = toDecimalNumber(collateralOutUsdc);
+  const yesOutNumber = toDecimalNumber(yesOut);
+  const noOutNumber = toDecimalNumber(noOut);
+  const yesScenarioValueUsdc =
+    collateralOutNumber === null || yesOutNumber === null ? null : round(collateralOutNumber + yesOutNumber, 6);
+  const noScenarioValueUsdc =
+    collateralOutNumber === null || noOutNumber === null ? null : round(collateralOutNumber + noOutNumber, 6);
+
+  return {
+    collateralOutRaw: preview.collateralOutRaw,
+    collateralOutUsdc,
+    yesOutRaw: preview.yesOutRaw,
+    yesOut,
+    noOutRaw: preview.noOutRaw,
+    noOut,
+    scenarioValues: {
+      yesUsdc: yesScenarioValueUsdc,
+      noUsdc: noScenarioValueUsdc,
+      minUsdc:
+        yesScenarioValueUsdc === null || noScenarioValueUsdc === null
+          ? null
+          : round(Math.min(yesScenarioValueUsdc, noScenarioValueUsdc), 6),
+      maxUsdc:
+        yesScenarioValueUsdc === null || noScenarioValueUsdc === null
+          ? null
+          : round(Math.max(yesScenarioValueUsdc, noScenarioValueUsdc), 6),
+    },
+  };
 }
 
 async function graphqlRequest(indexerUrl, query, variables, timeoutMs) {
@@ -383,6 +835,55 @@ async function fetchIndexerMarket(indexerUrl, marketAddress, timeoutMs) {
   return data.markets || null;
 }
 
+async function fetchIndexerMarketsMap(indexerUrl, marketAddresses, timeoutMs) {
+  const ids = Array.from(
+    new Set(
+      (marketAddresses || [])
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter((value) => /^0x[a-f0-9]{40}$/.test(value)),
+    ),
+  );
+  if (!ids.length) return new Map();
+
+  try {
+    const client = createIndexerClient(indexerUrl, timeoutMs);
+    const items = await client.getManyByIds({
+      queryName: 'markets',
+      fields: INDEXER_MARKET_FIELDS,
+      ids,
+    });
+    const map = new Map();
+    for (const id of ids) {
+      const item = items.get(id) || null;
+      map.set(id, item);
+      if (item && item.id) {
+        map.set(String(item.id).trim().toLowerCase(), item);
+      }
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+async function mapWithConcurrency(values, concurrency, iteratee) {
+  const items = Array.isArray(values) ? values : [];
+  const limit = Math.max(1, Math.min(items.length || 1, Number(concurrency) || 1));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await iteratee(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return results;
+}
+
 async function discoverLiquidityMarkets(indexerUrl, wallet, chainId, timeoutMs) {
   const query = `
     query($where: liquidityEventsFilter, $limit: Int) {
@@ -399,6 +900,29 @@ async function discoverLiquidityMarkets(indexerUrl, wallet, chainId, timeoutMs) 
   }
   const data = await graphqlRequest(indexerUrl, query, { where, limit: 500 }, timeoutMs);
   const page = data.liquidityEventss;
+  const items = page && Array.isArray(page.items) ? page.items : [];
+  const addresses = items
+    .map((item) => String(item && item.marketAddress ? item.marketAddress : '').toLowerCase())
+    .filter((value) => /^0x[a-f0-9]{40}$/.test(value));
+  return Array.from(new Set(addresses));
+}
+
+async function discoverMarketUserMarkets(indexerUrl, wallet, chainId, timeoutMs) {
+  const query = `
+    query($where: marketUsersFilter, $limit: Int) {
+      marketUserss(where: $where, orderBy: "lastTradeAt", orderDirection: "desc", limit: $limit) {
+        items {
+          marketAddress
+        }
+      }
+    }
+  `;
+  const where = { user: wallet };
+  if (Number.isInteger(chainId)) {
+    where.chainId = chainId;
+  }
+  const data = await graphqlRequest(indexerUrl, query, { where, limit: 500 }, timeoutMs);
+  const page = data.marketUserss;
   const items = page && Array.isArray(page.items) ? page.items : [];
   const addresses = items
     .map((item) => String(item && item.marketAddress ? item.marketAddress : '').toLowerCase())
@@ -466,20 +990,61 @@ async function runResolve(options = {}) {
     diagnostics: [],
   };
 
-  if (!options.execute) {
-    return payload;
-  }
-
-  const runtime = await resolveRuntime(options, { requirePrivateKey: true, requireUsdc: false });
+  const runtime = await resolveRuntime(options, { requirePrivateKey: options.execute, requireUsdc: false });
   payload.runtime = {
     mode: runtime.mode,
     chainId: runtime.chainId,
     rpcUrl: runtime.rpcUrl,
   };
-  const { publicClient, walletClient, account } = await createClients(runtime, true);
+  const { publicClient, walletClient, account } = await createClients(runtime, options.execute, {
+    command: 'resolve',
+    toolFamily: 'resolve',
+    category: options.category || null,
+  });
   const pollAddress = normalizeAddress(options.pollAddress, 'pollAddress');
+  const caller = normalizeOptionalAddress(account && account.address ? account.address : null);
+  if (!options.execute) {
+    try {
+      await ensureContractCode(publicClient, pollAddress, 'Poll contract');
+      const precheck = await readPollResolutionState(publicClient, pollAddress);
+      const callerIsOperator = Boolean(precheck.operator && caller && precheck.operator === caller);
+      payload.precheck = {
+        ...precheck,
+        caller,
+        callerIsOperator,
+      };
+    } catch (err) {
+      payload.precheck = null;
+      payload.diagnostics.push(
+        `Resolve precheck unavailable: ${err && err.message ? err.message : String(err)}`,
+      );
+    }
+    return payload;
+  }
 
   await ensureContractCode(publicClient, pollAddress, 'Poll contract');
+
+  const precheck = await readPollResolutionState(publicClient, pollAddress);
+  const callerIsOperator = Boolean(precheck.operator && caller && precheck.operator === caller);
+  payload.precheck = {
+    ...precheck,
+    caller,
+    callerIsOperator,
+  };
+
+  if (precheck.operator && caller && !callerIsOperator) {
+    throw createServiceError(
+      'RESOLVE_CALLER_NOT_OPERATOR',
+      `Cannot resolve: caller is not operator. Arbiter: ${precheck.operator}.`,
+      {
+        arbiter: precheck.operator,
+        caller,
+        finalizationEpoch: precheck.finalizationEpoch,
+        currentEpoch: precheck.currentEpoch,
+        epochsUntilFinalization: precheck.epochsUntilFinalization,
+      },
+    );
+  }
 
   try {
     const simulation = await publicClient.simulateContract({
@@ -524,12 +1089,12 @@ async function runLpPositions(options = {}) {
   const { publicClient } = await createClients(runtime, false);
   const wallet = normalizeAddress(options.wallet, '--wallet');
   const diagnostics = [];
+  const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
 
   let markets = [];
   if (options.marketAddress) {
     markets = [normalizeAddress(options.marketAddress, '--market-address')];
   } else {
-    const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
     try {
       markets = await discoverLiquidityMarkets(indexerUrl, wallet, options.chainId || runtime.chainId, timeoutMs);
       if (!markets.length) {
@@ -540,23 +1105,23 @@ async function runLpPositions(options = {}) {
     }
   }
 
+  const marketRowsByAddress = await fetchIndexerMarketsMap(indexerUrl, markets, timeoutMs);
+
   const { formatUnits } = await loadViemRuntime();
-  const items = [];
-  for (const marketAddress of markets) {
+  const items = await mapWithConcurrency(markets, READ_BATCH_CONCURRENCY, async (marketAddress) => {
     const itemDiagnostics = [];
     try {
       await ensureContractCode(publicClient, marketAddress, 'Market');
     } catch (err) {
       itemDiagnostics.push(err.message || String(err));
-      items.push({
+      return {
         marketAddress,
         lpTokenDecimals: null,
         lpTokenBalanceRaw: null,
         lpTokenBalance: null,
         preview: null,
         diagnostics: itemDiagnostics,
-      });
-      continue;
+      };
     }
 
     const lpTokenDecimals = await readDecimals(publicClient, marketAddress, 18);
@@ -577,32 +1142,67 @@ async function runLpPositions(options = {}) {
     if (typeof lpTokenBalanceRaw === 'bigint' && lpTokenBalanceRaw > 0n) {
       const calc = await readCalcRemoveLiquidity(publicClient, marketAddress, lpTokenBalanceRaw);
       if (calc) {
-        preview = {
-          collateralOutRaw: calc.collateralOutRaw,
-          collateralOutUsdc:
-            calc.collateralOutRaw !== null ? formatUnits(BigInt(calc.collateralOutRaw), 6) : null,
-          yesOutRaw: calc.yesOutRaw,
-          yesOut:
-            calc.yesOutRaw !== null ? formatUnits(BigInt(calc.yesOutRaw), 18) : null,
-          noOutRaw: calc.noOutRaw,
-          noOut:
-            calc.noOutRaw !== null ? formatUnits(BigInt(calc.noOutRaw), 18) : null,
-        };
+        preview = buildRemoveLiquidityPreviewPayload(formatUnits, calc);
       } else {
         itemDiagnostics.push('calcRemoveLiquidity unavailable for this market ABI.');
       }
     }
 
-    items.push({
+    let outcomeTokens = null;
+    try {
+      const refs = await readOutcomeTokenRefs(publicClient, marketAddress);
+      if (refs) {
+        const [yesDecimals, noDecimals, yesRaw, noRaw] = await Promise.all([
+          readDecimals(publicClient, refs.yesToken, 18),
+          readDecimals(publicClient, refs.noToken, 18),
+          publicClient.readContract({
+            address: refs.yesToken,
+            abi: LP_TOKEN_ABI,
+            functionName: 'balanceOf',
+            args: [wallet],
+          }),
+          publicClient.readContract({
+            address: refs.noToken,
+            abi: LP_TOKEN_ABI,
+            functionName: 'balanceOf',
+            args: [wallet],
+          }),
+        ]);
+        let resolution = null;
+        try {
+          const marketRow = marketRowsByAddress.get(marketAddress) || null;
+          const pollAddress = marketRow && marketRow.pollAddress ? normalizeAddress(marketRow.pollAddress, 'pollAddress') : null;
+          if (pollAddress) {
+            resolution = await readPollResolutionState(publicClient, pollAddress);
+          }
+        } catch {
+          // best effort only
+        }
+        outcomeTokens = buildOutcomeTokenVisibility({
+          refs,
+          yesRaw,
+          noRaw,
+          yesDecimals,
+          noDecimals,
+          resolution,
+          formatUnits,
+        });
+      }
+    } catch (err) {
+      itemDiagnostics.push(`Outcome token balance read failed: ${err && err.message ? err.message : String(err)}`);
+    }
+
+    return {
       marketAddress,
       lpTokenDecimals,
       lpTokenBalanceRaw: lpTokenBalanceRaw === null ? null : lpTokenBalanceRaw.toString(),
       lpTokenBalance:
         lpTokenBalanceRaw === null ? null : formatUnits(lpTokenBalanceRaw, lpTokenDecimals),
       preview,
+      outcomeTokens,
       diagnostics: itemDiagnostics,
-    });
-  }
+    };
+  });
 
   return {
     schemaVersion,
@@ -684,7 +1284,11 @@ async function runLpAdd(options = {}) {
     return payload;
   }
 
-  const { publicClient, walletClient, account } = await createClients(runtime, true);
+  const { publicClient, walletClient, account } = await createClients(runtime, true, {
+    command: 'lp.add',
+    toolFamily: 'lp',
+    category: options.category || null,
+  });
   await ensureContractCode(publicClient, marketAddress, 'Market');
 
   let marketInIndexer = null;
@@ -813,7 +1417,7 @@ async function runLpRemove(options = {}) {
     status: options.execute ? 'submitted' : 'planned',
     action: 'remove',
     marketAddress: options.marketAddress,
-    lpTokens: options.lpTokens,
+    lpTokens: options.lpAll ? 'all' : options.lpTokens,
     deadlineSeconds,
     txPlan: null,
     preflight: null,
@@ -821,7 +1425,7 @@ async function runLpRemove(options = {}) {
     diagnostics: [],
   };
 
-  const runtime = await resolveRuntime(options, {
+  const runtime = options.resolvedRuntime || await resolveRuntime(options, {
     requirePrivateKey: options.execute,
     requireUsdc: false,
   });
@@ -835,6 +1439,20 @@ async function runLpRemove(options = {}) {
 
   if (!options.execute) {
     const deadline = BigInt(Math.floor(Date.now() / 1000) + deadlineSeconds);
+    if (options.lpAll) {
+      payload.txPlan = {
+        lpTokenDecimalsAssumed: 18,
+        sharesToBurnRaw: null,
+        sharesToBurnMode: 'all-onchain-balance-at-execution',
+        minCollateralOutRaw: '0',
+        deadline: deadline.toString(),
+        removeLiquidityArgOrder: 'sharesToBurn, minCollateralOut, deadline',
+      };
+      payload.diagnostics.push(
+        'Dry-run with --all defers LP token amount resolution to execution-time on-chain balance.',
+      );
+      return payload;
+    }
     payload.txPlan = {
       lpTokenDecimalsAssumed: 18,
       sharesToBurnRaw: parseUnits(String(options.lpTokens), 18).toString(),
@@ -845,11 +1463,34 @@ async function runLpRemove(options = {}) {
     return payload;
   }
 
-  const { publicClient, walletClient, account } = await createClients(runtime, true);
+  const { publicClient, walletClient, account } = await createClients(runtime, true, {
+    command: 'lp.remove',
+    toolFamily: 'lp',
+    category: options.category || null,
+  });
   await ensureContractCode(publicClient, marketAddress, 'Market');
 
   const lpTokenDecimals = await readDecimals(publicClient, marketAddress, 18);
-  const sharesToBurnRaw = parseUnits(String(options.lpTokens), lpTokenDecimals);
+  let sharesToBurnRaw;
+  if (options.lpAll) {
+    const balanceRaw = await publicClient.readContract({
+      address: marketAddress,
+      abi: LP_TOKEN_ABI,
+      functionName: 'balanceOf',
+      args: [account.address],
+    });
+    if (typeof balanceRaw !== 'bigint' || balanceRaw <= 0n) {
+      throw createServiceError('LP_REMOVE_ZERO_BALANCE', 'No LP token balance available to remove with --all.', {
+        marketAddress,
+        account: account.address,
+      });
+    }
+    sharesToBurnRaw = balanceRaw;
+    payload.lpTokens = formatUnits(balanceRaw, lpTokenDecimals);
+    payload.diagnostics.push('Using full LP token balance (--all) from on-chain balanceOf(account).');
+  } else {
+    sharesToBurnRaw = parseUnits(String(options.lpTokens), lpTokenDecimals);
+  }
   const deadline = BigInt(Math.floor(Date.now() / 1000) + deadlineSeconds);
   const minCollateralOutRaw = 0n;
   const preview = await readCalcRemoveLiquidity(publicClient, marketAddress, sharesToBurnRaw);
@@ -864,15 +1505,7 @@ async function runLpRemove(options = {}) {
   payload.preflight = {
     account: account.address,
     chainId: runtime.chainId,
-    preview: preview
-      ? {
-          collateralOutRaw: preview.collateralOutRaw,
-          collateralOutUsdc:
-            preview.collateralOutRaw !== null ? formatUnits(BigInt(preview.collateralOutRaw), 6) : null,
-          yesOutRaw: preview.yesOutRaw,
-          noOutRaw: preview.noOutRaw,
-        }
-      : null,
+    preview: buildRemoveLiquidityPreviewPayload(formatUnits, preview),
   };
 
   let simulation;
@@ -910,6 +1543,84 @@ async function runLpRemove(options = {}) {
   }
 }
 
+async function runLpSimulateRemove(options = {}) {
+  const schemaVersion = '1.0.0';
+  const generatedAt = new Date().toISOString();
+  const runtime = await resolveRuntime(options, {
+    requirePrivateKey: false,
+    requireUsdc: false,
+  });
+  const { publicClient, account } = await createClients(runtime, false, {
+    command: 'lp.simulate-remove',
+    toolFamily: 'lp',
+    category: options.category || null,
+  });
+  const marketAddress = normalizeAddress(options.marketAddress, '--market-address');
+  await ensureContractCode(publicClient, marketAddress, 'Market');
+  const { parseUnits, formatUnits } = await loadViemRuntime();
+  const lpTokenDecimals = await readDecimals(publicClient, marketAddress, 18);
+  const wallet = options.wallet
+    ? normalizeAddress(options.wallet, '--wallet')
+    : account && account.address
+      ? account.address.toLowerCase()
+      : null;
+  const diagnostics = [];
+
+  let sharesToBurnRaw;
+  let lpTokens = options.lpTokens;
+  if (options.lpAll) {
+    if (!wallet) {
+      throw createServiceError(
+        'MISSING_REQUIRED_FLAG',
+        'lp simulate-remove --all requires --wallet <address> or signer credentials for wallet discovery.',
+      );
+    }
+    const balanceRaw = await publicClient.readContract({
+      address: marketAddress,
+      abi: LP_TOKEN_ABI,
+      functionName: 'balanceOf',
+      args: [wallet],
+    });
+    if (typeof balanceRaw !== 'bigint' || balanceRaw <= 0n) {
+      throw createServiceError('LP_REMOVE_ZERO_BALANCE', 'No LP token balance available to preview with --all.', {
+        marketAddress,
+        wallet,
+      });
+    }
+    sharesToBurnRaw = balanceRaw;
+    lpTokens = formatUnits(balanceRaw, lpTokenDecimals);
+    diagnostics.push('Using full LP token balance (--all) from on-chain balanceOf(wallet).');
+  } else {
+    sharesToBurnRaw = parseUnits(String(options.lpTokens), lpTokenDecimals);
+  }
+
+  const preview = await readCalcRemoveLiquidity(publicClient, marketAddress, sharesToBurnRaw);
+  const previewPayload = buildRemoveLiquidityPreviewPayload(formatUnits, preview);
+  if (!previewPayload) {
+    diagnostics.push('calcRemoveLiquidity unavailable for this market ABI.');
+  }
+
+  return {
+    schemaVersion,
+    generatedAt,
+    mode: 'preview',
+    status: previewPayload ? 'ready' : 'unavailable',
+    runtime: {
+      mode: runtime.mode,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+    },
+    action: 'simulate-remove',
+    marketAddress,
+    wallet,
+    lpTokens,
+    lpTokenDecimals,
+    sharesToBurnRaw: sharesToBurnRaw.toString(),
+    preview: previewPayload,
+    diagnostics,
+  };
+}
+
 /**
  * Dispatch LP admin action (`positions`, `add`, `remove`).
  * @param {object} [options]
@@ -922,10 +1633,299 @@ async function runLp(options = {}) {
   if (options.action === 'add') {
     return runLpAdd(options);
   }
+  if (options.action === 'simulate-remove') {
+    return runLpSimulateRemove(options);
+  }
   if (options.action === 'remove') {
+    if (options.allMarkets) {
+      return runLpRemoveAllMarkets(options);
+    }
     return runLpRemove(options);
   }
-  throw createServiceError('INVALID_ARGS', 'lp requires action add|remove|positions.');
+  throw createServiceError('INVALID_ARGS', 'lp requires action add|remove|positions|simulate-remove.');
+}
+
+async function runLpRemoveAllMarkets(options = {}) {
+  const schemaVersion = '1.0.0';
+  const generatedAt = new Date().toISOString();
+  const timeoutMs = normalizeTimeoutMs(options.timeoutMs);
+  const runtime = await resolveRuntime(options, {
+    requirePrivateKey: options.execute,
+    requireUsdc: false,
+  });
+  const signerClients = options.wallet ? null : await createClients(runtime, false);
+  const wallet =
+    options.wallet ||
+    (signerClients && signerClients.account && signerClients.account.address
+      ? signerClients.account.address.toLowerCase()
+      : null);
+  if (!wallet) {
+    throw createServiceError(
+      'MISSING_REQUIRED_FLAG',
+      'lp remove --all-markets requires --wallet <address> or signer credentials (--private-key or --profile-id/--profile-file) for wallet discovery.',
+    );
+  }
+  const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
+  const markets = await discoverLiquidityMarkets(indexerUrl, wallet, options.chainId || runtime.chainId, timeoutMs);
+  const batchConcurrency = options.execute ? 1 : READ_BATCH_CONCURRENCY;
+  const items = await mapWithConcurrency(markets, batchConcurrency, async (marketAddress) => {
+    try {
+      const item = await runLpRemove({
+        ...options,
+        marketAddress,
+        lpAll: true,
+        lpTokens: null,
+        wallet,
+        resolvedRuntime: runtime,
+      });
+      return {
+        marketAddress,
+        ok: true,
+        result: item,
+      };
+    } catch (err) {
+      return {
+        marketAddress,
+        ok: false,
+        error: {
+          code: err && err.code ? err.code : 'LP_REMOVE_MARKET_FAILED',
+          message: err && err.message ? err.message : String(err),
+          details: err && err.details ? err.details : null,
+        },
+      };
+    }
+  });
+
+  return {
+    schemaVersion,
+    generatedAt,
+    mode: options.execute ? 'execute' : 'dry-run',
+    runtime: {
+      mode: runtime.mode,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+    },
+    action: 'remove-all-markets',
+    wallet,
+    indexerUrl,
+    count: items.length,
+    successCount: items.filter((item) => item.ok).length,
+    failureCount: items.filter((item) => !item.ok).length,
+    items,
+  };
+}
+
+async function simulateRedeem(publicClient, account, marketAddress) {
+  for (const abi of CLAIM_MARKET_ABI_CANDIDATES) {
+    try {
+      const simulation = await publicClient.simulateContract({
+        account,
+        address: marketAddress,
+        abi,
+        functionName: 'redeemWinnings',
+        args: [],
+      });
+      return {
+        ok: true,
+        simulation,
+        estimatedClaimRaw:
+          simulation && simulation.result !== undefined && simulation.result !== null
+            ? simulation.result.toString()
+            : null,
+      };
+    } catch {
+      // try next signature
+    }
+  }
+  return {
+    ok: false,
+    simulation: null,
+    estimatedClaimRaw: null,
+  };
+}
+
+async function runClaimSingle(options = {}) {
+  const schemaVersion = '1.0.0';
+  const generatedAt = new Date().toISOString();
+  const runtime = options.resolvedRuntime || await resolveRuntime(options, { requirePrivateKey: options.execute, requireUsdc: false });
+  const { publicClient, walletClient, account } = options.sharedClients || await createClients(runtime, options.execute, {
+    command: 'claim',
+    toolFamily: 'claim',
+    category: options.category || null,
+  });
+  const marketAddress = normalizeAddress(options.marketAddress, '--market-address');
+  await ensureContractCode(publicClient, marketAddress, 'Market');
+
+  const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
+  const market = Object.prototype.hasOwnProperty.call(options, 'prefetchedMarket')
+    ? options.prefetchedMarket
+    : await fetchIndexerMarket(indexerUrl, marketAddress, normalizeTimeoutMs(options.timeoutMs));
+  const pollAddress = market && market.pollAddress ? normalizeAddress(market.pollAddress, 'pollAddress') : null;
+
+  let pollState = null;
+  if (pollAddress) {
+    try {
+      await ensureContractCode(publicClient, pollAddress, 'Poll contract');
+      pollState = await readPollResolutionState(publicClient, pollAddress);
+    } catch {
+      pollState = null;
+    }
+  }
+
+  const payload = {
+    schemaVersion,
+    generatedAt,
+    mode: options.execute ? 'execute' : 'dry-run',
+    runtime: {
+      mode: runtime.mode,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+    },
+    status: options.execute ? 'submitted' : 'planned',
+    marketAddress,
+    pollAddress,
+    resolution: pollState,
+    claimable: pollState ? Boolean(pollState.claimable) : null,
+    txPlan: {
+      functionName: 'redeemWinnings',
+      abiSignature: 'redeemWinnings()',
+      args: [],
+    },
+    preflight: null,
+    tx: null,
+    diagnostics: [],
+  };
+
+  if (!account) {
+    payload.diagnostics.push('No signer credentials supplied; simulation-based claimability check skipped.');
+    return payload;
+  }
+
+  const redeemSimulation = await simulateRedeem(publicClient, account, marketAddress);
+  payload.preflight = {
+    account: account.address,
+    simulationOk: redeemSimulation.ok,
+    estimatedClaimRaw: redeemSimulation.estimatedClaimRaw,
+  };
+
+  if (!redeemSimulation.ok) {
+    payload.claimable = false;
+    payload.diagnostics.push('Redeem simulation failed. Market may not be claimable yet.');
+    return payload;
+  }
+
+  if (!options.execute) {
+    payload.claimable = true;
+    return payload;
+  }
+
+  try {
+    const txHash = await walletClient.writeContract(redeemSimulation.simulation.request);
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    payload.tx = {
+      txHash,
+      explorerUrl: txExplorerUrl(runtime.chainId, txHash),
+      status: receipt && receipt.status ? receipt.status : null,
+      blockNumber:
+        receipt && receipt.blockNumber !== undefined && receipt.blockNumber !== null
+          ? receipt.blockNumber.toString()
+          : null,
+    };
+    payload.claimable = true;
+    return payload;
+  } catch (err) {
+    throw await decodeAndWrapError(err, 'CLAIM_EXECUTION_FAILED', 'Failed to execute redeemWinnings.');
+  }
+}
+
+async function runClaim(options = {}) {
+  if (!options.all) {
+    return runClaimSingle(options);
+  }
+  const schemaVersion = '1.0.0';
+  const generatedAt = new Date().toISOString();
+  const timeoutMs = normalizeTimeoutMs(options.timeoutMs);
+  const runtime = await resolveRuntime(options, { requirePrivateKey: options.execute, requireUsdc: false });
+  const signerClients = options.wallet ? null : await createClients(runtime, false);
+  const wallet =
+    options.wallet ||
+    (signerClients && signerClients.account && signerClients.account.address
+      ? signerClients.account.address.toLowerCase()
+      : null);
+  if (!wallet) {
+    throw createServiceError(
+      'MISSING_REQUIRED_FLAG',
+      'claim --all requires --wallet <address> or signer credentials (--private-key or --profile-id/--profile-file) for wallet discovery.',
+    );
+  }
+  const indexerUrl = options.indexerUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
+  const diagnostics = [];
+  const [lpMarketsResult, userMarketsResult] = await Promise.allSettled([
+    discoverLiquidityMarkets(indexerUrl, wallet, options.chainId || runtime.chainId, timeoutMs),
+    discoverMarketUserMarkets(indexerUrl, wallet, options.chainId || runtime.chainId, timeoutMs),
+  ]);
+  const lpMarkets = lpMarketsResult.status === 'fulfilled' ? lpMarketsResult.value : [];
+  const userMarkets = userMarketsResult.status === 'fulfilled' ? userMarketsResult.value : [];
+  if (lpMarketsResult.status === 'rejected') {
+    diagnostics.push(`LP market discovery failed: ${lpMarketsResult.reason && lpMarketsResult.reason.message ? lpMarketsResult.reason.message : String(lpMarketsResult.reason)}`);
+  }
+  if (userMarketsResult.status === 'rejected') {
+    diagnostics.push(`Position market discovery failed: ${userMarketsResult.reason && userMarketsResult.reason.message ? userMarketsResult.reason.message : String(userMarketsResult.reason)}`);
+  }
+  const markets = Array.from(new Set([...lpMarkets, ...userMarkets]));
+  if (!markets.length) {
+    diagnostics.push('No candidate markets discovered for claim-all.');
+  }
+  const prefetchedMarketsByAddress = await fetchIndexerMarketsMap(indexerUrl, markets, timeoutMs);
+  const sharedClients = await createClients(runtime, options.execute, {
+    command: 'claim',
+    toolFamily: 'claim',
+    category: options.category || null,
+  });
+  const batchConcurrency = options.execute ? 1 : READ_BATCH_CONCURRENCY;
+  const items = await mapWithConcurrency(markets, batchConcurrency, async (marketAddress) => {
+    try {
+      const item = await runClaimSingle({
+        ...options,
+        all: false,
+        marketAddress,
+        wallet,
+        indexerUrl,
+        resolvedRuntime: runtime,
+        sharedClients,
+        prefetchedMarket: prefetchedMarketsByAddress.get(marketAddress) || null,
+      });
+      return { marketAddress, ok: true, result: item };
+    } catch (err) {
+      return {
+        marketAddress,
+        ok: false,
+        error: {
+          code: err && err.code ? err.code : 'CLAIM_FAILED',
+          message: err && err.message ? err.message : String(err),
+          details: err && err.details ? err.details : null,
+        },
+      };
+    }
+  });
+  return {
+    schemaVersion,
+    generatedAt,
+    mode: options.execute ? 'execute' : 'dry-run',
+    runtime: {
+      mode: runtime.mode,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+    },
+    action: 'claim-all',
+    wallet,
+    indexerUrl,
+    count: items.length,
+    successCount: items.filter((item) => item.ok).length,
+    failureCount: items.filter((item) => !item.ok).length,
+    items,
+    diagnostics,
+  };
 }
 
 /** Public market admin API consumed by CLI `resolve` and `lp` commands. */
@@ -933,4 +1933,8 @@ module.exports = {
   runResolve,
   runLp,
   runLpPositions,
+  runClaim,
+  readPollResolutionState,
+  buildOutcomeTokenVisibility,
+  buildRemoveLiquidityPreviewPayload,
 };

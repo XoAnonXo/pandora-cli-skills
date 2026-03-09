@@ -5,6 +5,40 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
+function optionalDep(deps, name) {
+  if (!deps || typeof deps[name] !== 'function') return null;
+  return deps[name];
+}
+
+function normalizeTrackedProbability(value) {
+  if (!Number.isFinite(Number(value))) return null;
+  const numeric = Number(value);
+  const probability = numeric > 1 && numeric <= 100 ? numeric / 100 : numeric;
+  if (probability < 0 || probability > 1) return null;
+  return probability;
+}
+
+function resolveWatchProbabilityYes(options, quote) {
+  const fromOdds = quote
+    && quote.odds
+    && Number.isFinite(Number(quote.odds.yesProbability))
+    ? normalizeTrackedProbability(quote.odds.yesProbability)
+    : null;
+  if (fromOdds !== null) return fromOdds;
+
+  if (quote && quote.estimate && Number.isFinite(Number(quote.estimate.impliedProbability))) {
+    const implied = normalizeTrackedProbability(quote.estimate.impliedProbability);
+    if (implied !== null) {
+      return options.side === 'no' ? 1 - implied : implied;
+    }
+  }
+
+  if (Number.isFinite(Number(options.yesPct))) {
+    return normalizeTrackedProbability(options.yesPct);
+  }
+  return null;
+}
+
 /**
  * Creates the `watch` command runner.
  * @param {object} deps
@@ -26,6 +60,8 @@ function createRunWatchCommand(deps) {
   const sendWebhookNotifications = requireDep(deps, 'sendWebhookNotifications');
   const sleepMs = requireDep(deps, 'sleepMs');
   const renderWatchTable = requireDep(deps, 'renderWatchTable');
+  const appendForecastRecord = optionalDep(deps, 'appendForecastRecord');
+  const defaultForecastFile = optionalDep(deps, 'defaultForecastFile');
 
   return async function runWatchCommand(args, context) {
     const shared = parseIndexerSharedFlags(args);
@@ -45,6 +81,19 @@ function createRunWatchCommand(deps) {
     const snapshots = [];
     const alerts = [];
     const webhookReports = [];
+    const brierTracking = {
+      enabled: Boolean(options.trackBrier),
+      source: options.brierSource || options.forecastSource || 'watch',
+      filePath: options.brierFile || options.forecastFile || (defaultForecastFile ? defaultForecastFile() : null),
+      recordsWritten: 0,
+      skippedCount: 0,
+      errorCount: 0,
+      missingDependency: false,
+    };
+    if (brierTracking.enabled && !appendForecastRecord) {
+      brierTracking.missingDependency = true;
+    }
+
     for (let iteration = 1; iteration <= options.iterations; iteration += 1) {
       const snapshot = {
         iteration,
@@ -65,6 +114,67 @@ function createRunWatchCommand(deps) {
           slippageBps: options.slippageBps,
         }, shared.timeoutMs);
         snapshot.quote = quote;
+      }
+
+      if (brierTracking.enabled) {
+        if (!appendForecastRecord) {
+          snapshot.brierTracking = {
+            tracked: false,
+            reason: 'FORECAST_STORE_UNAVAILABLE',
+          };
+          brierTracking.skippedCount += 1;
+        } else {
+          const probabilityYes = resolveWatchProbabilityYes(options, snapshot.quote);
+          if (probabilityYes === null) {
+            snapshot.brierTracking = {
+              tracked: false,
+              reason: 'FORECAST_PROBABILITY_UNAVAILABLE',
+            };
+            brierTracking.skippedCount += 1;
+          } else {
+            try {
+              const writeResult = appendForecastRecord(
+                brierTracking.filePath || undefined,
+                {
+                  source: brierTracking.source,
+                  modelId: options.modelId || null,
+                  marketAddress: options.marketAddress || (snapshot.quote ? snapshot.quote.marketAddress : null),
+                  marketId: options.marketId || null,
+                  competition: options.competition || null,
+                  eventId: options.eventId || null,
+                  probabilityYes,
+                  forecastAt: snapshot.timestamp,
+                  metadata: {
+                    iteration,
+                    side: options.side,
+                    slippageBps: options.slippageBps,
+                    quoteSource: snapshot.quote && snapshot.quote.odds ? snapshot.quote.odds.source || null : null,
+                  },
+                },
+                {
+                  now: () => new Date(snapshot.timestamp),
+                },
+              );
+              brierTracking.recordsWritten += 1;
+              brierTracking.filePath = writeResult.filePath || brierTracking.filePath;
+              snapshot.brierTracking = {
+                tracked: true,
+                recordId: writeResult.record ? writeResult.record.id : null,
+                source: brierTracking.source,
+                filePath: brierTracking.filePath,
+                probabilityYes,
+              };
+            } catch (error) {
+              brierTracking.errorCount += 1;
+              snapshot.brierTracking = {
+                tracked: false,
+                reason: 'FORECAST_WRITE_FAILED',
+                errorCode: error && error.code ? error.code : null,
+                errorMessage: error && error.message ? error.message : String(error),
+              };
+            }
+          }
+        }
       }
 
       snapshot.alerts = evaluateWatchAlerts(snapshot, options);
@@ -120,12 +230,16 @@ function createRunWatchCommand(deps) {
         alertNetLiquidityBelow: options.alertNetLiquidityBelow,
         alertNetLiquidityAbove: options.alertNetLiquidityAbove,
         failOnAlert: options.failOnAlert,
+        trackBrier: brierTracking.enabled,
+        brierSource: brierTracking.source,
+        brierFile: brierTracking.filePath,
         webhookEnabled: hasWebhookTargets(options),
         failOnWebhookError: options.failOnWebhookError,
       },
       snapshots,
       alerts,
       webhookReports,
+      brierTracking,
     };
 
     if (options.failOnAlert && alerts.length) {

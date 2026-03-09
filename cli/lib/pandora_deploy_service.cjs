@@ -15,7 +15,14 @@ const {
   DEFAULT_FACTORY,
   DEFAULT_USDC,
   DEFAULT_ARBITER,
+  MIN_AMM_FEE_TIER,
+  MAX_AMM_FEE_TIER,
 } = require('./shared/constants.cjs');
+const {
+  buildRequiredAgentMarketValidation,
+  assertAgentMarketValidation,
+} = require('./agent_market_prompt_service.cjs');
+const { materializeExecutionSigner } = require('./signers/execution_signer_service.cjs');
 
 const ERC20_ABI = [
   {
@@ -50,6 +57,7 @@ const ERC20_ABI = [
 const ORACLE_ABI = [
   { name: 'operatorGasFee', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { name: 'protocolFee', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'MAX_RULES_LENGTH', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   {
     name: 'createPoll',
     type: 'function',
@@ -83,6 +91,13 @@ const FACTORY_ABI = [
   },
 ];
 
+const MAX_UINT24 = 16_777_215;
+const DEFAULT_CREATE_POLL_GAS_UNITS = 350_000n;
+const DEFAULT_APPROVE_GAS_UNITS = 65_000n;
+const DEFAULT_CREATE_MARKET_GAS_UNITS = 650_000n;
+const GAS_RESERVE_BUFFER_BPS = 2_500n;
+const DEFAULT_FALLBACK_GAS_PRICE_WEI = 2_000_000_000n;
+
 const POLL_CREATED_EVENT = {
   type: 'event',
   name: 'PollCreated',
@@ -115,6 +130,112 @@ function createDeployError(code, message, details = undefined) {
   return err;
 }
 
+function utf8ByteLength(value) {
+  return Buffer.byteLength(String(value || ''), 'utf8');
+}
+
+async function resolveMaxRulesLength(publicClient, oracle) {
+  try {
+    const result = await publicClient.readContract({
+      address: oracle,
+      abi: ORACLE_ABI,
+      functionName: 'MAX_RULES_LENGTH',
+    });
+    const numeric = Number(result);
+    return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveFeePerGas(publicClient) {
+  if (publicClient && typeof publicClient.estimateFeesPerGas === 'function') {
+    try {
+      const estimated = await publicClient.estimateFeesPerGas();
+      if (estimated && typeof estimated.maxFeePerGas === 'bigint' && estimated.maxFeePerGas > 0n) {
+        return estimated.maxFeePerGas;
+      }
+      if (estimated && typeof estimated.gasPrice === 'bigint' && estimated.gasPrice > 0n) {
+        return estimated.gasPrice;
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  if (publicClient && typeof publicClient.getGasPrice === 'function') {
+    try {
+      const gasPrice = await publicClient.getGasPrice();
+      if (typeof gasPrice === 'bigint' && gasPrice > 0n) {
+        return gasPrice;
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  return DEFAULT_FALLBACK_GAS_PRICE_WEI;
+}
+
+async function estimateContractGasUnits(publicClient, request, fallbackUnits) {
+  if (publicClient && typeof publicClient.estimateContractGas === 'function' && request) {
+    try {
+      const estimate = await publicClient.estimateContractGas(request);
+      if (typeof estimate === 'bigint' && estimate > 0n) {
+        return estimate;
+      }
+    } catch {
+      // use fallback
+    }
+  }
+  return fallbackUnits;
+}
+
+function applyReserveBuffer(value) {
+  const base = typeof value === 'bigint' && value > 0n ? value : 0n;
+  return base + ((base * GAS_RESERVE_BUFFER_BPS) / 10_000n);
+}
+
+async function buildGasReservePlan({
+  options,
+  publicClient,
+  pollRequest,
+  approveRequest,
+  needsApproval,
+  parseEtherFn,
+}) {
+  if (options.gasReserveEth !== undefined && options.gasReserveEth !== null && String(options.gasReserveEth).trim()) {
+    const gasReserveWei = parseEtherFn(String(options.gasReserveEth));
+    return {
+      gasReserveWei,
+      feePerGasWei: null,
+      gasUnits: null,
+      source: 'manual',
+    };
+  }
+
+  const feePerGasWei = await resolveFeePerGas(publicClient);
+  const pollGasUnits = await estimateContractGasUnits(publicClient, pollRequest, DEFAULT_CREATE_POLL_GAS_UNITS);
+  const approveGasUnits =
+    needsApproval && approveRequest
+      ? await estimateContractGasUnits(publicClient, approveRequest, DEFAULT_APPROVE_GAS_UNITS)
+      : 0n;
+  const marketGasUnits = DEFAULT_CREATE_MARKET_GAS_UNITS;
+  const totalGasUnits = pollGasUnits + approveGasUnits + marketGasUnits;
+
+  return {
+    gasReserveWei: applyReserveBuffer(feePerGasWei * totalGasUnits),
+    feePerGasWei,
+    gasUnits: {
+      poll: pollGasUnits,
+      approve: approveGasUnits,
+      market: marketGasUnits,
+      total: totalGasUnits,
+    },
+    source: 'dynamic',
+  };
+}
+
 async function wrapDeployExecutionError(err, code, fallbackMessage, details = undefined) {
   const decoded = await decodeContractError(err);
   const decodedMessage = formatDecodedContractError(decoded);
@@ -123,6 +244,18 @@ async function wrapDeployExecutionError(err, code, fallbackMessage, details = un
     cause: err && err.message ? err.message : String(err),
     ...((details && typeof details === 'object') ? details : {}),
   });
+}
+
+function resolveDeployRuntime(options = {}) {
+  const viemRuntime = options && options.viem && typeof options.viem === 'object' ? options.viem : {};
+  return {
+    createPublicClient: viemRuntime.createPublicClient || createPublicClient,
+    createWalletClient: viemRuntime.createWalletClient || createWalletClient,
+    privateKeyToAccount: viemRuntime.privateKeyToAccount || privateKeyToAccount,
+    http: viemRuntime.http || http,
+    parseEther: viemRuntime.parseEther || parseEther,
+    parseUnits: viemRuntime.parseUnits || parseUnits,
+  };
 }
 
 function resolveChain(chainId, rpcUrl) {
@@ -189,13 +322,13 @@ function buildDeploymentArgs(options = {}) {
   }
 
   const feeTier = Number(options.feeTier);
-  if (![500, 3000, 10000].includes(feeTier)) {
-    throw new Error('feeTier must be one of 500, 3000, 10000.');
+  if (feeTier < MIN_AMM_FEE_TIER || feeTier > MAX_AMM_FEE_TIER) {
+    throw new Error(`feeTier must be between ${MIN_AMM_FEE_TIER} and ${MAX_AMM_FEE_TIER} (max 5%).`);
   }
 
   const maxImbalance = Number(options.maxImbalance);
-  if (!Number.isInteger(maxImbalance) || maxImbalance <= 0) {
-    throw new Error('maxImbalance must be a positive integer.');
+  if (!Number.isInteger(maxImbalance) || maxImbalance < 0 || maxImbalance > MAX_UINT24) {
+    throw new Error(`maxImbalance must be an integer between 0 and ${MAX_UINT24}.`);
   }
 
   const category = Number.isInteger(Number(options.category)) ? Number(options.category) : 3;
@@ -217,6 +350,14 @@ function buildDeploymentArgs(options = {}) {
 
 async function deployPandoraAmmMarket(options = {}) {
   const args = buildDeploymentArgs(options);
+  const runtime = resolveDeployRuntime(options);
+  const validationInput = {
+    question: args.question,
+    rules: args.rules,
+    sources: args.sources,
+    targetTimestamp: args.targetTimestamp,
+  };
+  const requiredValidation = buildRequiredAgentMarketValidation(validationInput);
 
   const oracle = String(options.oracle || process.env.ORACLE || DEFAULT_ORACLE).toLowerCase();
   const factory = String(options.factory || process.env.FACTORY || DEFAULT_FACTORY).toLowerCase();
@@ -239,6 +380,8 @@ async function deployPandoraAmmMarket(options = {}) {
     },
     tx: null,
     preflight: null,
+    requiredValidation,
+    agentValidation: null,
     pandora: {
       pollAddress: null,
       marketAddress: null,
@@ -250,14 +393,56 @@ async function deployPandoraAmmMarket(options = {}) {
     return payload;
   }
 
-  const privateKey = options.privateKey || process.env.PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
-  if (!privateKey) {
-    throw new Error('Missing private key for deployment execution.');
+  payload.agentValidation = assertAgentMarketValidation(validationInput, {
+    env: options.env || process.env,
+    preflight: options.agentPreflight,
+  });
+
+  const privateKey = options.privateKey || process.env.PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY || null;
+  const hasProfileSelector = Boolean(
+    options.profile
+    || (typeof options.profileId === 'string' && options.profileId.trim())
+    || (typeof options.profileFile === 'string' && options.profileFile.trim())
+  );
+  if (!privateKey && !hasProfileSelector && !options.account && !options.walletClient) {
+    throw new Error('Missing signer credentials for deployment execution. Pass --private-key or --profile-id/--profile-file.');
   }
 
-  const account = privateKeyToAccount(privateKey);
-  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
-  const walletClient = createWalletClient({ account, chain, transport: http(rpcUrl) });
+  const publicClient = options.publicClient || runtime.createPublicClient({ chain, transport: runtime.http(rpcUrl) });
+  let account = options.account || null;
+  let walletClient = options.walletClient || null;
+  let materializedSigner = null;
+
+  if (!account || !walletClient) {
+    materializedSigner = await (options.materializeExecutionSigner || materializeExecutionSigner)({
+      privateKey,
+      profileId: options.profileId || null,
+      profileFile: options.profileFile || null,
+      profile: options.profile || null,
+      chain,
+      chainId,
+      rpcUrl,
+      viemRuntime: runtime,
+      env: options.env || process.env,
+      requireSigner: true,
+      mode: 'execute',
+      liveRequested: true,
+      mutating: true,
+      category: args.category,
+      command: options.command || 'deploy',
+      toolFamily: options.toolFamily || 'deploy',
+      metadata: {
+        source: options.source || 'pandora.deploy',
+        question: args.question,
+      },
+    });
+    if (!account) {
+      account = materializedSigner.account;
+    }
+    if (!walletClient) {
+      walletClient = materializedSigner.walletClient;
+    }
+  }
 
   const [operatorGasFee, protocolFee] = await Promise.all([
     publicClient.readContract({
@@ -273,9 +458,9 @@ async function deployPandoraAmmMarket(options = {}) {
   ]);
 
   const pollFee = operatorGasFee + protocolFee;
-  const gasReserveWei = parseEther(String(options.gasReserveEth || '0.005'));
-  const liquidityRaw = parseUnits(String(args.liquidityUsdc), 6);
-  const [nativeBalance, usdcBalance, currentAllowance] = await Promise.all([
+  const liquidityRaw = runtime.parseUnits(String(args.liquidityUsdc), 6);
+  const [maxRulesLength, nativeBalance, usdcBalance, currentAllowance] = await Promise.all([
+    resolveMaxRulesLength(publicClient, oracle),
     publicClient.getBalance({ address: account.address }),
     publicClient.readContract({
       address: usdc,
@@ -291,6 +476,53 @@ async function deployPandoraAmmMarket(options = {}) {
     }),
   ]);
 
+  const rulesLengthBytes = utf8ByteLength(args.rules);
+  if (Number.isInteger(maxRulesLength) && rulesLengthBytes > maxRulesLength) {
+    throw createDeployError(
+      'INVALID_RULES_LENGTH',
+      `Rules text is too long (${rulesLengthBytes} bytes). Oracle limit is ${maxRulesLength} bytes.`,
+      {
+        rulesLengthBytes,
+        maxRulesLength,
+      },
+    );
+  }
+
+  const needsApproval = currentAllowance < liquidityRaw;
+
+  let pollSimulation;
+  try {
+    pollSimulation = await publicClient.simulateContract({
+      account,
+      address: oracle,
+      abi: ORACLE_ABI,
+      functionName: 'createPoll',
+      args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
+      value: pollFee,
+    });
+  } catch (err) {
+    throw await wrapDeployExecutionError(err, 'POLL_SIMULATION_FAILED', 'createPoll simulation failed.');
+  }
+
+  const approveRequest = needsApproval
+    ? {
+        account,
+        address: usdc,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [factory, liquidityRaw],
+      }
+    : null;
+  const gasReservePlan = await buildGasReservePlan({
+    options,
+    publicClient,
+    pollRequest: pollSimulation.request,
+    approveRequest,
+    needsApproval,
+    parseEtherFn: runtime.parseEther,
+  });
+  const gasReserveWei = gasReservePlan.gasReserveWei;
+
   payload.preflight = {
     account: account.address,
     nativeSymbol: chain.nativeCurrency.symbol,
@@ -298,6 +530,18 @@ async function deployPandoraAmmMarket(options = {}) {
     nativeRequired: formatUnits(pollFee + gasReserveWei, 18),
     pollFeeNative: formatUnits(pollFee, 18),
     gasReserveNative: formatUnits(gasReserveWei, 18),
+    gasReserveSource: gasReservePlan.source,
+    gasPriceGwei: gasReservePlan.feePerGasWei === null ? null : formatUnits(gasReservePlan.feePerGasWei, 9),
+    estimatedGasUnits: gasReservePlan.gasUnits
+      ? {
+          poll: gasReservePlan.gasUnits.poll.toString(),
+          approve: gasReservePlan.gasUnits.approve.toString(),
+          market: gasReservePlan.gasUnits.market.toString(),
+          total: gasReservePlan.gasUnits.total.toString(),
+        }
+      : null,
+    rulesLengthBytes,
+    maxRulesLength,
     usdcBalance: formatUnits(usdcBalance, 6),
     usdcRequired: formatUnits(liquidityRaw, 6),
     usdcAllowance: formatUnits(currentAllowance, 6),
@@ -317,20 +561,6 @@ async function deployPandoraAmmMarket(options = {}) {
       `Wallet USDC balance is insufficient for liquidity (${payload.preflight.usdcRequired} required).`,
       payload.preflight,
     );
-  }
-
-  let pollSimulation;
-  try {
-    pollSimulation = await publicClient.simulateContract({
-      account,
-      address: oracle,
-      abi: ORACLE_ABI,
-      functionName: 'createPoll',
-      args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
-      value: pollFee,
-    });
-  } catch (err) {
-    throw await wrapDeployExecutionError(err, 'POLL_SIMULATION_FAILED', 'createPoll simulation failed.');
   }
 
   let pollTxHash;
@@ -367,14 +597,9 @@ async function deployPandoraAmmMarket(options = {}) {
   }
 
   let approveTxHash = null;
-  if (currentAllowance < liquidityRaw) {
+  if (needsApproval) {
     try {
-      approveTxHash = await walletClient.writeContract({
-        address: usdc,
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [factory, liquidityRaw],
-      });
+      approveTxHash = await walletClient.writeContract(approveRequest);
       await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
     } catch (err) {
       throw await wrapDeployExecutionError(err, 'APPROVE_EXECUTION_FAILED', 'USDC approve failed.', {

@@ -13,6 +13,10 @@ const DEFAULT_FACTORY = '0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c';
 const DEFAULT_USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 /** Default whitelisted arbiter used by deploy paths when none is provided. */
 const DEFAULT_ARBITER = '0x0D7B957C47Da86c2968dc52111D633D42cb7a5F7';
+/** AMM fee tier lower bound in parts-per-million (0.05%). */
+const MIN_AMM_FEE_TIER = 500;
+/** AMM fee tier upper bound in parts-per-million (5.00%). */
+const MAX_AMM_FEE_TIER = 50_000;
 
 /** Shared constant exports consumed across CLI services/parsers. */
 module.exports = {
@@ -22,4 +26,6 @@ module.exports = {
   DEFAULT_FACTORY,
   DEFAULT_USDC,
   DEFAULT_ARBITER,
+  MIN_AMM_FEE_TIER,
+  MAX_AMM_FEE_TIER,
 };

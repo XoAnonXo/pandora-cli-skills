@@ -3,3 +3,7 @@ wallet.json
 .env
 .env.*
 !scripts/.env.example
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/

@@ -1,4 +1,5 @@
 const { toNumber, round } = require('../shared/utils.cjs');
+const { assessMirrorSourceFreshness } = require('./source_freshness.cjs');
 
 const MIRROR_SYNC_GATE_CODES = Object.freeze([
   'MATCH_AND_RULES',
@@ -9,6 +10,19 @@ const MIRROR_SYNC_GATE_CODES = Object.freeze([
   'MAX_TRADES_PER_DAY',
   'MIN_TIME_TO_EXPIRY',
 ]);
+const DIAGNOSTIC_VERIFY_GATE_CODES = new Set(['CLOSE_TIME_DELTA']);
+
+/**
+ * Read an expiry field from verify payload in seconds.
+ * @param {object} verifyPayload
+ * @param {string} fieldName
+ * @returns {number|null}
+ */
+function readExpiryFieldSec(verifyPayload, fieldName) {
+  return verifyPayload && verifyPayload.expiry && Number.isFinite(Number(verifyPayload.expiry[fieldName]))
+    ? Number(verifyPayload.expiry[fieldName])
+    : null;
+}
 
 /**
  * Read min-time-to-expiry from verify payload in seconds.
@@ -16,9 +30,25 @@ const MIRROR_SYNC_GATE_CODES = Object.freeze([
  * @returns {number|null}
  */
 function readMinTimeToExpirySec(verifyPayload) {
-  return verifyPayload && verifyPayload.expiry && Number.isFinite(Number(verifyPayload.expiry.minTimeToExpirySec))
-    ? Number(verifyPayload.expiry.minTimeToExpirySec)
-    : null;
+  return readExpiryFieldSec(verifyPayload, 'minTimeToExpirySec');
+}
+
+/**
+ * Read Pandora time-to-expiry from verify payload in seconds.
+ * @param {object} verifyPayload
+ * @returns {number|null}
+ */
+function readPandoraTimeToExpirySec(verifyPayload) {
+  return readExpiryFieldSec(verifyPayload, 'pandoraTimeToExpirySec');
+}
+
+/**
+ * Read source-market time-to-expiry from verify payload in seconds.
+ * @param {object} verifyPayload
+ * @returns {number|null}
+ */
+function readSourceTimeToExpirySec(verifyPayload) {
+  return readExpiryFieldSec(verifyPayload, 'sourceTimeToExpirySec');
 }
 
 /**
@@ -36,6 +66,8 @@ function readMinTimeToExpirySec(verifyPayload) {
  *   reserveTotalUsdc: number|null,
  *   deltaLpUsdc: number|null,
  *   targetHedgeUsdc: number|null,
+ *   pandoraTimeToExpirySec: number|null,
+ *   sourceTimeToExpirySec: number|null,
  *   minTimeToExpirySec: number|null
  * }}
  */
@@ -54,6 +86,8 @@ function evaluateSnapshot(verifyPayload, options) {
   const reserveTotalUsdc = reserveYes !== null && reserveNo !== null ? round(reserveYes + reserveNo, 6) : null;
   const deltaLpUsdc = reserveYes !== null && reserveNo !== null ? round(reserveYes - reserveNo, 6) : null;
   const targetHedgeUsdc = deltaLpUsdc === null ? null : round(-deltaLpUsdc, 6);
+  const pandoraTimeToExpirySec = readPandoraTimeToExpirySec(verifyPayload);
+  const sourceTimeToExpirySec = readSourceTimeToExpirySec(verifyPayload);
   const minTimeToExpirySec = readMinTimeToExpirySec(verifyPayload);
 
   return {
@@ -66,6 +100,8 @@ function evaluateSnapshot(verifyPayload, options) {
     reserveTotalUsdc,
     deltaLpUsdc,
     targetHedgeUsdc,
+    pandoraTimeToExpirySec,
+    sourceTimeToExpirySec,
     minTimeToExpirySec,
   };
 }
@@ -86,18 +122,54 @@ function evaluateStrictGates(context) {
 
   const verify = context.verifyPayload;
   const verifyGate = verify && verify.gateResult ? verify.gateResult : null;
-  add('MATCH_AND_RULES', Boolean(verifyGate && verifyGate.ok), 'Mirror match/rules gates must pass.', {
-    failedChecks: verifyGate ? verifyGate.failedChecks : ['UNKNOWN'],
-  });
+  const verifyGateFailedChecksRaw = verifyGate && Array.isArray(verifyGate.failedChecks) ? verifyGate.failedChecks : null;
+  const verifyGateFailedChecks = Array.isArray(verifyGateFailedChecksRaw)
+    ? verifyGateFailedChecksRaw.filter((code) => !DIAGNOSTIC_VERIFY_GATE_CODES.has(code))
+    : null;
+  add(
+    'MATCH_AND_RULES',
+    Boolean(verifyGate && Array.isArray(verifyGateFailedChecks) && verifyGateFailedChecks.length === 0),
+    'Mirror match/rules lifecycle gates must pass. Close-time delta is tracked separately.',
+    {
+      failedChecks: verifyGateFailedChecks || ['UNKNOWN'],
+      failedChecksRaw: verifyGateFailedChecksRaw || ['UNKNOWN'],
+      diagnosticChecksIgnored: [...DIAGNOSTIC_VERIFY_GATE_CODES],
+    },
+  );
 
   const sourceType = String((verify && verify.sourceMarket && verify.sourceMarket.source) || '').toLowerCase();
   const sourceIsCached = sourceType === 'polymarket:cache';
+  const hasSourceFreshness =
+    Boolean(verify && verify.sourceMarket)
+    && verify.sourceMarket.sourceFreshness
+    && typeof verify.sourceMarket.sourceFreshness === 'object'
+    && Object.keys(verify.sourceMarket.sourceFreshness).length > 0;
+  const sourceFreshness = assessMirrorSourceFreshness(verify && verify.sourceMarket ? verify.sourceMarket : {}, {
+    executeLive: Boolean(context.executeLive),
+    intervalMs: context.intervalMs,
+    sourceMaxAgeMs: context.sourceMaxAgeMs,
+    nowMs: context.nowMs,
+  });
+  const sourceRequiresStream = Boolean(
+    context.executeLive
+    && hasSourceFreshness
+    && sourceFreshness.streamPreferred
+    && sourceFreshness.transport !== 'stream',
+  );
+  const sourceFreshEnough = hasSourceFreshness ? Boolean(sourceFreshness.fresh) : !sourceIsCached;
+  const sourceFreshGateOk = context.executeLive
+    ? !sourceIsCached && sourceFreshEnough && !sourceRequiresStream
+    : true;
   add(
     'POLYMARKET_SOURCE_FRESH',
-    context.executeLive ? !sourceIsCached : true,
-    'Live mode requires fresh Polymarket source data (cached source is blocked).',
+    sourceFreshGateOk,
+    'Live mode requires fresh Polymarket source data when freshness metadata is available; cached source is always blocked.',
     {
       sourceType: sourceType || null,
+      freshness: sourceFreshness,
+      cachedSourceBlocked: sourceIsCached,
+      freshnessMetadataPresent: hasSourceFreshness,
+      requiresStream: sourceRequiresStream,
     },
   );
 
@@ -105,11 +177,20 @@ function evaluateStrictGates(context) {
     verifyGate && Array.isArray(verifyGate.checks)
       ? verifyGate.checks.find((item) => item.code === 'CLOSE_TIME_DELTA')
       : null;
+  const strictCloseTimeDelta = Boolean(context.strictCloseTimeDelta);
+  const closeDeltaOk = closeDeltaCheck ? closeDeltaCheck.ok : true;
   add(
     'CLOSE_TIME_DELTA',
-    closeDeltaCheck ? closeDeltaCheck.ok : true,
-    'Close-time delta must be within strict threshold.',
-    closeDeltaCheck && closeDeltaCheck.meta ? closeDeltaCheck.meta : null,
+    strictCloseTimeDelta ? closeDeltaOk : true,
+    strictCloseTimeDelta
+      ? 'Close-time delta must be within strict threshold.'
+      : 'Close-time delta is diagnostic-only unless strict close-time delta mode is enabled.',
+    {
+      ...(closeDeltaCheck && closeDeltaCheck.meta ? closeDeltaCheck.meta : {}),
+      sourceCheckOk: closeDeltaOk,
+      strictCloseTimeDelta,
+      diagnosticOnly: !strictCloseTimeDelta,
+    },
   );
 
   const depthRequired = toNumber(context.plannedHedgeUsdc) || 0;
@@ -153,9 +234,12 @@ function evaluateStrictGates(context) {
 
   add(
     'MIN_TIME_TO_EXPIRY',
-    context.minTimeToExpirySec === null ? true : context.minTimeToExpirySec >= context.minimumTimeToCloseSec,
-    `Minimum time-to-expiry must be >= ${context.minimumTimeToCloseSec}s for sync runtime.`,
+    context.tradingTimeToExpirySec === null ? true : context.tradingTimeToExpirySec >= context.minimumTimeToCloseSec,
+    `Pandora trading time-to-expiry must be >= ${context.minimumTimeToCloseSec}s for sync runtime.`,
     {
+      tradingTimeToExpirySec: context.tradingTimeToExpirySec,
+      pandoraTimeToExpirySec: context.pandoraTimeToExpirySec,
+      sourceTimeToExpirySec: context.sourceTimeToExpirySec,
       minTimeToExpirySec: context.minTimeToExpirySec,
       minimumTimeToCloseSec: context.minimumTimeToCloseSec,
     },
@@ -210,7 +294,7 @@ function applyGateBypassPolicy(gate, options) {
  */
 function resolveMinimumTimeToCloseSec(options) {
   const configuredMinTimeToCloseSec = Number.isInteger(Number(options.minTimeToCloseSec))
-    ? Math.max(60, Math.trunc(Number(options.minTimeToCloseSec)))
+    ? Math.max(1, Math.trunc(Number(options.minTimeToCloseSec)))
     : 1800;
   return Math.max(
     Math.ceil((options.intervalMs || 5_000) / 1000) * 2,
@@ -228,10 +312,16 @@ function buildTickGateContext(params) {
   return {
     verifyPayload,
     executeLive: options.executeLive,
+    intervalMs: options.intervalMs,
+    sourceMaxAgeMs: options.sourceMaxAgeMs || null,
+    nowMs: Date.now(),
     state,
     plannedHedgeUsdc: plan.plannedHedgeUsdc,
     plannedSpendUsdc: plan.plannedSpendUsdc,
     plannedHedgeSignedUsdc: plan.plannedHedgeSignedUsdc,
+    tradingTimeToExpirySec: snapshotMetrics.pandoraTimeToExpirySec,
+    pandoraTimeToExpirySec: snapshotMetrics.pandoraTimeToExpirySec,
+    sourceTimeToExpirySec: snapshotMetrics.sourceTimeToExpirySec,
     minTimeToExpirySec: snapshotMetrics.minTimeToExpirySec,
     minimumTimeToCloseSec,
     depthWithinSlippageUsd: depth.depthWithinSlippageUsd,
@@ -244,6 +334,7 @@ function buildTickGateContext(params) {
     depthSlippageBps: options.depthSlippageBps,
     maxOpenExposureUsdc: options.maxOpenExposureUsdc,
     maxTradesPerDay: options.maxTradesPerDay,
+    strictCloseTimeDelta: options.strictCloseTimeDelta,
   };
 }
 
@@ -255,12 +346,16 @@ function buildTickGateContext(params) {
 async function runStartupVerify(params) {
   const { verifyFn, options, minimumTimeToCloseSec, buildVerifyRequest, createServiceError } = params;
   const payload = await verifyFn(buildVerifyRequest(options));
+  const startupPandoraTime = readPandoraTimeToExpirySec(payload);
+  const startupSourceTime = readSourceTimeToExpirySec(payload);
   const startupMinTime = readMinTimeToExpirySec(payload);
   if (startupMinTime !== null && startupMinTime < minimumTimeToCloseSec) {
     throw createServiceError(
       'MIRROR_EXPIRY_TOO_CLOSE',
-      `Mirror sync refused to start because market expiry is too close (${startupMinTime}s < ${minimumTimeToCloseSec}s).`,
+      `Mirror sync refused to start because the effective trading window is too close (${startupMinTime}s < ${minimumTimeToCloseSec}s).`,
       {
+        startupPandoraTimeToExpirySec: startupPandoraTime,
+        startupSourceTimeToExpirySec: startupSourceTime,
         startupMinTimeToExpirySec: startupMinTime,
         minimumTimeToCloseSec,
       },
@@ -272,6 +367,8 @@ async function runStartupVerify(params) {
 module.exports = {
   MIRROR_SYNC_GATE_CODES,
   readMinTimeToExpirySec,
+  readPandoraTimeToExpirySec,
+  readSourceTimeToExpirySec,
   evaluateSnapshot,
   evaluateStrictGates,
   normalizeSkipGateChecks,

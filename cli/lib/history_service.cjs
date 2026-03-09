@@ -308,6 +308,8 @@ async function fetchHistory(options) {
       tradeType: trade.tradeType,
       collateralAmountRaw: trade.collateralAmount,
       collateralAmountUsdc,
+      feeAmountRaw: trade.feeAmount,
+      feeAmountUsdc,
       tokenAmountRaw: trade.tokenAmount,
       tokenAmount,
       entryPriceUsdcPerToken: entryPrice,

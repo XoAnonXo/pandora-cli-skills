@@ -1,7 +1,18 @@
 const { computeSportsConsensus } = require('./sports_consensus_service.cjs');
 const { getCreationWindowStatus, planResolveWindow } = require('./sports_timing_service.cjs');
+const { createSyncOperationBridge } = require('./shared/operation_bridge.cjs');
+const { DEFAULT_SPORTS_POLL_CATEGORY } = require('./shared/poll_categories.cjs');
 
 const PPB_TOTAL = 1_000_000_000;
+
+function createCreatePlanError(code, message, details = undefined) {
+  const err = new Error(message);
+  err.code = code;
+  if (details !== undefined) {
+    err.details = details;
+  }
+  return err;
+}
 
 function toUnixSeconds(isoString) {
   const parsed = Date.parse(String(isoString || ''));
@@ -101,16 +112,48 @@ function deriveMechanics(consensusYesPct) {
   };
 }
 
+function appendOperationDiagnostics(payload, operation) {
+  if (!operation || !Array.isArray(operation.diagnostics) || !operation.diagnostics.length) {
+    return payload;
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload;
+  }
+  const existingDiagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics : [];
+  return {
+    ...payload,
+    diagnostics: existingDiagnostics.concat(operation.diagnostics),
+  };
+}
+
+function buildSportsFallbackOperationId(eventId, selection) {
+  const normalizedEventId = String(eventId || 'unknown-event').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const normalizedSelection = String(selection || 'home').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return `sports-create:${normalizedEventId}:${normalizedSelection}`;
+}
+
 /**
  * Build a conservative sports market creation plan.
  * @param {object} input
  * @returns {object}
  */
 function buildSportsCreatePlan(input = {}) {
+  const operation = createSyncOperationBridge(input, {
+    command: 'sports.create.plan',
+  });
   const event = input.event || {};
   const oddsPayload = input.oddsPayload || {};
   const options = input.options || {};
+  const modelInput = input.modelInput && typeof input.modelInput === 'object' ? input.modelInput : null;
   const selection = options.selection || 'home';
+  const ensuredOperationId = operation.ensure({
+    phase: 'sports.create.plan.start',
+    eventId: event.id || null,
+    selection,
+  });
+  if (!ensuredOperationId && operation.hasCreateHook) {
+    operation.setOperationId(buildSportsFallbackOperationId(event.id, selection));
+  }
 
   const quotes = buildConsensusQuotes(oddsPayload, selection, options.bookPriority || oddsPayload.preferredBooks);
   const consensus = computeSportsConsensus(quotes, {
@@ -119,6 +162,19 @@ function buildSportsCreatePlan(input = {}) {
     minTier1Books: options.minTier1Books,
     tier1Books: options.bookPriority || oddsPayload.preferredBooks,
   });
+
+  let probabilitySource = 'consensus';
+  let probabilityYesPct = consensus.consensusYesPct;
+  if (modelInput) {
+    const probability = Number(modelInput.probability);
+    if (!Number.isFinite(probability) || probability < 0.01 || probability > 0.99) {
+      throw createCreatePlanError('INVALID_FLAG_VALUE', 'BYOM probability must be within [0.01, 0.99].', {
+        probability: modelInput.probability,
+      });
+    }
+    probabilitySource = 'model';
+    probabilityYesPct = probability * 100;
+  }
 
   const kickoff = event.startTime || oddsPayload.event && oddsPayload.event.startTime;
   const kickoffMs = kickoff ? Date.parse(kickoff) : null;
@@ -148,7 +204,7 @@ function buildSportsCreatePlan(input = {}) {
   if (statusToken.includes('postpon') || statusToken.includes('cancel') || statusToken.includes('abandon')) {
     blockedReasons.push(`Event status is ${event.status}; creation blocked.`);
   }
-  if (consensus.confidence === 'insufficient') {
+  if (!modelInput && consensus.confidence === 'insufficient') {
     blockedReasons.push('Insufficient book coverage for creation policy.');
   }
 
@@ -160,14 +216,14 @@ function buildSportsCreatePlan(input = {}) {
   let distributionYes = options.distributionYes;
   let distributionNo = options.distributionNo;
   if (!Number.isInteger(distributionYes) || !Number.isInteger(distributionNo)) {
-    const suggestedYes = toPartsPerBillionFromPct(consensus.consensusYesPct);
+    const suggestedYes = toPartsPerBillionFromPct(probabilityYesPct);
     distributionYes = Number.isInteger(suggestedYes) ? suggestedYes : 500_000_000;
     distributionNo = PPB_TOTAL - distributionYes;
   }
 
-  const mechanics = deriveMechanics(consensus.consensusYesPct);
+  const mechanics = deriveMechanics(probabilityYesPct);
 
-  return {
+  const payload = {
     schemaVersion: '1.0.0',
     generatedAt: new Date().toISOString(),
     event: {
@@ -181,6 +237,19 @@ function buildSportsCreatePlan(input = {}) {
     source: {
       provider: options.provider || 'auto',
       consensus,
+      probabilitySource,
+      ...(modelInput
+        ? {
+            model: {
+              probability: Number(modelInput.probability),
+              probabilityPct: Number((Number(modelInput.probability) * 100).toFixed(6)),
+              confidence: modelInput.confidence || null,
+              source: modelInput.source || null,
+              inputMode: modelInput.inputMode || null,
+              modelFile: modelInput.modelFile || null,
+            },
+          }
+        : {}),
     },
     timing: {
       kickoffAt: kickoff || null,
@@ -207,7 +276,10 @@ function buildSportsCreatePlan(input = {}) {
       distributionYes,
       distributionNo,
       feeTier: Number(options.feeTier || 3000),
-      maxImbalance: Number(options.maxImbalance || 10000),
+      maxImbalance:
+        options.maxImbalance === null || options.maxImbalance === undefined
+          ? 16_777_215
+          : Number(options.maxImbalance),
       curveFlattener: Number(options.curveFlattener || 7),
       curveOffset: Number(options.curveOffset || 30000),
       chainId: options.chainId || null,
@@ -216,7 +288,7 @@ function buildSportsCreatePlan(input = {}) {
       oracle: options.oracle || null,
       factory: options.factory || null,
       arbiter: options.arbiter || null,
-      category: Number.isInteger(options.category) ? options.category : 3,
+      category: Number.isInteger(options.category) ? options.category : DEFAULT_SPORTS_POLL_CATEGORY,
       minCloseLeadSeconds: Number(options.minCloseLeadSeconds || 5400),
     },
     mechanics,
@@ -225,8 +297,70 @@ function buildSportsCreatePlan(input = {}) {
       blockedReasons,
     },
   };
+  operation.update('planned', {
+    phase: 'sports.create.plan.complete',
+    eventId: payload.event.id,
+    canExecuteCreate: payload.safety.canExecuteCreate,
+    marketType: payload.marketTemplate.marketType,
+  });
+  return appendOperationDiagnostics(operation.attach(payload), operation);
+}
+
+function buildSportsCreateRunPayload(input = {}) {
+  const plan =
+    input.plan && typeof input.plan === 'object'
+      ? input.plan
+      : buildSportsCreatePlan(input);
+  const operation = createSyncOperationBridge(
+    {
+      ...input,
+      operationId: input.operationId || (plan && plan.operationId) || null,
+    },
+    {
+      command: 'sports.create.run',
+    },
+  );
+  const ensuredOperationId = operation.ensure({
+    phase: 'sports.create.run.start',
+    eventId: plan && plan.event ? plan.event.id || null : null,
+  });
+  if (!ensuredOperationId && operation.hasCreateHook) {
+    operation.setOperationId(
+      (plan && plan.operationId) || buildSportsFallbackOperationId(plan && plan.event ? plan.event.id : null, plan && plan.marketTemplate ? plan.marketTemplate.selection : null),
+    );
+  }
+
+  const payload = {
+    ...plan,
+    mode: input.mode || (input.execute ? 'execute' : 'dry-run'),
+    runtime:
+      input.runtime && typeof input.runtime === 'object'
+        ? input.runtime
+        : {
+            mode: 'live',
+          },
+    ...(Object.prototype.hasOwnProperty.call(input, 'deployment') ? { deployment: input.deployment } : {}),
+  };
+
+  const hasDeployment = Boolean(payload.deployment && payload.deployment.pandora);
+  if (payload.mode === 'execute' && hasDeployment) {
+    operation.complete({
+      phase: 'sports.create.run.complete',
+      eventId: payload.event && payload.event.id ? payload.event.id : null,
+      mode: payload.mode,
+      marketAddress: payload.deployment.pandora.marketAddress || null,
+    });
+  } else {
+    operation.update('planned', {
+      phase: 'sports.create.run.ready',
+      eventId: payload.event && payload.event.id ? payload.event.id : null,
+      mode: payload.mode,
+    });
+  }
+  return appendOperationDiagnostics(operation.attach(payload), operation);
 }
 
 module.exports = {
   buildSportsCreatePlan,
+  buildSportsCreateRunPayload,
 };

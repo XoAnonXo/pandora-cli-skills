@@ -16,9 +16,11 @@ function createCliOutputService(options = {}) {
   }
 
   let failureAlreadyEmitted = false;
+  const COMPACT_JSON_COMMANDS = new Set(['bootstrap', 'capabilities', 'schema']);
 
-  function emitJson(payload) {
-    console.log(JSON.stringify(payload, null, 2));
+  function emitJson(payload, options = {}) {
+    const compact = options.compact === true;
+    console.log(compact ? JSON.stringify(payload) : JSON.stringify(payload, null, 2));
   }
 
   function formatErrorValue(value) {
@@ -131,7 +133,10 @@ function createCliOutputService(options = {}) {
 
   function emitSuccess(outputMode, command, data, tableRenderer) {
     if (outputMode === 'json') {
-      emitJson({ ok: true, command, data: attachJsonMetadata(data) });
+      emitJson(
+        { ok: true, command, data: attachJsonMetadata(data) },
+        { compact: COMPACT_JSON_COMMANDS.has(command) },
+      );
       return;
     }
 

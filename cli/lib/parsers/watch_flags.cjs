@@ -41,6 +41,14 @@ function createParseWatchFlags(deps) {
       alertNetLiquidityBelow: null,
       alertNetLiquidityAbove: null,
       failOnAlert: false,
+      trackBrier: false,
+      brierSource: null,
+      brierFile: null,
+      groupBy: null,
+      marketId: null,
+      eventId: null,
+      competition: null,
+      modelId: null,
       webhookUrl: null,
       webhookTemplate: null,
       webhookSecret: null,
@@ -163,6 +171,53 @@ function createParseWatchFlags(deps) {
         continue;
       }
 
+      if (token === '--track-brier') {
+        options.trackBrier = true;
+        continue;
+      }
+
+      if (token === '--brier-source' || token === '--forecast-source') {
+        options.brierSource = String(requireFlagValue(args, i, token)).trim() || null;
+        i += 1;
+        continue;
+      }
+
+      if (token === '--brier-file' || token === '--forecast-file') {
+        options.brierFile = String(requireFlagValue(args, i, token)).trim() || null;
+        i += 1;
+        continue;
+      }
+
+      if (token === '--group-by') {
+        options.groupBy = String(requireFlagValue(args, i, '--group-by')).trim().toLowerCase();
+        i += 1;
+        continue;
+      }
+
+      if (token === '--market-id') {
+        options.marketId = String(requireFlagValue(args, i, '--market-id')).trim() || null;
+        i += 1;
+        continue;
+      }
+
+      if (token === '--event-id') {
+        options.eventId = String(requireFlagValue(args, i, '--event-id')).trim() || null;
+        i += 1;
+        continue;
+      }
+
+      if (token === '--competition') {
+        options.competition = String(requireFlagValue(args, i, '--competition')).trim() || null;
+        i += 1;
+        continue;
+      }
+
+      if (token === '--model-id') {
+        options.modelId = String(requireFlagValue(args, i, '--model-id')).trim() || null;
+        i += 1;
+        continue;
+      }
+
       const webhookStep = parseWebhookFlagIntoOptions(args, i, token, options);
       if (webhookStep !== null) {
         i += webhookStep;
@@ -199,6 +254,15 @@ function createParseWatchFlags(deps) {
       throw new CliError(
         'INVALID_ARGS',
         'Telegram webhook requires both --telegram-bot-token and --telegram-chat-id.',
+      );
+    }
+    if (options.groupBy !== null && !['source', 'market', 'competition'].includes(options.groupBy)) {
+      throw new CliError('INVALID_FLAG_VALUE', '--group-by must be one of: source, market, competition.');
+    }
+    if (options.trackBrier && !options.marketAddress && !options.marketId) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        '--track-brier requires --market-address or --market-id for forecast attribution.',
       );
     }
 

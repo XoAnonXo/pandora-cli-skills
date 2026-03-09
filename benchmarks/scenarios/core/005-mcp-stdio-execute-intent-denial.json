@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-stdio-execute-intent-denial",
+  "title": "MCP execute-intent denial",
+  "description": "Mutating tools that require execute intent are denied before any runtime side effects.",
+  "transport": "mcp-stdio",
+  "assertionId": "execute-intent-denial",
+  "parityGroup": "execute-intent-denial",
+  "parityExpectedTransports": ["mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 5000,
+  "weight": 20,
+  "dimensions": ["safety", "mcp", "mutation-guard"],
+  "request": {
+    "tool": "risk.panic",
+    "arguments": {
+      "reason": "benchmark-intent-check"
+    }
+  }
+}

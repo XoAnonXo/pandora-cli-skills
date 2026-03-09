@@ -57,6 +57,10 @@ function ensureStateShape(raw, hash) {
   };
 }
 
+function createState(hash = null, raw = {}) {
+  return ensureStateShape(raw, hash);
+}
+
 function loadState(filePath, hash) {
   const resolved = path.resolve(expandHome(filePath));
   if (!fs.existsSync(resolved)) {
@@ -134,6 +138,7 @@ module.exports = {
   strategyHash,
   defaultStateFile,
   defaultKillSwitchFile,
+  createState,
   loadState,
   saveState,
   pruneIdempotencyKeys,

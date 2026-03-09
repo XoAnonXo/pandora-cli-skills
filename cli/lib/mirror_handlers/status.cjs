@@ -1,4 +1,5 @@
-const path = require('path');
+const { buildMirrorRuntimeTelemetry } = require('../mirror_sync/state.cjs');
+const { resolveMirrorSurfaceDaemonStatus, resolveMirrorSurfaceState } = require('../mirror_surface_service.cjs');
 
 /**
  * Handle `mirror status` command execution.
@@ -14,7 +15,6 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
     maybeLoadIndexerEnv,
     maybeLoadTradeEnv,
     parseMirrorStatusFlags,
-    loadMirrorState,
     resolveTrustedDeployPair,
     resolveIndexerUrl,
     verifyMirror,
@@ -25,7 +25,7 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
 
   if (includesHelpFlag(actionArgs)) {
     const usage =
-      'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>]';
+      'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]';
     const polymarketEnv = [
       'POLYMARKET_PRIVATE_KEY',
       'POLYMARKET_FUNDER',
@@ -40,7 +40,9 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
         polymarketEnv,
         notes: {
           withLive:
-            'When credentials are available, --with-live enriches diagnostics with Polymarket balances/open orders mark-to-market estimates.',
+            'When credentials are available, --with-live enriches diagnostics with cross-venue status, hedge-gap actionability, Polymarket balances/open orders, and scenario-style P&L estimates.',
+          runtime:
+            'mirror status can run selector-first without a state file; persisted state and daemon metadata are attached when they can be resolved.',
           funder:
             'POLYMARKET_FUNDER should be the Polymarket proxy wallet (Gnosis Safe), not the EOA signer address.',
           collateral:
@@ -56,8 +58,9 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
       );
       console.log('POLYMARKET_FUNDER must be the Polymarket proxy wallet (Gnosis Safe), not the EOA signer address.');
       console.log(
-        '--with-live adds Polymarket balance/open-order diagnostics when credentials are available and degrades gracefully when unavailable.',
+        '--with-live adds cross-venue status, hedge-gap actionability, and Polymarket balance/open-order diagnostics when credentials are available and degrades gracefully when unavailable.',
       );
+      console.log('mirror status can run selector-first; persisted runtime/daemon metadata is attached when a state file or matching daemon can be resolved.');
     }
     return;
   }
@@ -74,20 +77,20 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
     options.timeoutMs = shared.timeoutMs;
   }
   const strategyHashValue = options.strategyHash || null;
-  const stateFile =
-    options.stateFile ||
-    path.join(
-      process.env.HOME || process.env.USERPROFILE || '.',
-      '.pandora',
-      'mirror',
-      `${strategyHashValue}.json`,
-    );
-  const loaded = loadMirrorState(stateFile, strategyHashValue);
+  const loaded = resolveMirrorSurfaceState({
+    stateFile: options.stateFile || null,
+    strategyHash: strategyHashValue,
+  });
   const selector = {
     pandoraMarketAddress: options.pandoraMarketAddress || loaded.state.pandoraMarketAddress || null,
     polymarketMarketId: options.polymarketMarketId || loaded.state.polymarketMarketId || null,
     polymarketSlug: options.polymarketSlug || loaded.state.polymarketSlug || null,
   };
+  const runtime = buildMirrorRuntimeTelemetry({
+    state: loaded.state,
+    stateFile: loaded.filePath,
+    daemonStatus: resolveMirrorSurfaceDaemonStatus(selector, loaded.state),
+  });
 
   let trustManifest = null;
   let trustDeploy = false;
@@ -158,6 +161,7 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
       selector,
       trustManifest,
       live,
+      runtime,
       state: loaded.state,
     },
     renderMirrorStatusTable,

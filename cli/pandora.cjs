@@ -1,47 +1,14 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { createCommandRouter } = require('./lib/command_router.cjs');
 const { createCliOutputService } = require('./lib/cli_output_service.cjs');
 const { createErrorRecoveryService } = require('./lib/error_recovery_service.cjs');
-const { createRunScanCommand } = require('./lib/scan_command_service.cjs');
-const { createRunMirrorCommand } = require('./lib/mirror_command_service.cjs');
-const { createParseTradeFlags } = require('./lib/parsers/trade_flags.cjs');
-const { createParseWatchFlags } = require('./lib/parsers/watch_flags.cjs');
-const { createParseAutopilotFlags } = require('./lib/parsers/autopilot_flags.cjs');
-const { createParseMirrorPlanFlags } = require('./lib/parsers/mirror_plan_flags.cjs');
-const { createParseMirrorHedgeCalcFlags } = require('./lib/parsers/mirror_hedge_calc_flags.cjs');
-const { createParseMirrorDeployFlags } = require('./lib/parsers/mirror_deploy_flags.cjs');
-const { createParseMirrorGoFlags } = require('./lib/parsers/mirror_go_flags.cjs');
-const {
-  createParseMirrorSyncFlags,
-  createParseMirrorSyncDaemonSelectorFlags,
-} = require('./lib/parsers/mirror_sync_flags.cjs');
-const {
-  createParseMirrorBrowseFlags,
-  createParseMirrorVerifyFlags,
-  createParseMirrorStatusFlags,
-  createParseMirrorCloseFlags,
-  createParseMirrorLpExplainFlags,
-  createParseMirrorSimulateFlags,
-} = require('./lib/parsers/mirror_remaining_flags.cjs');
-const {
-  createParsePolymarketSharedFlags,
-  createParsePolymarketApproveFlags,
-  createParsePolymarketTradeFlags,
-} = require('./lib/parsers/polymarket_flags.cjs');
-const { createParseResolveFlags } = require('./lib/parsers/resolve_flags.cjs');
-const { createParseLpFlags } = require('./lib/parsers/lp_flags.cjs');
-const { createParseSportsFlags } = require('./lib/parsers/sports_flags.cjs');
 const { createCoreCommandFlagParsers } = require('./lib/parsers/core_command_flags.cjs');
-const { createRunTradeCommand } = require('./lib/trade_command_service.cjs');
-const { createRunWatchCommand } = require('./lib/watch_command_service.cjs');
-const { createRunPolymarketCommand } = require('./lib/polymarket_command_service.cjs');
-const { createRunResolveCommand } = require('./lib/resolve_command_service.cjs');
-const { createRunLpCommand } = require('./lib/lp_command_service.cjs');
-const { createRunSportsCommand } = require('./lib/sports_command_service.cjs');
+const { resolveTradeBuyCall, resolveTradeSellCall } = require('./lib/trade_market_type_service.cjs');
 const {
   DEFAULT_INDEXER_URL: SHARED_DEFAULT_INDEXER_URL,
   DEFAULT_RPC_BY_CHAIN_ID,
@@ -61,6 +28,42 @@ function createLazyModuleLoader(modulePath) {
       cached = require(modulePath);
     }
     return cached;
+  };
+}
+
+/**
+ * Lazily creates and memoizes a factory product from a CommonJS module export.
+ * @param {string} modulePath
+ * @param {string} exportName
+ * @param {() => object} buildDeps
+ * @returns {() => any}
+ */
+function createLazyFactoryValue(modulePath, exportName, buildDeps) {
+  let cached = null;
+  return function getFactoryValue() {
+    if (!cached) {
+      const mod = require(modulePath);
+      const factory = mod && mod[exportName];
+      if (typeof factory !== 'function') {
+        throw new Error(`Expected ${exportName} to be a function from ${modulePath}.`);
+      }
+      cached = factory(buildDeps());
+    }
+    return cached;
+  };
+}
+
+/**
+ * Lazily creates a factory product and forwards calls to it.
+ * @param {string} modulePath
+ * @param {string} exportName
+ * @param {() => object} buildDeps
+ * @returns {(...args: any[]) => any}
+ */
+function createLazyFactoryRunner(modulePath, exportName, buildDeps) {
+  const getFactoryValue = createLazyFactoryValue(modulePath, exportName, buildDeps);
+  return function runLazyFactoryProduct(...args) {
+    return getFactoryValue()(...args);
   };
 }
 
@@ -84,9 +87,26 @@ const getContractErrorDecoder = createLazyModuleLoader('./lib/contract_error_dec
 const getMirrorManifestStore = createLazyModuleLoader('./lib/mirror_manifest_store.cjs');
 const getAutopilotStateStore = createLazyModuleLoader('./lib/autopilot_state_store.cjs');
 const getMirrorStateStore = createLazyModuleLoader('./lib/mirror_state_store.cjs');
+const getRiskStateStore = createLazyModuleLoader('./lib/risk_state_store.cjs');
+const getExecutionSignerService = createLazyModuleLoader('./lib/signers/execution_signer_service.cjs');
+const getOperationStateStore = createLazyModuleLoader('./lib/operation_state_store.cjs');
+const getOperationServiceModule = createLazyModuleLoader('./lib/operation_service.cjs');
+const getRiskGuardService = createLazyModuleLoader('./lib/risk_guard_service.cjs');
+const getOperationEventBusModule = createLazyModuleLoader('./lib/operation_event_bus.cjs');
+const getOperationWebhookServiceModule = createLazyModuleLoader('./lib/operation_webhook_service.cjs');
+const getForecastStore = createLazyModuleLoader('./lib/forecast_store.cjs');
+const getBrierScoreService = createLazyModuleLoader('./lib/brier_score_service.cjs');
 const getSchemaCommandService = createLazyModuleLoader('./lib/schema_command_service.cjs');
+const getCapabilitiesCommandService = createLazyModuleLoader('./lib/capabilities_command_service.cjs');
+const getBootstrapCommandService = createLazyModuleLoader('./lib/bootstrap_command_service.cjs');
+const getAgentCommandService = createLazyModuleLoader('./lib/agent_command_service.cjs');
 const getMcpServerService = createLazyModuleLoader('./lib/mcp_server_service.cjs');
 const getStreamCommandService = createLazyModuleLoader('./lib/stream_command_service.cjs');
+const getSimulateCommandService = createLazyModuleLoader('./lib/simulate_command_service.cjs');
+const getOperationsCommandService = createLazyModuleLoader('./lib/operations_command_service.cjs');
+const getOperationsFlagsModule = createLazyModuleLoader('./lib/parsers/operations_flags.cjs');
+const getProfileFlagsModule = createLazyModuleLoader('./lib/parsers/profile_flags.cjs');
+const getRecipeFlagsModule = createLazyModuleLoader('./lib/parsers/recipe_flags.cjs');
 const getForkRuntimeService = createLazyModuleLoader('./lib/fork_runtime_service.cjs');
 const getDoctorService = createLazyModuleLoader('./lib/doctor_service.cjs');
 const getSportsProviderRegistry = createLazyModuleLoader('./lib/sports_provider_registry.cjs');
@@ -96,6 +116,11 @@ const getSportsSyncService = createLazyModuleLoader('./lib/sports_sync_service.c
 const getSportsResolvePlanService = createLazyModuleLoader('./lib/sports_resolve_plan_service.cjs');
 const getSportsCreationService = createLazyModuleLoader('./lib/sports_creation_service.cjs');
 const getPandoraDeployService = createLazyModuleLoader('./lib/pandora_deploy_service.cjs');
+const getVenueConnectorFactoryService = createLazyModuleLoader('./lib/venue_connector_factory.cjs');
+const getOddsHistoryService = createLazyModuleLoader('./lib/odds_history_service.cjs');
+const getIndexerClientService = createLazyModuleLoader('./lib/indexer_client.cjs');
+const getPolymarketAdapter = createLazyModuleLoader('./lib/polymarket_adapter.cjs');
+const getSimilarityService = createLazyModuleLoader('./lib/similarity_service.cjs');
 
 /** Proxy to history service fetch. */
 function fetchHistory(...args) {
@@ -105,6 +130,21 @@ function fetchHistory(...args) {
 /** Proxy to export payload builder. */
 function buildExportPayload(...args) {
   return getExportService().buildExportPayload(...args);
+}
+
+/** Proxy to shared indexer client factory. */
+function createIndexerClient(...args) {
+  return getIndexerClientService().createIndexerClient(...args);
+}
+
+/** Proxy to Polymarket market discovery adapter. */
+function fetchPolymarketMarkets(...args) {
+  return getPolymarketAdapter().fetchPolymarketMarkets(...args);
+}
+
+/** Proxy to shared similarity scoring. */
+function questionSimilarityBreakdown(...args) {
+  return getSimilarityService().questionSimilarityBreakdown(...args);
 }
 
 /** Proxy to arbitrage scanner. */
@@ -209,9 +249,9 @@ function mirrorDaemonStatus(...args) {
   return getMirrorDaemonService().daemonStatus(...args);
 }
 
-/** Proxy to mirror close plan builder. */
-function buildMirrorClosePlan(...args) {
-  return getMirrorCloseService().buildMirrorClosePlan(...args);
+/** Proxy to mirror close workflow service. */
+function runMirrorClose(...args) {
+  return getMirrorCloseService().runMirrorClose(...args);
 }
 
 /** Proxy to Polymarket position summary fetcher. */
@@ -264,6 +304,11 @@ function runLpPositions(...args) {
   return getMarketAdminService().runLpPositions(...args);
 }
 
+/** Proxy to market claim helper. */
+function runClaim(...args) {
+  return getMarketAdminService().runClaim(...args);
+}
+
 /** Proxy to contract error decoder. */
 function decodeContractError(...args) {
   return getContractErrorDecoder().decodeContractError(...args);
@@ -314,9 +359,352 @@ function loadMirrorState(...args) {
   return getMirrorStateStore().loadState(...args);
 }
 
+let cachedRiskGuard = null;
+let cachedOperationService = null;
+let cachedOperationEventBus = null;
+let cachedOperationWebhookService = null;
+
+function getRiskGuard() {
+  if (!cachedRiskGuard) {
+    const riskStateStore = getRiskStateStore();
+    cachedRiskGuard = getRiskGuardService().createRiskGuardService({
+      CliError,
+      defaultRiskFile: riskStateStore.defaultRiskFile,
+      loadRiskState: riskStateStore.loadRiskState,
+      saveRiskState: riskStateStore.saveRiskState,
+      touchPanicStopFiles: riskStateStore.touchPanicStopFiles,
+    });
+  }
+  return cachedRiskGuard;
+}
+
+function getRiskSnapshot(...args) {
+  return getRiskGuard().getRiskSnapshot(...args);
+}
+
+function assertLiveWriteAllowed(...args) {
+  return getRiskGuard().assertLiveWriteAllowed(...args);
+}
+
+function setRiskPanic(...args) {
+  return getRiskGuard().setPanic(...args);
+}
+
+function clearRiskPanic(...args) {
+  return getRiskGuard().clearPanic(...args);
+}
+
+function getOperationEventBus() {
+  if (!cachedOperationEventBus) {
+    cachedOperationEventBus = getOperationEventBusModule().createOperationEventBus();
+  }
+  return cachedOperationEventBus;
+}
+
+function getOperationWebhookService() {
+  if (!cachedOperationWebhookService) {
+    cachedOperationWebhookService = getOperationWebhookServiceModule().createOperationWebhookService({
+      hasWebhookTargets,
+      sendWebhookNotifications,
+    });
+  }
+  return cachedOperationWebhookService;
+}
+
+function mapOperationStatusToPublic(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'running') return 'executing';
+  if (normalized === 'succeeded') return 'completed';
+  if (normalized === 'cancelled') return 'canceled';
+  return normalized || 'planned';
+}
+
+function mapOperationStatusToStore(status, mode) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'validated') return 'validated';
+  if (normalized === 'queued' || normalized === 'submitted') return 'queued';
+  if (normalized === 'running' || normalized === 'executing' || normalized === 'active') return 'running';
+  if (normalized === 'completed' || normalized === 'succeeded' || normalized === 'success' || normalized === 'no-op') {
+    return 'succeeded';
+  }
+  if (normalized === 'failed' || normalized === 'partial' || normalized === 'blocked' || normalized === 'unsafe') {
+    return 'failed';
+  }
+  if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
+  if (normalized === 'closed') return 'closed';
+  if (String(mode || '').trim().toLowerCase() === 'execute') return 'queued';
+  return 'planned';
+}
+
+function choosePersistedOperationStatus(existingStatus, nextStatus) {
+  const rank = {
+    planned: 1,
+    validated: 2,
+    queued: 3,
+    running: 4,
+    failed: 5,
+    succeeded: 5,
+    cancelled: 5,
+    closed: 6,
+  };
+  const current = String(existingStatus || '').trim().toLowerCase();
+  const next = String(nextStatus || '').trim().toLowerCase();
+  if (!current) return next || 'planned';
+  if (!next) return current;
+  if (!rank[current] || !rank[next]) return next;
+  return rank[current] >= rank[next] ? current : next;
+}
+
+function deriveOperationTool(command) {
+  const normalized = typeof command === 'string' ? command.trim() : '';
+  if (!normalized) return null;
+  return normalized.split('.')[0] || normalized;
+}
+
+function deriveOperationAction(command) {
+  const normalized = typeof command === 'string' ? command.trim() : '';
+  if (!normalized || !normalized.includes('.')) return null;
+  return normalized.split('.').slice(1).join('.') || null;
+}
+
+function isPublicOperationCancelable(status) {
+  return !['completed', 'failed', 'canceled', 'closed'].includes(mapOperationStatusToPublic(status));
+}
+
+function isPublicOperationClosable(status) {
+  return ['completed', 'failed', 'canceled'].includes(mapOperationStatusToPublic(status));
+}
+
+async function normalizeOperationPayloadFromStore(store, record, options = {}) {
+  const operation = record && typeof record === 'object' ? record : null;
+  if (!operation) return null;
+
+  let checkpoints = [];
+  if (options.includeCheckpoints !== false && store && typeof store.readCheckpoints === 'function') {
+    const checkpointResult = await store.readCheckpoints(operation.operationId);
+    checkpoints = Array.isArray(checkpointResult && checkpointResult.items) ? checkpointResult.items : [];
+  }
+
+  return {
+    operationId: operation.operationId,
+    operationHash: operation.operationHash || null,
+    tool: deriveOperationTool(operation.command),
+    action: deriveOperationAction(operation.command),
+    command: operation.command || null,
+    summary: operation.summary || operation.description || null,
+    status: mapOperationStatusToPublic(operation.status),
+    createdAt: operation.createdAt,
+    updatedAt: operation.updatedAt,
+    policyPack: operation.metadata && typeof operation.metadata.policyPack === 'string' ? operation.metadata.policyPack : null,
+    profile: operation.metadata && typeof operation.metadata.profile === 'string' ? operation.metadata.profile : null,
+    environment: operation.metadata && typeof operation.metadata.environment === 'string' ? operation.metadata.environment : null,
+    mode: operation.metadata && typeof operation.metadata.mode === 'string' ? operation.metadata.mode : null,
+    scope: operation.scope || null,
+    cancelable: isPublicOperationCancelable(operation.status),
+    closable: isPublicOperationClosable(operation.status),
+    input: operation.request && typeof operation.request === 'object' ? operation.request : {},
+    normalizedInput: operation.request && typeof operation.request === 'object' ? operation.request : {},
+    checkpoints: checkpoints.map((checkpoint) => ({
+      ...checkpoint,
+      status: checkpoint && checkpoint.status ? mapOperationStatusToPublic(checkpoint.status) : checkpoint.status || null,
+    })),
+    metadata: operation.metadata && typeof operation.metadata === 'object' ? operation.metadata : {},
+    result: operation.result === undefined ? null : operation.result,
+    recovery: operation.recovery === undefined ? null : operation.recovery,
+    error: operation.error === undefined ? null : operation.error,
+    validatedAt: operation.validatedAt || null,
+    queuedAt: operation.queuedAt || null,
+    startedAt: operation.startedAt || null,
+    completedAt: operation.completedAt || operation.succeededAt || null,
+    failedAt: operation.failedAt || null,
+    canceledAt: operation.cancelledAt || null,
+    closedAt: operation.closedAt || null,
+  };
+}
+
+function buildOperationSummaryFromPayload(payload, operationContext) {
+  if (payload && typeof payload.summary === 'string' && payload.summary.trim()) {
+    return payload.summary.trim();
+  }
+  if (payload && payload.summary && typeof payload.summary === 'object') {
+    if (typeof payload.summary.message === 'string' && payload.summary.message.trim()) {
+      return payload.summary.message.trim();
+    }
+    if (typeof payload.summary.status === 'string' && payload.summary.status.trim()) {
+      return payload.summary.status.trim();
+    }
+  }
+  if (payload && typeof payload.message === 'string' && payload.message.trim()) {
+    return payload.message.trim();
+  }
+  if (operationContext && typeof operationContext.command === 'string' && operationContext.command.trim()) {
+    return operationContext.command.trim();
+  }
+  return null;
+}
+
+function buildOperationResultSnapshot(payload, operationContext) {
+  return {
+    mode: payload && payload.mode ? payload.mode : (operationContext && operationContext.mode) || null,
+    status: payload && payload.status ? payload.status : (operationContext && operationContext.status) || null,
+    summary: payload && payload.summary ? payload.summary : null,
+    target: operationContext && operationContext.target ? operationContext.target : null,
+  };
+}
+
+function getOperationWebhookTargetsFromEnv() {
+  const targets = {};
+  if (process.env.PANDORA_OPERATION_WEBHOOK_URL) {
+    targets.webhookUrl = process.env.PANDORA_OPERATION_WEBHOOK_URL;
+  }
+  if (process.env.PANDORA_OPERATION_DISCORD_WEBHOOK_URL) {
+    targets.discordWebhookUrl = process.env.PANDORA_OPERATION_DISCORD_WEBHOOK_URL;
+  }
+  if (process.env.PANDORA_OPERATION_TELEGRAM_BOT_TOKEN && process.env.PANDORA_OPERATION_TELEGRAM_CHAT_ID) {
+    targets.telegramBotToken = process.env.PANDORA_OPERATION_TELEGRAM_BOT_TOKEN;
+    targets.telegramChatId = process.env.PANDORA_OPERATION_TELEGRAM_CHAT_ID;
+  }
+  return targets;
+}
+
+async function decorateOperationPayload(payload, operationContext) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !operationContext || typeof operationContext !== 'object') {
+    return payload;
+  }
+
+  const operationStateStore = getOperationStateStore().createOperationStateStore();
+  const candidateOperationId =
+    (typeof payload.operationId === 'string' && payload.operationId.trim() ? payload.operationId.trim() : null)
+    || (typeof operationContext.operationId === 'string' && operationContext.operationId.trim()
+      ? operationContext.operationId.trim()
+      : null);
+  if (!candidateOperationId) {
+    return payload;
+  }
+
+  const existingLookup = await operationStateStore.get(candidateOperationId);
+  const existingRecord = existingLookup && existingLookup.found ? existingLookup.operation : null;
+  const storeStatus = choosePersistedOperationStatus(
+    existingRecord && existingRecord.status,
+    mapOperationStatusToStore(
+      (payload && payload.status) || operationContext.status,
+      (payload && payload.mode) || operationContext.mode,
+    ),
+  );
+
+  const upserted = await operationStateStore.upsert({
+    operationId: candidateOperationId,
+    command: operationContext.command || null,
+    summary: buildOperationSummaryFromPayload(payload, operationContext),
+    status: storeStatus,
+    scope: operationContext.protocol || null,
+    target: operationContext.target || null,
+    request: operationContext.target || {},
+    result: ['succeeded', 'closed'].includes(storeStatus) ? buildOperationResultSnapshot(payload, operationContext) : null,
+    error: storeStatus === 'failed'
+      ? {
+          code: payload && payload.error && payload.error.code ? payload.error.code : null,
+          message: payload && payload.error && payload.error.message
+            ? payload.error.message
+            : (payload && typeof payload.message === 'string' ? payload.message : null),
+        }
+      : null,
+    metadata: {
+      ...((existingRecord && existingRecord.metadata) || {}),
+      protocol: operationContext.protocol || null,
+      mode: (payload && payload.mode) || operationContext.mode || null,
+      runtimeHandle: operationContext.runtimeHandle || null,
+      decoratedBy: 'pandora.cli',
+    },
+  });
+
+  const savedOperation = upserted.operation;
+  const publicStatus = mapOperationStatusToPublic(savedOperation.status);
+  const event = await getOperationEventBus().emitLifecycleEvent({
+    operationId: savedOperation.operationId,
+    operationKind: operationContext.command || null,
+    phase: publicStatus,
+    source: 'cli',
+    summary: buildOperationSummaryFromPayload(payload, operationContext),
+    data: {
+      mode: (payload && payload.mode) || operationContext.mode || null,
+      scope: operationContext.protocol || null,
+    },
+  });
+
+  const webhookTargets = getOperationWebhookTargetsFromEnv();
+  if (getOperationWebhookService().hasTargets(webhookTargets)) {
+    await getOperationWebhookService().notifyLifecycleEvent(webhookTargets, event.event, {
+      metadata: {
+        command: operationContext.command || null,
+      },
+    });
+  }
+
+  return {
+    ...payload,
+    operationId: savedOperation.operationId,
+  };
+}
+
+function getOperationService() {
+  if (!cachedOperationService) {
+    const operationStateStore = getOperationStateStore().createOperationStateStore();
+    cachedOperationService = getOperationServiceModule().createOperationService({
+      operationStateStore,
+      operationEventBus: getOperationEventBus(),
+      operationWebhookService: getOperationWebhookService(),
+      getWebhookTargets: getOperationWebhookTargetsFromEnv,
+    });
+  }
+  return cachedOperationService;
+}
+
+/** Proxy to forecast-store append helper. */
+function appendForecastRecord(...args) {
+  return getForecastStore().appendForecastRecord(...args);
+}
+
+/** Proxy to forecast-store default file resolver. */
+function defaultForecastFile(...args) {
+  return getForecastStore().defaultForecastFile(...args);
+}
+
+/** Proxy to forecast-store reader. */
+function readForecastRecords(...args) {
+  return getForecastStore().readForecastRecords(...args);
+}
+
+/** Proxy to Brier scoring report service. */
+function computeBrierReport(...args) {
+  return getBrierScoreService().computeBrierReport(...args);
+}
+
 /** Schema command adapter with CLI output wiring. */
 function runSchemaCommand(...args) {
   return getSchemaCommandService().createRunSchemaCommand({ emitSuccess, CliError }).runSchemaCommand(...args);
+}
+
+/** Capabilities command adapter with CLI output wiring. */
+function runCapabilitiesCommand(...args) {
+  return getCapabilitiesCommandService()
+    .createRunCapabilitiesCommand({ emitSuccess, CliError })
+    .runCapabilitiesCommand(...args);
+}
+
+/** Bootstrap command adapter with CLI output wiring. */
+function runBootstrapCommand(...args) {
+  return getBootstrapCommandService()
+    .createRunBootstrapCommand({ emitSuccess, CliError })(...args);
+}
+
+function runAgentCommand(...args) {
+  return getAgentCommandService().createRunAgentCommand({
+    CliError,
+    includesHelpFlag,
+    emitSuccess,
+    commandHelpPayload,
+  }).runAgentCommand(...args);
 }
 
 function resolveForkRuntime(...args) {
@@ -345,6 +733,18 @@ function runStreamCommand(...args) {
     isSecureHttpUrlOrLocal,
     sleepMs,
   }).runStreamCommand(...args);
+}
+
+/** Simulation command adapter with Monte Carlo + particle-filter handlers. */
+function runSimulateCommand(...args) {
+  return getSimulateCommandService().createRunSimulateCommand({
+    CliError,
+    includesHelpFlag,
+    emitSuccess,
+    commandHelpPayload,
+    parseSimulateMcFlags: parseSimulateMcFlagsFromModule,
+    parseSimulateParticleFilterFlags: parseSimulateParticleFilterFlagsFromModule,
+  }).runSimulateCommand(...args);
 }
 
 /** Sports provider registry factory proxy. */
@@ -387,6 +787,16 @@ function deployPandoraAmmMarket(...args) {
   return getPandoraDeployService().deployPandoraAmmMarket(...args);
 }
 
+/** Venue connector factory proxy. */
+function createVenueConnectorFactory(...args) {
+  return getVenueConnectorFactoryService().createVenueConnectorFactory(...args);
+}
+
+/** Odds history service proxy. */
+function createOddsHistoryService(...args) {
+  return getOddsHistoryService().createOddsHistoryService(...args);
+}
+
 let doctorServiceInstance = null;
 
 /**
@@ -413,7 +823,13 @@ function getDoctorServiceInstance() {
 }
 
 const ROOT = path.resolve(__dirname, '..');
-const DEFAULT_ENV_FILE = path.join(ROOT, 'scripts', '.env');
+const DEFAULT_ENV_FILE_PRIMARY = path.join(ROOT, 'scripts', '.env');
+const DEFAULT_ENV_FILE_FALLBACK = path.join(os.homedir(), '.pandora-cli.env');
+const DEFAULT_ENV_FILE = fs.existsSync(DEFAULT_ENV_FILE_FALLBACK)
+  ? DEFAULT_ENV_FILE_FALLBACK
+  : fs.existsSync(DEFAULT_ENV_FILE_PRIMARY)
+    ? DEFAULT_ENV_FILE_PRIMARY
+    : DEFAULT_ENV_FILE_FALLBACK;
 const DEFAULT_ENV_EXAMPLE = path.join(ROOT, 'scripts', '.env.example');
 const DEFAULT_INDEXER_URL = SHARED_DEFAULT_INDEXER_URL;
 let PACKAGE_VERSION = '0.0.0';
@@ -455,6 +871,10 @@ const MARKETS_LIST_FIELDS = [
   'marketCloseTimestamp',
   'totalVolume',
   'currentTvl',
+  'yesChance',
+  'reserveYes',
+  'reserveNo',
+  'feeTier',
   'createdAt',
 ];
 const POLLS_LIST_FIELDS = [
@@ -498,21 +918,24 @@ const ERC20_ABI = [
     ],
     outputs: [{ type: 'uint256' }],
   },
-];
-const PARI_MUTUEL_ABI = [
   {
-    name: 'buy',
     type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'isYes', type: 'bool' },
-      { name: 'collateralAmount', type: 'uint256' },
-      { name: 'minSharesOut', type: 'uint256' },
-    ],
-    outputs: [{ name: 'sharesOut', type: 'uint256' }],
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'owner', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
   },
 ];
-
+const OUTCOME_TOKEN_REF_ABI = [
+  { type: 'function', name: 'yesToken', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'noToken', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'yesTokenAddress', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'noTokenAddress', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+];
+const AMM_SELL_QUOTE_ABI = [
+  { type: 'function', name: 'calcSellYes', stateMutability: 'view', inputs: [{ type: 'uint112' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'calcSellNo', stateMutability: 'view', inputs: [{ type: 'uint112' }], outputs: [{ type: 'uint256' }] },
+];
 const MARKET_DIRECT_ODDS_FIELDS = [
   { yesField: 'yesPct', noField: 'noPct', source: 'direct:yesPct/noPct' },
   { yesField: 'yesOdds', noField: 'noOdds', source: 'direct:yesOdds/noOdds' },
@@ -681,32 +1104,49 @@ Usage:
   pandora [--output table|json] init-env [--force] [--dotenv-path <path>] [--example <path>]
   pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
   pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
-  pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]
+  pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
+  pandora [--output table|json] markets scan [scan options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
   pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
   pandora [--output table|json] polls get --id <id>
   pandora [--output table|json] events list [--type all|liquidity|oracle-fee|claim] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-direction asc|desc] [--chain-id <id>] [--wallet <address>] [--market-address <address>] [--poll-address <address>] [--tx-hash <hash>]
   pandora [--output table|json] events get --id <id> [--type all|liquidity|oracle-fee|claim]
   pandora [--output table|json] positions list [--wallet <address>] [--market-address <address>] [--chain-id <id>] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--where-json <json>]
-  pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
-  pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]
-  pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand]
-  pandora [--output table|json] sports books list|events list|events live|odds snapshot|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan ...
-  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
-  pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
+  pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
+  pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
+  pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand]
+  pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan ...
+  pandora [--output table|json] odds record|history ...
+  pandora [--output table|json] lifecycle start|status|resolve ...
+  pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
+  pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
-  pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
+  pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
   pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...
   pandora [--output table|json] polymarket check|approve|preflight|trade ...
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
   pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
+  pandora [--output table|json] agent market autocomplete --question <text> [--market-type amm|parimutuel]
+  pandora [--output table|json] agent market validate --question <text> --rules <text> --target-timestamp <unix-seconds> [--sources <url...>]
   pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
-  pandora [--output table|json] resolve --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]
-  pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] resolve [--dotenv-path <path>] [--skip-dotenv] --poll-address <address> --answer yes|no|invalid --reason <text> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]
+  pandora [--output table|json] claim --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] policy list|get|lint [flags]
+  pandora [--output table|json] profile list|get|validate [flags]
+  pandora [--output table|json] recipe list|get|validate|run [flags]
+  pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
+  pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]
   pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
+  pandora [--output table|json] simulate mc|particle-filter|agents ...
+  pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...
+  pandora [--output json] bootstrap
+  pandora [--output json] capabilities
   pandora [--output json] schema
   pandora mcp
   pandora launch [--dotenv-path <path>] [--skip-dotenv] [script args...]
@@ -723,13 +1163,19 @@ Examples:
   pandora portfolio --wallet 0x1234... --chain-id 1 --with-lp
   pandora watch --market-address 0xabc... --side yes --amount-usdc 10 --iterations 5 --interval-ms 2000
   pandora scan --active --limit 25 --chain-id 1
-  pandora quote --market-address 0xabc... --side yes --amount-usdc 50
+  pandora quote --market-address 0xabc... --side yes --amounts 25,50,75,100
   pandora trade --dry-run --market-address 0xabc... --side no --amount-usdc 25 --max-amount-usdc 50 --min-probability-pct 20
+  pandora sell --dry-run --market-address 0xabc... --side no --shares 40
   pandora history --wallet 0x1234... --chain-id 1 --limit 50
   pandora export --wallet 0x1234... --format csv --year 2026 --out ./trades-2026.csv
   pandora arbitrage --chain-id 1 --limit 25 --venues pandora,polymarket --cross-venue-only --with-rules --include-similarity
+  pandora lifecycle start --config ./configs/lifecycle.json
+  pandora arb scan --source polymarket --output json --iterations 1 --min-spread-pct 2 --min-tvl 50
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
+  pandora recipe list
+  pandora recipe run --id mirror.sync.paper-safe --set market-address=0xabc...
   pandora mirror plan --source polymarket --polymarket-market-id 0xabc... --with-rules --include-similarity
+  pandora claim --all --dry-run
   pandora mirror browse --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10
   pandora mirror verify --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --include-similarity
   pandora mirror lp-explain --liquidity-usdc 10000 --source-yes-pct 58
@@ -745,33 +1191,52 @@ Examples:
   pandora webhook test --webhook-url https://example.com/hook --webhook-template '{\"text\":\"{{message}}\"}'
   pandora leaderboard --metric profit --limit 20
   pandora analyze --market-address 0xabc... --provider mock
+  pandora --output json agent market autocomplete --question "Will BTC close above $100k by Friday?" --market-type amm
+  pandora --output json agent market validate --question "Will BTC close above $100k by Friday?" --rules "YES: ... NO: ... EDGE: ..." --target-timestamp 1798675200 --sources https://example.com/a https://example.com/b
   pandora suggest --wallet 0x1234... --risk medium --budget 50 --count 3
+  pandora risk show
+  pandora risk panic --reason "Manual incident stop"
+  pandora risk panic --clear
+  pandora operations list --status planned,executing --limit 20
+  pandora operations receipt --id op_123
+  pandora operations verify-receipt --id op_123
   pandora stream prices --indexer-url https://pandoraindexer.up.railway.app/ --interval-ms 1000
+  pandora --output json simulate mc --trials 4000 --horizon 48 --start-yes-pct 57 --seed 7 --antithetic
+  pandora --output json simulate particle-filter --observations-json '[{\"yesPct\":56},{\"yesPct\":58},{\"yesPct\":57}]' --particles 750 --seed 11
+  pandora --output json capabilities
+  pandora --output json bootstrap
   pandora --output json schema
   pandora mcp
   pandora launch --dry-run --market-type amm --question "Will BTC close above $100k by end of 2026?" --rules "Resolves YES if ... Resolves NO if ... cancelled/postponed/abandoned/unresolved => NO." --sources "https://coinmarketcap.com/currencies/bitcoin/" "https://www.coingecko.com/en/coins/bitcoin" --target-timestamp 1798675200 --liquidity 100 --fee-tier 3000
 
 Notes:
   - launch/clone-bet forward unknown flags directly to underlying scripts.
-  - scripts/.env is loaded automatically for launch/clone-bet unless --skip-dotenv is used.
-  - --output json is supported for all commands except launch/clone-bet.
+  - Env auto-load default: ~/.pandora-cli.env when present; otherwise scripts/.env. Use --skip-dotenv to disable.
+  - bootstrap is the preferred first call for cold agent clients; it returns canonical tools only by default and points to the next safe discovery calls.
+  - Most commands support table and json output. bootstrap/capabilities/schema are json-only, mcp is table-only, and launch/clone-bet forward script output.
+  - scan is the canonical enriched discovery command; markets scan remains a backward-compatible alias and markets list is the raw indexer browse surface.
   - Indexer URL resolution order: --indexer-url, PANDORA_INDEXER_URL, INDEXER_URL, default public indexer.
   - mirror status --with-live can enrich output with Polymarket position data when POLYMARKET_* credentials are set; missing endpoints/creds return diagnostics instead of hard failures.
-  - watch is non-transactional monitoring; use quote/trade for execution workflows.
+  - watch is non-transactional monitoring; use quote/trade/sell for execution workflows.
   - stream always emits NDJSON to stdout (one JSON object per line).
+  - arb scan is the canonical arbitrage command; arbitrage remains a bounded backward-compatible one-shot wrapper.
+  - arb scan supports streaming NDJSON and bounded JSON (--output json --iterations 1) for agent workflows.
+  - agent market autocomplete/validate expose prompt templates plus validation tickets for agent-controlled market creation workflows.
 `);
 }
 
 function printQuoteHelpTable() {
   console.log(`
-pandora quote - Estimate a YES/NO trade
+pandora quote - Estimate a YES/NO buy or sell
 
 Usage:
-  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
 
 Notes:
+  - Buy mode uses USDC notional input; sell mode uses outcome-token share input.
   - If --yes-pct is omitted, quote attempts to derive odds from latest liquidity events on the indexer.
-  - Output includes odds source and estimated shares/payout.
+  - Sell mode prefers on-chain calcSell* views when RPC is available and falls back to reserve inversion.
+  - --amounts emits a sizing curve in the active mode units.
 `);
 }
 
@@ -780,14 +1245,32 @@ function printTradeHelpTable() {
 pandora trade - Execute a buy on a market
 
 Usage:
+  pandora [--output table|json] trade quote --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
 
 Notes:
   - --dry-run prints the execution plan and quote without sending transactions.
-  - --execute performs allowance check, optional USDC approve, then calls buy(bool,uint256,uint256).
+  - --execute performs allowance check, optional USDC approve, then calls market buy() using the detected market ABI.
   - --max-amount-usdc and probability guard flags fail fast before execution.
   - --execute requires a quote by default unless --min-shares-out-raw or --allow-unquoted-execute is set.
-  - Current execute path targets PariMutuel-compatible markets.
+  - Supports both PariMutuel and AMM market buy signatures.
+  - trade quote is read-only and returns full quote curve data for buy or sell analysis.
+  - Use pandora sell for AMM sell execution.
+`);
+}
+
+function printSellHelpTable() {
+  console.log(`
+pandora sell - Execute an AMM sell on a market
+
+Usage:
+  pandora [--output table|json] sell quote --market-address <address> --side yes|no --shares <amount>|--amount <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]
+
+Notes:
+  - Sell is AMM-only. PariMutuel markets do not expose a sell() interface.
+  - --execute performs outcome-token allowance check, optional token approve, then calls market sell().
+  - Sell quote prefers on-chain calcSell* views when RPC is available and falls back to reserve inversion.
 `);
 }
 
@@ -796,7 +1279,7 @@ function printWatchHelpTable() {
 pandora watch - Poll portfolio/market snapshots
 
 Usage:
-  pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]
+  pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
 
 Notes:
   - At least one target is required: --wallet and/or --market-address.
@@ -813,6 +1296,7 @@ pandora markets - Query market entities
 
 Usage:
   pandora [--output table|json] markets list [options]
+  pandora [--output table|json] markets scan [options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
 `);
 }
@@ -822,7 +1306,7 @@ function printMarketsListHelpTable() {
 pandora markets list - List markets
 
 Usage:
-  pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]
+  pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
 
 Notes:
   - Lifecycle filters are client-side post-filters on fetched results.
@@ -910,27 +1394,37 @@ Usage:
 }
 
 function commandHelpPayload(usage) {
-  return { usage };
+  const notes = Array.isArray(arguments[1]) ? arguments[1] : null;
+  return notes && notes.length ? { usage, notes } : { usage };
 }
 
-function quoteHelpJsonPayload() {
+function quoteHelpJsonPayload(defaultMode = 'buy') {
   return {
     usage:
-      'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --amount-usdc <amount> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
+      defaultMode === 'sell'
+        ? 'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --mode sell --shares <amount>|--amount <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]'
+        : 'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
   };
 }
 
 function tradeHelpJsonPayload() {
   return {
     usage:
-      'pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
+      'pandora [--output table|json] trade quote --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>] | pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
+  };
+}
+
+function sellHelpJsonPayload() {
+  return {
+    usage:
+      'pandora [--output table|json] sell quote --market-address <address> --side yes|no --shares <amount>|--amount <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>] | pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]',
   };
 }
 
 function watchHelpJsonPayload() {
   return {
     usage:
-      'pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert]',
+      'pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]',
   };
 }
 
@@ -946,7 +1440,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] init-env ...',
       'pandora [--output table|json] doctor ...',
       'pandora [--output table|json] setup ...',
-      'pandora [--output table|json] markets list|get ...',
+      'pandora [--output table|json] markets list|get|scan ...',
       'pandora [--output table|json] polls list|get ...',
       'pandora [--output table|json] events list|get ...',
       'pandora [--output table|json] positions list ...',
@@ -954,8 +1448,12 @@ function helpJsonPayload() {
       'pandora [--output table|json] watch ...',
       'pandora [--output table|json] scan ...',
       'pandora [--output table|json] sports ...',
+      'pandora [--output table|json] odds record|history ...',
+      'pandora [--output table|json] lifecycle start|status|resolve ...',
+      'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json ...',
       'pandora [--output table|json] quote ...',
-      'pandora [--output table|json] trade ...',
+      'pandora [--output table|json] trade quote|...',
+      'pandora [--output table|json] sell quote|...',
       'pandora [--output table|json] history ...',
       'pandora [--output table|json] export ...',
       'pandora [--output table|json] arbitrage ...',
@@ -965,10 +1463,18 @@ function helpJsonPayload() {
       'pandora [--output table|json] webhook test ...',
       'pandora [--output table|json] leaderboard ...',
       'pandora [--output table|json] analyze ...',
+      'pandora [--output table|json] agent market autocomplete|validate ...',
       'pandora [--output table|json] suggest ...',
       'pandora [--output table|json] resolve ...',
+      'pandora [--output table|json] claim ...',
       'pandora [--output table|json] lp add|remove|positions ...',
+      'pandora [--output table|json] risk show|panic ...',
+      'pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close ...',
       'pandora stream prices|events ...',
+      'pandora [--output table|json] simulate mc|particle-filter|agents ...',
+      'pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...',
+      'pandora [--output json] bootstrap',
+      'pandora [--output json] capabilities',
       'pandora [--output json] schema',
       'pandora mcp',
       'pandora launch ...',
@@ -977,8 +1483,20 @@ function helpJsonPayload() {
     globalFlags: {
       '--output': ['table', 'json'],
     },
-  };
-}
+      modeRouting: {
+        jsonOnly: ['bootstrap', 'capabilities', 'schema'],
+        stdioOnly: ['mcp'],
+        scriptNative: ['launch', 'clone-bet'],
+      },
+      notes: [
+        '`bootstrap` is the preferred first call for cold agent clients; it returns canonical tools only by default and points to the next safe discovery calls.',
+        '`scan` is the canonical enriched market discovery flow; `markets scan` remains a backward-compatible alias and `markets list` is the raw indexer browse view.',
+        '`arb scan` is the canonical arbitrage flow; `arbitrage` remains a backward-compatible bounded one-shot wrapper.',
+        '`agent market autocomplete` and `agent market validate` expose reusable AI prompt templates and validation tickets for agent-controlled market creation workflows.',
+        'Most commands support table and json output. `bootstrap`/`capabilities`/`schema` are json-only, `mcp` is stdio server mode, and `launch`/`clone-bet` forward script-native output.',
+      ],
+    };
+  }
 
 function normalizeOutputMode(raw) {
   if (!raw) return 'table';
@@ -989,14 +1507,81 @@ function normalizeOutputMode(raw) {
   return mode;
 }
 
+function findTopLevelCommandIndex(argv) {
+  const tokens = Array.isArray(argv) ? argv : [];
+  let index = 0;
+  if (tokens[0] === 'pandora') index = 1;
+
+  while (index < tokens.length) {
+    const token = String(tokens[index] || '').trim();
+    if (token === '--output' || token === '-o') {
+      index += 2;
+      continue;
+    }
+    if (token.startsWith('--output=')) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+
+  return index < tokens.length ? index : -1;
+}
+
+function findOddsSubcommandActionIndex(argv) {
+  const tokens = Array.isArray(argv) ? argv : [];
+  const commandIndex = findTopLevelCommandIndex(tokens);
+  if (commandIndex < 0) return -1;
+  const command = String(tokens[commandIndex] || '').trim().toLowerCase();
+  if (command !== 'odds') return -1;
+  for (let i = commandIndex + 1; i < tokens.length; i += 1) {
+    const token = String(tokens[i] || '').trim().toLowerCase();
+    if (token === 'history' || token === 'record') return i;
+  }
+  return -1;
+}
+
+function isOddsHistoryLocalOutputFlag(argv, index) {
+  const actionIndex = findOddsSubcommandActionIndex(argv);
+  if (actionIndex < 0 || index <= actionIndex) return false;
+  const action = String(argv[actionIndex] || '').trim().toLowerCase();
+  return action === 'history';
+}
+
+function findArbSubcommandActionIndex(argv) {
+  const tokens = Array.isArray(argv) ? argv : [];
+  const commandIndex = findTopLevelCommandIndex(tokens);
+  if (commandIndex < 0) return -1;
+  const command = String(tokens[commandIndex] || '').trim().toLowerCase();
+  if (command !== 'arb') return -1;
+  for (let i = commandIndex + 1; i < tokens.length; i += 1) {
+    const token = String(tokens[i] || '').trim().toLowerCase();
+    if (token === 'scan') return i;
+  }
+  return -1;
+}
+
+function isArbScanLocalOutputFlag(argv, index) {
+  const actionIndex = findArbSubcommandActionIndex(argv);
+  if (actionIndex < 0 || index <= actionIndex) return false;
+  const action = String(argv[actionIndex] || '').trim().toLowerCase();
+  return action === 'scan';
+}
+
+function isCommandLocalOutputFlag(argv, index) {
+  return isOddsHistoryLocalOutputFlag(argv, index) || isArbScanLocalOutputFlag(argv, index);
+}
+
 function inferRequestedOutputMode(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--output' || token === '-o') {
+      if (isCommandLocalOutputFlag(argv, i)) continue;
       const next = argv[i + 1];
       if (String(next).trim().toLowerCase() === 'json') return 'json';
     }
     if (token.startsWith('--output=')) {
+      if (isCommandLocalOutputFlag(argv, i)) continue;
       if (token.slice('--output='.length).trim().toLowerCase() === 'json') return 'json';
     }
   }
@@ -1039,6 +1624,8 @@ function expandEqualsStyleFlags(argv) {
     '--daemon',
     '--stream',
     '--no-hedge',
+    '--clear',
+    '--confirm',
   ]);
   for (const token of Array.isArray(argv) ? argv : []) {
     if (
@@ -1084,6 +1671,11 @@ function extractOutputMode(argv) {
       if (!next) {
         throw new CliError('MISSING_FLAG_VALUE', `Missing value for ${token}`);
       }
+      if (isCommandLocalOutputFlag(argv, i)) {
+        args.push(token, next);
+        i += 1;
+        continue;
+      }
       const parsedMode = normalizeOutputMode(next);
       if (outputConfigured && parsedMode !== outputMode) {
         throw new CliError('INVALID_ARGS', `Conflicting --output values: "${outputMode}" and "${parsedMode}".`);
@@ -1095,6 +1687,10 @@ function extractOutputMode(argv) {
     }
 
     if (token.startsWith('--output=')) {
+      if (isCommandLocalOutputFlag(argv, i)) {
+        args.push(token);
+        continue;
+      }
       const parsedMode = normalizeOutputMode(token.slice('--output='.length));
       if (outputConfigured && parsedMode !== outputMode) {
         throw new CliError('INVALID_ARGS', `Conflicting --output values: "${outputMode}" and "${parsedMode}".`);
@@ -1180,10 +1776,20 @@ function buildMirrorSyncStrategy(options) {
     polymarketMarketId: options.polymarketMarketId,
     polymarketSlug: options.polymarketSlug,
     executeLive: options.executeLive,
+    rebalanceSizingMode: options.rebalanceSizingMode,
+    priceSource: options.priceSource,
     driftTriggerBps: options.driftTriggerBps,
     hedgeEnabled: options.hedgeEnabled,
     hedgeRatio: options.hedgeRatio,
     hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+    maxRebalanceUsdc: options.maxRebalanceUsdc,
+    maxHedgeUsdc: options.maxHedgeUsdc,
+    maxOpenExposureUsdc: options.maxOpenExposureUsdc,
+    maxTradesPerDay: options.maxTradesPerDay,
+    cooldownMs: options.cooldownMs,
+    depthSlippageBps: options.depthSlippageBps,
+    minTimeToCloseSec: options.minTimeToCloseSec,
+    strictCloseTimeDelta: Boolean(options.strictCloseTimeDelta),
     forceGate: options.forceGate,
     skipGateChecks:
       Array.isArray(options.skipGateChecks) && options.skipGateChecks.length
@@ -1221,6 +1827,8 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
   args.push('--drift-trigger-bps', String(options.driftTriggerBps));
   args.push('--hedge-trigger-usdc', String(options.hedgeTriggerUsdc));
   args.push('--hedge-ratio', String(options.hedgeRatio));
+  if (options.rebalanceSizingMode) args.push('--rebalance-mode', String(options.rebalanceSizingMode));
+  if (options.priceSource) args.push('--price-source', String(options.priceSource));
   args.push('--max-rebalance-usdc', String(options.maxRebalanceUsdc));
   args.push('--max-hedge-usdc', String(options.maxHedgeUsdc));
   if (Number.isFinite(options.maxOpenExposureUsdc) && options.maxOpenExposureUsdc !== Number.POSITIVE_INFINITY) {
@@ -1233,6 +1841,9 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
   args.push('--depth-slippage-bps', String(options.depthSlippageBps));
   if (options.minTimeToCloseSec !== 1800) {
     args.push('--min-time-to-close-sec', String(options.minTimeToCloseSec));
+  }
+  if (options.strictCloseTimeDelta) {
+    args.push('--strict-close-time-delta');
   }
   if (Number.isFinite(options.iterations) && options.iterations > 0) {
     args.push('--iterations', String(options.iterations));
@@ -1247,6 +1858,9 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
     args.push('--chain-id', String(options.chainId));
   }
   if (options.rpcUrl) args.push('--rpc-url', options.rpcUrl);
+  if (options.polymarketRpcUrl) args.push('--polymarket-rpc-url', options.polymarketRpcUrl);
+  if (options.profileId) args.push('--profile-id', options.profileId);
+  if (options.profileFile) args.push('--profile-file', options.profileFile);
   if (options.funder) args.push('--funder', options.funder);
   if (options.usdc) args.push('--usdc', options.usdc);
   if (options.polymarketHost) args.push('--polymarket-host', options.polymarketHost);
@@ -1482,49 +2096,113 @@ function renderScanTable(data) {
   }
 
   printTable(
-    ['ID', 'Type', 'Chain', 'Close', 'YES', 'NO', 'Source', 'Diagnostic'],
-    items.map((item) => [
-      short(item.id, 18),
-      item.marketType || '',
-      `${item.chainName || ''} (${item.chainId || ''})`,
-      formatTimestamp(item.marketCloseTimestamp),
-      formatOddsPercent(item.odds && item.odds.yesProbability),
-      formatOddsPercent(item.odds && item.odds.noProbability),
-      short((item.odds && item.odds.source) || '', 26),
-      short((item.odds && item.odds.diagnostic) || '', 40),
-    ]),
+    ['ID', 'Type', 'Question', 'YES', 'NO', 'Reserve YES', 'Reserve NO', 'Fee', 'Close', 'Category'],
+    items.map((item) => {
+      const liquidity = item && item.liquidity ? item.liquidity : buildMarketLiquidityMetrics(item || {});
+      const poll = item && item.poll && typeof item.poll === 'object' ? item.poll : null;
+      const category = poll && poll.category !== undefined ? poll.category : item.category;
+      return [
+        short(item.id, 18),
+        item.marketType || '',
+        short((poll && poll.question) || item.question || '', 44),
+        formatOddsPercent(item.odds && item.odds.yesProbability),
+        formatOddsPercent(item.odds && item.odds.noProbability),
+        liquidity && liquidity.reserveYes !== null ? liquidity.reserveYes : '',
+        liquidity && liquidity.reserveNo !== null ? liquidity.reserveNo : '',
+        liquidity && liquidity.feePct !== null ? `${liquidity.feePct}%` : '',
+        formatTimestamp(item.marketCloseTimestamp),
+        category === null || category === undefined ? '' : category,
+      ];
+    }),
   );
 }
 
 function renderQuoteTable(data) {
   const odds = data.odds || {};
   const estimate = data.estimate || null;
+  const liquidity = data.liquidity || null;
+  const parimutuel = data.parimutuel || null;
+  const quoteMode = String(data && data.mode ? data.mode : 'buy').toLowerCase();
   printTable(
     ['Field', 'Value'],
     [
       ['marketAddress', data.marketAddress],
+      ['marketType', data.marketType || ''],
+      ['mode', quoteMode],
       ['side', data.side],
-      ['amountUsdc', data.amountUsdc],
+      ['amountUsdc', quoteMode === 'sell' ? 'n/a' : data.amountUsdc],
+      ['sharesIn', quoteMode === 'sell' ? data.amount : 'n/a'],
       ['oddsSource', odds.source || 'n/a'],
       ['yesPct', odds.yesPct === null || odds.yesPct === undefined ? 'n/a' : `${odds.yesPct}%`],
       ['noPct', odds.noPct === null || odds.noPct === undefined ? 'n/a' : `${odds.noPct}%`],
       ['quoteAvailable', data.quoteAvailable ? 'yes' : 'no'],
-      ['estimatedShares', estimate ? estimate.estimatedShares : 'n/a'],
-      ['minSharesOut', estimate ? estimate.minSharesOut : 'n/a'],
-      ['potentialPayoutIfWin', estimate ? estimate.potentialPayoutIfWin : 'n/a'],
-      ['potentialProfitIfWin', estimate ? estimate.potentialProfitIfWin : 'n/a'],
+      ['estimatedShares', quoteMode === 'sell' ? 'n/a' : estimate ? estimate.estimatedShares : 'n/a'],
+      ['minSharesOut', quoteMode === 'sell' ? 'n/a' : estimate ? estimate.minSharesOut : 'n/a'],
+      ['estimatedUsdcOut', quoteMode === 'sell' && estimate ? estimate.estimatedUsdcOut : 'n/a'],
+      ['minAmountOut', quoteMode === 'sell' && estimate ? estimate.minAmountOut : 'n/a'],
+      ['grossUsdcOut', quoteMode === 'sell' && estimate ? estimate.grossUsdcOut : 'n/a'],
+      ['feeAmount', quoteMode === 'sell' && estimate ? estimate.feeAmount : 'n/a'],
+      ['potentialPayoutIfWin', quoteMode === 'sell' ? 'n/a' : estimate ? estimate.potentialPayoutIfWin : 'n/a'],
+      ['potentialProfitIfWin', quoteMode === 'sell' ? 'n/a' : estimate ? estimate.potentialProfitIfWin : 'n/a'],
+      ['reserveYes', liquidity && liquidity.reserveYes !== null ? liquidity.reserveYes : 'n/a'],
+      ['reserveNo', liquidity && liquidity.reserveNo !== null ? liquidity.reserveNo : 'n/a'],
+      ['kValue', liquidity && liquidity.kValue !== null ? liquidity.kValue : 'n/a'],
       ['diagnostic', odds.diagnostic || ''],
     ],
   );
+
+  if (Array.isArray(data.curve) && data.curve.length > 1) {
+    console.log('');
+    if (quoteMode === 'sell') {
+      printTable(
+        ['Shares In', 'USDC Out', 'Eff. Price', 'Slippage %'],
+        data.curve.map((row) => [
+          row.amount === null || row.amount === undefined ? 'n/a' : row.amount,
+          row.estimatedUsdcOut === null || row.estimatedUsdcOut === undefined ? 'n/a' : row.estimatedUsdcOut,
+          row.effectivePrice === null ? 'n/a' : row.effectivePrice,
+          row.slippagePct === null ? 'n/a' : row.slippagePct,
+        ]),
+      );
+    } else {
+      printTable(
+        ['Amount USDC', 'Shares Out', 'Eff. Price', 'Slippage %', 'ROI if Win %'],
+        data.curve.map((row) => [
+          row.amountUsdc,
+          row.estimatedShares === null ? 'n/a' : row.estimatedShares,
+          row.effectivePrice === null ? 'n/a' : row.effectivePrice,
+          row.slippagePct === null ? 'n/a' : row.slippagePct,
+          row.roiIfWinPct === null ? 'n/a' : row.roiIfWinPct,
+        ]),
+      );
+    }
+  }
+
+  if (parimutuel) {
+    console.log('');
+    printTable(
+      ['Pari Field', 'Value'],
+      [
+        ['poolYes', parimutuel.poolYes],
+        ['poolNo', parimutuel.poolNo],
+        ['totalPool', parimutuel.totalPool],
+        ['sharePct', parimutuel.sharePct],
+        ['payoutIfWin', parimutuel.payoutIfWin],
+        ['profitIfWin', parimutuel.profitIfWin],
+        ['breakevenProbability', parimutuel.breakevenProbability],
+      ],
+    );
+  }
 }
 
 function renderTradeTable(data) {
   const riskGuards = data.riskGuards || {};
   const rows = [
     ['mode', data.mode],
+    ['action', data.action || 'buy'],
     ['marketAddress', data.marketAddress],
     ['side', data.side],
-    ['amountUsdc', data.amountUsdc],
+    ['amountUsdc', data.amountUsdc === null || data.amountUsdc === undefined ? '' : data.amountUsdc],
+    ['shares', data.amount === null || data.amount === undefined ? '' : data.amount],
     [
       'selectedProbabilityPct',
       data.selectedProbabilityPct === null || data.selectedProbabilityPct === undefined
@@ -1544,14 +2222,23 @@ function renderTradeTable(data) {
     ],
     ['quoteAvailable', data.quote && data.quote.quoteAvailable ? 'yes' : 'no'],
     ['account', data.account || ''],
+    ['approvalAsset', data.approvalAsset || ''],
     ['approveTxHash', data.approveTxHash || ''],
     ['approveTxUrl', data.approveTxUrl || ''],
     ['approveGasEstimate', data.approveGasEstimate || ''],
     ['approveStatus', data.approveStatus || ''],
+    ['tradeTxHash', data.tradeTxHash || ''],
+    ['tradeTxUrl', data.tradeTxUrl || ''],
+    ['tradeGasEstimate', data.tradeGasEstimate || ''],
+    ['tradeStatus', data.tradeStatus || ''],
     ['buyTxHash', data.buyTxHash || ''],
     ['buyTxUrl', data.buyTxUrl || ''],
     ['buyGasEstimate', data.buyGasEstimate || ''],
     ['buyStatus', data.buyStatus || ''],
+    ['sellTxHash', data.sellTxHash || ''],
+    ['sellTxUrl', data.sellTxUrl || ''],
+    ['sellGasEstimate', data.sellGasEstimate || ''],
+    ['sellStatus', data.sellStatus || ''],
     ['finalStatus', data.finalStatus || ''],
     ['status', data.status || ''],
   ];
@@ -1625,6 +2312,10 @@ function renderPortfolioTable(data) {
     ['claims', data.summary.claims],
     ['cashflowNet', data.summary.cashflowNet],
     ['pnlProxy', data.summary.pnlProxy],
+    ['totalDeposited', data.summary.totalDeposited === null ? '' : data.summary.totalDeposited],
+    ['totalNetDelta', data.summary.totalNetDelta === null ? '' : data.summary.totalNetDelta],
+    ['totalPositionMarkValueUsdc', data.summary.totalPositionMarkValueUsdc === null ? '' : data.summary.totalPositionMarkValueUsdc],
+    ['totalUnrealizedPnl', data.summary.totalUnrealizedPnl === null ? '' : data.summary.totalUnrealizedPnl],
     ['eventsIncluded', data.summary.eventsIncluded ? 'yes' : 'no'],
     ['lpIncluded', data.summary.lpIncluded ? 'yes' : 'no'],
     ['lpPositionCount', data.summary.lpPositionCount === undefined ? '' : data.summary.lpPositionCount],
@@ -1638,10 +2329,17 @@ function renderPortfolioTable(data) {
   if (Array.isArray(data.positions) && data.positions.length) {
     console.log('');
     printTable(
-      ['Market', 'Chain', 'Last Trade'],
+      ['Market', 'Question', 'Chain', 'Side', 'YES Bal', 'NO Bal', 'YES%', 'NO%', 'Mark (USDC)', 'Last Trade'],
       data.positions.map((item) => [
         short(item.marketAddress, 18),
+        short(item.question || '', 38),
         item.chainId,
+        item.positionSide || '',
+        item.yesBalance === null || item.yesBalance === undefined ? '' : item.yesBalance,
+        item.noBalance === null || item.noBalance === undefined ? '' : item.noBalance,
+        item.odds && item.odds.yesPct !== null && item.odds.yesPct !== undefined ? `${item.odds.yesPct}%` : '',
+        item.odds && item.odds.noPct !== null && item.odds.noPct !== undefined ? `${item.odds.noPct}%` : '',
+        item.markValueUsdc === null || item.markValueUsdc === undefined ? '' : item.markValueUsdc,
         formatTimestamp(item.lastTradeAt),
       ]),
     );
@@ -1831,6 +2529,7 @@ function renderAutopilotTable(data) {
 }
 
 function renderMirrorPlanTable(data) {
+  const timing = data.timing || {};
   printTable(
     ['Field', 'Value'],
     [
@@ -1838,6 +2537,10 @@ function renderMirrorPlanTable(data) {
       ['sourceMarketId', data.sourceMarket ? data.sourceMarket.marketId : ''],
       ['sourceSlug', data.sourceMarket ? data.sourceMarket.slug || '' : ''],
       ['sourceYesPct', data.sourceMarket && data.sourceMarket.yesPct !== null ? data.sourceMarket.yesPct : ''],
+      ['sourceTimestampKind', timing.sourceTimestampKind || (data.sourceMarket ? data.sourceMarket.timestampSource || '' : '')],
+      ['eventStartAt', timing.eventStartTimestampIso || ''],
+      ['suggestedTargetAt', timing.suggestedTargetTimestampIso || ''],
+      ['tradingCutoffAt', timing.tradingCutoffTimestampIso || ''],
       ['recommendedLiquidityUsdc', data.liquidityRecommendation ? data.liquidityRecommendation.liquidityUsdc : ''],
       ['distributionYes', data.distributionHint ? data.distributionHint.distributionYes : ''],
       ['distributionNo', data.distributionHint ? data.distributionHint.distributionNo : ''],
@@ -2005,6 +2708,8 @@ function renderMirrorDeployTable(data) {
       ['pollTxHash', data.tx && data.tx.pollTxHash ? data.tx.pollTxHash : ''],
       ['approveTxHash', data.tx && data.tx.approveTxHash ? data.tx.approveTxHash : ''],
       ['marketTxHash', data.tx && data.tx.marketTxHash ? data.tx.marketTxHash : ''],
+      ['targetTimestamp', data.timing && data.timing.selectedTargetTimestampIso ? data.timing.selectedTargetTimestampIso : ''],
+      ['tradingCutoffAt', data.timing && data.timing.tradingCutoffTimestampIso ? data.timing.tradingCutoffTimestampIso : ''],
       ['seedOddsMatch', data.postDeployChecks && data.postDeployChecks.seedOddsMatch !== null ? (data.postDeployChecks.seedOddsMatch ? 'yes' : 'no') : ''],
       ['seedDiffPct', data.postDeployChecks && data.postDeployChecks.diffPct !== null ? data.postDeployChecks.diffPct : ''],
       ['blockedLiveSync', data.postDeployChecks && data.postDeployChecks.blockedLiveSync ? 'yes' : 'no'],
@@ -2090,12 +2795,20 @@ function renderMirrorSyncDaemonTable(data) {
 
 function renderMirrorStatusTable(data) {
   const state = data.state || {};
+  const runtime = data.runtime || {};
+  const runtimeHealth = runtime.health || {};
+  const daemon = runtime.daemon || {};
+  const lastAction = runtime.lastAction || {};
+  const lastError = runtime.lastError || {};
   printTable(
     ['Field', 'Value'],
     [
       ['strategyHash', data.strategyHash || state.strategyHash || ''],
       ['stateFile', data.stateFile || ''],
       ['lastTickAt', state.lastTickAt || ''],
+      ['runtimeHealth', runtimeHealth.status || ''],
+      ['daemonStatus', daemon.status || (daemon.found === false ? 'not-found' : '')],
+      ['daemonPid', daemon.pid === undefined || daemon.pid === null ? '' : daemon.pid],
       ['dailySpendUsdc', state.dailySpendUsdc === undefined ? '' : state.dailySpendUsdc],
       ['tradesToday', state.tradesToday === undefined ? '' : state.tradesToday],
       ['currentHedgeUsdc', state.currentHedgeUsdc === undefined ? '' : state.currentHedgeUsdc],
@@ -2105,6 +2818,28 @@ function renderMirrorStatusTable(data) {
     ],
   );
 
+  if (data.runtime) {
+    console.log('');
+    printTable(
+      ['Runtime Field', 'Value'],
+      [
+        ['healthStatus', runtimeHealth.status || ''],
+        ['healthCode', runtimeHealth.code || ''],
+        ['healthMessage', runtimeHealth.message || ''],
+        ['lastTickAt', runtimeHealth.lastTickAt || ''],
+        ['heartbeatAgeMs', runtimeHealth.heartbeatAgeMs === undefined || runtimeHealth.heartbeatAgeMs === null ? '' : runtimeHealth.heartbeatAgeMs],
+        ['lastActionStatus', lastAction.status || ''],
+        ['lastActionStartedAt', lastAction.startedAt || ''],
+        ['lastActionCompletedAt', lastAction.completedAt || ''],
+        ['lastErrorCode', lastError.code || ''],
+        ['lastErrorAt', lastError.at || ''],
+        ['daemonAlive', daemon.alive ? 'yes' : 'no'],
+        ['daemonPidFile', daemon.pidFile || ''],
+        ['daemonLogFile', daemon.logFile || ''],
+      ],
+    );
+  }
+
   if (!data.live) {
     return;
   }
@@ -2113,6 +2848,7 @@ function renderMirrorStatusTable(data) {
   printTable(
     ['Live Field', 'Value'],
     [
+      ['crossVenueStatus', data.live.crossVenue && data.live.crossVenue.status ? data.live.crossVenue.status : ''],
       ['pandoraYesPct', data.live.pandoraYesPct],
       ['sourceYesPct', data.live.sourceYesPct],
       ['driftBps', data.live.driftBps],
@@ -2124,24 +2860,76 @@ function renderMirrorStatusTable(data) {
       ['netPnlApproxUsdc', data.live.netPnlApproxUsdc],
       ['netDeltaApprox', data.live.netDeltaApprox === undefined ? '' : data.live.netDeltaApprox],
       ['pnlApprox', data.live.pnlApprox === undefined ? '' : data.live.pnlApprox],
+      ['recommendedAction', data.live.actionability && data.live.actionability.recommendedAction ? data.live.actionability.recommendedAction : ''],
       [
         'polymarketPosition',
         data.live.polymarketPosition
-          ? `yes=${data.live.polymarketPosition.yesBalance ?? 'n/a'} no=${data.live.polymarketPosition.noBalance ?? 'n/a'} openOrders=${data.live.polymarketPosition.openOrdersCount ?? 'n/a'} estUsd=${data.live.polymarketPosition.estimatedValueUsd ?? 'n/a'}`
+          ? `yes=${data.live.polymarketPosition.yesBalance ?? 'n/a'} no=${data.live.polymarketPosition.noBalance ?? 'n/a'} openOrders=${data.live.polymarketPosition.openOrdersCount ?? 'n/a'} openOrdersUsd=${data.live.polymarketPosition.openOrdersNotionalUsd ?? 'n/a'} estUsd=${data.live.polymarketPosition.estimatedValueUsd ?? 'n/a'}`
           : '',
       ],
     ],
   );
+
+  if (data.live.crossVenue) {
+    console.log('');
+    printTable(
+      ['Cross-Venue Field', 'Value'],
+      [
+        ['gateOk', data.live.crossVenue.gateOk ? 'yes' : 'no'],
+        ['failedChecks', Array.isArray(data.live.crossVenue.failedChecks) ? data.live.crossVenue.failedChecks.join(', ') : ''],
+        ['matchConfidence', data.live.crossVenue.matchConfidence === undefined ? '' : data.live.crossVenue.matchConfidence],
+        ['ruleHashMatch', data.live.crossVenue.ruleHashMatch === null ? '' : data.live.crossVenue.ruleHashMatch ? 'yes' : 'no'],
+        ['closeTimeDeltaSec', data.live.crossVenue.closeTimeDeltaSec === undefined ? '' : data.live.crossVenue.closeTimeDeltaSec],
+        ['sourceType', data.live.crossVenue.sourceType || ''],
+      ],
+    );
+  }
+
+  if (data.live.actionableDiagnostics && data.live.actionableDiagnostics.length) {
+    console.log('');
+    printTable(
+      ['Diagnostic', 'Severity', 'Action'],
+      data.live.actionableDiagnostics.map((item) => [
+        item.code || '',
+        item.severity || '',
+        item.action || '',
+      ]),
+    );
+  }
+
+  if (data.live.pnlScenarios && data.live.pnlScenarios.resolutionScenarios) {
+    const resolution = data.live.pnlScenarios.resolutionScenarios;
+    console.log('');
+    printTable(
+      ['Outcome', 'InventoryPayoutUsd', 'FeesPlusInventoryPnlApproxUsdc'],
+      [
+        [
+          'yes',
+          resolution.yes && resolution.yes.hedgeInventoryPayoutUsd !== undefined ? resolution.yes.hedgeInventoryPayoutUsd : '',
+          resolution.yes && resolution.yes.feesPlusInventoryPnlApproxUsdc !== undefined ? resolution.yes.feesPlusInventoryPnlApproxUsdc : '',
+        ],
+        [
+          'no',
+          resolution.no && resolution.no.hedgeInventoryPayoutUsd !== undefined ? resolution.no.hedgeInventoryPayoutUsd : '',
+          resolution.no && resolution.no.feesPlusInventoryPnlApproxUsdc !== undefined ? resolution.no.feesPlusInventoryPnlApproxUsdc : '',
+        ],
+      ],
+    );
+  }
 }
 
 function renderMirrorCloseTable(data) {
+  const target = data && typeof data.target === 'object' && data.target ? data.target : {};
   printTable(
     ['Field', 'Value'],
     [
       ['mode', data.mode || ''],
-      ['pandoraMarketAddress', data.pandoraMarketAddress || ''],
-      ['polymarketMarketId', data.polymarketMarketId || ''],
-      ['polymarketSlug', data.polymarketSlug || ''],
+      ['all', target.all ? 'yes' : 'no'],
+      ['pandoraMarketAddress', target.pandoraMarketAddress || ''],
+      ['polymarketMarketId', target.polymarketMarketId || ''],
+      ['polymarketSlug', target.polymarketSlug || ''],
+      ['successCount', data.summary && data.summary.successCount !== undefined ? data.summary.successCount : ''],
+      ['failureCount', data.summary && data.summary.failureCount !== undefined ? data.summary.failureCount : ''],
     ],
   );
 
@@ -2151,8 +2939,12 @@ function renderMirrorCloseTable(data) {
 
   console.log('');
   printTable(
-    ['Step', 'Status', 'Description'],
-    data.steps.map((step) => [step.key || '', step.status || '', step.description || '']),
+    ['Step', 'Status', 'Error'],
+    data.steps.map((step) => [
+      step.step || '',
+      step.ok ? 'ok' : 'failed',
+      step.error && step.error.message ? step.error.message : '',
+    ]),
   );
 }
 
@@ -2338,6 +3130,54 @@ function renderSuggestTable(data) {
   );
 }
 
+function renderRiskTable(data) {
+  const panic = data && typeof data.panic === 'object' && data.panic ? data.panic : {};
+  const guardrails = data && typeof data.guardrails === 'object' && data.guardrails ? data.guardrails : {};
+  const counters = data && typeof data.counters === 'object' && data.counters ? data.counters : {};
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['riskFile', data && data.riskFile ? data.riskFile : ''],
+      ['action', data && data.action ? data.action : 'show'],
+      ['changed', data && data.changed !== undefined ? String(Boolean(data.changed)) : ''],
+      ['panic.active', String(Boolean(panic.active))],
+      ['panic.reason', panic.reason || ''],
+      ['panic.engagedAt', panic.engagedAt || ''],
+      ['panic.engagedBy', panic.engagedBy || ''],
+      ['guardrails.enabled', String(guardrails.enabled !== false)],
+      [
+        'guardrails.maxSingleLiveNotionalUsdc',
+        guardrails.maxSingleLiveNotionalUsdc === null || guardrails.maxSingleLiveNotionalUsdc === undefined
+          ? ''
+          : String(guardrails.maxSingleLiveNotionalUsdc),
+      ],
+      [
+        'guardrails.maxDailyLiveNotionalUsdc',
+        guardrails.maxDailyLiveNotionalUsdc === null || guardrails.maxDailyLiveNotionalUsdc === undefined
+          ? ''
+          : String(guardrails.maxDailyLiveNotionalUsdc),
+      ],
+      [
+        'guardrails.maxDailyLiveOps',
+        guardrails.maxDailyLiveOps === null || guardrails.maxDailyLiveOps === undefined
+          ? ''
+          : String(guardrails.maxDailyLiveOps),
+      ],
+      ['guardrails.blockForkExecute', String(Boolean(guardrails.blockForkExecute))],
+      ['counters.day', counters.day || ''],
+      ['counters.liveOps', counters.liveOps === undefined ? '' : String(counters.liveOps)],
+      ['counters.liveNotionalUsdc', counters.liveNotionalUsdc === undefined ? '' : String(counters.liveNotionalUsdc)],
+    ],
+  );
+  if (Array.isArray(data && data.stopFiles) && data.stopFiles.length) {
+    console.log('');
+    printTable(
+      ['Stop Files'],
+      data.stopFiles.map((filePath) => [filePath]),
+    );
+  }
+}
+
 function renderSingleEntityTable(data) {
   if (data && typeof data.item === 'object' && data.item !== null) {
     printRecord(data.item);
@@ -2458,8 +3298,11 @@ async function graphqlRequest(indexerUrl, query, variables, timeoutMs) {
 
 function resolveIndexerUrl(explicitUrl) {
   const resolved = explicitUrl || process.env.PANDORA_INDEXER_URL || process.env.INDEXER_URL || DEFAULT_INDEXER_URL;
-  if (!isValidHttpUrl(resolved)) {
-    throw new CliError('INVALID_INDEXER_URL', `Indexer URL must be a valid http/https URL. Received: "${resolved}"`);
+  if (!isSecureHttpUrlOrLocal(resolved)) {
+    throw new CliError(
+      'INVALID_INDEXER_URL',
+      `Indexer URL must use https:// (or http://localhost/127.0.0.1 for local testing). Received: "${resolved}"`,
+    );
   }
   return resolved;
 }
@@ -2526,30 +3369,33 @@ async function fetchPollDetailsMap(indexerUrl, items, timeoutMs) {
     return { pollsByKey: new Map(), diagnostic: null };
   }
 
-  const query = buildGraphqlGetQuery('polls', POLLS_LIST_FIELDS);
+  const client = createIndexerClient(indexerUrl, timeoutMs);
   const pollsByKey = new Map();
-  const failures = [];
-  await Promise.all(
-    Array.from(pollIdSet).map(async (pollId) => {
-      try {
-        const data = await graphqlRequest(indexerUrl, query, { id: pollId }, timeoutMs);
-        const poll = data.polls;
-        if (!poll || typeof poll !== 'object') return;
+  const diagnostic = null;
+  let fetchedPolls;
+  try {
+    fetchedPolls = await client.getManyByIds({
+      queryName: 'polls',
+      fields: POLLS_LIST_FIELDS,
+      ids: Array.from(pollIdSet),
+    });
+  } catch (err) {
+    return {
+      pollsByKey,
+      diagnostic: `Poll expansion unavailable: ${formatErrorValue(err)}`,
+    };
+  }
 
-        const keys = new Set([pollId, poll.id, poll.pollAddress, poll.address, poll.marketAddress]);
-        for (const keyCandidate of keys) {
-          const key = normalizeLookupKey(keyCandidate);
-          if (key) pollsByKey.set(key, poll);
-        }
-      } catch (err) {
-        failures.push(`poll=${pollId}: ${formatErrorValue(err)}`);
-      }
-    }),
-  );
+  for (const pollId of pollIdSet) {
+    const poll = fetchedPolls.get(pollId);
+    if (!poll || typeof poll !== 'object') continue;
+    const keys = new Set([pollId, poll.id, poll.pollAddress, poll.address, poll.marketAddress]);
+    for (const keyCandidate of keys) {
+      const key = normalizeLookupKey(keyCandidate);
+      if (key) pollsByKey.set(key, poll);
+    }
+  }
 
-  const diagnostic = failures.length
-    ? `Poll expansion fallback degraded for ${failures.length} poll lookup(s).`
-    : null;
   return { pollsByKey, diagnostic };
 }
 
@@ -2603,24 +3449,35 @@ async function buildMarketsEnrichmentContext(indexerUrl, items, options, timeout
     diagnostics: [],
   };
 
+  const tasks = [];
   if (options.expand) {
-    try {
-      const pollContext = await fetchPollDetailsMap(indexerUrl, items, timeoutMs);
-      context.pollsByKey = pollContext.pollsByKey;
-      if (pollContext.diagnostic) context.diagnostics.push(pollContext.diagnostic);
-    } catch (err) {
-      context.diagnostics.push(`Poll expansion unavailable: ${formatErrorValue(err)}`);
-    }
+    tasks.push(
+      fetchPollDetailsMap(indexerUrl, items, timeoutMs)
+        .then((pollContext) => {
+          context.pollsByKey = pollContext.pollsByKey;
+          if (pollContext.diagnostic) context.diagnostics.push(pollContext.diagnostic);
+        })
+        .catch((err) => {
+          context.diagnostics.push(`Poll expansion unavailable: ${formatErrorValue(err)}`);
+        }),
+    );
   }
 
   if (options.withOdds) {
-    try {
-      const oddsContext = await fetchLiquidityOddsIndex(indexerUrl, options, timeoutMs);
-      context.liquidityOddsByMarket = oddsContext.byMarket;
-      context.liquidityOddsByPoll = oddsContext.byPoll;
-    } catch (err) {
-      context.diagnostics.push(`Odds enrichment fallback unavailable: ${formatErrorValue(err)}`);
-    }
+    tasks.push(
+      fetchLiquidityOddsIndex(indexerUrl, options, timeoutMs)
+        .then((oddsContext) => {
+          context.liquidityOddsByMarket = oddsContext.byMarket;
+          context.liquidityOddsByPoll = oddsContext.byPoll;
+        })
+        .catch((err) => {
+          context.diagnostics.push(`Odds enrichment fallback unavailable: ${formatErrorValue(err)}`);
+        }),
+    );
+  }
+
+  if (tasks.length) {
+    await Promise.all(tasks);
   }
 
   return context;
@@ -2865,6 +3722,190 @@ function buildMarketExpansion(item) {
   };
 }
 
+function normalizeProbabilityLike(value) {
+  const numeric = toOptionalNumber(value);
+  if (!Number.isFinite(numeric)) return null;
+  if (numeric >= 0 && numeric <= 1) return numeric;
+  if (numeric >= 0 && numeric <= 100) return numeric / 100;
+  return null;
+}
+
+function maybeNormalizeReserveUnits(item, reserveYes, reserveNo) {
+  if (!Number.isFinite(reserveYes) || !Number.isFinite(reserveNo)) {
+    return {
+      reserveYes,
+      reserveNo,
+      scale: 1,
+      scaled: false,
+    };
+  }
+
+  const total = reserveYes + reserveNo;
+  const currentTvl = toOptionalNumber(item && item.currentTvl);
+  let scale = 1;
+
+  // Most indexer reserve fields are raw token units (USDC 6 decimals).
+  // Normalize integer reserve payloads to human USDC units.
+  if (Number.isInteger(reserveYes) && Number.isInteger(reserveNo) && Math.max(reserveYes, reserveNo) >= 1_000_000) {
+    scale = 1_000_000;
+  } else if (Number.isFinite(currentTvl) && currentTvl > 0) {
+    const ratio = total / currentTvl;
+    // Indexer payloads sometimes expose reserves in 1e6 units while TVL is already in USDC.
+    if (Number.isFinite(ratio) && ratio > 500_000 && ratio < 2_500_000) {
+      scale = 1_000_000;
+    }
+  } else {
+    const maxReserve = Math.max(reserveYes, reserveNo);
+    if (
+      maxReserve >= 1_000_000 &&
+      maxReserve <= 1_000_000_000_000 &&
+      Number.isInteger(reserveYes) &&
+      Number.isInteger(reserveNo) &&
+      reserveYes % 1_000_000 === 0 &&
+      reserveNo % 1_000_000 === 0
+    ) {
+      scale = 1_000_000;
+    }
+  }
+
+  if (scale === 1) {
+    return {
+      reserveYes,
+      reserveNo,
+      scale: 1,
+      scaled: false,
+    };
+  }
+
+  return {
+    reserveYes: reserveYes / scale,
+    reserveNo: reserveNo / scale,
+    scale,
+    scaled: true,
+  };
+}
+
+function deriveMarketReservePair(item) {
+  const reserveYesDirect = toOptionalNumber(item && (item.reserveYes ?? item.yesReserve ?? item.yesTokenAmount));
+  const reserveNoDirect = toOptionalNumber(item && (item.reserveNo ?? item.noReserve ?? item.noTokenAmount));
+
+  if (Number.isFinite(reserveYesDirect) && Number.isFinite(reserveNoDirect)) {
+    const normalized = maybeNormalizeReserveUnits(item, reserveYesDirect, reserveNoDirect);
+    return {
+      reserveYes: normalized.reserveYes,
+      reserveNo: normalized.reserveNo,
+      estimated: false,
+      source: normalized.scaled ? `market:reserve-pair:scaled-1e${Math.round(Math.log10(normalized.scale))}` : 'market:reserve-pair',
+    };
+  }
+
+  const yesProbability = normalizeProbabilityLike(item && (item.yesChance ?? item.yesPct ?? item.yesProbability));
+  if (Number.isFinite(reserveYesDirect) && Number.isFinite(yesProbability) && yesProbability > 0 && yesProbability < 1) {
+    const reserveNo = reserveYesDirect * (yesProbability / (1 - yesProbability));
+    const normalized = maybeNormalizeReserveUnits(item, reserveYesDirect, reserveNo);
+    return {
+      reserveYes: normalized.reserveYes,
+      reserveNo: normalized.reserveNo,
+      estimated: true,
+      source: normalized.scaled
+        ? `market:reserve-yes+yes-probability:scaled-1e${Math.round(Math.log10(normalized.scale))}`
+        : 'market:reserve-yes+yes-probability',
+    };
+  }
+
+  const currentTvl = toOptionalNumber(item && item.currentTvl);
+  if (Number.isFinite(currentTvl) && Number.isFinite(yesProbability) && yesProbability > 0 && yesProbability < 1) {
+    const reserveYes = currentTvl * (1 - yesProbability);
+    const reserveNo = currentTvl * yesProbability;
+    const normalized = maybeNormalizeReserveUnits(item, reserveYes, reserveNo);
+    return {
+      reserveYes: normalized.reserveYes,
+      reserveNo: normalized.reserveNo,
+      estimated: true,
+      source: normalized.scaled
+        ? `market:tvl+yes-probability:scaled-1e${Math.round(Math.log10(normalized.scale))}`
+        : 'market:tvl+yes-probability',
+    };
+  }
+
+  return {
+    reserveYes: null,
+    reserveNo: null,
+    estimated: false,
+    source: 'market:unavailable',
+  };
+}
+
+function solveReservesForYesProbabilityFromK(kValue, yesProbability) {
+  if (!Number.isFinite(kValue) || kValue <= 0) return null;
+  if (!Number.isFinite(yesProbability) || yesProbability <= 0 || yesProbability >= 1) return null;
+  const ratio = yesProbability / (1 - yesProbability);
+  const reserveYes = Math.sqrt(kValue / ratio);
+  const reserveNo = Math.sqrt(kValue * ratio);
+  if (!Number.isFinite(reserveYes) || !Number.isFinite(reserveNo)) return null;
+  return { reserveYes, reserveNo };
+}
+
+function buildDepthFromReserves(reserveYes, reserveNo) {
+  if (!Number.isFinite(reserveYes) || !Number.isFinite(reserveNo) || reserveYes <= 0 || reserveNo <= 0) {
+    return null;
+  }
+  const total = reserveYes + reserveNo;
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const yesProbability = reserveNo / total;
+  const kValue = reserveYes * reserveNo;
+  const slippages = [0.01, 0.05, 0.10];
+  const depth = {};
+  for (const slippage of slippages) {
+    const upProb = Math.min(0.999999, yesProbability * (1 + slippage));
+    const downProb = Math.max(0.000001, yesProbability * (1 - slippage));
+    const up = solveReservesForYesProbabilityFromK(kValue, upProb);
+    const down = solveReservesForYesProbabilityFromK(kValue, downProb);
+    const buyYesUsdc = up ? Math.max(0, up.reserveNo - reserveNo) : null;
+    const buyNoUsdc = down ? Math.max(0, down.reserveYes - reserveYes) : null;
+    const minDepthUsdc = [buyYesUsdc, buyNoUsdc].filter((value) => Number.isFinite(value) && value > 0);
+    depth[String(Math.round(slippage * 100))] = {
+      buyYesUsdc: Number.isFinite(buyYesUsdc) ? round(buyYesUsdc, 6) : null,
+      buyNoUsdc: Number.isFinite(buyNoUsdc) ? round(buyNoUsdc, 6) : null,
+      minDepthUsdc: minDepthUsdc.length ? round(Math.min(...minDepthUsdc), 6) : null,
+    };
+  }
+  return depth;
+}
+
+function buildMarketLiquidityMetrics(item) {
+  const reservePair = deriveMarketReservePair(item || {});
+  const reserveYes = reservePair.reserveYes;
+  const reserveNo = reservePair.reserveNo;
+  const marketType = String(item && item.marketType ? item.marketType : '').toLowerCase();
+  const totalPool = Number.isFinite(reserveYes) && Number.isFinite(reserveNo) ? reserveYes + reserveNo : null;
+  const yesPrice =
+    Number.isFinite(totalPool) && totalPool > 0 && Number.isFinite(reserveNo)
+      ? reserveNo / totalPool
+      : normalizeProbabilityLike(item && (item.yesChance ?? item.yesPct ?? item.yesProbability));
+  const noPrice = Number.isFinite(yesPrice) ? (1 - yesPrice) : null;
+  const kValue = Number.isFinite(reserveYes) && Number.isFinite(reserveNo) ? reserveYes * reserveNo : null;
+  const depth = marketType === 'amm' ? buildDepthFromReserves(reserveYes, reserveNo) : null;
+  const feeTier = toOptionalNumber(item && item.feeTier);
+
+  return {
+    reserveYes: Number.isFinite(reserveYes) ? round(reserveYes, 6) : null,
+    reserveNo: Number.isFinite(reserveNo) ? round(reserveNo, 6) : null,
+    feeTier: Number.isFinite(feeTier) ? feeTier : null,
+    feePct: Number.isFinite(feeTier) ? round(feeTier / 10_000, 6) : null,
+    yesPrice: Number.isFinite(yesPrice) ? round(yesPrice, 6) : null,
+    noPrice: Number.isFinite(noPrice) ? round(noPrice, 6) : null,
+    kValue: Number.isFinite(kValue) ? round(kValue, 6) : null,
+    depth,
+    poolYes: marketType === 'pari' && Number.isFinite(reserveYes) ? round(reserveYes, 6) : null,
+    poolNo: marketType === 'pari' && Number.isFinite(reserveNo) ? round(reserveNo, 6) : null,
+    totalPool: marketType === 'pari' && Number.isFinite(totalPool) ? round(totalPool, 6) : null,
+    deadPool: Number.isFinite(reserveYes) && Number.isFinite(reserveNo) ? reserveYes <= 1 || reserveNo <= 1 : null,
+    estimated: reservePair.estimated,
+    reserveSource: reservePair.source,
+  };
+}
+
 function normalizeNumericLikeValue(value) {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : value;
@@ -2915,6 +3956,7 @@ function enrichMarketItem(item, options, enrichmentContext) {
       }
     }
     enriched.expanded = buildMarketExpansion(baseItem);
+    enriched.liquidity = buildMarketLiquidityMetrics(baseItem);
   }
 
   if (options.withOdds) {
@@ -2976,6 +4018,12 @@ function buildMarketsListPayload(indexerUrl, options, items, pageInfo, opts = {}
     pageInfo,
     items: normalizedItems,
   };
+  const externalDiagnostics = Array.isArray(opts.externalDiagnostics)
+    ? opts.externalDiagnostics.map((line) => String(line || '').trim()).filter(Boolean)
+    : [];
+  if (externalDiagnostics.length) {
+    payload.diagnostics = Array.from(new Set(externalDiagnostics));
+  }
 
   if (
     typeof opts.unfilteredCount === 'number' &&
@@ -3032,28 +4080,37 @@ function buildMarketsListPayload(indexerUrl, options, items, pageInfo, opts = {}
 
 function applyMarketLifecycleFilter(items, options) {
   if (!Array.isArray(items) || !items.length) return items;
-  if (!options || !MARKET_LIFECYCLE_FILTERS.has(options.lifecycle) || options.lifecycle === 'all') {
-    return items;
-  }
+  if (!options) return items;
 
   const nowEpochSeconds = Math.floor(Date.now() / 1000);
   const expiringCutoffEpochSeconds =
     nowEpochSeconds + parsePositiveInteger(options.expiringSoonHours, '--expiring-hours') * 60 * 60;
 
-  return items.filter((item) => {
-    const closeEpoch = toOptionalNumber(item && item.marketCloseTimestamp);
-    if (!Number.isFinite(closeEpoch)) return false;
+  const lifecycleFiltered = (!MARKET_LIFECYCLE_FILTERS.has(options.lifecycle) || options.lifecycle === 'all')
+    ? items
+    : items.filter((item) => {
+        const closeEpoch = toOptionalNumber(item && item.marketCloseTimestamp);
+        if (!Number.isFinite(closeEpoch)) return false;
 
-    if (options.lifecycle === 'active') {
-      return closeEpoch > nowEpochSeconds;
-    }
-    if (options.lifecycle === 'resolved') {
-      return closeEpoch <= nowEpochSeconds;
-    }
-    if (options.lifecycle === 'expiring-soon') {
-      return closeEpoch > nowEpochSeconds && closeEpoch <= expiringCutoffEpochSeconds;
-    }
-    return true;
+        if (options.lifecycle === 'active') {
+          return closeEpoch > nowEpochSeconds;
+        }
+        if (options.lifecycle === 'resolved') {
+          return closeEpoch <= nowEpochSeconds;
+        }
+        if (options.lifecycle === 'expiring-soon') {
+          return closeEpoch > nowEpochSeconds && closeEpoch <= expiringCutoffEpochSeconds;
+        }
+        return true;
+      });
+
+  if (options.minTvlUsdc === null || options.minTvlUsdc === undefined) {
+    return lifecycleFiltered;
+  }
+
+  return lifecycleFiltered.filter((item) => {
+    const tvl = toOptionalNumber(item && item.currentTvl);
+    return Number.isFinite(tvl) && tvl >= options.minTvlUsdc;
   });
 }
 
@@ -3063,6 +4120,122 @@ async function fetchMarketsListPage(indexerUrl, options, timeoutMs) {
   const page = normalizePageResult(data.marketss);
   const items = applyMarketLifecycleFilter(page.items, options);
   return { items, pageInfo: page.pageInfo, unfilteredCount: page.items.length };
+}
+
+function buildHedgeablePandoraCandidates(items, pollsByKey) {
+  return (Array.isArray(items) ? items : []).map((item) => {
+    const poll = firstMappedValue(
+      pollsByKey,
+      [item && item.pollAddress, item && item.pollId, item && item.poll && item.poll.id],
+    );
+    return {
+      key: normalizeLookupKey(item && item.id),
+      question: String(item && item.question ? item.question : poll && poll.question ? poll.question : '').trim() || null,
+      closeTimestamp: toOptionalNumber(item && item.marketCloseTimestamp),
+    };
+  }).filter((item) => item.key && item.question);
+}
+
+function findBestHedgeablePolymarketMatch(candidate, polymarketItems) {
+  const maxCloseDiffHours = 24;
+  let best = null;
+  for (const item of polymarketItems) {
+    if (!item || !item.question) continue;
+    const similarity = questionSimilarityBreakdown(candidate.question, item.question);
+    if (similarity.tokenScore < 0.12 || similarity.score < 0.35) continue;
+
+    let closeDiffHours = null;
+    const leftClose = toOptionalNumber(candidate.closeTimestamp);
+    const rightClose = toOptionalNumber(item.closeTimestamp);
+    if (Number.isFinite(leftClose) && Number.isFinite(rightClose)) {
+      closeDiffHours = Math.abs(leftClose - rightClose) / 3600;
+      if (closeDiffHours > maxCloseDiffHours) continue;
+    }
+
+    const summary = {
+      marketId: item.marketId || null,
+      similarity,
+      closeDiffHours,
+    };
+    if (
+      !best ||
+      summary.similarity.score > best.similarity.score ||
+      (
+        summary.similarity.score === best.similarity.score &&
+        Number.isFinite(summary.closeDiffHours) &&
+        (!Number.isFinite(best.closeDiffHours) || summary.closeDiffHours < best.closeDiffHours)
+      )
+    ) {
+      best = summary;
+    }
+  }
+  return best;
+}
+
+async function filterHedgeableMarkets({ indexerUrl, timeoutMs, options, items }) {
+  const normalizedItems = Array.isArray(items) ? items.map((item) => normalizeMarketNumericFields(item)) : [];
+  if (!normalizedItems.length) {
+    return { items: normalizedItems, unfilteredCount: 0, diagnostics: [] };
+  }
+
+  const diagnostics = [];
+  const pollContext = await fetchPollDetailsMap(indexerUrl, normalizedItems, timeoutMs);
+  if (pollContext.diagnostic) diagnostics.push(pollContext.diagnostic);
+  const pandoraCandidates = buildHedgeablePandoraCandidates(normalizedItems, pollContext.pollsByKey);
+  if (!pandoraCandidates.length) {
+    return {
+      items: [],
+      unfilteredCount: normalizedItems.length,
+      diagnostics: diagnostics.length
+        ? diagnostics
+        : ['Hedgeable filter skipped: no candidate questions available for the current page.'],
+    };
+  }
+
+  let polymarketPayload;
+  try {
+    polymarketPayload = await fetchPolymarketMarkets({
+      timeoutMs,
+      limit: Math.max(pandoraCandidates.length * 4, 100),
+    });
+  } catch (err) {
+    return {
+      items: normalizedItems,
+      unfilteredCount: normalizedItems.length,
+      diagnostics: [
+        ...diagnostics,
+        `Hedgeable filter degraded: Polymarket matcher unavailable (${formatErrorValue(err)}); returning unfiltered market set.`,
+      ],
+    };
+  }
+
+  const matchedPandoraIds = new Set();
+  const polymarketItems = Array.isArray(polymarketPayload && polymarketPayload.items)
+    ? polymarketPayload.items
+    : [];
+  if (Array.isArray(polymarketPayload && polymarketPayload.diagnostics) && polymarketPayload.diagnostics.length) {
+    diagnostics.push(...polymarketPayload.diagnostics);
+  }
+
+  for (const candidate of pandoraCandidates) {
+    const bestMatch = findBestHedgeablePolymarketMatch(candidate, polymarketItems);
+    if (bestMatch) {
+      matchedPandoraIds.add(candidate.key);
+    }
+  }
+
+  if (!matchedPandoraIds.size) {
+    diagnostics.push('Hedgeable filter found no cross-venue matches for the current page.');
+  }
+
+  return {
+    items: normalizedItems.filter((item) => {
+      const key = normalizeLookupKey(item && item.id);
+      return key ? matchedPandoraIds.has(key) : false;
+    }),
+    unfilteredCount: normalizedItems.length,
+    diagnostics: Array.from(new Set(diagnostics)),
+  };
 }
 
 function maybeLoadTradeEnv(sharedFlags) {
@@ -3105,7 +4278,7 @@ function buildTradeRiskGuardConfig(options) {
 }
 
 function enforceTradeRiskGuards(options, quote) {
-  if (options.maxAmountUsdc !== null && options.amountUsdc > options.maxAmountUsdc) {
+  if (options.maxAmountUsdc !== null && options.amountUsdc !== null && options.amountUsdc > options.maxAmountUsdc) {
     throw new CliError(
       'TRADE_RISK_GUARD',
       `Trade amount ${options.amountUsdc} exceeds --max-amount-usdc ${options.maxAmountUsdc}.`,
@@ -3140,38 +4313,340 @@ function enforceTradeRiskGuards(options, quote) {
   if (
     options.execute &&
     !quote.quoteAvailable &&
-    options.minSharesOutRaw === null &&
+    ((options.mode === 'sell' && options.minAmountOutRaw === null) || (options.mode !== 'sell' && options.minSharesOutRaw === null)) &&
     !options.allowUnquotedExecute
   ) {
     throw new CliError(
       'TRADE_RISK_GUARD',
-      'Execute mode requires a quote by default. Provide --yes-pct, or set --min-shares-out-raw, or pass --allow-unquoted-execute.',
+      options.mode === 'sell'
+        ? 'Execute mode requires a quote by default. Provide --yes-pct, or set --min-amount-out-raw, or pass --allow-unquoted-execute.'
+        : 'Execute mode requires a quote by default. Provide --yes-pct, or set --min-shares-out-raw, or pass --allow-unquoted-execute.',
     );
   }
 }
 
-function buildQuoteEstimate(odds, side, amountUsdc, slippageBps) {
-  const probability = side === 'yes' ? odds.yesProbability : odds.noProbability;
-  if (!Number.isFinite(probability) || probability <= 0) {
+function computeAmmBuySharesFromReserves(liquidity, side, amountUsdc) {
+  const reserveYes = toOptionalNumber(liquidity && liquidity.reserveYes);
+  const reserveNo = toOptionalNumber(liquidity && liquidity.reserveNo);
+  if (!Number.isFinite(reserveYes) || !Number.isFinite(reserveNo) || reserveYes <= 0 || reserveNo <= 0) {
+    return null;
+  }
+  if (!Number.isFinite(amountUsdc) || amountUsdc <= 0) {
     return null;
   }
 
-  const pricePerShare = probability;
-  const estimatedShares = amountUsdc / pricePerShare;
+  const kValue = reserveYes * reserveNo;
+  if (!Number.isFinite(kValue) || kValue <= 0) return null;
+
+  const normalizedSide = String(side || '').toLowerCase();
+  const isYes = normalizedSide === 'yes';
+
+  let sharesOut = null;
+  let spotPrice = null;
+  let impliedProbability = null;
+  if (isYes) {
+    // Binary AMM execution path is mint+swap:
+    // 1) deposit collateral => mint amount YES + amount NO
+    // 2) swap minted NO into pool for extra YES along x*y=k
+    const nextReserveNo = reserveNo + amountUsdc;
+    if (!Number.isFinite(nextReserveNo) || nextReserveNo <= 0) return null;
+    const nextReserveYes = kValue / nextReserveNo;
+    const swapOutputYes = reserveYes - nextReserveYes;
+    if (!Number.isFinite(swapOutputYes) || swapOutputYes < 0) return null;
+    sharesOut = amountUsdc + swapOutputYes;
+    spotPrice = reserveNo / (reserveYes + reserveNo);
+    impliedProbability = reserveNo / (reserveYes + reserveNo);
+  } else {
+    // Binary AMM execution path is mint+swap:
+    // 1) deposit collateral => mint amount YES + amount NO
+    // 2) swap minted YES into pool for extra NO along x*y=k
+    const nextReserveYes = reserveYes + amountUsdc;
+    if (!Number.isFinite(nextReserveYes) || nextReserveYes <= 0) return null;
+    const nextReserveNo = kValue / nextReserveYes;
+    const swapOutputNo = reserveNo - nextReserveNo;
+    if (!Number.isFinite(swapOutputNo) || swapOutputNo < 0) return null;
+    sharesOut = amountUsdc + swapOutputNo;
+    spotPrice = reserveYes / (reserveYes + reserveNo);
+    impliedProbability = reserveYes / (reserveYes + reserveNo);
+  }
+
+  if (!Number.isFinite(sharesOut) || sharesOut <= 0) return null;
+  const effectivePrice = amountUsdc / sharesOut;
+  if (!Number.isFinite(effectivePrice) || effectivePrice <= 0) return null;
+
+  const slippagePct =
+    Number.isFinite(spotPrice) && spotPrice > 0
+      ? ((effectivePrice - spotPrice) / spotPrice) * 100
+      : null;
+
+  return {
+    impliedProbability,
+    pricePerShare: effectivePrice,
+    estimatedShares: sharesOut,
+    slippagePct,
+    spotPrice,
+  };
+}
+
+function solveAmmCollateralForShares(liquidity, side, shareAmount) {
+  const targetShares = toOptionalNumber(shareAmount);
+  if (!Number.isFinite(targetShares) || targetShares <= 0) return null;
+
+  let lower = 0;
+  let upper = Math.max(1, targetShares);
+  let upperEstimate = computeAmmBuySharesFromReserves(liquidity, side, upper);
+  let iterations = 0;
+  while (
+    (!upperEstimate || !Number.isFinite(upperEstimate.estimatedShares) || upperEstimate.estimatedShares < targetShares) &&
+    iterations < 40
+  ) {
+    upper *= 2;
+    upperEstimate = computeAmmBuySharesFromReserves(liquidity, side, upper);
+    iterations += 1;
+  }
+  if (!upperEstimate || !Number.isFinite(upperEstimate.estimatedShares) || upperEstimate.estimatedShares < targetShares) {
+    return null;
+  }
+
+  for (let i = 0; i < 80; i += 1) {
+    const midpoint = (lower + upper) / 2;
+    const estimate = computeAmmBuySharesFromReserves(liquidity, side, midpoint);
+    if (!estimate || !Number.isFinite(estimate.estimatedShares)) {
+      return null;
+    }
+    if (estimate.estimatedShares >= targetShares) {
+      upper = midpoint;
+    } else {
+      lower = midpoint;
+    }
+  }
+  return upper;
+}
+
+function buildAmmSellEstimateFromReserves(liquidity, side, shareAmount) {
+  const sharesIn = toOptionalNumber(shareAmount);
+  if (!Number.isFinite(sharesIn) || sharesIn <= 0) return null;
+
+  const grossUsdcOut = solveAmmCollateralForShares(liquidity, side, sharesIn);
+  if (!Number.isFinite(grossUsdcOut) || grossUsdcOut <= 0) {
+    return null;
+  }
+
+  const reserveYes = toOptionalNumber(liquidity && liquidity.reserveYes);
+  const reserveNo = toOptionalNumber(liquidity && liquidity.reserveNo);
+  const normalizedSide = String(side || '').toLowerCase();
+  const isYes = normalizedSide === 'yes';
+  const spotPrice =
+    Number.isFinite(reserveYes) && Number.isFinite(reserveNo) && reserveYes > 0 && reserveNo > 0
+      ? (isYes ? reserveNo / (reserveYes + reserveNo) : reserveYes / (reserveYes + reserveNo))
+      : null;
+  const impliedProbability = spotPrice;
+  const feePct = toOptionalNumber(liquidity && liquidity.feePct);
+  const feeFraction = Number.isFinite(feePct) && feePct > 0 ? feePct / 100 : 0;
+  const feeAmount = grossUsdcOut * feeFraction;
+  const estimatedUsdcOut = Math.max(0, grossUsdcOut - feeAmount);
+  const effectivePrice = estimatedUsdcOut / sharesIn;
+  const slippagePct =
+    Number.isFinite(spotPrice) && spotPrice > 0
+      ? ((spotPrice - effectivePrice) / spotPrice) * 100
+      : null;
+
+  return {
+    impliedProbability,
+    pricePerShare: effectivePrice,
+    estimatedUsdcOut,
+    grossUsdcOut,
+    feeAmount,
+    feePct,
+    slippagePct,
+    netDeltaChange: -sharesIn,
+    spotPrice,
+  };
+}
+
+function buildQuoteEstimate(odds, side, inputAmount, slippageBps, marketContext = null, quoteMode = 'buy', explicitEstimate = null) {
+  const probability = side === 'yes' ? odds.yesProbability : odds.noProbability;
+  const normalizedMode = String(quoteMode || 'buy').toLowerCase();
+  if (normalizedMode !== 'sell' && (!Number.isFinite(probability) || probability <= 0)) {
+    return null;
+  }
+
+  if (normalizedMode === 'sell') {
+    let sellEstimate = explicitEstimate;
+    if (!sellEstimate) {
+      const marketType = String(marketContext && marketContext.marketType ? marketContext.marketType : '').toLowerCase();
+      if (marketType === 'amm') {
+        sellEstimate = buildAmmSellEstimateFromReserves(marketContext && marketContext.liquidity, side, inputAmount);
+      }
+    }
+    if (!sellEstimate || !Number.isFinite(sellEstimate.estimatedUsdcOut) || sellEstimate.estimatedUsdcOut <= 0) {
+      return null;
+    }
+    const slippageFactor = Math.max(0, (10_000 - slippageBps) / 10_000);
+    return {
+      estimateSource: sellEstimate.estimateSource || 'amm-reserves-inverse',
+      impliedProbability: Number.isFinite(sellEstimate.impliedProbability) ? round(sellEstimate.impliedProbability, 6) : null,
+      pricePerShare: Number.isFinite(sellEstimate.pricePerShare) ? round(sellEstimate.pricePerShare, 6) : null,
+      estimatedShares: null,
+      estimatedUsdcOut: round(sellEstimate.estimatedUsdcOut, 6),
+      grossUsdcOut: Number.isFinite(sellEstimate.grossUsdcOut) ? round(sellEstimate.grossUsdcOut, 6) : round(sellEstimate.estimatedUsdcOut, 6),
+      minAmountOut: round(sellEstimate.estimatedUsdcOut * slippageFactor, 6),
+      feeAmount: Number.isFinite(sellEstimate.feeAmount) ? round(sellEstimate.feeAmount, 6) : null,
+      feePct: Number.isFinite(sellEstimate.feePct) ? round(sellEstimate.feePct, 6) : null,
+      potentialPayoutIfWin: null,
+      potentialProfitIfWin: null,
+      slippagePct: Number.isFinite(sellEstimate.slippagePct) ? round(sellEstimate.slippagePct, 6) : null,
+      priceImpactPct: Number.isFinite(sellEstimate.slippagePct) ? round(sellEstimate.slippagePct, 6) : null,
+      slippageBps,
+      netDeltaChange: Number.isFinite(sellEstimate.netDeltaChange) ? round(sellEstimate.netDeltaChange, 6) : null,
+    };
+  }
+
+  const amountUsdc = inputAmount;
+  let estimateSource = 'probability-linear';
+  let impliedProbability = probability;
+  let pricePerShare = probability;
+  let estimatedShares = amountUsdc / pricePerShare;
+  let slippagePct = 0;
+
+  const marketType = String(marketContext && marketContext.marketType ? marketContext.marketType : '').toLowerCase();
+  if (marketType === 'amm') {
+    const ammEstimate = computeAmmBuySharesFromReserves(marketContext && marketContext.liquidity, side, amountUsdc);
+    if (ammEstimate) {
+      estimateSource = 'amm-reserves';
+      impliedProbability = Number.isFinite(ammEstimate.impliedProbability) ? ammEstimate.impliedProbability : probability;
+      pricePerShare = Number.isFinite(ammEstimate.pricePerShare) ? ammEstimate.pricePerShare : pricePerShare;
+      estimatedShares = Number.isFinite(ammEstimate.estimatedShares) ? ammEstimate.estimatedShares : estimatedShares;
+      slippagePct = Number.isFinite(ammEstimate.slippagePct) ? ammEstimate.slippagePct : slippagePct;
+    }
+  }
+
   const slippageFactor = Math.max(0, (10_000 - slippageBps) / 10_000);
   const minSharesOut = estimatedShares * slippageFactor;
   const payoutIfWin = estimatedShares;
   const profitIfWin = payoutIfWin - amountUsdc;
 
   return {
-    impliedProbability: round(probability, 6),
+    estimateSource,
+    impliedProbability: round(impliedProbability, 6),
     pricePerShare: round(pricePerShare, 6),
     estimatedShares: round(estimatedShares, 6),
     minSharesOut: round(minSharesOut, 6),
     potentialPayoutIfWin: round(payoutIfWin, 6),
     potentialProfitIfWin: round(profitIfWin, 6),
+    slippagePct: round(slippagePct, 6),
     slippageBps,
+    netDeltaChange: round(estimatedShares, 6),
   };
+}
+
+function buildQuoteEstimateCurve(odds, side, amountsUsdc, slippageBps, marketContext = null, quoteMode = 'buy', explicitSellEstimates = null) {
+  const amounts = Array.isArray(amountsUsdc) ? amountsUsdc : [];
+  const curve = [];
+  for (const amount of amounts) {
+    const explicitEstimate = explicitSellEstimates instanceof Map ? explicitSellEstimates.get(String(amount)) || explicitSellEstimates.get(amount) : null;
+    const estimate = buildQuoteEstimate(odds, side, amount, slippageBps, marketContext, quoteMode, explicitEstimate);
+    if (!estimate) {
+      curve.push({
+        amountUsdc: quoteMode === 'sell' ? null : amount,
+        amount: quoteMode === 'sell' ? amount : null,
+        estimatedShares: null,
+        effectivePrice: null,
+        slippagePct: null,
+        roiIfWinPct: null,
+        estimatedUsdcOut: null,
+      });
+      continue;
+    }
+    const effectivePrice =
+      quoteMode === 'sell'
+        ? (Number.isFinite(estimate.estimatedUsdcOut) && amount > 0 ? estimate.estimatedUsdcOut / amount : null)
+        : (estimate.estimatedShares > 0 ? amount / estimate.estimatedShares : null);
+    const impliedPrice = Number.isFinite(estimate.pricePerShare) ? estimate.pricePerShare : null;
+    const slippagePct = Number.isFinite(estimate.slippagePct)
+      ? estimate.slippagePct
+      : Number.isFinite(effectivePrice) && Number.isFinite(impliedPrice) && impliedPrice > 0
+        ? (quoteMode === 'sell'
+          ? ((impliedPrice - effectivePrice) / impliedPrice) * 100
+          : ((effectivePrice - impliedPrice) / impliedPrice) * 100)
+        : null;
+    const roiIfWinPct =
+      quoteMode === 'sell'
+        ? null
+        : (Number.isFinite(estimate.potentialProfitIfWin) && amount > 0
+          ? (estimate.potentialProfitIfWin / amount) * 100
+          : null);
+    curve.push({
+      amountUsdc: quoteMode === 'sell' ? null : round(amount, 6),
+      amount: quoteMode === 'sell' ? round(amount, 6) : null,
+      estimatedShares: estimate.estimatedShares,
+      estimatedUsdcOut: Number.isFinite(estimate.estimatedUsdcOut) ? estimate.estimatedUsdcOut : null,
+      effectivePrice: Number.isFinite(effectivePrice) ? round(effectivePrice, 6) : null,
+      slippagePct: Number.isFinite(slippagePct) ? round(slippagePct, 6) : null,
+      roiIfWinPct: Number.isFinite(roiIfWinPct) ? round(roiIfWinPct, 6) : null,
+      estimateSource: estimate.estimateSource || null,
+      estimate,
+    });
+  }
+  return curve;
+}
+
+function buildParimutuelEstimate(liquidity, side, amountUsdc) {
+  const poolYes = toOptionalNumber(liquidity && liquidity.poolYes);
+  const poolNo = toOptionalNumber(liquidity && liquidity.poolNo);
+  if (!Number.isFinite(poolYes) || !Number.isFinite(poolNo) || amountUsdc <= 0) return null;
+  const totalBefore = poolYes + poolNo;
+  const selectedPoolBefore = side === 'yes' ? poolYes : poolNo;
+  const selectedPoolAfter = selectedPoolBefore + amountUsdc;
+  const totalAfter = totalBefore + amountUsdc;
+  if (selectedPoolAfter <= 0 || totalAfter <= 0) return null;
+  const sharePct = amountUsdc / selectedPoolAfter;
+  const payoutIfWin = sharePct * totalAfter;
+  const profitIfWin = payoutIfWin - amountUsdc;
+  const breakevenProbability = payoutIfWin > 0 ? amountUsdc / payoutIfWin : null;
+  return {
+    poolYes: round(poolYes, 6),
+    poolNo: round(poolNo, 6),
+    totalPool: round(totalBefore, 6),
+    selectedPoolAfter: round(selectedPoolAfter, 6),
+    sharePct: round(sharePct, 6),
+    payoutIfWin: round(payoutIfWin, 6),
+    profitIfWin: round(profitIfWin, 6),
+    breakevenProbability: Number.isFinite(breakevenProbability) ? round(breakevenProbability, 6) : null,
+  };
+}
+
+async function fetchMarketSnapshotMap(indexerUrl, marketAddresses, timeoutMs) {
+  const uniqueIds = Array.from(new Set((marketAddresses || []).map((value) => String(value || '').trim()).filter(Boolean)));
+  const out = new Map();
+  if (!uniqueIds.length) return out;
+
+  const client = createIndexerClient(indexerUrl, timeoutMs);
+  let fetchedMarkets;
+  try {
+    fetchedMarkets = await client.getManyByIds({
+      queryName: 'markets',
+      fields: MARKETS_LIST_FIELDS,
+      ids: uniqueIds,
+    });
+  } catch {
+    return out;
+  }
+
+  for (const marketId of uniqueIds) {
+    const item = fetchedMarkets.get(marketId);
+    if (!item || typeof item !== 'object') continue;
+    const normalized = normalizeMarketNumericFields(item);
+    out.set(marketId, normalized);
+    const normalizedKey = normalizeLookupKey(marketId);
+    if (normalizedKey) out.set(normalizedKey, normalized);
+  }
+  return out;
+}
+
+async function fetchMarketSnapshot(indexerUrl, marketAddress, timeoutMs) {
+  const fetched = await fetchMarketSnapshotMap(indexerUrl, [marketAddress], timeoutMs);
+  return fetched.get(String(marketAddress || '').trim()) || fetched.get(normalizeLookupKey(marketAddress)) || null;
 }
 
 async function fetchLatestLiquiditySnapshotForMarket(indexerUrl, marketAddress, timeoutMs) {
@@ -3218,25 +4693,123 @@ async function resolveQuoteOdds(indexerUrl, options, timeoutMs) {
   return odds;
 }
 
+async function maybeReadAmmSellEstimateFromContract(options) {
+  const marketAddress = String(options && options.marketAddress ? options.marketAddress : '').trim();
+  const side = String(options && options.side ? options.side : '').trim().toLowerCase();
+  const amount = toOptionalNumber(options && options.amount);
+  if (!isValidAddress(marketAddress) || (side !== 'yes' && side !== 'no') || !Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+
+  let publicClient;
+  try {
+    publicClient = await createReadOnlyPublicClient(options && options.chainId, options && options.rpcUrl);
+  } catch {
+    publicClient = null;
+  }
+  if (!publicClient) return null;
+
+  try {
+    const { parseUnits, formatUnits } = await loadViemRuntime();
+    const functionName = side === 'yes' ? 'calcSellYes' : 'calcSellNo';
+    const amountRaw = parseUnits(String(amount), 18);
+    const amountOutRaw = await publicClient.readContract({
+      address: marketAddress,
+      abi: AMM_SELL_QUOTE_ABI,
+      functionName,
+      args: [amountRaw],
+    });
+    const estimatedUsdcOut = Number(formatUnits(amountOutRaw, 6));
+    if (!Number.isFinite(estimatedUsdcOut) || estimatedUsdcOut <= 0) {
+      return null;
+    }
+    return {
+      estimateSource: 'amm-contract-view',
+      estimatedUsdcOut,
+      grossUsdcOut: estimatedUsdcOut,
+      feeAmount: null,
+      feePct: null,
+      pricePerShare: estimatedUsdcOut / amount,
+      netDeltaChange: -amount,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function buildQuotePayload(indexerUrl, options, timeoutMs) {
+  const market = await fetchMarketSnapshot(indexerUrl, options.marketAddress, timeoutMs);
+  const liquidity = buildMarketLiquidityMetrics(market || {});
+  const marketType = String(market && market.marketType ? market.marketType : '').toLowerCase();
+  const marketContext = { marketType, liquidity };
+  const quoteMode = String(options && options.mode ? options.mode : 'buy').toLowerCase();
   let odds;
   try {
     odds = await resolveQuoteOdds(indexerUrl, options, timeoutMs);
   } catch (err) {
     odds = buildNullOdds(null, `Unable to fetch odds: ${formatErrorValue(err)}`);
   }
-  const estimate = buildQuoteEstimate(odds, options.side, options.amountUsdc, options.slippageBps);
+  const amountInput = quoteMode === 'sell' ? options.amount : options.amountUsdc;
+  const amounts = quoteMode === 'sell'
+    ? (Array.isArray(options.amounts) && options.amounts.length ? options.amounts : [options.amount])
+    : (Array.isArray(options.amountsUsdc) && options.amountsUsdc.length ? options.amountsUsdc : [options.amountUsdc]);
+  const explicitSellEstimates = new Map();
+  if (quoteMode === 'sell' && marketType === 'amm') {
+    for (const amount of amounts) {
+      const estimate = await maybeReadAmmSellEstimateFromContract({
+        marketAddress: options.marketAddress,
+        side: options.side,
+        amount,
+        chainId: options.chainId,
+        rpcUrl: options.rpcUrl,
+      });
+      if (estimate) {
+        const probability = options.side === 'yes' ? odds.yesProbability : odds.noProbability;
+        if (Number.isFinite(probability) && !Number.isFinite(estimate.impliedProbability)) {
+          estimate.impliedProbability = probability;
+        }
+        explicitSellEstimates.set(String(amount), estimate);
+      }
+    }
+  }
+  const estimate = buildQuoteEstimate(
+    odds,
+    options.side,
+    amountInput,
+    options.slippageBps,
+    marketContext,
+    quoteMode,
+    quoteMode === 'sell' ? explicitSellEstimates.get(String(amountInput)) || null : null,
+  );
+  const curve = buildQuoteEstimateCurve(
+    odds,
+    options.side,
+    amounts,
+    options.slippageBps,
+    marketContext,
+    quoteMode,
+    explicitSellEstimates,
+  );
+  const parimutuel = quoteMode !== 'sell' && marketType === 'pari'
+    ? buildParimutuelEstimate(liquidity, options.side, options.amountUsdc)
+    : null;
 
   return {
     generatedAt: new Date().toISOString(),
     indexerUrl,
     marketAddress: options.marketAddress,
+    marketType: market && market.marketType ? market.marketType : null,
+    mode: quoteMode,
     side: options.side,
     amountUsdc: options.amountUsdc,
+    amount: options.amount,
     slippageBps: options.slippageBps,
     quoteAvailable: Boolean(estimate),
     odds,
     estimate,
+    curve,
+    liquidity,
+    parimutuel,
   };
 }
 
@@ -3273,11 +4846,28 @@ function resolveTradeRuntimeConfig(options) {
     );
   }
 
-  const privateKey = options.privateKey || process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY;
-  if (!privateKey || !isValidPrivateKey(privateKey)) {
+  const hasProfileSelector = Boolean(
+    options.profile
+    || (typeof options.profileId === 'string' && options.profileId.trim())
+    || (typeof options.profileFile === 'string' && options.profileFile.trim()),
+  );
+  const explicitPrivateKey = options.privateKey ? String(options.privateKey).trim() : '';
+  if (explicitPrivateKey && !isValidPrivateKey(explicitPrivateKey)) {
     throw new CliError(
       'INVALID_FLAG_VALUE',
-      'Missing or invalid private key. Set PANDORA_PRIVATE_KEY (preferred) or PRIVATE_KEY, or pass --private-key.',
+      'Invalid --private-key. Expected 0x + 64 hex chars.',
+    );
+  }
+  const envPrivateKey = String(process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY || '').trim();
+  const privateKey = explicitPrivateKey
+    ? explicitPrivateKey
+    : isValidPrivateKey(envPrivateKey)
+      ? envPrivateKey
+      : null;
+  if (!privateKey && !hasProfileSelector) {
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      'Missing signer credentials. Set PANDORA_PRIVATE_KEY (preferred) or PRIVATE_KEY, pass --private-key, or use --profile-id/--profile-file.',
     );
   }
 
@@ -3301,6 +4891,9 @@ function resolveTradeRuntimeConfig(options) {
     chain,
     rpcUrl,
     privateKey,
+    profileId: options.profileId || null,
+    profileFile: options.profileFile || null,
+    profile: options.profile || null,
     usdcAddress,
   };
 }
@@ -3311,19 +4904,86 @@ async function loadViemRuntime() {
   return { ...viem, ...accounts };
 }
 
+async function hasContractCodeAtAddress(options = {}) {
+  const marketAddress = String(options.marketAddress || '').trim();
+  if (!isValidAddress(marketAddress)) {
+    return false;
+  }
+  const parsedChainId = Number.parseInt(
+    options.chainId === null || options.chainId === undefined ? process.env.CHAIN_ID || '1' : String(options.chainId),
+    10,
+  );
+  const chainId = Number.isInteger(parsedChainId) && parsedChainId > 0 ? parsedChainId : 1;
+  const rpcUrl = options.rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[chainId] || null;
+  if (!rpcUrl) {
+    return false;
+  }
+
+  const { createPublicClient, getAddress, http } = await loadViemRuntime();
+  const chain = {
+    id: chainId,
+    name: `Chain ${chainId}`,
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: { default: { http: [rpcUrl] }, public: { http: [rpcUrl] } },
+  };
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  const normalizedAddress = typeof getAddress === 'function' ? getAddress(marketAddress) : marketAddress;
+  const code = await publicClient.getBytecode({ address: normalizedAddress });
+  return Boolean(code && code !== '0x' && code !== '0x0');
+}
+
+function deriveWalletAddressFromPrivateKey(privateKey) {
+  const raw = typeof privateKey === 'string' ? privateKey.trim() : '';
+  if (!raw) {
+    return null;
+  }
+  const { privateKeyToAccount } = require('viem/accounts');
+  return privateKeyToAccount(raw).address.toLowerCase();
+}
+
 async function executeTradeOnchain(options) {
   const runtime = resolveTradeRuntimeConfig(options);
+  const viemRuntime = await loadViemRuntime();
   const {
     createPublicClient,
-    createWalletClient,
+    formatUnits,
     http,
     parseUnits,
-    privateKeyToAccount,
-  } = await loadViemRuntime();
-
-  const account = privateKeyToAccount(runtime.privateKey);
+  } = viemRuntime;
+  let materializedSigner;
+  const tradeAction = String(options && options.mode ? options.mode : 'buy').toLowerCase();
+  try {
+    materializedSigner = await getExecutionSignerService().materializeExecutionSigner({
+      privateKey: runtime.privateKey,
+      profileId: runtime.profileId,
+      profileFile: runtime.profileFile,
+      profile: runtime.profile,
+      chain: runtime.chain,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+      viemRuntime,
+      env: process.env,
+      requireSigner: true,
+      mode: 'execute',
+      liveRequested: true,
+      mutating: true,
+      command: tradeAction === 'sell' ? 'sell' : 'trade',
+      toolFamily: tradeAction === 'sell' ? 'sell' : 'trade',
+      category: options && options.category ? options.category : null,
+      metadata: {
+        source: 'trade',
+        action: tradeAction,
+      },
+    });
+  } catch (error) {
+    if (error && error.code) {
+      throw new CliError(error.code, error.message || 'Unable to materialize signer for trade execution.', error.details);
+    }
+    throw error;
+  }
+  const account = materializedSigner.account;
   const publicClient = createPublicClient({ chain: runtime.chain, transport: http(runtime.rpcUrl) });
-  const walletClient = createWalletClient({ account, chain: runtime.chain, transport: http(runtime.rpcUrl) });
+  const walletClient = materializedSigner.walletClient;
 
   const marketCode = await publicClient.getBytecode({ address: options.marketAddress });
   if (!marketCode || marketCode === '0x' || marketCode === '0x0') {
@@ -3337,8 +4997,13 @@ async function executeTradeOnchain(options) {
     );
   }
 
-  const amountRaw = parseUnits(String(options.amountUsdc), 6);
-  const minSharesOutRaw = options.minSharesOutRaw === null ? 0n : options.minSharesOutRaw;
+  const tradeMode = String(options && options.mode ? options.mode : 'buy').toLowerCase();
+  const isSell = tradeMode === 'sell';
+  const amountRaw = isSell
+    ? parseUnits(String(options.amount), 18)
+    : parseUnits(String(options.amountUsdc), 6);
+  const minSharesOutRaw = options.minSharesOutRaw == null ? 0n : options.minSharesOutRaw;
+  const minAmountOutRaw = options.minAmountOutRaw == null ? 0n : options.minAmountOutRaw;
   const explorerBase = 'https://etherscan.io/tx/';
   const toExplorerUrl = (hash) => (hash ? `${explorerBase}${hash}` : null);
   const decodeTradeError = async (error, code, fallbackMessage, details = {}) => {
@@ -3353,30 +5018,107 @@ async function executeTradeOnchain(options) {
     });
   };
 
+  let tradeCall;
+  try {
+    if (isSell) {
+      tradeCall = await resolveTradeSellCall({
+        publicClient,
+        marketAddress: options.marketAddress,
+        side: options.side,
+        amountRaw,
+        minAmountOutRaw,
+      });
+    } else {
+      tradeCall = await resolveTradeBuyCall({
+        publicClient,
+        marketAddress: options.marketAddress,
+        side: options.side,
+        amountRaw,
+        minSharesOutRaw,
+      });
+    }
+  } catch (error) {
+    if (error && error.code) {
+      throw new CliError(
+        error.code,
+        error.message || 'Unsupported market trade interface.',
+        error.details,
+      );
+    }
+    await decodeTradeError(error, 'TRADE_MARKET_TYPE_RESOLUTION_FAILED', 'Unable to resolve market trade interface.', {
+      stage: 'market-type-resolve',
+      mode: tradeMode,
+    });
+  }
+
+  const approvalAsset = isSell
+    ? await readOutcomeTokenAddressForSide(publicClient, options.marketAddress, options.side)
+    : runtime.usdcAddress;
+  if (!approvalAsset) {
+    throw new CliError(
+      'OUTCOME_TOKEN_ADDRESS_UNAVAILABLE',
+      `Unable to resolve ${options.side.toUpperCase()} outcome token address for sell execution.`,
+      {
+        marketAddress: options.marketAddress,
+        side: options.side,
+      },
+    );
+  }
+
+  if (isSell) {
+    let tokenBalance;
+    try {
+      tokenBalance = await publicClient.readContract({
+        address: approvalAsset,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [account.address],
+      });
+    } catch (error) {
+      await decodeTradeError(error, 'OUTCOME_TOKEN_BALANCE_READ_FAILED', 'Failed to read outcome token balance.', {
+        stage: 'balance-read',
+        tokenAddress: approvalAsset,
+      });
+    }
+    if (tokenBalance < amountRaw) {
+      throw new CliError(
+        'INSUFFICIENT_OUTCOME_TOKEN_BALANCE',
+        `Wallet outcome token balance is insufficient for sell amount (${formatUnits(amountRaw, 18)} required).`,
+        {
+          side: options.side,
+          tokenAddress: approvalAsset,
+          balanceRaw: tokenBalance.toString(),
+          requiredRaw: amountRaw.toString(),
+        },
+      );
+    }
+  }
+
   let allowance;
   try {
     allowance = await publicClient.readContract({
-      address: runtime.usdcAddress,
+      address: approvalAsset,
       abi: ERC20_ABI,
       functionName: 'allowance',
       args: [account.address, options.marketAddress],
     });
   } catch (error) {
-    await decodeTradeError(error, 'ALLOWANCE_READ_FAILED', 'Failed to read USDC allowance.', {
+    await decodeTradeError(error, 'ALLOWANCE_READ_FAILED', `Failed to read ${isSell ? 'outcome token' : 'USDC'} allowance.`, {
       stage: 'allowance-read',
-      usdc: runtime.usdcAddress,
+      approvalAsset,
     });
   }
 
   let approveTxHash = null;
   let approveGasEstimate = null;
   let approveStatus = null;
+  let approveNonce = null;
   if (allowance < amountRaw) {
     let approveSimulation;
     try {
       approveSimulation = await publicClient.simulateContract({
         account,
-        address: runtime.usdcAddress,
+        address: approvalAsset,
         abi: ERC20_ABI,
         functionName: 'approve',
         args: [options.marketAddress, amountRaw],
@@ -3385,9 +5127,18 @@ async function executeTradeOnchain(options) {
         approveSimulation && approveSimulation.request && approveSimulation.request.gas
           ? approveSimulation.request.gas.toString()
           : null;
+      approveNonce = await publicClient.getTransactionCount({
+        address: account.address,
+        blockTag: 'pending',
+      });
+      approveSimulation.request = {
+        ...approveSimulation.request,
+        nonce: approveNonce,
+      };
     } catch (error) {
-      await decodeTradeError(error, 'APPROVE_SIMULATION_FAILED', 'USDC approve simulation failed.', {
+      await decodeTradeError(error, 'APPROVE_SIMULATION_FAILED', `${isSell ? 'Outcome token' : 'USDC'} approve simulation failed.`, {
         stage: 'approve-simulate',
+        approvalAsset,
       });
     }
     try {
@@ -3395,55 +5146,77 @@ async function executeTradeOnchain(options) {
       const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
       approveStatus = approveReceipt && approveReceipt.status ? approveReceipt.status : null;
     } catch (error) {
-      await decodeTradeError(error, 'APPROVE_EXECUTION_FAILED', 'USDC approve transaction failed.', {
+      await decodeTradeError(error, 'APPROVE_EXECUTION_FAILED', `${isSell ? 'Outcome token' : 'USDC'} approve transaction failed.`, {
         stage: 'approve-execute',
         approveTxHash,
+        approvalAsset,
       });
     }
   }
 
-  let buyTxHash = null;
-  let buyGasEstimate = null;
-  let buyStatus = null;
+  let tradeTxHash = null;
+  let tradeGasEstimate = null;
+  let tradeStatus = null;
+  let tradeNonce = null;
   try {
-    const buySimulation = await publicClient.simulateContract({
+    const tradeSimulation = await publicClient.simulateContract({
       account,
       address: options.marketAddress,
-      abi: PARI_MUTUEL_ABI,
-      functionName: 'buy',
-      args: [options.side === 'yes', amountRaw, minSharesOutRaw],
+      abi: tradeCall.abi,
+      functionName: tradeCall.functionName,
+      args: tradeCall.args,
     });
-    buyGasEstimate =
-      buySimulation && buySimulation.request && buySimulation.request.gas
-        ? buySimulation.request.gas.toString()
+    tradeGasEstimate =
+      tradeSimulation && tradeSimulation.request && tradeSimulation.request.gas
+        ? tradeSimulation.request.gas.toString()
         : null;
-    buyTxHash = await walletClient.writeContract(buySimulation.request);
-    const buyReceipt = await publicClient.waitForTransactionReceipt({ hash: buyTxHash });
-    buyStatus = buyReceipt && buyReceipt.status ? buyReceipt.status : null;
+    tradeNonce = await publicClient.getTransactionCount({
+      address: account.address,
+      blockTag: 'pending',
+    });
+    tradeSimulation.request = {
+      ...tradeSimulation.request,
+      nonce: tradeNonce,
+    };
+    tradeTxHash = await walletClient.writeContract(tradeSimulation.request);
+    const tradeReceipt = await publicClient.waitForTransactionReceipt({ hash: tradeTxHash });
+    tradeStatus = tradeReceipt && tradeReceipt.status ? tradeReceipt.status : null;
   } catch (error) {
-    await decodeTradeError(error, 'TRADE_EXECUTION_FAILED', 'Buy transaction failed.', {
-      stage: 'buy',
-      buyTxHash,
+    await decodeTradeError(error, 'TRADE_EXECUTION_FAILED', `${isSell ? 'Sell' : 'Buy'} transaction failed.`, {
+      stage: isSell ? 'sell' : 'buy',
+      tradeTxHash,
+      marketType: tradeCall ? tradeCall.marketType : null,
+      tradeSignature: tradeCall ? tradeCall.signature : null,
+      ammDeadlineEpoch: tradeCall && tradeCall.ammDeadlineEpoch ? tradeCall.ammDeadlineEpoch : null,
+      mode: tradeMode,
     });
   }
 
   return {
+    action: isSell ? 'sell' : 'buy',
     mode: runtime.mode,
     chainId: runtime.chainId,
     rpcUrl: runtime.rpcUrl,
     account: account.address,
     usdc: runtime.usdcAddress,
+    approvalAsset,
+    marketType: tradeCall.marketType,
+    tradeSignature: tradeCall.signature,
+    ammDeadlineEpoch: tradeCall.ammDeadlineEpoch,
     amountRaw: amountRaw.toString(),
     minSharesOutRaw: minSharesOutRaw.toString(),
+    minAmountOutRaw: minAmountOutRaw.toString(),
     approveTxHash,
     approveTxUrl: toExplorerUrl(approveTxHash),
     approveGasEstimate,
     approveStatus,
-    buyTxHash,
-    buyTxUrl: toExplorerUrl(buyTxHash),
-    buyGasEstimate,
-    buyStatus,
-    status: buyStatus || 'confirmed',
+    approveNonce,
+    tradeTxHash,
+    tradeTxUrl: toExplorerUrl(tradeTxHash),
+    tradeGasEstimate,
+    tradeStatus,
+    tradeNonce,
+    status: tradeStatus || 'confirmed',
   };
 }
 
@@ -3464,8 +5237,107 @@ async function runQuoteCommand(args, context) {
   emitSuccess(context.outputMode, 'quote', payload, renderQuoteTable);
 }
 
+async function createReadOnlyPublicClient(chainId, rpcUrl) {
+  const selectedChainId = Number.isInteger(Number(chainId)) ? Number(chainId) : 1;
+  const selectedRpcUrl = String(rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[selectedChainId] || '').trim();
+  if (!isSecureHttpUrlOrLocal(selectedRpcUrl)) return null;
+  const { createPublicClient, http } = await loadViemRuntime();
+  return createPublicClient({
+    chain: {
+      id: selectedChainId,
+      name: `Chain ${selectedChainId}`,
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+      rpcUrls: { default: { http: [selectedRpcUrl] }, public: { http: [selectedRpcUrl] } },
+    },
+    transport: http(selectedRpcUrl),
+  });
+}
+
+function isLikelyAddress(value) {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(value || ''));
+}
+
+async function readOutcomeTokenAddressForSide(publicClient, marketAddress, side) {
+  const candidates = String(side || '').toLowerCase() === 'yes'
+    ? ['yesToken', 'yesTokenAddress']
+    : ['noToken', 'noTokenAddress'];
+  for (const functionName of candidates) {
+    try {
+      const address = await publicClient.readContract({
+        address: marketAddress,
+        abi: OUTCOME_TOKEN_REF_ABI,
+        functionName,
+      });
+      if (isLikelyAddress(address)) {
+        return String(address);
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
+
+async function enrichMarketResolutionState(indexerUrl, marketItem, timeoutMs, publicClient) {
+  const pollAddress = String(marketItem && marketItem.pollAddress ? marketItem.pollAddress : '').trim();
+  if (!pollAddress) return null;
+  let onchain = null;
+  if (publicClient) {
+    try {
+      onchain = await getMarketAdminService().readPollResolutionState(publicClient, pollAddress);
+    } catch {
+      onchain = null;
+    }
+  }
+
+  let pollItem = null;
+  try {
+    const pollQuery = buildGraphqlGetQuery('polls', POLLS_LIST_FIELDS);
+    const data = await graphqlRequest(indexerUrl, pollQuery, { id: pollAddress }, timeoutMs);
+    pollItem = data && data.polls ? data.polls : null;
+  } catch {
+    pollItem = null;
+  }
+
+  const indexerFinalizationEpoch =
+    pollItem && pollItem.deadlineEpoch !== undefined && pollItem.deadlineEpoch !== null
+      ? String(pollItem.deadlineEpoch)
+      : null;
+  const indexerStatus = pollItem && pollItem.status !== undefined && pollItem.status !== null
+    ? Number(pollItem.status)
+    : null;
+  const indexerPollFinalized = Number.isFinite(indexerStatus) ? indexerStatus >= 2 : null;
+
+  const finalizationEpoch =
+    (onchain && onchain.finalizationEpoch) || indexerFinalizationEpoch || null;
+  const currentEpoch = onchain && onchain.currentEpoch ? onchain.currentEpoch : null;
+  const epochsUntilFinalization =
+    onchain && onchain.epochsUntilFinalization !== undefined
+      ? onchain.epochsUntilFinalization
+      : (finalizationEpoch && currentEpoch && BigInt(finalizationEpoch) > BigInt(currentEpoch))
+        ? Number(BigInt(finalizationEpoch) - BigInt(currentEpoch))
+        : 0;
+
+  return {
+    marketState: onchain && onchain.marketState !== undefined ? onchain.marketState : indexerStatus,
+    pollFinalized: onchain && onchain.pollFinalized !== null ? onchain.pollFinalized : indexerPollFinalized,
+    pollAnswer: onchain ? onchain.pollAnswer : null,
+    question: pollItem && pollItem.question ? pollItem.question : null,
+    category: pollItem && pollItem.category !== undefined ? pollItem.category : null,
+    finalizationEpoch,
+    currentEpoch,
+    epochsUntilFinalization,
+    claimable: onchain ? onchain.claimable : Boolean(indexerPollFinalized && epochsUntilFinalization <= 0),
+    operator: onchain ? onchain.operator : null,
+  };
+}
+
 async function runTradeCommand(args, context) {
   return runTradeCommandFromService(args, context);
+}
+
+async function runSellCommand(args, context) {
+  return runSellCommandFromService(args, context);
 }
 
 async function runMarketsCommand(args, context) {
@@ -3478,7 +5350,7 @@ async function runMarketsCommand(args, context) {
 
   if (!action || action === '--help' || action === '-h') {
     if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get ...'));
+      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get|scan ...'));
     } else {
       printMarketsHelpTable();
     }
@@ -3492,7 +5364,7 @@ async function runMarketsCommand(args, context) {
           context.outputMode,
           'markets.list.help',
           commandHelpPayload(
-            'pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--expand] [--with-odds]',
+            'pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]',
           ),
         );
       } else {
@@ -3502,13 +5374,33 @@ async function runMarketsCommand(args, context) {
     }
 
     const options = parseMarketsListFlags(actionArgs);
-    const { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
+    let hedgeableDiagnostics = [];
+    let { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
+    if (options.hedgeable) {
+      const filtered = await filterHedgeableMarkets({ indexerUrl, timeoutMs: shared.timeoutMs, options, items });
+      items = Array.isArray(filtered && filtered.items) ? filtered.items : items;
+      if (typeof filtered.unfilteredCount === 'number') {
+        unfilteredCount = filtered.unfilteredCount;
+      }
+      if (Array.isArray(filtered && filtered.diagnostics)) {
+        hedgeableDiagnostics = filtered.diagnostics;
+      }
+    }
     const enrichmentContext =
       options.expand || options.withOdds
         ? await buildMarketsEnrichmentContext(indexerUrl, items, options, shared.timeoutMs)
         : null;
-    const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, { enrichmentContext, unfilteredCount });
+    const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, {
+      enrichmentContext,
+      unfilteredCount,
+      externalDiagnostics: hedgeableDiagnostics,
+    });
     emitSuccess(context.outputMode, 'markets.list', payload, renderMarketsListTable);
+    return;
+  }
+
+  if (action === 'scan') {
+    await runScanCommand(actionArgs, context);
     return;
   }
 
@@ -3545,11 +5437,16 @@ async function runMarketsCommand(args, context) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market id. Use --id <id> or --stdin.');
     }
 
-    const query = buildGraphqlGetQuery('markets', MARKETS_LIST_FIELDS);
+    const publicClient = await createReadOnlyPublicClient(1, process.env.RPC_URL || null);
+    const marketMap = await fetchMarketSnapshotMap(indexerUrl, ids, shared.timeoutMs);
     const responses = await Promise.all(
       ids.map(async (id) => {
-        const data = await graphqlRequest(indexerUrl, query, { id }, shared.timeoutMs);
-        return { id, item: normalizeMarketNumericFields(data.markets || null) };
+        const item = marketMap.get(id) || marketMap.get(normalizeLookupKey(id)) || null;
+        if (!item) return { id, item: null };
+        const resolution = await enrichMarketResolutionState(indexerUrl, item, shared.timeoutMs, publicClient);
+        const liquidity = buildMarketLiquidityMetrics(item);
+        const enrichedItem = resolution ? { ...item, ...resolution, resolution } : item;
+        return { id, item: { ...enrichedItem, liquidity } };
       }),
     );
 
@@ -3583,10 +5480,10 @@ async function runMarketsCommand(args, context) {
     return;
   }
 
-  throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get');
+  throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get|scan');
 }
 
-const runScanCommand = createRunScanCommand({
+const runScanCommand = createLazyFactoryRunner('./lib/scan_command_service.cjs', 'createRunScanCommand', () => ({
   parseIndexerSharedFlags,
   includesHelpFlag,
   emitSuccess,
@@ -3597,8 +5494,9 @@ const runScanCommand = createRunScanCommand({
   fetchMarketsListPage,
   buildMarketsEnrichmentContext,
   buildMarketsListPayload,
+  filterHedgeableMarkets,
   renderScanTable,
-});
+}));
 
 async function runPollsCommand(args, context) {
   const shared = parseIndexerSharedFlags(args);
@@ -3793,10 +5691,15 @@ async function runEventsCommand(args, context) {
     const options = parseEventsListFlags(actionArgs);
     const types = options.type === 'all' ? ['liquidity', 'oracle-fee', 'claim'] : [options.type];
 
+    const pagesByType = await Promise.all(
+      types.map(async (type) => ({
+        type,
+        page: await fetchEventsByType(indexerUrl, type, options, shared.timeoutMs),
+      })),
+    );
     const all = [];
     const pageInfoBySource = {};
-    for (const type of types) {
-      const page = await fetchEventsByType(indexerUrl, type, options, shared.timeoutMs);
+    for (const { type, page } of pagesByType) {
       all.push(...page.items);
       pageInfoBySource[type] = page.pageInfo;
     }
@@ -3846,11 +5749,10 @@ async function runEventsCommand(args, context) {
     const options = parseEventsGetFlags(actionArgs);
     const types = options.type === 'all' ? ['liquidity', 'oracle-fee', 'claim'] : [options.type];
 
-    let found = null;
-    for (const type of types) {
-      found = await fetchEventByType(indexerUrl, type, options.id, shared.timeoutMs);
-      if (found) break;
-    }
+    const foundByType = await Promise.all(
+      types.map((type) => fetchEventByType(indexerUrl, type, options.id, shared.timeoutMs)),
+    );
+    const found = foundByType.find(Boolean) || null;
 
     if (!found) {
       throw new CliError('NOT_FOUND', `Event not found for id: ${options.id}`);
@@ -3928,7 +5830,9 @@ async function fetchPortfolioPositions(indexerUrl, options, timeoutMs) {
     where.chainId = options.chainId;
   }
 
-  const query = buildGraphqlListQuery('marketUserss', 'marketUsersFilter', ['id', 'chainId', 'marketAddress', 'user', 'lastTradeAt']);
+  const baseFields = ['id', 'chainId', 'marketAddress', 'user', 'lastTradeAt'];
+  const extendedFields = [...baseFields, 'yesTokenAmount', 'noTokenAmount', 'yesBalance', 'noBalance'];
+  const query = buildGraphqlListQuery('marketUserss', 'marketUsersFilter', extendedFields);
   const variables = {
     where,
     orderBy: 'lastTradeAt',
@@ -3937,8 +5841,215 @@ async function fetchPortfolioPositions(indexerUrl, options, timeoutMs) {
     after: null,
     limit: options.limit,
   };
-  const data = await graphqlRequest(indexerUrl, query, variables, timeoutMs);
-  return normalizePageResult(data.marketUserss);
+  try {
+    const data = await graphqlRequest(indexerUrl, query, variables, timeoutMs);
+    return normalizePageResult(data.marketUserss);
+  } catch (error) {
+    const fallbackQuery = buildGraphqlListQuery('marketUserss', 'marketUsersFilter', baseFields);
+    const fallbackData = await graphqlRequest(indexerUrl, fallbackQuery, variables, timeoutMs);
+    return normalizePageResult(fallbackData.marketUserss);
+  }
+}
+
+function pickFiniteNumber(...values) {
+  for (const value of values) {
+    const numeric = toOptionalNumber(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return null;
+}
+
+function derivePositionSide(yesBalance, noBalance) {
+  const hasYes = Number.isFinite(yesBalance) && yesBalance > 0;
+  const hasNo = Number.isFinite(noBalance) && noBalance > 0;
+  if (hasYes && hasNo) return 'both';
+  if (hasYes) return 'yes';
+  if (hasNo) return 'no';
+  return null;
+}
+
+function computePositionMarkValue(yesBalance, noBalance, odds) {
+  const yesProbability = toOptionalNumber(odds && odds.yesProbability);
+  const noProbability = toOptionalNumber(odds && odds.noProbability);
+  if (!Number.isFinite(yesProbability) || !Number.isFinite(noProbability)) return null;
+
+  const yesAmount = Number.isFinite(yesBalance) ? yesBalance : 0;
+  const noAmount = Number.isFinite(noBalance) ? noBalance : 0;
+  if (!yesAmount && !noAmount) return null;
+  return round(yesAmount * yesProbability + noAmount * noProbability, 6);
+}
+
+function parseTokenAmountMaybeRaw(value) {
+  const numeric = toOptionalNumber(value);
+  if (!Number.isFinite(numeric)) return null;
+
+  const rawText = typeof value === 'string' ? value.trim() : '';
+  if (rawText.includes('.')) {
+    return round(numeric, 6);
+  }
+
+  if (Number.isInteger(numeric) && Math.abs(numeric) >= 1_000_000) {
+    return round(numeric / 1_000_000, 6);
+  }
+  return round(numeric, 6);
+}
+
+function normalizeTradeSide(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['yes', 'y', 'true', '1'].includes(normalized)) return 'yes';
+  if (['no', 'n', 'false', '0'].includes(normalized)) return 'no';
+  return null;
+}
+
+async function fetchPortfolioTradeBalanceMap(indexerUrl, options, timeoutMs) {
+  const where = { trader: options.wallet };
+  if (options.chainId !== null) {
+    where.chainId = options.chainId;
+  }
+  const query = buildGraphqlListQuery(
+    'tradess',
+    'tradesFilter',
+    ['id', 'marketAddress', 'side', 'tradeType', 'tokenAmount', 'tokenAmountOut'],
+  );
+  const variables = {
+    where,
+    orderBy: 'timestamp',
+    orderDirection: 'desc',
+    before: null,
+    after: null,
+    // Keep this bounded: larger values can trigger indexer INTERNAL_SERVER_ERROR.
+    limit: Math.min(Math.max((Number(options.limit) || 100) * 5, 100), 500),
+  };
+
+  let page;
+  try {
+    const data = await graphqlRequest(indexerUrl, query, variables, timeoutMs);
+    page = normalizePageResult(data.tradess);
+  } catch {
+    return { balancesByMarket: new Map(), diagnostics: [] };
+  }
+
+  const balancesByMarket = new Map();
+  for (const trade of page.items || []) {
+    const marketKey = normalizeLookupKey(trade && trade.marketAddress);
+    if (!marketKey) continue;
+    const side = normalizeTradeSide(trade && trade.side);
+    if (!side) continue;
+
+    const tradeType = String(trade && trade.tradeType ? trade.tradeType : '').toLowerCase();
+    const tokenAmount = parseTokenAmountMaybeRaw(trade && trade.tokenAmount);
+    const tokenAmountOut = parseTokenAmountMaybeRaw(trade && trade.tokenAmountOut);
+
+    let delta = null;
+    if (
+      tradeType.includes('sell') ||
+      tradeType.includes('remove') ||
+      tradeType.includes('burn') ||
+      tradeType.includes('redeem')
+    ) {
+      delta = tokenAmount !== null ? -tokenAmount : tokenAmountOut !== null ? -tokenAmountOut : null;
+    } else {
+      delta = tokenAmountOut !== null ? tokenAmountOut : tokenAmount;
+    }
+    if (!Number.isFinite(delta)) continue;
+
+    const entry = balancesByMarket.get(marketKey) || { yesBalance: 0, noBalance: 0 };
+    if (side === 'yes') {
+      entry.yesBalance = round(entry.yesBalance + delta, 6);
+    } else {
+      entry.noBalance = round(entry.noBalance + delta, 6);
+    }
+    balancesByMarket.set(marketKey, entry);
+  }
+
+  const diagnostics = [];
+  if (page && page.pageInfo && page.pageInfo.hasNextPage) {
+    diagnostics.push('Portfolio token balances use capped trade history; increase --limit for deeper reconstruction.');
+  }
+
+  return { balancesByMarket, diagnostics };
+}
+
+async function enrichPortfolioPositions(indexerUrl, positions, options, timeoutMs) {
+  if (!Array.isArray(positions) || !positions.length) {
+    return { items: [], diagnostics: [] };
+  }
+
+  const uniqueMarketAddresses = Array.from(
+    new Set(
+      positions
+        .map((item) => normalizeLookupKey(item && item.marketAddress))
+        .filter(Boolean),
+    ),
+  );
+
+  const marketsByAddress = await fetchMarketSnapshotMap(indexerUrl, uniqueMarketAddresses, timeoutMs);
+
+  const marketItems = Array.from(new Set(marketsByAddress.values()));
+  let pollsByKey = new Map();
+  try {
+    const pollDetails = await fetchPollDetailsMap(indexerUrl, marketItems, timeoutMs);
+    pollsByKey = pollDetails && pollDetails.pollsByKey ? pollDetails.pollsByKey : new Map();
+  } catch {
+    pollsByKey = new Map();
+  }
+
+  const tradeBalances = await fetchPortfolioTradeBalanceMap(indexerUrl, options, timeoutMs);
+  const tradeBalanceByMarket = tradeBalances.balancesByMarket;
+
+  const items = positions.map((position) => {
+    const marketKey = normalizeLookupKey(position && position.marketAddress);
+    const market = marketKey ? marketsByAddress.get(marketKey) : null;
+    const liquidity = market ? buildMarketLiquidityMetrics(market) : buildMarketLiquidityMetrics({});
+    let odds = market ? computeMarketOdds(market, null) : buildNullOdds(null, 'Market enrichment unavailable.');
+    if (
+      (!odds || !Number.isFinite(odds.yesProbability)) &&
+      Number.isFinite(liquidity && liquidity.yesPrice) &&
+      Number.isFinite(liquidity && liquidity.noPrice)
+    ) {
+      odds = normalizeOddsFromPair(liquidity.yesPrice, liquidity.noPrice, 'liquidity:reserve-metrics');
+    }
+    const poll = market
+      ? firstMappedValue(pollsByKey, [market.pollAddress, market.pollId, market.poll && market.poll.id])
+      : null;
+
+    const tradeBalance = marketKey ? tradeBalanceByMarket.get(marketKey) : null;
+    const yesBalance = pickFiniteNumber(
+      position && position.yesTokenAmount,
+      position && position.yesBalance,
+      tradeBalance && tradeBalance.yesBalance,
+    );
+    const noBalance = pickFiniteNumber(
+      position && position.noTokenAmount,
+      position && position.noBalance,
+      tradeBalance && tradeBalance.noBalance,
+    );
+    const markValueUsdc = computePositionMarkValue(yesBalance, noBalance, odds);
+
+    return {
+      ...position,
+      question: poll && poll.question ? poll.question : null,
+      marketType: market && market.marketType ? market.marketType : null,
+      odds: {
+        yesPct: odds && Number.isFinite(odds.yesPct) ? odds.yesPct : null,
+        noPct: odds && Number.isFinite(odds.noPct) ? odds.noPct : null,
+      },
+      liquidity: {
+        reserveYes: Number.isFinite(liquidity && liquidity.reserveYes) ? liquidity.reserveYes : null,
+        reserveNo: Number.isFinite(liquidity && liquidity.reserveNo) ? liquidity.reserveNo : null,
+        deadPool: liquidity && liquidity.deadPool === true,
+      },
+      yesBalance,
+      noBalance,
+      positionSide: derivePositionSide(yesBalance, noBalance),
+      markValueUsdc,
+    };
+  });
+
+  return {
+    items,
+    diagnostics: tradeBalances.diagnostics,
+  };
 }
 
 async function fetchPortfolioLiquidityEvents(indexerUrl, options, timeoutMs) {
@@ -3982,37 +6093,46 @@ async function fetchPortfolioClaimEvents(indexerUrl, options, timeoutMs) {
 }
 
 async function collectPortfolioSnapshot(indexerUrl, options, timeoutMs) {
-  const positionsPage = await fetchPortfolioPositions(indexerUrl, options, timeoutMs);
-  let liquidityPage = { items: [] };
-  let claimPage = { items: [] };
-  let lpPayload = null;
+  const positionsPagePromise = fetchPortfolioPositions(indexerUrl, options, timeoutMs);
+  const eventsPromise = options.includeEvents
+    ? Promise.all([
+        fetchPortfolioLiquidityEvents(indexerUrl, options, timeoutMs),
+        fetchPortfolioClaimEvents(indexerUrl, options, timeoutMs),
+      ])
+    : Promise.resolve([{ items: [] }, { items: [] }]);
+  const lpPayloadPromise = options.withLp
+    ? runLpPositions({
+        wallet: options.wallet,
+        chainId: options.chainId,
+        rpcUrl: options.rpcUrl || null,
+        indexerUrl,
+        timeoutMs,
+      })
+    : Promise.resolve(null);
 
-  if (options.includeEvents) {
-    [liquidityPage, claimPage] = await Promise.all([
-      fetchPortfolioLiquidityEvents(indexerUrl, options, timeoutMs),
-      fetchPortfolioClaimEvents(indexerUrl, options, timeoutMs),
-    ]);
-  }
-
-  if (options.withLp) {
-    lpPayload = await runLpPositions({
-      wallet: options.wallet,
-      chainId: options.chainId,
-      rpcUrl: options.rpcUrl || null,
-      indexerUrl,
-      timeoutMs,
-    });
-  }
+  const [positionsPage, [liquidityPage, claimPage], lpPayload] = await Promise.all([
+    positionsPagePromise,
+    eventsPromise,
+    lpPayloadPromise,
+  ]);
 
   const positions = Array.isArray(positionsPage.items) ? positionsPage.items : [];
+  const enrichedPositionResult = await enrichPortfolioPositions(indexerUrl, positions, options, timeoutMs);
+  const enrichedPositions = Array.isArray(enrichedPositionResult && enrichedPositionResult.items)
+    ? enrichedPositionResult.items
+    : [];
+  const positionDiagnostics = Array.isArray(enrichedPositionResult && enrichedPositionResult.diagnostics)
+    ? enrichedPositionResult.diagnostics
+    : [];
   const liquidityEvents = Array.isArray(liquidityPage.items) ? liquidityPage.items : [];
   const claimEvents = Array.isArray(claimPage.items) ? claimPage.items : [];
   const lpPositions = Array.isArray(lpPayload && lpPayload.items) ? lpPayload.items : [];
   const lpDiagnostics = Array.isArray(lpPayload && lpPayload.diagnostics) ? lpPayload.diagnostics : [];
 
   return {
-    summary: summarizePortfolio(options, positions, liquidityEvents, claimEvents, lpPositions, lpDiagnostics),
-    positions,
+    summary: summarizePortfolio(options, enrichedPositions, liquidityEvents, claimEvents, lpPositions, lpDiagnostics),
+    positions: enrichedPositions,
+    rawPositions: positions,
     lpPositions,
     events: {
       liquidity: liquidityEvents,
@@ -4020,6 +6140,7 @@ async function collectPortfolioSnapshot(indexerUrl, options, timeoutMs) {
     },
     diagnostics: {
       lp: lpDiagnostics,
+      positions: positionDiagnostics,
     },
   };
 }
@@ -4080,6 +6201,34 @@ function summarizePortfolio(options, positions, liquidityEvents, claimEvents, lp
     }, 0),
     6,
   );
+  const hasAnyLpPreview = lpPositions.some((item) => {
+    const value = Number(item && item.preview && item.preview.collateralOutUsdc);
+    return Number.isFinite(value);
+  });
+
+  const totalDeposited = options.includeEvents ? round(liquidityAdded, 6) : null;
+  const totalNetDelta = options.includeEvents ? round(netLiquidity, 6) : null;
+  const totalPositionMarkValueUsdc = round(
+    positions.reduce((sum, position) => {
+      const value = Number(position && position.markValueUsdc);
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0),
+    6,
+  );
+  let totalUnrealizedPnl = null;
+
+  if (options.includeEvents && options.withLp) {
+    if (lpMarketsWithBalance === 0) {
+      totalUnrealizedPnl = 0;
+    } else if (hasAnyLpPreview && totalNetDelta !== null) {
+      totalUnrealizedPnl = round(lpEstimatedCollateralOutUsdc - totalNetDelta, 6);
+    } else {
+      totalUnrealizedPnl = null;
+      diagnostics.push('LP unrealized PnL unavailable: missing LP remove preview outputs.');
+    }
+  } else if (options.includeEvents && !options.withLp) {
+    diagnostics.push('LP unrealized PnL unavailable without --with-lp.');
+  }
 
   return {
     positionCount: positions.length,
@@ -4090,6 +6239,17 @@ function summarizePortfolio(options, positions, liquidityEvents, claimEvents, lp
     claims,
     cashflowNet,
     pnlProxy: cashflowNet,
+    totalDeposited,
+    totalNetDelta,
+    totalPositionMarkValueUsdc,
+    totalUnrealizedPnl,
+    totalsPolicy: {
+      eventDerivedTotalsWhenEventsDisabled: null,
+      eventDerivedTotalsDefaultWhenNoRows: 0,
+      unrealizedRequiresLp: true,
+      unrealizedWhenNoLpBalance: 0,
+      unrealizedWhenPreviewUnavailable: null,
+    },
     eventsIncluded: options.includeEvents,
     lpIncluded: Boolean(options.withLp),
     lpPositionCount,
@@ -4187,66 +6347,79 @@ const sharedParserDeps = {
   isSecureHttpUrlOrLocal,
 };
 
-const parseTradeFlagsFromModule = createParseTradeFlags({
+const parseTradeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/trade_flags.cjs', 'createParseTradeFlags', () => ({
   ...sharedParserDeps,
   parseBigIntString,
-});
-const parseWatchFlagsFromModule = createParseWatchFlags(sharedParserDeps);
-const parseAutopilotFlagsFromModule = createParseAutopilotFlags({
+}));
+const parseWatchFlagsFromModule = createLazyFactoryRunner('./lib/parsers/watch_flags.cjs', 'createParseWatchFlags', () => sharedParserDeps);
+const parseAutopilotFlagsFromModule = createLazyFactoryRunner('./lib/parsers/autopilot_flags.cjs', 'createParseAutopilotFlags', () => ({
   ...sharedParserDeps,
   defaultAutopilotStateFile,
   defaultAutopilotKillSwitchFile,
-});
-const parseMirrorPlanFlagsFromModule = createParseMirrorPlanFlags(sharedParserDeps);
-const parseMirrorHedgeCalcFlagsFromModule = createParseMirrorHedgeCalcFlags({
+}));
+const parseMirrorPlanFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_plan_flags.cjs', 'createParseMirrorPlanFlags', () => sharedParserDeps);
+const parseMirrorHedgeCalcFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_hedge_calc_flags.cjs', 'createParseMirrorHedgeCalcFlags', () => ({
   ...sharedParserDeps,
   parseCsvNumberList,
-});
-const parseMirrorDeployFlagsFromModule = createParseMirrorDeployFlags(sharedParserDeps);
-const parseMirrorGoFlagsFromModule = createParseMirrorGoFlags({
+}));
+const parseMirrorDeployFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_deploy_flags.cjs', 'createParseMirrorDeployFlags', () => sharedParserDeps);
+const parseMirrorGoFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_go_flags.cjs', 'createParseMirrorGoFlags', () => ({
   ...sharedParserDeps,
   parseMirrorSyncGateSkipList,
   mergeMirrorSyncGateSkipLists,
-});
-const parseMirrorSyncFlagsFromModule = createParseMirrorSyncFlags({
+}));
+const parseMirrorSyncFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_sync_flags.cjs', 'createParseMirrorSyncFlags', () => ({
   ...sharedParserDeps,
   defaultMirrorStateFile,
   defaultMirrorKillSwitchFile,
   parseMirrorSyncGateSkipList,
   mergeMirrorSyncGateSkipLists,
-});
-const parseMirrorSyncDaemonSelectorFlagsFromModule = createParseMirrorSyncDaemonSelectorFlags({
-  CliError,
-  requireFlagValue,
-});
-const parseMirrorBrowseFlagsFromModule = createParseMirrorBrowseFlags({
+}));
+const parseMirrorSyncDaemonSelectorFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/mirror_sync_flags.cjs',
+  'createParseMirrorSyncDaemonSelectorFlags',
+  () => ({
+    CliError,
+    requireFlagValue,
+    parseAddressFlag,
+  }),
+);
+const parseMirrorBrowseFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorBrowseFlags', () => ({
   ...sharedParserDeps,
   parseDateLikeFlag,
-});
-const parseMirrorVerifyFlagsFromModule = createParseMirrorVerifyFlags(sharedParserDeps);
-const parseMirrorStatusFlagsFromModule = createParseMirrorStatusFlags({
+}));
+const parseMirrorVerifyFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorVerifyFlags', () => sharedParserDeps);
+const parseMirrorStatusFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorStatusFlags', () => ({
   ...sharedParserDeps,
   defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
-});
-const parseMirrorCloseFlagsFromModule = createParseMirrorCloseFlags(sharedParserDeps);
-const parseMirrorLpExplainFlagsFromModule = createParseMirrorLpExplainFlags(sharedParserDeps);
-const parseMirrorSimulateFlagsFromModule = createParseMirrorSimulateFlags({
+}));
+const parseMirrorPnlFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorPnlFlags', () => ({
+  ...sharedParserDeps,
+  defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
+}));
+const parseMirrorAuditFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorAuditFlags', () => ({
+  ...sharedParserDeps,
+  defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
+}));
+const parseMirrorCloseFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorCloseFlags', () => sharedParserDeps);
+const parseMirrorLpExplainFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorLpExplainFlags', () => sharedParserDeps);
+const parseMirrorSimulateFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorSimulateFlags', () => ({
   ...sharedParserDeps,
   parseCsvNumberList,
-});
-const parsePolymarketSharedFlagsFromModule = createParsePolymarketSharedFlags({
+}));
+const parsePolymarketSharedFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketSharedFlags', () => ({
   CliError,
   requireFlagValue,
   parseAddressFlag,
   parseInteger,
   isValidPrivateKey,
   isSecureHttpUrlOrLocal,
-});
-const parsePolymarketApproveFlagsFromModule = createParsePolymarketApproveFlags({
+}));
+const parsePolymarketApproveFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketApproveFlags', () => ({
   CliError,
   parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
-});
-const parsePolymarketTradeFlagsFromModule = createParsePolymarketTradeFlags({
+}));
+const parsePolymarketTradeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketTradeFlags', () => ({
   CliError,
   requireFlagValue,
   parsePositiveNumber,
@@ -4254,16 +6427,26 @@ const parsePolymarketTradeFlagsFromModule = createParsePolymarketTradeFlags({
   parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
   isSecureHttpUrlOrLocal,
   defaultTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
-});
-const parseResolveFlagsFromModule = createParseResolveFlags({
+}));
+const parseResolveFlagsFromModule = createLazyFactoryRunner('./lib/parsers/resolve_flags.cjs', 'createParseResolveFlags', () => ({
   CliError,
   parseAddressFlag,
   requireFlagValue,
   parseInteger,
+  parsePositiveInteger,
   isValidPrivateKey,
   isSecureHttpUrlOrLocal,
-});
-const parseLpFlagsFromModule = createParseLpFlags({
+}));
+const parseClaimFlagsFromModule = createLazyFactoryRunner('./lib/parsers/claim_flags.cjs', 'createParseClaimFlags', () => ({
+  CliError,
+  parseAddressFlag,
+  requireFlagValue,
+  parseInteger,
+  parsePositiveInteger,
+  isValidPrivateKey,
+  isSecureHttpUrlOrLocal,
+}));
+const parseLpFlagsFromModule = createLazyFactoryRunner('./lib/parsers/lp_flags.cjs', 'createParseLpFlags', () => ({
   CliError,
   parseAddressFlag,
   requireFlagValue,
@@ -4273,8 +6456,15 @@ const parseLpFlagsFromModule = createParseLpFlags({
   isValidPrivateKey,
   isSecureHttpUrlOrLocal,
   defaultTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
-});
-const parseSportsFlagsFromModule = createParseSportsFlags({
+}));
+const parseLifecycleFlagsFromModule = createLazyFactoryRunner('./lib/parsers/lifecycle_flags.cjs', 'createParseLifecycleFlags', () => ({
+  CliError,
+  requireFlagValue,
+}));
+function parseOperationsFlagsFromModule(...args) {
+  return getOperationsFlagsModule().parseOperationsFlags(...args);
+}
+const parseSportsFlagsFromModule = createLazyFactoryRunner('./lib/parsers/sports_flags.cjs', 'createParseSportsFlags', () => ({
   CliError,
   requireFlagValue,
   parsePositiveInteger,
@@ -4286,15 +6476,94 @@ const parseSportsFlagsFromModule = createParseSportsFlags({
   parseCsvList,
   parseDateLikeFlag,
   isSecureHttpUrlOrLocal,
-});
-
-const runTradeCommandFromService = createRunTradeCommand({
+}));
+const parseOddsFlagsFromModule = createLazyFactoryRunner('./lib/parsers/odds_flags.cjs', 'createParseOddsFlags', () => ({
   CliError,
+  requireFlagValue,
+  parsePositiveInteger,
+  parseCsvList,
+  isSecureHttpUrlOrLocal,
+}));
+const parseRiskShowFlagsFromModule = createLazyFactoryRunner('./lib/parsers/risk_flags.cjs', 'createParseRiskShowFlags', () => ({
+  CliError,
+  requireFlagValue,
+}));
+const parseRiskPanicFlagsFromModule = createLazyFactoryRunner('./lib/parsers/risk_flags.cjs', 'createParseRiskPanicFlags', () => ({
+  CliError,
+  requireFlagValue,
+}));
+const parsePolicyFlagsFromModule = createLazyFactoryRunner('./lib/parsers/policy_flags.cjs', 'createParsePolicyFlags', () => ({
+  CliError,
+  requireFlagValue,
+}));
+function parseProfileFlagsFromModule(...args) {
+  return getProfileFlagsModule().parseProfileFlags(...args);
+}
+const parseRecipeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/recipe_flags.cjs', 'createParseRecipeFlags', () => ({
+  CliError,
+  requireFlagValue,
+}));
+const parseModelCalibrateFlagsFromModule = createLazyFactoryRunner('./lib/parsers/model_flags.cjs', 'createParseModelCalibrateFlags', () => ({
+  CliError,
+  requireFlagValue,
+  parseNumber,
+  parsePositiveNumber,
+  parsePositiveInteger,
+  parseCsvList,
+}));
+const parseModelCorrelationFlagsFromModule = createLazyFactoryRunner('./lib/parsers/model_flags.cjs', 'createParseModelCorrelationFlags', () => ({
+  CliError,
+  requireFlagValue,
+  parseNumber,
+  parsePositiveNumber,
+  parseCsvList,
+}));
+const parseModelDiagnoseFlagsFromModule = createLazyFactoryRunner('./lib/parsers/model_flags.cjs', 'createParseModelDiagnoseFlags', () => ({
+  CliError,
+  requireFlagValue,
+  parseNumber,
+}));
+const parseModelScoreBrierFlagsFromModule = createLazyFactoryRunner('./lib/parsers/model_flags.cjs', 'createParseModelScoreBrierFlags', () => ({
+  CliError,
+  requireFlagValue,
+  parsePositiveInteger,
+}));
+const parseSimulateMcFlagsFromModule = createLazyFactoryRunner('./lib/parsers/simulate_flags.cjs', 'createParseSimulateMcFlags', () => ({
+  CliError,
+  requireFlagValue,
+  parsePositiveInteger,
+  parsePositiveNumber,
+  parseProbabilityPercent,
+  parseNumber,
+  parseOutcomeSide,
+  parseNonNegativeInteger,
+}));
+const parseSimulateParticleFilterFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/simulate_flags.cjs',
+  'createParseSimulateParticleFilterFlags',
+  () => ({
+    CliError,
+    requireFlagValue,
+    parsePositiveInteger,
+    parsePositiveNumber,
+    parseProbabilityPercent,
+    parseNumber,
+    parseNonNegativeInteger,
+  }),
+);
+
+const runTradeCommandFromService = createLazyFactoryRunner('./lib/trade_command_service.cjs', 'createRunTradeCommand', () => ({
+  CliError,
+  includesHelpFlag,
   parseIndexerSharedFlags,
   emitSuccess,
   tradeHelpJsonPayload,
+  sellHelpJsonPayload,
+  quoteHelpJsonPayload,
   printTradeHelpTable,
+  printSellHelpTable,
   maybeLoadTradeEnv,
+  parseQuoteFlags,
   parseTradeFlags: parseTradeFlagsFromModule,
   resolveIndexerUrl,
   buildQuotePayload,
@@ -4304,10 +6573,37 @@ const runTradeCommandFromService = createRunTradeCommand({
   executeTradeOnchain,
   resolveForkRuntime,
   isSecureHttpUrlOrLocal,
+  assertLiveWriteAllowed,
+  renderQuoteTable,
   renderTradeTable,
-});
+}));
+const runSellCommandFromService = createLazyFactoryRunner('./lib/trade_command_service.cjs', 'createRunSellCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  parseIndexerSharedFlags,
+  emitSuccess,
+  tradeHelpJsonPayload,
+  sellHelpJsonPayload,
+  quoteHelpJsonPayload,
+  printTradeHelpTable,
+  printSellHelpTable,
+  maybeLoadTradeEnv,
+  parseQuoteFlags,
+  parseTradeFlags: parseTradeFlagsFromModule,
+  resolveIndexerUrl,
+  buildQuotePayload,
+  enforceTradeRiskGuards,
+  getSelectedOutcomeProbabilityPct,
+  buildTradeRiskGuardConfig,
+  executeTradeOnchain,
+  resolveForkRuntime,
+  isSecureHttpUrlOrLocal,
+  assertLiveWriteAllowed,
+  renderQuoteTable,
+  renderTradeTable,
+}));
 
-const runWatchCommandFromService = createRunWatchCommand({
+const runWatchCommandFromService = createLazyFactoryRunner('./lib/watch_command_service.cjs', 'createRunWatchCommand', () => ({
   CliError,
   parseIndexerSharedFlags,
   emitSuccess,
@@ -4321,11 +6617,13 @@ const runWatchCommandFromService = createRunWatchCommand({
   evaluateWatchAlerts,
   hasWebhookTargets,
   sendWebhookNotifications,
+  appendForecastRecord,
+  defaultForecastFile,
   sleepMs,
   renderWatchTable,
-});
+}));
 
-const runPolymarketCommandFromService = createRunPolymarketCommand({
+const runPolymarketCommandFromService = createLazyFactoryRunner('./lib/polymarket_command_service.cjs', 'createRunPolymarketCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
@@ -4346,29 +6644,52 @@ const runPolymarketCommandFromService = createRunPolymarketCommand({
   renderPolymarketApproveTable,
   renderPolymarketPreflightTable,
   renderSingleEntityTable,
+  assertLiveWriteAllowed,
   defaultEnvFile: DEFAULT_ENV_FILE,
-});
+}));
 
-const runResolveCommandFromService = createRunResolveCommand({
+const runResolveCommandFromService = createLazyFactoryRunner('./lib/resolve_command_service.cjs', 'createRunResolveCommand', () => ({
   includesHelpFlag,
   emitSuccess,
   commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadTradeEnv,
   parseResolveFlags: parseResolveFlagsFromModule,
   runResolve,
   renderSingleEntityTable,
   CliError,
-});
+  assertLiveWriteAllowed,
+  decorateOperationPayload,
+}));
 
-const runLpCommandFromService = createRunLpCommand({
+const runClaimCommandFromService = createLazyFactoryRunner('./lib/claim_command_service.cjs', 'createRunClaimCommand', () => ({
   includesHelpFlag,
   emitSuccess,
   commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadTradeEnv,
+  parseClaimFlags: parseClaimFlagsFromModule,
+  runClaim,
+  renderSingleEntityTable,
+  CliError,
+  assertLiveWriteAllowed,
+  decorateOperationPayload,
+}));
+
+const runLpCommandFromService = createLazyFactoryRunner('./lib/lp_command_service.cjs', 'createRunLpCommand', () => ({
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadTradeEnv,
   parseLpFlags: parseLpFlagsFromModule,
   runLp,
   renderSingleEntityTable,
   CliError,
-});
-const runSportsCommandFromService = createRunSportsCommand({
+  assertLiveWriteAllowed,
+  decorateOperationPayload,
+}));
+const runSportsCommandFromService = createLazyFactoryRunner('./lib/sports_command_service.cjs', 'createRunSportsCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
@@ -4382,7 +6703,115 @@ const runSportsCommandFromService = createRunSportsCommand({
   buildSportsResolvePlan,
   buildSportsCreatePlan,
   deployPandoraAmmMarket,
-});
+  assertLiveWriteAllowed,
+}));
+const runRiskCommandFromService = createLazyFactoryRunner('./lib/risk_command_service.cjs', 'createRunRiskCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseRiskShowFlags: parseRiskShowFlagsFromModule,
+  parseRiskPanicFlags: parseRiskPanicFlagsFromModule,
+  getRiskSnapshot,
+  setPanic: setRiskPanic,
+  clearPanic: clearRiskPanic,
+  renderRiskTable,
+}));
+const runPolicyCommandFromService = createLazyFactoryRunner('./lib/policy_command_service.cjs', 'createRunPolicyCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parsePolicyFlags: parsePolicyFlagsFromModule,
+  createPolicyRegistryService: () => require('./lib/policy_registry_service.cjs').createPolicyRegistryService(),
+  createPolicyEvaluatorService: (...args) => require('./lib/policy_evaluator_service.cjs').createPolicyEvaluatorService(...args),
+  createPolicyProfileGuidanceService: (...args) => require('./lib/policy_profile_guidance_service.cjs').createPolicyProfileGuidanceService(...args),
+  createProfileStore: () => require('./lib/profile_store.cjs').createProfileStore(),
+  createProfileResolverService: (...args) => require('./lib/profile_resolver_service.cjs').createProfileResolverService(...args),
+}));
+const runProfileCommandFromService = createLazyFactoryRunner('./lib/profile_command_service.cjs', 'createRunProfileCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseProfileFlags: parseProfileFlagsFromModule,
+  createProfileStore: () => require('./lib/profile_store.cjs').createProfileStore(),
+  createProfileResolverService: (...args) => require('./lib/profile_resolver_service.cjs').createProfileResolverService(...args),
+  createPolicyRegistryService: () => require('./lib/policy_registry_service.cjs').createPolicyRegistryService(),
+  createPolicyEvaluatorService: (...args) => require('./lib/policy_evaluator_service.cjs').createPolicyEvaluatorService(...args),
+  createPolicyProfileGuidanceService: (...args) => require('./lib/policy_profile_guidance_service.cjs').createPolicyProfileGuidanceService(...args),
+}));
+const runRecipeCommandFromService = createLazyFactoryRunner('./lib/recipe_command_service.cjs', 'createRunRecipeCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseRecipeFlags: parseRecipeFlagsFromModule,
+  createRecipeRegistryService: () => require('./lib/recipe_registry_service.cjs').createRecipeRegistryService(),
+  createRecipeRuntimeService: require('./lib/recipe_runtime_service.cjs').createRecipeRuntimeService,
+  createCommandExecutorService: () => require('./lib/command_executor_service.cjs').createCommandExecutorService(),
+  createPolicyEvaluatorService: () => require('./lib/policy_evaluator_service.cjs').createPolicyEvaluatorService(),
+  createProfileResolverService: () => require('./lib/profile_resolver_service.cjs').createProfileResolverService(),
+  buildCommandDescriptors: () => require('./lib/agent_contract_registry.cjs').buildCommandDescriptors(),
+}));
+const runOperationsCommandFromService = createLazyFactoryRunner('./lib/operations_command_service.cjs', 'createRunOperationsCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseOperationsFlags: parseOperationsFlagsFromModule,
+  createOperationService: getOperationService,
+}));
+const runModelCommandFromService = createLazyFactoryRunner('./lib/model_command_service.cjs', 'createRunModelCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseModelCalibrateFlags: parseModelCalibrateFlagsFromModule,
+  parseModelCorrelationFlags: parseModelCorrelationFlagsFromModule,
+  parseModelDiagnoseFlags: parseModelDiagnoseFlagsFromModule,
+  parseModelScoreBrierFlags: parseModelScoreBrierFlagsFromModule,
+  readForecastRecords,
+  defaultForecastFile,
+  computeBrierReport,
+}));
+const runLifecycleCommandFromService = createLazyFactoryRunner('./lib/lifecycle_command_service.cjs', 'createRunLifecycleCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseLifecycleFlags: parseLifecycleFlagsFromModule,
+}));
+const runArbCommandFromService = createLazyFactoryRunner('./lib/arb_command_service.cjs', 'createRunArbCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadIndexerEnv,
+  resolveIndexerUrl,
+  requireFlagValue,
+  parseCsvList,
+  parseNumber,
+  parsePositiveNumber,
+  parsePositiveInteger,
+  buildGraphqlGetQuery,
+  graphqlRequest,
+  sleepMs,
+  scanArbitrage,
+}));
+const runOddsCommandFromService = createLazyFactoryRunner('./lib/odds_command_service.cjs', 'createRunOddsCommand', () => ({
+  parseIndexerSharedFlags,
+  includesHelpFlag,
+  maybeLoadIndexerEnv,
+  resolveIndexerUrl,
+  parseOddsFlags: parseOddsFlagsFromModule,
+  createOddsHistoryService,
+  createVenueConnectorFactory,
+  sleepMs,
+  emitSuccess,
+  renderSingleEntityTable,
+}));
 
 async function runPortfolioCommand(args, context) {
   const shared = parseIndexerSharedFlags(args);
@@ -4390,11 +6819,11 @@ async function runPortfolioCommand(args, context) {
     if (context.outputMode === 'json') {
       emitSuccess(context.outputMode, 'portfolio.help', {
         usage:
-          'pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
+          'pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
       });
     } else {
       console.log(
-        'Usage: pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
+        'Usage: pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]',
       );
     }
     return;
@@ -4426,6 +6855,18 @@ async function runWatchCommand(args, context) {
 
 async function runSportsCommand(args, context) {
   return runSportsCommandFromService(args, context);
+}
+
+async function runLifecycleCommand(args, context) {
+  return runLifecycleCommandFromService(args, context);
+}
+
+async function runArbCommand(args, context) {
+  return runArbCommandFromService(args, context);
+}
+
+async function runOddsCommand(args, context) {
+  return runOddsCommandFromService(args, context);
 }
 
 async function runHistoryCommand(args, context) {
@@ -4502,19 +6943,30 @@ async function runExportCommand(args, context) {
 
 async function runArbitrageCommand(args, context) {
   const shared = parseIndexerSharedFlags(args);
+  const arbitrageHelpNotes = [
+    '`arbitrage` is the backward-compatible one-shot wrapper for cross-venue spreads.',
+    'Use `arb scan --output json --iterations 1` for the canonical bounded arbitrage flow.',
+    'Use `arb scan --output ndjson` for streaming scans.',
+  ];
   if (includesHelpFlag(shared.rest)) {
     if (context.outputMode === 'json') {
       emitSuccess(
         context.outputMode,
         'arbitrage.help',
         commandHelpPayload(
-          'pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
+          'pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
+          arbitrageHelpNotes,
         ),
       );
     } else {
       console.log(
-        'Usage: pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
+        'Usage: pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]',
       );
+      console.log('');
+      console.log('Notes:');
+      for (const note of arbitrageHelpNotes) {
+        console.log(`- ${note}`);
+      }
     }
     return;
   }
@@ -4575,6 +7027,10 @@ async function runAutopilotCommand(args, context) {
         privateKey: null,
         usdc: null,
       };
+      await assertLiveWriteAllowed('autopilot.execute-live', {
+        notionalUsdc: executionOptions.amountUsdc,
+        runtimeMode: 'live',
+      });
       const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
       enforceTradeRiskGuards(tradeOptions, quote);
       const execution = await executeTradeOnchain(tradeOptions);
@@ -4635,15 +7091,216 @@ function resolveTrustedDeployPair(options = {}) {
   };
 }
 
+function deriveMirrorStatusLiveStatus(params = {}) {
+  if (params.gateOk === false || params.lifecycleActive === false || params.notExpired === false) {
+    return 'blocked';
+  }
+  if (params.expiryWarn || params.driftTriggered || params.hedgeTriggered) {
+    return 'attention';
+  }
+  return 'ok';
+}
+
+function buildMirrorStatusDiagnostics(params = {}) {
+  const diagnostics = [];
+  const {
+    gateOk,
+    failedChecks,
+    driftBps,
+    driftTriggerBps,
+    hedgeGapUsdc,
+    hedgeTriggerUsdc,
+    hedgeTriggered,
+    rebalanceSide,
+    hedgeSide,
+    minTimeToExpirySec,
+    expiryWarn,
+    matchConfidence,
+    currentHedgeUsdc,
+    targetHedgeUsdc,
+  } = params;
+
+  if (gateOk === false) {
+    diagnostics.push({
+      code: 'VERIFY_GATES_FAILED',
+      severity: 'error',
+      message: 'Mirror verification gates failed.',
+      action: 'inspect-verify-gates',
+      details: {
+        failedChecks: Array.isArray(failedChecks) ? failedChecks : [],
+      },
+    });
+  }
+
+  if (Number.isFinite(driftBps) && Number.isFinite(driftTriggerBps) && driftBps >= driftTriggerBps) {
+    diagnostics.push({
+      code: 'DRIFT_TRIGGERED',
+      severity: driftBps >= driftTriggerBps * 2 ? 'error' : 'warn',
+      message: `Cross-venue drift ${driftBps}bps exceeds trigger ${driftTriggerBps}bps.`,
+      action: rebalanceSide ? `rebalance-${rebalanceSide}` : 'rebalance',
+      details: {
+        driftBps,
+        driftTriggerBps,
+        rebalanceSide: rebalanceSide || null,
+      },
+    });
+  }
+
+  if (hedgeTriggered && Number.isFinite(Math.abs(Number(hedgeGapUsdc)))) {
+    diagnostics.push({
+      code: 'HEDGE_GAP_TRIGGERED',
+      severity: Math.abs(hedgeGapUsdc) >= hedgeTriggerUsdc * 2 ? 'error' : 'warn',
+      message: `Tracked hedge gap ${Math.abs(hedgeGapUsdc)} USDC exceeds trigger ${hedgeTriggerUsdc} USDC.`,
+      action: hedgeSide ? `hedge-${hedgeSide}` : 'hedge',
+      details: {
+        hedgeGapUsdc,
+        currentHedgeUsdc,
+        targetHedgeUsdc,
+        hedgeTriggerUsdc,
+        hedgeSide: hedgeSide || null,
+      },
+    });
+  }
+
+  if (expiryWarn) {
+    diagnostics.push({
+      code: 'EXPIRY_NEAR',
+      severity: 'warn',
+      message: `Mirror pair expiry is near (${minTimeToExpirySec}s remaining on the tighter venue).`,
+      action: 'tighten-monitoring',
+      details: {
+        minTimeToExpirySec,
+      },
+    });
+  }
+
+  if (matchConfidence !== null && matchConfidence < 0.97) {
+    diagnostics.push({
+      code: 'MATCH_CONFIDENCE_SOFT_WARN',
+      severity: 'info',
+      message: `Question similarity confidence is ${matchConfidence}.`,
+      action: 'spot-check-market-match',
+      details: {
+        matchConfidence,
+      },
+    });
+  }
+
+  if (!diagnostics.length) {
+    diagnostics.push({
+      code: 'MONITOR_ONLY',
+      severity: 'info',
+      message: 'No rebalance or hedge action is currently implied by status thresholds.',
+      action: 'monitor',
+      details: {},
+    });
+  }
+
+  return diagnostics;
+}
+
+function buildMirrorStatusActionability(params = {}) {
+  const diagnostics = buildMirrorStatusDiagnostics(params);
+  const primary = diagnostics[0];
+  const blocked = diagnostics.some((item) => item.severity === 'error' && item.code === 'VERIFY_GATES_FAILED');
+  const hasTradeAction = diagnostics.some((item) => item.code === 'DRIFT_TRIGGERED' || item.code === 'HEDGE_GAP_TRIGGERED');
+  return {
+    status: blocked ? 'blocked' : hasTradeAction ? 'action-needed' : params.expiryWarn ? 'attention' : 'monitor',
+    urgency: blocked ? 'high' : hasTradeAction ? 'medium' : params.expiryWarn ? 'medium' : 'low',
+    recommendedAction: primary && primary.action ? primary.action : 'monitor',
+    diagnostics,
+  };
+}
+
+function buildMirrorStatusPnlScenarios(params = {}) {
+  const {
+    reserveYesUsdc,
+    reserveNoUsdc,
+    sourceYesPct,
+    cumulativeLpFeesApproxUsdc,
+    cumulativeHedgeCostApproxUsdc,
+    netPnlApproxUsdc,
+    positionSummary,
+    pnlApprox,
+  } = params;
+  const feeScenarioPayload =
+    Number.isFinite(reserveYesUsdc) && Number.isFinite(reserveNoUsdc)
+      ? buildMirrorHedgeCalc({
+          reserveYesUsdc,
+          reserveNoUsdc,
+          polymarketYesPct: sourceYesPct,
+          hedgeRatio: 1,
+        })
+      : null;
+
+  const estimatedValueUsd = Number.isFinite(Number(positionSummary && positionSummary.estimatedValueUsd))
+    ? Number(positionSummary.estimatedValueUsd)
+    : null;
+  const yesBalance = Number.isFinite(Number(positionSummary && positionSummary.yesBalance))
+    ? Number(positionSummary.yesBalance)
+    : null;
+  const noBalance = Number.isFinite(Number(positionSummary && positionSummary.noBalance))
+    ? Number(positionSummary.noBalance)
+    : null;
+
+  const buildResolutionRow = (label, payoutValueUsd) => ({
+    outcome: label,
+    hedgeInventoryPayoutUsd: payoutValueUsd,
+    markToMarketMoveUsd:
+      estimatedValueUsd !== null && payoutValueUsd !== null
+        ? round(payoutValueUsd - estimatedValueUsd, 6)
+        : null,
+    feesPlusInventoryPnlApproxUsdc:
+      Number.isFinite(netPnlApproxUsdc) && payoutValueUsd !== null
+        ? round(netPnlApproxUsdc + payoutValueUsd, 6)
+        : null,
+  });
+
+  return {
+    baseline: {
+      scope: 'fees-plus-marked-polymarket-inventory',
+      cumulativeLpFeesApproxUsdc,
+      cumulativeHedgeCostApproxUsdc,
+      netPnlApproxUsdc,
+      markedPolymarketInventoryUsd: estimatedValueUsd,
+      openOrdersNotionalUsd:
+        Number.isFinite(Number(positionSummary && positionSummary.openOrdersNotionalUsd))
+          ? Number(positionSummary.openOrdersNotionalUsd)
+          : null,
+      markToMarketPnlApproxUsdc: Number.isFinite(pnlApprox) ? pnlApprox : netPnlApproxUsdc,
+    },
+    feeVolumeScenarios:
+      feeScenarioPayload && Array.isArray(feeScenarioPayload.scenarios)
+        ? feeScenarioPayload.scenarios
+        : [],
+    resolutionScenarios: {
+      scope: 'fees-plus-polymarket-token-payout-only',
+      yes: buildResolutionRow('yes', yesBalance),
+      no: buildResolutionRow('no', noBalance),
+    },
+  };
+}
+
 async function toMirrorStatusLivePayload(verifyPayload, state, options) {
   const pandoraYesPct = verifyPayload && verifyPayload.pandora ? Number(verifyPayload.pandora.yesPct) : null;
   const sourceYesPct = verifyPayload && verifyPayload.sourceMarket ? Number(verifyPayload.sourceMarket.yesPct) : null;
+  const pandoraNoPct = Number.isFinite(pandoraYesPct) ? round(100 - pandoraYesPct, 6) : null;
+  const sourceNoPct =
+    verifyPayload && verifyPayload.sourceMarket && Number.isFinite(Number(verifyPayload.sourceMarket.noPct))
+      ? Number(verifyPayload.sourceMarket.noPct)
+      : Number.isFinite(sourceYesPct)
+        ? round(100 - sourceYesPct, 6)
+        : null;
   const driftBps =
     Number.isFinite(sourceYesPct) && Number.isFinite(pandoraYesPct)
       ? Math.round(Math.abs(sourceYesPct - pandoraYesPct) * 10000) / 100
       : null;
   const reserveYesUsdc = verifyPayload && verifyPayload.pandora ? Number(verifyPayload.pandora.reserveYes) : null;
   const reserveNoUsdc = verifyPayload && verifyPayload.pandora ? Number(verifyPayload.pandora.reserveNo) : null;
+  const reserveTotalUsdc =
+    Number.isFinite(reserveYesUsdc) && Number.isFinite(reserveNoUsdc)
+      ? round(reserveYesUsdc + reserveNoUsdc, 6)
+      : null;
   const deltaLpUsdc =
     Number.isFinite(reserveYesUsdc) && Number.isFinite(reserveNoUsdc)
       ? Math.round((reserveYesUsdc - reserveNoUsdc) * 1e6) / 1e6
@@ -4651,12 +7308,25 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
   const targetHedgeUsdc = deltaLpUsdc === null ? null : Math.round((-deltaLpUsdc) * 1e6) / 1e6;
   const currentHedgeUsdc = Number.isFinite(Number(state.currentHedgeUsdc)) ? Number(state.currentHedgeUsdc) : 0;
   const hedgeGapUsdc = targetHedgeUsdc === null ? null : Math.round((targetHedgeUsdc - currentHedgeUsdc) * 1e6) / 1e6;
+  const hedgeGapAbsUsdc = hedgeGapUsdc === null ? null : round(Math.abs(hedgeGapUsdc), 6);
+  const rebalanceSide =
+    Number.isFinite(sourceYesPct) && Number.isFinite(pandoraYesPct)
+      ? sourceYesPct > pandoraYesPct
+        ? 'yes'
+        : 'no'
+      : null;
+  const hedgeSide = hedgeGapUsdc === null ? null : hedgeGapUsdc > 0 ? 'yes' : hedgeGapUsdc < 0 ? 'no' : null;
+  const hedgeCoverageRatio =
+    Number.isFinite(targetHedgeUsdc) && Math.abs(targetHedgeUsdc) > 0
+      ? round(currentHedgeUsdc / targetHedgeUsdc, 6)
+      : null;
 
   const gateChecks = verifyPayload && verifyPayload.gateResult && Array.isArray(verifyPayload.gateResult.checks)
     ? verifyPayload.gateResult.checks
     : [];
   const lifecycleCheck = gateChecks.find((item) => item.code === 'LIFECYCLE_ACTIVE');
   const notExpiredCheck = gateChecks.find((item) => item.code === 'NOT_EXPIRED');
+  const closeTimeCheck = gateChecks.find((item) => item.code === 'CLOSE_TIME_DELTA');
 
   const cumulativeLpFeesApproxUsdc = Number.isFinite(Number(state.cumulativeLpFeesApproxUsdc))
     ? Number(state.cumulativeLpFeesApproxUsdc)
@@ -4707,6 +7377,58 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
     verifyPayload && verifyPayload.expiry && Number.isFinite(Number(verifyPayload.expiry.minTimeToExpirySec))
       ? Number(verifyPayload.expiry.minTimeToExpirySec)
       : null;
+  const closeTimeDeltaSec =
+    closeTimeCheck && closeTimeCheck.meta && Number.isFinite(Number(closeTimeCheck.meta.closeDeltaSeconds))
+      ? Number(closeTimeCheck.meta.closeDeltaSeconds)
+      : null;
+  const gateOk = Boolean(verifyPayload && verifyPayload.gateResult && verifyPayload.gateResult.ok);
+  const failedChecks =
+    verifyPayload && verifyPayload.gateResult && Array.isArray(verifyPayload.gateResult.failedChecks)
+      ? verifyPayload.gateResult.failedChecks
+      : [];
+  const ruleHashMatch =
+    verifyPayload && verifyPayload.ruleHashLeft && verifyPayload.ruleHashRight
+      ? verifyPayload.ruleHashLeft === verifyPayload.ruleHashRight
+      : null;
+  const driftTriggered = driftBps !== null ? driftBps >= options.driftTriggerBps : false;
+  const hedgeTriggered = hedgeGapUsdc !== null ? Math.abs(hedgeGapUsdc) >= options.hedgeTriggerUsdc : false;
+  const expiryWarn = Boolean(verifyPayload && verifyPayload.expiry && verifyPayload.expiry.warn);
+  const crossVenueStatus = deriveMirrorStatusLiveStatus({
+    gateOk,
+    lifecycleActive: lifecycleCheck ? Boolean(lifecycleCheck.ok) : null,
+    notExpired: notExpiredCheck ? Boolean(notExpiredCheck.ok) : null,
+    expiryWarn,
+    driftTriggered,
+    hedgeTriggered,
+  });
+  const actionability = buildMirrorStatusActionability({
+    gateOk,
+    failedChecks,
+    driftBps,
+    driftTriggerBps: options.driftTriggerBps,
+    hedgeGapUsdc,
+    hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+    hedgeTriggered,
+    rebalanceSide,
+    hedgeSide,
+    minTimeToExpirySec,
+    expiryWarn,
+    matchConfidence: verifyPayload && Number.isFinite(Number(verifyPayload.matchConfidence))
+      ? Number(verifyPayload.matchConfidence)
+      : null,
+    currentHedgeUsdc,
+    targetHedgeUsdc,
+  });
+  const pnlScenarios = buildMirrorStatusPnlScenarios({
+    reserveYesUsdc,
+    reserveNoUsdc,
+    sourceYesPct,
+    cumulativeLpFeesApproxUsdc,
+    cumulativeHedgeCostApproxUsdc,
+    netPnlApproxUsdc,
+    positionSummary,
+    pnlApprox,
+  });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -4714,15 +7436,18 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
     sourceYesPct: Number.isFinite(sourceYesPct) ? sourceYesPct : null,
     driftBps,
     driftTriggerBps: options.driftTriggerBps,
-    driftTriggered: driftBps !== null ? driftBps >= options.driftTriggerBps : false,
+    driftTriggered,
     reserveYesUsdc: Number.isFinite(reserveYesUsdc) ? reserveYesUsdc : null,
     reserveNoUsdc: Number.isFinite(reserveNoUsdc) ? reserveNoUsdc : null,
+    reserveTotalUsdc,
     deltaLpUsdc,
     targetHedgeUsdc,
     currentHedgeUsdc,
     hedgeGapUsdc,
+    hedgeGapAbsUsdc,
     hedgeTriggerUsdc: options.hedgeTriggerUsdc,
-    hedgeTriggered: hedgeGapUsdc !== null ? Math.abs(hedgeGapUsdc) >= options.hedgeTriggerUsdc : false,
+    hedgeTriggered,
+    hedgeCoverageRatio,
     lifecycleActive: lifecycleCheck ? Boolean(lifecycleCheck.ok) : null,
     notExpired: notExpiredCheck ? Boolean(notExpiredCheck.ok) : null,
     minTimeToExpirySec,
@@ -4740,11 +7465,66 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
           : Number.isFinite(Number(positionSummary.openOrdersCount))
             ? Math.trunc(Number(positionSummary.openOrdersCount))
             : null,
+      openOrdersNotionalUsd: Number.isFinite(Number(positionSummary.openOrdersNotionalUsd))
+        ? Number(positionSummary.openOrdersNotionalUsd)
+        : null,
       estimatedValueUsd: Number.isFinite(Number(positionSummary.estimatedValueUsd))
         ? Number(positionSummary.estimatedValueUsd)
         : null,
+      positionDeltaApprox: Number.isFinite(Number(positionSummary.positionDeltaApprox))
+        ? Number(positionSummary.positionDeltaApprox)
+        : null,
+      prices:
+        positionSummary && positionSummary.prices && typeof positionSummary.prices === 'object'
+          ? {
+              yes: Number.isFinite(Number(positionSummary.prices.yes)) ? Number(positionSummary.prices.yes) : null,
+              no: Number.isFinite(Number(positionSummary.prices.no)) ? Number(positionSummary.prices.no) : null,
+            }
+          : { yes: null, no: null },
       diagnostics: Array.isArray(positionSummary.diagnostics) ? positionSummary.diagnostics : [],
     },
+    crossVenue: {
+      status: crossVenueStatus,
+      gateOk,
+      failedChecks,
+      matchConfidence: Number.isFinite(Number(verifyPayload && verifyPayload.matchConfidence))
+        ? Number(verifyPayload.matchConfidence)
+        : null,
+      ruleHashMatch,
+      closeTimeDeltaSec,
+      expiryWarn,
+      sourceType:
+        verifyPayload && verifyPayload.sourceMarket && verifyPayload.sourceMarket.source
+          ? String(verifyPayload.sourceMarket.source)
+          : null,
+      pandora: {
+        active: verifyPayload && verifyPayload.pandora ? Boolean(verifyPayload.pandora.active) : null,
+        resolved: verifyPayload && verifyPayload.pandora ? Boolean(verifyPayload.pandora.resolved) : null,
+        yesPct: Number.isFinite(pandoraYesPct) ? pandoraYesPct : null,
+        noPct: pandoraNoPct,
+        reserveTotalUsdc,
+      },
+      source: {
+        active: verifyPayload && verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.active) : null,
+        resolved: verifyPayload && verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.resolved) : null,
+        yesPct: Number.isFinite(sourceYesPct) ? sourceYesPct : null,
+        noPct: sourceNoPct,
+      },
+    },
+    hedgeStatus: {
+      rebalanceSide,
+      hedgeSide,
+      targetHedgeUsdc,
+      currentHedgeUsdc,
+      hedgeGapUsdc,
+      hedgeGapAbsUsdc,
+      hedgeCoverageRatio,
+      triggerUsdc: options.hedgeTriggerUsdc,
+      triggered: hedgeTriggered,
+    },
+    actionability,
+    actionableDiagnostics: actionability.diagnostics,
+    pnlScenarios,
     gateResult: verifyPayload.gateResult,
     matchConfidence: verifyPayload.matchConfidence,
     verifyDiagnostics: verifyPayload.diagnostics || [],
@@ -4752,8 +7532,11 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
       marketId: verifyPayload.sourceMarket && verifyPayload.sourceMarket.marketId ? verifyPayload.sourceMarket.marketId : null,
       slug: verifyPayload.sourceMarket && verifyPayload.sourceMarket.slug ? verifyPayload.sourceMarket.slug : null,
       question: verifyPayload.sourceMarket && verifyPayload.sourceMarket.question ? verifyPayload.sourceMarket.question : null,
+      source: verifyPayload.sourceMarket && verifyPayload.sourceMarket.source ? verifyPayload.sourceMarket.source : null,
       active: verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.active) : null,
       resolved: verifyPayload.sourceMarket ? Boolean(verifyPayload.sourceMarket.resolved) : null,
+      yesPct: Number.isFinite(sourceYesPct) ? sourceYesPct : null,
+      noPct: sourceNoPct,
       closeTimestamp: verifyPayload.sourceMarket && verifyPayload.sourceMarket.closeTimestamp !== undefined
         ? verifyPayload.sourceMarket.closeTimestamp
         : null,
@@ -4764,6 +7547,10 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
       question: verifyPayload.pandora && verifyPayload.pandora.question ? verifyPayload.pandora.question : null,
       active: verifyPayload.pandora ? Boolean(verifyPayload.pandora.active) : null,
       resolved: verifyPayload.pandora ? Boolean(verifyPayload.pandora.resolved) : null,
+      yesPct: Number.isFinite(pandoraYesPct) ? pandoraYesPct : null,
+      noPct: pandoraNoPct,
+      reserveYesUsdc: Number.isFinite(reserveYesUsdc) ? reserveYesUsdc : null,
+      reserveNoUsdc: Number.isFinite(reserveNoUsdc) ? reserveNoUsdc : null,
       closeTimestamp: verifyPayload.pandora && verifyPayload.pandora.closeTimestamp !== undefined
         ? verifyPayload.pandora.closeTimestamp
         : null,
@@ -4819,7 +7606,9 @@ function coerceMirrorServiceError(err, fallbackCode = 'MIRROR_ERROR') {
 
 async function runLivePolymarketPreflightForMirror(options = {}) {
   const preflightOptions = {};
-  if (options.rpcUrl) preflightOptions.rpcUrl = options.rpcUrl;
+  const preflightRpcUrl =
+    options.polymarketRpcUrl || process.env.POLYMARKET_RPC_URL || options.rpcUrl || null;
+  if (preflightRpcUrl) preflightOptions.rpcUrl = preflightRpcUrl;
   if (options.privateKey) preflightOptions.privateKey = options.privateKey;
   if (options.funder) preflightOptions.funder = options.funder;
   else if (process.env.POLYMARKET_FUNDER) preflightOptions.funder = process.env.POLYMARKET_FUNDER;
@@ -4834,7 +7623,7 @@ async function runLivePolymarketPreflightForMirror(options = {}) {
   }
 }
 
-const runMirrorCommand = createRunMirrorCommand({
+const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.cjs', 'createRunMirrorCommand', () => ({
   CliError,
   includesHelpFlag,
   emitSuccess,
@@ -4848,6 +7637,8 @@ const runMirrorCommand = createRunMirrorCommand({
   parseMirrorDeployFlags: parseMirrorDeployFlagsFromModule,
   parseMirrorVerifyFlags: parseMirrorVerifyFlagsFromModule,
   parseMirrorStatusFlags: parseMirrorStatusFlagsFromModule,
+  parseMirrorPnlFlags: parseMirrorPnlFlagsFromModule,
+  parseMirrorAuditFlags: parseMirrorAuditFlagsFromModule,
   parseMirrorSyncFlags: parseMirrorSyncFlagsFromModule,
   parseMirrorSyncDaemonSelectorFlags: parseMirrorSyncDaemonSelectorFlagsFromModule,
   parseMirrorGoFlags: parseMirrorGoFlagsFromModule,
@@ -4866,8 +7657,14 @@ const runMirrorCommand = createRunMirrorCommand({
   startMirrorDaemon,
   stopMirrorDaemon,
   mirrorDaemonStatus,
-  buildMirrorClosePlan,
+  runMirrorClose,
+  runLp,
+  runClaim,
+  decorateOperationPayload,
   resolveTrustedDeployPair,
+  findMirrorPair,
+  defaultMirrorManifestFile,
+  hasContractCodeAtAddress,
   toMirrorStatusLivePayload,
   coerceMirrorServiceError,
   runLivePolymarketPreflightForMirror,
@@ -4875,7 +7672,9 @@ const runMirrorCommand = createRunMirrorCommand({
   mirrorStrategyHash,
   buildMirrorSyncDaemonCliArgs,
   buildQuotePayload,
+  enforceTradeRiskGuards,
   executeTradeOnchain,
+  assertLiveWriteAllowed,
   hasWebhookTargets,
   sendWebhookNotifications,
   loadMirrorState,
@@ -4889,11 +7688,12 @@ const runMirrorCommand = createRunMirrorCommand({
   renderMirrorSimulateTable,
   renderMirrorGoTable,
   renderMirrorSyncTable,
+  deriveWalletAddressFromPrivateKey,
   renderMirrorSyncDaemonTable,
   renderMirrorStatusTable,
   renderMirrorCloseTable,
   cliPath: __filename,
-});
+}));
 
 
 async function runPolymarketCommand(args, context) {
@@ -5098,38 +7898,40 @@ async function runSuggestCommand(args, context) {
   let history;
   let arbitrage;
   try {
-    history = await fetchHistory({
-      wallet: options.wallet,
-      chainId: null,
-      marketAddress: null,
-      side: 'both',
-      status: 'all',
-      limit: 250,
-      after: null,
-      before: null,
-      orderBy: 'timestamp',
-      orderDirection: 'desc',
-      includeSeed: false,
-      indexerUrl,
-      timeoutMs: shared.timeoutMs,
-    });
-    arbitrage = await scanArbitrage({
-      indexerUrl,
-      timeoutMs: shared.timeoutMs,
-      chainId: null,
-      venues: options.includeVenues,
-      limit: Math.max(options.count * 3, 10),
-      minSpreadPct: 3,
-      minLiquidityUsd: 1000,
-      maxCloseDiffHours: 24,
-      similarityThreshold: 0.86,
-      crossVenueOnly: true,
-      withRules: false,
-      includeSimilarity: false,
-      questionContains: null,
-      polymarketHost: null,
-      polymarketMockUrl: null,
-    });
+    [history, arbitrage] = await Promise.all([
+      fetchHistory({
+        wallet: options.wallet,
+        chainId: null,
+        marketAddress: null,
+        side: 'both',
+        status: 'all',
+        limit: 250,
+        after: null,
+        before: null,
+        orderBy: 'timestamp',
+        orderDirection: 'desc',
+        includeSeed: false,
+        indexerUrl,
+        timeoutMs: shared.timeoutMs,
+      }),
+      scanArbitrage({
+        indexerUrl,
+        timeoutMs: shared.timeoutMs,
+        chainId: null,
+        venues: options.includeVenues,
+        limit: Math.max(options.count * 3, 10),
+        minSpreadPct: 3,
+        minLiquidityUsd: 1000,
+        maxCloseDiffHours: 24,
+        similarityThreshold: 0.86,
+        crossVenueOnly: true,
+        withRules: false,
+        includeSimilarity: false,
+        questionContains: null,
+        polymarketHost: null,
+        polymarketMockUrl: null,
+      }),
+    ]);
   } catch (err) {
     if (err && err.code) {
       throw new CliError(err.code, err.message || 'suggest failed.', err.details);
@@ -5159,8 +7961,36 @@ async function runResolveCommand(args, context) {
   return runResolveCommandFromService(args, context);
 }
 
+async function runClaimCommand(args, context) {
+  return runClaimCommandFromService(args, context);
+}
+
 async function runLpCommand(args, context) {
   return runLpCommandFromService(args, context);
+}
+
+async function runRiskCommand(args, context) {
+  return runRiskCommandFromService(args, context);
+}
+
+async function runPolicyCommand(args, context) {
+  return runPolicyCommandFromService(args, context);
+}
+
+async function runProfileCommand(args, context) {
+  return runProfileCommandFromService(args, context);
+}
+
+async function runRecipeCommand(args, context) {
+  return runRecipeCommandFromService(args, context);
+}
+
+async function runOperationsCommand(args, context) {
+  return runOperationsCommandFromService(args, context);
+}
+
+async function runModelCommand(args, context) {
+  return runModelCommandFromService(args, context);
 }
 
 function runInitEnv(args, outputMode) {
@@ -5307,8 +8137,12 @@ const dispatch = createCommandRouter({
   runMarketsCommand,
   runScanCommand,
   runSportsCommand,
+  runLifecycleCommand,
+  runArbCommand,
+  runOddsCommand,
   runQuoteCommand,
   runTradeCommand,
+  runSellCommand,
   runPollsCommand,
   runEventsCommand,
   runPositionsCommand,
@@ -5323,11 +8157,22 @@ const dispatch = createCommandRouter({
   runWebhookCommand,
   runLeaderboardCommand,
   runAnalyzeCommand,
+  runAgentCommand,
   runSuggestCommand,
   runResolveCommand,
+  runClaimCommand,
   runLpCommand,
+  runPolicyCommand,
+  runProfileCommand,
+  runRecipeCommand,
+  runRiskCommand,
+  runOperationsCommand,
+  runModelCommand,
   runMcpCommand,
   runStreamCommand,
+  runSimulateCommand,
+  runBootstrapCommand,
+  runCapabilitiesCommand,
   runSchemaCommand,
   runScriptCommand,
 });

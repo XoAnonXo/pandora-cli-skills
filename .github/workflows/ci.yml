@@ -41,3 +41,61 @@ jobs:
 
       - name: npm pack dry-run
         run: npm pack --dry-run
+
+  standalone-sdk-artifacts:
+    name: "Standalone SDK Artifacts"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Python build frontend
+        run: python3 -m pip install --disable-pip-version-check --quiet "setuptools>=68" wheel build
+
+      - name: Build standalone SDK artifacts
+        run: npm run release:build-sdk-artifacts
+
+  benchmark-trust-evidence:
+    name: "Benchmark And Trust Evidence"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Release trust metadata check
+        run: npm run check:release-trust
+
+      - name: Generate benchmark report
+        run: node scripts/run_agent_benchmarks.cjs --suite core --write-lock --out benchmarks/latest/core-report.json
+
+      - name: Verify benchmark gate
+        run: npm run benchmark:check
+
+      - name: Upload benchmark evidence artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: benchmark-evidence-${{ github.sha }}
+          path: |
+            benchmarks/latest/core-report.json
+            benchmarks/locks/core.lock.json
+          if-no-files-found: error

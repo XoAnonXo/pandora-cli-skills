@@ -1,404 +1,265 @@
 # Pandora CLI & Skills — Shareable Package
 
-This is a sanitized, shareable copy of the Pandora market setup skill.
+Sanitized, shareable copy of the Pandora CLI docs, SDK surfaces, and package metadata.
 
-## What is included
-- `SKILL.md` (usage/behavior)
+## Included
+- `SKILL.md`
+- `README.md`
+- `README_FOR_SHARING.md`
+- `docs/skills/*.md`
+- `docs/trust/*.md`
+- `docs/benchmarks/**`
+- `benchmarks/latest/core-report.json`
+- `sdk/generated/*`
+- `sdk/typescript/**`
+- `sdk/python/**`
 - `package.json`
 - `package-lock.json`
 - `.gitignore`
 - `scripts/.env.example`
 - `scripts/create_market_launcher.ts`
 - `scripts/create_polymarket_clone_and_bet.ts`
+- `scripts/release/install_release.sh`
 - `references/creation-script.md`
 - `references/contracts.md`
 - `references/checklist.md`
 
-## What is intentionally omitted
-- `.env` (contains PRIVATE_KEY / RPC overrides)
-- `wallet.json` (contains privateKey/address)
-- any local runtime secrets
+## Intentionally omitted
+- `.env`
+- `wallet.json`
+- local runtime secrets
 - `node_modules`
+
+Packaging note:
+- The published npm package ships the latest benchmark report and trust/reference docs.
+- The full benchmark harness, CI workflows, and release-maintainer scripts remain repository surfaces rather than installed runtime baggage.
 
 ## Setup
 Prerequisite: Node.js `>=18`.
 
-1. Install dependencies:
-   - `npm install`
-2. Initialize env file:
-   - `npm run init-env`
-   - or one-shot guided flow: `npm run setup`
-3. Fill `scripts/.env`:
-   - `CHAIN_ID`
-   - `PRIVATE_KEY`
-   - `RPC_URL`
-   - `ORACLE`
-   - `FACTORY`
-   - `USDC`
-   - optional for live mirror hedging and `mirror status --with-live` position diagnostics:
-     - `POLYMARKET_PRIVATE_KEY`
-     - `POLYMARKET_FUNDER` (Polymarket proxy wallet / Gnosis Safe address, not your EOA)
-     - `POLYMARKET_API_KEY`
-     - `POLYMARKET_API_SECRET`
-     - `POLYMARKET_API_PASSPHRASE`
-     - `POLYMARKET_HOST`
-   - note: live Polymarket trading settles with Polygon USDC.e collateral on the proxy wallet.
-4. Validate and build:
-   - `npm run doctor`
-   - `npm run build`
-5. Run:
-   - `npm run dry-run`
-   - `npm run dry-run:clone`
-   - `node cli/pandora.cjs help`
+```bash
+npm install
+node cli/pandora.cjs --output json bootstrap
+node cli/pandora.cjs --output json capabilities
+node cli/pandora.cjs --output json schema
+node cli/pandora.cjs --output json policy list
+node cli/pandora.cjs --output json profile list
+node cli/pandora.cjs --output json recipe list
+node cli/pandora.cjs help
+```
 
-## Quickstart (Sports)
-- List soccer events:
-  - `pandora --output json sports events list --competition <id-or-slug> --limit 5`
-- Compute sportsbook consensus:
-  - `pandora --output json sports consensus --event-id <event-id> --trim-percent 20`
-- Build creation plan:
-  - `pandora --output json sports create plan --event-id <event-id> --selection home`
-- Build manual resolve recommendation:
-  - `pandora --output json sports resolve plan --event-id <event-id> --poll-address <0x...>`
+Operation tracking:
+- use `pandora --output json operations list --status planned,queued,running --limit 20` to inspect persisted mutable-operation records
 
-## New CLI capabilities
-- Global machine-readable output:
-  - `pandora --output json doctor`
-  - `pandora --output table polls list --limit 10`
-  - `--output json` is supported for all commands except `launch`/`clone-bet`; those stream script output directly.
-- Agent-native schema + MCP:
-  - `pandora --output json schema`
-  - `pandora mcp`
-  - MCP exposes one tool per command family entrypoint and reuses CLI JSON envelopes.
-- Next Best Action recovery hints:
-  - JSON errors can include `error.recovery = { action, command, retryable }`.
-  - existing `error.code`, `error.message`, and `error.details` fields are preserved.
-- Attach-only fork runtime:
-  - shared flags: `--fork`, `--fork-rpc-url <url>`, `--fork-chain-id <id>`.
-  - payloads include runtime marker (`runtime.mode = "fork" | "live"`).
-  - precedence: `--fork-rpc-url` > `FORK_RPC_URL` (when `--fork`) > normal runtime path.
-- NDJSON streaming:
-  - `pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--interval-ms <ms>] [--limit <n>]`.
-  - always emits NDJSON lines to stdout; WebSocket-first with polling fallback.
-- Guided setup:
-  - `pandora setup`
-  - `pandora setup --check-usdc-code`
-- Stronger doctor checks:
-  - Required env and value validation
-  - RPC reachability + chain-id match
-  - Contract bytecode checks (`ORACLE`, `FACTORY`, optional `USDC`)
-- Read-only indexer commands (GraphQL-backed):
-  - `pandora markets list|get`
-  - `pandora scan`
-  - `pandora quote`
-  - `pandora portfolio`
-  - `pandora watch`
-  - `pandora polls list|get`
-  - `pandora events list|get`
-  - `pandora positions list`
-- Phase 1 market discovery helpers:
-  - `pandora markets list --expand` (include linked poll metadata inline)
-  - `pandora markets list --with-odds` (include YES/NO percentage odds inline)
-  - `pandora markets list --active|--resolved|--expiring-soon` (lifecycle convenience filters)
-  - `pandora markets get --id <market-id> --id <market-id>` (batch lookup in one call)
-- `pandora --output json scan` (single-pass market discovery payload for automation)
-- `pandora stream prices` (reactive market ticks in NDJSON)
-- `pandora stream events` (reactive event feed in NDJSON)
-- Phase 2 trading helpers:
-  - `pandora quote --market-address <0x...> --side yes|no --amount-usdc <amount>`
-  - `pandora trade --dry-run --market-address <0x...> --side yes|no --amount-usdc <amount> [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>]`
-  - `pandora trade --execute ...` performs allowance check, conditional USDC approve, then `buy`.
-- Phase 3 wallet analytics:
-  - `pandora portfolio --wallet <0x...> [--chain-id <id>] [--limit <n>] [--include-events|--no-events]`
-  - `pandora watch --wallet <0x...> --iterations 10 --interval-ms 5000`
-  - `pandora watch --market-address <0x...> --side yes --amount-usdc 10 --iterations 5 --alert-yes-above 65 --fail-on-alert`
-- Phase 4 intelligence and automation:
-  - `pandora history --wallet <0x...> --limit 50`
-  - `pandora export --wallet <0x...> --format csv --year 2026 --out ./trades-2026.csv`
-  - `pandora arbitrage --venues pandora,polymarket --min-spread-pct 3`
-  - `pandora autopilot run|once ...`
-  - `pandora mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...`
-  - `pandora webhook test ...`
-  - `pandora leaderboard --metric profit|volume|win-rate`
-  - `pandora analyze --market-address <0x...> --provider <name>`
-  - `pandora suggest --wallet <0x...> --risk low|medium|high --budget <amount>`
-  - `pandora resolve`
-- `pandora lp add|remove|positions`
+Preferred agent path:
+- start with `bootstrap`, then `schema`, `policy list`, `profile list`, and `recipe list`; none of those require signer material
+- use `pandora mcp` for local stdio tool execution
+- use `pandora mcp http --auth-scopes ...` when you intentionally want a remote MCP gateway
+- for a remote read-only planning token that covers `scan`, `quote`, `portfolio`, `mirror plan`, `sports create plan`, and `operations list|get`, use `capabilities:read,contracts:read,help:read,schema:read,operations:read,scan:read,quote:read,portfolio:read,mirror:read,sports:read,network:indexer,network:rpc,network:polymarket,network:sports`
+- add `operations:write` only when the remote runtime needs `operations cancel|close`; over MCP those mutating calls also require `intent.execute=true`
+- give the agent the minimum bearer-token scopes it needs
+- only provision signing secrets on the runtime that will actually execute live mutating tools
+- if you are embedding the shipped SDKs, use each package's own generated artifacts:
+  - standalone SDK package identities are `@thisispandora/agent-sdk` and `pandora-agent`
+  - current release flow builds, verifies, and publishes those standalone SDK packages alongside the main CLI release
+  - this shareable package also includes vendored SDK copies under `sdk/typescript` and `sdk/python`
+  - local SDK execution uses `pandora mcp`; remote SDK execution uses intentionally hosted `pandora mcp http ...` plus a bearer token to `/mcp`
+  - `sdk/typescript/generated/manifest.json` is the TypeScript manifest entrypoint
+  - `sdk/python/pandora_agent/generated/manifest.json` is the Python manifest entrypoint
+  - `sdk/generated` is the shared contract bundle
+- `bootstrap` and `GET /bootstrap` return canonical tools by default
+- only use `--include-compatibility` or `?include_aliases=1` when you are debugging or migrating a legacy caller that still depends on alias names
 
-## Agent-native expansion details
+Live execution setup:
+- run `npm run init-env`
+- run `npm run doctor`
+- then, only if this local process will sign live transactions, populate `.env` or process env with only the fields your live workflow needs:
+  - `CHAIN_ID`
+  - `PRIVATE_KEY`
+  - `RPC_URL`
+  - `ORACLE`
+  - `FACTORY`
+  - `USDC`
 
-### MCP server (`pandora mcp`)
-- Runs MCP server over stdio with tool discovery + execution.
-- `tools/list` includes JSON-capable command tools (for example `markets.list`, `trade`, `mirror.plan`, `polymarket.check`).
-- `launch` and `clone-bet` are intentionally not exposed over MCP because they stream script output.
-- MCP safety rails:
-  - mutating tools require explicit execute intent (`intent.execute=true`) for live execution.
-  - long-running modes are blocked in v1 (`watch`, `autopilot run`, `mirror sync run/start`).
+Optional live Polymarket hedge env:
+- `POLYMARKET_PRIVATE_KEY`
+- `POLYMARKET_FUNDER`
+- `POLYMARKET_API_KEY`
+- `POLYMARKET_API_SECRET`
+- `POLYMARKET_API_PASSPHRASE`
+- `POLYMARKET_HOST`
 
-### Next Best Action recovery hints
-- Structured JSON errors may include:
-  - `error.recovery.action`
-  - `error.recovery.command`
-  - `error.recovery.retryable`
-- This supports automatic recovery flows in agents while keeping backward compatibility for existing JSON parsers.
+Credential handling note:
+- Current builds ship policy packs and named profiles in alpha via `policy list|get|lint` and `profile list|get|explain|validate`.
+- Current builds also ship first-party recipes in alpha via `recipe list|get|validate|run`.
+- Current live command execution still commonly resolves signer secrets from flags/env during rollout.
+- Treat `bootstrap` as the recommendation surface for both policies and profiles:
+  - `defaults.policyId` / `defaults.profileId`
+  - `policyProfiles.policyPacks.recommendedReadOnlyPolicyId` / `recommendedMutablePolicyId`
+  - `policyProfiles.signerProfiles.recommendedReadOnlyProfileId` / `recommendedMutableProfileId`
+  - `nextSteps[]`
+- `bootstrap` is still the preferred cold-start surface, but standalone `policy explain`, `policy recommend`, and `profile recommend` are available for exact context-aware reasoning.
+- treat those exact-context commands as follow-ups after you already know the canonical target tool and execution context from `bootstrap`, `capabilities`, or `schema`
+- Use `policy get` for pack inspection, `profile get` for raw profile state, and `profile explain` for exact execution-context decisions.
+- Do not collapse signer readiness into one “pending” bucket:
+  - implementation-status fields: `implementedBackends`, `placeholderBackends`
+  - runtime-readiness fields: `readyBuiltinIds`, `degradedBuiltinIds`, `placeholderBuiltinIds`
+  - backend rollup: `policyProfiles.signerProfiles.backendStatuses`
+  - vocabulary: `policyProfiles.signerProfiles.statusAxes`
+  - today, all shipped signer backends are implemented: `read-only`, `local-env`, `local-keystore`, `external-signer`
+  - in the default runtime view, `market_observer_ro` is the only built-in profile reporting `ready`, and it is read-only
+  - `--runtime-local-readiness` actively probes local signer/network prerequisites and can promote built-in mutable profiles such as `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` to `ready` when their runtime requirements are satisfied
+  - in the current runtime, no built-in mutable profile is ready
+  - current built-in mutable profile states are:
+    - `prod_trader_a`: backend rollup `degraded`, per-profile `resolutionStatus` `missing-secrets`
+    - `dev_keystore_operator`: backend rollup `degraded`, per-profile `resolutionStatus` `missing-keystore`
+    - `desk_signer_service`: backend rollup `degraded`, per-profile `resolutionStatus` `missing-context`
+  - `degraded` means the backend exists, but this runtime is still missing signer material, keystore access, external-signer context, network context, or compatibility prerequisites
+  - use `profile list` for the compact `runtimeReady` / `resolutionStatus` view
+  - use `profile explain --id <profile-id> [--command <tool>] [--mode <mode>] [--policy-id <id>] [--chain-id <id>] [--category <id|name>]` before mutable execution to inspect `explanation.requestedContext`, `explanation.usable`, `explanation.readiness`, `explanation.compatibility`, `explanation.remediation`, and `explanation.blockers`
+- Prefer process env, `.env`, or your own secret-manager wrapper that materializes those env vars before launching Pandora.
+- Avoid putting raw `--private-key` values on the command line unless you explicitly need a one-off manual override.
+- There is not yet a universal `--profile` selector across every mutating command family.
+- Direct Pandora signer-bearing commands now accept `--profile-id` / `--profile-file` for `trade`, `sell`, `lp add`, `lp remove`, `resolve`, `claim`, `mirror deploy`, `mirror go`, `mirror sync once|run|start`, and `sports create run`.
+- Mirror deploy/go/sync flows and sports live execution paths now also accept profile selectors in current builds; use `pandora --output json capabilities` or `schema` to confirm support on the exact command family you plan to call.
 
-### Fork runtime support
-- Supported families:
-  - `trade`
-  - `resolve`
-  - `lp`
-  - `polymarket check|approve|preflight|trade`
-- `polymarket trade --execute` in fork mode is simulation-only unless `--polymarket-mock-url` is provided.
+## Documentation map
+- [`SKILL.md`](./SKILL.md)
+  - root overview and doc router
+- [`docs/skills/capabilities.md`](./docs/skills/capabilities.md)
+  - capability map and PollCategory guidance
+- [`docs/skills/agent-quickstart.md`](./docs/skills/agent-quickstart.md)
+  - fastest safe bootstrap path for external agents
+- [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
+  - human-oriented command and flag reference; use capabilities/schema for machine authority
+- [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md)
+  - discover -> quote -> trade/sell -> claim workflows
+- [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md)
+  - portfolio inspection, LP exits, claim-all, mirror closeout, and operation tracking
+- [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md)
+  - mirror safety, validation, sync, and closeout workflow
+- [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
+  - schema, MCP, JSON envelopes, recovery hints, and runtime contracts
+- [`docs/skills/policy-profiles.md`](./docs/skills/policy-profiles.md)
+  - policy packs, signer profiles, gateway scopes, and secret-handling guidance
+- [`docs/skills/recipes.md`](./docs/skills/recipes.md)
+  - reusable safe workflows that compile to ordinary Pandora commands
+- [`docs/skills/legacy-launchers.md`](./docs/skills/legacy-launchers.md)
+  - legacy `launch` / `clone-bet` notes
+- [`docs/trust/release-verification.md`](./docs/trust/release-verification.md)
+  - verify tarballs, checksums, attestations, SBOM, and cosign signatures before install
+- [`docs/trust/security-model.md`](./docs/trust/security-model.md)
+  - trust boundaries, mutation controls, and secret-handling posture across CLI, MCP, gateway, and SDKs
+- [`docs/trust/support-matrix.md`](./docs/trust/support-matrix.md)
+  - support status and guarantees for local CLI, MCP transports, SDKs, benchmarks, and packaged docs
 
-### NDJSON stream command
-- `pandora stream prices|events` always emits NDJSON (ignores table rendering path for active stream output).
-- Tick envelope includes:
-  - `type`
-  - `ts`
-  - `seq`
-  - `channel`
-  - `source.transport`
-  - `data`
-- Transport behavior:
-  - primary: WebSocket (`--indexer-ws-url` or derived URL)
-  - fallback: polling (`source.transport = "polling"`)
+## Standalone SDKs And Contract Export
 
-Mirror advanced flags (for operator tuning):
-- `--sync-interval-ms <ms>` on `mirror go` to control auto-sync tick cadence.
-- `--oracle <address>` / `--factory <address>` on `mirror deploy` and `mirror go` for explicit contract overrides.
-- `--polymarket-gamma-mock-url <url>` on `mirror browse|plan|verify|go|sync|status` for deterministic mock-source testing.
-- `--no-stream` on `mirror sync` to disable per-tick stdout line streaming in run mode.
-- `--pid-file <path>` on `mirror sync stop|status` for explicit daemon process selection.
+Current shipped consumer paths:
+- TypeScript/Node:
+  - standalone package identity: `@thisispandora/agent-sdk`
+  - current external install path: signed GitHub release tarball attached to the tagged Pandora release
+  - unpacked tree path: `sdk/typescript` for maintainers and in-tree consumers
+  - vendored root-package copy: `pandora-cli-skills/sdk/typescript`
+- Python:
+  - standalone package identity: `pandora-agent`
+  - current external install path: signed GitHub release wheel or sdist attached to the tagged Pandora release
+  - embedded package source: `sdk/python` for maintainers and in-tree consumers
+  - module/import name: `pandora_agent`
+- Shared contract bundle:
+  - standalone TypeScript package: `@thisispandora/agent-sdk/generated`
+  - installed root-package subpath: `pandora-cli-skills/sdk/generated`
+  - unpacked tree path: `sdk/generated`
 
-## Read-only examples
-- `pandora markets list --limit 20 --order-by createdAt --order-direction desc`
-- `pandora markets list --active --with-odds --limit 20`
-- `pandora markets list --expand --limit 20`
-- `pandora markets list --with-odds --limit 20`
-- `pandora markets get --id <market-id>`
-- `pandora markets get --id <market-id-a> --id <market-id-b>`
-- `pandora --output json scan --limit 25`
-- `pandora quote --market-address <0x...> --side yes --amount-usdc 50`
-- `pandora trade --dry-run --market-address <0x...> --side no --amount-usdc 25 --max-amount-usdc 30 --min-probability-pct 20`
-- `pandora portfolio --wallet <0x...> --chain-id 1`
-- `pandora watch --wallet <0x...> --iterations 3 --interval-ms 1000 --alert-net-liquidity-below -100`
-- `pandora history --wallet <0x...> --limit 50`
-- `pandora export --wallet <0x...> --format csv --out ./trades.csv`
-- `pandora arbitrage --venues pandora,polymarket --min-spread-pct 2 --cross-venue-only --with-rules --include-similarity`
-- `pandora autopilot once --market-address <0x...> --side no --amount-usdc 10 --trigger-yes-below 15 --paper`
-- `pandora mirror browse --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10`
-- `pandora mirror plan --source polymarket --polymarket-market-id <id> --with-rules --include-similarity`
-- `pandora mirror go --polymarket-slug <slug> --liquidity-usdc 10 --paper`
-- `pandora mirror verify --pandora-market-address <0x...> --polymarket-market-id <id> --include-similarity`
-- `pandora mirror lp-explain --liquidity-usdc 10000 --source-yes-pct 58`
-- `pandora mirror hedge-calc --reserve-yes-usdc 8 --reserve-no-usdc 12 --excess-no-usdc 2 --polymarket-yes-pct 60`
-- `pandora mirror simulate --liquidity-usdc 10000 --source-yes-pct 58 --target-yes-pct 58 --volume-scenarios 1000,5000,10000`
-- `pandora mirror sync once --pandora-market-address <0x...> --polymarket-market-id <id> --paper --hedge-ratio 1.0`
-- `pandora mirror status --strategy-hash <hash> --with-live`
-- `pandora mirror close --pandora-market-address <0x...> --polymarket-market-id <id> --dry-run`
-- `pandora webhook test --webhook-url https://example.com/hook`
-- `pandora leaderboard --metric volume --limit 20`
-- `pandora analyze --market-address <0x...> --provider mock`
-- `pandora suggest --wallet <0x...> --risk medium --budget 50 --include-venues pandora`
-- `pandora polls list --status 1 --category 3`
-- `pandora events list --type all --wallet <0x...> --limit 25`
-- `pandora positions list --wallet <0x...> --limit 50`
+```bash
+npm run generate:sdk-contracts
+```
 
-## Phase 1 JSON contracts
-- `markets list --expand`:
-  - each item includes `poll` with `id`, `question`, `status`, `category`, `deadlineEpoch`.
-- `markets list --with-odds`:
-  - each item includes `odds` with numeric `yesPct` and `noPct` (normalized to 100 total).
-- `scan`:
-  - response envelope is `ok=true`, `command="scan"`, with `data.indexerUrl`, `data.generatedAt`, `data.count`, and `data.items[]`.
-  - each scan item includes at minimum `id`, `chainId`, `marketType`, `question`, `marketCloseTimestamp`, and `odds`.
+Run that only from a repository checkout. The published npm package already includes the generated SDK artifacts and does not ship the repo-only generator script.
 
-## Phase 1 limitations
-- `scan` always includes odds; `--with-odds` is accepted for backward compatibility.
-- `--expand` is supported on both `markets list` and `scan`.
-- `--active|--resolved|--expiring-soon` are client-side filters on fetched list pages.
-- Odds are indexer-derived and read-only; missing upstream liquidity/price fields can produce partial odds in some environments.
-- `scan` is indexer-backed only (no direct chain reads); freshness depends on indexer sync state.
+- This repository ships standalone SDK alpha packages plus vendored copies and the shared contract bundle:
+  - JavaScript/TypeScript SDK package sources under `sdk/typescript`
+  - Python SDK package sources under `sdk/python`
+  - vendored TypeScript loader/manifest under `sdk/typescript/generated`
+  - vendored Python manifest under `sdk/python/pandora_agent/generated`
+  - shared JS contract export under `sdk/generated`
+- `capabilities.data.transports.sdk` reports `supported=true` and `status="alpha"` in current builds.
+- Export `capabilities` for compact routing, transport, and digest metadata.
+- Export `schema` for authoritative JSON Schema definitions and per-command descriptors.
+- In a repository checkout, `npm run generate:sdk-contracts` regenerates the shared export in `sdk/generated` plus the standalone SDK package-local copies in `sdk/typescript/generated` and `sdk/python/pandora_agent/generated`.
+- Standalone SDK consumers should prefer the standalone package entrypoints and package-local generated artifacts:
+  - TypeScript SDK package identity: `@thisispandora/agent-sdk`
+  - TypeScript generated bundle subpath: `@thisispandora/agent-sdk/generated`
+  - Python SDK package identity: `pandora-agent`
+  - use signed GitHub release assets as the external installation path unless a release explicitly announces public npm/PyPI publication
+- Current release/distribution status:
+  - standalone SDK artifacts are built and verified in release flow
+  - public npm/PyPI publication is not claimed by this guide yet
+- This shareable root package also vendors matching copies:
+  - TypeScript client: `pandora-cli-skills/sdk/typescript`
+  - shared contract bundle: `pandora-cli-skills/sdk/generated`
+  - vendored manifests: `sdk/typescript/generated/manifest.json` and `sdk/python/pandora_agent/generated/manifest.json`
+- Raw `capabilities` / `schema` exports remain available for custom generators.
+- Rebuild any generated client layer when `commandDescriptorVersion` or `registryDigest.descriptorHash` changes.
+- Use `pandora mcp` for local stdio SDK/MCP execution, or intentionally hosted `pandora mcp http ...` for remote streamable HTTP execution instead of local code generation.
 
-## Phase 2 JSON contracts
-- `quote`:
-  - envelope is `ok=true`, `command="quote"`, with `data.marketAddress`, `data.side`, `data.amountUsdc`, `data.odds`, `data.quoteAvailable`, and `data.estimate` (or `null` when unavailable).
-- `trade --dry-run`:
-  - envelope is `ok=true`, `command="trade"`, with `data.mode="dry-run"`, `data.quote`, `data.selectedProbabilityPct`, `data.riskGuards`, and `data.executionPlan.steps`.
-- `trade --execute`:
-  - envelope is `ok=true`, `command="trade"`, with tx metadata (`approveTxHash` optional, `buyTxHash` required on success) plus `selectedProbabilityPct` and `riskGuards`.
+## Policy And Profile Status
 
-## Phase 2 limitations
-- `trade` currently targets PariMutuel-compatible `buy(bool,uint256,uint256)` markets.
-- `minSharesOut` protection defaults to raw `0` unless explicitly set with `--min-shares-out-raw`.
-- If indexer odds are unavailable, `quote` still returns a structured payload with `quoteAvailable=false`.
-- `trade --execute` blocks unquoted execution by default unless `--min-shares-out-raw` or `--allow-unquoted-execute` is provided.
+- `pandora mcp http` enforces bearer-token scopes from `--auth-scopes` against each tool's declared `policyScopes`.
+- `capabilities.data.policyProfiles.policyPacks` reports `supported=true` and `status="alpha"` in current builds. Use `policy list|get|lint` to inspect the shipped packs.
+- `capabilities.data.policyProfiles.signerProfiles` reports `supported=true` and `status="alpha"` in current builds. Use `profile list|get|explain|validate` to inspect the shipped/sample profiles and readiness metadata.
+- `bootstrap` is the canonical recommendation surface for cold agents:
+  - `defaults.policyId` / `defaults.profileId`
+  - `policyProfiles.policyPacks.recommendedReadOnlyPolicyId` / `recommendedMutablePolicyId`
+  - `policyProfiles.signerProfiles.recommendedReadOnlyProfileId` / `recommendedMutableProfileId`
+  - `nextSteps[]`
+- Keep using `bootstrap` first for defaults, and use `policy explain`, `policy recommend`, or `profile recommend` when the agent already knows the exact workflow context it wants to evaluate.
+- Compatibility aliases stay hidden by default; opt in only for legacy/debug inspection, not routine planning.
+- The signer-profile payload now separates implementation status from runtime readiness:
+  - implementation fields: `implementedBackends`, `placeholderBackends`
+  - runtime fields: `readyBuiltinIds`, `degradedBuiltinIds`, `placeholderBuiltinIds`, `pendingBuiltinIds`
+  - backend rollup: `backendStatuses`
+  - vocabulary: `statusAxes`
+- The built-in read-only bootstrap pair is `research-only` plus `market_observer_ro`.
+- In the default runtime view, `market_observer_ro` is the only built-in profile reporting `ready`, and it is read-only.
+- Use `pandora --output json capabilities --runtime-local-readiness` when you want the CLI to actively probe local signer/network prerequisites; under valid runtime conditions, built-in mutable profiles such as `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` can move from `degraded` to `ready`.
+- In the current runtime, no built-in mutable profile is ready:
+  - `prod_trader_a` resolves as `missing-secrets`
+  - `dev_keystore_operator` resolves as `missing-keystore`
+  - `desk_signer_service` resolves as `missing-context`
+- Treat `degraded` as the backend-level summary only. The exact reason lives in the profile payload:
+  - `profile list` for `runtimeReady` and `resolutionStatus`
+  - `profile get --id <profile-id>` for raw `resolution`
+  - `profile explain --id <profile-id> [--command <tool>] [--mode <mode>] [--policy-id <id>] [--chain-id <id>] [--category <id|name>]` for the exact decision surface:
+    - prefer canonical command names from `bootstrap`, `capabilities`, or `schema` when filling `--command`
+    - `explanation.requestedContext.exact` tells you whether the evaluation is complete
+    - `explanation.requestedContext.missingFlags` tells you what to add before trusting the result
+    - `explanation.remediation[]` is the machine-usable action list; `blockers` is the human-readable summary
+- Do not assume a global `--policy` or `--profile` selector exists across every mutating family yet.
+- For current live automation, prefer scoped gateway tokens plus env-based signer injection over raw command-line private keys.
 
-## Phase 3 JSON contracts
-- `portfolio`:
-  - envelope is `ok=true`, `command="portfolio"`, with `data.wallet`, `data.summary`, `data.positions[]`, and `data.events.{liquidity,claims}`.
-  - summary includes `positionCount`, `uniqueMarkets`, `liquidityAdded`, `liquidityRemoved`, `netLiquidity`, `claims`, `cashflowNet`, and `pnlProxy`.
-- `watch`:
-  - envelope is `ok=true`, `command="watch"`, with `data.parameters`, `data.iterationsRequested`, `data.snapshots[]`, and aggregated `data.alerts[]`.
-  - each snapshot can include `portfolioSummary` and/or `quote` depending on selected targets, plus `alertCount`/`alerts`.
+## Mirror operator guidance
+- `mirror plan|deploy|go` use a sports-aware suggested `targetTimestamp`; they do not rely on a generic `+1h` rule.
+- Use `--target-timestamp <unix|iso>` only for explicit close-time overrides.
+- Fresh `mirror deploy` / `mirror go` runs require at least two independent public resolution URLs from different hosts in `--sources`.
+- Polymarket, Gamma, and CLOB URLs are discovery inputs only and are not valid `--sources`.
+- Validation is exact-payload:
+  - validate the final `question`, `rules`, `sources`, and `targetTimestamp`
+  - rerun CLI execute with `--validation-ticket <ticket>`
+  - rerun MCP execute/live with `agentPreflight = { validationTicket, validationDecision: "PASS", validationSummary }`
+- `sports create run` does not expose a CLI `--validation-ticket`; agent-controlled execute uses `agentPreflight` / `PANDORA_AGENT_PREFLIGHT`.
 
-## Phase 3 limitations
-- P&L values are indexer-derived activity metrics, not full realized/unrealized accounting.
-- Claim events are not chain-filtered by indexer schema and may include cross-chain entries.
-- Event-based aggregation can be disabled with `--no-events`.
-- `watch` polls on an interval and is intended for terminal monitoring, not background daemonization.
-- `--fail-on-alert` exits non-zero when any configured threshold is hit.
+## PollCategory mapping
+- `Politics=0`
+- `Sports=1`
+- `Finance=2`
+- `Crypto=3`
+- `Culture=4`
+- `Technology=5`
+- `Science=6`
+- `Entertainment=7`
+- `Health=8`
+- `Environment=9`
+- `Other=10`
 
-## Phase 4 JSON contracts
-- `history`:
-  - envelope is `ok=true`, `command="history"`, with `data.schemaVersion`, `data.summary`, and per-trade `data.items[]`.
-  - P&L fields are analytics-grade approximations with row diagnostics where precision is limited.
-- `export`:
-  - envelope is `ok=true`, `command="export"`, with `data.format`, `data.columns`, `data.count`, optional `data.outPath`, and materialized `data.content`.
-- `arbitrage`:
-  - envelope is `ok=true`, `command="arbitrage"`, with `data.parameters`, `data.sources`, and `data.opportunities[]`.
-  - agent-focused flags:
-    - `--cross-venue-only` (default) prevents same-venue duplicate-market noise.
-    - `--allow-same-venue` re-enables same-venue matching.
-    - `--with-rules` includes per-leg rules/source metadata where available.
-    - `--include-similarity` includes pairwise similarity diagnostics for each group.
-  - source failures are emitted in diagnostics instead of hard crashes.
-- `autopilot`:
-  - envelope is `ok=true`, `command="autopilot"`, with `data.strategyHash`, `data.stateFile`, `data.snapshots[]`, and `data.actions[]`.
-  - paper mode is default; live mode requires explicit caps (`--max-amount-usdc`, `--max-open-exposure-usdc`, `--max-trades-per-day`).
-- `mirror plan`:
-  - envelope is `ok=true`, `command="mirror.plan"`, with `data.sourceMarket`, `data.match`, `data.sizingInputs`, `data.liquidityRecommendation`, and `data.distributionHint`.
-- `mirror browse`:
-  - envelope is `ok=true`, `command="mirror.browse"`, with `data.filters`, `data.count`, and `data.items[]`.
-- `mirror deploy`:
-  - envelope is `ok=true`, `command="mirror.deploy"`, with `data.planDigest`, `data.deploymentArgs`, `data.tx`, `data.preflight`, `data.pandora`, `data.postDeployChecks`, and optional `data.trustManifest`.
-- `mirror verify`:
-  - envelope is `ok=true`, `command="mirror.verify"`, with `data.matchConfidence`, `data.ruleHashLeft`, `data.ruleHashRight`, `data.ruleDiffSummary`, `data.expiry`, optional `data.trustManifest`, `data.similarityChecks[]`, and `data.gateResult`.
-- `mirror lp-explain`:
-  - envelope is `ok=true`, `command="mirror.lp-explain"`, with complete-set flow fields (`mintedCompleteSets`, `seededPoolReserves`, `returnedExcessTokens`, `totalLpInventory`).
-  - this command explains the `addLiquidity` mechanics explicitly: complete sets are minted first, only a weighted slice is seeded into pool reserves, and excess YES/NO tokens are returned to LP wallet inventory.
-- `mirror hedge-calc`:
-  - envelope is `ok=true`, `command="mirror.hedge-calc"`, with `data.metrics` (`deltaPoolUsdc`, `deltaTotalUsdc`, `targetHedgeUsdcSigned`, `hedgeToken`, `hedgeSharesApprox`, `breakEvenVolumeUsdc`) and `data.scenarios[]` fee-vs-hedge estimates.
-- `mirror simulate`:
-  - envelope is `ok=true`, `command="mirror.simulate"`, with `data.initialState`, `data.targeting`, and `data.scenarios[]` for volume-based LP/hedge planning.
-  - simulation keeps the complete-set split exact (raw integer math), then models directional AMM flow with fee-in-reserve behavior for planning-grade projections.
-- `mirror go`:
-  - envelope is `ok=true`, `command="mirror.go"`, with staged results for `data.plan`, `data.deploy`, `data.verify`, optional `data.sync`, and `data.suggestedSyncCommand`.
-- `mirror sync`:
-  - envelope is `ok=true`, `command="mirror.sync"`, with `data.strategyHash`, `data.stateFile`, `data.parameters`, `data.snapshots[]`, and `data.actions[]`.
-  - hedge controls: `--hedge-trigger-usdc`, `--max-hedge-usdc`, `--hedge-ratio <n>` (default `1`), and `--no-hedge` to disable hedge execution while keeping drift rebalancing active.
-  - trust controls: `--trust-deploy`.
-  - streaming: `--stream` emits per-tick logs for `mirror sync run` (table mode streams by default).
-  - rebalance sizing is pool-aware: drift notional scales with `reserveYes + reserveNo`, then bounded by `--max-rebalance-usdc`.
-  - Polymarket resilience: when Polymarket endpoints are unreachable, cached snapshots under `~/.pandora/polymarket` are reused for read paths; live sync blocks execution if source data is cached/stale.
-- `mirror status`:
-  - envelope is `ok=true`, `command="mirror.status"`, with `data.stateFile`, `data.strategyHash`, persisted `data.state`, and optional `data.live` when `--with-live` is used.
-  - `data.live` now includes additive position diagnostics: `polymarketPosition.{yesBalance,noBalance,openOrdersCount,estimatedValueUsd,diagnostics[]}` plus `netDeltaApprox` and `pnlApprox`.
-  - if Polymarket credentials/endpoints are unavailable, `--with-live` remains non-fatal and returns diagnostics with null position fields.
-- `mirror close`:
-  - envelope is `ok=true`, `command="mirror.close"`, with `data.mode` and unwind `data.steps[]` scaffold.
-- `webhook test`:
-  - envelope is `ok=true`, `command="webhook.test"`, with per-target delivery and retry metadata.
-- `leaderboard`:
-  - envelope is `ok=true`, `command="leaderboard"`, with ranked rows for selected metric.
-  - inconsistent indexer aggregates are sanitized (win-rate capped to 0-100%) and exposed in diagnostics.
-- `analyze`:
-  - envelope is `ok=true`, `command="analyze"`, with provider/model metadata, market context, and `{ fairYesPct, confidence, rationale }`.
-  - provider-agnostic interface; missing provider returns `ANALYZE_PROVIDER_NOT_CONFIGURED`.
-- `suggest`:
-  - envelope is `ok=true`, `command="suggest"`, with ranked suggestions, sizing, and risk notes.
-
-## Resolve/LP commands
-- `resolve` and `lp` are active command paths with strict flag validation, runtime preflight checks, and decoded on-chain revert reporting.
-
-## Compatibility aliases
-- `--env-file` = `--dotenv-path`
-- `--no-env-file` = `--skip-dotenv`
-- `--amount` = `--amount-usdc` (trade/watch/autopilot paths)
-- `--market-id` = `--condition-id` (polymarket trade)
-- `--force-gate` = `--skip-gate` (deprecated; prefer `--skip-gate`)
-
-## Additional JSON response shapes
-- `doctor`: `{ ok: true, command: "doctor", data: { schemaVersion, generatedAt, env, rpc, codeChecks, polymarket, summary } }`
-- `resolve`:
-  - dry-run: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "dry-run", txPlan } }`
-  - execute: `{ ok: true, command: "resolve", data: { schemaVersion, generatedAt, mode: "execute", tx } }`
-- `lp`:
-  - add/remove: `{ ok: true, command: "lp", data: { schemaVersion, generatedAt, action: "add"|"remove", mode, txPlan, tx? } }`
-  - positions: `{ ok: true, command: "lp", data: { schemaVersion, generatedAt, action: "positions", mode: "read", wallet, count, items } }`
-- `polymarket` (`check|preflight|approve|trade`):
-  - `{ ok: true, command, data: { schemaVersion, generatedAt, ... } }`
-
-### Resolve command
-- Usage:
-  - `pandora [--output table|json] resolve --poll-address <address> --answer yes|no --reason <text> --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>]`
-- Behavior:
-  - `--dry-run` returns a deterministic execution plan.
-  - `--execute` submits the resolution transaction with decoded revert diagnostics on failure.
-
-### LP command
-- Usage:
-  - `pandora [--output table|json] lp add --market-address <address> --amount-usdc <n> --dry-run|--execute [--deadline-seconds <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]`
-  - `pandora [--output table|json] lp remove --market-address <address> --lp-tokens <n> --dry-run|--execute [--deadline-seconds <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--usdc <address>]`
-  - `pandora [--output table|json] lp positions --wallet <address> [--market-address <address>] [--chain-id <id>] [--indexer-url <url>] [--timeout-ms <ms>]`
-- Behavior:
-  - `add/remove` use simulation-first transaction flow.
-  - `positions` returns LP holdings and preview diagnostics.
-
-## Pandora Mainnet Reference
-- PredictionOracle (Factory): `0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442`
-- PredictionPoll (Implementation): `0xC49c177736107fD8351ed6564136B9ADbE5B1eC3`
-- MarketFactory: `0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c`
-- OutcomeToken (Implementation): `0x15AF9A6cE764a7D2b6913e09494350893436Ab3d`
-- PredictionAMM (Implementation): `0x7D45D4835001347B31B722Fb830fc1D9336F09f4`
-- PredictionPariMutuel (Implementation): `0x5CaF2D85f17A8f3b57918d54c8B138Cacac014BD`
-- Initial collateral (USDC): `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
-- Platform treasury: `0x8789F22a0456FEddaf9074FF4cEE55E4122095f0`
-- Protocol fee rate: `20000` (`2%`)
-- Indexer URL: `https://pandoraindexer.up.railway.app/`
-- Full deployment notes: `references/contracts.md`
-
-## Release and verified install
-- CI workflow: `.github/workflows/ci.yml` runs on Linux/macOS/Windows and covers install, lint/typecheck, full tests, and `npm pack --dry-run`.
-- Release workflow: `.github/workflows/release.yml` runs on pushed `v*` tags, runs tests, builds `npm pack`, generates `checksums.sha256`, and uploads both workflow artifacts + GitHub Release assets.
-- Verified install helper:
-  - `scripts/release/install_release.sh --repo <owner/repo> --tag <tag> --no-install`
-  - `scripts/release/install_release.sh --repo <owner/repo> --tag <tag>`
-  - optional out-of-band digest pin: `scripts/release/install_release.sh --repo <owner/repo> --tag <tag> --expected-sha256 <64-hex>`
-- The helper downloads `checksums.sha256` from the tag release, verifies SHA-256 for the tarball, verifies keyless cosign signature (`<asset>.sig` + `<asset>.pem`) against the release workflow identity, then installs via npm (global by default).
-- `cosign` is required for default secure install. Use `--skip-signature-verify` only for legacy unsigned releases.
-
-## CLI
-- Entry command: `pandora` (from package `bin`) or `node cli/pandora.cjs`.
-- Commands:
-  - `pandora init-env`
-  - `pandora setup`
-  - `pandora doctor`
-  - `pandora markets list|get`
-  - `pandora scan`
-  - `pandora quote`
-  - `pandora trade`
-  - `pandora portfolio`
-  - `pandora watch`
-  - `pandora history`
-  - `pandora export`
-  - `pandora arbitrage`
-  - `pandora autopilot`
-  - `pandora mirror`
-  - `pandora webhook test`
-  - `pandora leaderboard`
-  - `pandora analyze`
-  - `pandora suggest`
-  - `pandora resolve`
-  - `pandora lp add|remove|positions`
-  - `pandora polls list|get`
-  - `pandora events list|get`
-  - `pandora positions list`
-  - `pandora launch ...`
-  - `pandora clone-bet ...`
-- Optional global link in this checkout:
-  - `npm link`
-  - then run `pandora help`
-
-## Security
-Never share real private keys. Use environment files only locally.
+For sports mirror deploy/go flows, use `--category Sports` or `--category 1`.

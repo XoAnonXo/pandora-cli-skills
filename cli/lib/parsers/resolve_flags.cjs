@@ -1,3 +1,8 @@
+const {
+  consumeProfileSelectorFlag,
+  assertNoMixedSignerSelectors,
+} = require('./shared_profile_selector_flags.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseResolveFlags requires deps.${name}()`);
@@ -15,6 +20,7 @@ function createParseResolveFlags(deps) {
   const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
   const requireFlagValue = requireDep(deps, 'requireFlagValue');
   const parseInteger = requireDep(deps, 'parseInteger');
+  const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
   const isValidPrivateKey = requireDep(deps, 'isValidPrivateKey');
   const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
 
@@ -25,12 +31,17 @@ function createParseResolveFlags(deps) {
       reason: null,
       dryRun: false,
       execute: false,
+      watch: false,
+      watchIntervalMs: 5_000,
+      watchTimeoutMs: 15 * 60_000,
       chainId: null,
       rpcUrl: null,
       fork: false,
       forkRpcUrl: null,
       forkChainId: null,
       privateKey: null,
+      profileId: null,
+      profileFile: null,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -60,6 +71,26 @@ function createParseResolveFlags(deps) {
       }
       if (token === '--execute') {
         options.execute = true;
+        continue;
+      }
+      if (token === '--watch') {
+        options.watch = true;
+        continue;
+      }
+      if (token === '--watch-interval-ms') {
+        options.watchIntervalMs = parsePositiveInteger(
+          requireFlagValue(args, i, '--watch-interval-ms'),
+          '--watch-interval-ms',
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--watch-timeout-ms') {
+        options.watchTimeoutMs = parsePositiveInteger(
+          requireFlagValue(args, i, '--watch-timeout-ms'),
+          '--watch-timeout-ms',
+        );
+        i += 1;
         continue;
       }
       if (token === '--chain-id') {
@@ -109,6 +140,18 @@ function createParseResolveFlags(deps) {
         i += 1;
         continue;
       }
+      const profileIndex = consumeProfileSelectorFlag({
+        token,
+        args,
+        index: i,
+        options,
+        CliError,
+        requireFlagValue,
+      });
+      if (profileIndex !== null) {
+        i = profileIndex;
+        continue;
+      }
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for resolve: ${token}`);
     }
 
@@ -124,6 +167,13 @@ function createParseResolveFlags(deps) {
     if (options.dryRun === options.execute) {
       throw new CliError('INVALID_ARGS', 'Use exactly one mode: --dry-run or --execute.');
     }
+    if (!options.watch && (options.watchIntervalMs !== 5_000 || options.watchTimeoutMs !== 15 * 60_000)) {
+      throw new CliError(
+        'INVALID_ARGS',
+        '--watch-interval-ms and --watch-timeout-ms require --watch.',
+      );
+    }
+    assertNoMixedSignerSelectors(options, CliError);
 
     return options;
   };

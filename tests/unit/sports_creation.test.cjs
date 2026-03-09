@@ -53,3 +53,50 @@ test('sports create plan rules align with draw selection', () => {
   );
   assert.equal(plan.marketTemplate.rules.includes('Resolves NO if Arsenal or Chelsea wins.'), true);
 });
+
+test('sports create plan accepts BYOM probability and bypasses consensus gating', () => {
+  const input = buildInput('home');
+  input.oddsPayload.books = [];
+  input.options.minTotalBooks = 6;
+  input.options.minTier1Books = 3;
+
+  const plan = buildSportsCreatePlan({
+    ...input,
+    modelInput: {
+      probability: 0.62,
+      confidence: 'high',
+      source: 'my_model_v3',
+      inputMode: 'file',
+      modelFile: '/tmp/model.json',
+    },
+  });
+
+  assert.equal(plan.source.probabilitySource, 'model');
+  assert.equal(plan.source.model.probability, 0.62);
+  assert.equal(plan.source.model.confidence, 'high');
+  assert.equal(plan.source.model.source, 'my_model_v3');
+  assert.equal(plan.source.model.inputMode, 'file');
+  assert.equal(plan.source.model.modelFile, '/tmp/model.json');
+  assert.equal(plan.marketTemplate.distributionYes, 620000000);
+  assert.equal(plan.marketTemplate.distributionNo, 380000000);
+  assert.equal(
+    plan.safety.blockedReasons.some((reason) => reason.includes('Insufficient book coverage')),
+    false,
+  );
+});
+
+test('sports create plan rejects BYOM probability outside [0.01, 0.99]', () => {
+  const input = buildInput('home');
+  assert.throws(
+    () =>
+      buildSportsCreatePlan({
+        ...input,
+        modelInput: {
+          probability: 1,
+          confidence: 'high',
+          source: 'my_model_v3',
+        },
+      }),
+    (err) => err && err.code === 'INVALID_FLAG_VALUE',
+  );
+});

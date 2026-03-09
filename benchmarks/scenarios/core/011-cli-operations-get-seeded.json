@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cli-operations-get-seeded",
+  "title": "CLI seeded operation fetch",
+  "description": "CLI operations get returns a seeded operation record with stable lifecycle fields.",
+  "transport": "cli-json",
+  "assertionId": "operations-get-seeded",
+  "parityGroup": "operations-get-seeded",
+  "parityExpectedTransports": ["cli-json", "mcp-stdio", "mcp-http"],
+  "expectedOperationId": "benchmark-op-1",
+  "seedOperations": [
+    {
+      "operationId": "benchmark-op-1",
+      "tool": "mirror.deploy",
+      "command": "mirror.deploy",
+      "status": "planned",
+      "summary": "Seeded benchmark operation",
+      "request": { "marketId": "benchmark-market" },
+      "createdAt": "2026-03-08T00:00:00.000Z",
+      "updatedAt": "2026-03-08T00:00:00.000Z"
+    }
+  ],
+  "targetLatencyMs": 5000,
+  "weight": 8,
+  "dimensions": ["operations", "state", "parity"],
+  "request": {
+    "args": ["--output", "json", "operations", "get", "--id", "benchmark-op-1"]
+  }
+}

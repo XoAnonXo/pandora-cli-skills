@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-stdio-list-tools-bootstrap",
+  "title": "Stdio MCP listTools bootstrap",
+  "description": "The generated local SDK can list normalized MCP tools with stable xPandora metadata.",
+  "transport": "mcp-stdio",
+  "assertionId": "tools-list-bootstrap",
+  "parityGroup": "tools-list-bootstrap",
+  "parityExpectedTransports": ["mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 5000,
+  "weight": 10,
+  "dimensions": ["bootstrap", "sdk", "mcp", "local-parity"],
+  "request": {
+    "mode": "listTools"
+  }
+}

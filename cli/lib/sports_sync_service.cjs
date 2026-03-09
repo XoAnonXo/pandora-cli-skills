@@ -1,4 +1,5 @@
 const SPORTS_SYNC_SCHEMA_VERSION = '1.0.0';
+const { createSyncOperationBridge } = require('./shared/operation_bridge.cjs');
 
 const DEFAULT_SYNC_CADENCE_MS = Object.freeze({
   prematch: 30_000,
@@ -327,7 +328,7 @@ function evaluateAutoPauseTriggers(input = {}) {
  * Build daemon-like metadata fields used across sync lifecycle payloads.
  * @param {'once'|'run'|'start'|'stop'|'status'} action
  * @param {object} input
- * @returns {{found: boolean, alive: boolean, status: string, pid: number|null, pidFile: string|null, strategyHash: string|null, metadata: object}}
+ * @returns {{found: boolean, alive: boolean, status: string, pid: number|null, pidFile: string|null, strategyHash: string|null, operationId: string|null, metadata: object}}
  */
 function buildDaemonLikeFields(action, input = {}) {
   const pid = Number.isInteger(input.pid) && input.pid > 0 ? input.pid : null;
@@ -356,6 +357,7 @@ function buildDaemonLikeFields(action, input = {}) {
     action,
     pidFile: input.pidFile || null,
     strategyHash: input.strategyHash || null,
+    operationId: input.operationId || input.strategyHash || null,
     counters:
       input.counters && typeof input.counters === 'object'
         ? {
@@ -371,6 +373,7 @@ function buildDaemonLikeFields(action, input = {}) {
     pid,
     pidFile: input.pidFile || null,
     strategyHash: input.strategyHash || null,
+    operationId: input.operationId || input.strategyHash || null,
     metadata,
   };
 }
@@ -424,6 +427,14 @@ function buildSyncStatusPayload(action, input = {}) {
   if (!['once', 'run', 'start', 'stop', 'status'].includes(action)) {
     throw new Error('buildSyncStatusPayload action must be one of once|run|start|stop|status.');
   }
+  const operation = createSyncOperationBridge(input, {
+    command: `sports.sync.${action}`,
+  });
+  operation.ensure({
+    phase: `sports.sync.${action}.start`,
+    action,
+    strategyHash: input.strategyHash || null,
+  });
 
   const cadence =
     input.cadence && typeof input.cadence === 'object'
@@ -453,8 +464,10 @@ function buildSyncStatusPayload(action, input = {}) {
 
   const daemonLike = buildDaemonLikeFields(action, {
     ...input,
+    operationId: input.operationId || operation.getOperationId() || null,
     autoPaused: Boolean(autoPause.autoPause),
   });
+  operation.setOperationId(daemonLike.operationId);
 
   const diagnostics = normalizeDiagnostics(input.diagnostics);
   const triggerDiagnostics = Array.isArray(autoPause.triggers)
@@ -466,7 +479,15 @@ function buildSyncStatusPayload(action, input = {}) {
       }))
     : [];
 
-  return {
+  operation.update(daemonLike.status, {
+    phase: `sports.sync.${action}.complete`,
+    action,
+    found: daemonLike.found,
+    alive: daemonLike.alive,
+    strategyHash: daemonLike.strategyHash || null,
+  });
+
+  return operation.attach({
     schemaVersion: SPORTS_SYNC_SCHEMA_VERSION,
     generatedAt: toIso(input.now),
     action,
@@ -474,8 +495,8 @@ function buildSyncStatusPayload(action, input = {}) {
     ...daemonLike,
     cadence,
     autoPause,
-    diagnostics: [...diagnostics, ...triggerDiagnostics],
-  };
+    diagnostics: [...diagnostics, ...triggerDiagnostics, ...operation.diagnostics],
+  });
 }
 
 /**

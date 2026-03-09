@@ -1,3 +1,51 @@
+const ROUTED_TOP_LEVEL_COMMANDS = Object.freeze([
+  'init-env',
+  'doctor',
+  'setup',
+  'markets',
+  'scan',
+  'sports',
+  'lifecycle',
+  'arb',
+  'odds',
+  'quote',
+  'trade',
+  'sell',
+  'polls',
+  'events',
+  'positions',
+  'portfolio',
+  'watch',
+  'history',
+  'export',
+  'arbitrage',
+  'autopilot',
+  'mirror',
+  'polymarket',
+  'webhook',
+  'leaderboard',
+  'analyze',
+  'agent',
+  'suggest',
+  'resolve',
+  'claim',
+  'lp',
+  'policy',
+  'profile',
+  'recipe',
+  'risk',
+  'operations',
+  'model',
+  'mcp',
+  'stream',
+  'simulate',
+  'capabilities',
+  'bootstrap',
+  'schema',
+  'launch',
+  'clone-bet',
+]);
+
 /**
  * Build the top-level command dispatcher for `pandora`.
  * The returned function routes parsed command/args/context to subcommand handlers.
@@ -19,8 +67,12 @@ function createCommandRouter(deps = {}) {
     runMarketsCommand,
     runScanCommand,
     runSportsCommand,
+    runLifecycleCommand,
+    runArbCommand,
+    runOddsCommand,
     runQuoteCommand,
     runTradeCommand,
+    runSellCommand,
     runPollsCommand,
     runEventsCommand,
     runPositionsCommand,
@@ -35,11 +87,22 @@ function createCommandRouter(deps = {}) {
     runWebhookCommand,
     runLeaderboardCommand,
     runAnalyzeCommand,
+    runAgentCommand,
     runSuggestCommand,
     runResolveCommand,
+    runClaimCommand,
     runLpCommand,
+    runPolicyCommand,
+    runProfileCommand,
+    runRecipeCommand,
+    runRiskCommand,
+    runOperationsCommand,
+    runModelCommand,
     runMcpCommand,
     runStreamCommand,
+    runSimulateCommand,
+    runCapabilitiesCommand,
+    runBootstrapCommand,
     runScriptCommand,
   } = deps;
 
@@ -67,8 +130,12 @@ function createCommandRouter(deps = {}) {
   requireFn('runMarketsCommand', runMarketsCommand);
   requireFn('runScanCommand', runScanCommand);
   requireFn('runSportsCommand', runSportsCommand);
+  requireFn('runLifecycleCommand', runLifecycleCommand);
+  requireFn('runArbCommand', runArbCommand);
+  requireFn('runOddsCommand', runOddsCommand);
   requireFn('runQuoteCommand', runQuoteCommand);
   requireFn('runTradeCommand', runTradeCommand);
+  requireFn('runSellCommand', runSellCommand);
   requireFn('runPollsCommand', runPollsCommand);
   requireFn('runEventsCommand', runEventsCommand);
   requireFn('runPositionsCommand', runPositionsCommand);
@@ -83,11 +150,22 @@ function createCommandRouter(deps = {}) {
   requireFn('runWebhookCommand', runWebhookCommand);
   requireFn('runLeaderboardCommand', runLeaderboardCommand);
   requireFn('runAnalyzeCommand', runAnalyzeCommand);
+  requireFn('runAgentCommand', runAgentCommand);
   requireFn('runSuggestCommand', runSuggestCommand);
   requireFn('runResolveCommand', runResolveCommand);
+  requireFn('runClaimCommand', runClaimCommand);
   requireFn('runLpCommand', runLpCommand);
+  requireFn('runPolicyCommand', runPolicyCommand);
+  requireFn('runProfileCommand', runProfileCommand);
+  requireFn('runRecipeCommand', runRecipeCommand);
+  requireFn('runRiskCommand', runRiskCommand);
+  requireFn('runOperationsCommand', runOperationsCommand);
+  requireFn('runModelCommand', runModelCommand);
   requireFn('runMcpCommand', runMcpCommand);
   requireFn('runStreamCommand', runStreamCommand);
+  requireFn('runSimulateCommand', runSimulateCommand);
+  requireFn('runCapabilitiesCommand', runCapabilitiesCommand);
+  requireFn('runBootstrapCommand', runBootstrapCommand);
   requireFn('runSchemaCommand', deps.runSchemaCommand);
   requireFn('runScriptCommand', runScriptCommand);
 
@@ -156,8 +234,12 @@ function createCommandRouter(deps = {}) {
       markets: async (handlerArgs, handlerContext) => runMarketsCommand(handlerArgs, handlerContext),
       scan: async (handlerArgs, handlerContext) => runScanCommand(handlerArgs, handlerContext),
       sports: async (handlerArgs, handlerContext) => runSportsCommand(handlerArgs, handlerContext),
+      lifecycle: async (handlerArgs, handlerContext) => runLifecycleCommand(handlerArgs, handlerContext),
+      arb: async (handlerArgs, handlerContext) => runArbCommand(handlerArgs, handlerContext),
+      odds: async (handlerArgs, handlerContext) => runOddsCommand(handlerArgs, handlerContext),
       quote: async (handlerArgs, handlerContext) => runQuoteCommand(handlerArgs, handlerContext),
       trade: async (handlerArgs, handlerContext) => runTradeCommand(handlerArgs, handlerContext),
+      sell: async (handlerArgs, handlerContext) => runSellCommand(handlerArgs, handlerContext),
       polls: async (handlerArgs, handlerContext) => runPollsCommand(handlerArgs, handlerContext),
       events: async (handlerArgs, handlerContext) => runEventsCommand(handlerArgs, handlerContext),
       positions: async (handlerArgs, handlerContext) => runPositionsCommand(handlerArgs, handlerContext),
@@ -172,9 +254,17 @@ function createCommandRouter(deps = {}) {
       webhook: async (handlerArgs, handlerContext) => runWebhookCommand(handlerArgs, handlerContext),
       leaderboard: async (handlerArgs, handlerContext) => runLeaderboardCommand(handlerArgs, handlerContext),
       analyze: async (handlerArgs, handlerContext) => runAnalyzeCommand(handlerArgs, handlerContext),
+      agent: async (handlerArgs, handlerContext) => runAgentCommand(handlerArgs, handlerContext),
       suggest: async (handlerArgs, handlerContext) => runSuggestCommand(handlerArgs, handlerContext),
       resolve: async (handlerArgs, handlerContext) => runResolveCommand(handlerArgs, handlerContext),
+      claim: async (handlerArgs, handlerContext) => runClaimCommand(handlerArgs, handlerContext),
       lp: async (handlerArgs, handlerContext) => runLpCommand(handlerArgs, handlerContext),
+      policy: async (handlerArgs, handlerContext) => runPolicyCommand(handlerArgs, handlerContext),
+      profile: async (handlerArgs, handlerContext) => runProfileCommand(handlerArgs, handlerContext),
+      recipe: async (handlerArgs, handlerContext) => runRecipeCommand(handlerArgs, handlerContext),
+      risk: async (handlerArgs, handlerContext) => runRiskCommand(handlerArgs, handlerContext),
+      operations: async (handlerArgs, handlerContext) => runOperationsCommand(handlerArgs, handlerContext),
+      model: async (handlerArgs, handlerContext) => runModelCommand(handlerArgs, handlerContext),
       mcp: async (handlerArgs, handlerContext) => {
         if (handlerContext.outputMode === 'json') {
           throw new CliError(
@@ -185,6 +275,9 @@ function createCommandRouter(deps = {}) {
         await runMcpCommand(handlerArgs, handlerContext);
       },
       stream: async (handlerArgs, handlerContext) => runStreamCommand(handlerArgs, handlerContext),
+      simulate: async (handlerArgs, handlerContext) => runSimulateCommand(handlerArgs, handlerContext),
+      capabilities: async (handlerArgs, handlerContext) => runCapabilitiesCommand(handlerArgs, handlerContext),
+      bootstrap: async (handlerArgs, handlerContext) => runBootstrapCommand(handlerArgs, handlerContext),
       schema: async (handlerArgs, handlerContext) => deps.runSchemaCommand(handlerArgs, handlerContext),
       launch: async (handlerArgs, handlerContext) => {
         if (handlerContext.outputMode === 'json') {
@@ -220,4 +313,5 @@ function createCommandRouter(deps = {}) {
 /** Public command-router factory export. */
 module.exports = {
   createCommandRouter,
+  ROUTED_TOP_LEVEL_COMMANDS,
 };

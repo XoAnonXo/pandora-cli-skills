@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mcp-stdio-workspace-denial",
+  "title": "MCP workspace path denial",
+  "description": "Workspace-constrained MCP tools reject file reads outside the workspace boundary.",
+  "transport": "mcp-stdio",
+  "assertionId": "workspace-path-denial",
+  "parityGroup": "workspace-path-denial",
+  "parityExpectedTransports": ["mcp-stdio", "mcp-http"],
+  "targetLatencyMs": 5000,
+  "weight": 15,
+  "dimensions": ["safety", "workspace", "mcp"],
+  "request": {
+    "tool": "mirror.deploy",
+    "arguments": {
+      "plan-file": "/tmp/pandora-benchmark-outside-plan.json",
+      "dry-run": true
+    }
+  }
+}

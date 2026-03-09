@@ -1,0 +1,351 @@
+{
+  "schemaVersion": "1.0.0",
+  "suite": "core",
+  "generatedAt": "2026-03-09T01:05:05.430Z",
+  "package": {
+    "name": "pandora-cli-skills",
+    "version": "1.1.73"
+  },
+  "assets": {
+    "reportPath": "benchmarks/latest/core-report.json",
+    "lockPath": "benchmarks/locks/core.lock.json",
+    "historyPath": "benchmarks/latest/core-history.json",
+    "docsHistoryPath": "docs/benchmarks/history.json",
+    "reportSha256": "72a00e3a19d4219ec5562666918a4477190e36b79e70b6f9c7a4350cc98c8c1e",
+    "lockSha256": "4797d62c67ef777fcc3a06886ca1582b147543f60a133ea9d3427688bb2725af"
+  },
+  "latest": {
+    "summary": {
+      "scenarioCount": 19,
+      "passedCount": 19,
+      "failedCount": 0,
+      "successRate": 1,
+      "latencyPassRate": 1,
+      "weightedScoreBase": 100,
+      "weightedScore": 100,
+      "parityGroupCount": 6,
+      "failedParityGroupCount": 0,
+      "overallPass": true
+    },
+    "parity": {
+      "groups": [
+        {
+          "groupId": "capabilities-bootstrap",
+          "scenarioIds": [
+            "cli-capabilities-bootstrap",
+            "mcp-stdio-capabilities",
+            "mcp-http-capabilities"
+          ],
+          "expectedTransports": [
+            "cli-json",
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "actualTransports": [
+            "cli-json",
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "missingTransports": [],
+          "matches": true,
+          "hashCount": 1,
+          "hashes": [
+            "eac5fed395a8a67ffdad9adbaf99412a3b868268fc57d51b60b17615d0f836bd"
+          ]
+        },
+        {
+          "groupId": "execute-intent-denial",
+          "scenarioIds": [
+            "mcp-stdio-execute-intent-denial",
+            "mcp-http-execute-intent-denial"
+          ],
+          "expectedTransports": [
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "actualTransports": [
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "missingTransports": [],
+          "matches": true,
+          "hashCount": 1,
+          "hashes": [
+            "6ac1ce422d9912243a20b03aa46bf4fee9bc69e8d02d84b486be0b93e2ce9081"
+          ]
+        },
+        {
+          "groupId": "workspace-path-denial",
+          "scenarioIds": [
+            "mcp-stdio-workspace-denial",
+            "mcp-http-workspace-denial"
+          ],
+          "expectedTransports": [
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "actualTransports": [
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "missingTransports": [],
+          "matches": true,
+          "hashCount": 1,
+          "hashes": [
+            "9fce831a8894e526c7b077509798bd60689e8d01f1badfb80e7364a36695e2c5"
+          ]
+        },
+        {
+          "groupId": "schema-bootstrap",
+          "scenarioIds": [
+            "cli-schema-bootstrap",
+            "mcp-stdio-schema-bootstrap",
+            "mcp-http-schema-bootstrap"
+          ],
+          "expectedTransports": [
+            "cli-json",
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "actualTransports": [
+            "cli-json",
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "missingTransports": [],
+          "matches": true,
+          "hashCount": 1,
+          "hashes": [
+            "3b872550539ad841f57fc854e281e0c6f05ec4ef23d55aa7d06654291fe18adb"
+          ]
+        },
+        {
+          "groupId": "operations-get-seeded",
+          "scenarioIds": [
+            "cli-operations-get-seeded",
+            "mcp-stdio-operations-get-seeded",
+            "mcp-http-operations-get-seeded"
+          ],
+          "expectedTransports": [
+            "cli-json",
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "actualTransports": [
+            "cli-json",
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "missingTransports": [],
+          "matches": true,
+          "hashCount": 1,
+          "hashes": [
+            "2de4187eb14fb5a0880ea35dd7f5e0eeeb48730ade3885c10d740139d5b1ca1a"
+          ]
+        },
+        {
+          "groupId": "tools-list-bootstrap",
+          "scenarioIds": [
+            "mcp-stdio-list-tools-bootstrap",
+            "mcp-http-list-tools-bootstrap"
+          ],
+          "expectedTransports": [
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "actualTransports": [
+            "mcp-http",
+            "mcp-stdio"
+          ],
+          "missingTransports": [],
+          "matches": true,
+          "hashCount": 1,
+          "hashes": [
+            "9f7d4b6253c5a005a72c76f128eee11ada8ef5c869e0afdaf23bcd9f8a66ec57"
+          ]
+        }
+      ],
+      "failedGroups": []
+    },
+    "runtime": {
+      "packageVersion": "1.1.73"
+    },
+    "contractLock": {
+      "commandDescriptorVersion": "1.4.0",
+      "generatedManifestVersion": "1.0.0",
+      "generatedManifestCommandDescriptorVersion": "1.4.0",
+      "generatedManifestPackageVersion": "0.1.0-alpha.2",
+      "generatedManifestRegistryDigest": {
+        "canonicalHash": "1c22b4245a990813d22e2b5945b028a36262486540ef385056821ff22bd8fa03",
+        "commandDigestHash": "2cc52b0ed0cd5a2ee341b2278fc9257a129e54692b45d8befda95c021d6fbe6b",
+        "descriptorHash": "54c203a2d68c1f6fbe52b1032d0448092218b7f4af0db922ee57480887f201a0",
+        "documentationHash": "6145cfd014624d8b6bf942a0480f6c3810c423a70f0da3928061eb172edb78bb",
+        "fullDescriptorHash": "cefb2bb79c3eb1ed8b9f7ab72d2fd5156fd0e80821bfe535b817a57fb9f78891",
+        "namespaceHash": "7fddd158a2b75736f374e58905d5598a04cdad0dc05f7108f72c79fd6e3bd82e",
+        "policyProfilesHash": "91135a1831077cc1ed80cc1815391b2c743a2a3e992c895a144906d026c15870",
+        "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
+        "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
+        "topLevelHash": "d34af211503157c33608719a6292ee71b8630490d358010edc58aeb702dae0db",
+        "trustDistributionHash": "f61027d0eb83cc0711288451fb64a14528b3bcfa91ae2121a4600216c7838b9d"
+      },
+      "registryDigest": {
+        "descriptorHash": "54c203a2d68c1f6fbe52b1032d0448092218b7f4af0db922ee57480887f201a0",
+        "fullDescriptorHash": "cefb2bb79c3eb1ed8b9f7ab72d2fd5156fd0e80821bfe535b817a57fb9f78891",
+        "commandDigestHash": "2cc52b0ed0cd5a2ee341b2278fc9257a129e54692b45d8befda95c021d6fbe6b",
+        "canonicalHash": "1c22b4245a990813d22e2b5945b028a36262486540ef385056821ff22bd8fa03",
+        "topLevelHash": "d34af211503157c33608719a6292ee71b8630490d358010edc58aeb702dae0db",
+        "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
+        "namespaceHash": "7fddd158a2b75736f374e58905d5598a04cdad0dc05f7108f72c79fd6e3bd82e",
+        "documentationHash": "6145cfd014624d8b6bf942a0480f6c3810c423a70f0da3928061eb172edb78bb",
+        "trustDistributionHash": "f61027d0eb83cc0711288451fb64a14528b3bcfa91ae2121a4600216c7838b9d",
+        "policyProfilesHash": "91135a1831077cc1ed80cc1815391b2c743a2a3e992c895a144906d026c15870",
+        "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740"
+      },
+      "documentationContentHash": "ca271dd291a995e9646ad7b4d25897f2ce792ce4a8713b9d6bb9bc0049d2b062",
+      "documentationRegistryHash": "6145cfd014624d8b6bf942a0480f6c3810c423a70f0da3928061eb172edb78bb",
+      "schemaHash": "540301b7df815c196a4a99145f7a762ba4283bfa2b869ab8e32d714e0b86ab22",
+      "capabilitiesLocalHash": "91395e3d275956801b2fa664d2b361b26f538c1c809df1cb13532c4e8aac3857",
+      "capabilitiesRemoteTemplateHash": "b6897ef9d75f688c6a0edb085f0705b00daab740d4e7e39854fcf4f91585bb59",
+      "generatedArtifactHashes": {
+        "generatedContractRegistry": "3ac16e95144b4923c72dde8b92909adb84af58bb3e002b4a386c417fa6b10561",
+        "generatedCommandDescriptors": "05b7c497bb416bafee713f6e49a27e494a1a9e84d11f93323bc9995d90edff07",
+        "generatedMcpToolDefinitions": "8fd2278049da4abbbc6216cfcc564c258ec30cf52072fb199cf0fd2f46ac8ba4",
+        "generatedManifest": "ed54e41fa41a0c72c5e19da09f161ad4b48fa3570ed7a87b05bc56e78bf47161",
+        "tsContractRegistry": "3ac16e95144b4923c72dde8b92909adb84af58bb3e002b4a386c417fa6b10561",
+        "tsCommandDescriptors": "05b7c497bb416bafee713f6e49a27e494a1a9e84d11f93323bc9995d90edff07",
+        "tsMcpToolDefinitions": "8fd2278049da4abbbc6216cfcc564c258ec30cf52072fb199cf0fd2f46ac8ba4",
+        "tsManifest": "8b85e01f4cdde026deda8ce120f85c33f69e08eaf63dfe4465a639b8237f38f5",
+        "pyContractRegistry": "3ac16e95144b4923c72dde8b92909adb84af58bb3e002b4a386c417fa6b10561",
+        "pyCommandDescriptors": "05b7c497bb416bafee713f6e49a27e494a1a9e84d11f93323bc9995d90edff07",
+        "pyMcpToolDefinitions": "8fd2278049da4abbbc6216cfcc564c258ec30cf52072fb199cf0fd2f46ac8ba4",
+        "pyManifest": "c4594b40dfd66deed3d8e2612a4ad1c1a7d7ee8c3c033fa95fff8759ff3030aa"
+      }
+    },
+    "contractLockMatchesExpected": true
+  },
+  "history": {
+    "schemaVersion": "1.0.0",
+    "suite": "core",
+    "generatedAt": "2026-03-09T01:05:05.430Z",
+    "latestVersion": "1.1.73",
+    "latestGeneratedAt": "2026-03-09T01:05:05.430Z",
+    "entries": [
+      {
+        "schemaVersion": "1.0.0",
+        "suite": "core",
+        "packageName": "pandora-cli-skills",
+        "version": "1.1.73",
+        "packageVersion": "1.1.73",
+        "generatedAt": "2026-03-09T01:05:05.430Z",
+        "summary": {
+          "weightedScore": 100,
+          "overallPass": true,
+          "scenarioCount": 19,
+          "passedCount": 19,
+          "failedCount": 0,
+          "failedParityGroupCount": 0
+        },
+        "weightedScore": 100,
+        "overallPass": true,
+        "scenarioCount": 19,
+        "passedCount": 19,
+        "failedCount": 0,
+        "failedParityGroupCount": 0,
+        "contractLockMatchesExpected": true,
+        "parityFailedGroups": [],
+        "descriptorHash": "54c203a2d68c1f6fbe52b1032d0448092218b7f4af0db922ee57480887f201a0",
+        "documentationContentHash": "ca271dd291a995e9646ad7b4d25897f2ce792ce4a8713b9d6bb9bc0049d2b062",
+        "reportSha256": "72a00e3a19d4219ec5562666918a4477190e36b79e70b6f9c7a4350cc98c8c1e",
+        "lockSha256": "4797d62c67ef777fcc3a06886ca1582b147543f60a133ea9d3427688bb2725af",
+        "lockSchemaVersion": "1.0.0"
+      },
+      {
+        "schemaVersion": "1.0.0",
+        "suite": "core",
+        "packageName": "pandora-cli-skills",
+        "version": "1.1.72",
+        "packageVersion": "1.1.72",
+        "generatedAt": "2026-03-09T00:57:12.080Z",
+        "summary": {
+          "weightedScore": 100,
+          "overallPass": true,
+          "scenarioCount": 19,
+          "passedCount": 19,
+          "failedCount": 0,
+          "failedParityGroupCount": 0
+        },
+        "weightedScore": 100,
+        "overallPass": true,
+        "scenarioCount": 19,
+        "passedCount": 19,
+        "failedCount": 0,
+        "failedParityGroupCount": 0,
+        "contractLockMatchesExpected": true,
+        "parityFailedGroups": [],
+        "descriptorHash": "54c203a2d68c1f6fbe52b1032d0448092218b7f4af0db922ee57480887f201a0",
+        "documentationContentHash": "a42e419cfd28fc0da6438fb527dd6aff33aa82ebe893cc25693a925574af18d6",
+        "reportSha256": "2e5cdde2b71940078bb7fca0547354af3f38dc23a3b9b8aaf522ea7e51769665",
+        "lockSha256": "52905a087f0712a4506ca65795f6b146874ec2bf3d3b90ab7df35e86e8dce1e1",
+        "lockSchemaVersion": "1.0.0"
+      },
+      {
+        "schemaVersion": "1.0.0",
+        "suite": "core",
+        "packageName": "pandora-cli-skills",
+        "version": "1.1.71",
+        "packageVersion": "1.1.71",
+        "generatedAt": "2026-03-08T20:45:48.428Z",
+        "summary": {
+          "weightedScore": 100,
+          "overallPass": true,
+          "scenarioCount": 19,
+          "passedCount": 19,
+          "failedCount": 0,
+          "failedParityGroupCount": 0
+        },
+        "weightedScore": 100,
+        "overallPass": true,
+        "scenarioCount": 19,
+        "passedCount": 19,
+        "failedCount": 0,
+        "failedParityGroupCount": 0,
+        "contractLockMatchesExpected": true,
+        "parityFailedGroups": [],
+        "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
+        "documentationContentHash": "f964c1d8d9d88bf90d017b45dfb3e8ecee1ebc9bd18594358447426ca8943a2a",
+        "reportSha256": "20e9d4010d7a4767847218956aeb10d7d0c115174a037e7a40b3a6ef2879fdaa",
+        "lockSha256": "6cdcd9894c3e2f0dcb0d665f3f9c6ce7237bd56ad4d9e5b6d2350661de93fb76",
+        "lockSchemaVersion": "1.0.0"
+      },
+      {
+        "schemaVersion": "1.0.0",
+        "suite": "core",
+        "packageName": "pandora-cli-skills",
+        "version": "1.1.70",
+        "packageVersion": "1.1.70",
+        "generatedAt": "2026-03-08T18:22:00.105Z",
+        "summary": {
+          "weightedScore": 100,
+          "overallPass": true,
+          "scenarioCount": 19,
+          "passedCount": 19,
+          "failedCount": 0,
+          "failedParityGroupCount": 0
+        },
+        "weightedScore": 100,
+        "overallPass": true,
+        "scenarioCount": 19,
+        "passedCount": 19,
+        "failedCount": 0,
+        "failedParityGroupCount": 0,
+        "contractLockMatchesExpected": true,
+        "parityFailedGroups": [],
+        "descriptorHash": "a97310334b756e2300f6793ae6f3ebc7019a93f85acf7d3c0a4d75a0fe64b40b",
+        "documentationContentHash": "7d0642a8b431a6b150ee311e4a0b38f4a0c00a5911ff44b372666d0457791f6a",
+        "reportSha256": "b73107f7aef9a3fc80d8d360355ac9061f9d8b68c148f1187557982f241ab9b6",
+        "lockSha256": "2626b11f053b2b97e1079d0df98b45e8bf9e61359d5eb556269afd5a4c8be29c",
+        "lockSchemaVersion": "1.0.0"
+      }
+    ]
+  }
+}
