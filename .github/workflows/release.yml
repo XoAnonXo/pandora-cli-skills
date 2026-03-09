@@ -451,11 +451,10 @@ jobs:
           shopt -s nullglob
           python_distributions=(
             dist/release/sdk/python/*.whl
-            dist/release/sdk/python/*.tar.gz
           )
 
           if [[ ${#python_distributions[@]} -eq 0 ]]; then
-            echo "No standalone Python SDK distributions found to stage for PyPI publish." >&2
+            echo "No standalone Python SDK wheel found to stage for PyPI publish." >&2
             exit 1
           fi
 
