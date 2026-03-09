@@ -59,6 +59,14 @@ function stableSortedJsonHash(value) {
   return stableJsonHash(sortJsonValue(value));
 }
 
+function compareStableStrings(left, right) {
+  const a = String(left ?? '');
+  const b = String(right ?? '');
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -69,7 +77,7 @@ function sortJsonValue(value) {
   }
   if (value && typeof value === 'object') {
     const sorted = {};
-    for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+    for (const key of Object.keys(value).sort(compareStableStrings)) {
       sorted[key] = sortJsonValue(value[key]);
     }
     return sorted;
@@ -81,7 +89,7 @@ function loadScenarioSuite(suite = DEFAULT_SUITE) {
   const suiteDir = path.join(SCENARIO_ROOT, suite);
   return fs.readdirSync(suiteDir)
     .filter((name) => name.endsWith('.json'))
-    .sort((left, right) => left.localeCompare(right))
+    .sort(compareStableStrings)
     .map((name) => JSON.parse(fs.readFileSync(path.join(suiteDir, name), 'utf8')));
 }
 
@@ -290,10 +298,10 @@ function normalizePublicationParity(parity) {
       matches: Boolean(group && group.matches),
     }))
     : [];
-  groups.sort((left, right) => String(left.groupId || '').localeCompare(String(right.groupId || '')));
+  groups.sort((left, right) => compareStableStrings(left.groupId, right.groupId));
   return {
     groups,
-    failedGroups: Array.isArray(parity && parity.failedGroups) ? parity.failedGroups.slice().sort((left, right) => String(left).localeCompare(String(right))) : [],
+    failedGroups: Array.isArray(parity && parity.failedGroups) ? parity.failedGroups.slice().sort(compareStableStrings) : [],
   };
 }
 
@@ -350,7 +358,7 @@ function createPublishedBenchmarkReport(report) {
     expectedContractLockPath,
     contractLockMatchesExpected: clone && clone.contractLockMatchesExpected === true,
     contractLockMismatches: Array.isArray(clone && clone.contractLockMismatches)
-      ? clone.contractLockMismatches.slice().sort((left, right) => String(left).localeCompare(String(right)))
+      ? clone.contractLockMismatches.slice().sort(compareStableStrings)
       : [],
     parity: normalizePublicationParity(clone && clone.parity),
     scenarios: Array.isArray(clone && clone.scenarios)
@@ -392,7 +400,7 @@ function stripToolsListParityNoise(envelope) {
       delete tool.inputSchema.xPandora.remotePlanned;
     }
   }
-  clone.data.tools = tools.sort((left, right) => String(left && left.name || '').localeCompare(String(right && right.name || '')));
+  clone.data.tools = tools.sort((left, right) => compareStableStrings(left && left.name, right && right.name));
   return sortJsonValue(clone);
 }
 
@@ -573,7 +581,7 @@ function listOperationIds(env) {
   return fs.readdirSync(operationDir)
     .filter((name) => name.endsWith('.json') && !name.endsWith('.checkpoints.jsonl'))
     .map((name) => name.replace(/\.json$/, ''))
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareStableStrings);
 }
 
 function buildParitySummary(results) {
@@ -591,8 +599,8 @@ function buildParitySummary(results) {
     const hashes = Array.from(new Set(groupResults.map((result) => result.parityHash)));
     const expectedTransports = Array.from(new Set(
       groupResults.flatMap((result) => Array.isArray(result.parityExpectedTransports) ? result.parityExpectedTransports : []),
-    )).sort((left, right) => left.localeCompare(right));
-    const actualTransports = Array.from(new Set(groupResults.map((result) => result.transport))).sort((left, right) => left.localeCompare(right));
+    )).sort(compareStableStrings);
+    const actualTransports = Array.from(new Set(groupResults.map((result) => result.transport))).sort(compareStableStrings);
     const missingTransports = expectedTransports.filter((transport) => !actualTransports.includes(transport));
     summary.push({
       groupId,

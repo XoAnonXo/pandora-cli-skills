@@ -1,7 +1,7 @@
 {
   "contractLock": {
-    "capabilitiesLocalHash": "55b92b069061c62dbb554f33fa32550b1296ba7c44291cb37212843bd1f45689",
-    "capabilitiesRemoteTemplateHash": "5404f930add6ff37f481505c74017a67824200909769689799c3bf3f8c520875",
+    "capabilitiesLocalHash": "539433abede9ff77f6e88a1e7894ca080eef59871ccf50758aa64099cd67faeb",
+    "capabilitiesRemoteTemplateHash": "79da37639cc7205635564eda30cf6403cf1671b14db2b5841fa975a985951f56",
     "commandDescriptorVersion": "1.4.3",
     "documentationContentHash": "b9cf8155459cdcd53f2a708f9c786c2564699a1eca3a627e4437f8641b4f725d",
     "documentationRegistryHash": "b26199ef39d42002232d40fe801fa4da9353dab09293f8815d28718ada333901",
@@ -48,14 +48,14 @@
       "topLevelHash": "cce379250f0a7a808a65e87930f848c0a04a4be32bd4a62208ce6af083ed6ba8",
       "trustDistributionHash": "52befd4c0663cf55a69e43fd35b041ce8ff2d78bbfa8c11d1d5f823f7e5d31f7"
     },
-    "schemaHash": "086471d03156d71db5ab3d805b72701862e3645b0af4d9f80d47c4991b9cc12e"
+    "schemaHash": "4cd4be7cae32c00f2ef3e7ab1ee21a8892e1a44fada1ae2422d047138ac7b8d6"
   },
   "publication": {
-    "contractLockHash": "1858367c13f5596e2b667b31da06ca5177a551d4d989b8242bc059401c2e2128",
+    "contractLockHash": "86821e4b5dbdd8a4754fc1181b21f046b5a3a26b987b2d6cd90a17f80ae2f843",
     "deterministic": true,
     "grade": "release-grade",
     "kind": "benchmark-contract-lock",
-    "lockDocumentHash": "8fe36bc47e89b6caf2f97b5bb84a8fc2bac76018e92d8cfbbe56e43f0f1798c6",
+    "lockDocumentHash": "afbff8e294ce51ebfe103a062490cd45a4ff9c8a929c0b9917904fad3e76ea62",
     "suiteLockPath": "benchmarks/locks/core.lock.json"
   },
   "schemaVersion": "1.0.0",
