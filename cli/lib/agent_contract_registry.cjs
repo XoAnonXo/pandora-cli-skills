@@ -6,7 +6,7 @@ const ODDS_HELP_SCHEMA_REF = '#/definitions/OddsHelpPayload';
 const MIRROR_STATUS_HELP_SCHEMA_REF = '#/definitions/MirrorStatusHelpPayload';
 const SCHEMA_HELP_SCHEMA_REF = '#/definitions/SchemaHelpPayload';
 const CAPABILITIES_HELP_SCHEMA_REF = '#/definitions/CapabilitiesHelpPayload';
-const COMMAND_DESCRIPTOR_VERSION = '1.4.0';
+const COMMAND_DESCRIPTOR_VERSION = '1.4.1';
 const { POLL_CATEGORY_NAME_LIST } = require('./shared/poll_categories.cjs');
 const { MIRROR_SYNC_GATE_CODES } = require('./mirror_sync/gates.cjs');
 
@@ -283,13 +283,15 @@ const DEFAULT_AGENT_PLATFORM_METADATA = Object.freeze({
 });
 
 const AGENT_PLATFORM_NON_REMOTE_COMMANDS = new Set(['launch', 'clone-bet', 'mcp']);
-const AGENT_PLATFORM_CRITICAL_RISK_COMMANDS = new Set(['risk.panic']);
+const AGENT_PLATFORM_CRITICAL_RISK_COMMANDS = new Set(['risk.panic', 'mirror.panic']);
 const AGENT_PLATFORM_FAST_LOCAL_COMMANDS = new Set(['help', 'version', 'schema', 'bootstrap']);
 const AGENT_PLATFORM_LOCAL_DAEMON_CONTROL_COMMANDS = new Set([
   'sports.sync.stop',
   'sports.sync.status',
   'mirror.sync.stop',
   'mirror.sync.status',
+  'mirror.health',
+  'mirror.panic',
 ]);
 const AGENT_PLATFORM_FILESYSTEM_WRITE_COMMANDS = new Set([
   'init-env',
@@ -677,7 +679,10 @@ const mirrorCloseSelectorAndModeAnyOf = buildRequiredSetCombinations(
   [['dry-run'], ['execute']],
 );
 const mirrorStatusLookupAnyOf = [['state-file'], ['strategy-hash']];
-const mirrorSyncStopSelectorAnyOf = [['pid-file'], ['strategy-hash'], ['market-address'], ['all']];
+const mirrorResolvedLookupAnyOf = [...mirrorStatusLookupAnyOf, ...mirrorPandoraPolymarketSelectorAnyOf];
+const mirrorHealthLookupAnyOf = [['state-file'], ['strategy-hash'], ['pid-file'], ...mirrorPandoraSelectorAnyOf];
+const mirrorLogsLookupAnyOf = [['state-file'], ['strategy-hash'], ...mirrorPandoraSelectorAnyOf];
+const mirrorSyncStopSelectorAnyOf = [['pid-file'], ['strategy-hash'], ...mirrorPandoraSelectorAnyOf, ['all']];
 const mirrorSyncStatusSelectorAnyOf = [['pid-file'], ['strategy-hash']];
 const mirrorVerifySelectorOneOf = buildExclusivePresenceBranches(
   mirrorPandoraSelectorAnyOf,
@@ -701,6 +706,8 @@ const mirrorCloseSelectorAndModeOneOf = buildExclusivePresenceBranches(
   [['dry-run'], ['execute']],
 );
 const mirrorStatusLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupAnyOf);
+const mirrorResolvedLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupAnyOf, mirrorPandoraPolymarketSelectorAnyOf);
+const mirrorLogsLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupAnyOf, mirrorPandoraSelectorAnyOf);
 const mirrorSyncStopSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStopSelectorAnyOf);
 const mirrorSyncStatusSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStatusSelectorAnyOf);
 
@@ -938,7 +945,7 @@ const commandContracts = [
   commandContract({
     name: 'markets',
     summary: 'Market command family help and routing entrypoint.',
-    usage: 'pandora [--output table|json] markets list|get|scan ...',
+    usage: 'pandora [--output table|json] markets list|get|scan|mine ...',
     emits: ['markets.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
   }),
@@ -952,7 +959,7 @@ const commandContracts = [
     mcpExposed: true,
     mcp: {
       command: ['markets', 'list'],
-      description: 'List Pandora markets with filters.',
+      description: 'List Pandora markets with filters. Use `--creator` for creator-scoped discovery; use `markets mine` for wallet-owned exposure discovery.',
       inputSchema: buildInputSchema({
         flagProperties: {
           limit: commonFlags.limit,
@@ -1001,6 +1008,32 @@ const commandContracts = [
     },
   }),
   commandContract({
+    name: 'markets.mine',
+    summary: 'Discover wallet-owned Pandora market exposure from positions, LP balances, and claimable outcomes.',
+    usage:
+      'pandora [--output table|json] markets mine [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]',
+    emits: ['markets.mine', 'markets.mine.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['markets', 'mine'],
+      description: 'Discover wallet-owned Pandora market exposure. Accepts an explicit wallet or signer credentials; profile-based signer resolution needs `--rpc-url`.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          wallet: stringSchema('Wallet address to inspect.'),
+          'chain-id': commonFlags.chainId,
+          'rpc-url': commonFlags.rpcUrl,
+          'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+        },
+      }),
+      preferred: true,
+    },
+  }),
+  commandContract({
     name: 'scan',
     summary: 'Canonical enriched market discovery view with odds and lifecycle filters.',
     usage:
@@ -1011,7 +1044,7 @@ const commandContracts = [
     canonicalTool: 'scan',
     mcp: {
       command: ['scan'],
-      description: 'Canonical enriched market discovery flow.',
+      description: 'Canonical enriched market discovery flow. Use `--creator` for creator-scoped discovery; use `markets mine` for wallet-owned exposure discovery.',
       inputSchema: buildInputSchema({
         flagProperties: {
           limit: commonFlags.limit,
@@ -1047,15 +1080,15 @@ const commandContracts = [
   }),
   commandContract({
     name: 'quote',
-    summary: 'Estimate a YES/NO buy or sell quote from current market conditions.',
+    summary: 'Estimate a YES/NO buy or sell quote from current market conditions, including AMM buy quotes that solve to a target YES percentage.',
     usage:
-      'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
+      'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv>|--target-pct <0-100> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
     emits: ['quote', 'quote.help'],
     dataSchema: '#/definitions/QuotePayload',
     mcpExposed: true,
     mcp: {
       command: ['quote'],
-      description: 'Build YES/NO quote estimates.',
+      description: 'Build YES/NO quote estimates. `--target-pct` is buy-only and solves the required AMM trade size to reach a target YES percentage; do not combine it with explicit buy amounts.',
       inputSchema: buildInputSchema({
         flagProperties: {
           'indexer-url': commonFlags.indexerUrl,
@@ -1066,11 +1099,12 @@ const commandContracts = [
           'amount-usdc': numberSchema('Trade notional in USDC.', { minimum: 0 }),
           shares: numberSchema('Outcome-token amount for sell mode.', { minimum: 0 }),
           amounts: stringSchema('Comma-delimited curve sizes in USDC.'),
+          'target-pct': numberSchema('Target YES probability percent for AMM buy quotes.', { minimum: 0, maximum: 100 }),
           'yes-pct': numberSchema('Override YES probability percent.', { minimum: 0, maximum: 100 }),
           'slippage-bps': integerSchema('Slippage in basis points.', { minimum: 0, maximum: 10000 }),
         },
         requiredFlags: ['market-address', 'side'],
-        anyOf: [['amount-usdc'], ['shares'], ['amounts']],
+        anyOf: [['amount-usdc'], ['shares'], ['amounts'], ['target-pct']],
       }),
       preferred: true,
     },
@@ -1826,9 +1860,61 @@ const commandContracts = [
     name: 'sports',
     summary: 'Sports command family help and routing entrypoint.',
     usage:
-      'pandora [--output table|json] sports books list|events list|events live|odds snapshot|consensus|create plan|create run|sync once|run|start|stop|status|resolve plan ...',
+      'pandora [--output table|json] sports schedule|scores|books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|run|start|stop|status|resolve plan ...',
     emits: ['sports.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
+  }),
+  commandContract({
+    name: 'sports.schedule',
+    summary: 'Operator-oriented schedule view for normalized soccer fixtures.',
+    usage:
+      'pandora [--output table|json] sports schedule [--provider primary|backup|auto] [--competition <id|slug>] [--date <YYYY-MM-DD>] [--kickoff-after <iso>] [--kickoff-before <iso>] [--limit <n>] [--timeout-ms <ms>]',
+    emits: ['sports.schedule', 'sports.help'],
+    dataSchema: '#/definitions/SportsSchedulePayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['sports', 'schedule'],
+      description: 'List normalized soccer fixtures in schedule order for operator readouts.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          provider: commonFlags.provider,
+          competition: commonFlags.competition,
+          date: stringSchema('UTC calendar date shorthand in YYYY-MM-DD form. Expands to kickoff-after/before for that day.'),
+          'kickoff-after': stringSchema('ISO timestamp lower bound.'),
+          'kickoff-before': stringSchema('ISO timestamp upper bound.'),
+          limit: commonFlags.limit,
+          'timeout-ms': commonFlags.timeoutMs,
+        },
+      }),
+      preferred: true,
+    },
+  }),
+  commandContract({
+    name: 'sports.scores',
+    summary: 'Operator-oriented live score and status view for soccer events.',
+    usage:
+      'pandora [--output table|json] sports scores [--event-id <id>|--game <id>] [--provider primary|backup|auto] [--competition <id|slug>] [--date <YYYY-MM-DD>] [--kickoff-after <iso>] [--kickoff-before <iso>] [--limit <n>] [--timeout-ms <ms>]',
+    emits: ['sports.scores', 'sports.help'],
+    dataSchema: '#/definitions/SportsScoresPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['sports', 'scores'],
+      description: 'Return current live score and status rows for one event or the active slate.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'event-id': commonFlags.eventId,
+          game: stringSchema('Alias for --event-id.'),
+          provider: commonFlags.provider,
+          competition: commonFlags.competition,
+          date: stringSchema('UTC calendar date shorthand in YYYY-MM-DD form. Expands to kickoff-after/before for that day.'),
+          'kickoff-after': stringSchema('ISO timestamp lower bound.'),
+          'kickoff-before': stringSchema('ISO timestamp upper bound.'),
+          limit: commonFlags.limit,
+          'timeout-ms': commonFlags.timeoutMs,
+        },
+      }),
+      preferred: true,
+    },
   }),
   commandContract({
     name: 'sports.books.list',
@@ -2581,7 +2667,7 @@ const commandContracts = [
     name: 'mirror',
     summary: 'Mirror command family help and routing entrypoint.',
     usage:
-      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...',
+      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|close ...',
     emits: ['mirror.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
   }),
@@ -2790,28 +2876,160 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.hedge-calc',
-    summary: 'Compute hedge sizing and leg diagnostics for a mirror market.',
+    summary: 'Compute offline hedge sizing and leg diagnostics from explicit reserves or a resolved mirror pair. This is analytical sizing, not the live dashboard/actionability gate.',
     usage:
-      'pandora [--output table|json] mirror hedge-calc --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--hedge-ratio <n>] [--polymarket-yes-pct <0-100>]',
+      'pandora [--output table|json] mirror hedge-calc [--reserve-yes-usdc <n> --reserve-no-usdc <n>] [--excess-yes-usdc <n>] [--excess-no-usdc <n>] [--polymarket-yes-pct <0-100>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
     emits: ['mirror.hedge-calc', 'mirror.hedge-calc.help'],
     dataSchema: '#/definitions/MirrorHedgeCalcPayload',
     mcpExposed: true,
     mcp: {
       command: ['mirror', 'hedge-calc'],
-      description: 'Compute hedge sizing and legs.',
+      description: 'Compute offline hedge sizing and legs from explicit reserves or a resolved mirror pair. Use `mirror hedge-check` or `mirror status --with-live` for current live hedge posture.',
       inputSchema: buildInputSchema({
         flagProperties: {
-          'liquidity-usdc': numberSchema('Initial liquidity in USDC.', { minimum: 0 }),
-          'source-yes-pct': numberSchema('Source YES probability percent.', { minimum: 0, maximum: 100 }),
-          'target-yes-pct': numberSchema('Target YES probability percent.', { minimum: 0, maximum: 100 }),
-          'distribution-yes': numberSchema('Initial YES distribution parts.', { minimum: 0 }),
-          'distribution-no': numberSchema('Initial NO distribution parts.', { minimum: 0 }),
+          'reserve-yes-usdc': numberSchema('Pandora YES-side reserve in USDC.', { minimum: 0 }),
+          'reserve-no-usdc': numberSchema('Pandora NO-side reserve in USDC.', { minimum: 0 }),
+          'excess-yes-usdc': numberSchema('Existing YES-side hedge inventory in USDC terms.', { minimum: 0 }),
+          'excess-no-usdc': numberSchema('Existing NO-side hedge inventory in USDC terms.', { minimum: 0 }),
           'hedge-ratio': numberSchema('Desired hedge ratio.', { minimum: 0 }),
+          'hedge-cost-bps': integerSchema('Estimated hedge cost in basis points.', { minimum: 0 }),
+          'fee-tier': integerSchema('Fee tier in hundredths of a bip.', { minimum: 500, maximum: 50000 }),
+          'volume-scenarios': stringSchema('Comma-delimited fee-volume scenarios in USDC.'),
           'polymarket-yes-pct': numberSchema('Polymarket YES probability percent.', { minimum: 0, maximum: 100 }),
+          'pandora-market-address': commonFlags.marketAddress,
+          'market-address': commonFlags.marketAddress,
+          'polymarket-market-id': stringSchema('Polymarket market id.'),
+          'polymarket-slug': stringSchema('Polymarket slug.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'polymarket-host': stringSchema('Polymarket host override for selector-based resolution.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL for selector-based resolution.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL for selector-based resolution.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL for selector-based resolution.'),
         },
-        requiredFlags: ['liquidity-usdc'],
+        anyOf: [['reserve-yes-usdc', 'reserve-no-usdc'], ...mirrorPandoraPolymarketSelectorAnyOf],
       }),
       preferred: true,
+    },
+  }),
+  commandContract({
+    name: 'mirror.calc',
+    summary: 'Compute exact Pandora rebalance sizing to reach a target percentage, then derive the corresponding hedge inventory needed on Polymarket.',
+    usage:
+      'pandora [--output table|json] mirror calc --target-pct <0-100> --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+    emits: ['mirror.calc', 'mirror.calc.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['mirror', 'calc'],
+      description: 'Compute exact Pandora notional needed to reach a target percentage, then derive the corresponding hedge inventory needed on Polymarket.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'target-pct': numberSchema('Target Pandora YES probability percent.', { minimum: 0, maximum: 100 }),
+          'state-file': commonFlags.stateFile,
+          'strategy-hash': stringSchema('Mirror strategy hash.'),
+          'pandora-market-address': commonFlags.marketAddress,
+          'market-address': commonFlags.marketAddress,
+          'polymarket-market-id': stringSchema('Polymarket market id.'),
+          'polymarket-slug': stringSchema('Polymarket slug.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+          'polymarket-host': stringSchema('Polymarket host override for live diagnostics.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL for live diagnostics.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL for live diagnostics.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL for live diagnostics.'),
+        },
+        requiredFlags: ['target-pct'],
+        anyOf: mirrorResolvedLookupAnyOf,
+        oneOf: mirrorResolvedLookupOneOf,
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      externalDependencies: ['filesystem', 'polymarket-api'],
+      expectedLatencyMs: 1500,
+    },
+  }),
+  commandContract({
+    name: 'mirror.drift',
+    summary: 'Read the dedicated live drift/readiness surface for a mirror pair via persisted state or selector-first lookup.',
+    usage:
+      'pandora [--output table|json] mirror drift --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+    emits: ['mirror.drift', 'mirror.drift.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['mirror', 'drift'],
+      description: 'Read the dedicated live drift/readiness surface for a mirror pair using persisted state or direct selectors.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'state-file': commonFlags.stateFile,
+          'strategy-hash': stringSchema('Mirror strategy hash.'),
+          'pandora-market-address': commonFlags.marketAddress,
+          'market-address': commonFlags.marketAddress,
+          'polymarket-market-id': stringSchema('Polymarket market id.'),
+          'polymarket-slug': stringSchema('Polymarket slug.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points used when projecting live sync posture.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC used when projecting live sync posture.', { minimum: 0 }),
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+          'polymarket-host': stringSchema('Polymarket host override for live diagnostics.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL for live diagnostics.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL for live diagnostics.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL for live diagnostics.'),
+        },
+        anyOf: mirrorResolvedLookupAnyOf,
+        oneOf: mirrorResolvedLookupOneOf,
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      externalDependencies: ['filesystem', 'polymarket-api'],
+      expectedLatencyMs: 1500,
+    },
+  }),
+  commandContract({
+    name: 'mirror.hedge-check',
+    summary: 'Read the dedicated live hedge-gap/readiness surface for a mirror pair via persisted state or selector-first lookup.',
+    usage:
+      'pandora [--output table|json] mirror hedge-check --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+    emits: ['mirror.hedge-check', 'mirror.hedge-check.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['mirror', 'hedge-check'],
+      description: 'Read the dedicated live hedge-gap/readiness surface for a mirror pair using persisted state or direct selectors.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'state-file': commonFlags.stateFile,
+          'strategy-hash': stringSchema('Mirror strategy hash.'),
+          'pandora-market-address': commonFlags.marketAddress,
+          'market-address': commonFlags.marketAddress,
+          'polymarket-market-id': stringSchema('Polymarket market id.'),
+          'polymarket-slug': stringSchema('Polymarket slug.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points used when projecting live sync posture.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC used when projecting live sync posture.', { minimum: 0 }),
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+          'polymarket-host': stringSchema('Polymarket host override for live diagnostics.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL for live diagnostics.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL for live diagnostics.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL for live diagnostics.'),
+        },
+        anyOf: mirrorResolvedLookupAnyOf,
+        oneOf: mirrorResolvedLookupOneOf,
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      externalDependencies: ['filesystem', 'polymarket-api'],
+      expectedLatencyMs: 1500,
     },
   }),
   commandContract({
@@ -3223,8 +3441,111 @@ const commandContracts = [
       },
     }),
     commandContract({
-      name: 'mirror.status',
-    summary: 'Read the canonical mirror operator dashboard with selector-first lookup, graceful fallback behavior, runtime health, and optional live diagnostics.',
+      name: 'mirror.health',
+      summary: 'Read machine-usable mirror daemon/runtime health for one strategy via state, strategy hash, pid file, or market selector.',
+      usage:
+        'pandora [--output table|json] mirror health --state-file <path>|--strategy-hash <hash>|--pid-file <path>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--stale-after-ms <ms>]',
+      emits: ['mirror.health', 'mirror.health.help'],
+      dataSchema: GENERIC_DATA_SCHEMA_REF,
+      mcpExposed: true,
+      mcp: {
+        command: ['mirror', 'health'],
+        description: 'Read machine-usable mirror daemon/runtime status including runtime.health, daemon metadata, pending-action blockers, and next action.',
+        inputSchema: buildInputSchema({
+          flagProperties: {
+            'state-file': commonFlags.stateFile,
+            'strategy-hash': stringSchema('Mirror strategy hash.'),
+            'pid-file': stringSchema('Mirror daemon pid file path.'),
+            'market-address': commonFlags.marketAddress,
+            'pandora-market-address': commonFlags.marketAddress,
+            'polymarket-market-id': stringSchema('Optional Polymarket market id to disambiguate selector-first state lookups.'),
+            'polymarket-slug': stringSchema('Optional Polymarket slug to disambiguate selector-first state lookups.'),
+            'stale-after-ms': integerSchema('Override heartbeat stale threshold in milliseconds.', { minimum: 1 }),
+          },
+          anyOf: mirrorHealthLookupAnyOf,
+        }),
+        preferred: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem'],
+        expectedLatencyMs: 1000,
+        returnsOperationId: false,
+        returnsRuntimeHandle: false,
+      },
+    }),
+    commandContract({
+      name: 'mirror.panic',
+      summary: 'Engage or clear the global risk panic lock while writing mirror stop files and attempting daemon stop for the selected mirror scope.',
+      usage:
+        'pandora [--output table|json] mirror panic --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all [--risk-file <path>] [--reason <text>] [--actor <id>] [--clear]',
+      emits: ['mirror.panic', 'mirror.panic.help'],
+      dataSchema: GENERIC_DATA_SCHEMA_REF,
+      mcpExposed: true,
+      mcp: {
+        command: ['mirror', 'panic'],
+        description: 'Engage or clear global risk panic while applying mirror stop-file and daemon-stop emergency flow for the selected scope.',
+        inputSchema: buildInputSchema({
+          includeIntent: true,
+          flagProperties: {
+            'pid-file': stringSchema('Mirror daemon pid file path.'),
+            'strategy-hash': stringSchema('Mirror strategy hash.'),
+            'market-address': commonFlags.marketAddress,
+            'pandora-market-address': commonFlags.marketAddress,
+            all: booleanSchema('Target every discovered mirror daemon.'),
+            clear: booleanSchema('Clear panic state and remove the default mirror stop file.'),
+            reason: stringSchema('Reason for engaging panic mode. Required unless clear=true.'),
+            actor: stringSchema('Operator or agent identifier recorded with the panic action.'),
+            'risk-file': stringSchema('Override risk state file path.'),
+          },
+          anyOf: [['clear'], ...mirrorSyncStopSelectorAnyOf],
+        }),
+        preferred: true,
+        mutating: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem'],
+        expectedLatencyMs: 1000,
+        returnsOperationId: false,
+        returnsRuntimeHandle: false,
+      },
+    }),
+  commandContract({
+    name: 'mirror.dashboard',
+    summary: 'Read the multi-market mirror operator summary/dashboard across discovered state files, with optional live enrichment and suggested next commands.',
+    usage:
+      'pandora [--output table|json] mirror dashboard [--with-live|--no-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+    emits: ['mirror.dashboard', 'mirror.dashboard.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+      mcp: {
+      command: ['mirror', 'dashboard'],
+      description: 'Read the multi-market mirror dashboard across discovered state files. Top-level `dashboard` is the canonical alias for this operator summary.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'with-live': booleanSchema('Enrich each dashboard item with live cross-venue diagnostics.'),
+          'no-live': booleanSchema('Disable live cross-venue diagnostics and use local state/daemon data only.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pairs when enriching dashboard items.'),
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points used when projecting live sync posture.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC used when projecting live sync posture.', { minimum: 0 }),
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+          'polymarket-host': stringSchema('Polymarket host override for live diagnostics.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL for live diagnostics.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL for live diagnostics.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL for live diagnostics.'),
+        },
+      }),
+        preferred: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem', 'polymarket-api'],
+        expectedLatencyMs: 1500,
+      },
+    }),
+  commandContract({
+    name: 'mirror.status',
+    summary: 'Read the single-mirror operator status/dashboard surface with selector-first lookup, graceful fallback behavior, runtime health, and optional live diagnostics.',
     usage:
       'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
     emits: ['mirror.status', 'mirror.status.help'],
@@ -3233,7 +3554,7 @@ const commandContracts = [
     mcpExposed: true,
       mcp: {
       command: ['mirror', 'status'],
-      description: 'Read mirror state/status payload. --with-live enriches diagnostics and degrades partial live visibility into diagnostics instead of hard failure.',
+      description: 'Read single-mirror status/dashboard payload. Use `mirror dashboard` for multi-market operator summaries and `mirror drift` or `mirror hedge-check` for narrower live actionability views.',
       inputSchema: buildInputSchema({
         flagProperties: {
           'state-file': commonFlags.stateFile,
@@ -3254,8 +3575,8 @@ const commandContracts = [
           'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL for live diagnostics.'),
           'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL for live diagnostics.'),
         },
-        anyOf: mirrorStatusLookupAnyOf,
-        oneOf: mirrorStatusLookupOneOf,
+        anyOf: mirrorResolvedLookupAnyOf,
+        oneOf: mirrorResolvedLookupOneOf,
           }),
         preferred: true,
       },
@@ -3294,8 +3615,8 @@ const commandContracts = [
             'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL for live diagnostics.'),
             'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL for live diagnostics.'),
           },
-          anyOf: mirrorStatusLookupAnyOf,
-          oneOf: mirrorStatusLookupOneOf,
+          anyOf: mirrorResolvedLookupAnyOf,
+          oneOf: mirrorResolvedLookupOneOf,
         }),
         preferred: true,
       },
@@ -3335,14 +3656,76 @@ const commandContracts = [
             'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL for live diagnostics.'),
             'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL for live diagnostics.'),
           },
-          anyOf: mirrorStatusLookupAnyOf,
-          oneOf: mirrorStatusLookupOneOf,
+          anyOf: mirrorResolvedLookupAnyOf,
+          oneOf: mirrorResolvedLookupOneOf,
         }),
         preferred: true,
       },
       agentPlatform: {
         externalDependencies: ['filesystem', 'polymarket-api'],
         expectedLatencyMs: 1200,
+      },
+    }),
+    commandContract({
+      name: 'mirror.replay',
+      summary: 'Replay persisted mirror execution history against modeled rebalance and hedge outcomes using the append-only audit log, or lastExecution fallback when no ledger exists.',
+      usage:
+        'pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]',
+      emits: ['mirror.replay', 'mirror.replay.help'],
+      dataSchema: GENERIC_DATA_SCHEMA_REF,
+      mcpExposed: true,
+      mcp: {
+        command: ['mirror', 'replay'],
+        description: 'Replay persisted mirror execution history against modeled rebalance and hedge outcomes. Uses the append-only audit log when available and falls back to lastExecution state when needed.',
+        inputSchema: buildInputSchema({
+          flagProperties: {
+            'state-file': commonFlags.stateFile,
+            'strategy-hash': stringSchema('Mirror strategy hash.'),
+            'pandora-market-address': commonFlags.marketAddress,
+            'market-address': commonFlags.marketAddress,
+            'polymarket-market-id': stringSchema('Polymarket market id.'),
+            'polymarket-slug': stringSchema('Polymarket slug.'),
+            limit: commonFlags.limit,
+          },
+          anyOf: mirrorResolvedLookupAnyOf,
+          oneOf: mirrorResolvedLookupOneOf,
+        }),
+        preferred: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem'],
+        expectedLatencyMs: 1200,
+      },
+    }),
+    commandContract({
+      name: 'mirror.logs',
+      summary: 'Tail mirror daemon logs via state, strategy hash, or Pandora market selector, preserving diagnostics instead of hard-failing when the log file is missing.',
+      usage:
+        'pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>]',
+      emits: ['mirror.logs', 'mirror.logs.help'],
+      dataSchema: GENERIC_DATA_SCHEMA_REF,
+      mcpExposed: true,
+      mcp: {
+        command: ['mirror', 'logs'],
+        description: 'Tail mirror daemon logs resolved from state, strategy hash, or Pandora market selector. Missing or unreadable logs degrade into diagnostics instead of a transport failure.',
+        inputSchema: buildInputSchema({
+          flagProperties: {
+            'state-file': commonFlags.stateFile,
+            'strategy-hash': stringSchema('Mirror strategy hash.'),
+            'pandora-market-address': commonFlags.marketAddress,
+            'market-address': commonFlags.marketAddress,
+            'polymarket-market-id': stringSchema('Optional Polymarket market id used to disambiguate selector-first log lookup.'),
+            'polymarket-slug': stringSchema('Optional Polymarket slug used to disambiguate selector-first log lookup.'),
+            lines: commonFlags.limit,
+          },
+          anyOf: mirrorLogsLookupAnyOf,
+          oneOf: mirrorLogsLookupOneOf,
+        }),
+        preferred: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem'],
+        expectedLatencyMs: 1000,
       },
     }),
   commandContract({
@@ -3383,6 +3766,85 @@ const commandContracts = [
     },
   }),
   commandContract({
+    name: 'dashboard',
+    summary: 'Read the active-mirror operator dashboard across discovered mirror contexts, with live enrichment enabled by default.',
+    usage:
+      'pandora [--output table|json] dashboard [--with-live|--no-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+    emits: ['dashboard', 'dashboard.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['dashboard'],
+      description: 'Read the active-mirror operator dashboard across discovered mirror contexts. This is the top-level convenience surface over `mirror dashboard`, with live enrichment enabled unless `--no-live` is supplied.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'with-live': booleanSchema('Force live enrichment on for the dashboard items.'),
+          'no-live': booleanSchema('Disable live enrichment and return state/daemon-only dashboard data.'),
+          'trust-deploy': booleanSchema('Trust manifest deploy pairs during live enrichment.'),
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points used when projecting live sync posture.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC used when projecting live sync posture.', { minimum: 0 }),
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+          'polymarket-host': stringSchema('Polymarket host override for live diagnostics.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL for live diagnostics.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL for live diagnostics.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL for live diagnostics.'),
+        },
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      externalDependencies: ['filesystem', 'polymarket-api'],
+      expectedLatencyMs: 1500,
+    },
+  }),
+  commandContract({
+    name: 'fund-check',
+    summary: 'Estimate immediate hedge funding needs from live mirror gaps, then compare them against Polymarket balances, approvals, and gas reserve. This is the canonical high-level wallet shortfall planner.',
+    usage:
+      'pandora [--output table|json] fund-check --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--target-pct <0-100>] [--trust-deploy] [--manifest-file <path>] [--indexer-url <url>] [--timeout-ms <ms>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+    emits: ['fund-check', 'fund-check.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['fund-check'],
+      description: 'Estimate live mirror hedge funding shortfalls and compare them against Polymarket wallet balances, approvals, risk guardrails, and native gas reserve. Use this canonical planner before dropping to `polymarket check` or `polymarket balance`.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'trust-deploy': booleanSchema('Trust manifest deploy pairs during live enrichment.'),
+          'manifest-file': stringSchema('Mirror manifest path.'),
+          'drift-trigger-bps': integerSchema('Drift trigger in basis points used when projecting live sync posture.', { minimum: 1 }),
+          'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC used when projecting live sync posture.', { minimum: 0 }),
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+          'target-pct': numberSchema('Target Pandora YES probability percent used for exact rebalance sizing.', { minimum: 0, maximum: 100 }),
+          'rpc-url': commonFlags.rpcUrl,
+          'polymarket-rpc-url': stringSchema('Polygon RPC URL used for Polymarket balance and readiness checks.'),
+          'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
+          'state-file': commonFlags.stateFile,
+          'strategy-hash': stringSchema('Mirror strategy hash.'),
+          'pandora-market-address': commonFlags.marketAddress,
+          'market-address': commonFlags.marketAddress,
+          'polymarket-market-id': stringSchema('Polymarket market id.'),
+          'polymarket-slug': stringSchema('Polymarket slug.'),
+          funder: stringSchema('Polymarket proxy wallet.'),
+          'polymarket-host': stringSchema('Polymarket host override.'),
+          'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL.'),
+          'polymarket-gamma-mock-url': stringSchema('Polymarket Gamma mock URL.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock CLOB URL.'),
+        },
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      externalDependencies: ['filesystem', 'polymarket-api'],
+      expectedLatencyMs: 1500,
+    },
+  }),
+  commandContract({
     name: 'polymarket',
     summary: 'Polymarket command family help and routing entrypoint.',
     usage: 'pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ...',
@@ -3391,7 +3853,7 @@ const commandContracts = [
   }),
   commandContract({
     name: 'polymarket.check',
-    summary: 'Run Polymarket auth and allowance checks.',
+    summary: 'Run Polymarket funding, auth, and allowance checks. This is the lower-level readiness primitive that complements the top-level `fund-check` planner.',
     usage:
       'pandora [--output table|json] polymarket check [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]',
     emits: ['polymarket.check', 'polymarket.check.help', 'polymarket.help'],
@@ -3399,7 +3861,7 @@ const commandContracts = [
     mcpExposed: true,
     mcp: {
       command: ['polymarket', 'check'],
-      description: 'Run Polymarket auth/allowance checks.',
+      description: 'Run Polymarket funding, auth, and allowance checks. Use this when `fund-check` recommends drilling into ownership, allowance, or RPC readiness; pair it with `polymarket balance` for raw wallet balances.',
       inputSchema: buildInputSchema({
         flagProperties: {
           'polymarket-host': stringSchema('Polymarket host override.'),
@@ -3443,9 +3905,9 @@ const commandContracts = [
       executeFlags: ['--execute'],
     },
   }),
-    commandContract({
+  commandContract({
       name: 'polymarket.preflight',
-    summary: 'Run Polymarket trade preflight checks.',
+    summary: 'Run strict Polymarket trade preflight checks.',
     usage:
       'pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]',
     emits: ['polymarket.preflight', 'polymarket.preflight.help', 'polymarket.help'],
@@ -3453,7 +3915,7 @@ const commandContracts = [
     mcpExposed: true,
       mcp: {
       command: ['polymarket', 'preflight'],
-      description: 'Run Polymarket trade preflight checks.',
+      description: 'Run strict Polymarket trade preflight checks. Use this after `polymarket check` when you need the execute-mode go/no-go gate.',
       inputSchema: buildInputSchema({
         flagProperties: {
           'polymarket-host': stringSchema('Polymarket host override.'),
@@ -3472,7 +3934,7 @@ const commandContracts = [
     }),
   commandContract({
     name: 'polymarket.balance',
-    summary: 'Read Polymarket signer/proxy funding balances.',
+    summary: 'Read Polymarket signer/proxy funding balances. This is the raw balance companion to `fund-check` and `polymarket check`.',
     usage:
       'pandora [--output table|json] polymarket balance [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
     emits: ['polymarket.balance', 'polymarket.balance.help', 'polymarket.help'],
@@ -3480,7 +3942,7 @@ const commandContracts = [
     mcpExposed: true,
     mcp: {
       command: ['polymarket', 'balance'],
-      description: 'Read signer/proxy funding balances for Polymarket.',
+      description: 'Read signer/proxy funding balances for Polymarket. Use this when `fund-check` or `polymarket check` needs the raw signer, funder, or owner balances after readiness checks.',
       inputSchema: buildInputSchema({
         flagProperties: {
           wallet: stringSchema('Wallet address to inspect.'),
@@ -3532,7 +3994,7 @@ const commandContracts = [
     name: 'polymarket.withdraw',
     summary: 'Dry-run or execute a proxy-to-signer Polymarket funding transfer.',
     usage:
-      'pandora [--output table|json] polymarket withdraw --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]  # execute only when signer controls the source wallet',
+      'pandora [--output table|json] polymarket withdraw --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
     emits: ['polymarket.withdraw', 'polymarket.withdraw.help', 'polymarket.help'],
     dataSchema: '#/definitions/PolymarketPayload',
     mcpExposed: true,
@@ -4351,6 +4813,35 @@ const commandContracts = [
       }),
       preferred: true,
       mutating: true,
+    },
+  }),
+  commandContract({
+    name: 'explain',
+    summary: 'Explain a Pandora error code or error envelope and return canonical remediation.',
+    usage: 'pandora [--output table|json] explain <error-code>|--code <code> [--message <text>] [--details-json <json>] [--stdin]',
+    emits: ['explain', 'explain.help'],
+    dataSchema: '#/definitions/ExplainPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['explain'],
+      description: 'Explain a Pandora error and return canonical remediation plus next commands.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          code: stringSchema('Canonical Pandora error code to explain.'),
+          message: stringSchema('Optional error message to preserve alongside the code.'),
+          'details-json': stringSchema('Optional JSON object string containing structured error details.'),
+          stdin: booleanSchema('Local CLI helper: read a raw error object or full Pandora JSON failure envelope from stdin.'),
+        },
+        anyOf: [['code'], ['stdin']],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      expectedLatencyMs: 100,
+      externalDependencies: [],
+      supportsRemote: true,
+      remoteEligible: true,
+      policyScopes: ['contracts:read'],
     },
   }),
 ];

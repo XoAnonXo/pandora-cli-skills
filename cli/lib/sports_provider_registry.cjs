@@ -624,15 +624,16 @@ function createSportsProviderRegistry(options = {}) {
    * @param {string} eventId
    * @returns {Promise<object>}
    */
-  async function getEventStatus(eventId) {
+  async function getEventStatus(eventId, options = {}) {
     const normalizedEventId = toStringOrNull(eventId);
     if (!normalizedEventId) {
       throw providerError('MISSING_REQUIRED_INPUT', 'getEventStatus requires eventId.');
     }
 
-    return runWithFallback('get_event_status', null, async (provider, mode) => {
+    return runWithFallback('get_event_status', options.providerMode || null, async (provider, mode) => {
       const response = await requestProvider(provider, 'status', {
         pathParams: { eventId: normalizedEventId },
+        timeoutMs: options.timeoutMs,
       });
       return {
         ...normalizeEventStatus(response.payload, {

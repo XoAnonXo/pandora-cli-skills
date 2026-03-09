@@ -42,10 +42,12 @@ const {
   subscribePolymarketMarketFeed,
 } = require('../../cli/lib/polymarket_adapter.cjs');
 const { buildPlanDigest } = require('../../cli/lib/mirror_service.cjs');
+const { discoverOwnedMarkets } = require('../../cli/lib/markets_mine_service.cjs');
 const {
   computeApprovalDiff,
   runPolymarketCheck,
   runPolymarketPreflight,
+  runPolymarketWithdraw,
   POLYMARKET_OPS_SCHEMA_VERSION,
 } = require('../../cli/lib/polymarket_ops_service.cjs');
 const { formatDecodedContractError } = require('../../cli/lib/contract_error_decoder.cjs');
@@ -96,6 +98,7 @@ const {
   buildPendingActionFilePath,
   readPendingActionLock,
 } = require('../../cli/lib/mirror_sync/state.cjs');
+const handleMirrorDashboard = require('../../cli/lib/mirror_handlers/dashboard.cjs');
 
 class ParserCliError extends Error {
   constructor(code, message, details = null) {
@@ -283,6 +286,13 @@ function buildPolymarketOpsTestViemRuntime(options = {}) {
   );
 
   return {
+    parseUnits(value, decimals) {
+      const [wholePart, fractionPart = ''] = String(value).split('.');
+      const whole = BigInt(wholePart || '0');
+      const paddedFraction = `${fractionPart}${'0'.repeat(decimals)}`.slice(0, decimals);
+      const fraction = BigInt(paddedFraction || '0');
+      return whole * (10n ** BigInt(decimals)) + fraction;
+    },
     http(url) {
       return { url };
     },
@@ -318,6 +328,70 @@ function buildPolymarketOpsTestViemRuntime(options = {}) {
         },
       };
     },
+  };
+}
+
+async function startUnitIndexerMetadataServer(fixtures = {}) {
+  const marketsById = new Map(
+    Object.entries(fixtures.markets || {}).map(([id, value]) => [String(id).toLowerCase(), value]),
+  );
+  const pollsById = new Map(
+    Object.entries(fixtures.polls || {}).map(([id, value]) => [String(id).toLowerCase(), value]),
+  );
+
+  const server = http.createServer((request, response) => {
+    let body = '';
+    request.on('data', (chunk) => {
+      body += chunk;
+    });
+    request.on('end', () => {
+      let parsed;
+      try {
+        parsed = body ? JSON.parse(body) : {};
+      } catch {
+        response.writeHead(400, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ errors: [{ message: 'invalid json' }] }));
+        return;
+      }
+
+      const query = String(parsed && parsed.query ? parsed.query : '');
+      const variables = parsed && parsed.variables && typeof parsed.variables === 'object'
+        ? parsed.variables
+        : {};
+      const data = {};
+
+      if (query.includes('markets')) {
+        if (Object.prototype.hasOwnProperty.call(variables, 'id')) {
+          data.markets = marketsById.get(String(variables.id).toLowerCase()) || null;
+        }
+        for (const [key, value] of Object.entries(variables)) {
+          if (/^id\d+$/.test(key)) {
+            data[`item${key.slice(2)}`] = marketsById.get(String(value).toLowerCase()) || null;
+          }
+        }
+      }
+
+      if (query.includes('polls')) {
+        if (Object.prototype.hasOwnProperty.call(variables, 'id')) {
+          data.polls = pollsById.get(String(variables.id).toLowerCase()) || null;
+        }
+        for (const [key, value] of Object.entries(variables)) {
+          if (/^id\d+$/.test(key)) {
+            data[`item${key.slice(2)}`] = pollsById.get(String(value).toLowerCase()) || null;
+          }
+        }
+      }
+
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ data }));
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
   };
 }
 
@@ -1877,6 +1951,180 @@ test('runPolymarketPreflight reports exhausted rpc candidates when every fallbac
       return true;
     },
   );
+});
+
+test('runPolymarketWithdraw dry-run surfaces proxy-manual execution and source shortfall in one payload', async () => {
+  const funder = '0x2222222222222222222222222222222222222222';
+  const payload = await runPolymarketWithdraw(
+    {
+      rpcUrl: 'https://polygon-rpc.example',
+      privateKey: TEST_PRIVATE_KEY,
+      funder,
+      amountUsdc: 5,
+    },
+    {
+      viemRuntime: buildPolymarketOpsTestViemRuntime({
+        signerAddress: TEST_WALLET,
+        funderAddress: funder,
+        usdcBalanceRaw: 2_000_000n,
+      }),
+    },
+  );
+
+  assert.equal(payload.action, 'withdraw');
+  assert.equal(payload.mode, 'dry-run');
+  assert.equal(payload.fromAddress, funder);
+  assert.equal(payload.toAddress, TEST_WALLET);
+  assert.equal(payload.preflight.manualProxyActionRequired, true);
+  assert.equal(payload.preflight.executeSupported, false);
+  assert.equal(payload.preflight.sourceBalanceSufficient, false);
+  assert.equal(payload.preflight.sourceBalanceAfterRaw, '-3000000');
+  assert.equal(payload.preflight.sourceBalanceAfter, '-3');
+  assert.equal(
+    payload.diagnostics.some((entry) => entry.includes('proxy-originated transfer requires manual execution')),
+    true,
+  );
+});
+
+test('discoverOwnedMarkets groups token, LP, and claimable exposure into operator market summaries', async () => {
+  const marketToken = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const marketLp = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const marketClaim = '0xcccccccccccccccccccccccccccccccccccccccc';
+  const pollToken = '0x1111111111111111111111111111111111111111';
+  const pollLp = '0x2222222222222222222222222222222222222222';
+  const pollClaim = '0x3333333333333333333333333333333333333333';
+  const indexer = await startUnitIndexerMetadataServer({
+    markets: {
+      [marketToken]: { id: marketToken, chainId: 1, pollAddress: pollToken, marketType: 'amm', marketCloseTimestamp: '1893456000' },
+      [marketLp]: { id: marketLp, chainId: 1, pollAddress: pollLp, marketType: 'amm', marketCloseTimestamp: '1893456000' },
+      [marketClaim]: { id: marketClaim, chainId: 1, pollAddress: pollClaim, marketType: 'amm', marketCloseTimestamp: '1893456000' },
+    },
+    polls: {
+      [pollToken]: { id: pollToken, question: 'Alpha token exposure' },
+      [pollLp]: { id: pollLp, question: 'Bravo LP exposure' },
+      [pollClaim]: { id: pollClaim, question: 'Charlie claim exposure' },
+    },
+  });
+
+  try {
+    const payload = await discoverOwnedMarkets(
+      {
+        wallet: TEST_WALLET,
+        chainId: 1,
+        indexerUrl: indexer.url,
+        timeoutMs: 1000,
+      },
+      {
+        collectPortfolioSnapshot: async () => ({
+          positions: [
+            {
+              marketAddress: marketToken,
+              chainId: 1,
+              positionSide: 'yes',
+              yesBalance: 3,
+              noBalance: 0,
+              markValueUsdc: 2.1,
+              question: 'Alpha token exposure',
+              diagnostics: ['Token exposure came from the position snapshot.'],
+            },
+          ],
+          lpPositions: [
+            {
+              marketAddress: marketLp,
+              lpTokenBalanceRaw: '1200000',
+              lpTokenBalance: '1.2',
+              lpTokenDecimals: 6,
+              preview: { collateralOutUsdc: 14 },
+              outcomeTokens: {
+                hasClaimableInventory: true,
+                claimableAmount: '2.5',
+                claimableAmountRaw: '2500000',
+                claimableUsdc: '2.5',
+              },
+              diagnostics: ['LP preview came from cached reserves.'],
+            },
+          ],
+          diagnostics: ['Portfolio snapshot loaded without signer credentials.'],
+        }),
+        runClaim: async () => ({
+          count: 2,
+          successCount: 2,
+          failureCount: 0,
+          diagnostics: ['Claim scan completed.'],
+          items: [
+            {
+              marketAddress: marketLp,
+              ok: true,
+              result: {
+                claimable: true,
+                pollAddress: pollLp,
+                preflight: {
+                  estimatedClaimRaw: '2500000',
+                },
+                resolution: {
+                  pollFinalized: true,
+                  pollAnswer: 'Yes',
+                  finalizationEpoch: 1700000000,
+                  currentEpoch: 1700000600,
+                },
+                diagnostics: ['LP claim estimate derived from outcome inventory.'],
+              },
+            },
+            {
+              marketAddress: marketClaim,
+              ok: true,
+              result: {
+                claimable: true,
+                pollAddress: pollClaim,
+                preflight: {
+                  estimatedClaimRaw: '3500000',
+                },
+                resolution: {
+                  pollFinalized: true,
+                  pollAnswer: 'Yes',
+                  finalizationEpoch: 1700000000,
+                  currentEpoch: 1700000600,
+                },
+                diagnostics: ['Claim estimate derived from outcome balances.'],
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    assert.equal(payload.wallet, TEST_WALLET);
+    assert.equal(payload.walletSource, 'flag');
+    assert.equal(payload.runtime.signerResolved, false);
+    assert.equal(payload.count, 3);
+    assert.deepEqual(payload.exposureCounts, {
+      token: 1,
+      lp: 1,
+      claimable: 2,
+    });
+    assert.deepEqual(
+      payload.items.map((item) => item.question),
+      ['Alpha token exposure', 'Bravo LP exposure', 'Charlie claim exposure'],
+    );
+
+    const lpItem = payload.items.find((item) => item.marketAddress === marketLp);
+    const claimItem = payload.items.find((item) => item.marketAddress === marketClaim);
+
+    assert.deepEqual(lpItem.exposureTypes, ['lp', 'claimable']);
+    assert.equal(lpItem.exposure.lp.estimatedCollateralOutUsdc, 14);
+    assert.equal(lpItem.exposure.lp.outcomeTokens.claimableUsdc, '2.5');
+    assert.deepEqual(claimItem.exposureTypes, ['claimable']);
+    assert.equal(claimItem.exposure.claimable.estimatedClaimUsdc, '3.5');
+    assert.equal(claimItem.exposure.claimable.pollFinalized, true);
+    assert.equal(
+      payload.diagnostics.includes(
+        'Claimable exposure inference is best-effort without signer credentials; estimated claim amounts may be unavailable.',
+      ),
+      true,
+    );
+  } finally {
+    await indexer.close();
+  }
 });
 
 test('mirror sync live execution normalizes rebalance trades before onchain execution', async () => {
@@ -4872,6 +5120,182 @@ test('buildMirrorRuntimeTelemetry exposes direct operator health fields for daem
   }
 });
 
+test('handleMirrorDashboard summarizes actionable markets while degrading per-market live failures', async () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-dashboard-home-'));
+  const previousHome = process.env.HOME;
+  const stateDir = path.join(tempHome, '.pandora', 'mirror');
+  const alphaMarket = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const betaMarket = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const alphaStateFile = path.join(stateDir, 'alpha.json');
+  const betaStateFile = path.join(stateDir, 'beta.json');
+  const observed = {
+    emitted: [],
+    verifiedSelectors: [],
+  };
+
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    alphaStateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'alpha-hash',
+        pandoraMarketAddress: alphaMarket,
+        polymarketMarketId: 'poly-alpha',
+        currentHedgeUsdc: 5,
+        alerts: [
+          {
+            level: 'warn',
+            code: 'SOURCE_STALE',
+            message: 'Source feed lagged once.',
+            count: 1,
+            timestamp: '2026-03-09T00:04:00.000Z',
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    betaStateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'beta-hash',
+        pandoraMarketAddress: betaMarket,
+        polymarketMarketId: 'poly-beta',
+        alerts: [
+          {
+            level: 'error',
+            code: 'MANUAL_REVIEW_REQUIRED',
+            message: 'Previous sync requires manual review.',
+            count: 1,
+            timestamp: '2026-03-09T00:05:00.000Z',
+          },
+        ],
+        lastExecution: {
+          mode: 'live',
+          status: 'failed',
+          requiresManualReview: true,
+          startedAt: '2026-03-09T00:04:30.000Z',
+          completedAt: '2026-03-09T00:05:00.000Z',
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    process.env.HOME = tempHome;
+    await handleMirrorDashboard({
+      actionArgs: ['--with-live'],
+      shared: {
+        timeoutMs: 5000,
+        indexerUrl: 'https://indexer.example',
+      },
+      context: {
+        outputMode: 'json',
+      },
+      deps: {
+        CliError: ParserCliError,
+        includesHelpFlag: () => false,
+        emitSuccess: (...args) => observed.emitted.push(args),
+        commandHelpPayload: () => {
+          throw new Error('commandHelpPayload should not run in live dashboard mode');
+        },
+        maybeLoadIndexerEnv: () => {},
+        maybeLoadTradeEnv: () => {},
+        resolveIndexerUrl: (value) => value || 'https://indexer.example',
+        resolveTrustedDeployPair: () => {
+          throw new Error('resolveTrustedDeployPair should not run without --trust-deploy');
+        },
+        verifyMirror: async (options) => {
+          observed.verifiedSelectors.push([options.pandoraMarketAddress, options.polymarketMarketId]);
+          if (options.polymarketMarketId === 'poly-beta') {
+            const error = new Error('source unavailable');
+            error.code = 'MIRROR_VERIFY_FAILED';
+            throw error;
+          }
+          return {
+            sourceMarket: {
+              marketId: options.polymarketMarketId,
+              question: 'Alpha mirror market',
+            },
+            pandora: {
+              marketAddress: options.pandoraMarketAddress,
+            },
+          };
+        },
+        toMirrorStatusLivePayload: async (verifyPayload, state) => ({
+          crossVenue: {
+            status: 'attention',
+          },
+          actionability: {
+            status: 'action-needed',
+            recommendedAction: 'rebalance-yes',
+          },
+          netPnlApproxUsdc: 1.25,
+          pnlApprox: 9.5,
+          driftBps: 1900,
+          driftTriggerBps: 150,
+          targetHedgeUsdc: 0,
+          currentHedgeUsdc: Number(state.currentHedgeUsdc || 0),
+          hedgeGapUsdc: -5,
+          hedgeTriggerUsdc: 10,
+          hedgeStatus: {
+            hedgeGapUsdc: -5,
+            triggered: false,
+          },
+          sourceMarket: {
+            marketId: verifyPayload.sourceMarket.marketId,
+            question: verifyPayload.sourceMarket.question,
+          },
+          pandoraMarket: {
+            marketAddress: verifyPayload.pandora.marketAddress,
+          },
+        }),
+      },
+    });
+
+    assert.equal(observed.emitted.length, 1);
+    assert.equal(observed.emitted[0][1], 'mirror.dashboard');
+    assert.deepEqual(observed.verifiedSelectors, [
+      [alphaMarket, 'poly-alpha'],
+      [betaMarket, 'poly-beta'],
+    ]);
+
+    const payload = observed.emitted[0][2];
+    assert.equal(payload.summary.marketCount, 2);
+    assert.equal(payload.summary.liveCount, 1);
+    assert.equal(payload.summary.actionNeededCount, 1);
+    assert.equal(payload.summary.manualReviewCount, 1);
+    assert.equal(payload.summary.alertCount, 2);
+    assert.equal(payload.summary.totalNetPnlApproxUsdc, 1.25);
+
+    const alphaItem = payload.items.find((item) => item.strategyHash === 'alpha-hash');
+    const betaItem = payload.items.find((item) => item.strategyHash === 'beta-hash');
+
+    assert.equal(alphaItem.liveAvailable, true);
+    assert.equal(alphaItem.question, 'Alpha mirror market');
+    assert.equal(alphaItem.actionability.recommendedAction, 'rebalance-yes');
+    assert.equal(betaItem.liveAvailable, false);
+    assert.equal(betaItem.alertSummary.requiresManualReview, true);
+    assert.equal(
+      betaItem.diagnostics.some((entry) => String(entry).includes('MIRROR_VERIFY_FAILED: source unavailable')),
+      true,
+    );
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('createRunMirrorCommand sync help reports full usage and daemon selectors', async () => {
   const observed = {
     emitted: [],
@@ -4900,6 +5324,42 @@ test('createRunMirrorCommand sync help reports full usage and daemon selectors',
   assert.match(payload.usage, /--telegram-chat-id <id>/);
   assert.match(payload.daemonLifecycle.stop, /--pid-file <path>\|--strategy-hash <hash>/);
   assert.match(payload.daemonLifecycle.status, /--pid-file <path>\|--strategy-hash <hash>/);
+});
+
+test('createRunMirrorCommand help lists drift and hedge-check read surfaces', async () => {
+  const observed = {
+    emitted: [],
+  };
+  const runMirrorCommand = createRunMirrorCommand({
+    CliError: ParserCliError,
+    emitSuccess: (...args) => observed.emitted.push(args),
+    commandHelpPayload: (usage, notes) => ({ usage, notes }),
+    parseIndexerSharedFlags: (args) => ({
+      envFile: '/tmp/.env',
+      envFileExplicit: false,
+      useEnvFile: true,
+      indexerUrl: null,
+      timeoutMs: 12000,
+      rest: args,
+    }),
+    includesHelpFlag: (args) => Array.isArray(args) && args.includes('--help'),
+  });
+
+  await runMirrorCommand(['--help'], { outputMode: 'json' });
+
+  assert.equal(observed.emitted.length, 1);
+  assert.equal(observed.emitted[0][1], 'mirror.help');
+  const payload = observed.emitted[0][2];
+  assert.match(payload.usage, /status\|health\|panic\|drift\|hedge-check\|pnl/);
+  assert.equal(Array.isArray(payload.notes), true);
+  assert.equal(
+    payload.notes.some((line) => /mirror drift and mirror hedge-check/.test(String(line))),
+    true,
+  );
+  assert.equal(
+    payload.notes.some((line) => /mirror health is the machine-usable daemon\/runtime status shell/i.test(String(line))),
+    true,
+  );
 });
 
 test('error recovery service returns hints for all mapped codes', () => {

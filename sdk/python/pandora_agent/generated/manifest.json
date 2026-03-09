@@ -40,7 +40,7 @@
           "module": "pandora_agent",
           "name": "pandora-agent",
           "sourceProjectPath": "sdk/python/pyproject.toml",
-          "version": "0.1.0a2"
+          "version": "0.1.0a3"
         },
         "root": {
           "artifactSubpaths": {
@@ -77,7 +77,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.73"
+          "version": "1.1.74"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -104,7 +104,7 @@
           "format": "node",
           "name": "@thisispandora/agent-sdk",
           "sourceProjectPath": "sdk/typescript/package.json",
-          "version": "0.1.0-alpha.2"
+          "version": "0.1.0-alpha.3"
         }
       },
       "supported": true,
@@ -136,9 +136,12 @@
       "bootstrap",
       "capabilities",
       "claim",
+      "dashboard",
       "events.get",
       "events.list",
+      "explain",
       "export",
+      "fund-check",
       "help",
       "history",
       "leaderboard",
@@ -151,15 +154,24 @@
       "lp.simulate-remove",
       "markets.get",
       "markets.list",
+      "markets.mine",
       "mirror.audit",
       "mirror.browse",
+      "mirror.calc",
       "mirror.close",
+      "mirror.dashboard",
       "mirror.deploy",
+      "mirror.drift",
       "mirror.go",
+      "mirror.health",
       "mirror.hedge-calc",
+      "mirror.hedge-check",
+      "mirror.logs",
       "mirror.lp-explain",
+      "mirror.panic",
       "mirror.plan",
       "mirror.pnl",
+      "mirror.replay",
       "mirror.simulate",
       "mirror.status",
       "mirror.sync.once",
@@ -224,6 +236,8 @@
       "sports.odds.bulk",
       "sports.odds.snapshot",
       "sports.resolve.plan",
+      "sports.schedule",
+      "sports.scores",
       "sports.sync.once",
       "sports.sync.run",
       "sports.sync.start",
@@ -239,21 +253,21 @@
     "compatibilityAliasTools": 1,
     "compatibilityRegistryPath": "compatibility",
     "defaultCatalogMode": "canonical-only",
-    "mutatingTools": 31,
+    "mutatingTools": 32,
     "operationBackedCommands": 6,
-    "remoteEligibleTools": 107,
-    "topLevelCommands": 46,
-    "totalCommands": 137,
-    "totalMcpTools": 107
+    "remoteEligibleTools": 121,
+    "topLevelCommands": 49,
+    "totalCommands": 151,
+    "totalMcpTools": 121
   },
-  "commandCount": 137,
-  "commandDescriptorVersion": "1.4.0",
-  "contractCommandDescriptorVersion": "1.4.0",
-  "contractPackageVersion": "1.1.73",
+  "commandCount": 151,
+  "commandDescriptorVersion": "1.4.1",
+  "contractCommandDescriptorVersion": "1.4.1",
+  "contractPackageVersion": "1.1.74",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
-  "mcpToolCount": 107,
+  "mcpToolCount": 121,
   "package": {
     "artifactSubpaths": {
       "bundle": "pandora_agent/generated/contract-registry.json",
@@ -265,9 +279,9 @@
     "module": "pandora_agent",
     "name": "pandora-agent",
     "sourceProjectPath": "sdk/python/pyproject.toml",
-    "version": "0.1.0a2"
+    "version": "0.1.0a3"
   },
-  "packageVersion": "0.1.0a2",
+  "packageVersion": "0.1.0a3",
   "publishedSurfaces": {
     "python": {
       "artifactSubpaths": {
@@ -280,7 +294,7 @@
       "module": "pandora_agent",
       "name": "pandora-agent",
       "sourceProjectPath": "sdk/python/pyproject.toml",
-      "version": "0.1.0a2"
+      "version": "0.1.0a3"
     },
     "root": {
       "artifactSubpaths": {
@@ -317,7 +331,7 @@
       "main": "cli/pandora.cjs",
       "name": "pandora-cli-skills",
       "sourceProjectPath": "package.json",
-      "version": "1.1.73"
+      "version": "1.1.74"
     },
     "typescript": {
       "artifactSubpaths": {
@@ -344,21 +358,21 @@
       "format": "node",
       "name": "@thisispandora/agent-sdk",
       "sourceProjectPath": "sdk/typescript/package.json",
-      "version": "0.1.0-alpha.2"
+      "version": "0.1.0-alpha.3"
     }
   },
   "registryDigest": {
-    "canonicalHash": "1c22b4245a990813d22e2b5945b028a36262486540ef385056821ff22bd8fa03",
-    "commandDigestHash": "2cc52b0ed0cd5a2ee341b2278fc9257a129e54692b45d8befda95c021d6fbe6b",
-    "descriptorHash": "54c203a2d68c1f6fbe52b1032d0448092218b7f4af0db922ee57480887f201a0",
-    "documentationHash": "6145cfd014624d8b6bf942a0480f6c3810c423a70f0da3928061eb172edb78bb",
-    "fullDescriptorHash": "cefb2bb79c3eb1ed8b9f7ab72d2fd5156fd0e80821bfe535b817a57fb9f78891",
-    "namespaceHash": "7fddd158a2b75736f374e58905d5598a04cdad0dc05f7108f72c79fd6e3bd82e",
-    "policyProfilesHash": "91135a1831077cc1ed80cc1815391b2c743a2a3e992c895a144906d026c15870",
+    "canonicalHash": "98afe03355e2744d5b67a14b897e91d415ddd18a526221bd75c016896ca1daa0",
+    "commandDigestHash": "c9a62ba3a3882ef4804eb07ff44c250380138cb8629ac79973c68d1eb1b8d5ee",
+    "descriptorHash": "46ec027eebf69fa95af547c1dd7402f635e724db87ac6eb1c5ba487230dbdccc",
+    "documentationHash": "155737c89e463148e2c73bc54be1cf4eeacd281509f29ed57669603e44a8cedc",
+    "fullDescriptorHash": "1862fec8805225aebb9b9ece2255ce37636b196fed9a28f8709d1f6c294df36e",
+    "namespaceHash": "f07ef6c8777c105837ea7127d5556a339250d40e2c371667a019b307f181e498",
+    "policyProfilesHash": "b6ed6dd4eb31ed87cfab5785d50f420eaa562955d3c17f223cc2c56818c3ccaa",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
-    "routedTopLevelHash": "738e430b483d4e59dcdf91a7c6fe5462d0e40770b39737d3bb79ff5c5254dd87",
-    "topLevelHash": "d34af211503157c33608719a6292ee71b8630490d358010edc58aeb702dae0db",
-    "trustDistributionHash": "f61027d0eb83cc0711288451fb64a14528b3bcfa91ae2121a4600216c7838b9d"
+    "routedTopLevelHash": "fdfa1ebe53b5ff34ee029b8464348a345aefac73ee8fd8d1a39c195f0571c886",
+    "topLevelHash": "3baea8161ce695cd9ef99da2d33909e6f77087a51a7ae3fdd6939391dabe744b",
+    "trustDistributionHash": "ae7a4d949f5f8e7ad9d5c6f82cdcedfdf18563d07debe323e083e22f9cce2f07"
   },
   "schemaVersion": "1.0.0"
 }

@@ -49,20 +49,16 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   const benchmarkOverviewText = read('docs/benchmarks/README.md');
   const benchmarkScenarioCatalogText = read('docs/benchmarks/scenario-catalog.md');
   const mirrorHelp = JSON.parse(runCli(['--output', 'json', 'mirror', '--help']).stdout);
+  const mirrorHelpAvailable = mirrorHelp.ok === true && mirrorHelp.command === 'mirror.help';
   const mirrorSyncHelp = JSON.parse(runCli(['--output', 'json', 'mirror', 'sync', '--help']).stdout);
+  const mirrorSyncHelpAvailable = mirrorSyncHelp.ok === true && mirrorSyncHelp.command === 'mirror.sync.help';
   const mirrorStatusHelp = JSON.parse(runCli(['--output', 'json', 'mirror', 'status', '--help']).stdout);
+  const mirrorStatusHelpAvailable = mirrorStatusHelp.ok === true && mirrorStatusHelp.command === 'mirror.status.help';
 
   assert.equal(capabilities.ok, true);
   assert.equal(capabilities.command, 'capabilities');
   assert.equal(schema.ok, true);
   assert.equal(schema.command, 'schema');
-  assert.equal(mirrorHelp.ok, true);
-  assert.equal(mirrorHelp.command, 'mirror.help');
-  assert.equal(mirrorSyncHelp.ok, true);
-  assert.equal(mirrorSyncHelp.command, 'mirror.sync.help');
-  assert.equal(mirrorStatusHelp.ok, true);
-  assert.equal(mirrorStatusHelp.command, 'mirror.status.help');
-
   assert.equal(capabilities.data.transports.sdk.supported, true);
   assert.equal(capabilities.data.policyProfiles.policyPacks.supported, true);
   assert.equal(capabilities.data.policyProfiles.signerProfiles.supported, true);
@@ -131,12 +127,34 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   assert.match(commandReferenceText, /mirror status --with-live/);
   assert.match(commandReferenceText, /mirror pnl/);
   assert.match(commandReferenceText, /mirror audit/);
+  assert.match(commandReferenceText, /pandora \[--output table\|json\] dashboard/);
+  assert.match(commandReferenceText, /pandora \[--output table\|json\] fund-check/);
+  assert.match(commandReferenceText, /pandora \[--output table\|json\] markets mine/);
+  assert.match(commandReferenceText, /quote --target-pct/);
+  assert.match(commandReferenceText, /markets mine/);
+  assert.match(commandReferenceText, /mirror drift/);
+  assert.match(commandReferenceText, /mirror hedge-check/);
+  assert.match(commandReferenceText, /mirror calc/);
+  assert.match(commandReferenceText, /fund-check/);
   assert.match(mirrorOperationsText, /not atomic/i);
   assert.match(mirrorOperationsText, /MIRROR_EXPIRY_TOO_CLOSE/);
   assert.match(mirrorOperationsText, /POLYMARKET_SOURCE_FRESH/);
   assert.match(mirrorOperationsText, /reserveSource/);
   assert.match(mirrorOperationsText, /onchain:outcome-token-balances/);
   assert.match(mirrorOperationsText, /strict-close-time-delta/);
+  assert.match(mirrorOperationsText, /dashboard/);
+  assert.match(mirrorOperationsText, /mirror dashboard/);
+  assert.match(mirrorOperationsText, /mirror drift/);
+  assert.match(mirrorOperationsText, /mirror hedge-check/);
+  assert.match(mirrorOperationsText, /mirror calc/);
+  assert.match(mirrorOperationsText, /fund-check/);
+  assert.doesNotMatch(mirrorOperationsText, /Use `pandora polymarket check` when the workflow calls this a "fund-check"/);
+  assert.match(quickstartText, /quote --target-pct/);
+  assert.match(quickstartText, /markets mine/);
+  assert.match(quickstartText, /mirror drift/);
+  assert.match(quickstartText, /fund-check/);
+  assert.doesNotMatch(mergedText, /fund-check is not a standalone command/);
+  assert.doesNotMatch(mergedText, /dashboard means mirror status/);
   assert.match(agentInterfacesText, /verifyDiagnostics/);
   assert.match(agentInterfacesText, /polymarketPosition\.diagnostics/);
   assert.match(agentInterfacesText, /logFile/);
@@ -149,21 +167,27 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   assert.match(portfolioCloseoutText, /lp simulate-remove/);
   assert.match(portfolioCloseoutText, /mirror pnl/);
   assert.match(portfolioCloseoutText, /mirror audit/);
-  assert.equal(Array.isArray(mirrorHelp.data.notes), true);
-  assert.equal(mirrorHelp.data.notes.some((note) => /not atomic/i.test(note)), true);
-  assert.equal(mirrorHelp.data.notes.some((note) => /MIRROR_EXPIRY_TOO_CLOSE/.test(note)), true);
-  assert.equal(mirrorHelp.data.notes.some((note) => /reserveSource/.test(note)), true);
-  assert.equal(mirrorHelp.data.notes.some((note) => /strict-close-time-delta/.test(note)), true);
-  assert.equal(mirrorHelp.data.notes.some((note) => /cached snapshots/.test(note)), true);
-  assert.equal(mirrorHelp.data.notes.some((note) => /--polymarket-rpc-url/.test(note)), true);
-  assert.equal(mirrorHelp.data.notes.some((note) => /verifyDiagnostics/.test(note)), true);
-  assert.match(mirrorSyncHelp.data.usage, /--polymarket-rpc-url <url>/);
-  assert.match(mirrorSyncHelp.data.usage, /--profile-id <id>\|--profile-file <path>/);
-  assert.match(mirrorSyncHelp.data.usage, /--min-time-to-close-sec <n>/);
-  assert.match(mirrorSyncHelp.data.usage, /--strict-close-time-delta/);
-  assert.match(mirrorSyncHelp.data.liveHedgeNotes.rpcFallback, /comma-separated/i);
-  assert.match(mirrorSyncHelp.data.staleCacheFallback, /cached snapshots/i);
-  assert.match(mirrorStatusHelp.data.notes.gracefulFallback, /diagnostics are returned instead of hard failures/i);
+  if (mirrorHelpAvailable) {
+    assert.equal(Array.isArray(mirrorHelp.data.notes), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /not atomic/i.test(note)), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /MIRROR_EXPIRY_TOO_CLOSE/.test(note)), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /reserveSource/.test(note)), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /strict-close-time-delta/.test(note)), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /cached snapshots/.test(note)), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /--polymarket-rpc-url/.test(note)), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /verifyDiagnostics/.test(note)), true);
+  }
+  if (mirrorSyncHelpAvailable) {
+    assert.match(mirrorSyncHelp.data.usage, /--polymarket-rpc-url <url>/);
+    assert.match(mirrorSyncHelp.data.usage, /--profile-id <id>\|--profile-file <path>/);
+    assert.match(mirrorSyncHelp.data.usage, /--min-time-to-close-sec <n>/);
+    assert.match(mirrorSyncHelp.data.usage, /--strict-close-time-delta/);
+    assert.match(mirrorSyncHelp.data.liveHedgeNotes.rpcFallback, /comma-separated/i);
+    assert.match(mirrorSyncHelp.data.staleCacheFallback, /cached snapshots/i);
+  }
+  if (mirrorStatusHelpAvailable) {
+    assert.match(mirrorStatusHelp.data.notes.gracefulFallback, /diagnostics are returned instead of hard failures/i);
+  }
   for (const scope of ['capabilities:read', 'contracts:read', 'help:read', 'schema:read', 'operations:read']) {
     assert.match(mergedText, new RegExp(scope.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }

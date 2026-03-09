@@ -151,7 +151,9 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     consensus: 'trimmed-median',
     trimPercent: 20,
     eventId: null,
+    gameId: null,
     competition: null,
+    date: null,
     kickoffAfter: null,
     kickoffBefore: null,
     liveOnly: false,
@@ -261,8 +263,24 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       i += 1;
       continue;
     }
+    if (token === '--game') {
+      const gameId = requireFlagValue(args, i, '--game');
+      options.gameId = gameId;
+      options.eventId = gameId;
+      i += 1;
+      continue;
+    }
     if (token === '--competition') {
       options.competition = requireFlagValue(args, i, '--competition');
+      i += 1;
+      continue;
+    }
+    if (token === '--date') {
+      const date = requireFlagValue(args, i, '--date');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+        throw new CliError('INVALID_FLAG_VALUE', '--date must use YYYY-MM-DD format.');
+      }
+      options.date = date;
       i += 1;
       continue;
     }
@@ -567,6 +585,12 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
   }
 
   finalizeDistribution(options, CliError);
+  if (options.date && !options.kickoffAfter && !options.kickoffBefore) {
+    options.kickoffAfter = `${options.date}T00:00:00.000Z`;
+    const nextDay = new Date(`${options.date}T00:00:00.000Z`);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    options.kickoffBefore = nextDay.toISOString();
+  }
 
   if (options.distributionYes !== null || options.distributionNo !== null) {
     if (!Number.isInteger(options.distributionYes) || !Number.isInteger(options.distributionNo)) {
@@ -618,6 +642,12 @@ function createParseSportsFlags(deps) {
     const action = norm(args[1]);
     const rest = args.slice(2);
 
+    if (scope === 'schedule') {
+      return { scope, action: 'schedule', command: 'sports.schedule', options: parseBaseSportsFlags(args.slice(1), baseDeps, {}) };
+    }
+    if (scope === 'scores') {
+      return { scope, action: 'scores', command: 'sports.scores', options: parseBaseSportsFlags(args.slice(1), baseDeps, { liveOnly: true }) };
+    }
     if (scope === 'books' && action === 'list') {
       return { scope, action, command: 'sports.books.list', options: parseBaseSportsFlags(rest, baseDeps, {}) };
     }
@@ -674,7 +704,7 @@ function createParseSportsFlags(deps) {
 
     throw new CliError(
       'INVALID_USAGE',
-      'sports requires one of: books list | events list|live | odds snapshot|bulk | consensus | create plan|run | sync once|run|start|stop|status | resolve plan',
+      'sports requires one of: schedule | scores | books list | events list|live | odds snapshot|bulk | consensus | create plan|run | sync once|run|start|stop|status | resolve plan',
     );
   };
 }

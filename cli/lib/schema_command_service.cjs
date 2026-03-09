@@ -2172,6 +2172,33 @@ function buildSchemaPayload(options = {}) {
           generatedAt: { type: 'string', format: 'date-time' },
         },
       },
+      SportsSchedulePayload: {
+        type: 'object',
+        properties: {
+          provider: { type: ['string', 'null'] },
+          mode: { type: ['string', 'null'] },
+          competition: { type: ['string', 'null'] },
+          count: { type: 'integer' },
+          schedule: { type: 'array', items: { type: 'object' } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      SportsScoresPayload: {
+        type: 'object',
+        properties: {
+          provider: { type: ['string', 'null'] },
+          mode: { type: ['string', 'null'] },
+          queriedEventId: { type: ['string', 'null'] },
+          competition: { type: ['string', 'null'] },
+          liveOnly: { type: 'boolean' },
+          count: { type: 'integer' },
+          scores: { type: 'array', items: { type: 'object' } },
+          diagnostics: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'object' }] } },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
       SportsEventsPayload: {
         type: 'object',
         properties: {
@@ -2946,6 +2973,66 @@ function buildSchemaPayload(options = {}) {
           schemaVersion: { type: 'string' },
           generatedAt: { type: 'string', format: 'date-time' },
         },
+      },
+      ExplainPayload: {
+        type: 'object',
+        required: ['input', 'error', 'explanation', 'nextCommands', 'schemaVersion', 'generatedAt'],
+        properties: {
+          input: {
+            type: ['object', 'null'],
+            properties: {
+              source: { type: ['string', 'null'] },
+              format: { type: ['string', 'null'] },
+            },
+            additionalProperties: false,
+          },
+          error: {
+            type: ['object', 'null'],
+            properties: {
+              code: { type: ['string', 'null'] },
+              normalizedCode: { type: ['string', 'null'] },
+              message: { type: ['string', 'null'] },
+              details: { type: ['object', 'null'] },
+            },
+            additionalProperties: false,
+          },
+          explanation: {
+            type: ['object', 'null'],
+            properties: {
+              recognized: { type: ['boolean', 'null'] },
+              category: { type: ['string', 'null'] },
+              summary: { type: ['string', 'null'] },
+              retryable: { type: ['boolean', 'null'] },
+              recovery: {
+                oneOf: [
+                  { $ref: '#/definitions/ErrorRecoveryPayload' },
+                  { type: 'null' },
+                ],
+              },
+              remediation: { type: 'array', items: { type: 'object' } },
+              diagnostics: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'object' }] } },
+            },
+            additionalProperties: false,
+          },
+          nextCommands: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['command', 'action', 'retryable', 'canonical', 'source'],
+              properties: {
+                command: { type: 'string' },
+                action: { type: ['string', 'null'] },
+                retryable: { type: 'boolean' },
+                canonical: { type: 'boolean' },
+                source: { type: 'string' },
+              },
+              additionalProperties: false,
+            },
+          },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: false,
       },
       PolicyPayload: {
         type: 'object',

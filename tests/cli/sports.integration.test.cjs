@@ -197,6 +197,229 @@ test('sports provider registry returns normalized JSON from mocked sportsbook UR
   assert.equal(requestedPaths[3], '/health');
 });
 
+test('sports schedule accepts --date shorthand and returns normalized schedule rows', async (t) => {
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url.startsWith('/events?')) {
+      return {
+        body: {
+          events: [
+            {
+              id: 'nba-bos-cle-2026-03-09',
+              competitionId: 'nba',
+              home_team: 'Celtics',
+              away_team: 'Cavaliers',
+              startTime: '2026-03-09T23:00:00Z',
+              status: 'scheduled',
+            },
+          ],
+        },
+      };
+    }
+    if (url === '/health') {
+      return { body: { ok: true, status: 'ok' } };
+    }
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+  });
+
+  const result = await runCliAsync(
+    [
+      '--output',
+      'json',
+      'sports',
+      'schedule',
+      '--provider',
+      'primary',
+      '--competition',
+      'nba',
+      '--date',
+      '2026-03-09',
+      '--limit',
+      '5',
+    ],
+    {
+      env: {
+        SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+        SPORTSBOOK_PROVIDER_MODE: 'primary',
+      },
+    },
+  );
+
+  const payload = parseJsonEnvelopeStrict(result, 'sports schedule --date');
+  assert.equal(payload.command, 'sports.schedule');
+  assert.equal(payload.ok, true);
+  assert.equal(payload.data.count, 1);
+  assert.equal(payload.data.schedule[0].eventId, 'nba-bos-cle-2026-03-09');
+  assert.equal(payload.data.schedule[0].homeTeam, 'Celtics');
+  assert.equal(payload.data.schedule[0].awayTeam, 'Cavaliers');
+
+  const requestPath = String(mock.requests[0].url);
+  assert.ok(requestPath.startsWith('/events?'));
+  assert.ok(requestPath.includes('competitionId=nba'));
+  assert.ok(requestPath.includes('from=2026-03-09T00%3A00%3A00.000Z'));
+  assert.ok(requestPath.includes('to=2026-03-10T00%3A00%3A00.000Z'));
+});
+
+test('sports scores accepts --game alias and returns score/status rows', async (t) => {
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url === '/events/nba-bos-cle-2026-03-08/status') {
+      return {
+        body: {
+          event: {
+            id: 'nba-bos-cle-2026-03-08',
+            competitionId: 'nba',
+            homeTeam: 'Celtics',
+            awayTeam: 'Cavaliers',
+            startTime: '2026-03-08T23:00:00Z',
+            status: 'live',
+            updatedAt: '2026-03-09T00:40:00Z',
+            inPlay: true,
+            homeScore: 87,
+            awayScore: 74,
+            score: 'BOS 87 - CLE 74',
+          },
+        },
+      };
+    }
+    if (url === '/health') {
+      return { body: { ok: true, status: 'ok' } };
+    }
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+  });
+
+  const result = await runCliAsync(
+    [
+      '--output',
+      'json',
+      'sports',
+      'scores',
+      '--provider',
+      'primary',
+      '--game',
+      'nba-bos-cle-2026-03-08',
+    ],
+    {
+      env: {
+        SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+        SPORTSBOOK_PROVIDER_MODE: 'primary',
+      },
+    },
+  );
+
+  const payload = parseJsonEnvelopeStrict(result, 'sports scores --game');
+  assert.equal(payload.command, 'sports.scores');
+  assert.equal(payload.ok, true);
+  assert.equal(payload.data.queriedEventId, 'nba-bos-cle-2026-03-08');
+  assert.equal(payload.data.count, 1);
+  assert.equal(payload.data.scores[0].eventId, 'nba-bos-cle-2026-03-08');
+  assert.equal(payload.data.scores[0].homeScore, 87);
+  assert.equal(payload.data.scores[0].awayScore, 74);
+  assert.equal(payload.data.scores[0].score, 'BOS 87 - CLE 74');
+  assert.equal(payload.data.scores[0].inPlay, true);
+});
+
+test('sports scores falls back to schedule data when event-status refresh times out and reports diagnostics', async (t) => {
+  const mock = await startJsonHttpServer(async ({ url }) => {
+    if (url === '/events/nba-bos-cle-2026-03-08/status') {
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      return {
+        body: {
+          event: {
+            id: 'nba-bos-cle-2026-03-08',
+            homeTeam: 'Celtics',
+            awayTeam: 'Cavaliers',
+            status: 'live',
+          },
+        },
+      };
+    }
+    if (url.startsWith('/events?')) {
+      return {
+        body: {
+          events: [
+            {
+              id: 'nba-bos-cle-2026-03-08',
+              competitionId: 'nba',
+              home_team: 'Celtics',
+              away_team: 'Cavaliers',
+              startTime: '2026-03-08T23:00:00Z',
+              status: 'scheduled',
+            },
+          ],
+        },
+      };
+    }
+    if (url === '/health') {
+      return { body: { ok: true, status: 'ok' } };
+    }
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+  });
+
+  const env = {
+    SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+    SPORTSBOOK_PROVIDER_MODE: 'primary',
+  };
+
+  const result = await runCliAsync(
+    [
+      '--output',
+      'json',
+      'sports',
+      'scores',
+      '--provider',
+      'primary',
+      '--event-id',
+      'nba-bos-cle-2026-03-08',
+      '--timeout-ms',
+      '10',
+      '--competition',
+      'nba',
+    ],
+    { env },
+  );
+  const payload = parseJsonEnvelopeStrict(result, 'sports scores fallback');
+
+  assert.equal(payload.command, 'sports.scores');
+  assert.equal(payload.ok, true);
+  assert.equal(payload.data.count, 1);
+  assert.equal(payload.data.scores[0].eventId, 'nba-bos-cle-2026-03-08');
+  assert.equal(payload.data.scores[0].homeTeam, 'Celtics');
+  assert.equal(payload.data.scores[0].awayTeam, 'Cavaliers');
+  assert.equal(payload.data.scores[0].status, 'scheduled');
+  assert.equal(Array.isArray(payload.data.diagnostics), true);
+  assert.ok(payload.data.diagnostics.length >= 1);
+  assert.ok(payload.data.diagnostics.some((item) => item && item.eventId === 'nba-bos-cle-2026-03-08'));
+
+  const tableResult = await runCliAsync(
+    [
+      'sports',
+      'scores',
+      '--provider',
+      'primary',
+      '--event-id',
+      'nba-bos-cle-2026-03-08',
+      '--timeout-ms',
+      '10',
+      '--competition',
+      'nba',
+    ],
+    { env },
+  );
+  assert.equal(tableResult.status, 0, tableResult.output);
+  assert.match(tableResult.stdout, /diagnostics:/i);
+});
+
 test('sports odds snapshot/consensus use bulk competition endpoint with disk cache across invocations', async (t) => {
   const tempDir = createTempDir('pandora-sports-bulk-cache-');
   const expectedCacheFile = path.join(tempDir, '.pandora', 'cache', 'odds', 'soccer_epl__soccer_winner.json');

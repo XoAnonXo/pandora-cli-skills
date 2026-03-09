@@ -578,6 +578,150 @@ function createParseMirrorAuditFlags(deps) {
   });
 }
 
+function createParseMirrorReplayFlags(deps) {
+  const CliError = requireDep(deps, 'CliError');
+  const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
+  const requireFlagValue = requireDep(deps, 'requireFlagValue');
+  const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
+
+  return function parseMirrorReplayFlags(args) {
+    const options = {
+      stateFile: null,
+      strategyHash: null,
+      pandoraMarketAddress: null,
+      polymarketMarketId: null,
+      polymarketSlug: null,
+      limit: 200,
+    };
+
+    for (let i = 0; i < args.length; i += 1) {
+      const token = args[i];
+      if (token === '--state-file') {
+        options.stateFile = normalizeMirrorPathForMcp(
+          requireFlagValue(args, i, '--state-file'),
+          '--state-file',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--strategy-hash') {
+        const value = requireFlagValue(args, i, '--strategy-hash');
+        if (!/^[a-f0-9]{16}$/i.test(value)) {
+          throw new CliError('INVALID_FLAG_VALUE', '--strategy-hash must be a 16-character hex value.');
+        }
+        options.strategyHash = value.toLowerCase();
+        i += 1;
+        continue;
+      }
+      if (token === '--pandora-market-address' || token === '--market-address') {
+        options.pandoraMarketAddress = parseAddressFlag(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-market-id') {
+        options.polymarketMarketId = requireFlagValue(args, i, '--polymarket-market-id');
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-slug') {
+        options.polymarketSlug = requireFlagValue(args, i, '--polymarket-slug');
+        i += 1;
+        continue;
+      }
+      if (token === '--limit') {
+        options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
+        i += 1;
+        continue;
+      }
+      throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror replay: ${token}`);
+    }
+
+    const hasPersistedSelector = Boolean(options.stateFile || options.strategyHash);
+    const hasLiveSelector = Boolean(
+      options.pandoraMarketAddress && (options.polymarketMarketId || options.polymarketSlug),
+    );
+    if (!hasPersistedSelector && !hasLiveSelector) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'mirror replay requires --state-file <path>, --strategy-hash <hash>, or a selector pair (--pandora-market-address/--market-address plus --polymarket-market-id|--polymarket-slug).',
+      );
+    }
+
+    return options;
+  };
+}
+
+function createParseMirrorLogsFlags(deps) {
+  const CliError = requireDep(deps, 'CliError');
+  const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
+  const requireFlagValue = requireDep(deps, 'requireFlagValue');
+  const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
+
+  return function parseMirrorLogsFlags(args) {
+    const options = {
+      stateFile: null,
+      strategyHash: null,
+      pandoraMarketAddress: null,
+      polymarketMarketId: null,
+      polymarketSlug: null,
+      lines: 50,
+    };
+
+    for (let i = 0; i < args.length; i += 1) {
+      const token = args[i];
+      if (token === '--state-file') {
+        options.stateFile = normalizeMirrorPathForMcp(
+          requireFlagValue(args, i, '--state-file'),
+          '--state-file',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--strategy-hash') {
+        const value = requireFlagValue(args, i, '--strategy-hash');
+        if (!/^[a-f0-9]{16}$/i.test(value)) {
+          throw new CliError('INVALID_FLAG_VALUE', '--strategy-hash must be a 16-character hex value.');
+        }
+        options.strategyHash = value.toLowerCase();
+        i += 1;
+        continue;
+      }
+      if (token === '--pandora-market-address' || token === '--market-address') {
+        options.pandoraMarketAddress = parseAddressFlag(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-market-id') {
+        options.polymarketMarketId = requireFlagValue(args, i, '--polymarket-market-id');
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-slug') {
+        options.polymarketSlug = requireFlagValue(args, i, '--polymarket-slug');
+        i += 1;
+        continue;
+      }
+      if (token === '--lines') {
+        options.lines = parsePositiveInteger(requireFlagValue(args, i, '--lines'), '--lines');
+        i += 1;
+        continue;
+      }
+      throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror logs: ${token}`);
+    }
+
+    if (!options.stateFile && !options.strategyHash && !options.pandoraMarketAddress) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'mirror logs requires --state-file <path>, --strategy-hash <hash>, or --pandora-market-address/--market-address <address>.',
+      );
+    }
+
+    return options;
+  };
+}
+
 /**
  * Creates the mirror close parser.
  * @param {object} deps
@@ -936,6 +1080,8 @@ module.exports = {
   createParseMirrorStatusFlags,
   createParseMirrorPnlFlags,
   createParseMirrorAuditFlags,
+  createParseMirrorReplayFlags,
+  createParseMirrorLogsFlags,
   createParseMirrorCloseFlags,
   createParseMirrorLpExplainFlags,
   createParseMirrorSimulateFlags,

@@ -67,6 +67,8 @@ test('buildExportPayload keeps legacy columns and appends replay-friendly fields
   assert.equal(CSV_COLUMNS.includes('price'), true);
   assert.equal(CSV_COLUMNS.includes('gas_usd'), true);
   assert.equal(CSV_COLUMNS.includes('realized_pnl'), true);
+  assert.equal(CSV_COLUMNS.includes('classification'), true);
+  assert.equal(CSV_COLUMNS.includes('idempotency_key'), true);
 
   const first = payload.rows[0];
   assert.equal(first.date, '2023-11-14');
@@ -85,3 +87,46 @@ test('buildExportPayload keeps legacy columns and appends replay-friendly fields
   assert.equal(second.realized_pnl, -2);
 });
 
+test('buildExportPayload preserves mirror classification metadata and ISO timestamps', () => {
+  const payload = buildExportPayload({
+    wallet: null,
+    chainId: null,
+    strategyHash: 'feedfacecafebeef',
+    stateFile: '/tmp/mirror-state.json',
+    items: [
+      {
+        timestamp: '2026-03-09T10:00:00.000Z',
+        classification: 'sync-action',
+        venue: 'mirror',
+        source: 'mirror-sync.execution',
+        status: 'failed',
+        code: 'HEDGE_EXECUTION_FAILED',
+        message: 'hedge failed',
+        details: {
+          mode: 'live',
+          idempotencyKey: 'bucket-1',
+        },
+      },
+    ],
+  }, {
+    format: 'json',
+    year: null,
+    from: null,
+    to: null,
+    outPath: null,
+  });
+
+  assert.equal(payload.count, 1);
+  const row = payload.rows[0];
+  assert.equal(row.date, '2026-03-09');
+  assert.equal(row.action, 'sync-action');
+  assert.equal(row.classification, 'sync-action');
+  assert.equal(row.venue, 'mirror');
+  assert.equal(row.source, 'mirror-sync.execution');
+  assert.equal(row.code, 'HEDGE_EXECUTION_FAILED');
+  assert.equal(row.message, 'hedge failed');
+  assert.equal(row.mode, 'live');
+  assert.equal(row.strategy_hash, 'feedfacecafebeef');
+  assert.equal(row.state_file, '/tmp/mirror-state.json');
+  assert.equal(row.idempotency_key, 'bucket-1');
+});

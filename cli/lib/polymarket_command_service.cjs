@@ -384,10 +384,13 @@ function createRunPolymarketCommand(deps) {
     if (action === 'deposit' || action === 'withdraw') {
       if (includesHelpFlag(actionArgs)) {
         const usage = action === 'withdraw'
-          ? 'pandora [--output table|json] polymarket withdraw --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]  # execute only when signer controls the source wallet'
+          ? 'pandora [--output table|json] polymarket withdraw --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]'
           : 'pandora [--output table|json] polymarket deposit --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
         if (context.outputMode === 'json') {
-          emitSuccess(context.outputMode, `polymarket.${action}.help`, commandHelpPayload(usage));
+          const notes = action === 'withdraw'
+            ? ['Execute mode only works when the signer controls the source wallet. Proxy-originated withdrawals usually need manual execution from the proxy wallet.']
+            : null;
+          emitSuccess(context.outputMode, `polymarket.${action}.help`, commandHelpPayload(usage, notes));
         } else {
           // eslint-disable-next-line no-console
           console.log(`Usage: ${usage}`);

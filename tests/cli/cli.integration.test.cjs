@@ -1519,7 +1519,12 @@ test('schema help definitions match representative emitted help payloads', () =>
 
   const polymarketWithdrawHelp = parseJsonOutput(runCli(['--output', 'json', 'polymarket', 'withdraw', '--help']));
   assert.equal(polymarketWithdrawHelp.command, 'polymarket.withdraw.help');
-  assert.match(polymarketWithdrawHelp.data.usage, /execute only when signer controls the source wallet/);
+  assert.match(polymarketWithdrawHelp.data.usage, /polymarket withdraw --amount-usdc/);
+  assert.equal(Array.isArray(polymarketWithdrawHelp.data.notes), true);
+  assert.equal(
+    polymarketWithdrawHelp.data.notes.some((line) => /signer controls the source wallet/i.test(String(line))),
+    true,
+  );
 
   const tradeQuoteHelp = parseJsonOutput(runCli(['--output', 'json', 'trade', 'quote', '--help']));
   assert.equal(tradeQuoteHelp.command, 'trade.quote.help');
@@ -2438,6 +2443,8 @@ test('markets get supports repeated --id values and reports missing ids', async 
     ]);
     assert.equal(result.status, 0);
     const payload = parseJsonOutput(result);
+    console.error(JSON.stringify(payload.data.polymarket, null, 2));
+    console.error(JSON.stringify(payload.data.suggestions, null, 2));
     assert.equal(payload.ok, true);
     assert.equal(payload.command, 'markets.get');
     assert.equal(payload.data.requestedCount, 2);
@@ -2913,6 +2920,170 @@ test('quote supports manual odds override via --yes-pct without indexer calls', 
   assert.equal(payload.data.odds.source, 'manual:yes-pct');
   assert.equal(payload.data.quoteAvailable, true);
   assert.ok(payload.data.estimate.estimatedShares > 0);
+});
+
+test('quote --target-pct computes the required AMM buy to reach the requested YES percentage', async () => {
+  const marketAddress = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '120000',
+        currentTvl: '768',
+        yesChance: '0.23828125',
+        reserveYes: '585000000',
+        reserveNo: '183000000',
+        createdAt: '1700000000',
+      },
+    ],
+    liquidityEvents: [
+      {
+        id: 'evt-liq-target-pct-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        provider: ADDRESSES.wallet1,
+        marketAddress,
+        pollAddress: marketAddress,
+        eventType: 'addLiquidity',
+        collateralAmount: '1000',
+        lpTokens: '500',
+        yesTokenAmount: '585000000',
+        noTokenAmount: '183000000',
+        yesTokensReturned: '0',
+        noTokensReturned: '0',
+        txHash: '0xtx-liq-target-pct-1',
+        timestamp: 1700000100,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'quote',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--market-address',
+      marketAddress,
+      '--side',
+      'yes',
+      '--target-pct',
+      '40',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'quote');
+    assert.equal(payload.data.targetPct, 40);
+    assert.equal(payload.data.quoteAvailable, true);
+    assert.equal(payload.data.targeting.currentPct, 23.828125);
+    assert.equal(payload.data.targeting.targetPct, 40);
+    assert.equal(payload.data.targeting.requiredSide, 'yes');
+    assert.ok(payload.data.targeting.requiredAmountUsdc > 0);
+    assert.equal(payload.data.amountUsdc, payload.data.targeting.requiredAmountUsdc);
+    assert.ok(Math.abs(payload.data.targeting.postTradePct - 40) < 0.02);
+    assert.deepEqual(payload.data.targeting.diagnostics, []);
+    assert.deepEqual(payload.data.diagnostics, []);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('quote --target-pct rejects a requested side that cannot reach the requested YES percentage', async () => {
+  const marketAddress = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '120000',
+        currentTvl: '768',
+        yesChance: '0.23828125',
+        reserveYes: '585000000',
+        reserveNo: '183000000',
+        createdAt: '1700000000',
+      },
+    ],
+    liquidityEvents: [
+      {
+        id: 'evt-liq-target-pct-2',
+        chainId: 1,
+        chainName: 'ethereum',
+        provider: ADDRESSES.wallet1,
+        marketAddress,
+        pollAddress: marketAddress,
+        eventType: 'addLiquidity',
+        collateralAmount: '1000',
+        lpTokens: '500',
+        yesTokenAmount: '585000000',
+        noTokenAmount: '183000000',
+        yesTokensReturned: '0',
+        noTokensReturned: '0',
+        txHash: '0xtx-liq-target-pct-2',
+        timestamp: 1700000100,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'quote',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--market-address',
+      marketAddress,
+      '--side',
+      'no',
+      '--target-pct',
+      '40',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.error.code, 'INVALID_FLAG_COMBINATION');
+    assert.match(payload.error.message, /requires buying YES/i);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('quote --target-pct rejects explicit buy amounts in the same request', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'quote',
+    '--skip-dotenv',
+    '--market-address',
+    '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    '--side',
+    'yes',
+    '--target-pct',
+    '55',
+    '--amount-usdc',
+    '10',
+  ]);
+
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.error.code, 'INVALID_FLAG_COMBINATION');
+  assert.match(payload.error.message, /Use either --target-pct or --amount-usdc\/--amounts/);
 });
 
 test('quote --help prints command help without parser errors', () => {
@@ -6700,6 +6871,214 @@ test('mirror status --help returns usage payload', () => {
   assert.match(payload.data.notes.gracefulFallback, /diagnostics are returned instead of hard failures/i);
 });
 
+test('mirror health returns machine-usable runtime status payload', () => {
+  const tempDir = createTempDir('pandora-mirror-health-');
+  const strategyHash = '0123456789abcdef';
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const statePath = path.join(stateDir, `${strategyHash}.json`);
+  const daemonDir = path.join(stateDir, 'daemon');
+  const daemonPidFile = path.join(daemonDir, `${strategyHash}.json`);
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash,
+        lastTickAt: new Date().toISOString(),
+        tradesToday: 2,
+        dailySpendUsdc: 42,
+      },
+      null,
+      2,
+    ),
+  );
+  fs.mkdirSync(daemonDir, { recursive: true });
+  fs.writeFileSync(
+    daemonPidFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash,
+        pid: process.pid,
+        pidAlive: true,
+        status: 'running',
+        checkedAt: '2026-03-09T00:00:00.000Z',
+        startedAt: '2026-03-08T23:59:00.000Z',
+        stateFile: statePath,
+        logFile: path.join(tempDir, '.pandora', 'mirror', 'logs', `${strategyHash}.log`),
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const result = runCli(['--output', 'json', 'mirror', 'health', '--strategy-hash', strategyHash], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.health');
+    assert.equal(payload.data.strategyHash, strategyHash);
+    assert.equal(payload.data.healthy, true);
+    assert.equal(payload.data.severity, 'ok');
+    assert.equal(payload.data.summary.status, 'running');
+    assert.equal(payload.data.summary.code, 'OK');
+    assert.equal(payload.data.summary.daemonFound, true);
+    assert.equal(payload.data.summary.daemonAlive, true);
+    assert.equal(payload.data.runtime.daemon.strategyHash, strategyHash);
+    assert.equal(payload.data.runtime.daemon.pid, process.pid);
+    assert.equal(payload.data.followUpActions[0].code, 'MONITOR_NEXT_TICK');
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('mirror health --help returns usage payload', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'health', '--help']);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.health.help');
+  assert.match(payload.data.usage, /mirror health/);
+  assert.equal(Array.isArray(payload.data.notes), true);
+  assert.equal(
+    payload.data.notes.some((line) => /machine-usable daemon\/runtime status surface/i.test(String(line))),
+    true,
+  );
+});
+
+test('mirror panic engages risk panic and writes the canonical mirror stop file', () => {
+  const tempDir = createTempDir('pandora-mirror-panic-');
+  const strategyHash = 'feedfacecafebeef';
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const statePath = path.join(stateDir, `${strategyHash}.json`);
+  const daemonDir = path.join(stateDir, 'daemon');
+  const daemonPidFile = path.join(daemonDir, `${strategyHash}.json`);
+  const defaultStopFile = path.join(stateDir, 'STOP');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash,
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+      },
+      null,
+      2,
+    ),
+  );
+  fs.mkdirSync(daemonDir, { recursive: true });
+  fs.writeFileSync(
+    daemonPidFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash,
+        pid: 999999,
+        pidAlive: false,
+        status: 'running',
+        checkedAt: '2026-03-09T00:00:00.000Z',
+        startedAt: '2026-03-08T23:59:00.000Z',
+        stateFile: statePath,
+        killSwitchFile: path.join(tempDir, 'custom-stop-file'),
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const engageResult = runCli(
+      ['--output', 'json', 'mirror', 'panic', '--all', '--reason', 'incident response'],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(engageResult.status, 0);
+    const engagePayload = parseJsonOutput(engageResult);
+    assert.equal(engagePayload.ok, true);
+    assert.equal(engagePayload.command, 'mirror.panic');
+    assert.equal(engagePayload.data.action, 'engage');
+    assert.equal(engagePayload.data.status, 'engaged');
+    assert.equal(engagePayload.data.risk.panic.active, true);
+    assert.equal(engagePayload.data.selector.all, true);
+    assert.equal(engagePayload.data.daemonStop.mode, 'all');
+    assert.equal(engagePayload.data.daemonStop.count, 1);
+    assert.equal(Array.isArray(engagePayload.data.stopFiles.written), true);
+    assert.equal(engagePayload.data.stopFiles.written.includes(defaultStopFile), true);
+    assert.equal(fs.existsSync(defaultStopFile), true);
+    assert.equal(engagePayload.data.followUpActions.some((item) => item.code === 'CLEAR_PANIC_WHEN_SAFE'), true);
+
+    const clearResult = runCli(
+      ['--output', 'json', 'mirror', 'panic', '--clear', '--all'],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(clearResult.status, 0);
+    const clearPayload = parseJsonOutput(clearResult);
+    assert.equal(clearPayload.ok, true);
+    assert.equal(clearPayload.command, 'mirror.panic');
+    assert.equal(clearPayload.data.action, 'clear');
+    assert.equal(clearPayload.data.status, 'cleared');
+    assert.equal(clearPayload.data.risk.panic.active, false);
+    assert.equal(clearPayload.data.stopFiles.cleared.includes(defaultStopFile), true);
+    assert.equal(fs.existsSync(defaultStopFile), false);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('mirror panic --help returns usage payload', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'panic', '--help']);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.panic.help');
+  assert.match(payload.data.usage, /mirror panic/);
+  assert.equal(Array.isArray(payload.data.notes), true);
+  assert.equal(
+    payload.data.notes.some((line) => /mirror-focused emergency shell/i.test(String(line))),
+    true,
+  );
+});
+
+test('mirror drift --help returns usage payload', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'drift', '--help']);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.drift.help');
+  assert.match(payload.data.usage, /mirror drift/);
+  assert.equal(Array.isArray(payload.data.notes), true);
+  assert.equal(
+    payload.data.notes.some((line) => /dedicated live drift\/readiness surface/i.test(String(line))),
+    true,
+  );
+});
+
+test('mirror hedge-check --help returns usage payload', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'hedge-check', '--help']);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.hedge-check.help');
+  assert.match(payload.data.usage, /mirror hedge-check/);
+  assert.equal(Array.isArray(payload.data.notes), true);
+  assert.equal(
+    payload.data.notes.some((line) => /current hedge target, gap, trigger state/i.test(String(line))),
+    true,
+  );
+});
+
 test('--version returns package version in json mode', () => {
   const result = runCli(['--output', 'json', '--version']);
   assert.equal(result.status, 0);
@@ -7427,6 +7806,535 @@ test('mirror pnl returns the dedicated cross-venue scenario surface', async () =
     await indexer.close();
     await polymarket.close();
     removeDir(tempDir);
+  }
+});
+
+test('mirror drift returns the dedicated drift surface', async () => {
+  const tempDir = createTempDir('pandora-mirror-drift-live-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'feedfacecafebeef',
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+        polymarketMarketId: 'poly-cond-1',
+        currentHedgeUsdc: 5,
+        cumulativeLpFeesApproxUsdc: 2.5,
+        cumulativeHedgeCostApproxUsdc: 1.25,
+      },
+      null,
+      2,
+    ),
+  );
+
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    balances: {
+      'poly-yes-1': '12.5',
+      'poly-no-1': '3.25',
+    },
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'drift',
+      '--skip-dotenv',
+      '--state-file',
+      stateFile,
+      '--drift-trigger-bps',
+      '25',
+      '--hedge-trigger-usdc',
+      '10',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+    ], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.drift');
+    assert.equal(payload.data.stateFile, stateFile);
+    assert.equal(payload.data.summary.triggerBps, 25);
+    assert.equal(typeof payload.data.summary.driftBps, 'number');
+    assert.equal(payload.data.summary.triggered, true);
+    assert.equal(payload.data.summary.crossVenueStatus, 'attention');
+    assert.equal(payload.data.summary.runtimeHealth, 'idle');
+    assert.equal(payload.data.crossVenue.sourceType, 'polymarket:mock');
+    assert.equal(payload.data.actionability.recommendedAction, 'rebalance-yes');
+    assert.equal(payload.data.drift.sourceType, 'polymarket:mock');
+    assert.equal(payload.data.sourceMarket.marketId, 'poly-cond-1');
+    assert.equal(payload.data.pandoraMarket.marketAddress, ADDRESSES.mirrorMarket);
+    assert.equal(
+      payload.data.diagnostics.some((line) => String(line).includes('DRIFT_TRIGGERED')),
+      true,
+    );
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror hedge-check returns the dedicated hedge surface and readable table output', async () => {
+  const tempDir = createTempDir('pandora-mirror-hedge-check-live-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'feedfacecafebeef',
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+        polymarketMarketId: 'poly-cond-1',
+        currentHedgeUsdc: 5,
+        cumulativeLpFeesApproxUsdc: 2.5,
+        cumulativeHedgeCostApproxUsdc: 1.25,
+      },
+      null,
+      2,
+    ),
+  );
+
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    balances: {
+      'poly-yes-1': '12.5',
+      'poly-no-1': '3.25',
+    },
+    openOrders: [
+      {
+        id: 'order-1',
+        market: 'poly-cond-1',
+        asset_id: 'poly-yes-1',
+        original_size: '10',
+        size_matched: '4',
+        price: '0.74',
+      },
+      {
+        id: 'order-2',
+        market: 'poly-cond-1',
+        asset_id: 'poly-no-1',
+        remaining_size: '2',
+        price: '0.26',
+      },
+    ],
+  });
+
+  try {
+    const jsonResult = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'hedge-check',
+      '--skip-dotenv',
+      '--state-file',
+      stateFile,
+      '--hedge-trigger-usdc',
+      '10',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+    ], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(jsonResult.status, 0);
+    const payload = parseJsonOutput(jsonResult);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.hedge-check');
+    assert.equal(typeof payload.data.summary.targetHedgeUsdc, 'number');
+    assert.equal(payload.data.summary.currentHedgeUsdc, 5);
+    assert.equal(payload.data.summary.hedgeGapUsdc, -5);
+    assert.equal(payload.data.summary.hedgeGapAbsUsdc, 5);
+    assert.equal(payload.data.summary.triggerUsdc, 10);
+    assert.equal(payload.data.summary.triggered, false);
+    assert.equal(payload.data.summary.hedgeSide, 'no');
+    assert.equal(payload.data.summary.crossVenueStatus, 'attention');
+    assert.equal(payload.data.hedge.hedgeGapAbsUsdc, 5);
+    assert.equal(payload.data.polymarketPosition.openOrdersCount, 2);
+    assert.equal(payload.data.actionability.recommendedAction, 'rebalance-yes');
+    assert.equal(
+      payload.data.diagnostics.includes('Loaded Polymarket position summary from mock payload.'),
+      true,
+    );
+
+    const tableResult = await runCliAsync([
+      'mirror',
+      'hedge-check',
+      '--skip-dotenv',
+      '--state-file',
+      stateFile,
+      '--hedge-trigger-usdc',
+      '10',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+    ], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(tableResult.status, 0);
+    assert.match(String(tableResult.stdout || tableResult.output || ''), /Mirror Hedge Check/);
+    assert.match(String(tableResult.stdout || tableResult.output || ''), /hedgeGapUsdc: -5/);
+    assert.match(String(tableResult.stdout || tableResult.output || ''), /hedgeSide: no/);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror dashboard summarizes active mirrors without forcing operators into ad hoc scripts', async () => {
+  const tempDir = createTempDir('pandora-mirror-dashboard-live-');
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const stateFile = path.join(stateDir, 'feedfacecafebeef.json');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'feedfacecafebeef',
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+        polymarketMarketId: 'poly-cond-1',
+        currentHedgeUsdc: 5,
+        cumulativeLpFeesApproxUsdc: 2.5,
+        cumulativeHedgeCostApproxUsdc: 1.25,
+        alerts: [
+          {
+            level: 'warn',
+            code: 'SOURCE_STALE',
+            message: 'Source feed lagged once.',
+            count: 1,
+            timestamp: '2026-03-09T00:04:00.000Z',
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    balances: {
+      'poly-yes-1': '12.5',
+      'poly-no-1': '3.25',
+    },
+    openOrders: [
+      {
+        id: 'order-1',
+        market: 'poly-cond-1',
+        asset_id: 'poly-yes-1',
+        original_size: '10',
+        size_matched: '4',
+        price: '0.74',
+      },
+      {
+        id: 'order-2',
+        market: 'poly-cond-1',
+        asset_id: 'poly-no-1',
+        remaining_size: '2',
+        price: '0.26',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'dashboard',
+      '--with-live',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+    ], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.dashboard');
+    assert.equal(payload.data.summary.marketCount, 1);
+    assert.equal(payload.data.summary.liveCount, 1);
+    assert.equal(payload.data.summary.actionNeededCount, 1);
+    assert.equal(payload.data.summary.alertCount, 1);
+    assert.equal(payload.data.summary.totalNetPnlApproxUsdc, 1.25);
+    assert.equal(payload.data.items.length, 1);
+    assert.equal(payload.data.items[0].question, 'Will deterministic tests pass?');
+    assert.equal(payload.data.items[0].actionability.recommendedAction, 'rebalance-yes');
+    assert.equal(payload.data.items[0].runtime.health.status, 'idle');
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('dashboard degrades per-market live failures while preserving actionable summaries', async () => {
+  const tempDir = createTempDir('pandora-dashboard-live-');
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const alphaStateFile = path.join(stateDir, 'alpha.json');
+  const betaStateFile = path.join(stateDir, 'beta.json');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    alphaStateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'alpha-hash',
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+        polymarketMarketId: 'poly-cond-1',
+        currentHedgeUsdc: 5,
+        cumulativeLpFeesApproxUsdc: 2.5,
+        cumulativeHedgeCostApproxUsdc: 1.25,
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    betaStateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'beta-hash',
+        pandoraMarketAddress: '0x9999999999999999999999999999999999999999',
+        polymarketMarketId: 'poly-missing',
+        lastExecution: {
+          mode: 'live',
+          status: 'failed',
+          requiresManualReview: true,
+          startedAt: '2026-03-09T00:04:30.000Z',
+          completedAt: '2026-03-09T00:05:00.000Z',
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    balances: {
+      'poly-yes-1': '12.5',
+      'poly-no-1': '3.25',
+    },
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'dashboard',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+    ], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'dashboard');
+    assert.equal(payload.data.summary.marketCount, 2);
+    assert.equal(payload.data.summary.liveCount, 1);
+    assert.equal(payload.data.summary.actionNeededCount, 1);
+    assert.equal(payload.data.summary.manualReviewCount, 1);
+    assert.equal(payload.data.items.length, 2);
+    assert.equal(
+      payload.data.suggestedNextCommands.includes('pandora mirror status --strategy-hash alpha-hash --with-live'),
+      true,
+    );
+
+    const alphaItem = payload.data.items.find((item) => item.strategyHash === 'alpha-hash');
+    const betaItem = payload.data.items.find((item) => item.strategyHash === 'beta-hash');
+
+    assert.equal(alphaItem.liveAvailable, true);
+    assert.equal(alphaItem.actionability.recommendedAction, 'rebalance-yes');
+    assert.equal(betaItem.liveAvailable, false);
+    assert.equal(betaItem.alertSummary.requiresManualReview, true);
+    assert.equal(Array.isArray(betaItem.diagnostics), true);
+    assert.ok(betaItem.diagnostics.length > 0);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('fund-check surfaces venue shortfalls and next commands in one operator payload', async () => {
+  const rpc = await startPolymarketOpsRpcMock({
+    funder: POLYMARKET_DEFAULTS.funder,
+    usdc: ADDRESSES.usdc,
+    usdcBalanceRaw: 2_000_000n,
+    safeOwner: true,
+  });
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'fund-check',
+        '--market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--target-pct',
+        '60',
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--rpc-url',
+        rpc.url,
+        '--private-key',
+        `0x${'1'.repeat(64)}`,
+        '--funder',
+        POLYMARKET_DEFAULTS.funder,
+      ],
+      {
+        env: {
+          USDC_ADDRESS: ADDRESSES.usdc,
+          POLYMARKET_API_KEY: 'test-key',
+          POLYMARKET_API_SECRET: 'test-secret',
+          POLYMARKET_API_PASSPHRASE: 'test-passphrase',
+        },
+      },
+    );
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'fund-check');
+    assert.equal(payload.data.selector.pandoraMarketAddress, ADDRESSES.mirrorMarket);
+    assert.equal(payload.data.selector.polymarketMarketId, 'poly-cond-1');
+    assert.equal(payload.data.targetPct, 60);
+    assert.equal(payload.data.actionability.recommendedAction, 'rebalance-yes');
+    assert.equal(payload.data.pandora.requiredSide, 'yes');
+    assert.ok(payload.data.pandora.shortfallUsdc > 0);
+    assert.ok(payload.data.polymarket.shortfallUsdc > 0);
+    assert.equal(payload.data.polymarket.readyForLive, false);
+    assert.deepEqual(
+      payload.data.suggestions.map((entry) => entry.action),
+      [
+        'fund-pandora-wallet',
+        'fund-polymarket-proxy',
+        'approve-polymarket-spenders',
+        'inspect-polymarket-readiness',
+      ],
+    );
+    assert.equal(
+      payload.data.suggestions.some((entry) => String(entry.command || '').includes('pandora polymarket deposit')),
+      true,
+    );
+  } finally {
+    await rpc.close();
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('fund-check stays quiet when balances and approvals are already healthy', async () => {
+  const pandoraRpc = await startPolymarketOpsRpcMock({
+    chainIdHex: '0x1',
+    funder: POLYMARKET_DEFAULTS.funder,
+    usdc: ADDRESSES.usdc,
+    usdcBalanceRaw: 500_000_000n,
+    safeOwner: true,
+  });
+  const polymarketRpc = await startPolymarketOpsRpcMock({
+    chainIdHex: '0x89',
+    funder: POLYMARKET_DEFAULTS.funder,
+    usdcBalanceRaw: 500_000_000n,
+    safeOwner: true,
+    allowanceBySpender: {
+      exchange: 1n << 200n,
+      negRiskExchange: 1n << 200n,
+      negRiskAdapter: 1n << 200n,
+    },
+    operatorBySpender: {
+      exchange: true,
+      negRiskExchange: true,
+      negRiskAdapter: true,
+    },
+  });
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+
+  try {
+    const result = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'fund-check',
+        '--market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--target-pct',
+        '60',
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--rpc-url',
+        pandoraRpc.url,
+        '--polymarket-rpc-url',
+        polymarketRpc.url,
+        '--private-key',
+        `0x${'1'.repeat(64)}`,
+        '--funder',
+        POLYMARKET_DEFAULTS.funder,
+      ],
+      {
+        env: {
+          USDC_ADDRESS: ADDRESSES.usdc,
+          POLYMARKET_API_KEY: 'test-key',
+          POLYMARKET_API_SECRET: 'test-secret',
+          POLYMARKET_API_PASSPHRASE: 'test-passphrase',
+        },
+      },
+    );
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'fund-check');
+    assert.equal(payload.data.pandora.shortfallUsdc, 0);
+    assert.equal(payload.data.polymarket.shortfallUsdc, 0);
+    assert.equal(payload.data.polymarket.readyForLive, true);
+    assert.equal(payload.data.polymarket.check.approvals.missingCount, 0);
+    assert.equal(payload.data.suggestions.length, 0);
+  } finally {
+    await pandoraRpc.close();
+    await polymarketRpc.close();
+    await indexer.close();
+    await polymarket.close();
   }
 });
 

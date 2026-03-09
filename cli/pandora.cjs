@@ -78,6 +78,7 @@ const getSuggestService = createLazyModuleLoader('./lib/suggest_service.cjs');
 const getMirrorService = createLazyModuleLoader('./lib/mirror_service.cjs');
 const getMirrorSyncService = createLazyModuleLoader('./lib/mirror_sync_service.cjs');
 const getMirrorEconService = createLazyModuleLoader('./lib/mirror_econ_service.cjs');
+const getAmmTargetPctService = createLazyModuleLoader('./lib/amm_target_pct_service.cjs');
 const getMirrorDaemonService = createLazyModuleLoader('./lib/mirror_daemon_service.cjs');
 const getMirrorCloseService = createLazyModuleLoader('./lib/mirror_close_service.cjs');
 const getPolymarketTradeAdapter = createLazyModuleLoader('./lib/polymarket_trade_adapter.cjs');
@@ -119,6 +120,7 @@ const getPandoraDeployService = createLazyModuleLoader('./lib/pandora_deploy_ser
 const getVenueConnectorFactoryService = createLazyModuleLoader('./lib/venue_connector_factory.cjs');
 const getOddsHistoryService = createLazyModuleLoader('./lib/odds_history_service.cjs');
 const getIndexerClientService = createLazyModuleLoader('./lib/indexer_client.cjs');
+const getMarketsMineService = createLazyModuleLoader('./lib/markets_mine_service.cjs');
 const getPolymarketAdapter = createLazyModuleLoader('./lib/polymarket_adapter.cjs');
 const getSimilarityService = createLazyModuleLoader('./lib/similarity_service.cjs');
 
@@ -213,6 +215,11 @@ function runMirrorSync(...args) {
   return getMirrorSyncService().runMirrorSync(...args);
 }
 
+/** Proxy to mirror runtime telemetry builder. */
+function buildMirrorRuntimeTelemetry(...args) {
+  return require('./lib/mirror_sync/state.cjs').buildMirrorRuntimeTelemetry(...args);
+}
+
 /** Returns supported mirror sync gate codes from service constants. */
 function getMirrorSyncGateCodes() {
   const { MIRROR_SYNC_GATE_CODES } = getMirrorSyncService();
@@ -232,6 +239,16 @@ function buildMirrorHedgeCalc(...args) {
 /** Proxy to mirror simulation builder. */
 function buildMirrorSimulate(...args) {
   return getMirrorEconService().buildMirrorSimulate(...args);
+}
+
+/** Proxy to mirror surface state resolver. */
+function resolveMirrorSurfaceState(...args) {
+  return require('./lib/mirror_surface_service.cjs').resolveMirrorSurfaceState(...args);
+}
+
+/** Proxy to mirror surface daemon-status resolver. */
+function resolveMirrorSurfaceDaemonStatus(...args) {
+  return require('./lib/mirror_surface_service.cjs').resolveMirrorSurfaceDaemonStatus(...args);
 }
 
 /** Proxy to mirror daemon starter. */
@@ -287,6 +304,16 @@ function runPolymarketApprove(...args) {
 /** Proxy to Polymarket preflight flow. */
 function runPolymarketPreflight(...args) {
   return getPolymarketOpsService().runPolymarketPreflight(...args);
+}
+
+/** Proxy to Polymarket balance flow. */
+function runPolymarketBalance(...args) {
+  return getPolymarketOpsService().runPolymarketBalance(...args);
+}
+
+/** Proxy to Polymarket deposit flow. */
+function runPolymarketDeposit(...args) {
+  return getPolymarketOpsService().runPolymarketDeposit(...args);
 }
 
 /** Proxy to resolve command on-chain executor. */
@@ -1009,10 +1036,12 @@ class CliError extends Error {
   }
 }
 
+const errorRecoveryService = createErrorRecoveryService({ cliName: 'pandora' });
+
 const { emitFailure, emitSuccess } = createCliOutputService({
   defaultSchemaVersion: CLI_JSON_SCHEMA_VERSION,
   CliError,
-  getRecoveryForError: createErrorRecoveryService({ cliName: 'pandora' }).getRecoveryForError,
+  getRecoveryForError: errorRecoveryService.getRecoveryForError,
 });
 
 const {
@@ -1115,19 +1144,21 @@ Usage:
   pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
   pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
   pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand]
-  pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan ...
+  pandora [--output table|json] sports schedule|scores|books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan ...
   pandora [--output table|json] odds record|history ...
   pandora [--output table|json] lifecycle start|status|resolve ...
   pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--amount-usdc <n>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]
-  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv>|--target-pct <0-100> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
   pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
   pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
   pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
   pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
-  pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...
-  pandora [--output table|json] polymarket check|approve|preflight|trade ...
+  pandora [--output table|json] dashboard [--with-live|--no-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
+  pandora [--output table|json] fund-check --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--target-pct <0-100>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
+  pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|close ...
+  pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ...
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
   pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
@@ -1138,9 +1169,10 @@ Usage:
   pandora [--output table|json] claim --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] policy list|get|lint [flags]
-  pandora [--output table|json] profile list|get|validate [flags]
+  pandora [--output table|json] profile list|get|explain|recommend|validate [flags]
   pandora [--output table|json] recipe list|get|validate|run [flags]
   pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]
+  pandora [--output table|json] explain <error-code>|--code <code> [--message <text>] [--details-json <json>] [--stdin]
   pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]
   pandora stream prices|events [--indexer-url <url>] [--indexer-ws-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--market-address <address>] [--chain-id <id>] [--limit <n>]
   pandora [--output table|json] simulate mc|particle-filter|agents ...
@@ -1164,6 +1196,7 @@ Examples:
   pandora watch --market-address 0xabc... --side yes --amount-usdc 10 --iterations 5 --interval-ms 2000
   pandora scan --active --limit 25 --chain-id 1
   pandora quote --market-address 0xabc... --side yes --amounts 25,50,75,100
+  pandora quote --market-address 0xabc... --side yes --target-pct 60
   pandora trade --dry-run --market-address 0xabc... --side no --amount-usdc 25 --max-amount-usdc 50 --min-probability-pct 20
   pandora sell --dry-run --market-address 0xabc... --side no --shares 40
   pandora history --wallet 0x1234... --chain-id 1 --limit 50
@@ -1174,6 +1207,8 @@ Examples:
   pandora autopilot once --market-address 0xabc... --side no --amount-usdc 10 --trigger-yes-below 15 --paper
   pandora recipe list
   pandora recipe run --id mirror.sync.paper-safe --set market-address=0xabc...
+  pandora dashboard
+  pandora fund-check --rpc-url https://polygon-bor-rpc.publicnode.com --funder 0xproxy...
   pandora mirror plan --source polymarket --polymarket-market-id 0xabc... --with-rules --include-similarity
   pandora claim --all --dry-run
   pandora mirror browse --min-yes-pct 20 --max-yes-pct 80 --min-volume-24h 100000 --limit 10
@@ -1197,6 +1232,8 @@ Examples:
   pandora risk show
   pandora risk panic --reason "Manual incident stop"
   pandora risk panic --clear
+  pandora explain RISK_PANIC_ACTIVE
+  pandora --output json explain --stdin < ./error-envelope.json
   pandora operations list --status planned,executing --limit 20
   pandora operations receipt --id op_123
   pandora operations verify-receipt --id op_123
@@ -1221,6 +1258,7 @@ Notes:
   - stream always emits NDJSON to stdout (one JSON object per line).
   - arb scan is the canonical arbitrage command; arbitrage remains a bounded backward-compatible one-shot wrapper.
   - arb scan supports streaming NDJSON and bounded JSON (--output json --iterations 1) for agent workflows.
+  - explain is the canonical AI-facing remediation surface; use --code for tool calls or --stdin to consume Pandora JSON failure envelopes.
   - agent market autocomplete/validate expose prompt templates plus validation tickets for agent-controlled market creation workflows.
 `);
 }
@@ -1230,13 +1268,14 @@ function printQuoteHelpTable() {
 pandora quote - Estimate a YES/NO buy or sell
 
 Usage:
-  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
+  pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv>|--target-pct <0-100> [--yes-pct <0-100>] [--slippage-bps <0-10000>]
 
 Notes:
   - Buy mode uses USDC notional input; sell mode uses outcome-token share input.
   - If --yes-pct is omitted, quote attempts to derive odds from latest liquidity events on the indexer.
   - Sell mode prefers on-chain calcSell* views when RPC is available and falls back to reserve inversion.
   - --amounts emits a sizing curve in the active mode units.
+  - --target-pct is buy-only and computes the required USDC trade to move an AMM market to the requested YES percentage.
 `);
 }
 
@@ -1297,6 +1336,7 @@ pandora markets - Query market entities
 Usage:
   pandora [--output table|json] markets list [options]
   pandora [--output table|json] markets scan [options]
+  pandora [--output table|json] markets mine [options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
 `);
 }
@@ -1403,7 +1443,7 @@ function quoteHelpJsonPayload(defaultMode = 'buy') {
     usage:
       defaultMode === 'sell'
         ? 'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no --mode sell --shares <amount>|--amount <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]'
-        : 'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
+        : 'pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv>|--target-pct <0-100> [--yes-pct <0-100>] [--slippage-bps <0-10000>]',
   };
 }
 
@@ -1458,8 +1498,10 @@ function helpJsonPayload() {
       'pandora [--output table|json] export ...',
       'pandora [--output table|json] arbitrage ...',
       'pandora [--output table|json] autopilot run|once ...',
-      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|close ...',
-      'pandora [--output table|json] polymarket check|approve|preflight|trade ...',
+      'pandora [--output table|json] dashboard ...',
+      'pandora [--output table|json] fund-check ...',
+      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|close ...',
+      'pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ...',
       'pandora [--output table|json] webhook test ...',
       'pandora [--output table|json] leaderboard ...',
       'pandora [--output table|json] analyze ...',
@@ -1469,6 +1511,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] claim ...',
       'pandora [--output table|json] lp add|remove|positions ...',
       'pandora [--output table|json] risk show|panic ...',
+      'pandora [--output table|json] explain ...',
       'pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close ...',
       'pandora stream prices|events ...',
       'pandora [--output table|json] simulate mc|particle-filter|agents ...',
@@ -1492,6 +1535,7 @@ function helpJsonPayload() {
         '`bootstrap` is the preferred first call for cold agent clients; it returns canonical tools only by default and points to the next safe discovery calls.',
         '`scan` is the canonical enriched market discovery flow; `markets scan` remains a backward-compatible alias and `markets list` is the raw indexer browse view.',
         '`arb scan` is the canonical arbitrage flow; `arbitrage` remains a backward-compatible bounded one-shot wrapper.',
+        '`explain` is the canonical AI-facing remediation surface; use `--code` for direct tool calls or `--stdin` to consume Pandora JSON failure envelopes.',
         '`agent market autocomplete` and `agent market validate` expose reusable AI prompt templates and validation tickets for agent-controlled market creation workflows.',
         'Most commands support table and json output. `bootstrap`/`capabilities`/`schema` are json-only, `mcp` is stdio server mode, and `launch`/`clone-bet` forward script-native output.',
       ],
@@ -2122,6 +2166,7 @@ function renderQuoteTable(data) {
   const estimate = data.estimate || null;
   const liquidity = data.liquidity || null;
   const parimutuel = data.parimutuel || null;
+  const targeting = data.targeting || null;
   const quoteMode = String(data && data.mode ? data.mode : 'buy').toLowerCase();
   printTable(
     ['Field', 'Value'],
@@ -2132,6 +2177,11 @@ function renderQuoteTable(data) {
       ['side', data.side],
       ['amountUsdc', quoteMode === 'sell' ? 'n/a' : data.amountUsdc],
       ['sharesIn', quoteMode === 'sell' ? data.amount : 'n/a'],
+      ['currentPct', targeting && targeting.currentPct !== null && targeting.currentPct !== undefined ? `${targeting.currentPct}%` : 'n/a'],
+      ['targetPct', targeting && targeting.targetPct !== null && targeting.targetPct !== undefined ? `${targeting.targetPct}%` : 'n/a'],
+      ['requiredSide', targeting && targeting.requiredSide ? targeting.requiredSide : 'n/a'],
+      ['requiredAmountUsdc', targeting && targeting.requiredAmountUsdc !== null && targeting.requiredAmountUsdc !== undefined ? targeting.requiredAmountUsdc : 'n/a'],
+      ['postTradePct', targeting && targeting.postTradePct !== null && targeting.postTradePct !== undefined ? `${targeting.postTradePct}%` : 'n/a'],
       ['oddsSource', odds.source || 'n/a'],
       ['yesPct', odds.yesPct === null || odds.yesPct === undefined ? 'n/a' : `${odds.yesPct}%`],
       ['noPct', odds.noPct === null || odds.noPct === undefined ? 'n/a' : `${odds.noPct}%`],
@@ -2147,7 +2197,7 @@ function renderQuoteTable(data) {
       ['reserveYes', liquidity && liquidity.reserveYes !== null ? liquidity.reserveYes : 'n/a'],
       ['reserveNo', liquidity && liquidity.reserveNo !== null ? liquidity.reserveNo : 'n/a'],
       ['kValue', liquidity && liquidity.kValue !== null ? liquidity.kValue : 'n/a'],
-      ['diagnostic', odds.diagnostic || ''],
+      ['diagnostic', Array.isArray(data.diagnostics) && data.diagnostics.length ? data.diagnostics.join(' | ') : odds.diagnostic || ''],
     ],
   );
 
@@ -3226,6 +3276,56 @@ function renderMarketsGetTable(data) {
 
   if (Array.isArray(data.missingIds) && data.missingIds.length) {
     console.log(`Missing IDs: ${data.missingIds.join(', ')}`);
+  }
+}
+
+function renderMarketsMineTable(data) {
+  const items = Array.isArray(data && data.items) ? data.items : [];
+  printTable(
+    ['Field', 'Value'],
+    [
+      ['wallet', data && data.wallet ? data.wallet : ''],
+      ['walletSource', data && data.walletSource ? data.walletSource : ''],
+      ['chainId', data && data.chainId !== undefined && data.chainId !== null ? data.chainId : ''],
+      ['markets', Number.isInteger(data && data.count) ? data.count : 0],
+      ['tokenMarkets', data && data.exposureCounts ? data.exposureCounts.token : 0],
+      ['lpMarkets', data && data.exposureCounts ? data.exposureCounts.lp : 0],
+      ['claimableMarkets', data && data.exposureCounts ? data.exposureCounts.claimable : 0],
+      ['signerResolved', data && data.runtime && data.runtime.signerResolved ? 'yes' : 'no'],
+    ],
+  );
+
+  if (!items.length) {
+    console.log('');
+    console.log('No owned market exposure found.');
+    return;
+  }
+
+  console.log('');
+  printTable(
+    ['Market', 'Exposure', 'YES Bal', 'NO Bal', 'LP Tokens', 'Claimable USDC', 'Question'],
+    items.map((item) => {
+      const token = item && item.exposure ? item.exposure.token : null;
+      const lp = item && item.exposure ? item.exposure.lp : null;
+      const claimable = item && item.exposure ? item.exposure.claimable : null;
+      return [
+        short(item && item.marketAddress ? item.marketAddress : '', 18),
+        Array.isArray(item && item.exposureTypes) ? item.exposureTypes.join(',') : '',
+        token && token.yesBalance !== null && token.yesBalance !== undefined ? token.yesBalance : '',
+        token && token.noBalance !== null && token.noBalance !== undefined ? token.noBalance : '',
+        lp && lp.lpTokenBalance !== null && lp.lpTokenBalance !== undefined ? lp.lpTokenBalance : '',
+        claimable && claimable.estimatedClaimUsdc !== null && claimable.estimatedClaimUsdc !== undefined
+          ? claimable.estimatedClaimUsdc
+          : '',
+        short(item && item.question ? item.question : '', 44),
+      ];
+    }),
+  );
+
+  const diagnostics = Array.isArray(data && data.diagnostics) ? data.diagnostics.filter(Boolean) : [];
+  if (diagnostics.length) {
+    console.log('');
+    console.log(`Diagnostics: ${diagnostics.join('; ')}`);
   }
 }
 
@@ -4749,10 +4849,50 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
   } catch (err) {
     odds = buildNullOdds(null, `Unable to fetch odds: ${formatErrorValue(err)}`);
   }
-  const amountInput = quoteMode === 'sell' ? options.amount : options.amountUsdc;
+  if (
+    (!Number.isFinite(odds && odds.yesProbability) || !Number.isFinite(odds && odds.noProbability))
+    && Number.isFinite(liquidity.yesPrice)
+    && Number.isFinite(liquidity.noPrice)
+  ) {
+    const reserveOdds = normalizeOddsFromPair(liquidity.yesPrice, liquidity.noPrice, 'market-snapshot:reserves');
+    if (reserveOdds && !reserveOdds.diagnostic) {
+      odds = reserveOdds;
+    }
+  }
+
+  let targeting = null;
+  let resolvedAmountUsdc = options.amountUsdc;
+  let resolvedAmountsUsdc =
+    Array.isArray(options.amountsUsdc) && options.amountsUsdc.length ? options.amountsUsdc : [options.amountUsdc];
+  if (quoteMode !== 'sell' && options.targetPct !== null && options.targetPct !== undefined) {
+    const { planAmmTradeToTargetYesPct } = getAmmTargetPctService();
+    targeting = planAmmTradeToTargetYesPct({
+      targetYesPct: options.targetPct,
+      reserveYesUsdc: liquidity.reserveYes,
+      reserveNoUsdc: liquidity.reserveNo,
+      feeTier: Number.isFinite(Number(liquidity.feeTier)) ? Number(liquidity.feeTier) : 3000,
+      requestedSide: options.side,
+    });
+    if (targeting && targeting.sideMatchesTarget === false) {
+      throw new CliError(
+        'INVALID_FLAG_COMBINATION',
+        Array.isArray(targeting.diagnostics) && targeting.diagnostics.length
+          ? targeting.diagnostics[0]
+          : 'Requested side is incompatible with --target-pct.',
+        { targeting },
+      );
+    }
+    resolvedAmountUsdc =
+      targeting && Number.isFinite(targeting.requiredAmountUsdc)
+        ? targeting.requiredAmountUsdc
+        : null;
+    resolvedAmountsUsdc = Number.isFinite(resolvedAmountUsdc) ? [resolvedAmountUsdc] : [];
+  }
+
+  const amountInput = quoteMode === 'sell' ? options.amount : resolvedAmountUsdc;
   const amounts = quoteMode === 'sell'
     ? (Array.isArray(options.amounts) && options.amounts.length ? options.amounts : [options.amount])
-    : (Array.isArray(options.amountsUsdc) && options.amountsUsdc.length ? options.amountsUsdc : [options.amountUsdc]);
+    : resolvedAmountsUsdc;
   const explicitSellEstimates = new Map();
   if (quoteMode === 'sell' && marketType === 'amm') {
     for (const amount of amounts) {
@@ -4772,27 +4912,38 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
       }
     }
   }
-  const estimate = buildQuoteEstimate(
-    odds,
-    options.side,
-    amountInput,
-    options.slippageBps,
-    marketContext,
-    quoteMode,
-    quoteMode === 'sell' ? explicitSellEstimates.get(String(amountInput)) || null : null,
-  );
-  const curve = buildQuoteEstimateCurve(
-    odds,
-    options.side,
-    amounts,
-    options.slippageBps,
-    marketContext,
-    quoteMode,
-    explicitSellEstimates,
-  );
-  const parimutuel = quoteMode !== 'sell' && marketType === 'pari'
-    ? buildParimutuelEstimate(liquidity, options.side, options.amountUsdc)
+  const estimate = Number.isFinite(amountInput)
+    ? buildQuoteEstimate(
+        odds,
+        options.side,
+        amountInput,
+        options.slippageBps,
+        marketContext,
+        quoteMode,
+        quoteMode === 'sell' ? explicitSellEstimates.get(String(amountInput)) || null : null,
+      )
     : null;
+  const curve = Array.isArray(amounts) && amounts.length
+    ? buildQuoteEstimateCurve(
+        odds,
+        options.side,
+        amounts,
+        options.slippageBps,
+        marketContext,
+        quoteMode,
+        explicitSellEstimates,
+      )
+    : [];
+  const parimutuel = quoteMode !== 'sell' && marketType === 'pari'
+    ? buildParimutuelEstimate(liquidity, options.side, resolvedAmountUsdc)
+    : null;
+  const diagnostics = [];
+  if (odds && odds.diagnostic) diagnostics.push(String(odds.diagnostic));
+  if (targeting && Array.isArray(targeting.diagnostics)) {
+    for (const diagnostic of targeting.diagnostics) {
+      if (diagnostic && !diagnostics.includes(String(diagnostic))) diagnostics.push(String(diagnostic));
+    }
+  }
 
   return {
     generatedAt: new Date().toISOString(),
@@ -4801,8 +4952,9 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
     marketType: market && market.marketType ? market.marketType : null,
     mode: quoteMode,
     side: options.side,
-    amountUsdc: options.amountUsdc,
+    amountUsdc: resolvedAmountUsdc,
     amount: options.amount,
+    targetPct: options.targetPct !== undefined ? options.targetPct : null,
     slippageBps: options.slippageBps,
     quoteAvailable: Boolean(estimate),
     odds,
@@ -4810,6 +4962,8 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
     curve,
     liquidity,
     parimutuel,
+    targeting,
+    diagnostics,
   };
 }
 
@@ -5350,7 +5504,7 @@ async function runMarketsCommand(args, context) {
 
   if (!action || action === '--help' || action === '-h') {
     if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get|scan ...'));
+      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get|scan|mine ...'));
     } else {
       printMarketsHelpTable();
     }
@@ -5401,6 +5555,45 @@ async function runMarketsCommand(args, context) {
 
   if (action === 'scan') {
     await runScanCommand(actionArgs, context);
+    return;
+  }
+
+  if (action === 'mine') {
+    if (includesHelpFlag(actionArgs)) {
+      const usage =
+        'pandora [--output table|json] markets mine [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]';
+      if (context.outputMode === 'json') {
+        emitSuccess(context.outputMode, 'markets.mine.help', commandHelpPayload(usage));
+      } else {
+        console.log(`Usage: ${usage}`);
+      }
+      return;
+    }
+
+    const options = parseMarketsMineFlagsFromModule(actionArgs);
+    if (!options.wallet && !options.privateKey && !options.profileId && !options.profileFile) {
+      const envPrivateKey = String(process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY || '').trim();
+      if (isValidPrivateKey(envPrivateKey)) {
+        options.privateKey = envPrivateKey;
+      }
+    }
+    options.indexerUrl = resolveIndexerUrl(shared.indexerUrl || options.indexerUrl || null);
+    if (Number.isFinite(shared.timeoutMs)) {
+      options.timeoutMs = shared.timeoutMs;
+    }
+
+    try {
+      const payload = await getMarketsMineService().discoverOwnedMarkets(options, {
+        collectPortfolioSnapshot,
+        runClaim,
+      });
+      emitSuccess(context.outputMode, 'markets.mine', payload, renderMarketsMineTable);
+    } catch (error) {
+      if (error && error.code) {
+        throw new CliError(error.code, error.message || 'markets mine failed.', error.details);
+      }
+      throw error;
+    }
     return;
   }
 
@@ -5480,7 +5673,7 @@ async function runMarketsCommand(args, context) {
     return;
   }
 
-  throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get|scan');
+  throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get|scan|mine');
 }
 
 const runScanCommand = createLazyFactoryRunner('./lib/scan_command_service.cjs', 'createRunScanCommand', () => ({
@@ -6351,6 +6544,18 @@ const parseTradeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/trade_f
   ...sharedParserDeps,
   parseBigIntString,
 }));
+const parseMarketsMineFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/markets_mine_flags.cjs',
+  'createParseMarketsMineFlags',
+  () => ({
+    CliError,
+    parseAddressFlag,
+    requireFlagValue,
+    parseInteger,
+    isValidPrivateKey,
+    isSecureHttpUrlOrLocal,
+  }),
+);
 const parseWatchFlagsFromModule = createLazyFactoryRunner('./lib/parsers/watch_flags.cjs', 'createParseWatchFlags', () => sharedParserDeps);
 const parseAutopilotFlagsFromModule = createLazyFactoryRunner('./lib/parsers/autopilot_flags.cjs', 'createParseAutopilotFlags', () => ({
   ...sharedParserDeps,
@@ -6401,6 +6606,9 @@ const parseMirrorAuditFlagsFromModule = createLazyFactoryRunner('./lib/parsers/m
   ...sharedParserDeps,
   defaultIndexerTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
 }));
+const parseMirrorReplayFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorReplayFlags', () => ({
+  ...sharedParserDeps,
+}));
 const parseMirrorCloseFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorCloseFlags', () => sharedParserDeps);
 const parseMirrorLpExplainFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorLpExplainFlags', () => sharedParserDeps);
 const parseMirrorSimulateFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorSimulateFlags', () => ({
@@ -6421,10 +6629,10 @@ const parsePolymarketApproveFlagsFromModule = createLazyFactoryRunner('./lib/par
 }));
 const parsePolymarketTradeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketTradeFlags', () => ({
   CliError,
+  parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
   requireFlagValue,
   parsePositiveNumber,
   parsePositiveInteger,
-  parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
   isSecureHttpUrlOrLocal,
   defaultTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
 }));
@@ -6647,6 +6855,46 @@ const runPolymarketCommandFromService = createLazyFactoryRunner('./lib/polymarke
   assertLiveWriteAllowed,
   defaultEnvFile: DEFAULT_ENV_FILE,
 }));
+const runDashboardCommandFromService = createLazyFactoryRunner('./lib/dashboard_fund_service.cjs', 'createRunDashboardCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseIndexerSharedFlags,
+  parseAddressFlag,
+  requireFlagValue,
+  parsePositiveInteger,
+  maybeLoadIndexerEnv,
+  maybeLoadTradeEnv,
+  resolveIndexerUrl,
+  resolveTrustedDeployPair,
+  verifyMirror,
+  toMirrorStatusLivePayload,
+}));
+const runFundCheckCommandFromService = createLazyFactoryRunner('./lib/fund_check_command_service.cjs', 'createRunFundCheckCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseAddressFlag,
+  parseIndexerSharedFlags,
+  requireFlagValue,
+  parsePositiveInteger,
+  maybeLoadIndexerEnv,
+  maybeLoadTradeEnv,
+  resolveIndexerUrl,
+  resolveTrustedDeployPair,
+  verifyMirror,
+  coerceMirrorServiceError,
+  toMirrorStatusLivePayload,
+  runPolymarketBalance,
+  runPolymarketCheck,
+  parseAddressFlag,
+  parsePrivateKeyFlag,
+  parsePositiveInteger,
+  parseInteger,
+  parseProbabilityPercent,
+}));
 
 const runResolveCommandFromService = createLazyFactoryRunner('./lib/resolve_command_service.cjs', 'createRunResolveCommand', () => ({
   includesHelpFlag,
@@ -6716,6 +6964,13 @@ const runRiskCommandFromService = createLazyFactoryRunner('./lib/risk_command_se
   setPanic: setRiskPanic,
   clearPanic: clearRiskPanic,
   renderRiskTable,
+}));
+const runExplainCommandFromService = createLazyFactoryRunner('./lib/explain_command_service.cjs', 'createRunExplainCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  getExplanationForError: errorRecoveryService.getExplanationForError,
 }));
 const runPolicyCommandFromService = createLazyFactoryRunner('./lib/policy_command_service.cjs', 'createRunPolicyCommand', () => ({
   CliError,
@@ -7639,6 +7894,7 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   parseMirrorStatusFlags: parseMirrorStatusFlagsFromModule,
   parseMirrorPnlFlags: parseMirrorPnlFlagsFromModule,
   parseMirrorAuditFlags: parseMirrorAuditFlagsFromModule,
+  parseMirrorReplayFlags: parseMirrorReplayFlagsFromModule,
   parseMirrorSyncFlags: parseMirrorSyncFlagsFromModule,
   parseMirrorSyncDaemonSelectorFlags: parseMirrorSyncDaemonSelectorFlagsFromModule,
   parseMirrorGoFlags: parseMirrorGoFlagsFromModule,
@@ -7646,6 +7902,7 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   parseMirrorLpExplainFlags: parseMirrorLpExplainFlagsFromModule,
   parseMirrorHedgeCalcFlags: parseMirrorHedgeCalcFlagsFromModule,
   parseMirrorSimulateFlags: parseMirrorSimulateFlagsFromModule,
+  parseProbabilityPercent,
   buildMirrorPlan,
   deployMirror,
   verifyMirror,
@@ -7653,10 +7910,12 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   buildMirrorLpExplain,
   buildMirrorHedgeCalc,
   buildMirrorSimulate,
+  buildMirrorRuntimeTelemetry,
   runMirrorSync,
   startMirrorDaemon,
   stopMirrorDaemon,
   mirrorDaemonStatus,
+  defaultMirrorKillSwitchFile,
   runMirrorClose,
   runLp,
   runClaim,
@@ -7675,9 +7934,13 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   enforceTradeRiskGuards,
   executeTradeOnchain,
   assertLiveWriteAllowed,
+  setRiskPanic,
+  clearRiskPanic,
   hasWebhookTargets,
   sendWebhookNotifications,
   loadMirrorState,
+  resolveMirrorSurfaceState,
+  resolveMirrorSurfaceDaemonStatus,
   renderMirrorSyncTickLine,
   renderMirrorBrowseTable,
   renderMirrorPlanTable,
@@ -7692,6 +7955,9 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   renderMirrorSyncDaemonTable,
   renderMirrorStatusTable,
   renderMirrorCloseTable,
+  requireFlagValue,
+  parseAddressFlag,
+  parsePositiveInteger,
   cliPath: __filename,
 }));
 
@@ -7957,6 +8223,14 @@ async function runSuggestCommand(args, context) {
   emitSuccess(context.outputMode, 'suggest', payload, renderSuggestTable);
 }
 
+async function runDashboardCommand(args, context) {
+  return runDashboardCommandFromService(args, context);
+}
+
+async function runFundCheckCommand(args, context) {
+  return runFundCheckCommandFromService(args, context);
+}
+
 async function runResolveCommand(args, context) {
   return runResolveCommandFromService(args, context);
 }
@@ -7971,6 +8245,10 @@ async function runLpCommand(args, context) {
 
 async function runRiskCommand(args, context) {
   return runRiskCommandFromService(args, context);
+}
+
+async function runExplainCommand(args, context) {
+  return runExplainCommandFromService(args, context);
 }
 
 async function runPolicyCommand(args, context) {
@@ -8134,6 +8412,8 @@ const dispatch = createCommandRouter({
   runInitEnv,
   runDoctor,
   runSetup,
+  runDashboardCommand,
+  runFundCheckCommand,
   runMarketsCommand,
   runScanCommand,
   runSportsCommand,
@@ -8166,6 +8446,7 @@ const dispatch = createCommandRouter({
   runProfileCommand,
   runRecipeCommand,
   runRiskCommand,
+  runExplainCommand,
   runOperationsCommand,
   runModelCommand,
   runMcpCommand,

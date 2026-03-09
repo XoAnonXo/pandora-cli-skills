@@ -29,6 +29,16 @@ const CSV_COLUMNS = [
   'price',
   'gas_usd',
   'realized_pnl',
+  'classification',
+  'venue',
+  'source',
+  'code',
+  'message',
+  'mode',
+  'verdict',
+  'strategy_hash',
+  'state_file',
+  'idempotency_key',
 ];
 
 function csvEscape(value) {
@@ -38,20 +48,52 @@ function csvEscape(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function firstDefined() {
+  for (const value of arguments) {
+    if (value !== null && value !== undefined && value !== '') return value;
+  }
+  return null;
+}
+
+function toTimestampMs(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    if (Math.abs(numeric) >= 1e12) return Math.trunc(numeric);
+    return Math.trunc(numeric * 1000);
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toUnixBoundaryMs(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.abs(numeric) >= 1e12 ? Math.trunc(numeric) : Math.trunc(numeric * 1000);
+}
+
 function toExportRows(historyPayload) {
   const wallet = historyPayload.wallet;
+  const strategyHash = historyPayload.strategyHash || null;
+  const stateFile = historyPayload.stateFile || null;
   return (historyPayload.items || []).map((item) => ({
     date: toReplayDate(item.timestamp),
-    market: item.marketAddress,
-    action: item.tradeType || null,
-    amount: item.collateralAmountUsdc,
-    price: item.entryPriceUsdcPerToken,
+    market: firstDefined(item.marketAddress, item.selector && item.selector.pandoraMarketAddress),
+    action: firstDefined(item.tradeType, item.action, item.classification, item.verdict),
+    amount: firstDefined(
+      item.collateralAmountUsdc,
+      item.amount,
+      item.details && item.details.amountUsdc,
+      item.actual && item.actual.spendUsdc,
+    ),
+    price: firstDefined(item.entryPriceUsdcPerToken, item.price),
     gas_usd: item.feeAmountUsdc === undefined ? null : item.feeAmountUsdc,
     realized_pnl: item.pnlRealizedApproxUsdc === undefined ? null : item.pnlRealizedApproxUsdc,
     timestamp: item.timestamp,
     chain_id: item.chainId,
     wallet,
-    market_address: item.marketAddress,
+    market_address: firstDefined(item.marketAddress, item.selector && item.selector.pandoraMarketAddress),
     poll_address: item.pollAddress,
     question: item.question,
     side: item.side,
@@ -65,13 +107,23 @@ function toExportRows(historyPayload) {
     pnl_realized_approx_usdc: item.pnlRealizedApproxUsdc,
     status: item.status,
     tx_hash: item.txHash,
+    classification: item.classification || null,
+    venue: item.venue || null,
+    source: item.source || null,
+    code: item.code || null,
+    message: item.message || null,
+    mode: firstDefined(item.mode, item.details && item.details.mode),
+    verdict: item.verdict || null,
+    strategy_hash: firstDefined(item.strategyHash, strategyHash),
+    state_file: firstDefined(item.stateFile, stateFile),
+    idempotency_key: firstDefined(item.idempotencyKey, item.details && item.details.idempotencyKey),
   }));
 }
 
 function toReplayDate(timestampSeconds) {
-  const numeric = Number(timestampSeconds);
-  if (!Number.isFinite(numeric)) return null;
-  return new Date(Math.floor(numeric) * 1000).toISOString().slice(0, 10);
+  const timestampMs = toTimestampMs(timestampSeconds);
+  if (timestampMs === null) return null;
+  return new Date(timestampMs).toISOString().slice(0, 10);
 }
 
 function toCsv(rows) {
@@ -94,10 +146,12 @@ function parseDateRangeFilter(rows, options) {
   }
 
   return rows.filter((row) => {
-    const ts = Number(row.timestamp);
-    if (!Number.isFinite(ts)) return false;
-    if (from !== null && from !== undefined && ts < from) return false;
-    if (to !== null && to !== undefined && ts > to) return false;
+    const ts = toTimestampMs(row.timestamp);
+    if (ts === null) return false;
+    const fromMs = toUnixBoundaryMs(from);
+    const toMs = toUnixBoundaryMs(to);
+    if (fromMs !== null && ts < fromMs) return false;
+    if (toMs !== null && ts > toMs) return false;
     return true;
   });
 }
