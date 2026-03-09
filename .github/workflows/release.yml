@@ -500,6 +500,7 @@ jobs:
         with:
           packages-dir: dist/release/sdk/python-publish
           skip-existing: true
+          attestations: false
 
       - name: Publish npm package
         shell: bash

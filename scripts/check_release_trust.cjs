@@ -400,6 +400,7 @@ function checkWorkflowAndInstaller() {
     'dist/release/sdk/python-publish',
     'cp "${python_distributions[@]}" "$STAGING_DIR"/',
     'packages-dir: dist/release/sdk/python-publish',
+    'attestations: false',
     '"$SDK_CHECKSUMS"',
     'scripts/generate_sbom.cjs',
     'actions/attest-build-provenance@',
