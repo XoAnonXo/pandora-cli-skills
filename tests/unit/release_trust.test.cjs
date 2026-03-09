@@ -50,6 +50,9 @@ test('release workflow and installer advertise provenance, sbom, and signature v
   assert.match(workflow, /\.sig/);
   assert.match(workflow, /\.pem/);
   assert.match(workflow, /cosign sign-blob/);
+  assert.match(workflow, /Prepare standalone Python SDK publish staging directory/);
+  assert.match(workflow, /dist\/release\/sdk\/python-publish/);
+  assert.match(workflow, /packages-dir:\s*dist\/release\/sdk\/python-publish/);
 
   assert.match(installer, /gh attestation verify/);
   assert.match(installer, /sbom\.spdx\.json/);

@@ -438,6 +438,29 @@ jobs:
               "$artifact" >/dev/null
           done
 
+      - name: Prepare standalone Python SDK publish staging directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          STAGING_DIR="dist/release/sdk/python-publish"
+
+          rm -rf "$STAGING_DIR"
+          mkdir -p "$STAGING_DIR"
+
+          shopt -s nullglob
+          python_distributions=(
+            dist/release/sdk/python/*.whl
+            dist/release/sdk/python/*.tar.gz
+          )
+
+          if [[ ${#python_distributions[@]} -eq 0 ]]; then
+            echo "No standalone Python SDK distributions found to stage for PyPI publish." >&2
+            exit 1
+          fi
+
+          cp "${python_distributions[@]}" "$STAGING_DIR"/
+
       - name: Publish standalone TypeScript SDK
         shell: bash
         env:
@@ -475,7 +498,7 @@ jobs:
       - name: Publish standalone Python SDK
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/release/sdk/python
+          packages-dir: dist/release/sdk/python-publish
           skip-existing: true
 
       - name: Publish npm package
