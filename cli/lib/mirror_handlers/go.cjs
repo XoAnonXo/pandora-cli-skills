@@ -350,6 +350,11 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
               profileId: options.profileId || null,
               profileFile: options.profileFile || null,
               usdc: options.usdc,
+              rebalanceRoute: options.rebalanceRoute,
+              rebalanceRouteFallback: options.rebalanceRouteFallback,
+              flashbotsRelayUrl: options.flashbotsRelayUrl,
+              flashbotsAuthKey: options.flashbotsAuthKey,
+              flashbotsTargetBlockOffset: options.flashbotsTargetBlockOffset,
             });
             if (typeof assertLiveWriteAllowed === 'function') {
               await assertLiveWriteAllowed('mirror.go.sync.execute', {
@@ -391,7 +396,14 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         `--hedge-ratio ${options.hedgeRatio}`,
         `--rebalance-mode ${options.rebalanceSizingMode}`,
         `--price-source ${options.priceSource}`,
-        !options.hedgeEnabled ? '--no-hedge' : null,
+        `--rebalance-route ${options.rebalanceRoute}`,
+        `--rebalance-route-fallback ${options.rebalanceRouteFallback}`,
+        options.flashbotsRelayUrl ? `--flashbots-relay-url ${options.flashbotsRelayUrl}` : null,
+        options.flashbotsAuthKey ? `--flashbots-auth-key ${options.flashbotsAuthKey}` : null,
+        Number.isFinite(Number(options.flashbotsTargetBlockOffset))
+          ? `--flashbots-target-block-offset ${Number(options.flashbotsTargetBlockOffset)}`
+          : null,
+        options.noHedge ? '--no-hedge' : null,
         `--max-rebalance-usdc ${options.maxRebalanceUsdc}`,
         `--max-hedge-usdc ${options.maxHedgeUsdc}`,
         Number.isFinite(options.maxOpenExposureUsdc) && options.maxOpenExposureUsdc !== Number.POSITIVE_INFINITY

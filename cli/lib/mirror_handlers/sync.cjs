@@ -29,6 +29,72 @@ function normalizeMirrorRebalanceTradeOptions(executionOptions, runtimeOptions) 
   };
 }
 
+function buildMirrorSyncOperationResult(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const actions = Array.isArray(payload.actions) ? payload.actions : [];
+  const lastAction = actions.length ? actions[actions.length - 1] : null;
+  let lastRebalanceAction = null;
+  for (let index = actions.length - 1; index >= 0; index -= 1) {
+    const action = actions[index];
+    if (action && action.rebalance && typeof action.rebalance === 'object') {
+      lastRebalanceAction = action;
+      break;
+    }
+  }
+  const rebalanceAction = lastRebalanceAction || lastAction;
+  const rebalanceResult =
+    rebalanceAction &&
+    rebalanceAction.rebalance &&
+    rebalanceAction.rebalance.result &&
+    typeof rebalanceAction.rebalance.result === 'object'
+      ? rebalanceAction.rebalance.result
+      : null;
+  return {
+    strategyHash: payload.strategyHash || null,
+    mode: payload.mode || null,
+    executeLive: Boolean(payload.executeLive),
+    actionCount: Number.isFinite(payload.actionCount) ? payload.actionCount : actions.length,
+    lastExecutionStatus: lastAction && lastAction.status ? lastAction.status : null,
+    rebalance:
+      rebalanceAction && rebalanceAction.rebalance
+        ? {
+            side: rebalanceAction.rebalance.side || null,
+            amountUsdc: rebalanceAction.rebalance.amountUsdc ?? null,
+            tradeTxHash:
+              rebalanceResult && (rebalanceResult.tradeTxHash || rebalanceResult.txHash || null),
+            approveTxHash:
+              rebalanceResult && rebalanceResult.approveTxHash ? rebalanceResult.approveTxHash : null,
+            executionRouteRequested:
+              rebalanceResult && rebalanceResult.executionRouteRequested ? rebalanceResult.executionRouteRequested : null,
+            executionRouteResolved:
+              rebalanceResult && rebalanceResult.executionRouteResolved ? rebalanceResult.executionRouteResolved : null,
+            executionRouteFallback:
+              rebalanceResult && rebalanceResult.executionRouteFallback ? rebalanceResult.executionRouteFallback : null,
+            executionRouteFallbackUsed:
+              Boolean(rebalanceResult && rebalanceResult.executionRouteFallbackUsed),
+            executionRouteFallbackReason:
+              rebalanceResult && rebalanceResult.executionRouteFallbackReason ? rebalanceResult.executionRouteFallbackReason : null,
+            flashbotsRelayUrl:
+              rebalanceResult && rebalanceResult.flashbotsRelayUrl ? rebalanceResult.flashbotsRelayUrl : null,
+            flashbotsRelayMethod:
+              rebalanceResult && rebalanceResult.flashbotsRelayMethod ? rebalanceResult.flashbotsRelayMethod : null,
+            flashbotsTargetBlockNumber:
+              rebalanceResult && rebalanceResult.flashbotsTargetBlockNumber !== undefined
+                ? rebalanceResult.flashbotsTargetBlockNumber
+                : null,
+            flashbotsRelayResponseId:
+              rebalanceResult && rebalanceResult.flashbotsRelayResponseId !== undefined
+                ? rebalanceResult.flashbotsRelayResponseId
+                : null,
+            flashbotsBundleHash:
+              rebalanceResult && rebalanceResult.flashbotsBundleHash ? rebalanceResult.flashbotsBundleHash : null,
+            flashbotsSimulation:
+              rebalanceResult && rebalanceResult.flashbotsSimulation ? rebalanceResult.flashbotsSimulation : null,
+          }
+        : null,
+  };
+}
+
 function normalizeRpcUrlCandidates(value) {
   const rawValues = Array.isArray(value) ? value : String(value || '').split(',');
   const candidates = rawValues
@@ -587,6 +653,11 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
             profileId: options.profileId || null,
             profileFile: options.profileFile || null,
             usdc: options.usdc,
+            rebalanceRoute: options.rebalanceRoute,
+            rebalanceRouteFallback: options.rebalanceRouteFallback,
+            flashbotsRelayUrl: options.flashbotsRelayUrl,
+            flashbotsAuthKey: options.flashbotsAuthKey,
+            flashbotsTargetBlockOffset: options.flashbotsTargetBlockOffset,
           });
           if (typeof assertLiveWriteAllowed === 'function') {
             await assertLiveWriteAllowed('mirror.sync.execute', {
@@ -627,6 +698,11 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     await operation.fail(mirrorError, {
       phase: 'mirror.sync.execution.failed',
       mode: options.mode,
+      error: {
+        code: mirrorError.code || null,
+        message: mirrorError.message || String(mirrorError),
+        details: mirrorError.details || null,
+      },
     });
     throw mirrorError;
   }
@@ -637,6 +713,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     mode: payload && payload.mode ? payload.mode : options.mode,
     strategyHash: payload && payload.strategyHash ? payload.strategyHash : null,
     actionCount: payload && Number.isFinite(payload.actionCount) ? payload.actionCount : null,
+    result: buildMirrorSyncOperationResult(payload),
   });
   if (trustManifest) {
     payload.trustManifest = trustManifest;
@@ -660,3 +737,4 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
 module.exports.normalizeMirrorRebalanceTradeOptions = normalizeMirrorRebalanceTradeOptions;
 module.exports.selectHealthyPolymarketRpc = selectHealthyPolymarketRpc;
 module.exports.probePolymarketRpcCandidate = probePolymarketRpcCandidate;
+module.exports.buildMirrorSyncOperationResult = buildMirrorSyncOperationResult;

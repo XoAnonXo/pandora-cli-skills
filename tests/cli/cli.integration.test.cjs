@@ -408,6 +408,164 @@ async function startPolymarketOpsRpcMock(options = {}) {
   });
 }
 
+function encodeAddress(address) {
+  const normalized = String(address || '').trim().toLowerCase().replace(/^0x/, '');
+  return `0x${normalized.padStart(64, '0')}`;
+}
+
+function encodeHexQuantity(value) {
+  return `0x${BigInt(value || 0).toString(16)}`;
+}
+
+async function startMirrorTraceRpcMock(options = {}) {
+  const marketAddress = String(options.marketAddress || ADDRESSES.mirrorMarket).toLowerCase();
+  const yesToken = String(options.yesToken || '0x1111111111111111111111111111111111111111').toLowerCase();
+  const noToken = String(options.noToken || '0x2222222222222222222222222222222222222222').toLowerCase();
+  const chainIdHex = String(options.chainIdHex || '0x1').toLowerCase();
+  const tradingFee = BigInt(options.tradingFee || 3000);
+  const decimals = BigInt(options.decimals || 6);
+  const snapshots = new Map();
+  const archiveMissingBlocks = new Set(
+    (Array.isArray(options.archiveMissingBlocks) ? options.archiveMissingBlocks : []).map((value) =>
+      encodeHexQuantity(value).toLowerCase()),
+  );
+
+  for (const snapshot of Array.isArray(options.snapshots) ? options.snapshots : []) {
+    const blockNumber = Number(snapshot && snapshot.blockNumber);
+    if (!Number.isInteger(blockNumber) || blockNumber < 0) continue;
+    snapshots.set(encodeHexQuantity(blockNumber).toLowerCase(), {
+      blockNumber,
+      timestamp: Number(snapshot.timestamp || 0),
+      blockHash:
+        snapshot.blockHash
+        || `0x${BigInt(blockNumber).toString(16).padStart(64, '0')}`,
+      reserveYesRaw: BigInt(snapshot.reserveYesRaw || 0n),
+      reserveNoRaw: BigInt(snapshot.reserveNoRaw || 0n),
+    });
+  }
+
+  function resolveSnapshot(blockTag) {
+    const normalized = String(blockTag || 'latest').trim().toLowerCase();
+    if (normalized === 'latest') {
+      const ordered = Array.from(snapshots.values()).sort((left, right) => left.blockNumber - right.blockNumber);
+      return ordered[ordered.length - 1] || null;
+    }
+    return snapshots.get(normalized) || null;
+  }
+
+  return startJsonHttpServer(({ bodyJson }) => {
+    const requests = Array.isArray(bodyJson) ? bodyJson : [bodyJson];
+    const responses = requests.map((request, index) => {
+      const id = request && request.id !== undefined ? request.id : index + 1;
+      if (!request || typeof request !== 'object') {
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { message: 'Invalid JSON-RPC payload' },
+        };
+      }
+
+      if (request.method === 'eth_chainId') {
+        return { jsonrpc: '2.0', id, result: chainIdHex };
+      }
+
+      if (request.method === 'eth_getBlockByNumber') {
+        const blockTag = String((request.params && request.params[0]) || 'latest').toLowerCase();
+        if (archiveMissingBlocks.has(blockTag)) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            error: { message: 'missing trie node: historical state unavailable; archive node required' },
+          };
+        }
+        const snapshot = resolveSnapshot(blockTag);
+        if (!snapshot) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            error: { message: `Unknown block ${blockTag}` },
+          };
+        }
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            number: encodeHexQuantity(snapshot.blockNumber),
+            hash: snapshot.blockHash,
+            timestamp: encodeHexQuantity(snapshot.timestamp),
+          },
+        };
+      }
+
+      if (request.method === 'eth_call') {
+        const tx = request.params && request.params[0] ? request.params[0] : {};
+        const target = String(tx.to || '').toLowerCase();
+        const data = String(tx.data || '').toLowerCase();
+        const selector = data.slice(0, 10);
+        const blockTag = String((request.params && request.params[1]) || 'latest').toLowerCase();
+
+        if (archiveMissingBlocks.has(blockTag)) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            error: { message: 'missing trie node: historical state unavailable; archive node required' },
+          };
+        }
+
+        const snapshot = resolveSnapshot(blockTag);
+        if (!snapshot) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            error: { message: `Unknown block ${blockTag}` },
+          };
+        }
+
+        if (target === marketAddress && selector === '0xf0d9bb20') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(yesToken) };
+        }
+        if (target === marketAddress && selector === '0x11a9f10a') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(noToken) };
+        }
+        if (target === marketAddress && selector === '0x8a8ee140') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(yesToken) };
+        }
+        if (target === marketAddress && selector === '0x3c802ddd') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(noToken) };
+        }
+        if (target === marketAddress && selector === '0x56f43352') {
+          return { jsonrpc: '2.0', id, result: encodeUint256(tradingFee) };
+        }
+        if ((target === yesToken || target === noToken) && selector === '0x313ce567') {
+          return { jsonrpc: '2.0', id, result: encodeUint256(decimals) };
+        }
+        if (target === yesToken && selector === '0x70a08231') {
+          return { jsonrpc: '2.0', id, result: encodeUint256(snapshot.reserveYesRaw) };
+        }
+        if (target === noToken && selector === '0x70a08231') {
+          return { jsonrpc: '2.0', id, result: encodeUint256(snapshot.reserveNoRaw) };
+        }
+
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { message: `Unsupported eth_call target/selector ${target} ${selector}` },
+        };
+      }
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        error: { message: `Unsupported method ${request.method}` },
+      };
+    });
+
+    return {
+      body: Array.isArray(bodyJson) ? responses : responses[0],
+    };
+  });
+}
+
 function applyWhereFilter(items, where) {
   if (!where || typeof where !== 'object') return items;
 
@@ -3953,7 +4111,7 @@ test('export can materialize CSV to --out path', async () => {
     const payload = parseJsonOutput(result);
     assert.equal(payload.ok, true);
     assert.equal(payload.command, 'export');
-    assert.equal(payload.data.schemaVersion, '1.0.0');
+    assert.equal(payload.data.schemaVersion, '1.1.0');
     assert.equal(payload.data.format, 'csv');
     assert.equal(payload.data.outPath, outPath);
     assert.equal(fs.existsSync(outPath), true);
@@ -5687,7 +5845,31 @@ test('mirror go accepts named --skip-gate lists during parsing', async () => {
   }
 });
 
-test('mirror command dispatcher preserves normalized live sync trade execution payloads', async () => {
+test('mirror sync rejects invalid rebalance route enums using flashbots naming contract', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'mirror',
+    'sync',
+    'once',
+    '--skip-dotenv',
+    '--pandora-market-address',
+    ADDRESSES.mirrorMarket,
+    '--polymarket-market-id',
+    'poly-cond-1',
+    '--paper',
+    '--rebalance-route',
+    'private',
+  ]);
+
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+  assert.match(payload.error.message, /--rebalance-route must be public\|auto\|flashbots-private\|flashbots-bundle\./);
+});
+
+test('mirror command dispatcher preserves normalized live sync trade execution payloads including flashbots routing contract', async () => {
   class TestCliError extends Error {
     constructor(code, message, details = null) {
       super(message);
@@ -5748,6 +5930,11 @@ test('mirror command dispatcher preserves normalized live sync trade execution p
       profileFile: null,
       usdc: ADDRESSES.usdc,
       failOnWebhookError: false,
+      rebalanceRoute: 'flashbots-bundle',
+      rebalanceRouteFallback: 'public',
+      flashbotsRelayUrl: 'https://relay.flashbots.example',
+      flashbotsAuthKey: 'test-flashbots-auth-key',
+      flashbotsTargetBlockOffset: 3,
     }),
     buildMirrorSyncStrategy: () => ({}),
     mirrorStrategyHash: () => 'strategy-hash',
@@ -5822,6 +6009,11 @@ test('mirror command dispatcher preserves normalized live sync trade execution p
   assert.equal(captured.executionTradeOptions.minAmountOutRaw, null);
   assert.equal(captured.executionTradeOptions.allowUnquotedExecute, true);
   assert.equal(captured.executionTradeOptions.deadlineSeconds, 900);
+  assert.equal(captured.executionTradeOptions.rebalanceRoute, 'flashbots-bundle');
+  assert.equal(captured.executionTradeOptions.rebalanceRouteFallback, 'public');
+  assert.equal(captured.executionTradeOptions.flashbotsRelayUrl, 'https://relay.flashbots.example');
+  assert.equal(captured.executionTradeOptions.flashbotsAuthKey, 'test-flashbots-auth-key');
+  assert.equal(captured.executionTradeOptions.flashbotsTargetBlockOffset, 3);
   assert.equal(captured.guardQuote, quotePayload);
   assert.equal(emitted.payload.actions[0].rebalance.result.quote, quotePayload);
   assert.equal(emitted.payload.actions[0].rebalance.result.ammDeadlineEpoch, '1710000910');
@@ -6267,12 +6459,86 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   assert.match(payload.data.usage, /--strict-close-time-delta/);
   assert.match(payload.data.usage, /--rebalance-mode atomic\|incremental/);
   assert.match(payload.data.usage, /--price-source on-chain\|indexer/);
+  assert.match(payload.data.usage, /--rebalance-route public\|auto\|flashbots-private\|flashbots-bundle/);
+  assert.match(payload.data.usage, /--rebalance-route-fallback fail\|public/);
+  assert.match(payload.data.usage, /--flashbots-relay-url <url>/);
+  assert.match(payload.data.usage, /--flashbots-auth-key <key>/);
+  assert.match(payload.data.usage, /--flashbots-target-block-offset <n>/);
   assert.match(payload.data.liveHedgeNotes.rpcFallback, /comma-separated/i);
   assert.match(payload.data.statusTelemetry.health, /runtime\.health/i);
   assert.match(payload.data.statusTelemetry.lastTrade, /runtime\.lastTrade/i);
   assert.match(payload.data.statusTelemetry.errors, /runtime\.errorCount/i);
   assert.match(payload.data.statusTelemetry.nextAction, /runtime\.nextAction/i);
   assert.match(payload.data.staleCacheFallback, /cached snapshots/i);
+});
+
+test('mirror go --help json includes flashbots routing flag contract', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'go', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.go.help');
+  assert.match(payload.data.usage, /--rebalance-route public\|auto\|flashbots-private\|flashbots-bundle/);
+  assert.match(payload.data.usage, /--rebalance-route-fallback fail\|public/);
+  assert.match(payload.data.usage, /--flashbots-relay-url <url>/);
+  assert.match(payload.data.usage, /--flashbots-auth-key <key>/);
+  assert.match(payload.data.usage, /--flashbots-target-block-offset <n>/);
+});
+
+test('mirror trace --help json includes historical reserve tracing usage and archive notes', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'trace', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.trace.help');
+  assert.match(payload.data.usage, /mirror trace/);
+  assert.match(payload.data.usage, /--rpc-url <url>/);
+  assert.match(payload.data.usage, /--blocks <csv>/);
+  assert.match(payload.data.usage, /--from-block <n>/);
+  assert.match(payload.data.usage, /--to-block <n>/);
+  assert.equal(Array.isArray(payload.data.notes), true);
+  assert.equal(payload.data.notes.some((note) => /archive/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /historical reserve/i.test(String(note))), true);
+});
+
+test('command descriptors expose flashbots routing flags for mirror go and sync surfaces', () => {
+  const descriptors = buildCommandDescriptors();
+
+  assert.ok(descriptors['mirror.go']);
+  assert.match(descriptors['mirror.go'].usage, /--rebalance-route public\|auto\|flashbots-private\|flashbots-bundle/);
+  assert.match(descriptors['mirror.go'].usage, /--rebalance-route-fallback fail\|public/);
+  assert.match(descriptors['mirror.go'].usage, /--flashbots-relay-url <url>/);
+  assert.match(descriptors['mirror.go'].usage, /--flashbots-auth-key <key>/);
+  assert.match(descriptors['mirror.go'].usage, /--flashbots-target-block-offset <n>/);
+
+  for (const commandName of ['mirror.sync.once', 'mirror.sync.run', 'mirror.sync.start']) {
+    assert.ok(descriptors[commandName], `missing descriptor for ${commandName}`);
+    assert.match(
+      descriptors[commandName].usage,
+      /--rebalance-route public\|auto\|flashbots-private\|flashbots-bundle/,
+      `${commandName} usage should advertise rebalanceRoute contract`,
+    );
+    assert.match(
+      descriptors[commandName].usage,
+      /--rebalance-route-fallback fail\|public/,
+      `${commandName} usage should advertise rebalanceRouteFallback contract`,
+    );
+    assert.match(
+      descriptors[commandName].usage,
+      /--flashbots-relay-url <url>/,
+      `${commandName} usage should advertise flashbotsRelayUrl`,
+    );
+    assert.match(
+      descriptors[commandName].usage,
+      /--flashbots-auth-key <key>/,
+      `${commandName} usage should advertise flashbotsAuthKey`,
+    );
+    assert.match(
+      descriptors[commandName].usage,
+      /--flashbots-target-block-offset <n>/,
+      `${commandName} usage should advertise flashbotsTargetBlockOffset`,
+    );
+  }
 });
 
 test('mirror --help json includes batch-1 sync semantics notes', () => {
@@ -6292,6 +6558,192 @@ test('mirror --help json includes batch-1 sync semantics notes', () => {
   assert.equal(payload.data.notes.some((note) => /--polymarket-rpc-url/.test(note)), true);
   assert.equal(payload.data.notes.some((note) => /verifyDiagnostics/.test(note)), true);
   assert.equal(payload.data.notes.some((note) => /logFile/.test(note)), true);
+});
+
+test('mirror trace returns structured historical reserve snapshots for explicit block lists', async () => {
+  const rpc = await startMirrorTraceRpcMock({
+    snapshots: [
+      {
+        blockNumber: 111,
+        timestamp: 1_700_000_000,
+        reserveYesRaw: 4_000_000n,
+        reserveNoRaw: 6_000_000n,
+      },
+      {
+        blockNumber: 112,
+        timestamp: 1_700_000_060,
+        reserveYesRaw: 5_000_000n,
+        reserveNoRaw: 5_000_000n,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'trace',
+      '--market-address',
+      ADDRESSES.mirrorMarket,
+      '--rpc-url',
+      rpc.url,
+      '--blocks',
+      '111,112',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.trace');
+    assert.equal(payload.data.selector.selectionMode, 'blocks');
+    assert.deepEqual(payload.data.selector.blocks, [111, 112]);
+    assert.equal(payload.data.selector.fromBlock, null);
+    assert.equal(payload.data.selector.toBlock, null);
+    assert.equal(payload.data.selector.step, null);
+    assert.equal(Array.isArray(payload.data.snapshots), true);
+    assert.equal(payload.data.snapshots.length, 2);
+    assert.equal(payload.data.snapshots[0].blockNumber, 111);
+    assert.equal(payload.data.snapshots[0].reserveYesUsdc, 4);
+    assert.equal(payload.data.snapshots[0].reserveNoUsdc, 6);
+    assert.equal(payload.data.snapshots[0].pandoraYesPct, 60);
+    assert.equal(payload.data.snapshots[0].feeTier, 3000);
+    assert.equal(payload.data.snapshots[0].rpcUrl, rpc.url);
+    assert.equal(typeof payload.data.snapshots[0].blockHash, 'string');
+    assert.equal(typeof payload.data.snapshots[0].blockTimestamp, 'string');
+    assert.equal(payload.data.snapshots[1].blockNumber, 112);
+    assert.equal(payload.data.snapshots[1].reserveYesUsdc, 5);
+    assert.equal(payload.data.snapshots[1].reserveNoUsdc, 5);
+    assert.equal(payload.data.snapshots[1].pandoraYesPct, 50);
+  } finally {
+    await rpc.close();
+  }
+});
+
+test('mirror trace range sampling honors step and limit while preserving the requested selector', async () => {
+  const rpc = await startMirrorTraceRpcMock({
+    snapshots: [
+      {
+        blockNumber: 0,
+        timestamp: 1_700_000_000,
+        reserveYesRaw: 1_000_000n,
+        reserveNoRaw: 2_000_000n,
+      },
+      {
+        blockNumber: 1,
+        timestamp: 1_700_000_060,
+        reserveYesRaw: 2_000_000n,
+        reserveNoRaw: 3_000_000n,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'trace',
+      '--market-address',
+      ADDRESSES.mirrorMarket,
+      '--rpc-url',
+      rpc.url,
+      '--from-block',
+      '0',
+      '--to-block',
+      '5000',
+      '--step',
+      '1',
+      '--limit',
+      '2',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.selector.selectionMode, 'range');
+    assert.equal(payload.data.selector.fromBlock, 0);
+    assert.equal(payload.data.selector.toBlock, 5000);
+    assert.equal(payload.data.selector.step, 1);
+    assert.deepEqual(payload.data.selector.blocks, []);
+    assert.equal(payload.data.snapshots.length, 2);
+    assert.deepEqual(payload.data.snapshots.map((entry) => entry.blockNumber), [0, 1]);
+  } finally {
+    await rpc.close();
+  }
+});
+
+test('mirror trace fails with an explicit archive-state error when historical reserves are unavailable', async () => {
+  const rpc = await startMirrorTraceRpcMock({
+    snapshots: [
+      {
+        blockNumber: 111,
+        timestamp: 1_700_000_000,
+        reserveYesRaw: 4_000_000n,
+        reserveNoRaw: 6_000_000n,
+      },
+    ],
+    archiveMissingBlocks: [111],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'trace',
+      '--market-address',
+      ADDRESSES.mirrorMarket,
+      '--rpc-url',
+      rpc.url,
+      '--blocks',
+      '111',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'MIRROR_ONCHAIN_ARCHIVE_STATE_UNAVAILABLE');
+    assert.match(payload.error.message, /archive/i);
+  } finally {
+    await rpc.close();
+  }
+});
+
+test('mirror trace preserves generic rpc failures instead of relabeling them as archive errors', async () => {
+  const rpc = await startMirrorTraceRpcMock({
+    snapshots: [
+      {
+        blockNumber: 111,
+        timestamp: 1_700_000_000,
+        reserveYesRaw: 4_000_000n,
+        reserveNoRaw: 6_000_000n,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'trace',
+      '--market-address',
+      ADDRESSES.mirrorMarket,
+      '--rpc-url',
+      rpc.url,
+      '--blocks',
+      '999',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'MIRROR_ONCHAIN_RESERVES_UNAVAILABLE');
+    assert.notEqual(payload.error.code, 'MIRROR_ONCHAIN_ARCHIVE_STATE_UNAVAILABLE');
+  } finally {
+    await rpc.close();
+  }
 });
 
 test('polymarket check returns deterministic JSON payload shape', async () => {
@@ -6401,6 +6853,51 @@ test('polymarket check falls back to later rpc candidates when the primary endpo
     await deadRpc.close();
     await liveRpc.close();
   }
+});
+
+test('polymarket balance --help stays funding-only and omits CTF inventory selectors', () => {
+  const result = runCli(['--output', 'json', 'polymarket', 'balance', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'polymarket.balance.help');
+  assert.match(payload.data.usage, /polymarket balance/);
+  assert.doesNotMatch(payload.data.usage, /--source auto\|api\|on-chain/);
+  assert.doesNotMatch(payload.data.usage, /--condition-id <id>\|--market-id <id>\|--slug <slug>\|--token-id <id>/);
+});
+
+test('polymarket --help advertises positions alongside the funding-only balance surface', () => {
+  const result = runCli(['--output', 'json', 'polymarket', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'polymarket.help');
+  assert.match(payload.data.usage, /check\|approve\|preflight\|balance\|positions\|deposit\|withdraw\|trade/);
+});
+
+test('polymarket positions --help documents selector and source modes for CTF inventory reads', () => {
+  const result = runCli(['--output', 'json', 'polymarket', 'positions', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'polymarket.positions.help');
+  assert.match(payload.data.usage, /--wallet <address>\|--funder <address>/);
+  assert.match(payload.data.usage, /--condition-id <id>\|--market-id <id>\|--slug <slug>\|--token-id <id>/);
+  assert.match(payload.data.usage, /--source auto\|api\|on-chain/);
+});
+
+test('command descriptors expose polymarket positions while keeping polymarket balance funding-only', () => {
+  const descriptors = buildCommandDescriptors();
+
+  assert.ok(descriptors.polymarket);
+  assert.match(descriptors.polymarket.usage, /check\|approve\|preflight\|balance\|positions\|deposit\|withdraw\|trade/);
+  assert.match(descriptors['polymarket.balance'].summary, /funding balances/i);
+  assert.doesNotMatch(descriptors['polymarket.balance'].summary, /inventory|open order|YES\/NO/i);
+  assert.ok(descriptors['polymarket.positions']);
+  assert.match(descriptors['polymarket.positions'].summary, /CTF|inventory|open orders/i);
+  assert.match(descriptors['polymarket.positions'].usage, /polymarket positions \[--wallet <address>\|--funder <address>\]/);
+  assert.match(descriptors['polymarket.positions'].usage, /--source auto\|api\|on-chain/);
+  assert.match(descriptors['polymarket.positions'].usage, /--funder <address>/);
 });
 
 test('polymarket approve --dry-run returns deterministic JSON plan shape', async () => {
@@ -7809,6 +8306,175 @@ test('mirror pnl returns the dedicated cross-venue scenario surface', async () =
   }
 });
 
+test('mirror pnl --reconciled attaches ledger-grade summary rows when accounting inputs exist', async () => {
+  const tempDir = createTempDir('pandora-mirror-pnl-reconciled-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const auditFile = `${path.resolve(stateFile)}.audit.jsonl`;
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'feedfacecafebeef',
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+        polymarketMarketId: 'poly-cond-1',
+        currentHedgeUsdc: 5,
+        cumulativeLpFeesApproxUsdc: 2.5,
+        cumulativeHedgeCostApproxUsdc: 1.25,
+        accounting: {
+          provenance: {
+            status: 'complete',
+          },
+          components: {
+            lpFeeIncomeUsdc: 2.5,
+            hedgeCostUsdc: 1.25,
+            markToMarketInventoryUsd: 10.095,
+          },
+          rows: [
+            {
+              component: 'funding',
+              venue: 'bridge',
+              chain: 'polygon',
+              timestamp: '2026-03-09T09:59:00.000Z',
+              cashFlowUsdc: 15,
+              txHash: '0xfunding',
+              source: 'state.accounting.rows',
+            },
+            {
+              component: 'gas-cost',
+              venue: 'pandora',
+              chain: 'ethereum',
+              timestamp: '2026-03-09T10:00:30.000Z',
+              gasUsdc: 0.25,
+              realizedPnlUsdc: -0.25,
+              txHash: '0xgas123',
+              source: 'state.accounting.rows',
+            },
+          ],
+          traceSnapshots: [
+            {
+              blockNumber: 111,
+              blockTimestamp: '2026-03-09T09:55:00.000Z',
+              reserveYesUsdc: 4,
+              reserveNoUsdc: 6,
+              impermanentLossUsdc: 0.75,
+            },
+            {
+              blockNumber: 112,
+              blockTimestamp: '2026-03-09T10:05:00.000Z',
+              reserveYesUsdc: 5,
+              reserveNoUsdc: 5,
+              impermanentLossUsdc: 0.75,
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    auditFile,
+    [
+      JSON.stringify({
+        classification: 'sync-action',
+        venue: 'mirror',
+        source: 'mirror-sync.execution',
+        timestamp: '2026-03-09T10:00:00.000Z',
+        status: 'ok',
+        details: {
+          idempotencyKey: 'bucket-3',
+        },
+      }),
+      JSON.stringify({
+        classification: 'pandora-rebalance',
+        venue: 'pandora',
+        source: 'mirror-sync.execution.rebalance',
+        timestamp: '2026-03-09T10:00:01.000Z',
+        status: 'ok',
+        details: {
+          side: 'yes',
+          amountUsdc: 12.5,
+          transactionRef: '0xrebalance',
+        },
+      }),
+      JSON.stringify({
+        classification: 'polymarket-hedge',
+        venue: 'polymarket',
+        source: 'mirror-sync.execution.hedge',
+        timestamp: '2026-03-09T10:00:02.000Z',
+        status: 'ok',
+        details: {
+          tokenSide: 'no',
+          orderSide: 'buy',
+          amountUsdc: 7.25,
+          transactionRef: '0xhedge',
+        },
+      }),
+    ].join('\n'),
+  );
+
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    balances: {
+      'poly-yes-1': '12.5',
+      'poly-no-1': '3.25',
+    },
+    openOrders: [
+      {
+        id: 'order-1',
+        market: 'poly-cond-1',
+        asset_id: 'poly-yes-1',
+        original_size: '10',
+        size_matched: '4',
+        price: '0.74',
+      },
+      {
+        id: 'order-2',
+        market: 'poly-cond-1',
+        asset_id: 'poly-no-1',
+        remaining_size: '2',
+        price: '0.26',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'pnl',
+      '--state-file',
+      stateFile,
+      '--reconciled',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.pnl');
+    assert.equal(payload.data.summary.accountingMode, 'complete');
+    assert.equal(payload.data.summary.realizedPnlUsdc, 1);
+    assert.equal(payload.data.summary.unrealizedPnlUsdc, 9.345);
+    assert.equal(payload.data.summary.netPnlUsdc, 10.345);
+    assert.equal(payload.data.reconciled.status, 'complete');
+    assert.deepEqual(payload.data.reconciled.provenance.missing, []);
+    assert.equal(payload.data.reconciled.summary.transactionHashCount, 4);
+    assert.equal(payload.data.reconciled.ledger.rows.some((row) => row.component === 'funding' && row.txHash === '0xfunding'), true);
+    assert.equal(payload.data.reconciled.ledger.exportRows.some((row) => row.component === 'inventory-mark'), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
 test('mirror drift returns the dedicated drift surface', async () => {
   const tempDir = createTempDir('pandora-mirror-drift-live-');
   const stateFile = path.join(tempDir, 'mirror-state.json');
@@ -8567,6 +9233,154 @@ test('mirror audit --with-live classifies persisted execution state without doub
   }
 });
 
+test('mirror audit --reconciled emits normalized ledger rows with complete provenance when accounting inputs exist', async () => {
+  const tempDir = createTempDir('pandora-mirror-audit-reconciled-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const auditFile = `${path.resolve(stateFile)}.audit.jsonl`;
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'feedfacecafebeef',
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+        polymarketMarketId: 'poly-cond-1',
+        currentHedgeUsdc: 5,
+        cumulativeLpFeesApproxUsdc: 2.5,
+        cumulativeHedgeCostApproxUsdc: 1.25,
+        accounting: {
+          provenance: {
+            status: 'complete',
+          },
+          components: {
+            lpFeeIncomeUsdc: 2.5,
+            hedgeCostUsdc: 1.25,
+            markToMarketInventoryUsd: 10.095,
+          },
+          rows: [
+            {
+              component: 'funding',
+              venue: 'bridge',
+              chain: 'polygon',
+              timestamp: '2026-03-09T09:59:00.000Z',
+              cashFlowUsdc: 15,
+              txHash: '0xfunding',
+              source: 'state.accounting.rows',
+            },
+            {
+              component: 'gas-cost',
+              venue: 'pandora',
+              chain: 'ethereum',
+              timestamp: '2026-03-09T10:00:30.000Z',
+              gasUsdc: 0.25,
+              realizedPnlUsdc: -0.25,
+              txHash: '0xgas123',
+              source: 'state.accounting.rows',
+            },
+          ],
+          traceSnapshots: [
+            {
+              blockNumber: 111,
+              blockTimestamp: '2026-03-09T09:55:00.000Z',
+              reserveYesUsdc: 4,
+              reserveNoUsdc: 6,
+              impermanentLossUsdc: 0.75,
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    auditFile,
+    [
+      JSON.stringify({
+        classification: 'sync-action',
+        venue: 'mirror',
+        source: 'mirror-sync.execution',
+        timestamp: '2026-03-09T10:00:00.000Z',
+        status: 'ok',
+        details: {
+          idempotencyKey: 'bucket-3',
+        },
+      }),
+      JSON.stringify({
+        classification: 'pandora-rebalance',
+        venue: 'pandora',
+        source: 'mirror-sync.execution.rebalance',
+        timestamp: '2026-03-09T10:00:01.000Z',
+        status: 'ok',
+        details: {
+          side: 'yes',
+          amountUsdc: 12.5,
+          transactionRef: '0xrebalance',
+        },
+      }),
+      JSON.stringify({
+        classification: 'polymarket-hedge',
+        venue: 'polymarket',
+        source: 'mirror-sync.execution.hedge',
+        timestamp: '2026-03-09T10:00:02.000Z',
+        status: 'ok',
+        details: {
+          tokenSide: 'no',
+          orderSide: 'buy',
+          amountUsdc: 7.25,
+          transactionRef: '0xhedge',
+        },
+      }),
+    ].join('\n'),
+  );
+
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    balances: {
+      'poly-yes-1': '12.5',
+      'poly-no-1': '3.25',
+    },
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'audit',
+      '--state-file',
+      stateFile,
+      '--reconciled',
+      '--with-live',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.audit');
+    assert.equal(payload.data.summary.accountingMode, 'complete');
+    assert.equal(payload.data.summary.reconciledRowCount, 8);
+    assert.equal(payload.data.summary.realizedPnlUsdc, 1);
+    assert.equal(payload.data.summary.unrealizedPnlUsdc, 9.345);
+    assert.equal(payload.data.summary.netPnlUsdc, 10.345);
+    assert.equal(payload.data.reconciled.status, 'complete');
+    assert.deepEqual(payload.data.reconciled.provenance.missing, []);
+    assert.equal(payload.data.reconciled.ledger.rows.some((row) => row.component === 'pandora-rebalance' && row.txHash === '0xrebalance'), true);
+    assert.equal(payload.data.reconciled.ledger.rows.some((row) => row.component === 'polymarket-hedge' && row.txHash === '0xhedge'), true);
+    assert.equal(payload.data.reconciled.ledger.rows.some((row) => row.component === 'impermanent-loss'), true);
+    assert.equal(payload.data.reconciled.ledger.exportRows.some((row) => row.component === 'funding'), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
 test('mirror audit prefers append-only audit log entries over lastExecution reconstruction', () => {
   const tempDir = createTempDir('pandora-mirror-audit-log-');
   const stateFile = path.join(tempDir, 'mirror-state.json');
@@ -9273,6 +10087,103 @@ test('polymarket fork mode validates FORK_RPC_URL from env', () => {
   const payload = parseJsonOutput(result);
   assert.equal(payload.ok, false);
   assert.equal(payload.error.code, 'INVALID_FLAG_VALUE');
+});
+
+test('polymarket positions help advertises source selection and data api controls', () => {
+  const result = runCli(['--output', 'json', 'polymarket', 'positions', '--help']);
+
+  assert.equal(result.status, 0, result.output);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'polymarket.positions.help');
+  assert.match(payload.data.usage, /--source auto\|api\|on-chain/);
+  assert.match(payload.data.usage, /--polymarket-data-api-url <url>/);
+});
+
+test('polymarket positions returns normalized inventory from a mock payload', async () => {
+  const conditionId = `0x${'d'.repeat(64)}`;
+  const server = await startJsonHttpServer(async () => ({
+    body: {
+      markets: [
+        {
+          condition_id: conditionId,
+          market_slug: 'btc-above-100k',
+          question: 'Will BTC close above $100k?',
+          outcomes: ['Yes', 'No'],
+          outcomePrices: ['0.62', '0.38'],
+          clobTokenIds: ['101', '102'],
+          active: true,
+        },
+      ],
+      positions: [
+        {
+          asset: '101',
+          conditionId,
+          size: 1.5,
+          curPrice: 0.62,
+          outcome: 'YES',
+          question: 'Will BTC close above $100k?',
+        },
+        {
+          asset: '102',
+          conditionId,
+          size: 0.25,
+          curPrice: 0.38,
+          outcome: 'NO',
+          question: 'Will BTC close above $100k?',
+        },
+      ],
+      balances: {
+        101: 1.5,
+        102: 0.25,
+      },
+      openOrders: [
+        {
+          id: 'ord-1',
+          market: conditionId,
+          asset_id: '101',
+          side: 'buy',
+          price: 0.61,
+          size: 1.2,
+        },
+      ],
+    },
+  }));
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'polymarket',
+      'positions',
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--condition-id',
+      conditionId,
+      '--source',
+      'api',
+      '--polymarket-mock-url',
+      server.url,
+      '--timeout-ms',
+      '8000',
+    ]);
+
+    assert.equal(result.status, 0, result.output);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'polymarket.positions');
+    assert.equal(payload.data.market.marketId, conditionId);
+    assert.equal(payload.data.market.yesTokenId, '101');
+    assert.equal(payload.data.summary.yesBalance, 1.5);
+    assert.equal(payload.data.summary.noBalance, 0.25);
+    assert.equal(payload.data.summary.openOrdersCount, 1);
+    assert.equal(payload.data.positions.length, 2);
+    assert.equal(payload.data.positions[0].fieldSources.balance, 'api');
+    assert.equal(payload.data.openOrders[0].tokenId, '101');
+    assert.equal(payload.data.diagnostics.includes('Loaded Polymarket position inventory from mock payload.'), true);
+  } finally {
+    await server.close();
+  }
 });
 
 test('model calibrate returns jump-diffusion artifact and persists with --save-model', () => {

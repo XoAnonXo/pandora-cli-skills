@@ -6,7 +6,7 @@ const ODDS_HELP_SCHEMA_REF = '#/definitions/OddsHelpPayload';
 const MIRROR_STATUS_HELP_SCHEMA_REF = '#/definitions/MirrorStatusHelpPayload';
 const SCHEMA_HELP_SCHEMA_REF = '#/definitions/SchemaHelpPayload';
 const CAPABILITIES_HELP_SCHEMA_REF = '#/definitions/CapabilitiesHelpPayload';
-const COMMAND_DESCRIPTOR_VERSION = '1.4.1';
+const COMMAND_DESCRIPTOR_VERSION = '1.4.3';
 const { POLL_CATEGORY_NAME_LIST } = require('./shared/poll_categories.cjs');
 const { MIRROR_SYNC_GATE_CODES } = require('./mirror_sync/gates.cjs');
 
@@ -662,6 +662,23 @@ const commonFlags = {
   provider: enumSchema(['primary', 'backup', 'auto'], 'Sports provider selection.'),
 };
 
+const MIRROR_REBALANCE_ROUTE_VALUES = ['public', 'auto', 'flashbots-private', 'flashbots-bundle'];
+const MIRROR_REBALANCE_ROUTE_FALLBACK_VALUES = ['fail', 'public'];
+
+function buildMirrorRebalanceRouteSchema() {
+  return enumSchema(
+    MIRROR_REBALANCE_ROUTE_VALUES,
+    'Pandora-leg execution route. public preserves ordinary mempool submission; auto chooses a private route when supported; flashbots-private requests single-tx private relay submission; flashbots-bundle requests Flashbots bundle semantics for approval+trade paths. This affects only the Ethereum Pandora leg.',
+  );
+}
+
+function buildMirrorRebalanceRouteFallbackSchema() {
+  return enumSchema(
+    MIRROR_REBALANCE_ROUTE_FALLBACK_VALUES,
+    'Fallback policy when the requested Pandora-leg private route is unsupported or rejected. fail stops the run; public degrades to ordinary public submission. This does not change Polygon hedge semantics.',
+  );
+}
+
 const mirrorPandoraSelectorAnyOf = [['pandora-market-address'], ['market-address']];
 const mirrorPolymarketSelectorAnyOf = [['polymarket-market-id'], ['polymarket-slug']];
 const mirrorPandoraPolymarketSelectorAnyOf = buildRequiredSetCombinations(
@@ -684,6 +701,7 @@ const mirrorHealthLookupAnyOf = [['state-file'], ['strategy-hash'], ['pid-file']
 const mirrorLogsLookupAnyOf = [['state-file'], ['strategy-hash'], ...mirrorPandoraSelectorAnyOf];
 const mirrorSyncStopSelectorAnyOf = [['pid-file'], ['strategy-hash'], ...mirrorPandoraSelectorAnyOf, ['all']];
 const mirrorSyncStatusSelectorAnyOf = [['pid-file'], ['strategy-hash']];
+const polymarketPositionsSelectorChoices = [[], ['condition-id'], ['slug'], ['token-id']];
 const mirrorVerifySelectorOneOf = buildExclusivePresenceBranches(
   mirrorPandoraSelectorAnyOf,
   mirrorPolymarketSelectorAnyOf,
@@ -710,6 +728,8 @@ const mirrorResolvedLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLoo
 const mirrorLogsLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupAnyOf, mirrorPandoraSelectorAnyOf);
 const mirrorSyncStopSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStopSelectorAnyOf);
 const mirrorSyncStatusSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStatusSelectorAnyOf);
+const polymarketPositionsSelectorOneOf = buildExclusivePresenceBranches(polymarketPositionsSelectorChoices);
+const mirrorTraceSelectorOneOf = buildExclusivePresenceBranches([['blocks'], ['from-block', 'to-block']]);
 
 const commandContracts = [
   commandContract({
@@ -2667,7 +2687,7 @@ const commandContracts = [
     name: 'mirror',
     summary: 'Mirror command family help and routing entrypoint.',
     usage:
-      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|close ...',
+      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|trace|logs|close ...',
     emits: ['mirror.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
   }),
@@ -3062,9 +3082,9 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.go',
-    summary: 'Run mirror deploy, verify, and optional sync workflow; any sync leg remains separate Pandora rebalance and Polymarket hedge legs, not atomic.',
+    summary: 'Run mirror deploy, verify, and optional sync workflow. Rebalance-route flags apply only to the Ethereum Pandora leg; any sync leg still remains separate Pandora rebalance and Polymarket hedge legs, not atomic.',
     usage:
-      'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]',
+      'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]',
     emits: ['mirror.go', 'mirror.go.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
@@ -3076,11 +3096,12 @@ const commandContracts = [
         'Mirror go inherits the exact market payload from its deploy stage; use the returned validation ticket from paper/dry-run output.',
         'When mirror go will execute a fresh deploy, provide independent public --sources and a matching validation ticket.',
         'Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live.',
+        'Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic.',
       ],
     },
     mcp: {
       command: ['mirror', 'go'],
-      description: 'Plan/deploy/verify/go orchestration. Auto-sync still executes separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.',
+      description: 'Plan/deploy/verify/go orchestration. Rebalance-route flags affect only the Ethereum Pandora leg. Auto-sync still executes separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3105,6 +3126,11 @@ const commandContracts = [
           'no-hedge': booleanSchema('Disable source hedge leg.'),
           'rebalance-mode': enumSchema(['atomic', 'incremental'], 'Rebalance sizing mode. atomic targets the source price in one Pandora leg when reserves are available; incremental sizes by observed drift.'),
           'price-source': enumSchema(['on-chain', 'indexer'], 'Reserve source for Pandora pricing. on-chain refreshes outcome-token balances before sizing; indexer uses verify payload reserves.'),
+          'rebalance-route': buildMirrorRebalanceRouteSchema(),
+          'rebalance-route-fallback': buildMirrorRebalanceRouteFallbackSchema(),
+          'flashbots-relay-url': stringSchema('Optional Flashbots/private relay URL for the Ethereum Pandora rebalance leg.'),
+          'flashbots-auth-key': stringSchema('Optional Flashbots auth key or signer reference for the Ethereum Pandora rebalance leg.'),
+          'flashbots-target-block-offset': integerSchema('Optional target block offset for Flashbots/private bundle submission.', { minimum: 1 }),
           'max-rebalance-usdc': numberSchema('Maximum rebalance notional in USDC.', { minimum: 0 }),
           'max-hedge-usdc': numberSchema('Maximum hedge notional in USDC.', { minimum: 0 }),
           'max-open-exposure-usdc': numberSchema('Maximum open exposure in USDC.', { minimum: 0 }),
@@ -3160,22 +3186,22 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.sync',
-    summary: 'Mirror sync runtime command family for separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.',
+    summary: 'Mirror sync runtime command family for separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
     usage: 'pandora [--output table|json] mirror sync once|run|start|stop|status ...',
     emits: ['mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
   }),
   commandContract({
     name: 'mirror.sync.once',
-    summary: 'Execute one mirror sync tick with separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.',
+    summary: 'Execute one mirror sync tick with separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
     usage:
-      'pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
+      'pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.once', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     mcpExposed: true,
     mcp: {
       command: ['mirror', 'sync', 'once'],
-      description: 'Execute one mirror sync tick. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
+      description: 'Execute one mirror sync tick. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3195,6 +3221,11 @@ const commandContracts = [
           'no-hedge': booleanSchema('Disable source hedge leg.'),
           'rebalance-mode': enumSchema(['atomic', 'incremental'], 'Rebalance sizing mode. atomic targets the source price in one Pandora leg when reserves are available; incremental sizes by observed drift.'),
           'price-source': enumSchema(['on-chain', 'indexer'], 'Reserve source for Pandora pricing. on-chain refreshes outcome-token balances before sizing; indexer uses verify payload reserves.'),
+          'rebalance-route': buildMirrorRebalanceRouteSchema(),
+          'rebalance-route-fallback': buildMirrorRebalanceRouteFallbackSchema(),
+          'flashbots-relay-url': stringSchema('Optional Flashbots/private relay URL for the Ethereum Pandora rebalance leg.'),
+          'flashbots-auth-key': stringSchema('Optional Flashbots auth key or signer reference for the Ethereum Pandora rebalance leg.'),
+          'flashbots-target-block-offset': integerSchema('Optional target block offset for Flashbots/private bundle submission.', { minimum: 1 }),
           'max-rebalance-usdc': numberSchema('Maximum rebalance notional in USDC.', { minimum: 0 }),
           'max-hedge-usdc': numberSchema('Maximum hedge notional in USDC.', { minimum: 0 }),
           'max-open-exposure-usdc': numberSchema('Maximum open exposure in USDC.', { minimum: 0 }),
@@ -3236,15 +3267,15 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.sync.run',
-    summary: 'Run continuous mirror sync loop with separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.',
+    summary: 'Run continuous mirror sync loop with separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
     usage:
-      'pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
+      'pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.run', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     mcpExposed: true,
     mcp: {
       command: ['mirror', 'sync', 'run'],
-      description: 'Continuous mirror sync loop (blocked in MCP v1). Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
+      description: 'Continuous mirror sync loop (blocked in MCP v1). Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3264,6 +3295,11 @@ const commandContracts = [
           'no-hedge': booleanSchema('Disable source hedge leg.'),
           'rebalance-mode': enumSchema(['atomic', 'incremental'], 'Rebalance sizing mode. atomic targets the source price in one Pandora leg when reserves are available; incremental sizes by observed drift.'),
           'price-source': enumSchema(['on-chain', 'indexer'], 'Reserve source for Pandora pricing. on-chain refreshes outcome-token balances before sizing; indexer uses verify payload reserves.'),
+          'rebalance-route': buildMirrorRebalanceRouteSchema(),
+          'rebalance-route-fallback': buildMirrorRebalanceRouteFallbackSchema(),
+          'flashbots-relay-url': stringSchema('Optional Flashbots/private relay URL for the Ethereum Pandora rebalance leg.'),
+          'flashbots-auth-key': stringSchema('Optional Flashbots auth key or signer reference for the Ethereum Pandora rebalance leg.'),
+          'flashbots-target-block-offset': integerSchema('Optional target block offset for Flashbots/private bundle submission.', { minimum: 1 }),
           'max-rebalance-usdc': numberSchema('Maximum rebalance notional in USDC.', { minimum: 0 }),
           'max-hedge-usdc': numberSchema('Maximum hedge notional in USDC.', { minimum: 0 }),
           'max-open-exposure-usdc': numberSchema('Maximum open exposure in USDC.', { minimum: 0 }),
@@ -3307,17 +3343,17 @@ const commandContracts = [
       executeFlags: ['--execute-live', '--execute'],
     },
   }),
-    commandContract({
+  commandContract({
       name: 'mirror.sync.start',
-    summary: 'Start detached mirror sync daemon for separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.',
+    summary: 'Start detached mirror sync daemon for separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
     usage:
-      'pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
+      'pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.start', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     mcpExposed: true,
       mcp: {
       command: ['mirror', 'sync', 'start'],
-      description: 'Start detached mirror sync daemon (blocked in MCP v1). Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
+      description: 'Start detached mirror sync daemon (blocked in MCP v1). Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3337,6 +3373,11 @@ const commandContracts = [
           'no-hedge': booleanSchema('Disable source hedge leg.'),
           'rebalance-mode': enumSchema(['atomic', 'incremental'], 'Rebalance sizing mode. atomic targets the source price in one Pandora leg when reserves are available; incremental sizes by observed drift.'),
           'price-source': enumSchema(['on-chain', 'indexer'], 'Reserve source for Pandora pricing. on-chain refreshes outcome-token balances before sizing; indexer uses verify payload reserves.'),
+          'rebalance-route': buildMirrorRebalanceRouteSchema(),
+          'rebalance-route-fallback': buildMirrorRebalanceRouteFallbackSchema(),
+          'flashbots-relay-url': stringSchema('Optional Flashbots/private relay URL for the Ethereum Pandora rebalance leg.'),
+          'flashbots-auth-key': stringSchema('Optional Flashbots auth key or signer reference for the Ethereum Pandora rebalance leg.'),
+          'flashbots-target-block-offset': integerSchema('Optional target block offset for Flashbots/private bundle submission.', { minimum: 1 }),
           'max-rebalance-usdc': numberSchema('Maximum rebalance notional in USDC.', { minimum: 0 }),
           'max-hedge-usdc': numberSchema('Maximum hedge notional in USDC.', { minimum: 0 }),
           'max-open-exposure-usdc': numberSchema('Maximum open exposure in USDC.', { minimum: 0 }),
@@ -3587,15 +3628,15 @@ const commandContracts = [
     }),
     commandContract({
       name: 'mirror.pnl',
-      summary: 'Read the dedicated cross-venue scenario P&L surface for a mirror pair via persisted state or selector-first lookup.',
+      summary: 'Read the canonical mirror P&L surface for a pair. It remains the dedicated cross-venue scenario P&L surface; `--reconciled` adds normalized realized/unrealized accounting, provenance, and export-ready ledger rows beside the legacy approximate fields.',
       usage:
-        'pandora [--output table|json] mirror pnl --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+        'pandora [--output table|json] mirror pnl --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--reconciled] [--include-legacy-approx] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
       emits: ['mirror.pnl', 'mirror.pnl.help'],
       dataSchema: '#/definitions/MirrorPnlPayload',
       mcpExposed: true,
       mcp: {
         command: ['mirror', 'pnl'],
-        description: 'Read cross-venue scenario P&L approximations for a mirror pair using persisted state or direct selectors.',
+        description: 'Read the mirror P&L/accounting summary surface for a pair. `--reconciled` adds normalized realized/unrealized components, provenance, and export-ready ledger rows.',
         inputSchema: buildInputSchema({
           flagProperties: {
             'state-file': commonFlags.stateFile,
@@ -3604,6 +3645,8 @@ const commandContracts = [
             'market-address': commonFlags.marketAddress,
             'polymarket-market-id': stringSchema('Polymarket market id.'),
             'polymarket-slug': stringSchema('Polymarket slug.'),
+            reconciled: booleanSchema('Attach the normalized reconciled accounting payload beside the approximate scenario surface.'),
+            'include-legacy-approx': booleanSchema('Keep approximate scenario fields visible while requesting reconciled accounting.'),
             'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
             'manifest-file': stringSchema('Mirror manifest path.'),
             'drift-trigger-bps': integerSchema('Drift trigger in basis points used when projecting live sync posture.', { minimum: 1 }),
@@ -3627,19 +3670,20 @@ const commandContracts = [
     }),
     commandContract({
       name: 'mirror.audit',
-      summary: 'Read the mirror audit ledger with optional live context, preferring the append-only audit log when available.',
+      summary: 'Read the canonical mirror audit ledger surface. `--reconciled` adds a normalized cross-venue ledger with provenance and export-ready rows beside the append-only operational audit log.',
       usage:
-        'pandora [--output table|json] mirror audit --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+        'pandora [--output table|json] mirror audit --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--reconciled] [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
       emits: ['mirror.audit', 'mirror.audit.help'],
       dataSchema: '#/definitions/MirrorAuditPayload',
       mcpExposed: true,
       mcp: {
         command: ['mirror', 'audit'],
-        description: 'Read the mirror audit ledger (append-only audit log when available); --with-live attaches current cross-venue context.',
+        description: 'Read the mirror audit/ledger surface. `--reconciled` adds normalized venue, funding, gas, and reserve-trace provenance beside the operational audit log.',
         inputSchema: buildInputSchema({
           flagProperties: {
             'state-file': commonFlags.stateFile,
             'strategy-hash': stringSchema('Mirror strategy hash.'),
+            reconciled: booleanSchema('Attach the normalized reconciled ledger beside the append-only operational audit payload.'),
             'with-live': booleanSchema('Attach current live cross-venue context to the persisted audit ledger.'),
             'pandora-market-address': commonFlags.marketAddress,
             'market-address': commonFlags.marketAddress,
@@ -3695,6 +3739,38 @@ const commandContracts = [
       agentPlatform: {
         externalDependencies: ['filesystem'],
         expectedLatencyMs: 1200,
+      },
+    }),
+    commandContract({
+      name: 'mirror.trace',
+      summary: 'Read block-aware historical Pandora reserve snapshots for one market via explicit block lists or sampled block ranges.',
+      usage:
+        'pandora [--output table|json] mirror trace --pandora-market-address <address>|--market-address <address> --rpc-url <url> [--blocks <csv>|--from-block <n> --to-block <n> [--step <n>]] [--limit <n>]',
+      emits: ['mirror.trace', 'mirror.trace.help'],
+      dataSchema: '#/definitions/MirrorTracePayload',
+      mcpExposed: true,
+      mcp: {
+        command: ['mirror', 'trace'],
+        description: 'Read historical Pandora reserve snapshots at explicit blocks or sampled block ranges. Deep history requires an archive-capable RPC endpoint.',
+        inputSchema: buildInputSchema({
+          flagProperties: {
+            'pandora-market-address': commonFlags.marketAddress,
+            'market-address': commonFlags.marketAddress,
+            'rpc-url': commonFlags.rpcUrl,
+            blocks: stringSchema('Comma-delimited explicit block numbers to sample.'),
+            'from-block': integerSchema('Inclusive start block number.', { minimum: 0 }),
+            'to-block': integerSchema('Inclusive end block number.', { minimum: 0 }),
+            step: integerSchema('Sampling step for block ranges.', { minimum: 1 }),
+            limit: commonFlags.limit,
+          },
+          requiredFlags: ['rpc-url'],
+          anyOf: [['pandora-market-address'], ['market-address']],
+          oneOf: mirrorTraceSelectorOneOf,
+        }),
+        preferred: true,
+      },
+      agentPlatform: {
+        expectedLatencyMs: 1500,
       },
     }),
     commandContract({
@@ -3847,7 +3923,7 @@ const commandContracts = [
   commandContract({
     name: 'polymarket',
     summary: 'Polymarket command family help and routing entrypoint.',
-    usage: 'pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ...',
+    usage: 'pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...',
     emits: ['polymarket.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
   }),
@@ -3955,6 +4031,43 @@ const commandContracts = [
         },
       }),
       preferred: true,
+    },
+  }),
+  commandContract({
+    name: 'polymarket.positions',
+    summary: 'Read Polymarket YES/NO position inventory and open-order exposure. This is distinct from `polymarket balance`, which remains funding and collateral only.',
+    usage:
+      'pandora [--output table|json] polymarket positions [--wallet <address>|--funder <address>] [--condition-id <id>|--market-id <id>|--slug <slug>|--token-id <id>] [--source auto|api|on-chain] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-data-api-url <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>]',
+    emits: ['polymarket.positions', 'polymarket.positions.help', 'polymarket.help'],
+    dataSchema: '#/definitions/PolymarketPositionsPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['polymarket', 'positions'],
+      description: 'Read Polymarket YES/NO inventory, conditional token balances, and open-order exposure. Use this for position inventory; use `polymarket balance` for funding and collateral balances.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          wallet: stringSchema('Wallet address to inspect.'),
+          'condition-id': stringSchema('Polymarket condition id / market id selector.'),
+          slug: stringSchema('Polymarket slug selector.'),
+          'token-id': stringSchema('Conditional token id selector.'),
+          source: enumSchema(['auto', 'api', 'on-chain'], 'Inventory source preference.'),
+          'polymarket-host': stringSchema('Polymarket host override.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock URL.'),
+          'timeout-ms': commonFlags.timeoutMs,
+          fork: booleanSchema('Run in fork mode.'),
+          'fork-rpc-url': stringSchema('Fork RPC URL.'),
+          'fork-chain-id': integerSchema('Fork chain id.', { minimum: 1 }),
+          'rpc-url': commonFlags.rpcUrl,
+          'private-key': commonFlags.privateKey,
+          funder: stringSchema('Polymarket proxy wallet.'),
+        },
+        oneOf: polymarketPositionsSelectorOneOf,
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      externalDependencies: ['polymarket-api', 'rpc'],
+      expectedLatencyMs: 1200,
     },
   }),
   commandContract({

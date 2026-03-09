@@ -35,7 +35,9 @@ const {
   browsePolymarketMarkets,
   placeHedgeOrder,
   readTradingCredsFromEnv,
+  fetchPolymarketPositionInventory,
   normalizePolymarketPositionSummary,
+  fetchPolymarketPositionSummary,
 } = require('../../cli/lib/polymarket_trade_adapter.cjs');
 const {
   fetchPolymarketMarkets,
@@ -56,8 +58,12 @@ const {
   assessMirrorSourceFreshness,
   buildMirrorSourceSubscriptionRequest,
 } = require('../../cli/lib/mirror_sync/source_freshness.cjs');
-const { readPandoraOnchainReserveContext } = require('../../cli/lib/mirror_sync/reserve_source.cjs');
+const {
+  readPandoraOnchainReserveContext,
+  readPandoraOnchainReserveTrace,
+} = require('../../cli/lib/mirror_sync/reserve_source.cjs');
 const { createRunMirrorCommand } = require('../../cli/lib/mirror_command_service.cjs');
+const { createRunPolymarketCommand } = require('../../cli/lib/polymarket_command_service.cjs');
 const handleMirrorSync = require('../../cli/lib/mirror_handlers/sync.cjs');
 const handleMirrorGo = require('../../cli/lib/mirror_handlers/go.cjs');
 const { resolveForkRuntime } = require('../../cli/lib/fork_runtime_service.cjs');
@@ -67,10 +73,16 @@ const { createParseWatchFlags } = require('../../cli/lib/parsers/watch_flags.cjs
 const { createParseAutopilotFlags } = require('../../cli/lib/parsers/autopilot_flags.cjs');
 const { createParseMirrorDeployFlags } = require('../../cli/lib/parsers/mirror_deploy_flags.cjs');
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
-const { createParseMirrorBrowseFlags } = require('../../cli/lib/parsers/mirror_remaining_flags.cjs');
+const {
+  createParseMirrorBrowseFlags,
+  createParseMirrorTraceFlags,
+} = require('../../cli/lib/parsers/mirror_remaining_flags.cjs');
 const { createParseLifecycleFlags } = require('../../cli/lib/parsers/lifecycle_flags.cjs');
 const { createParseOddsFlags } = require('../../cli/lib/parsers/odds_flags.cjs');
-const { createParsePolymarketSharedFlags } = require('../../cli/lib/parsers/polymarket_flags.cjs');
+const {
+  createParsePolymarketSharedFlags,
+  createParsePolymarketPositionsFlags,
+} = require('../../cli/lib/parsers/polymarket_flags.cjs');
 const {
   createParseMirrorSyncFlags,
   createParseMirrorSyncDaemonSelectorFlags,
@@ -987,6 +999,61 @@ test('normalizePolymarketPositionSummary degrades gracefully for missing payload
   assert.equal(summary.estimatedValueUsd, null);
   assert.equal(summary.positionDeltaApprox, null);
   assert.equal(summary.diagnostics.some((line) => line.includes('Open orders unavailable')), true);
+});
+
+test('fetchPolymarketPositionSummary composes authenticated CTF balances and scoped open orders', async () => {
+  const calls = [];
+  const summary = await fetchPolymarketPositionSummary({
+    market: {
+      marketId: 'poly-cond-1',
+      yesTokenId: 'poly-yes-1',
+      noTokenId: 'poly-no-1',
+      yesPct: 74,
+      noPct: 26,
+    },
+    privateKey: `0x${'1'.repeat(64)}`,
+    client: {
+      getBalanceAllowance: async ({ token_id }) => {
+        calls.push(['getBalanceAllowance', token_id]);
+        if (token_id === 'poly-yes-1') return { balance: '7.5' };
+        if (token_id === 'poly-no-1') return { balance: '2' };
+        throw new Error(`unexpected token ${token_id}`);
+      },
+      getOpenOrders: async (query) => {
+        calls.push(['getOpenOrders', query]);
+        return [
+          {
+            id: 'order-1',
+            market: 'poly-cond-1',
+            asset_id: 'poly-yes-1',
+            remaining_size: '3',
+            price: '0.74',
+          },
+          {
+            id: 'order-2',
+            market: 'other-market',
+            asset_id: 'other-token',
+            remaining_size: '8',
+            price: '0.11',
+          },
+        ];
+      },
+    },
+  });
+
+  assert.equal(summary.yesBalance, 7.5);
+  assert.equal(summary.noBalance, 2);
+  assert.equal(summary.openOrdersCount, 1);
+  assert.equal(summary.openOrdersNotionalUsd, 2.22);
+  assert.equal(summary.estimatedValueUsd, 6.07);
+  assert.equal(summary.positionDeltaApprox, 5.5);
+  assert.deepEqual(summary.prices, { yes: 0.74, no: 0.26 });
+  assert.deepEqual(summary.diagnostics, []);
+  assert.deepEqual(calls, [
+    ['getBalanceAllowance', 'poly-yes-1'],
+    ['getBalanceAllowance', 'poly-no-1'],
+    ['getOpenOrders', { market: 'poly-cond-1' }],
+  ]);
 });
 
 test('resolvePolymarketMarket scans deep pagination for selector matches', async () => {
@@ -4032,6 +4099,82 @@ test('createParseMirrorBrowseFlags rejects contradictory sports filters', () => 
   );
 });
 
+test('createParseMirrorTraceFlags accepts explicit blocks and range sampling selectors', () => {
+  const parseMirrorTraceFlags = createParseMirrorTraceFlags(buildParserDeps());
+
+  const explicitBlocks = parseMirrorTraceFlags([
+    '--market-address',
+    TEST_MARKET,
+    '--rpc-url',
+    'https://primary-rpc.example, https://backup-rpc.example,https://primary-rpc.example',
+    '--blocks',
+    '0,19000002, 19000005',
+    '--limit',
+    '2',
+  ]);
+  assert.equal(explicitBlocks.pandoraMarketAddress, TEST_MARKET);
+  assert.equal(explicitBlocks.rpcUrl, 'https://primary-rpc.example,https://backup-rpc.example');
+  assert.deepEqual(explicitBlocks.blocks, [0, 19000002, 19000005]);
+  assert.equal(explicitBlocks.fromBlock, null);
+  assert.equal(explicitBlocks.toBlock, null);
+  assert.equal(explicitBlocks.step, 1);
+  assert.equal(explicitBlocks.limit, 2);
+
+  const range = parseMirrorTraceFlags([
+    '--market-address',
+    TEST_MARKET,
+    '--rpc-url',
+    'https://trace-rpc.example',
+    '--from-block',
+    '19000010',
+    '--to-block',
+    '19000000',
+    '--step',
+    '5',
+  ]);
+  assert.equal(range.rpcUrl, 'https://trace-rpc.example');
+  assert.equal(range.blocks, null);
+  assert.equal(range.fromBlock, 19000010);
+  assert.equal(range.toBlock, 19000000);
+  assert.equal(range.step, 5);
+  assert.equal(range.limit, null);
+});
+
+test('createParseMirrorTraceFlags rejects missing or contradictory historical selectors', () => {
+  const parseMirrorTraceFlags = createParseMirrorTraceFlags(buildParserDeps());
+
+  assert.throws(
+    () => parseMirrorTraceFlags(['--market-address', TEST_MARKET, '--rpc-url', 'https://trace-rpc.example']),
+    (error) => {
+      assert.equal(error.code, 'MISSING_REQUIRED_FLAG');
+      assert.match(error.message, /--blocks/i);
+      assert.match(error.message, /--from-block/i);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      parseMirrorTraceFlags([
+        '--market-address',
+        TEST_MARKET,
+        '--rpc-url',
+        'https://trace-rpc.example',
+        '--blocks',
+        '19000000,19000001',
+        '--from-block',
+        '19000000',
+        '--to-block',
+        '19000001',
+      ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_ARGS');
+      assert.match(error.message, /cannot be combined/i);
+      return true;
+    },
+  );
+});
+
 test('resolveForkRuntime supports attach-only fork mode with strict env/flag precedence', () => {
   const live = resolveForkRuntime(
     { chainId: 146 },
@@ -4431,6 +4574,237 @@ test('readPandoraOnchainReserveContext marks fallback only when a secondary rpc 
   assert.equal(context.rpcUrl, secondaryRpcUrl);
   assert.equal(context.fallbackUsed, true);
   assert.equal(context.source, 'onchain:outcome-token-balances:fallback');
+});
+
+test('readPandoraOnchainReserveContext rejects unsupported named block tags instead of reading latest state', async () => {
+  await assert.rejects(
+    () =>
+      readPandoraOnchainReserveContext(
+        {
+          rpcUrl: 'https://primary-rpc.example',
+          marketAddress: TEST_MARKET,
+          blockTag: 'earliest',
+        },
+        {
+          publicClient: {
+            readContract: async () => {
+              throw new Error('should not reach RPC');
+            },
+          },
+        },
+      ),
+    (error) => {
+      assert.equal(error.code, 'MIRROR_TRACE_INVALID_BLOCK_TAG');
+      assert.match(String(error.message), /latest|safe|finalized|pending/i);
+      return true;
+    },
+  );
+});
+
+test('readPandoraOnchainReserveTrace returns structured historical snapshots with fallback rpc provenance', async () => {
+  const primaryRpcUrl = 'https://primary-rpc.example';
+  const secondaryRpcUrl = 'https://secondary-rpc.example';
+  const blockNumbers = [19000000, 19000005];
+  const observedBalanceReads = [];
+
+  const payload = await readPandoraOnchainReserveTrace(
+    {
+      rpcUrl: `${primaryRpcUrl},${secondaryRpcUrl}`,
+      marketAddress: TEST_MARKET,
+      blocks: blockNumbers,
+    },
+    {
+      viemRuntime: {
+        createPublicClient({ transport }) {
+          const rpcUrl = transport && transport.url ? String(transport.url) : '';
+          return {
+            async getBlock({ blockNumber }) {
+              return {
+                number: blockNumber,
+                hash: `0x${Number(blockNumber).toString(16).padStart(64, '0')}`,
+                timestamp: BigInt(1_710_000_000 + Number(blockNumber)),
+              };
+            },
+            async readContract({ functionName, address, blockNumber }) {
+              if (rpcUrl === primaryRpcUrl) {
+                throw Object.assign(new Error(`primary unavailable for ${blockNumber}`), { code: 'RPC_DOWN' });
+              }
+              if (functionName === 'yesToken') return '0x1111111111111111111111111111111111111111';
+              if (functionName === 'noToken') return '0x2222222222222222222222222222222222222222';
+              if (functionName === 'decimals') return 6;
+              if (functionName === 'tradingFee') return 3000;
+              if (functionName === 'balanceOf') {
+                observedBalanceReads.push([String(address).toLowerCase(), Number(blockNumber)]);
+                return String(address).toLowerCase() === '0x1111111111111111111111111111111111111111'
+                  ? BigInt((Number(blockNumber) - 18_999_990) * 1_000_000)
+                  : BigInt((19_000_010 - Number(blockNumber)) * 1_000_000);
+              }
+              throw new Error(`unexpected function ${functionName}`);
+            },
+          };
+        },
+        http: (url) => ({ url }),
+        formatUnits: (value, decimals) => Number(value) / 10 ** decimals,
+      },
+    },
+  );
+
+  assert.equal(payload.summary.snapshotCount, 2);
+  assert.equal(payload.selector.selectionMode, 'blocks');
+  assert.deepEqual(payload.selector.blocks, blockNumbers);
+  assert.equal(payload.selector.fromBlock, null);
+  assert.equal(payload.selector.toBlock, null);
+  assert.equal(payload.selector.step, null);
+  assert.equal(payload.summary.archiveRequired, null);
+  assert.equal(payload.summary.archiveRequirement, 'depends-on-history-depth');
+  assert.deepEqual(
+    payload.snapshots.map((entry) => entry.blockNumber),
+    blockNumbers,
+  );
+  assert.equal(payload.snapshots[0].rpcUrl, secondaryRpcUrl);
+  assert.equal(payload.snapshots[0].fallbackUsed, true);
+  assert.equal(typeof payload.snapshots[0].blockHash, 'string');
+  assert.equal(typeof payload.snapshots[0].blockTimestamp, 'string');
+  assert.equal(payload.snapshots[0].feeTier, 3000);
+  assert.equal(payload.snapshots[0].reserveYesUsdc, 10);
+  assert.equal(payload.snapshots[0].reserveNoUsdc, 10);
+  assert.equal(payload.snapshots[0].pandoraYesPct, 50);
+  assert.deepEqual(observedBalanceReads, [
+    ['0x1111111111111111111111111111111111111111', 19000000],
+    ['0x2222222222222222222222222222222222222222', 19000000],
+    ['0x1111111111111111111111111111111111111111', 19000005],
+    ['0x2222222222222222222222222222222222222222', 19000005],
+  ]);
+});
+
+test('readPandoraOnchainReserveTrace applies range limits before the snapshot expansion cap and preserves range selectors', async () => {
+  const payload = await readPandoraOnchainReserveTrace(
+    {
+      rpcUrl: 'https://trace-rpc.example',
+      marketAddress: TEST_MARKET,
+      fromBlock: 0,
+      toBlock: 5_000,
+      step: 1,
+      limit: 2,
+    },
+    {
+      viemRuntime: {
+        createPublicClient() {
+          return {
+            async getBlock({ blockNumber }) {
+              return {
+                number: blockNumber,
+                hash: `0x${Number(blockNumber).toString(16).padStart(64, '0')}`,
+                timestamp: BigInt(1_710_000_000 + Number(blockNumber)),
+              };
+            },
+            async readContract({ functionName, address, blockNumber }) {
+              if (functionName === 'yesToken') return '0x1111111111111111111111111111111111111111';
+              if (functionName === 'noToken') return '0x2222222222222222222222222222222222222222';
+              if (functionName === 'decimals') return 6;
+              if (functionName === 'tradingFee') return 3000;
+              if (functionName === 'balanceOf') {
+                return String(address).toLowerCase() === '0x1111111111111111111111111111111111111111'
+                  ? BigInt((Number(blockNumber) + 1) * 1_000_000)
+                  : BigInt((Number(blockNumber) + 2) * 1_000_000);
+              }
+              throw new Error(`unexpected function ${functionName}`);
+            },
+          };
+        },
+        http: (url) => ({ url }),
+        formatUnits: (value, decimals) => Number(value) / 10 ** decimals,
+      },
+    },
+  );
+
+  assert.equal(payload.selector.selectionMode, 'range');
+  assert.equal(payload.selector.fromBlock, 0);
+  assert.equal(payload.selector.toBlock, 5000);
+  assert.equal(payload.selector.step, 1);
+  assert.deepEqual(payload.selector.blocks, []);
+  assert.deepEqual(payload.snapshots.map((entry) => entry.blockNumber), [0, 1]);
+});
+
+test('readPandoraOnchainReserveTrace maps archive-state failures to a distinct operator error', async () => {
+  await assert.rejects(
+    () =>
+      readPandoraOnchainReserveTrace(
+        {
+          rpcUrl: 'https://archive-missing-rpc.example',
+          marketAddress: TEST_MARKET,
+          blocks: [19000000],
+        },
+        {
+          viemRuntime: {
+            createPublicClient() {
+              return {
+                async getBlock({ blockNumber }) {
+                  return {
+                    number: blockNumber,
+                    hash: `0x${Number(blockNumber).toString(16).padStart(64, '0')}`,
+                    timestamp: BigInt(1_710_000_000 + Number(blockNumber)),
+                  };
+                },
+                async readContract({ functionName }) {
+                  if (functionName === 'yesToken') return '0x1111111111111111111111111111111111111111';
+                  if (functionName === 'noToken') return '0x2222222222222222222222222222222222222222';
+                  throw Object.assign(new Error('missing trie node for historical state'), { code: -32000 });
+                },
+              };
+            },
+            http: (url) => ({ url }),
+            formatUnits: (value, decimals) => Number(value) / 10 ** decimals,
+          },
+        },
+      ),
+    (error) => {
+      assert.equal(error.code, 'MIRROR_ONCHAIN_ARCHIVE_STATE_UNAVAILABLE');
+      assert.equal(Array.isArray(error.details.attempts), true);
+      assert.match(String(error.message), /archive|histor/i);
+      return true;
+    },
+  );
+});
+
+test('readPandoraOnchainReserveTrace preserves generic rpc failures instead of misclassifying them as archive errors', async () => {
+  await assert.rejects(
+    () =>
+      readPandoraOnchainReserveTrace(
+        {
+          rpcUrl: 'https://generic-rpc-failure.example',
+          marketAddress: TEST_MARKET,
+          blocks: [19000000],
+        },
+        {
+          viemRuntime: {
+            createPublicClient() {
+              return {
+                async getBlock({ blockNumber }) {
+                  return {
+                    number: blockNumber,
+                    hash: `0x${Number(blockNumber).toString(16).padStart(64, '0')}`,
+                    timestamp: BigInt(1_710_000_000 + Number(blockNumber)),
+                  };
+                },
+                async readContract({ functionName }) {
+                  if (functionName === 'yesToken') return '0x1111111111111111111111111111111111111111';
+                  if (functionName === 'noToken') return '0x2222222222222222222222222222222222222222';
+                  throw Object.assign(new Error('connection reset by peer'), { code: 'RPC_DOWN' });
+                },
+              };
+            },
+            http: (url) => ({ url }),
+            formatUnits: (value, decimals) => Number(value) / 10 ** decimals,
+          },
+        },
+      ),
+    (error) => {
+      assert.equal(error.code, 'MIRROR_ONCHAIN_RESERVES_UNAVAILABLE');
+      assert.notEqual(error.code, 'MIRROR_ONCHAIN_ARCHIVE_STATE_UNAVAILABLE');
+      return true;
+    },
+  );
 });
 
 test('mirror sync planning helpers build deterministic strategy payloads', () => {
@@ -5326,7 +5700,41 @@ test('createRunMirrorCommand sync help reports full usage and daemon selectors',
   assert.match(payload.daemonLifecycle.status, /--pid-file <path>\|--strategy-hash <hash>/);
 });
 
-test('createRunMirrorCommand help lists drift and hedge-check read surfaces', async () => {
+test('createRunMirrorCommand trace help reports historical block selectors and archive guidance', async () => {
+  const observed = {
+    emitted: [],
+  };
+  const runMirrorCommand = createRunMirrorCommand({
+    CliError: ParserCliError,
+    emitSuccess: (...args) => observed.emitted.push(args),
+    commandHelpPayload: (usage, notes) => ({ usage, notes }),
+    parseIndexerSharedFlags: (args) => ({
+      envFile: '/tmp/.env',
+      envFileExplicit: false,
+      useEnvFile: true,
+      indexerUrl: null,
+      timeoutMs: 12000,
+      rest: args,
+    }),
+    includesHelpFlag: (args) => Array.isArray(args) && args.includes('--help'),
+    parseMirrorTraceFlags: () => {
+      throw new Error('parseMirrorTraceFlags should not run for --help');
+    },
+  });
+
+  await runMirrorCommand(['trace', '--help'], { outputMode: 'json' });
+
+  assert.equal(observed.emitted.length, 1);
+  assert.equal(observed.emitted[0][1], 'mirror.trace.help');
+  const payload = observed.emitted[0][2];
+  assert.match(payload.usage, /mirror trace/);
+  assert.match(payload.usage, /--blocks <csv>/);
+  assert.match(payload.usage, /--from-block <n> --to-block <n>/);
+  assert.equal(Array.isArray(payload.notes), true);
+  assert.equal(payload.notes.some((line) => /archive/i.test(String(line))), true);
+});
+
+test('createRunMirrorCommand help lists trace, drift, and hedge-check read surfaces', async () => {
   const observed = {
     emitted: [],
   };
@@ -5350,8 +5758,12 @@ test('createRunMirrorCommand help lists drift and hedge-check read surfaces', as
   assert.equal(observed.emitted.length, 1);
   assert.equal(observed.emitted[0][1], 'mirror.help');
   const payload = observed.emitted[0][2];
-  assert.match(payload.usage, /status\|health\|panic\|drift\|hedge-check\|pnl/);
+  assert.match(payload.usage, /sync\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl/);
   assert.equal(Array.isArray(payload.notes), true);
+  assert.equal(
+    payload.notes.some((line) => /mirror trace/i.test(String(line))),
+    true,
+  );
   assert.equal(
     payload.notes.some((line) => /mirror drift and mirror hedge-check/.test(String(line))),
     true,
@@ -5360,6 +5772,199 @@ test('createRunMirrorCommand help lists drift and hedge-check read surfaces', as
     payload.notes.some((line) => /mirror health is the machine-usable daemon\/runtime status shell/i.test(String(line))),
     true,
   );
+});
+
+test('createParsePolymarketPositionsFlags parses selectors and shared runtime flags', () => {
+  const parseShared = createParsePolymarketSharedFlags({
+    CliError: ParserCliError,
+    requireFlagValue: parserRequireFlagValue,
+    parseAddressFlag: parserParseAddressFlag,
+    parseInteger: parserParseInteger,
+    isValidPrivateKey: (value) => /^0x[a-fA-F0-9]{64}$/.test(String(value || '').trim()),
+    isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
+  });
+  const parsePositions = createParsePolymarketPositionsFlags({
+    CliError: ParserCliError,
+    parsePolymarketSharedFlags: parseShared,
+    requireFlagValue: parserRequireFlagValue,
+    parseAddressFlag: parserParseAddressFlag,
+    parsePositiveInteger: parserParsePositiveInteger,
+    isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
+    defaultTimeoutMs: 12000,
+  });
+
+  const payload = parsePositions([
+    '--wallet',
+    '0x1111111111111111111111111111111111111111',
+    '--token-id',
+    '101,102',
+    '--source',
+    'on-chain',
+    '--polymarket-data-api-url',
+    'https://data-api.example',
+    '--polymarket-host',
+    'https://clob.example',
+    '--polymarket-gamma-url',
+    'https://gamma.example',
+    '--timeout-ms',
+    '3000',
+    '--fork',
+    '--fork-rpc-url',
+    'http://127.0.0.1:8545',
+    '--private-key',
+    `0x${'1'.repeat(64)}`,
+    '--funder',
+    '0x2222222222222222222222222222222222222222',
+  ]);
+
+  assert.equal(payload.wallet, '0x1111111111111111111111111111111111111111');
+  assert.equal(payload.conditionId, null);
+  assert.deepEqual(payload.tokenIds, ['101', '102']);
+  assert.equal(payload.source, 'on-chain');
+  assert.equal(payload.dataApiUrl, 'https://data-api.example');
+  assert.equal(payload.host, 'https://clob.example');
+  assert.equal(payload.gammaUrl, 'https://gamma.example');
+  assert.equal(payload.timeoutMs, 3000);
+  assert.equal(payload.fork, true);
+  assert.equal(payload.forkRpcUrl, 'http://127.0.0.1:8545');
+  assert.equal(payload.funder, '0x2222222222222222222222222222222222222222');
+});
+
+test('fetchPolymarketPositionInventory normalizes mock API rows with provenance', async () => {
+  const conditionId = `0x${'b'.repeat(64)}`;
+  const server = http.createServer((req, res) => {
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({
+      positions: [
+        {
+          asset: '101',
+          conditionId,
+          size: 1.5,
+          curPrice: 0.62,
+          outcome: 'YES',
+          question: 'Will BTC close above $100k?',
+        },
+        {
+          asset: '102',
+          conditionId,
+          size: 0.25,
+          curPrice: 0.38,
+          outcome: 'NO',
+          question: 'Will BTC close above $100k?',
+        },
+      ],
+      openOrders: [
+        {
+          id: 'ord-1',
+          market: conditionId,
+          asset_id: '101',
+          side: 'buy',
+          price: 0.61,
+          size: 1.2,
+        },
+      ],
+    }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const mockUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const payload = await fetchPolymarketPositionInventory({
+      walletAddress: '0x3333333333333333333333333333333333333333',
+      market: {
+        marketId: conditionId,
+        slug: 'btc-above-100k',
+        question: 'Will BTC close above $100k?',
+        yesTokenId: '101',
+        noTokenId: '102',
+        yesPct: 62,
+        noPct: 38,
+      },
+      source: 'api',
+      mockUrl,
+      timeoutMs: 3000,
+    });
+
+    assert.equal(payload.source, 'api');
+    assert.equal(payload.market.marketId, conditionId);
+    assert.equal(payload.summary.yesBalance, 1.5);
+    assert.equal(payload.summary.noBalance, 0.25);
+    assert.equal(payload.summary.openOrdersCount, 1);
+    assert.equal(payload.summary.estimatedValueUsd, 1.025);
+    assert.equal(payload.positions.length, 2);
+    assert.equal(payload.positions[0].fieldSources.balance, 'api');
+    assert.equal(payload.openOrders[0].tokenId, '101');
+    assert.equal(payload.diagnostics.includes('Loaded Polymarket position inventory from mock payload.'), true);
+  } finally {
+    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test('createRunPolymarketCommand routes positions through the ops service payload', async () => {
+  const observed = { emitted: [] };
+  const runPolymarketCommand = createRunPolymarketCommand({
+    CliError: ParserCliError,
+    includesHelpFlag: (args) => Array.isArray(args) && args.includes('--help'),
+    emitSuccess: (...args) => observed.emitted.push(args),
+    commandHelpPayload: (usage, notes) => ({ usage, notes }),
+    loadEnvIfPresent: () => {},
+    parsePolymarketSharedFlags: () => ({}),
+    parsePolymarketApproveFlags: () => {
+      throw new Error('not used');
+    },
+    parsePolymarketPositionsFlags: () => ({
+      wallet: '0x1111111111111111111111111111111111111111',
+      conditionId: `0x${'c'.repeat(64)}`,
+      slug: null,
+      tokenIds: ['101', '102'],
+      source: 'auto',
+      dataApiUrl: null,
+      rpcUrl: null,
+      privateKey: null,
+      funder: null,
+      host: 'https://clob.example',
+      gammaUrl: null,
+      polymarketMockUrl: 'https://mock.example',
+      timeoutMs: 12000,
+      fork: false,
+      forkRpcUrl: null,
+      forkChainId: null,
+    }),
+    parsePolymarketTradeFlags: () => {
+      throw new Error('not used');
+    },
+    resolveForkRuntime: () => ({ mode: 'live', chainId: 137, rpcUrl: null }),
+    isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
+    runPolymarketCheck: async () => ({}),
+    runPolymarketApprove: async () => ({}),
+    runPolymarketPreflight: async () => ({}),
+    runPolymarketPositions: async () => ({
+      action: 'positions',
+      summary: { yesBalance: 2, noBalance: 1, openOrdersCount: 0, estimatedValueUsd: 1.62 },
+      positions: [{ tokenId: '101', outcome: 'yes', balance: 2 }],
+      openOrders: [],
+      runtime: {},
+      diagnostics: [],
+    }),
+    resolvePolymarketMarket: async () => ({}),
+    readTradingCredsFromEnv: () => ({}),
+    placeHedgeOrder: async () => ({}),
+    renderPolymarketCheckTable: () => {},
+    renderPolymarketApproveTable: () => {},
+    renderPolymarketPreflightTable: () => {},
+    renderSingleEntityTable: () => {},
+    defaultEnvFile: '/tmp/.env',
+  });
+
+  await runPolymarketCommand(['positions', '--wallet', '0x1111111111111111111111111111111111111111'], { outputMode: 'json' });
+
+  assert.equal(observed.emitted.length, 1);
+  assert.equal(observed.emitted[0][1], 'polymarket.positions');
+  assert.equal(observed.emitted[0][2].action, 'positions');
+  assert.equal(observed.emitted[0][2].summary.yesBalance, 2);
+  assert.equal(observed.emitted[0][2].runtime.mode, 'live');
 });
 
 test('error recovery service returns hints for all mapped codes', () => {

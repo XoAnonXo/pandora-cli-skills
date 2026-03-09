@@ -51,6 +51,9 @@ function ensureStateShape(raw, hash) {
     cumulativeHedgeCostApproxUsdc: Number.isFinite(Number(data.cumulativeHedgeCostApproxUsdc))
       ? Number(data.cumulativeHedgeCostApproxUsdc)
       : 0,
+    accounting: data.accounting && typeof data.accounting === 'object'
+      ? data.accounting
+      : null,
     lastExecution: data.lastExecution || null,
     idempotencyKeys: Array.isArray(data.idempotencyKeys) ? data.idempotencyKeys : [],
     alerts: Array.isArray(data.alerts) ? data.alerts : [],

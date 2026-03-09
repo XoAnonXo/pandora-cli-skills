@@ -57,6 +57,7 @@ test('buildExportPayload keeps legacy columns and appends replay-friendly fields
   });
 
   assert.equal(payload.format, 'json');
+  assert.equal(payload.schemaVersion, '1.1.0');
   assert.equal(payload.count, 2);
   assert.equal(CSV_COLUMNS.includes('timestamp'), true);
   assert.equal(CSV_COLUMNS.includes('tx_hash'), true);
@@ -69,6 +70,9 @@ test('buildExportPayload keeps legacy columns and appends replay-friendly fields
   assert.equal(CSV_COLUMNS.includes('realized_pnl'), true);
   assert.equal(CSV_COLUMNS.includes('classification'), true);
   assert.equal(CSV_COLUMNS.includes('idempotency_key'), true);
+  assert.equal(CSV_COLUMNS.includes('ledger_leg_type'), true);
+  assert.equal(CSV_COLUMNS.includes('notional_usdc'), true);
+  assert.equal(CSV_COLUMNS.includes('details_json'), true);
 
   const first = payload.rows[0];
   assert.equal(first.date, '2023-11-14');
@@ -129,4 +133,112 @@ test('buildExportPayload preserves mirror classification metadata and ISO timest
   assert.equal(row.strategy_hash, 'feedfacecafebeef');
   assert.equal(row.state_file, '/tmp/mirror-state.json');
   assert.equal(row.idempotency_key, 'bucket-1');
+});
+
+test('buildExportPayload preserves ledger-grade mirror fields for reconciled rows', () => {
+  const payload = buildExportPayload({
+    wallet: null,
+    chainId: 137,
+    strategyHash: 'feedfacecafebeef',
+    stateFile: '/tmp/mirror-state.json',
+    items: [
+      {
+        timestamp: '2026-03-09T10:00:00.000Z',
+        classification: 'pandora-rebalance',
+        venue: 'pandora',
+        source: 'mirror-ledger.reconciled',
+        status: 'ok',
+        details: {
+          idempotencyKey: 'bucket-3',
+          legType: 'rebalance-fill',
+          asset: 'YES',
+          quantity: 20,
+          notionalUsdc: 10.5,
+          feeUsdc: 0.12,
+          gasUsdc: 0.09,
+          gasNative: 0.00042,
+          realizedPnlUsdc: 1.2,
+          unrealizedPnlUsdc: -0.4,
+          lpFeeIncomeUsdc: 0.33,
+          impermanentLossUsdc: -0.21,
+          fundingFlowUsdc: 5,
+          bridgeFlowUsdc: -5,
+          txHash: '0xrebalance',
+          blockNumber: 123456,
+          nonce: 9,
+          provenance: {
+            balances: 'on-chain',
+            pricing: 'trace',
+          },
+          components: {
+            realized: 1.2,
+            lpFees: 0.33,
+          },
+        },
+      },
+    ],
+  }, {
+    format: 'json',
+    year: null,
+    from: null,
+    to: null,
+    outPath: null,
+  });
+
+  assert.equal(payload.count, 1);
+  const row = payload.rows[0];
+  assert.equal(row.action, 'pandora-rebalance');
+  assert.equal(row.amount, 10.5);
+  assert.equal(row.gas_usd, 0.09);
+  assert.equal(row.tx_hash, '0xrebalance');
+  assert.equal(row.ledger_leg_type, 'rebalance-fill');
+  assert.equal(row.asset, 'YES');
+  assert.equal(row.quantity, 20);
+  assert.equal(row.notional_usdc, 10.5);
+  assert.equal(row.fee_usdc, 0.12);
+  assert.equal(row.gas_native, 0.00042);
+  assert.equal(row.realized_pnl_usdc, 1.2);
+  assert.equal(row.unrealized_pnl_usdc, -0.4);
+  assert.equal(row.lp_fee_income_usdc, 0.33);
+  assert.equal(row.impermanent_loss_usdc, -0.21);
+  assert.equal(row.funding_flow_usdc, 5);
+  assert.equal(row.bridge_flow_usdc, -5);
+  assert.equal(row.block_number, 123456);
+  assert.equal(row.nonce, 9);
+  assert.equal(row.provenance_json, JSON.stringify({ balances: 'on-chain', pricing: 'trace' }));
+  assert.equal(row.components_json, JSON.stringify({ realized: 1.2, lpFees: 0.33 }));
+  assert.equal(typeof row.details_json, 'string');
+});
+
+test('buildExportPayload keeps order refs out of tx_hash and emits valid json text for string metadata', () => {
+  const payload = buildExportPayload({
+    wallet: null,
+    chainId: 137,
+    items: [
+      {
+        timestamp: '2026-03-09T10:00:00.000Z',
+        classification: 'polymarket-hedge',
+        venue: 'polymarket',
+        source: 'mirror-ledger.reconciled',
+        status: 'ok',
+        transactionRef: 'order-123',
+        details: {
+          transactionRef: 'order-123',
+          provenance: 'on-chain',
+          components: 'inventory-mark',
+        },
+      },
+    ],
+  }, {
+    format: 'json',
+    year: null,
+    from: null,
+    to: null,
+    outPath: null,
+  });
+
+  const row = payload.rows[0];
+  assert.equal(row.tx_hash, null);
+  assert.equal(row.provenance_json, JSON.stringify('on-chain'));
+  assert.equal(row.components_json, JSON.stringify('inventory-mark'));
 });

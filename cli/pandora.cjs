@@ -10,6 +10,16 @@ const { createErrorRecoveryService } = require('./lib/error_recovery_service.cjs
 const { createCoreCommandFlagParsers } = require('./lib/parsers/core_command_flags.cjs');
 const { resolveTradeBuyCall, resolveTradeSellCall } = require('./lib/trade_market_type_service.cjs');
 const {
+  DEFAULT_FLASHBOTS_RELAY_URL,
+  DEFAULT_FLASHBOTS_TARGET_BLOCK_OFFSET,
+  FLASHBOTS_SUPPORTED_CHAIN_ID,
+  normalizeFlashbotsRelayUrl,
+  normalizeTargetBlockOffset,
+  sendFlashbotsPrivateTransaction,
+  sendFlashbotsBundle,
+} = require('./lib/flashbots_service.cjs');
+const { executeTradeWithRoute } = require('./lib/trade_execution_route_service.cjs');
+const {
   DEFAULT_INDEXER_URL: SHARED_DEFAULT_INDEXER_URL,
   DEFAULT_RPC_BY_CHAIN_ID,
 } = require('./lib/shared/constants.cjs');
@@ -309,6 +319,11 @@ function runPolymarketPreflight(...args) {
 /** Proxy to Polymarket balance flow. */
 function runPolymarketBalance(...args) {
   return getPolymarketOpsService().runPolymarketBalance(...args);
+}
+
+/** Proxy to Polymarket positions flow. */
+function runPolymarketPositions(...args) {
+  return getPolymarketOpsService().runPolymarketPositions(...args);
 }
 
 /** Proxy to Polymarket deposit flow. */
@@ -1157,8 +1172,8 @@ Usage:
   pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
   pandora [--output table|json] dashboard [--with-live|--no-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] fund-check --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--target-pct <0-100>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
-  pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|close ...
-  pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ...
+  pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|close ...
+  pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
   pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
@@ -1218,9 +1233,11 @@ Examples:
   pandora mirror simulate --liquidity-usdc 10000 --source-yes-pct 58 --target-yes-pct 58 --volume-scenarios 1000,5000,10000
   pandora mirror go --polymarket-slug nba-mia-phi-2026-02-28 --liquidity-usdc 10 --paper
   pandora mirror sync once --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --paper --hedge-ratio 1.0 --skip-gate
+  pandora mirror trace --pandora-market-address 0xabc... --rpc-url https://eth-mainnet.example --from-block 100 --to-block 110 --step 5
   pandora polymarket check --rpc-url https://polygon-bor-rpc.publicnode.com --private-key 0x... --funder 0xproxy...
   pandora polymarket approve --dry-run --rpc-url https://polygon-bor-rpc.publicnode.com --private-key 0x... --funder 0xproxy...
   pandora polymarket preflight --rpc-url https://polygon-bor-rpc.publicnode.com --private-key 0x... --funder 0xproxy...
+  pandora polymarket positions --wallet 0xproxy... --slug btc-above-100k-on-friday --source auto
   pandora polymarket trade --condition-id 0xabc... --token yes --amount-usdc 2 --dry-run
   pandora mirror close --pandora-market-address 0xabc... --polymarket-market-id 0xdef... --dry-run
   pandora webhook test --webhook-url https://example.com/hook --webhook-template '{\"text\":\"{{message}}\"}'
@@ -1500,8 +1517,8 @@ function helpJsonPayload() {
       'pandora [--output table|json] autopilot run|once ...',
       'pandora [--output table|json] dashboard ...',
       'pandora [--output table|json] fund-check ...',
-      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|close ...',
-      'pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ...',
+      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|close ...',
+      'pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...',
       'pandora [--output table|json] webhook test ...',
       'pandora [--output table|json] leaderboard ...',
       'pandora [--output table|json] analyze ...',
@@ -5030,6 +5047,49 @@ function resolveTradeRuntimeConfig(options) {
     throw new CliError('MISSING_REQUIRED_FLAG', 'Missing USDC token address. Set USDC in env or pass --usdc.');
   }
   const usdcAddress = parseAddressFlag(usdc, '--usdc');
+  const executionRoute = String(
+    options.executionRoute
+      || options.rebalanceRoute
+      || process.env.MIRROR_REBALANCE_ROUTE
+      || 'public',
+  ).trim().toLowerCase();
+  if (!['public', 'auto', 'flashbots-private', 'flashbots-bundle'].includes(executionRoute)) {
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      '--rebalance-route must be public|auto|flashbots-private|flashbots-bundle.',
+    );
+  }
+  const executionRouteFallback = String(
+    options.executionRouteFallback
+      || options.rebalanceRouteFallback
+      || process.env.MIRROR_REBALANCE_ROUTE_FALLBACK
+      || 'fail',
+  ).trim().toLowerCase();
+  if (!['fail', 'public'].includes(executionRouteFallback)) {
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      '--rebalance-route-fallback must be fail|public.',
+    );
+  }
+  const flashbotsRelayUrl = normalizeFlashbotsRelayUrl(
+    options.flashbotsRelayUrl || process.env.FLASHBOTS_RELAY_URL || DEFAULT_FLASHBOTS_RELAY_URL,
+  );
+  if (!isSecureHttpUrlOrLocal(flashbotsRelayUrl)) {
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      '--flashbots-relay-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
+    );
+  }
+  const flashbotsAuthKey = String(options.flashbotsAuthKey || process.env.FLASHBOTS_AUTH_KEY || '').trim() || null;
+  if (flashbotsAuthKey && !isValidPrivateKey(flashbotsAuthKey)) {
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      '--flashbots-auth-key must be 0x + 64 hex chars.',
+    );
+  }
+  const flashbotsTargetBlockOffset = normalizeTargetBlockOffset(
+    options.flashbotsTargetBlockOffset || process.env.FLASHBOTS_TARGET_BLOCK_OFFSET || DEFAULT_FLASHBOTS_TARGET_BLOCK_OFFSET,
+  );
 
   const chain = {
     id: 1,
@@ -5049,6 +5109,11 @@ function resolveTradeRuntimeConfig(options) {
     profileFile: options.profileFile || null,
     profile: options.profile || null,
     usdcAddress,
+    executionRoute,
+    executionRouteFallback,
+    flashbotsRelayUrl,
+    flashbotsAuthKey,
+    flashbotsTargetBlockOffset,
   };
 }
 
@@ -5260,14 +5325,47 @@ async function executeTradeOnchain(options) {
     await decodeTradeError(error, 'ALLOWANCE_READ_FAILED', `Failed to read ${isSell ? 'outcome token' : 'USDC'} allowance.`, {
       stage: 'allowance-read',
       approvalAsset,
-    });
+      });
   }
 
-  let approveTxHash = null;
-  let approveGasEstimate = null;
-  let approveStatus = null;
-  let approveNonce = null;
-  if (allowance < amountRaw) {
+  const needsApproval = allowance < amountRaw;
+  const requestedExecutionRoute = runtime.executionRoute;
+  const resolvedExecutionRoute =
+    requestedExecutionRoute === 'auto'
+      ? needsApproval
+        ? 'flashbots-bundle'
+        : 'flashbots-private'
+      : requestedExecutionRoute;
+
+  const buildRouteMetadata = (overrides = {}) => ({
+    executionRouteRequested: requestedExecutionRoute,
+    executionRouteResolved: overrides.executionRouteResolved || resolvedExecutionRoute,
+    executionRouteFallback: runtime.executionRouteFallback,
+    executionRouteFallbackUsed: Boolean(overrides.executionRouteFallbackUsed),
+    executionRouteFallbackReason: overrides.executionRouteFallbackReason || null,
+    flashbotsRelayUrl:
+      overrides.flashbotsRelayUrl !== undefined
+        ? overrides.flashbotsRelayUrl
+        : requestedExecutionRoute === 'public'
+          ? null
+          : runtime.flashbotsRelayUrl,
+    flashbotsRelayMethod: overrides.flashbotsRelayMethod || null,
+    flashbotsTargetBlockNumber:
+      overrides.flashbotsTargetBlockNumber !== undefined ? overrides.flashbotsTargetBlockNumber : null,
+    flashbotsRelayResponseId:
+      overrides.flashbotsRelayResponseId !== undefined ? overrides.flashbotsRelayResponseId : null,
+    flashbotsBundleHash: overrides.flashbotsBundleHash || null,
+    flashbotsSimulation: overrides.flashbotsSimulation || null,
+  });
+
+  async function simulateApproveRequest(nonceOverride = null) {
+    if (!needsApproval) {
+      return {
+        request: null,
+        gasEstimate: null,
+        nonce: null,
+      };
+    }
     let approveSimulation;
     try {
       approveSimulation = await publicClient.simulateContract({
@@ -5277,101 +5375,302 @@ async function executeTradeOnchain(options) {
         functionName: 'approve',
         args: [options.marketAddress, amountRaw],
       });
-      approveGasEstimate =
-        approveSimulation && approveSimulation.request && approveSimulation.request.gas
-          ? approveSimulation.request.gas.toString()
-          : null;
-      approveNonce = await publicClient.getTransactionCount({
-        address: account.address,
-        blockTag: 'pending',
-      });
-      approveSimulation.request = {
-        ...approveSimulation.request,
-        nonce: approveNonce,
-      };
     } catch (error) {
       await decodeTradeError(error, 'APPROVE_SIMULATION_FAILED', `${isSell ? 'Outcome token' : 'USDC'} approve simulation failed.`, {
         stage: 'approve-simulate',
         approvalAsset,
       });
     }
+    const nonce =
+      nonceOverride !== null && nonceOverride !== undefined
+        ? Number(nonceOverride)
+        : await publicClient.getTransactionCount({
+          address: account.address,
+          blockTag: 'pending',
+        });
+    return {
+      request: {
+        ...approveSimulation.request,
+        nonce,
+      },
+      gasEstimate:
+        approveSimulation && approveSimulation.request && approveSimulation.request.gas
+          ? approveSimulation.request.gas.toString()
+          : null,
+      nonce,
+    };
+  }
+
+  async function simulateTradeRequest(nonceOverride = null) {
+    let tradeSimulation;
     try {
-      approveTxHash = await walletClient.writeContract(approveSimulation.request);
-      const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-      approveStatus = approveReceipt && approveReceipt.status ? approveReceipt.status : null;
+      tradeSimulation = await publicClient.simulateContract({
+        account,
+        address: options.marketAddress,
+        abi: tradeCall.abi,
+        functionName: tradeCall.functionName,
+        args: tradeCall.args,
+      });
     } catch (error) {
-      await decodeTradeError(error, 'APPROVE_EXECUTION_FAILED', `${isSell ? 'Outcome token' : 'USDC'} approve transaction failed.`, {
-        stage: 'approve-execute',
+      await decodeTradeError(error, 'TRADE_EXECUTION_FAILED', `${isSell ? 'Sell' : 'Buy'} simulation failed.`, {
+        stage: isSell ? 'sell-simulate' : 'buy-simulate',
+        marketType: tradeCall ? tradeCall.marketType : null,
+        tradeSignature: tradeCall ? tradeCall.signature : null,
+        ammDeadlineEpoch: tradeCall && tradeCall.ammDeadlineEpoch ? tradeCall.ammDeadlineEpoch : null,
+        mode: tradeMode,
+      });
+    }
+    const nonce =
+      nonceOverride !== null && nonceOverride !== undefined
+        ? Number(nonceOverride)
+        : await publicClient.getTransactionCount({
+          address: account.address,
+          blockTag: 'pending',
+        });
+    return {
+      request: {
+        ...tradeSimulation.request,
+        nonce,
+      },
+      gasEstimate:
+        tradeSimulation && tradeSimulation.request && tradeSimulation.request.gas
+          ? tradeSimulation.request.gas.toString()
+          : null,
+      nonce,
+    };
+  }
+
+  async function waitForReceiptStatus(hash) {
+    if (!hash) return null;
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    return receipt && receipt.status ? receipt.status : null;
+  }
+
+  function toSubmittedFlashbotsCliError(error, code, message, details = {}) {
+    return new CliError(
+      error && error.code ? error.code : code,
+      error && error.message ? error.message : message,
+      {
+        requestedRoute: requestedExecutionRoute,
+        resolvedRoute: resolvedExecutionRoute,
+        executionRouteFallback: runtime.executionRouteFallback,
+        submissionState: 'submitted',
+        ...details,
+        ...(error && error.details ? error.details : {}),
+      },
+    );
+  }
+
+  function buildExecutionPayload(routeMetadata, executionFields = {}) {
+    const approveTxHash = executionFields.approveTxHash || null;
+    const tradeTxHash = executionFields.tradeTxHash || null;
+    const approveStatus = executionFields.approveStatus || null;
+    const tradeStatus = executionFields.tradeStatus || null;
+    return {
+      action: isSell ? 'sell' : 'buy',
+      mode: runtime.mode,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+      account: account.address,
+      usdc: runtime.usdcAddress,
+      approvalAsset,
+      marketType: tradeCall.marketType,
+      tradeSignature: tradeCall.signature,
+      ammDeadlineEpoch: tradeCall.ammDeadlineEpoch,
+      amountRaw: amountRaw.toString(),
+      minSharesOutRaw: minSharesOutRaw.toString(),
+      minAmountOutRaw: minAmountOutRaw.toString(),
+      approveTxHash,
+      approveTxUrl: toExplorerUrl(approveTxHash),
+      approveGasEstimate: executionFields.approveGasEstimate || null,
+      approveStatus,
+      approveNonce: executionFields.approveNonce ?? null,
+      tradeTxHash,
+      tradeTxUrl: toExplorerUrl(tradeTxHash),
+      tradeGasEstimate: executionFields.tradeGasEstimate || null,
+      tradeStatus,
+      tradeNonce: executionFields.tradeNonce ?? null,
+      status: tradeStatus || 'confirmed',
+      ...routeMetadata,
+    };
+  }
+
+  async function executePublicRoute(routeMetadata) {
+    const approveExecution = await simulateApproveRequest();
+    let approveTxHash = null;
+    let approveStatus = null;
+    if (approveExecution.request) {
+      try {
+        approveTxHash = await walletClient.writeContract(approveExecution.request);
+        approveStatus = await waitForReceiptStatus(approveTxHash);
+      } catch (error) {
+        await decodeTradeError(error, 'APPROVE_EXECUTION_FAILED', `${isSell ? 'Outcome token' : 'USDC'} approve transaction failed.`, {
+          stage: 'approve-execute',
+          approveTxHash,
+          approvalAsset,
+        });
+      }
+    }
+
+    let tradeExecution;
+    try {
+      tradeExecution = await simulateTradeRequest();
+      const tradeTxHash = await walletClient.writeContract(tradeExecution.request);
+      const tradeStatus = await waitForReceiptStatus(tradeTxHash);
+      return buildExecutionPayload(routeMetadata, {
         approveTxHash,
-        approvalAsset,
+        approveGasEstimate: approveExecution.gasEstimate,
+        approveStatus,
+        approveNonce: approveExecution.nonce,
+        tradeTxHash,
+        tradeGasEstimate: tradeExecution.gasEstimate,
+        tradeStatus,
+        tradeNonce: tradeExecution.nonce,
+      });
+    } catch (error) {
+      await decodeTradeError(error, 'TRADE_EXECUTION_FAILED', `${isSell ? 'Sell' : 'Buy'} transaction failed.`, {
+        stage: isSell ? 'sell' : 'buy',
+        tradeTxHash: null,
+        marketType: tradeCall ? tradeCall.marketType : null,
+        tradeSignature: tradeCall ? tradeCall.signature : null,
+        ammDeadlineEpoch: tradeCall && tradeCall.ammDeadlineEpoch ? tradeCall.ammDeadlineEpoch : null,
+        mode: tradeMode,
       });
     }
   }
 
-  let tradeTxHash = null;
-  let tradeGasEstimate = null;
-  let tradeStatus = null;
-  let tradeNonce = null;
-  try {
-    const tradeSimulation = await publicClient.simulateContract({
-      account,
-      address: options.marketAddress,
-      abi: tradeCall.abi,
-      functionName: tradeCall.functionName,
-      args: tradeCall.args,
-    });
-    tradeGasEstimate =
-      tradeSimulation && tradeSimulation.request && tradeSimulation.request.gas
-        ? tradeSimulation.request.gas.toString()
-        : null;
-    tradeNonce = await publicClient.getTransactionCount({
+  async function executeFlashbotsPrivateRoute() {
+    const pendingNonce = await publicClient.getTransactionCount({
       address: account.address,
       blockTag: 'pending',
     });
-    tradeSimulation.request = {
-      ...tradeSimulation.request,
-      nonce: tradeNonce,
-    };
-    tradeTxHash = await walletClient.writeContract(tradeSimulation.request);
-    const tradeReceipt = await publicClient.waitForTransactionReceipt({ hash: tradeTxHash });
-    tradeStatus = tradeReceipt && tradeReceipt.status ? tradeReceipt.status : null;
-  } catch (error) {
-    await decodeTradeError(error, 'TRADE_EXECUTION_FAILED', `${isSell ? 'Sell' : 'Buy'} transaction failed.`, {
-      stage: isSell ? 'sell' : 'buy',
-      tradeTxHash,
-      marketType: tradeCall ? tradeCall.marketType : null,
-      tradeSignature: tradeCall ? tradeCall.signature : null,
-      ammDeadlineEpoch: tradeCall && tradeCall.ammDeadlineEpoch ? tradeCall.ammDeadlineEpoch : null,
-      mode: tradeMode,
+    const approveExecution = await simulateApproveRequest(pendingNonce);
+    const tradeExecution = await simulateTradeRequest(
+      approveExecution.request ? pendingNonce + 1 : pendingNonce,
+    );
+    const privateSubmission = await sendFlashbotsPrivateTransaction({
+      publicClient,
+      walletClient,
+      account,
+      transactionRequest: tradeExecution.request,
+      relayUrl: runtime.flashbotsRelayUrl,
+      authPrivateKey: runtime.flashbotsAuthKey,
+      targetBlockOffset: runtime.flashbotsTargetBlockOffset,
+      viemRuntime,
+    });
+    let tradeStatus;
+    try {
+      tradeStatus = await waitForReceiptStatus(privateSubmission.transactionHash);
+    } catch (error) {
+      throw toSubmittedFlashbotsCliError(
+        error,
+        'FLASHBOTS_PRIVATE_RECEIPT_FAILED',
+        'Flashbots private transaction was submitted, but receipt polling failed.',
+        {
+          flashbotsRelayUrl: privateSubmission.relayUrl,
+          flashbotsRelayMethod: privateSubmission.relayMethod,
+          flashbotsTargetBlockNumber: privateSubmission.targetBlockNumber,
+          flashbotsRelayResponseId: privateSubmission.relayResponseId,
+          transactionHash: privateSubmission.transactionHash,
+          tradeTxHash: privateSubmission.transactionHash,
+        },
+      );
+    }
+    return buildExecutionPayload(buildRouteMetadata({
+      flashbotsRelayUrl: privateSubmission.relayUrl,
+      flashbotsRelayMethod: privateSubmission.relayMethod,
+      flashbotsTargetBlockNumber: privateSubmission.targetBlockNumber,
+      flashbotsRelayResponseId: privateSubmission.relayResponseId,
+    }), {
+      approveGasEstimate: approveExecution.gasEstimate,
+      approveNonce: approveExecution.nonce,
+      tradeTxHash: privateSubmission.transactionHash,
+      tradeGasEstimate: tradeExecution.gasEstimate,
+      tradeStatus,
+      tradeNonce: tradeExecution.nonce,
     });
   }
 
-  return {
-    action: isSell ? 'sell' : 'buy',
-    mode: runtime.mode,
-    chainId: runtime.chainId,
-    rpcUrl: runtime.rpcUrl,
-    account: account.address,
-    usdc: runtime.usdcAddress,
-    approvalAsset,
-    marketType: tradeCall.marketType,
-    tradeSignature: tradeCall.signature,
-    ammDeadlineEpoch: tradeCall.ammDeadlineEpoch,
-    amountRaw: amountRaw.toString(),
-    minSharesOutRaw: minSharesOutRaw.toString(),
-    minAmountOutRaw: minAmountOutRaw.toString(),
-    approveTxHash,
-    approveTxUrl: toExplorerUrl(approveTxHash),
-    approveGasEstimate,
-    approveStatus,
-    approveNonce,
-    tradeTxHash,
-    tradeTxUrl: toExplorerUrl(tradeTxHash),
-    tradeGasEstimate,
-    tradeStatus,
-    tradeNonce,
-    status: tradeStatus || 'confirmed',
-  };
+  async function executeFlashbotsBundleRoute() {
+    const pendingNonce = await publicClient.getTransactionCount({
+      address: account.address,
+      blockTag: 'pending',
+    });
+    const approveExecution = await simulateApproveRequest(pendingNonce);
+    const tradeExecution = await simulateTradeRequest(
+      approveExecution.request ? pendingNonce + 1 : pendingNonce,
+    );
+
+    const bundleRequests = approveExecution.request
+      ? [approveExecution.request, tradeExecution.request]
+      : [tradeExecution.request];
+    const bundleSubmission = await sendFlashbotsBundle({
+      publicClient,
+      walletClient,
+      account,
+      transactionRequests: bundleRequests,
+      relayUrl: runtime.flashbotsRelayUrl,
+      authPrivateKey: runtime.flashbotsAuthKey,
+      targetBlockOffset: runtime.flashbotsTargetBlockOffset,
+      viemRuntime,
+    });
+    const approveTxHash = approveExecution.request ? bundleSubmission.transactionHashes[0] : null;
+    const tradeTxHash = approveExecution.request
+      ? bundleSubmission.transactionHashes[1]
+      : bundleSubmission.transactionHashes[0];
+    let approveStatus = null;
+    let tradeStatus = null;
+    try {
+      approveStatus = approveTxHash ? await waitForReceiptStatus(approveTxHash) : null;
+      tradeStatus = await waitForReceiptStatus(tradeTxHash);
+    } catch (error) {
+      throw toSubmittedFlashbotsCliError(
+        error,
+        'FLASHBOTS_BUNDLE_RECEIPT_FAILED',
+        'Flashbots bundle was submitted, but receipt polling failed.',
+        {
+          flashbotsRelayUrl: bundleSubmission.relayUrl,
+          flashbotsRelayMethod: bundleSubmission.relayMethod,
+          flashbotsTargetBlockNumber: bundleSubmission.targetBlockNumber,
+          flashbotsRelayResponseId: bundleSubmission.relayResponseId,
+          flashbotsBundleHash: bundleSubmission.bundleHash,
+          flashbotsSimulation: bundleSubmission.simulation,
+          transactionHashes: bundleSubmission.transactionHashes,
+          approveTxHash,
+          tradeTxHash,
+        },
+      );
+    }
+    return buildExecutionPayload(buildRouteMetadata({
+      flashbotsRelayUrl: bundleSubmission.relayUrl,
+      flashbotsRelayMethod: bundleSubmission.relayMethod,
+      flashbotsTargetBlockNumber: bundleSubmission.targetBlockNumber,
+      flashbotsRelayResponseId: bundleSubmission.relayResponseId,
+      flashbotsBundleHash: bundleSubmission.bundleHash,
+      flashbotsSimulation: bundleSubmission.simulation,
+    }), {
+      approveTxHash,
+      approveGasEstimate: approveExecution.gasEstimate,
+      approveStatus,
+      approveNonce: approveExecution.nonce,
+      tradeTxHash,
+      tradeGasEstimate: tradeExecution.gasEstimate,
+      tradeStatus,
+      tradeNonce: tradeExecution.nonce,
+    });
+  }
+
+  return executeTradeWithRoute({
+    runtime,
+    requestedExecutionRoute,
+    needsApproval,
+    flashbotsSupportedChainId: FLASHBOTS_SUPPORTED_CHAIN_ID,
+    errorFactory: (code, message, details) => new CliError(code, message, details),
+    buildRouteMetadata,
+    executePublicRoute,
+    executeFlashbotsPrivateRoute,
+    executeFlashbotsBundleRoute,
+  });
 }
 
 async function runQuoteCommand(args, context) {
@@ -6609,6 +6908,9 @@ const parseMirrorAuditFlagsFromModule = createLazyFactoryRunner('./lib/parsers/m
 const parseMirrorReplayFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorReplayFlags', () => ({
   ...sharedParserDeps,
 }));
+const parseMirrorTraceFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorTraceFlags', () => ({
+  ...sharedParserDeps,
+}));
 const parseMirrorCloseFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorCloseFlags', () => sharedParserDeps);
 const parseMirrorLpExplainFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorLpExplainFlags', () => sharedParserDeps);
 const parseMirrorSimulateFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_remaining_flags.cjs', 'createParseMirrorSimulateFlags', () => ({
@@ -6626,6 +6928,15 @@ const parsePolymarketSharedFlagsFromModule = createLazyFactoryRunner('./lib/pars
 const parsePolymarketApproveFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketApproveFlags', () => ({
   CliError,
   parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
+}));
+const parsePolymarketPositionsFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketPositionsFlags', () => ({
+  CliError,
+  parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
+  requireFlagValue,
+  parseAddressFlag,
+  parsePositiveInteger,
+  isSecureHttpUrlOrLocal,
+  defaultTimeoutMs: DEFAULT_INDEXER_TIMEOUT_MS,
 }));
 const parsePolymarketTradeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/polymarket_flags.cjs', 'createParsePolymarketTradeFlags', () => ({
   CliError,
@@ -6839,12 +7150,14 @@ const runPolymarketCommandFromService = createLazyFactoryRunner('./lib/polymarke
   loadEnvIfPresent,
   parsePolymarketSharedFlags: parsePolymarketSharedFlagsFromModule,
   parsePolymarketApproveFlags: parsePolymarketApproveFlagsFromModule,
+  parsePolymarketPositionsFlags: parsePolymarketPositionsFlagsFromModule,
   parsePolymarketTradeFlags: parsePolymarketTradeFlagsFromModule,
   resolveForkRuntime,
   isSecureHttpUrlOrLocal,
   runPolymarketCheck,
   runPolymarketApprove,
   runPolymarketPreflight,
+  runPolymarketPositions,
   resolvePolymarketMarket,
   readTradingCredsFromEnv,
   placeHedgeOrder,
@@ -7878,6 +8191,13 @@ async function runLivePolymarketPreflightForMirror(options = {}) {
   }
 }
 
+function traceMirrorReserves(options = {}) {
+  return require('./lib/mirror_sync/reserve_source.cjs').readPandoraOnchainReserveTrace({
+    ...options,
+    marketAddress: options.marketAddress || options.pandoraMarketAddress || null,
+  });
+}
+
 const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.cjs', 'createRunMirrorCommand', () => ({
   CliError,
   includesHelpFlag,
@@ -7895,6 +8215,7 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   parseMirrorPnlFlags: parseMirrorPnlFlagsFromModule,
   parseMirrorAuditFlags: parseMirrorAuditFlagsFromModule,
   parseMirrorReplayFlags: parseMirrorReplayFlagsFromModule,
+  parseMirrorTraceFlags: parseMirrorTraceFlagsFromModule,
   parseMirrorSyncFlags: parseMirrorSyncFlagsFromModule,
   parseMirrorSyncDaemonSelectorFlags: parseMirrorSyncDaemonSelectorFlagsFromModule,
   parseMirrorGoFlags: parseMirrorGoFlagsFromModule,
@@ -7927,6 +8248,7 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   toMirrorStatusLivePayload,
   coerceMirrorServiceError,
   runLivePolymarketPreflightForMirror,
+  traceMirrorReserves,
   buildMirrorSyncStrategy,
   mirrorStrategyHash,
   buildMirrorSyncDaemonCliArgs,

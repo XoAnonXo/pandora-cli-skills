@@ -506,3 +506,148 @@ test('mirror sync start falls back to strategyHash when create hook returns no i
   assert.equal(emitted[0].payload.operationDiagnostics, undefined);
   assert.ok(hookCalls.some((entry) => entry[2] === 'strategy-123'));
 });
+
+test('mirror sync completion hook carries rebalance route provenance into the operation result', async () => {
+  let completed = null;
+
+  await handleMirrorSync({
+    shared: {
+      rest: ['once'],
+      indexerUrl: 'https://indexer.example',
+      timeoutMs: 5_000,
+    },
+    context: {
+      outputMode: 'json',
+      operationHooks: {
+        completeOperation: async (details) => {
+          completed = details;
+        },
+      },
+    },
+    deps: {
+      CliError: class CliError extends Error {
+        constructor(code, message, details) {
+          super(message);
+          this.code = code;
+          this.details = details;
+        }
+      },
+      includesHelpFlag: () => false,
+      emitSuccess: () => {},
+      maybeLoadTradeEnv: () => {},
+      resolveIndexerUrl: (value) => value,
+      parseMirrorSyncDaemonSelectorFlags: () => {
+        throw new Error('not used');
+      },
+      stopMirrorDaemon: async () => {
+        throw new Error('not used');
+      },
+      mirrorDaemonStatus: () => {
+        throw new Error('not used');
+      },
+      parseMirrorSyncFlags: () => ({
+        mode: 'once',
+        daemon: false,
+        executeLive: true,
+        trustDeploy: false,
+        stream: false,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-1',
+        polymarketSlug: null,
+        forceGateDeprecatedUsed: false,
+      }),
+      buildMirrorSyncStrategy: () => {
+        throw new Error('not used');
+      },
+      mirrorStrategyHash: () => {
+        throw new Error('not used');
+      },
+      buildMirrorSyncDaemonCliArgs: () => {
+        throw new Error('not used');
+      },
+      startMirrorDaemon: () => {
+        throw new Error('not used');
+      },
+      resolveTrustedDeployPair: () => {
+        throw new Error('not used');
+      },
+      verifyMirror: async () => {
+        throw new Error('not used');
+      },
+      selectHealthyPolymarketRpc: async () => ({
+        selectedRpcUrl: 'https://polygon-rpc.example',
+        attempts: [],
+        diagnostics: [],
+      }),
+      runLivePolymarketPreflightForMirror: async () => ({
+        diagnostics: [],
+      }),
+      runMirrorSync: async () => ({
+        schemaVersion: '1.0.0',
+        mode: 'once',
+        executeLive: true,
+        actionCount: 2,
+        actions: [
+          {
+            status: 'executed',
+            rebalance: {
+              side: 'buy',
+              amountUsdc: 12,
+              result: {
+                tradeTxHash: `0x${'1'.repeat(64)}`,
+                executionRouteRequested: 'flashbots-bundle',
+                executionRouteResolved: 'public',
+                executionRouteFallback: 'public',
+                executionRouteFallbackUsed: true,
+                executionRouteFallbackReason: 'Flashbots relay rejected eth_sendBundle.',
+                flashbotsRelayUrl: 'https://relay.flashbots.example',
+                flashbotsRelayMethod: 'eth_sendBundle',
+                flashbotsTargetBlockNumber: 12345678,
+                flashbotsRelayResponseId: 9,
+                flashbotsBundleHash: `0x${'2'.repeat(64)}`,
+                flashbotsSimulation: { results: [{ gasUsed: '0x1' }] },
+              },
+            },
+          },
+          {
+            status: 'noop',
+            reason: 'drift below threshold',
+          },
+        ],
+      }),
+      buildQuotePayload: async () => {
+        throw new Error('not used');
+      },
+      enforceTradeRiskGuards: () => {
+        throw new Error('not used');
+      },
+      executeTradeOnchain: async () => {
+        throw new Error('not used');
+      },
+      assertLiveWriteAllowed: async () => {},
+      hasWebhookTargets: () => false,
+      sendWebhookNotifications: async () => ({
+        count: 0,
+        successCount: 0,
+        failureCount: 0,
+        results: [],
+      }),
+      coerceMirrorServiceError: (error) => error,
+      renderMirrorSyncTickLine: () => {},
+      renderMirrorSyncDaemonTable: () => {},
+      renderMirrorSyncTable: () => {},
+      cliPath: '/usr/bin/node',
+    },
+    mirrorSyncUsage: 'pandora mirror sync once',
+  });
+
+  assert.ok(completed);
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.result.lastExecutionStatus, 'noop');
+  assert.equal(completed.result.rebalance.executionRouteRequested, 'flashbots-bundle');
+  assert.equal(completed.result.rebalance.executionRouteResolved, 'public');
+  assert.equal(completed.result.rebalance.executionRouteFallbackUsed, true);
+  assert.equal(completed.result.rebalance.flashbotsRelayMethod, 'eth_sendBundle');
+  assert.equal(completed.result.rebalance.flashbotsTargetBlockNumber, 12345678);
+  assert.deepEqual(completed.result.rebalance.flashbotsSimulation, { results: [{ gasUsed: '0x1' }] });
+});

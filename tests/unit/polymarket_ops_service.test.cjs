@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   runPolymarketBalance,
+  runPolymarketPositions,
   runPolymarketDeposit,
   runPolymarketWithdraw,
 } = require('../../cli/lib/polymarket_ops_service.cjs');
@@ -46,8 +47,13 @@ test('runPolymarketBalance returns requested wallet balances without signer/fund
   assert.equal(payload.status, 'ready');
   assert.equal(payload.requestedWallet, wallet);
   assert.equal(payload.runtime.rpcUrl, 'https://polygon.example');
+  assert.deepEqual(Object.keys(payload.balances), ['wallet']);
   assert.equal(payload.balances.wallet.address, wallet);
   assert.equal(payload.balances.wallet.formatted, '123.45');
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, 'yesBalance'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, 'noBalance'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, 'openOrdersCount'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, 'estimatedValueUsd'), false);
   assert.deepEqual(payload.diagnostics, []);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].functionName, 'balanceOf');
@@ -142,4 +148,52 @@ test('runPolymarketWithdraw execute fails closed when the proxy differs from the
       return true;
     },
   );
+});
+
+test('runPolymarketPositions returns on-chain CTF balances with inventory provenance', async () => {
+  const wallet = '0x7777777777777777777777777777777777777777';
+  const conditionId = `0x${'a'.repeat(64)}`;
+  const payload = await runPolymarketPositions(
+    {
+      wallet,
+      source: 'on-chain',
+      market: {
+        marketId: conditionId,
+        slug: 'btc-above-100k',
+        question: 'Will BTC close above $100k?',
+        yesTokenId: '101',
+        noTokenId: '102',
+        yesPct: 62,
+        noPct: 38,
+      },
+      rpcUrl: 'https://polygon.example',
+    },
+    {
+      publicClient: {
+        readContract: async ({ args }) => {
+          const tokenId = String(args[1]);
+          if (tokenId === '101') return 2_500_000n;
+          if (tokenId === '102') return 750_000n;
+          return 0n;
+        },
+      },
+    },
+  );
+
+  assert.equal(payload.action, 'positions');
+  assert.equal(payload.status, 'ready');
+  assert.equal(payload.sourceRequested, 'on-chain');
+  assert.equal(payload.sourceResolved, 'on-chain');
+  assert.equal(payload.market.marketId, conditionId);
+  assert.equal(payload.market.yesTokenId, '101');
+  assert.equal(payload.market.noTokenId, '102');
+  assert.equal(payload.summary.yesBalance, 2.5);
+  assert.equal(payload.summary.noBalance, 0.75);
+  assert.equal(payload.summary.estimatedValueUsd, 1.835);
+  assert.equal(payload.positions.length, 2);
+  assert.deepEqual(
+    payload.positions.map((item) => item.fieldSources.balance),
+    ['on-chain', 'on-chain'],
+  );
+  assert.equal(payload.openOrders.length, 0);
 });

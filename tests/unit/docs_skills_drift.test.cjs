@@ -50,10 +50,15 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   const benchmarkScenarioCatalogText = read('docs/benchmarks/scenario-catalog.md');
   const mirrorHelp = JSON.parse(runCli(['--output', 'json', 'mirror', '--help']).stdout);
   const mirrorHelpAvailable = mirrorHelp.ok === true && mirrorHelp.command === 'mirror.help';
+  const mirrorTraceHelp = JSON.parse(runCli(['--output', 'json', 'mirror', 'trace', '--help']).stdout);
+  const mirrorTraceHelpAvailable = mirrorTraceHelp.ok === true && mirrorTraceHelp.command === 'mirror.trace.help';
   const mirrorSyncHelp = JSON.parse(runCli(['--output', 'json', 'mirror', 'sync', '--help']).stdout);
   const mirrorSyncHelpAvailable = mirrorSyncHelp.ok === true && mirrorSyncHelp.command === 'mirror.sync.help';
   const mirrorStatusHelp = JSON.parse(runCli(['--output', 'json', 'mirror', 'status', '--help']).stdout);
   const mirrorStatusHelpAvailable = mirrorStatusHelp.ok === true && mirrorStatusHelp.command === 'mirror.status.help';
+  const polymarketHelp = JSON.parse(runCli(['--output', 'json', 'polymarket', '--help']).stdout);
+  const polymarketBalanceHelp = JSON.parse(runCli(['--output', 'json', 'polymarket', 'balance', '--help']).stdout);
+  const polymarketPositionsHelp = JSON.parse(runCli(['--output', 'json', 'polymarket', 'positions', '--help']).stdout);
 
   assert.equal(capabilities.ok, true);
   assert.equal(capabilities.command, 'capabilities');
@@ -127,6 +132,13 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   assert.match(commandReferenceText, /mirror status --with-live/);
   assert.match(commandReferenceText, /mirror pnl/);
   assert.match(commandReferenceText, /mirror audit/);
+  assert.match(commandReferenceText, /mirror trace/);
+  assert.match(commandReferenceText, /--blocks <csv>/);
+  assert.match(commandReferenceText, /polymarket positions/);
+  assert.match(commandReferenceText, /--source auto\|api\|on-chain/);
+  assert.match(commandReferenceText, /YES\/NO inventory and open orders/);
+  assert.match(commandReferenceText, /balance[\s\S]*not the canonical YES\/NO share inventory surface/);
+  assert.match(commandReferenceText, /archive/i);
   assert.match(commandReferenceText, /pandora \[--output table\|json\] dashboard/);
   assert.match(commandReferenceText, /pandora \[--output table\|json\] fund-check/);
   assert.match(commandReferenceText, /pandora \[--output table\|json\] markets mine/);
@@ -136,6 +148,9 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   assert.match(commandReferenceText, /mirror hedge-check/);
   assert.match(commandReferenceText, /mirror calc/);
   assert.match(commandReferenceText, /fund-check/);
+  assert.match(commandReferenceText, /polymarket positions/);
+  assert.match(commandReferenceText, /--source auto\|api\|on-chain/);
+  assert.match(commandReferenceText, /polymarket balance/);
   assert.match(mirrorOperationsText, /not atomic/i);
   assert.match(mirrorOperationsText, /MIRROR_EXPIRY_TOO_CLOSE/);
   assert.match(mirrorOperationsText, /POLYMARKET_SOURCE_FRESH/);
@@ -144,10 +159,17 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   assert.match(mirrorOperationsText, /strict-close-time-delta/);
   assert.match(mirrorOperationsText, /dashboard/);
   assert.match(mirrorOperationsText, /mirror dashboard/);
+  assert.match(mirrorOperationsText, /mirror trace/);
+  assert.match(mirrorOperationsText, /pandora polymarket positions/);
+  assert.match(mirrorOperationsText, /canonical CTF YES\/NO inventory/i);
+  assert.match(mirrorOperationsText, /--source auto/);
+  assert.match(mirrorOperationsText, /archive/i);
   assert.match(mirrorOperationsText, /mirror drift/);
   assert.match(mirrorOperationsText, /mirror hedge-check/);
   assert.match(mirrorOperationsText, /mirror calc/);
   assert.match(mirrorOperationsText, /fund-check/);
+  assert.match(mirrorOperationsText, /polymarket positions/);
+  assert.match(mirrorOperationsText, /polymarket balance/);
   assert.doesNotMatch(mirrorOperationsText, /Use `pandora polymarket check` when the workflow calls this a "fund-check"/);
   assert.match(quickstartText, /quote --target-pct/);
   assert.match(quickstartText, /markets mine/);
@@ -167,6 +189,20 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   assert.match(portfolioCloseoutText, /lp simulate-remove/);
   assert.match(portfolioCloseoutText, /mirror pnl/);
   assert.match(portfolioCloseoutText, /mirror audit/);
+  assert.equal(polymarketHelp.ok, true);
+  assert.equal(polymarketHelp.command, 'polymarket.help');
+  assert.match(polymarketHelp.data.usage, /check\|approve\|preflight\|balance\|positions\|deposit\|withdraw\|trade/);
+  assert.equal(polymarketBalanceHelp.ok, true);
+  assert.equal(polymarketBalanceHelp.command, 'polymarket.balance.help');
+  assert.doesNotMatch(polymarketBalanceHelp.data.usage, /--source auto\|api\|on-chain/);
+  assert.doesNotMatch(polymarketBalanceHelp.data.usage, /--condition-id <id>\|--market-id <id>\|--slug <slug>\|--token-id <id>/);
+  assert.equal(polymarketPositionsHelp.ok, true);
+  assert.equal(polymarketPositionsHelp.command, 'polymarket.positions.help');
+  assert.match(polymarketPositionsHelp.data.usage, /--wallet <address>/);
+  assert.match(polymarketPositionsHelp.data.usage, /--funder <address>/);
+  assert.match(polymarketPositionsHelp.data.usage, /--condition-id <id>\|--market-id <id>\|--slug <slug>\|--token-id <id>/);
+  assert.match(polymarketPositionsHelp.data.usage, /--source auto\|api\|on-chain/);
+  assert.match(polymarketPositionsHelp.data.usage, /--polymarket-data-api-url <url>/);
   if (mirrorHelpAvailable) {
     assert.equal(Array.isArray(mirrorHelp.data.notes), true);
     assert.equal(mirrorHelp.data.notes.some((note) => /not atomic/i.test(note)), true);
@@ -176,6 +212,16 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
     assert.equal(mirrorHelp.data.notes.some((note) => /cached snapshots/.test(note)), true);
     assert.equal(mirrorHelp.data.notes.some((note) => /--polymarket-rpc-url/.test(note)), true);
     assert.equal(mirrorHelp.data.notes.some((note) => /verifyDiagnostics/.test(note)), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /mirror trace/i.test(note)), true);
+  }
+  if (mirrorTraceHelpAvailable) {
+    assert.match(mirrorTraceHelp.data.usage, /--pandora-market-address <address>\|--market-address <address>/);
+    assert.match(mirrorTraceHelp.data.usage, /--rpc-url <url>/);
+    assert.match(mirrorTraceHelp.data.usage, /--blocks <csv>/);
+    assert.match(mirrorTraceHelp.data.usage, /--from-block <n> --to-block <n>/);
+    assert.equal(Array.isArray(mirrorTraceHelp.data.notes), true);
+    assert.equal(mirrorTraceHelp.data.notes.some((note) => /archive/i.test(String(note))), true);
+    assert.equal(mirrorTraceHelp.data.notes.some((note) => /1000 snapshots|--limit/i.test(String(note))), true);
   }
   if (mirrorSyncHelpAvailable) {
     assert.match(mirrorSyncHelp.data.usage, /--polymarket-rpc-url <url>/);
@@ -211,7 +257,8 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   const sdkPackages = capabilities.data.transports.sdk.packages;
   assert.equal(sdkPackages.typescript.publicRegistryPublished, true);
   assert.equal(sdkPackages.python.publicRegistryPublished, true);
-  assert.match(quickstartText, /public npm package `@thisispandora\/agent-sdk`/i);
+  assert.match(quickstartText, /npm install @thisispandora\/agent-sdk@alpha/i);
+  assert.match(quickstartText, /pip install pandora-agent==0\.1\.0a3/i);
   assertMentionsAll(supportMatrixText, [
     sdkPackages.typescript.name,
     sdkPackages.python.name,

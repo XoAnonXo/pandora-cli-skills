@@ -487,6 +487,21 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
   assert.ok(descriptors['mirror.replay']);
   assert.match(descriptors['mirror.drift'].summary, /drift\/readiness/i);
   assert.match(descriptors['mirror.hedge-check'].summary, /hedge-gap\/readiness/i);
+  assert.equal(descriptors['mirror.trace'].dataSchema, '#/definitions/MirrorTracePayload');
+  assert.deepEqual(descriptors['mirror.trace'].inputSchema.required, ['rpc-url']);
+  assert.deepEqual(
+    descriptors['mirror.trace'].inputSchema.oneOf.map((branch) => branch.required),
+    [['blocks'], ['from-block', 'to-block']],
+  );
+  assert.deepEqual(
+    descriptors['mirror.trace'].inputSchema.oneOf[0].not.anyOf,
+    [{ required: ['from-block', 'to-block'] }, { required: ['from-block'] }, { required: ['to-block'] }],
+  );
+  assert.ok(
+    descriptors['mirror.trace'].inputSchema.oneOf[1].not.anyOf.some((branch) =>
+      Array.isArray(branch.required) && branch.required.length === 1 && branch.required[0] === 'blocks'
+    ),
+  );
   assert.match(descriptors['mirror.logs'].summary, /daemon log/i);
   assert.match(descriptors['mirror.replay'].summary, /persisted mirror execution history/i);
   assert.match(toolDefinitions['mirror.status'].description, /status\/dashboard payload/i);
@@ -496,6 +511,12 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
   assert.equal(toolDefinitions['mirror.replay'].canonicalTool, 'mirror.replay');
   assert.match(descriptors['mirror.hedge-calc'].summary, /offline hedge sizing/i);
   assert.match(descriptors['polymarket.check'].summary, /lower-level readiness primitive/i);
+  assert.equal(descriptors['polymarket.positions'].dataSchema, '#/definitions/PolymarketPositionsPayload');
+  assert.deepEqual(
+    descriptors['polymarket.positions'].inputSchema.oneOf.map((branch) => branch.required),
+    [undefined, ['condition-id'], ['slug'], ['token-id']],
+  );
+  assert.match(toolDefinitions['polymarket.positions'].description, /YES\/NO inventory/i);
   assert.match(toolDefinitions['polymarket.balance'].description, /signer\/proxy funding balances/i);
 });
 

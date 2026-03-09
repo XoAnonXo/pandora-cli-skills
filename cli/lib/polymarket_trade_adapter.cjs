@@ -7,10 +7,26 @@ const { round, toOptionalNumber } = require('./shared/utils.cjs');
 
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
 const DEFAULT_POLYMARKET_GAMMA_URL = 'https://gamma-api.polymarket.com';
+const DEFAULT_POLYMARKET_DATA_API_URL = 'https://data-api.polymarket.com';
 const DEFAULT_POLYMARKET_CHAIN = Chain.POLYGON;
+const DEFAULT_POLYMARKET_CTF_ADDRESS = '0x4d97dcd97ec945f40cf65f87097ace5ea0476045';
+const DEFAULT_POLYMARKET_POSITION_DECIMALS = 6;
 const POLYMARKET_CACHE_SCHEMA_VERSION = '1.0.0';
 const POLYMARKET_SIG_TYPE_EOA = 0;
 const POLYMARKET_SIG_TYPE_PROXY = 2;
+
+const ERC1155_BALANCE_OF_ABI = [
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'account', type: 'address' },
+      { name: 'id', type: 'uint256' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+];
 
 const tradingClientCache = new Map();
 const derivedCredsCache = new Map();
@@ -36,6 +52,16 @@ function toIntegerOrNull(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return null;
   return Math.trunc(numeric);
+}
+
+function toBigIntOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'bigint') return value;
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
 }
 
 function toTimestampSeconds(value) {
@@ -1548,6 +1574,153 @@ function toPrice01(value) {
   return null;
 }
 
+function normalizePositionSource(value) {
+  const normalized = normalizeText(value);
+  if (normalized === 'api') return 'api';
+  if (normalized === 'on-chain' || normalized === 'onchain' || normalized === 'on_chain') return 'on-chain';
+  return 'auto';
+}
+
+function formatPositionBalance(rawValue, decimals = DEFAULT_POLYMARKET_POSITION_DECIMALS) {
+  const raw = toBigIntOrNull(rawValue);
+  const normalizedDecimals = Number.isInteger(decimals) && decimals >= 0 ? decimals : DEFAULT_POLYMARKET_POSITION_DECIMALS;
+  if (raw === null) return null;
+  const sign = raw < 0n ? '-' : '';
+  const absolute = raw < 0n ? -raw : raw;
+  const base = 10n ** BigInt(normalizedDecimals);
+  const whole = absolute / base;
+  const fraction = absolute % base;
+  const fractionText = fraction.toString().padStart(normalizedDecimals, '0').replace(/0+$/, '');
+  const numeric = Number(fractionText ? `${sign}${whole.toString()}.${fractionText}` : `${sign}${whole.toString()}`);
+  return Number.isFinite(numeric) ? round(numeric, normalizedDecimals) : null;
+}
+
+function normalizePositionBalanceEntry(rawValue, fallbackSource = null, fallbackTokenId = null) {
+  const entry = rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue) ? rawValue : null;
+  const tokenId = toStringOrNull(entry && entry.tokenId) || fallbackTokenId || null;
+  const source = toStringOrNull(entry && entry.source) || fallbackSource || null;
+  const decimals = toIntegerOrNull(entry && entry.decimals) || DEFAULT_POLYMARKET_POSITION_DECIMALS;
+  const rawBalance =
+    toStringOrNull(entry && entry.balanceRaw)
+    || toStringOrNull(entry && entry.raw)
+    || (typeof rawValue === 'bigint' ? rawValue.toString() : null);
+  let balance = toOptionalNumber(entry && entry.balance !== undefined ? entry.balance : rawValue);
+  if (balance === null && rawBalance !== null) {
+    balance = formatPositionBalance(rawBalance, decimals);
+  }
+
+  return {
+    tokenId,
+    source,
+    balance: balance === null ? null : round(balance, 6),
+    balanceRaw: rawBalance,
+    decimals,
+    readOk:
+      entry && Object.prototype.hasOwnProperty.call(entry, 'readOk')
+        ? Boolean(entry.readOk)
+        : balance !== null || rawBalance !== null,
+    error: entry && entry.error ? String(entry.error) : null,
+  };
+}
+
+function normalizeOpenOrderRecord(order) {
+  if (!order || typeof order !== 'object') return null;
+  return {
+    id: toStringOrNull(order.id),
+    marketId: toStringOrNull(order.market || order.condition_id || order.conditionId),
+    tokenId: toStringOrNull(order.asset_id || order.assetId || order.token_id || order.tokenId),
+    side: toStringOrNull(order.side),
+    orderType: toStringOrNull(order.order_type || order.orderType),
+    status: toStringOrNull(order.status),
+    price: toOptionalNumber(order.price),
+    originalSize: toOptionalNumber(order.original_size || order.originalSize || order.size || order.amount),
+    remainingSize: deriveRemainingOrderSize(order),
+    matchedSize: toOptionalNumber(order.size_matched || order.sizeMatched),
+    createdAt: toStringOrNull(order.created_at || order.createdAt),
+  };
+}
+
+async function readOnchainPositionBalance(options = {}) {
+  const publicClient = options.publicClient || null;
+  const walletAddress = toStringOrNull(options.walletAddress);
+  const tokenId = toStringOrNull(options.tokenId);
+  const ctfAddress = toStringOrNull(options.ctfAddress) || DEFAULT_POLYMARKET_CTF_ADDRESS;
+  if (!publicClient) {
+    return {
+      tokenId,
+      source: 'on-chain',
+      balance: null,
+      balanceRaw: null,
+      decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+      readOk: false,
+      error: 'RPC client unavailable.',
+    };
+  }
+  if (!walletAddress) {
+    return {
+      tokenId,
+      source: 'on-chain',
+      balance: null,
+      balanceRaw: null,
+      decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+      readOk: false,
+      error: 'Wallet address unavailable.',
+    };
+  }
+  if (!tokenId) {
+    return {
+      tokenId: null,
+      source: 'on-chain',
+      balance: null,
+      balanceRaw: null,
+      decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+      readOk: false,
+      error: 'Token id unavailable.',
+    };
+  }
+
+  const tokenIdArg = toBigIntOrNull(tokenId);
+  if (tokenIdArg === null) {
+    return {
+      tokenId,
+      source: 'on-chain',
+      balance: null,
+      balanceRaw: null,
+      decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+      readOk: false,
+      error: `Invalid token id: ${tokenId}.`,
+    };
+  }
+
+  try {
+    const raw = await publicClient.readContract({
+      address: ctfAddress,
+      abi: ERC1155_BALANCE_OF_ABI,
+      functionName: 'balanceOf',
+      args: [walletAddress, tokenIdArg],
+    });
+    return {
+      tokenId,
+      source: 'on-chain',
+      balance: formatPositionBalance(raw),
+      balanceRaw: raw !== null && raw !== undefined ? raw.toString() : null,
+      decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+      readOk: true,
+      error: null,
+    };
+  } catch (err) {
+    return {
+      tokenId,
+      source: 'on-chain',
+      balance: null,
+      balanceRaw: null,
+      decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+      readOk: false,
+      error: formatNetworkError(err),
+    };
+  }
+}
+
 function dedupeDiagnostics(lines) {
   const seen = new Set();
   const output = [];
@@ -1599,7 +1772,7 @@ function pickFirstObject(values) {
 
 function extractMockPositionData(payload) {
   if (!payload || typeof payload !== 'object') {
-    return { balancesByToken: null, openOrders: null };
+    return { balancesByToken: null, openOrders: null, positions: null };
   }
 
   return {
@@ -1617,6 +1790,610 @@ function extractMockPositionData(payload) {
       payload.data && payload.data.orders,
       payload.position && payload.position.openOrders,
     ]),
+    positions: pickFirstArray([
+      payload.positions,
+      payload.currentPositions,
+      payload.data && payload.data.positions,
+      payload.data && payload.data.currentPositions,
+      payload.position && payload.position.positions,
+    ]),
+  };
+}
+
+function normalizePositionInventorySource(value) {
+  const normalized = String(value || 'auto').trim().toLowerCase();
+  if (normalized === 'api' || normalized === 'on-chain') return normalized;
+  return 'auto';
+}
+
+function normalizeDataApiBaseUrl(dataApiUrl) {
+  const raw = String(dataApiUrl || process.env.POLYMARKET_DATA_API_URL || DEFAULT_POLYMARKET_DATA_API_URL).trim();
+  return raw.replace(/\/+$/, '');
+}
+
+function buildDataApiPositionsUrl(baseUrl, walletAddress) {
+  const url = new URL(`${baseUrl}/positions`);
+  url.searchParams.set('user', walletAddress);
+  url.searchParams.set('sizeThreshold', '0');
+  return url.toString();
+}
+
+function extractPositionRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  return pickFirstArray([
+    payload.positions,
+    payload.currentPositions,
+    payload.data && payload.data.positions,
+    payload.data && payload.data.currentPositions,
+    payload.results,
+    payload.data,
+  ]) || [];
+}
+
+function extractPositionTokenId(row) {
+  return toStringOrNull(
+    row &&
+      (row.asset ||
+        row.asset_id ||
+        row.assetId ||
+        row.token_id ||
+        row.tokenId ||
+        row.position_id ||
+        row.positionId),
+  );
+}
+
+function extractPositionConditionId(row) {
+  return toStringOrNull(
+    row &&
+      (row.conditionId ||
+        row.condition_id ||
+        row.market ||
+        row.market_id ||
+        row.marketId ||
+        row.question_id ||
+        row.questionId),
+  );
+}
+
+function extractPositionBalance(row) {
+  return toOptionalNumber(
+    row &&
+      (row.size ||
+        row.balance ||
+        row.amount ||
+        row.quantity ||
+        row.position ||
+        row.currentSize ||
+        row.current_size),
+  );
+}
+
+function extractPositionPrice(row) {
+  return toPrice01(
+    row &&
+      (row.curPrice ||
+        row.currentPrice ||
+        row.current_price ||
+        row.price ||
+        row.avgPrice ||
+        row.averagePrice ||
+        row.average_price),
+  );
+}
+
+function extractPositionEstimatedValue(row) {
+  return toOptionalNumber(
+    row &&
+      (row.currentValue ||
+        row.current_value ||
+        row.value ||
+        row.notional ||
+        row.notionalUsd ||
+        row.notional_usd ||
+        row.usdValue ||
+        row.amountUsd ||
+        row.amount_usd),
+  );
+}
+
+function resolvePositionOutcome(row, market, tokenId) {
+  if (market && tokenId) {
+    if (market.yesTokenId && normalizeText(market.yesTokenId) === normalizeText(tokenId)) return 'yes';
+    if (market.noTokenId && normalizeText(market.noTokenId) === normalizeText(tokenId)) return 'no';
+  }
+
+  const raw = String(
+    (row &&
+      (row.outcome ||
+        row.side ||
+        row.positionSide ||
+        row.position_side ||
+        row.title ||
+        row.label)) ||
+      '',
+  ).trim().toLowerCase();
+  if (['yes', 'true'].includes(raw)) return 'yes';
+  if (['no', 'false'].includes(raw)) return 'no';
+  return null;
+}
+
+function normalizeOpenOrders(rows, market) {
+  const orders = Array.isArray(rows) ? rows : [];
+  return orders.map((order) => {
+    const tokenId = toStringOrNull(order && (order.asset_id || order.assetId || order.token_id || order.tokenId));
+    const size = deriveRemainingOrderSize(order);
+    const price = toOptionalNumber(order && order.price);
+    const notionalUsd = size !== null && price !== null ? round(size * price, 6) : null;
+    return {
+      orderId: toStringOrNull(order && (order.id || order.order_id || order.orderId)),
+      tokenId,
+      side: toStringOrNull(order && order.side),
+      outcome: resolvePositionOutcome(order, market, tokenId),
+      size: size === null ? null : round(size, 6),
+      price: price === null ? null : round(price, 8),
+      notionalUsd,
+      status: toStringOrNull(order && (order.status || order.state)) || 'open',
+      source: 'authenticated-clob',
+    };
+  });
+}
+
+function filterOpenOrdersForSelection(openOrders, selector = {}, market = null) {
+  const marketNeedle = normalizeText(selector.marketId || selector.conditionId || (market && market.marketId));
+  const tokenNeedles = new Set(
+    (Array.isArray(selector.tokenIds) ? selector.tokenIds : [])
+      .concat([market && market.yesTokenId, market && market.noTokenId])
+      .map((tokenId) => normalizeText(tokenId))
+      .filter(Boolean),
+  );
+  if (!marketNeedle && tokenNeedles.size === 0) {
+    return Array.isArray(openOrders) ? openOrders.slice() : [];
+  }
+  return (Array.isArray(openOrders) ? openOrders : []).filter((order) => {
+    const orderMarket = normalizeText(order && (order.market || order.condition_id || order.conditionId));
+    const orderToken = normalizeText(order && (order.asset_id || order.assetId || order.token_id || order.tokenId));
+    if (marketNeedle && orderMarket === marketNeedle) return true;
+    if (tokenNeedles.size && tokenNeedles.has(orderToken)) return true;
+    return false;
+  });
+}
+
+function buildInventorySummary(market, positions, openOrders, diagnostics) {
+  if (market && (market.yesTokenId || market.noTokenId)) {
+    const balancesByToken = {};
+    for (const position of Array.isArray(positions) ? positions : []) {
+      if (!position || !position.tokenId || position.balance === null || position.balance === undefined) continue;
+      balancesByToken[position.tokenId] = position.balance;
+    }
+    return normalizePolymarketPositionSummary({
+      marketId: market.marketId,
+      yesTokenId: market.yesTokenId,
+      noTokenId: market.noTokenId,
+      yesPrice: market.yesPct,
+      noPrice: market.noPct,
+      balancesByToken,
+      openOrders,
+      diagnostics,
+    });
+  }
+
+  let estimatedValueUsd = 0;
+  let estimatedValueSeen = false;
+  let yesBalance = 0;
+  let yesSeen = false;
+  let noBalance = 0;
+  let noSeen = false;
+  for (const position of Array.isArray(positions) ? positions : []) {
+    if (!position || typeof position !== 'object') continue;
+    if (Number.isFinite(Number(position.estimatedValueUsd))) {
+      estimatedValueUsd += Number(position.estimatedValueUsd);
+      estimatedValueSeen = true;
+    }
+    if (position.outcome === 'yes' && Number.isFinite(Number(position.balance))) {
+      yesBalance += Number(position.balance);
+      yesSeen = true;
+    }
+    if (position.outcome === 'no' && Number.isFinite(Number(position.balance))) {
+      noBalance += Number(position.balance);
+      noSeen = true;
+    }
+  }
+
+  let openOrdersNotionalUsd = 0;
+  let openOrdersSeen = false;
+  for (const order of Array.isArray(openOrders) ? openOrders : []) {
+    if (!order || typeof order !== 'object') continue;
+    if (Number.isFinite(Number(order.notionalUsd))) {
+      openOrdersNotionalUsd += Number(order.notionalUsd);
+      openOrdersSeen = true;
+    }
+  }
+
+  return {
+    yesBalance: yesSeen ? round(yesBalance, 6) : null,
+    noBalance: noSeen ? round(noBalance, 6) : null,
+    openOrdersCount: Array.isArray(openOrders) ? openOrders.length : null,
+    openOrdersNotionalUsd: openOrdersSeen ? round(openOrdersNotionalUsd, 6) : Array.isArray(openOrders) ? 0 : null,
+    estimatedValueUsd: estimatedValueSeen ? round(estimatedValueUsd, 6) : null,
+    positionDeltaApprox: yesSeen && noSeen ? round(yesBalance - noBalance, 6) : null,
+    prices: {
+      yes: null,
+      no: null,
+    },
+    diagnostics: dedupeDiagnostics(diagnostics),
+  };
+}
+
+async function maybeBuildTradingClientForInventory(options = {}, diagnostics = []) {
+  if (options.client && typeof options.client === 'object') {
+    return options.client;
+  }
+
+  const envCreds = readTradingCredsFromEnv(options.env || process.env);
+  const privateKey = options.privateKey || envCreds.privateKey;
+  if (!privateKey) {
+    diagnostics.push('POLYMARKET_PRIVATE_KEY not configured; authenticated CLOB balances/open orders are unavailable.');
+    return null;
+  }
+
+  try {
+    return await buildTradingClient({
+      host: options.host || envCreds.host || DEFAULT_POLYMARKET_HOST,
+      chain: options.chain || DEFAULT_POLYMARKET_CHAIN,
+      privateKey,
+      funder: options.funder || envCreds.funder,
+      apiKey: options.apiKey || envCreds.apiKey,
+      apiSecret: options.apiSecret || envCreds.apiSecret,
+      apiPassphrase: options.apiPassphrase || envCreds.apiPassphrase,
+    });
+  } catch (err) {
+    diagnostics.push(`Unable to initialize Polymarket trading client: ${formatNetworkError(err)}`);
+    return null;
+  }
+}
+
+async function fetchPolymarketPositionInventory(options = {}) {
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const diagnostics = [];
+  const source = normalizePositionInventorySource(options.source);
+  const selector = {
+    wallet: toStringOrNull(options.wallet || options.walletAddress || options.ownerAddress) || null,
+    conditionId: toStringOrNull(options.conditionId || options.marketId) || null,
+    slug: toStringOrNull(options.slug) || null,
+    tokenIds: Array.from(
+      new Set(
+        (Array.isArray(options.tokenIds) ? options.tokenIds : [options.tokenId])
+          .map((tokenId) => toStringOrNull(tokenId))
+          .filter(Boolean),
+      ),
+    ),
+    source,
+  };
+
+  let market = options.market && typeof options.market === 'object' ? { ...options.market } : null;
+  if (!market && (selector.conditionId || selector.slug)) {
+    try {
+      market = await resolvePolymarketMarket({
+        marketId: selector.conditionId,
+        slug: selector.slug,
+        host: options.host,
+        gammaUrl: options.gammaUrl,
+        mockUrl: options.mockUrl,
+        timeoutMs,
+      });
+    } catch (err) {
+      diagnostics.push(`Polymarket market resolution failed: ${formatNetworkError(err)}`);
+    }
+  }
+
+  if (market) {
+    if (market.yesTokenId) selector.tokenIds.push(market.yesTokenId);
+    if (market.noTokenId) selector.tokenIds.push(market.noTokenId);
+    selector.tokenIds = Array.from(new Set(selector.tokenIds));
+  }
+
+  let mockData = null;
+  if (options.mockUrl) {
+    try {
+      mockData = extractMockPositionData(await fetchMockPayload(options.mockUrl, timeoutMs));
+      diagnostics.push('Loaded Polymarket position inventory from mock payload.');
+    } catch (err) {
+      diagnostics.push(`Polymarket mock position fetch failed: ${formatNetworkError(err)}`);
+    }
+  }
+
+  const positionsByToken = new Map();
+  const balanceSourceByToken = new Map();
+  const walletAddress = selector.wallet || toStringOrNull(options.funder) || null;
+
+  if (source !== 'on-chain' && walletAddress) {
+    try {
+      let apiRows = [];
+      if (mockData && Array.isArray(mockData.positions)) {
+        apiRows = mockData.positions;
+      } else {
+        const dataApiUrl = normalizeDataApiBaseUrl(options.dataApiUrl);
+        apiRows = extractPositionRows(await fetchJson(buildDataApiPositionsUrl(dataApiUrl, walletAddress), timeoutMs));
+      }
+
+      for (const row of apiRows) {
+        const tokenId = extractPositionTokenId(row);
+        const conditionId = extractPositionConditionId(row);
+        const outcome = resolvePositionOutcome(row, market, tokenId);
+        if (selector.conditionId && normalizeText(conditionId || market && market.marketId) !== normalizeText(selector.conditionId)) {
+          continue;
+        }
+        if (selector.tokenIds.length && (!tokenId || !selector.tokenIds.some((candidate) => normalizeText(candidate) === normalizeText(tokenId)))) {
+          continue;
+        }
+        if (!tokenId && !conditionId) continue;
+        const balance = extractPositionBalance(row);
+        const price = extractPositionPrice(row);
+        const estimatedValueUsd = extractPositionEstimatedValue(row);
+        const entry = {
+          tokenId,
+          marketId: toStringOrNull(conditionId || (market && market.marketId)),
+          conditionId: toStringOrNull(conditionId || (market && market.marketId)),
+          slug: toStringOrNull(row && (row.slug || row.marketSlug || row.market_slug || (market && market.slug))),
+          question: toStringOrNull(row && (row.question || row.title || (market && market.question))),
+          outcome,
+          balance: balance === null ? null : round(balance, 6),
+          balanceRaw: null,
+          decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+          price: price,
+          estimatedValueUsd:
+            estimatedValueUsd !== null
+              ? round(estimatedValueUsd, 6)
+              : balance !== null && price !== null
+                ? round(balance * price, 6)
+                : null,
+          cashPnl: toOptionalNumber(row && (row.cashPnl || row.cash_pnl)),
+          realizedPnl: toOptionalNumber(row && (row.realizedPnl || row.realized_pnl)),
+          source: 'api',
+          fieldSources: {
+            balance: balance !== null ? 'api' : null,
+            price: price !== null ? 'api' : null,
+            estimatedValueUsd:
+              estimatedValueUsd !== null
+                ? 'api'
+                : balance !== null && price !== null
+                  ? 'derived'
+                  : null,
+          },
+        };
+        positionsByToken.set(tokenId || `${entry.conditionId || 'position'}:${entry.outcome || 'unknown'}`, entry);
+        if (tokenId && entry.balance !== null) {
+          balanceSourceByToken.set(tokenId, 'api');
+        }
+      }
+    } catch (err) {
+      diagnostics.push(`Polymarket current positions fetch failed: ${formatNetworkError(err)}`);
+    }
+  } else if (source !== 'on-chain' && !walletAddress) {
+    diagnostics.push('Wallet address unavailable; skipping public Data API current positions lookup.');
+  }
+
+  const tradingClient = source === 'on-chain' ? null : await maybeBuildTradingClientForInventory(options, diagnostics);
+  if (tradingClient && selector.tokenIds.length) {
+    await Promise.all(
+      selector.tokenIds.map(async (tokenId) => {
+        if (!tokenId || balanceSourceByToken.has(tokenId)) return;
+        try {
+          const response = await callWithTimeout(
+            () =>
+              tradingClient.getBalanceAllowance({
+                asset_type: AssetType.CONDITIONAL,
+                token_id: tokenId,
+              }),
+            timeoutMs,
+            `Polymarket getBalanceAllowance(${tokenId})`,
+          );
+          if (!responseContainsError(response) && response && response.balance !== undefined) {
+            const balance = toOptionalNumber(response.balance);
+            const key = tokenId;
+            const entry = positionsByToken.get(key) || {
+              tokenId,
+              marketId: market && market.marketId ? market.marketId : selector.conditionId,
+              conditionId: market && market.marketId ? market.marketId : selector.conditionId,
+              slug: market && market.slug ? market.slug : null,
+              question: market && market.question ? market.question : null,
+              outcome: resolvePositionOutcome(null, market, tokenId),
+              decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+              source: 'authenticated-clob',
+              fieldSources: {},
+            };
+            entry.balance = balance === null ? null : round(balance, 6);
+            entry.balanceRaw = entry.balanceRaw || null;
+            entry.fieldSources = {
+              ...(entry.fieldSources || {}),
+              balance: balance === null ? null : 'authenticated-clob',
+            };
+            if (entry.price === undefined) {
+              entry.price = null;
+            }
+            if (entry.estimatedValueUsd === undefined || entry.estimatedValueUsd === null) {
+              const marketPrice =
+                entry.outcome === 'yes'
+                  ? toPrice01(market && market.yesPct)
+                  : entry.outcome === 'no'
+                    ? toPrice01(market && market.noPct)
+                    : null;
+              entry.price = entry.price !== null && entry.price !== undefined ? entry.price : marketPrice;
+              entry.estimatedValueUsd =
+                entry.balance !== null && entry.price !== null ? round(entry.balance * entry.price, 6) : null;
+              entry.fieldSources.estimatedValueUsd =
+                entry.estimatedValueUsd !== null ? 'derived' : entry.fieldSources.estimatedValueUsd || null;
+            }
+            positionsByToken.set(key, entry);
+            balanceSourceByToken.set(tokenId, 'authenticated-clob');
+          }
+        } catch (err) {
+          diagnostics.push(`Conditional token balance lookup failed for ${tokenId}: ${formatNetworkError(err)}`);
+        }
+      }),
+    );
+  }
+
+  if (source !== 'api' && walletAddress && options.publicClient && selector.tokenIds.length) {
+    await Promise.all(
+      selector.tokenIds.map(async (tokenId) => {
+        if (!tokenId || balanceSourceByToken.has(tokenId) && source !== 'on-chain') return;
+        try {
+          const rawBalance = await options.publicClient.readContract({
+            address: options.ctfAddress || DEFAULT_POLYMARKET_CTF_ADDRESS,
+            abi: ERC1155_BALANCE_OF_ABI,
+            functionName: 'balanceOf',
+            args: [walletAddress, BigInt(tokenId)],
+          });
+          const numericBalance = typeof rawBalance === 'bigint'
+            ? Number(rawBalance) / (10 ** DEFAULT_POLYMARKET_POSITION_DECIMALS)
+            : toOptionalNumber(rawBalance);
+          const key = tokenId;
+          const entry = positionsByToken.get(key) || {
+            tokenId,
+            marketId: market && market.marketId ? market.marketId : selector.conditionId,
+            conditionId: market && market.marketId ? market.marketId : selector.conditionId,
+            slug: market && market.slug ? market.slug : null,
+            question: market && market.question ? market.question : null,
+            outcome: resolvePositionOutcome(null, market, tokenId),
+            decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+            source: 'on-chain',
+            fieldSources: {},
+          };
+          entry.balance = numericBalance === null ? null : round(numericBalance, 6);
+          entry.balanceRaw = typeof rawBalance === 'bigint' ? rawBalance.toString() : toStringOrNull(rawBalance);
+          entry.fieldSources = {
+            ...(entry.fieldSources || {}),
+            balance: entry.balance !== null ? 'on-chain' : null,
+          };
+          const marketPrice =
+            entry.outcome === 'yes'
+              ? toPrice01(market && market.yesPct)
+              : entry.outcome === 'no'
+                ? toPrice01(market && market.noPct)
+                : null;
+          if (entry.price === null || entry.price === undefined) {
+            entry.price = marketPrice;
+            entry.fieldSources.price = marketPrice !== null ? 'market' : entry.fieldSources.price || null;
+          }
+          if (entry.estimatedValueUsd === null || entry.estimatedValueUsd === undefined) {
+            entry.estimatedValueUsd =
+              entry.balance !== null && entry.price !== null ? round(entry.balance * entry.price, 6) : null;
+            entry.fieldSources.estimatedValueUsd =
+              entry.estimatedValueUsd !== null ? 'derived' : entry.fieldSources.estimatedValueUsd || null;
+          }
+          positionsByToken.set(key, entry);
+          balanceSourceByToken.set(tokenId, 'on-chain');
+        } catch (err) {
+          diagnostics.push(`On-chain conditional token balance lookup failed for ${tokenId}: ${formatNetworkError(err)}`);
+        }
+      }),
+    );
+  } else if (source !== 'api' && selector.tokenIds.length && !options.publicClient) {
+    diagnostics.push('Polygon RPC client unavailable; skipping on-chain CTF balance reads.');
+  }
+
+  let openOrderRows = mockData && Array.isArray(mockData.openOrders) ? mockData.openOrders : null;
+  if (!openOrderRows && tradingClient) {
+    try {
+      if (market && market.marketId) {
+        openOrderRows = await callWithTimeout(
+          () => tradingClient.getOpenOrders({ market: market.marketId }),
+          timeoutMs,
+          `Polymarket getOpenOrders(market:${market.marketId})`,
+        );
+      } else {
+        openOrderRows = await callWithTimeout(
+          () => tradingClient.getOpenOrders(),
+          timeoutMs,
+          'Polymarket getOpenOrders()',
+        );
+      }
+    } catch (err) {
+      diagnostics.push(`Open orders lookup failed: ${formatNetworkError(err)}`);
+      openOrderRows = null;
+    }
+  }
+
+  const normalizedOpenOrders = normalizeOpenOrders(
+    filterOpenOrdersForSelection(openOrderRows, selector, market),
+    market,
+  );
+
+  const positions = Array.from(positionsByToken.values())
+    .map((entry) => {
+      const next = { ...entry };
+      if ((next.price === null || next.price === undefined) && market) {
+        const marketPrice =
+          next.outcome === 'yes'
+            ? toPrice01(market.yesPct)
+            : next.outcome === 'no'
+              ? toPrice01(market.noPct)
+              : null;
+        next.price = marketPrice;
+        next.fieldSources = {
+          ...(next.fieldSources || {}),
+          price: marketPrice !== null ? 'market' : next.fieldSources && next.fieldSources.price ? next.fieldSources.price : null,
+        };
+      }
+      if ((next.estimatedValueUsd === null || next.estimatedValueUsd === undefined) && next.balance !== null && next.price !== null) {
+        next.estimatedValueUsd = round(next.balance * next.price, 6);
+        next.fieldSources = {
+          ...(next.fieldSources || {}),
+          estimatedValueUsd: 'derived',
+        };
+      }
+      return next;
+    })
+    .filter((entry) => {
+      if (source === 'on-chain') return entry.balance !== null;
+      if (selector.tokenIds.length && entry.tokenId) {
+        return selector.tokenIds.some((tokenId) => normalizeText(tokenId) === normalizeText(entry.tokenId));
+      }
+      if (selector.conditionId && entry.conditionId) {
+        return normalizeText(selector.conditionId) === normalizeText(entry.conditionId);
+      }
+      return true;
+    });
+
+  const summary = buildInventorySummary(market, positions, normalizedOpenOrders, diagnostics);
+  const topLevelSource =
+    positions.some((entry) => entry.fieldSources && entry.fieldSources.balance === 'on-chain')
+      ? positions.some((entry) => entry.fieldSources && /^api|authenticated-clob$/.test(String(entry.fieldSources.balance)))
+        ? 'mixed'
+        : 'on-chain'
+      : positions.some((entry) => entry.fieldSources && entry.fieldSources.balance)
+        ? 'api'
+        : source;
+
+  return {
+    schemaVersion: POLYMARKET_CACHE_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    selector: {
+      wallet: walletAddress,
+      conditionId: selector.conditionId,
+      slug: selector.slug,
+      tokenId: selector.tokenIds.length === 1 ? selector.tokenIds[0] : null,
+      funder: toStringOrNull(options.funder) || null,
+      source,
+    },
+    source: topLevelSource,
+    market: market
+      ? {
+          marketId: market.marketId || selector.conditionId || null,
+          conditionId: market.marketId || selector.conditionId || null,
+          slug: market.slug || selector.slug || null,
+          question: market.question || null,
+          yesTokenId: market.yesTokenId || null,
+          noTokenId: market.noTokenId || null,
+        }
+      : null,
+    summary,
+    positions,
+    openOrders: normalizedOpenOrders,
+    diagnostics: dedupeDiagnostics(diagnostics.concat(Array.isArray(summary.diagnostics) ? summary.diagnostics : [])),
   };
 }
 
@@ -1639,6 +2416,9 @@ function extractMockPositionData(payload) {
 function normalizePolymarketPositionSummary(options = {}) {
   const diagnostics = Array.isArray(options.diagnostics) ? [...options.diagnostics] : [];
   const marketId = toStringOrNull(options.marketId);
+  const conditionId = toStringOrNull(options.conditionId) || marketId;
+  const slug = toStringOrNull(options.slug);
+  const walletAddress = toStringOrNull(options.walletAddress) || toStringOrNull(options.ownerAddress);
   const yesTokenId = toStringOrNull(options.yesTokenId);
   const noTokenId = toStringOrNull(options.noTokenId);
   const yesPrice = toPrice01(options.yesPrice);
@@ -1648,34 +2428,54 @@ function normalizePolymarketPositionSummary(options = {}) {
   const balancesByToken =
     options.balancesByToken && typeof options.balancesByToken === 'object' ? options.balancesByToken : null;
   const openOrders = Array.isArray(options.openOrders) ? options.openOrders : null;
+  const provenanceInput = options.provenance && typeof options.provenance === 'object' ? options.provenance : {};
+  const requestedSource = normalizePositionSource(provenanceInput.requested || options.source);
+  const balanceSource = toStringOrNull(provenanceInput.balances);
+  const openOrdersSource = toStringOrNull(provenanceInput.openOrders);
+  const priceSource = toStringOrNull(provenanceInput.prices);
+  const marketSource = toStringOrNull(provenanceInput.market);
 
   const readBalance = (tokenId, sideLabel) => {
     if (!tokenId) {
       diagnostics.push(`Missing ${sideLabel} token id; cannot query ${sideLabel} balance.`);
-      return null;
+      return {
+        tokenId: null,
+        source: balanceSource,
+        balance: null,
+        balanceRaw: null,
+        decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+        readOk: false,
+        error: 'Token id unavailable.',
+      };
     }
     if (!balancesByToken) {
       diagnostics.push(`${sideLabel} balance unavailable (no balance payload).`);
-      return null;
+      return {
+        tokenId,
+        source: balanceSource,
+        balance: null,
+        balanceRaw: null,
+        decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+        readOk: false,
+        error: 'Balance payload unavailable.',
+      };
     }
 
     const sideKey = sideLabel.toLowerCase();
     const rawValue = Object.prototype.hasOwnProperty.call(balancesByToken, tokenId)
       ? balancesByToken[tokenId]
       : balancesByToken[sideKey];
-    const rawBalance = rawValue && typeof rawValue === 'object' && rawValue.balance !== undefined
-      ? rawValue.balance
-      : rawValue;
-    const numeric = toOptionalNumber(rawBalance);
-    if (numeric === null) {
+    const normalizedEntry = normalizePositionBalanceEntry(rawValue, balanceSource, tokenId);
+    if (normalizedEntry.balance === null) {
       diagnostics.push(`${sideLabel} balance missing or invalid.`);
-      return null;
     }
-    return round(numeric, 6);
+    return normalizedEntry;
   };
 
-  const yesBalance = readBalance(yesTokenId, 'YES');
-  const noBalance = readBalance(noTokenId, 'NO');
+  const yesEntry = readBalance(yesTokenId, 'YES');
+  const noEntry = readBalance(noTokenId, 'NO');
+  const yesBalance = yesEntry.balance;
+  const noBalance = noEntry.balance;
 
   let scopedOrders = null;
   let openOrdersCount = null;
@@ -1721,6 +2521,10 @@ function normalizePolymarketPositionSummary(options = {}) {
     diagnostics.push('Open orders unavailable (no orders payload).');
   }
 
+  const normalizedOpenOrders = Array.isArray(scopedOrders)
+    ? scopedOrders.map((order) => normalizeOpenOrderRecord(order)).filter(Boolean)
+    : [];
+
   let estimatedValueUsd = null;
   let estimatedValueComponents = 0;
   let estimatedValueAccumulator = 0;
@@ -1746,16 +2550,62 @@ function normalizePolymarketPositionSummary(options = {}) {
   const positionDeltaApprox =
     yesBalance !== null && noBalance !== null ? round(yesBalance - noBalance, 6) : null;
 
+  const sourceCandidates = Array.from(new Set([balanceSource, openOrdersSource].filter(Boolean)));
+  const resolvedSource = toStringOrNull(provenanceInput.resolved)
+    || (sourceCandidates.length === 1 ? sourceCandidates[0] : sourceCandidates.length > 1 ? 'mixed' : null);
+
   return {
+    marketId,
+    conditionId,
+    slug,
+    walletAddress,
+    ownerAddress: walletAddress,
+    yesTokenId,
+    noTokenId,
+    tokenIds: {
+      yes: yesTokenId,
+      no: noTokenId,
+    },
     yesBalance,
     noBalance,
+    balances: {
+      yes: {
+        side: 'YES',
+        tokenId: yesTokenId,
+        balance: yesBalance,
+        balanceRaw: yesEntry.balanceRaw,
+        decimals: yesEntry.decimals,
+        source: yesEntry.source,
+        readOk: yesEntry.readOk,
+        error: yesEntry.error,
+      },
+      no: {
+        side: 'NO',
+        tokenId: noTokenId,
+        balance: noBalance,
+        balanceRaw: noEntry.balanceRaw,
+        decimals: noEntry.decimals,
+        source: noEntry.source,
+        readOk: noEntry.readOk,
+        error: noEntry.error,
+      },
+    },
     openOrdersCount,
     openOrdersNotionalUsd,
+    openOrders: normalizedOpenOrders,
     estimatedValueUsd,
     positionDeltaApprox,
     prices: {
       yes: yesPrice,
       no: noPrice,
+    },
+    source: {
+      requested: requestedSource,
+      resolved: resolvedSource,
+      balances: balanceSource,
+      openOrders: openOrdersSource,
+      prices: priceSource,
+      market: marketSource,
     },
     diagnostics: dedupeDiagnostics(diagnostics),
   };
@@ -1771,8 +2621,14 @@ async function fetchPolymarketPositionSummary(options = {}) {
   const market = options.market && typeof options.market === 'object' ? options.market : {};
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const diagnostics = [];
+  const requestedSource = normalizePositionSource(options.source);
+  const walletAddress = toStringOrNull(options.walletAddress) || toStringOrNull(options.ownerAddress);
+  const apiWalletAddress = toStringOrNull(options.apiWalletAddress);
   const baseSummary = {
     marketId: options.marketId || market.marketId || null,
+    conditionId: options.conditionId || options.marketId || market.marketId || null,
+    slug: options.slug || market.slug || null,
+    walletAddress,
     yesTokenId: options.yesTokenId || market.yesTokenId || null,
     noTokenId: options.noTokenId || market.noTokenId || null,
     yesPrice: options.yesPrice !== undefined ? options.yesPrice : market.yesPct,
@@ -1784,11 +2640,18 @@ async function fetchPolymarketPositionSummary(options = {}) {
       ...baseSummary,
       balancesByToken: options.balancesByToken || null,
       openOrders: Array.isArray(options.openOrders) ? options.openOrders : null,
+      provenance: {
+        requested: requestedSource,
+        balances: 'provided',
+        openOrders: Array.isArray(options.openOrders) ? 'provided' : null,
+        prices: baseSummary.yesPrice !== null || baseSummary.noPrice !== null ? 'provided' : null,
+        market: baseSummary.marketId || baseSummary.slug ? 'provided' : null,
+      },
       diagnostics,
     });
   }
 
-  if (options.mockUrl) {
+  if (options.mockUrl && requestedSource !== 'on-chain') {
     try {
       const payload = await fetchMockPayload(options.mockUrl, timeoutMs);
       const mockData = extractMockPositionData(payload);
@@ -1796,6 +2659,14 @@ async function fetchPolymarketPositionSummary(options = {}) {
         ...baseSummary,
         balancesByToken: mockData.balancesByToken,
         openOrders: mockData.openOrders,
+        provenance: {
+          requested: requestedSource,
+          balances: mockData.balancesByToken ? 'mock' : null,
+          openOrders: Array.isArray(mockData.openOrders) ? 'mock' : null,
+          prices: baseSummary.yesPrice !== null || baseSummary.noPrice !== null ? 'market' : null,
+          market: baseSummary.marketId || baseSummary.slug ? 'provided' : null,
+          resolved: 'mock',
+        },
         diagnostics: diagnostics.concat('Loaded Polymarket position summary from mock payload.'),
       });
       return summaryFromMock;
@@ -1815,121 +2686,189 @@ async function fetchPolymarketPositionSummary(options = {}) {
   const apiPassphrase = options.apiPassphrase || envCreds.apiPassphrase;
   const host = options.host || envCreds.host || DEFAULT_POLYMARKET_HOST;
   const chain = options.chain || DEFAULT_POLYMARKET_CHAIN;
-
-  if (!privateKey) {
-    diagnostics.push('POLYMARKET_PRIVATE_KEY not configured; skipping authenticated Polymarket position lookup.');
-    return normalizePolymarketPositionSummary({
-      ...baseSummary,
-      balancesByToken: null,
-      openOrders: null,
-      diagnostics,
-    });
-  }
-
-  let client = options.client || null;
-  if (!client) {
-    try {
-      client = await buildTradingClient({
-        host,
-        chain,
-        privateKey,
-        funder,
-        apiKey,
-        apiSecret,
-        apiPassphrase,
-      });
-    } catch (err) {
-      diagnostics.push(`Unable to initialize Polymarket trading client: ${formatNetworkError(err)}`);
-      return normalizePolymarketPositionSummary({
-        ...baseSummary,
-        balancesByToken: null,
-        openOrders: null,
-        diagnostics,
-      });
-    }
-  }
-
-  const balancesByToken = {};
-  const fetchBalance = async (tokenId, sideLabel) => {
-    if (!tokenId) return;
-    try {
-      const response = await callWithTimeout(
-        (_signal) =>
-          client.getBalanceAllowance({
-            asset_type: AssetType.CONDITIONAL,
-            token_id: tokenId,
-          }),
-        timeoutMs,
-        `Polymarket getBalanceAllowance(${tokenId})`,
-      );
-      if (responseContainsError(response)) {
-        diagnostics.push(
-          `${sideLabel} balance lookup failed: ${response && response.error ? response.error : `HTTP ${response && response.status ? response.status : 'error'}`}.`,
-        );
-        return;
-      }
-      if (response && response.balance !== undefined) {
-        balancesByToken[tokenId] = response.balance;
-      } else {
-        diagnostics.push(`${sideLabel} balance response missing balance field.`);
-      }
-    } catch (err) {
-      diagnostics.push(`${sideLabel} balance lookup failed: ${formatNetworkError(err)}`);
-    }
-  };
-
-  await Promise.all([
-    fetchBalance(baseSummary.yesTokenId, 'YES'),
-    fetchBalance(baseSummary.noTokenId, 'NO'),
-  ]);
-
+  const allowApiLookup = requestedSource === 'api' || requestedSource === 'auto';
+  const allowOnchainLookup = requestedSource === 'on-chain' || requestedSource === 'auto';
+  const walletMatchesApiAccount =
+    !walletAddress || !apiWalletAddress || normalizeText(walletAddress) === normalizeText(apiWalletAddress);
+  let balanceSource = null;
+  let openOrdersSource = null;
+  let balancesByToken = null;
   let openOrders = null;
-  try {
-    if (baseSummary.marketId) {
-      openOrders = await callWithTimeout(
-        (_signal) => client.getOpenOrders({ market: baseSummary.marketId }),
-        timeoutMs,
-        `Polymarket getOpenOrders(market:${baseSummary.marketId})`,
+
+  if (allowApiLookup) {
+    if (!privateKey) {
+      diagnostics.push('POLYMARKET_PRIVATE_KEY not configured; skipping authenticated Polymarket position lookup.');
+    } else if (!walletMatchesApiAccount) {
+      diagnostics.push(
+        `Requested wallet ${walletAddress} does not match authenticated Polymarket account ${apiWalletAddress}; skipping API inventory lookup.`,
       );
     } else {
-      const grouped = [];
-      if (baseSummary.yesTokenId) {
-        grouped.push(
-          await callWithTimeout(
-            (_signal) => client.getOpenOrders({ asset_id: baseSummary.yesTokenId }),
-            timeoutMs,
-            `Polymarket getOpenOrders(asset:${baseSummary.yesTokenId})`,
-          ),
-        );
-      }
-      if (baseSummary.noTokenId && baseSummary.noTokenId !== baseSummary.yesTokenId) {
-        grouped.push(
-          await callWithTimeout(
-            (_signal) => client.getOpenOrders({ asset_id: baseSummary.noTokenId }),
-            timeoutMs,
-            `Polymarket getOpenOrders(asset:${baseSummary.noTokenId})`,
-          ),
-        );
-      }
-      const dedup = new Map();
-      for (const group of grouped) {
-        for (const order of Array.isArray(group) ? group : []) {
-          const key = String(
-            order && (order.id || `${order.asset_id || ''}-${order.price || ''}-${order.original_size || ''}-${order.created_at || ''}`),
-          );
-          dedup.set(key, order);
+      let client = options.client || null;
+      if (!client) {
+        try {
+          client = await buildTradingClient({
+            host,
+            chain,
+            privateKey,
+            funder,
+            apiKey,
+            apiSecret,
+            apiPassphrase,
+          });
+        } catch (err) {
+          diagnostics.push(`Unable to initialize Polymarket trading client: ${formatNetworkError(err)}`);
+          client = null;
         }
       }
-      openOrders = Array.from(dedup.values());
+
+      if (client) {
+        const apiBalancesByToken = {};
+        const fetchBalance = async (tokenId, sideLabel) => {
+          if (!tokenId) return;
+          try {
+            const response = await callWithTimeout(
+              (_signal) =>
+                client.getBalanceAllowance({
+                  asset_type: AssetType.CONDITIONAL,
+                  token_id: tokenId,
+                }),
+              timeoutMs,
+              `Polymarket getBalanceAllowance(${tokenId})`,
+            );
+            if (responseContainsError(response)) {
+              diagnostics.push(
+                `${sideLabel} balance lookup failed: ${response && response.error ? response.error : `HTTP ${response && response.status ? response.status : 'error'}`}.`,
+              );
+              return;
+            }
+            if (response && response.balance !== undefined) {
+              apiBalancesByToken[tokenId] = {
+                tokenId,
+                source: 'api',
+                balance: response.balance,
+                balanceRaw: toStringOrNull(response.rawBalance || response.balanceRaw),
+                decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+                readOk: true,
+                error: null,
+              };
+            } else {
+              diagnostics.push(`${sideLabel} balance response missing balance field.`);
+            }
+          } catch (err) {
+            diagnostics.push(`${sideLabel} balance lookup failed: ${formatNetworkError(err)}`);
+          }
+        };
+
+        await Promise.all([
+          fetchBalance(baseSummary.yesTokenId, 'YES'),
+          fetchBalance(baseSummary.noTokenId, 'NO'),
+        ]);
+
+        if (Object.keys(apiBalancesByToken).length) {
+          balancesByToken = apiBalancesByToken;
+          balanceSource = 'api';
+        }
+
+        try {
+          if (baseSummary.marketId) {
+            openOrders = await callWithTimeout(
+              (_signal) => client.getOpenOrders({ market: baseSummary.marketId }),
+              timeoutMs,
+              `Polymarket getOpenOrders(market:${baseSummary.marketId})`,
+            );
+          } else {
+            const grouped = [];
+            if (baseSummary.yesTokenId) {
+              grouped.push(
+                await callWithTimeout(
+                  (_signal) => client.getOpenOrders({ asset_id: baseSummary.yesTokenId }),
+                  timeoutMs,
+                  `Polymarket getOpenOrders(asset:${baseSummary.yesTokenId})`,
+                ),
+              );
+            }
+            if (baseSummary.noTokenId && baseSummary.noTokenId !== baseSummary.yesTokenId) {
+              grouped.push(
+                await callWithTimeout(
+                  (_signal) => client.getOpenOrders({ asset_id: baseSummary.noTokenId }),
+                  timeoutMs,
+                  `Polymarket getOpenOrders(asset:${baseSummary.noTokenId})`,
+                ),
+              );
+            }
+            const dedup = new Map();
+            for (const group of grouped) {
+              for (const order of Array.isArray(group) ? group : []) {
+                const key = String(
+                  order && (order.id || `${order.asset_id || ''}-${order.price || ''}-${order.original_size || ''}-${order.created_at || ''}`),
+                );
+                dedup.set(key, order);
+              }
+            }
+            openOrders = Array.from(dedup.values());
+          }
+          if (Array.isArray(openOrders)) {
+            openOrdersSource = 'api';
+          }
+        } catch (err) {
+          diagnostics.push(`Open orders lookup failed: ${formatNetworkError(err)}`);
+        }
+      }
     }
-  } catch (err) {
-    diagnostics.push(`Open orders lookup failed: ${formatNetworkError(err)}`);
+  }
+
+  if (allowOnchainLookup && !balancesByToken) {
+    const publicClient = options.publicClient || null;
+    if (!publicClient) {
+      diagnostics.push('RPC client unavailable; skipping on-chain CTF balance lookup.');
+    } else if (!walletAddress) {
+      diagnostics.push('Wallet address unavailable; skipping on-chain CTF balance lookup.');
+    } else {
+      const onchainBalances = {};
+      const yesBalance = await readOnchainPositionBalance({
+        publicClient,
+        walletAddress,
+        ctfAddress: options.ctfAddress,
+        tokenId: baseSummary.yesTokenId,
+      });
+      if (baseSummary.yesTokenId) {
+        onchainBalances[baseSummary.yesTokenId] = yesBalance;
+      }
+      if (yesBalance.error) {
+        diagnostics.push(`YES on-chain balance lookup failed: ${yesBalance.error}`);
+      }
+
+      const noBalance = await readOnchainPositionBalance({
+        publicClient,
+        walletAddress,
+        ctfAddress: options.ctfAddress,
+        tokenId: baseSummary.noTokenId,
+      });
+      if (baseSummary.noTokenId) {
+        onchainBalances[baseSummary.noTokenId] = noBalance;
+      }
+      if (noBalance.error) {
+        diagnostics.push(`NO on-chain balance lookup failed: ${noBalance.error}`);
+      }
+
+      if (Object.keys(onchainBalances).length) {
+        balancesByToken = onchainBalances;
+        balanceSource = 'on-chain';
+      }
+    }
   }
 
   return normalizePolymarketPositionSummary({
     ...baseSummary,
     balancesByToken,
     openOrders,
+    provenance: {
+      requested: requestedSource,
+      balances: balanceSource,
+      openOrders: openOrdersSource,
+      prices: baseSummary.yesPrice !== null || baseSummary.noPrice !== null ? 'market' : null,
+      market: baseSummary.marketId || baseSummary.slug ? (options.market ? 'provided' : 'resolved') : null,
+    },
     diagnostics,
   });
 }
@@ -2170,6 +3109,7 @@ module.exports = {
   fetchDepthForMarket,
   calculateExecutableDepthUsd,
   placeHedgeOrder,
+  fetchPolymarketPositionInventory,
   normalizePolymarketPositionSummary,
   fetchPolymarketPositionSummary,
 };

@@ -179,6 +179,7 @@
       "mirror.sync.start",
       "mirror.sync.status",
       "mirror.sync.stop",
+      "mirror.trace",
       "mirror.verify",
       "model.calibrate",
       "model.correlation",
@@ -203,6 +204,7 @@
       "polymarket.balance",
       "polymarket.check",
       "polymarket.deposit",
+      "polymarket.positions",
       "polymarket.preflight",
       "polymarket.trade",
       "polymarket.withdraw",
@@ -255,19 +257,19 @@
     "defaultCatalogMode": "canonical-only",
     "mutatingTools": 32,
     "operationBackedCommands": 6,
-    "remoteEligibleTools": 121,
+    "remoteEligibleTools": 123,
     "topLevelCommands": 49,
-    "totalCommands": 151,
-    "totalMcpTools": 121
+    "totalCommands": 153,
+    "totalMcpTools": 123
   },
-  "commandCount": 151,
-  "commandDescriptorVersion": "1.4.1",
-  "contractCommandDescriptorVersion": "1.4.1",
+  "commandCount": 153,
+  "commandDescriptorVersion": "1.4.3",
+  "contractCommandDescriptorVersion": "1.4.3",
   "contractPackageVersion": "1.1.74",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
-  "mcpToolCount": 121,
+  "mcpToolCount": 123,
   "package": {
     "artifactSubpaths": {
       "bundle": "pandora_agent/generated/contract-registry.json",
@@ -362,17 +364,17 @@
     }
   },
   "registryDigest": {
-    "canonicalHash": "98afe03355e2744d5b67a14b897e91d415ddd18a526221bd75c016896ca1daa0",
-    "commandDigestHash": "c9a62ba3a3882ef4804eb07ff44c250380138cb8629ac79973c68d1eb1b8d5ee",
-    "descriptorHash": "46ec027eebf69fa95af547c1dd7402f635e724db87ac6eb1c5ba487230dbdccc",
-    "documentationHash": "3f98c78492d0102c1fe99eb7115537517737b49845a43898ea903af4955e9064",
-    "fullDescriptorHash": "1862fec8805225aebb9b9ece2255ce37636b196fed9a28f8709d1f6c294df36e",
-    "namespaceHash": "f07ef6c8777c105837ea7127d5556a339250d40e2c371667a019b307f181e498",
-    "policyProfilesHash": "b6ed6dd4eb31ed87cfab5785d50f420eaa562955d3c17f223cc2c56818c3ccaa",
+    "canonicalHash": "f07fc0c12e214d3e7fc33da629fb272595b2c405e82e169f65b5c1c1c7947dee",
+    "commandDigestHash": "097c5962b0f46694e81418ed90355e6a108fad28cd78f7b200c2012f780d53ec",
+    "descriptorHash": "46ebe41f97c0d880841b1a56007b81222fe4d6183f4c7b81591ba8e92651a3d0",
+    "documentationHash": "7ed931d94018a910f92d9dc482b4c0988b140b513acf7f6241d175cb3126ba95",
+    "fullDescriptorHash": "d43d124b243c11db491097ccf46ef0f627817bf01bff648893960b6a8108ded1",
+    "namespaceHash": "83b548c6b3be31f7ff544df57a5d0fa2aae748c7929c089841b0c539f7a55cc0",
+    "policyProfilesHash": "353bc5f443bf14f9b5d16c04fe0bc9cc0350beb83104208a0f1361515dbf8f8e",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "fdfa1ebe53b5ff34ee029b8464348a345aefac73ee8fd8d1a39c195f0571c886",
-    "topLevelHash": "3baea8161ce695cd9ef99da2d33909e6f77087a51a7ae3fdd6939391dabe744b",
-    "trustDistributionHash": "1081b3715feb0cc4463cd8c34d31c29dd7adca35837aa34f72c4c9b953ac12e1"
+    "topLevelHash": "cce379250f0a7a808a65e87930f848c0a04a4be32bd4a62208ce6af083ed6ba8",
+    "trustDistributionHash": "52befd4c0663cf55a69e43fd35b041ce8ff2d78bbfa8c11d1d5f823f7e5d31f7"
   },
   "schemaVersion": "1.0.0"
 }

@@ -1,6 +1,7 @@
 const { buildMirrorRuntimeTelemetry } = require('../mirror_sync/state.cjs');
 const {
   buildMirrorPnlPayload,
+  loadAuditEntries,
   resolveMirrorSurfaceDaemonStatus,
   resolveMirrorSurfaceState,
 } = require('../mirror_surface_service.cjs');
@@ -24,8 +25,14 @@ function renderMirrorPnlTable(data) {
   renderKeyValueRows('Mirror PnL', [
     ['strategyHash', data.strategyHash || ''],
     ['stateFile', data.stateFile || ''],
+    ['accountingMode', summary.accountingMode || 'approximate'],
     ['netPnlApproxUsdc', summary.netPnlApproxUsdc],
     ['pnlApprox', summary.pnlApprox],
+    ['realizedPnlUsdc', summary.realizedPnlUsdc],
+    ['unrealizedPnlUsdc', summary.unrealizedPnlUsdc],
+    ['netPnlUsdc', summary.netPnlUsdc],
+    ['lpFeeIncomeUsdc', summary.lpFeeIncomeUsdc],
+    ['impermanentLossUsdc', summary.impermanentLossUsdc],
     ['netDeltaApprox', summary.netDeltaApprox],
     ['driftBps', summary.driftBps],
     ['hedgeGapUsdc', summary.hedgeGapUsdc],
@@ -52,7 +59,7 @@ module.exports = async function handleMirrorPnl({ actionArgs, shared, context, d
   } = deps;
 
   const usage =
-    'pandora [--output table|json] mirror pnl --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]';
+    'pandora [--output table|json] mirror pnl --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--reconciled] [--include-legacy-approx] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]';
 
   if (includesHelpFlag(actionArgs)) {
     if (context.outputMode === 'json') {
@@ -61,12 +68,16 @@ module.exports = async function handleMirrorPnl({ actionArgs, shared, context, d
         'mirror.pnl.help',
         commandHelpPayload(usage, [
           'mirror pnl always resolves the live cross-venue scenario model used by mirror status --with-live.',
+          'Use --reconciled to add normalized realized/unrealized, LP fee, hedge-cost, gas, funding, and reserve-trace attribution next to the legacy approximate fields.',
+          '--include-legacy-approx is only meaningful with --reconciled; it requests the reconciled attachment while retaining the legacy approximate fields during rollout.',
           'Polymarket balance/open-order visibility degrades into diagnostics instead of hard failure when those endpoints are unavailable.',
         ]),
       );
     } else {
       console.log(`Usage: ${usage}`);
       console.log('mirror pnl always resolves the live cross-venue scenario model used by mirror status --with-live.');
+      console.log('Use --reconciled to add normalized realized/unrealized, LP fee, hedge-cost, gas, funding, and reserve-trace attribution next to the legacy approximate fields.');
+      console.log('--include-legacy-approx is only meaningful with --reconciled; it requests the reconciled attachment while retaining the legacy approximate fields during rollout.');
       console.log('Polymarket balance/open-order visibility degrades into diagnostics instead of hard failure when those endpoints are unavailable.');
     }
     return;
@@ -148,18 +159,38 @@ module.exports = async function handleMirrorPnl({ actionArgs, shared, context, d
     polymarketHost: options.polymarketHost,
     polymarketMockUrl: options.polymarketMockUrl,
   });
+  const auditLog = loadAuditEntries(loaded.filePath);
 
-  emitSuccess(
-    context.outputMode,
-    'mirror.pnl',
-    buildMirrorPnlPayload({
-      stateFile: loaded.filePath,
-      strategyHash: loaded.state.strategyHash || strategyHashValue,
-      selector,
-      state: loaded.state,
-      runtime,
-      live,
-    }),
-    renderMirrorPnlTable,
-  );
+  const payload = buildMirrorPnlPayload({
+    stateFile: loaded.filePath,
+    strategyHash: loaded.state.strategyHash || strategyHashValue,
+    selector,
+    state: loaded.state,
+    runtime,
+    live,
+    auditEntries: auditLog.entries,
+    accounting: loaded.state.accounting || null,
+    includeReconciled: options.reconciled,
+  });
+
+  payload.summary = {
+    ...(payload.summary && typeof payload.summary === 'object' ? payload.summary : {}),
+    accountingMode: options.reconciled && payload.reconciled ? payload.reconciled.status : 'approximate',
+    legacyApproxIncluded: true,
+  };
+  payload.reconciliation = {
+    requested: Boolean(options.reconciled),
+    mode: options.reconciled && payload.reconciled ? payload.reconciled.status : 'approximate',
+    requestedLegacyApprox: Boolean(options.includeLegacyApprox),
+    legacyApproxIncluded: true,
+    missing: payload.reconciled && payload.reconciled.provenance ? payload.reconciled.provenance.missing : [],
+  };
+  payload.diagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics.slice() : [];
+  if (options.reconciled && payload.reconciled && Array.isArray(payload.reconciled.provenance && payload.reconciled.provenance.missing) && payload.reconciled.provenance.missing.length) {
+    payload.diagnostics.push(
+      `Reconciled ledger is partial; missing components: ${payload.reconciled.provenance.missing.join(', ')}.`,
+    );
+  }
+
+  emitSuccess(context.outputMode, 'mirror.pnl', payload, renderMirrorPnlTable);
 };

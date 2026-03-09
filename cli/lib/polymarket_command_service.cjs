@@ -1,4 +1,5 @@
 const { buildPolymarketForkPreview } = require('./fork_preview_service.cjs');
+const DEFAULT_POLYMARKET_TIMEOUT_MS = 12_000;
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -35,6 +36,14 @@ function parsePositiveNumberFlag(value, flagName, CliError) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) {
     throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a positive number.`);
+  }
+  return numeric;
+}
+
+function parsePositiveIntegerFlag(value, flagName, CliError) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a positive integer.`);
   }
   return numeric;
 }
@@ -171,14 +180,19 @@ function createRunPolymarketCommand(deps) {
   const opsService = typeof deps.runPolymarketBalance === 'function'
     && typeof deps.runPolymarketDeposit === 'function'
     && typeof deps.runPolymarketWithdraw === 'function'
+    && typeof deps.runPolymarketPositions === 'function'
       ? null
       : require('./polymarket_ops_service.cjs');
   const runPolymarketBalance =
     typeof deps.runPolymarketBalance === 'function' ? deps.runPolymarketBalance : opsService.runPolymarketBalance;
+  const runPolymarketPositions =
+    typeof deps.runPolymarketPositions === 'function' ? deps.runPolymarketPositions : opsService.runPolymarketPositions;
   const runPolymarketDeposit =
     typeof deps.runPolymarketDeposit === 'function' ? deps.runPolymarketDeposit : opsService.runPolymarketDeposit;
   const runPolymarketWithdraw =
     typeof deps.runPolymarketWithdraw === 'function' ? deps.runPolymarketWithdraw : opsService.runPolymarketWithdraw;
+  let cachedParsePolymarketPositionsFlags = null;
+  let cachedFetchPolymarketPositionInventory = undefined;
 
   function toCliError(err, fallbackCode, fallbackMessage) {
     if (err && err.code) {
@@ -203,6 +217,44 @@ function createRunPolymarketCommand(deps) {
     }
   }
 
+  function getParsePolymarketPositionsFlags() {
+    if (typeof deps.parsePolymarketPositionsFlags === 'function') {
+      return deps.parsePolymarketPositionsFlags;
+    }
+    if (cachedParsePolymarketPositionsFlags) {
+      return cachedParsePolymarketPositionsFlags;
+    }
+    const parserModule = require('./parsers/polymarket_flags.cjs');
+    if (typeof parserModule.createParsePolymarketPositionsFlags !== 'function') {
+      return null;
+    }
+    cachedParsePolymarketPositionsFlags = parserModule.createParsePolymarketPositionsFlags({
+      CliError,
+      parsePolymarketSharedFlags,
+      requireFlagValue: (argv, index, flagName) => requireFlagValue(argv, index, flagName, CliError),
+      parseAddressFlag: (value, flagName) => parseAddressFlagValue(CliError, value, flagName),
+      parsePositiveInteger: (value, flagName) => parsePositiveIntegerFlag(value, flagName, CliError),
+      isSecureHttpUrlOrLocal,
+      defaultTimeoutMs: DEFAULT_POLYMARKET_TIMEOUT_MS,
+    });
+    return cachedParsePolymarketPositionsFlags;
+  }
+
+  function getFetchPolymarketPositionInventory() {
+    if (typeof deps.fetchPolymarketPositionInventory === 'function') {
+      return deps.fetchPolymarketPositionInventory;
+    }
+    if (cachedFetchPolymarketPositionInventory !== undefined) {
+      return cachedFetchPolymarketPositionInventory;
+    }
+    const tradeAdapter = require('./polymarket_trade_adapter.cjs');
+    cachedFetchPolymarketPositionInventory =
+      typeof tradeAdapter.fetchPolymarketPositionInventory === 'function'
+        ? tradeAdapter.fetchPolymarketPositionInventory
+        : null;
+    return cachedFetchPolymarketPositionInventory;
+  }
+
   return async function runPolymarketCommand(args, context) {
     loadEnvIfPresent(defaultEnvFile);
 
@@ -210,7 +262,7 @@ function createRunPolymarketCommand(deps) {
     const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ...';
+      const usage = 'pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'polymarket.help', commandHelpPayload(usage));
       } else {
@@ -228,6 +280,8 @@ function createRunPolymarketCommand(deps) {
         console.log('  preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]');
         // eslint-disable-next-line no-console
         console.log('  balance [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]');
+        // eslint-disable-next-line no-console
+        console.log('  positions [--wallet <address>|--funder <address>] [--condition-id <id>|--market-id <id>|--slug <slug>|--token-id <id>] [--source auto|api|on-chain] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-data-api-url <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>]');
         // eslint-disable-next-line no-console
         console.log('  deposit --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]');
         // eslint-disable-next-line no-console
@@ -378,6 +432,77 @@ function createRunPolymarketCommand(deps) {
         forkRpcUrl: runtime.rpcUrl || null,
       };
       emitSuccess(context.outputMode, 'polymarket.balance', payload, renderSingleEntityTable);
+      return;
+    }
+
+    if (action === 'positions') {
+      if (includesHelpFlag(actionArgs)) {
+        const usage =
+          'pandora [--output table|json] polymarket positions [--wallet <address>|--funder <address>] [--condition-id <id>|--market-id <id>|--slug <slug>|--token-id <id>] [--source auto|api|on-chain] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-data-api-url <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>]';
+        const notes = [
+          '--source auto prefers Polymarket API/CLOB enrichment and falls back to raw on-chain CTF balances when available.',
+          '--source api prefers public Polymarket enrichment for metadata, open orders, and marked value fields.',
+          '--source on-chain forces Polygon RPC / CTF balance reads and may leave prices or open-order fields as diagnostics/null.',
+        ];
+        if (context.outputMode === 'json') {
+          emitSuccess(context.outputMode, 'polymarket.positions.help', commandHelpPayload(usage, notes));
+        } else {
+          // eslint-disable-next-line no-console
+          console.log(`Usage: ${usage}`);
+          for (const note of notes) {
+            // eslint-disable-next-line no-console
+            console.log(`Note: ${note}`);
+          }
+        }
+        return;
+      }
+
+      const parsePositionsFlags = getParsePolymarketPositionsFlags();
+      if (typeof parsePositionsFlags !== 'function') {
+        throw new CliError(
+          'POLYMARKET_POSITIONS_UNAVAILABLE',
+          'polymarket positions flag parsing is unavailable in this build.',
+        );
+      }
+      const options = parsePositionsFlags(actionArgs);
+      const runtime = resolvePolymarketForkRuntime(options);
+      if (runtime.mode === 'fork') {
+        options.rpcUrl = runtime.rpcUrl;
+      }
+
+      let payload;
+      try {
+        payload = await runPolymarketPositions({
+          wallet: options.wallet,
+          conditionId: options.conditionId,
+          marketId: options.conditionId,
+          slug: options.slug,
+          tokenId: options.tokenIds.length === 1 ? options.tokenIds[0] : null,
+          tokenIds: options.tokenIds,
+          source: options.source,
+          rpcUrl: options.rpcUrl,
+          privateKey: options.privateKey,
+          funder: options.funder,
+          fork: options.fork,
+          forkRpcUrl: options.forkRpcUrl,
+          forkChainId: options.forkChainId,
+          host: options.host,
+          gammaUrl: options.gammaUrl,
+          dataApiUrl: options.dataApiUrl,
+          polymarketMockUrl: options.polymarketMockUrl,
+          timeoutMs: options.timeoutMs,
+          env: process.env,
+        });
+      } catch (err) {
+        throw toCliError(err, 'POLYMARKET_POSITIONS_FAILED', 'Polymarket positions lookup failed.');
+      }
+      payload.runtime = {
+        ...(payload.runtime && typeof payload.runtime === 'object' ? payload.runtime : {}),
+        mode: runtime.mode,
+        forkChainId: runtime.chainId,
+        forkRpcUrl: runtime.rpcUrl || null,
+      };
+      emitSuccess(context.outputMode, 'polymarket.positions', payload, renderSingleEntityTable);
       return;
     }
 
@@ -595,7 +720,7 @@ function createRunPolymarketCommand(deps) {
       return;
     }
 
-    throw new CliError('INVALID_ARGS', 'polymarket requires subcommand: check|approve|preflight|balance|deposit|withdraw|trade');
+    throw new CliError('INVALID_ARGS', 'polymarket requires subcommand: check|approve|preflight|balance|positions|deposit|withdraw|trade');
   };
 }
 

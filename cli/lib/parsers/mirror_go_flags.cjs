@@ -5,6 +5,8 @@ const { consumeProfileSelectorFlag } = require('./shared_profile_selector_flags.
 
 const MAX_UINT24 = 16_777_215;
 const DISTRIBUTION_SCALE = 1_000_000_000;
+const REBALANCE_ROUTE_VALUES = new Set(['public', 'auto', 'flashbots-private', 'flashbots-bundle']);
+const REBALANCE_ROUTE_FALLBACK_VALUES = new Set(['fail', 'public']);
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -52,6 +54,28 @@ function parseDistributionPercent(value, flagName, CliError) {
     throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be between 0 and 100.`);
   }
   return parsed;
+}
+
+function parseRebalanceRoute(value, flagName, CliError) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!REBALANCE_ROUTE_VALUES.has(normalized)) {
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      `${flagName} must be public|auto|flashbots-private|flashbots-bundle.`,
+    );
+  }
+  return normalized;
+}
+
+function parseRebalanceRouteFallback(value, flagName, CliError) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!REBALANCE_ROUTE_FALLBACK_VALUES.has(normalized)) {
+    throw new CliError(
+      'INVALID_FLAG_VALUE',
+      `${flagName} must be fail|public.`,
+    );
+  }
+  return normalized;
 }
 
 function parseSecureUrlList(value, flagName, CliError, isSecureHttpUrlOrLocal) {
@@ -138,6 +162,11 @@ function createParseMirrorGoFlags(deps) {
       hedgeRatio: 1,
       rebalanceSizingMode: 'atomic',
       priceSource: 'on-chain',
+      rebalanceRoute: 'public',
+      rebalanceRouteFallback: 'fail',
+      flashbotsRelayUrl: null,
+      flashbotsAuthKey: null,
+      flashbotsTargetBlockOffset: null,
       noHedge: false,
       maxRebalanceUsdc: 25,
       maxHedgeUsdc: 50,
@@ -278,6 +307,47 @@ function createParseMirrorGoFlags(deps) {
           throw new CliError('INVALID_FLAG_VALUE', '--price-source must be on-chain|indexer.');
         }
         options.priceSource = value;
+        i += 1;
+        continue;
+      }
+      if (token === '--rebalance-route') {
+        options.rebalanceRoute = parseRebalanceRoute(
+          requireFlagValue(args, i, '--rebalance-route'),
+          '--rebalance-route',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--rebalance-route-fallback') {
+        options.rebalanceRouteFallback = parseRebalanceRouteFallback(
+          requireFlagValue(args, i, '--rebalance-route-fallback'),
+          '--rebalance-route-fallback',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--flashbots-relay-url') {
+        options.flashbotsRelayUrl = validateMirrorUrl(
+          requireFlagValue(args, i, '--flashbots-relay-url'),
+          '--flashbots-relay-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--flashbots-auth-key') {
+        options.flashbotsAuthKey = requireFlagValue(args, i, '--flashbots-auth-key');
+        i += 1;
+        continue;
+      }
+      if (token === '--flashbots-target-block-offset') {
+        options.flashbotsTargetBlockOffset = parsePositiveInteger(
+          requireFlagValue(args, i, '--flashbots-target-block-offset'),
+          '--flashbots-target-block-offset',
+        );
         i += 1;
         continue;
       }
@@ -603,6 +673,18 @@ function createParseMirrorGoFlags(deps) {
         'INVALID_FLAG_VALUE',
         '--sources requires at least two non-empty URLs when explicitly provided.',
       );
+    }
+    if (options.rebalanceRoute === 'public') {
+      const flashbotsFlags = [];
+      if (options.flashbotsRelayUrl) flashbotsFlags.push('--flashbots-relay-url');
+      if (options.flashbotsAuthKey) flashbotsFlags.push('--flashbots-auth-key');
+      if (options.flashbotsTargetBlockOffset !== null) flashbotsFlags.push('--flashbots-target-block-offset');
+      if (flashbotsFlags.length) {
+        throw new CliError(
+          'INVALID_ARGS',
+          `${flashbotsFlags.join(', ')} require --rebalance-route auto, flashbots-private, or flashbots-bundle.`,
+        );
+      }
     }
 
     return options;

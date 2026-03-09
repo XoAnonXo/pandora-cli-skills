@@ -9,6 +9,27 @@ For release verification and support posture before you even start the runtime:
 ## Goal
 Get an agent from zero to safe tool usage without starting from raw secrets or the full command reference.
 
+## Choose the operating model first
+
+### Self-custody local runtime
+
+Use this when the agent should execute with the user's own wallet.
+
+- start `pandora mcp` locally, or run `pandora mcp http` on the user's own machine
+- keep signer material on the same runtime the user controls
+- this is the preferred path for live execution with user-owned funds
+
+### Hosted read-only / planning gateway
+
+Use this when you want a shared remote endpoint for:
+
+- bootstrap
+- schema and tool discovery
+- recipes and recommendations
+- planning, audit, receipts, and operator guidance
+
+Keep this gateway read-only by default. Treat hosted mutation as a separate custody decision.
+
 ## Preferred bootstrap order
 
 ### 1. Discover the live contract
@@ -51,6 +72,7 @@ Current profile-readiness baseline in this runtime:
   - `dev_keystore_operator`: `missing-keystore`
   - `desk_signer_service`: `missing-context`
 - `degraded` is the backend-level summary only; use `profile list`, `profile get`, and especially `profile explain` to see the exact blocker
+- on a shared hosted gateway, `readyMutableBuiltinCount: 0` is a normal and often desirable default until you intentionally provision signer material
 
 ### 2. Decide the execution transport
 
@@ -192,13 +214,15 @@ Status:
 - keep local-vs-remote backend choice explicit; the SDKs do not bypass MCP transport or gateway policy checks
 - standalone package identities are `@thisispandora/agent-sdk` and `pandora-agent`
 - release flow already builds and verifies standalone SDK artifacts for those package identities
-- use signed GitHub release assets as the external install path unless a release explicitly announces public npm/PyPI publication
-- public npm/PyPI publication is not claimed by this guide until a release explicitly says so
+- public publication is live:
+  - `npm install @thisispandora/agent-sdk@alpha`
+  - `pip install pandora-agent==0.1.0a3`
+- signed GitHub release assets remain the parity and audit-friendly distribution path
 - the repository and the root Pandora package also vendor matching SDK copies under `sdk/typescript` and `sdk/python`
 
 ### TypeScript
 - standalone package identity: `@thisispandora/agent-sdk`
- - external install path: public npm package `@thisispandora/agent-sdk` or signed GitHub release tarball attached to the tagged Pandora release
+ - external install path: public npm package `@thisispandora/agent-sdk@alpha` or signed GitHub release tarball attached to the tagged Pandora release
  - repository checkout path: `sdk/typescript` for maintainers and in-tree consumers
 - vendored root-package copy: `pandora-cli-skills/sdk/typescript`
 - generated manifest/loader: `sdk/typescript/generated`
@@ -209,7 +233,7 @@ Status:
 
 ### Python
 - standalone package identity: `pandora-agent`
- - external install path: signed GitHub release wheel or sdist attached to the tagged Pandora release
+ - external install path: public PyPI package `pandora-agent==0.1.0a3` or signed GitHub release wheel or sdist attached to the tagged Pandora release
  - repository checkout path: `sdk/python` for maintainers and in-tree consumers
 - module/import name: `pandora_agent`
 - vendored root-package copy: `sdk/python`

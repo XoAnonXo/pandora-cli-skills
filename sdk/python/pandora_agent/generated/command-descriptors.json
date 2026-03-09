@@ -3532,7 +3532,7 @@
     "summary": "Mirror command family help and routing entrypoint.",
     "supportsRemote": false,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|close ..."
+    "usage": "pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|trace|logs|close ..."
   },
   "mirror.audit": {
     "agentWorkflow": null,
@@ -3543,7 +3543,7 @@
       "audit"
     ],
     "canonicalTool": "mirror.audit",
-    "canonicalUsage": "pandora [--output table|json] mirror audit --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] mirror audit --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--reconciled] [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/MirrorAuditPayload",
     "emits": [
@@ -4125,6 +4125,10 @@
           "description": "Polymarket slug.",
           "type": "string"
         },
+        "reconciled": {
+          "description": "Attach the normalized reconciled ledger beside the append-only operational audit payload.",
+          "type": "boolean"
+        },
         "state-file": {
           "description": "State file path.",
           "type": "string"
@@ -4172,10 +4176,10 @@
     "riskLevel": "low",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Read the mirror audit ledger with optional live context, preferring the append-only audit log when available.",
+    "summary": "Read the canonical mirror audit ledger surface. `--reconciled` adds a normalized cross-venue ledger with provenance and export-ready rows beside the append-only operational audit log.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] mirror audit --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
+    "usage": "pandora [--output table|json] mirror audit --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--reconciled] [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
   },
   "mirror.browse": {
     "agentWorkflow": null,
@@ -7254,7 +7258,8 @@
       "notes": [
         "Mirror go inherits the exact market payload from its deploy stage; use the returned validation ticket from paper/dry-run output.",
         "When mirror go will execute a fresh deploy, provide independent public --sources and a matching validation ticket.",
-        "Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live."
+        "Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live.",
+        "Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic."
       ],
       "recommendedTools": [
         "agent.market.autocomplete"
@@ -7270,7 +7275,7 @@
       "go"
     ],
     "canonicalTool": "mirror.go",
-    "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
+    "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
     "controlInputNames": [
       "agentPreflight"
     ],
@@ -7995,6 +8000,19 @@
           "minimum": 500,
           "type": "integer"
         },
+        "flashbots-auth-key": {
+          "description": "Optional Flashbots auth key or signer reference for the Ethereum Pandora rebalance leg.",
+          "type": "string"
+        },
+        "flashbots-relay-url": {
+          "description": "Optional Flashbots/private relay URL for the Ethereum Pandora rebalance leg.",
+          "type": "string"
+        },
+        "flashbots-target-block-offset": {
+          "description": "Optional target block offset for Flashbots/private bundle submission.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "funder": {
           "description": "Polymarket proxy/safe address.",
           "type": "string"
@@ -8133,6 +8151,22 @@
             "incremental"
           ]
         },
+        "rebalance-route": {
+          "description": "Pandora-leg execution route. public preserves ordinary mempool submission; auto chooses a private route when supported; flashbots-private requests single-tx private relay submission; flashbots-bundle requests Flashbots bundle semantics for approval+trade paths. This affects only the Ethereum Pandora leg.",
+          "enum": [
+            "public",
+            "auto",
+            "flashbots-private",
+            "flashbots-bundle"
+          ]
+        },
+        "rebalance-route-fallback": {
+          "description": "Fallback policy when the requested Pandora-leg private route is unsupported or rejected. fail stops the run; public degrades to ordinary public submission. This does not change Polygon hedge semantics.",
+          "enum": [
+            "fail",
+            "public"
+          ]
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -8241,10 +8275,10 @@
       "--paper",
       "--dry-run"
     ],
-    "summary": "Run mirror deploy, verify, and optional sync workflow; any sync leg remains separate Pandora rebalance and Polymarket hedge legs, not atomic.",
+    "summary": "Run mirror deploy, verify, and optional sync workflow. Rebalance-route flags apply only to the Ethereum Pandora leg; any sync leg still remains separate Pandora rebalance and Polymarket hedge legs, not atomic.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
+    "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
   },
   "mirror.health": {
     "agentWorkflow": null,
@@ -9785,7 +9819,7 @@
       "pnl"
     ],
     "canonicalTool": "mirror.pnl",
-    "canonicalUsage": "pandora [--output table|json] mirror pnl --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] mirror pnl --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--reconciled] [--include-legacy-approx] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/MirrorPnlPayload",
     "emits": [
@@ -10327,6 +10361,10 @@
           "minimum": 0,
           "type": "number"
         },
+        "include-legacy-approx": {
+          "description": "Keep approximate scenario fields visible while requesting reconciled accounting.",
+          "type": "boolean"
+        },
         "indexer-url": {
           "description": "Indexer base URL.",
           "type": "string"
@@ -10366,6 +10404,10 @@
         "polymarket-slug": {
           "description": "Polymarket slug.",
           "type": "string"
+        },
+        "reconciled": {
+          "description": "Attach the normalized reconciled accounting payload beside the approximate scenario surface.",
+          "type": "boolean"
         },
         "state-file": {
           "description": "State file path.",
@@ -10410,10 +10452,10 @@
     "riskLevel": "low",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Read the dedicated cross-venue scenario P&L surface for a mirror pair via persisted state or selector-first lookup.",
+    "summary": "Read the canonical mirror P&L surface for a pair. It remains the dedicated cross-venue scenario P&L surface; `--reconciled` adds normalized realized/unrealized accounting, provenance, and export-ready ledger rows beside the legacy approximate fields.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] mirror pnl --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
+    "usage": "pandora [--output table|json] mirror pnl --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--reconciled] [--include-legacy-approx] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
   },
   "mirror.replay": {
     "agentWorkflow": null,
@@ -11810,7 +11852,7 @@
     "riskLevel": "low",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Mirror sync runtime command family for separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.",
+    "summary": "Mirror sync runtime command family for separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.",
     "supportsRemote": false,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] mirror sync once|run|start|stop|status ..."
@@ -11825,7 +11867,7 @@
       "once"
     ],
     "canonicalTool": "mirror.sync.once",
-    "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/MirrorStatusPayload",
     "emits": [
@@ -13173,6 +13215,19 @@
           "description": "Execute live sync actions.",
           "type": "boolean"
         },
+        "flashbots-auth-key": {
+          "description": "Optional Flashbots auth key or signer reference for the Ethereum Pandora rebalance leg.",
+          "type": "string"
+        },
+        "flashbots-relay-url": {
+          "description": "Optional Flashbots/private relay URL for the Ethereum Pandora rebalance leg.",
+          "type": "string"
+        },
+        "flashbots-target-block-offset": {
+          "description": "Optional target block offset for Flashbots/private bundle submission.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "funder": {
           "description": "Polymarket proxy/safe address.",
           "type": "string"
@@ -13310,6 +13365,22 @@
             "incremental"
           ]
         },
+        "rebalance-route": {
+          "description": "Pandora-leg execution route. public preserves ordinary mempool submission; auto chooses a private route when supported; flashbots-private requests single-tx private relay submission; flashbots-bundle requests Flashbots bundle semantics for approval+trade paths. This affects only the Ethereum Pandora leg.",
+          "enum": [
+            "public",
+            "auto",
+            "flashbots-private",
+            "flashbots-bundle"
+          ]
+        },
+        "rebalance-route-fallback": {
+          "description": "Fallback policy when the requested Pandora-leg private route is unsupported or rejected. fail stops the run; public degrades to ordinary public submission. This does not change Polygon hedge semantics.",
+          "enum": [
+            "fail",
+            "public"
+          ]
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -13396,10 +13467,10 @@
       "--paper",
       "--dry-run"
     ],
-    "summary": "Execute one mirror sync tick with separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.",
+    "summary": "Execute one mirror sync tick with separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.",
     "supportsRemote": true,
     "supportsWebhook": true,
-    "usage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+    "usage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
   },
   "mirror.sync.run": {
     "agentWorkflow": null,
@@ -13411,7 +13482,7 @@
       "run"
     ],
     "canonicalTool": "mirror.sync.run",
-    "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/MirrorStatusPayload",
     "emits": [
@@ -14763,6 +14834,19 @@
           "description": "Execute live sync actions.",
           "type": "boolean"
         },
+        "flashbots-auth-key": {
+          "description": "Optional Flashbots auth key or signer reference for the Ethereum Pandora rebalance leg.",
+          "type": "string"
+        },
+        "flashbots-relay-url": {
+          "description": "Optional Flashbots/private relay URL for the Ethereum Pandora rebalance leg.",
+          "type": "string"
+        },
+        "flashbots-target-block-offset": {
+          "description": "Optional target block offset for Flashbots/private bundle submission.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "funder": {
           "description": "Polymarket proxy/safe address.",
           "type": "string"
@@ -14904,6 +14988,22 @@
             "incremental"
           ]
         },
+        "rebalance-route": {
+          "description": "Pandora-leg execution route. public preserves ordinary mempool submission; auto chooses a private route when supported; flashbots-private requests single-tx private relay submission; flashbots-bundle requests Flashbots bundle semantics for approval+trade paths. This affects only the Ethereum Pandora leg.",
+          "enum": [
+            "public",
+            "auto",
+            "flashbots-private",
+            "flashbots-bundle"
+          ]
+        },
+        "rebalance-route-fallback": {
+          "description": "Fallback policy when the requested Pandora-leg private route is unsupported or rejected. fail stops the run; public degrades to ordinary public submission. This does not change Polygon hedge semantics.",
+          "enum": [
+            "fail",
+            "public"
+          ]
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -14995,10 +15095,10 @@
       "--paper",
       "--dry-run"
     ],
-    "summary": "Run continuous mirror sync loop with separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.",
+    "summary": "Run continuous mirror sync loop with separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.",
     "supportsRemote": true,
     "supportsWebhook": true,
-    "usage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+    "usage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
   },
   "mirror.sync.start": {
     "agentWorkflow": null,
@@ -15010,7 +15110,7 @@
       "start"
     ],
     "canonicalTool": "mirror.sync.start",
-    "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/MirrorStatusPayload",
     "emits": [
@@ -16358,6 +16458,19 @@
           "description": "Execute live sync actions.",
           "type": "boolean"
         },
+        "flashbots-auth-key": {
+          "description": "Optional Flashbots auth key or signer reference for the Ethereum Pandora rebalance leg.",
+          "type": "string"
+        },
+        "flashbots-relay-url": {
+          "description": "Optional Flashbots/private relay URL for the Ethereum Pandora rebalance leg.",
+          "type": "string"
+        },
+        "flashbots-target-block-offset": {
+          "description": "Optional target block offset for Flashbots/private bundle submission.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "funder": {
           "description": "Polymarket proxy/safe address.",
           "type": "string"
@@ -16495,6 +16608,22 @@
             "incremental"
           ]
         },
+        "rebalance-route": {
+          "description": "Pandora-leg execution route. public preserves ordinary mempool submission; auto chooses a private route when supported; flashbots-private requests single-tx private relay submission; flashbots-bundle requests Flashbots bundle semantics for approval+trade paths. This affects only the Ethereum Pandora leg.",
+          "enum": [
+            "public",
+            "auto",
+            "flashbots-private",
+            "flashbots-bundle"
+          ]
+        },
+        "rebalance-route-fallback": {
+          "description": "Fallback policy when the requested Pandora-leg private route is unsupported or rejected. fail stops the run; public degrades to ordinary public submission. This does not change Polygon hedge semantics.",
+          "enum": [
+            "fail",
+            "public"
+          ]
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -16582,10 +16711,10 @@
       "--paper",
       "--dry-run"
     ],
-    "summary": "Start detached mirror sync daemon for separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.",
+    "summary": "Start detached mirror sync daemon for separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.",
     "supportsRemote": true,
     "supportsWebhook": true,
-    "usage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+    "usage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
   },
   "mirror.sync.status": {
     "agentWorkflow": null,
@@ -17060,6 +17189,163 @@
     "supportsRemote": true,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all"
+  },
+  "mirror.trace": {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canRunConcurrent": true,
+    "canonicalCommandTokens": [
+      "mirror",
+      "trace"
+    ],
+    "canonicalTool": "mirror.trace",
+    "canonicalUsage": "pandora [--output table|json] mirror trace --pandora-market-address <address>|--market-address <address> --rpc-url <url> [--blocks <csv>|--from-block <n> --to-block <n> [--step <n>]] [--limit <n>]",
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/MirrorTracePayload",
+    "emits": [
+      "mirror.trace",
+      "mirror.trace.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 1500,
+    "externalDependencies": [
+      "chain-rpc",
+      "polymarket-api"
+    ],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "pandora-market-address"
+          ]
+        },
+        {
+          "required": [
+            "market-address"
+          ]
+        }
+      ],
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "from-block",
+                  "to-block"
+                ]
+              },
+              {
+                "required": [
+                  "from-block"
+                ]
+              },
+              {
+                "required": [
+                  "to-block"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "blocks"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "blocks"
+                ]
+              },
+              {
+                "required": [
+                  "blocks"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "from-block",
+            "to-block"
+          ]
+        }
+      ],
+      "properties": {
+        "blocks": {
+          "description": "Comma-delimited explicit block numbers to sample.",
+          "type": "string"
+        },
+        "from-block": {
+          "description": "Inclusive start block number.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "description": "Maximum number of results.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "market-address": {
+          "description": "Market address.",
+          "type": "string"
+        },
+        "pandora-market-address": {
+          "description": "Market address.",
+          "type": "string"
+        },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
+        "step": {
+          "description": "Sampling step for block ranges.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "to-block": {
+          "description": "Inclusive end block number.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rpc-url"
+      ],
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "mirror:read",
+      "network:rpc",
+      "network:polymarket"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Read block-aware historical Pandora reserve snapshots for one market via explicit block lists or sampled block ranges.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] mirror trace --pandora-market-address <address>|--market-address <address> --rpc-url <url> [--blocks <csv>|--from-block <n> --to-block <n> [--step <n>]] [--limit <n>]"
   },
   "mirror.verify": {
     "agentWorkflow": null,
@@ -19118,7 +19404,7 @@
     "summary": "Polymarket command family help and routing entrypoint.",
     "supportsRemote": false,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] polymarket check|approve|preflight|balance|deposit|withdraw|trade ..."
+    "usage": "pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ..."
   },
   "polymarket.approve": {
     "agentWorkflow": null,
@@ -19527,6 +19813,256 @@
     "supportsRemote": true,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] polymarket deposit --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
+  },
+  "polymarket.positions": {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canRunConcurrent": true,
+    "canonicalCommandTokens": [
+      "polymarket",
+      "positions"
+    ],
+    "canonicalTool": "polymarket.positions",
+    "canonicalUsage": "pandora [--output table|json] polymarket positions [--wallet <address>|--funder <address>] [--condition-id <id>|--market-id <id>|--slug <slug>|--token-id <id>] [--source auto|api|on-chain] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-data-api-url <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>]",
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/PolymarketPositionsPayload",
+    "emits": [
+      "polymarket.positions",
+      "polymarket.positions.help",
+      "polymarket.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 1200,
+    "externalDependencies": [
+      "wallet-secrets",
+      "chain-rpc",
+      "polymarket-api",
+      "rpc"
+    ],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "condition-id"
+                ]
+              },
+              {
+                "required": [
+                  "condition-id"
+                ]
+              },
+              {
+                "required": [
+                  "slug"
+                ]
+              },
+              {
+                "required": [
+                  "slug"
+                ]
+              },
+              {
+                "required": [
+                  "token-id"
+                ]
+              },
+              {
+                "required": [
+                  "token-id"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "slug"
+                ]
+              },
+              {
+                "required": [
+                  "slug"
+                ]
+              },
+              {
+                "required": [
+                  "token-id"
+                ]
+              },
+              {
+                "required": [
+                  "token-id"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "condition-id"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "condition-id"
+                ]
+              },
+              {
+                "required": [
+                  "condition-id"
+                ]
+              },
+              {
+                "required": [
+                  "token-id"
+                ]
+              },
+              {
+                "required": [
+                  "token-id"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "slug"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "condition-id"
+                ]
+              },
+              {
+                "required": [
+                  "condition-id"
+                ]
+              },
+              {
+                "required": [
+                  "slug"
+                ]
+              },
+              {
+                "required": [
+                  "slug"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "token-id"
+          ]
+        }
+      ],
+      "properties": {
+        "condition-id": {
+          "description": "Polymarket condition id / market id selector.",
+          "type": "string"
+        },
+        "fork": {
+          "description": "Run in fork mode.",
+          "type": "boolean"
+        },
+        "fork-chain-id": {
+          "description": "Fork chain id.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "fork-rpc-url": {
+          "description": "Fork RPC URL.",
+          "type": "string"
+        },
+        "funder": {
+          "description": "Polymarket proxy wallet.",
+          "type": "string"
+        },
+        "polymarket-host": {
+          "description": "Polymarket host override.",
+          "type": "string"
+        },
+        "polymarket-mock-url": {
+          "description": "Polymarket mock URL.",
+          "type": "string"
+        },
+        "private-key": {
+          "description": "Hex private key.",
+          "type": "string"
+        },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
+        "slug": {
+          "description": "Polymarket slug selector.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Inventory source preference.",
+          "enum": [
+            "auto",
+            "api",
+            "on-chain"
+          ]
+        },
+        "timeout-ms": {
+          "description": "Request timeout in milliseconds.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "token-id": {
+          "description": "Conditional token id selector.",
+          "type": "string"
+        },
+        "wallet": {
+          "description": "Wallet address to inspect.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "polymarket:read",
+      "secrets:use",
+      "network:rpc",
+      "network:polymarket"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": true,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "medium",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Read Polymarket YES/NO position inventory and open-order exposure. This is distinct from `polymarket balance`, which remains funding and collateral only.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] polymarket positions [--wallet <address>|--funder <address>] [--condition-id <id>|--market-id <id>|--slug <slug>|--token-id <id>] [--source auto|api|on-chain] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-data-api-url <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>]"
   },
   "polymarket.preflight": {
     "agentWorkflow": null,

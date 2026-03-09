@@ -172,12 +172,49 @@ function buildExecutableAction(params) {
  * @returns {{ok: false, error: {code: string|null, message: string}}}
  */
 function normalizeExecutionFailure(err) {
+  const details = err && err.details && typeof err.details === 'object' ? err.details : {};
   return {
     ok: false,
     error: {
       code: err && err.code ? String(err.code) : null,
       message: err && err.message ? String(err.message) : String(err),
+      details,
     },
+    tradeTxHash:
+      details.tradeTxHash || details.transactionHash || null,
+    approveTxHash:
+      details.approveTxHash || null,
+    txHash:
+      details.txHash || details.tradeTxHash || details.transactionHash || null,
+    executionRouteRequested:
+      details.requestedRoute || details.executionRouteRequested || null,
+    executionRouteResolved:
+      details.resolvedRoute || details.executionRouteResolved || null,
+    executionRouteFallback:
+      details.executionRouteFallback || null,
+    executionRouteFallbackUsed: Boolean(details.executionRouteFallbackUsed),
+    executionRouteFallbackReason:
+      details.executionRouteFallbackReason || null,
+    flashbotsRelayUrl:
+      details.flashbotsRelayUrl || details.relayUrl || null,
+    flashbotsRelayMethod:
+      details.flashbotsRelayMethod || details.relayMethod || null,
+    flashbotsTargetBlockNumber:
+      details.flashbotsTargetBlockNumber !== undefined
+        ? details.flashbotsTargetBlockNumber
+        : details.targetBlockNumber !== undefined
+          ? details.targetBlockNumber
+          : null,
+    flashbotsRelayResponseId:
+      details.flashbotsRelayResponseId !== undefined
+        ? details.flashbotsRelayResponseId
+        : details.relayResponseId !== undefined
+          ? details.relayResponseId
+          : null,
+    flashbotsBundleHash:
+      details.flashbotsBundleHash || details.bundleHash || null,
+    flashbotsSimulation:
+      details.flashbotsSimulation || details.simulation || null,
   };
 }
 
@@ -252,6 +289,38 @@ function buildMirrorAuditEntries(action) {
         transactionRef: action.rebalance.result && (action.rebalance.result.tradeTxHash || action.rebalance.result.txHash || null),
         transactionNonce: action.rebalance.result && action.rebalance.result.tradeNonce !== undefined ? action.rebalance.result.tradeNonce : null,
         approveNonce: action.rebalance.result && action.rebalance.result.approveNonce !== undefined ? action.rebalance.result.approveNonce : null,
+        executionRouteRequested: action.rebalance.result && action.rebalance.result.executionRouteRequested
+          ? action.rebalance.result.executionRouteRequested
+          : null,
+        executionRouteResolved: action.rebalance.result && action.rebalance.result.executionRouteResolved
+          ? action.rebalance.result.executionRouteResolved
+          : null,
+        executionRouteFallback: action.rebalance.result && action.rebalance.result.executionRouteFallback
+          ? action.rebalance.result.executionRouteFallback
+          : null,
+        executionRouteFallbackUsed: Boolean(
+          action.rebalance.result && action.rebalance.result.executionRouteFallbackUsed,
+        ),
+        executionRouteFallbackReason: action.rebalance.result && action.rebalance.result.executionRouteFallbackReason
+          ? action.rebalance.result.executionRouteFallbackReason
+          : null,
+        flashbotsRelayUrl: action.rebalance.result && action.rebalance.result.flashbotsRelayUrl
+          ? action.rebalance.result.flashbotsRelayUrl
+          : null,
+        flashbotsRelayMethod: action.rebalance.result && action.rebalance.result.flashbotsRelayMethod
+          ? action.rebalance.result.flashbotsRelayMethod
+          : null,
+        flashbotsTargetBlockNumber:
+          action.rebalance.result && action.rebalance.result.flashbotsTargetBlockNumber !== undefined
+            ? action.rebalance.result.flashbotsTargetBlockNumber
+            : null,
+        flashbotsRelayResponseId:
+          action.rebalance.result && action.rebalance.result.flashbotsRelayResponseId !== undefined
+            ? action.rebalance.result.flashbotsRelayResponseId
+            : null,
+        flashbotsBundleHash: action.rebalance.result && action.rebalance.result.flashbotsBundleHash
+          ? action.rebalance.result.flashbotsBundleHash
+          : null,
         result: action.rebalance.result || null,
       },
     });

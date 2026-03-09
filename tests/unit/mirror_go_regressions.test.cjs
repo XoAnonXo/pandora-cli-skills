@@ -166,6 +166,11 @@ function buildGoOptions(overrides = {}) {
     driftTriggerBps: 150,
     hedgeTriggerUsdc: 10,
     hedgeRatio: 1,
+    rebalanceRoute: 'public',
+    rebalanceRouteFallback: 'fail',
+    flashbotsRelayUrl: null,
+    flashbotsAuthKey: null,
+    flashbotsTargetBlockOffset: null,
     noHedge: false,
     maxRebalanceUsdc: 25,
     maxHedgeUsdc: 50,
@@ -250,6 +255,108 @@ test('parseMirrorSyncFlags accepts --polymarket-rpc-url and enforces companion l
       assert.match(error.message, /--max-trades-per-day/);
       return true;
     },
+  );
+});
+
+test('mirror go and sync parsers accept flashbots routing flags and reject invalid fallback/relay/block values', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildGoParserDeps());
+  const parseMirrorSyncFlags = createParseMirrorSyncFlags(buildSyncParserDeps());
+
+  const goParsed = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--rebalance-route',
+    'flashbots-bundle',
+    '--rebalance-route-fallback',
+    'public',
+    '--flashbots-relay-url',
+    'https://relay.flashbots.example',
+    '--flashbots-auth-key',
+    'auth-key-ref',
+    '--flashbots-target-block-offset',
+    '3',
+  ]);
+  assert.equal(goParsed.rebalanceRoute, 'flashbots-bundle');
+  assert.equal(goParsed.rebalanceRouteFallback, 'public');
+  assert.equal(goParsed.flashbotsRelayUrl, 'https://relay.flashbots.example');
+  assert.equal(goParsed.flashbotsAuthKey, 'auth-key-ref');
+  assert.equal(goParsed.flashbotsTargetBlockOffset, 3);
+
+  const syncParsed = parseMirrorSyncFlags([
+    'once',
+    '--market-address',
+    TEST_MARKET,
+    '--polymarket-market-id',
+    'poly-1',
+    '--rebalance-route',
+    'flashbots-private',
+    '--rebalance-route-fallback',
+    'fail',
+    '--flashbots-relay-url',
+    'https://relay.flashbots.example',
+    '--flashbots-auth-key',
+    'auth-key-ref',
+    '--flashbots-target-block-offset',
+    '2',
+    '--paper',
+  ]);
+  assert.equal(syncParsed.rebalanceRoute, 'flashbots-private');
+  assert.equal(syncParsed.rebalanceRouteFallback, 'fail');
+  assert.equal(syncParsed.flashbotsRelayUrl, 'https://relay.flashbots.example');
+  assert.equal(syncParsed.flashbotsAuthKey, 'auth-key-ref');
+  assert.equal(syncParsed.flashbotsTargetBlockOffset, 2);
+
+  assert.throws(
+    () => parseMirrorGoFlags(['--polymarket-market-id', 'poly-1', '--rebalance-route-fallback', 'maybe']),
+    /--rebalance-route-fallback must be fail\|public\./,
+  );
+  assert.throws(
+    () => parseMirrorSyncFlags([
+      'once',
+      '--market-address',
+      TEST_MARKET,
+      '--polymarket-market-id',
+      'poly-1',
+      '--flashbots-relay-url',
+      'http://relay.flashbots.example',
+      '--paper',
+    ]),
+    /--flashbots-relay-url must use https:\/\//,
+  );
+  assert.throws(
+    () => parseMirrorSyncFlags([
+      'once',
+      '--market-address',
+      TEST_MARKET,
+      '--polymarket-market-id',
+      'poly-1',
+      '--flashbots-target-block-offset',
+      '0',
+      '--paper',
+    ]),
+    /--flashbots-target-block-offset must be a positive integer\./,
+  );
+  assert.throws(
+    () => parseMirrorGoFlags([
+      '--polymarket-market-id',
+      'poly-1',
+      '--flashbots-auth-key',
+      'auth-key-ref',
+    ]),
+    /--flashbots-auth-key require --rebalance-route auto, flashbots-private, or flashbots-bundle\./,
+  );
+  assert.throws(
+    () => parseMirrorSyncFlags([
+      'once',
+      '--market-address',
+      TEST_MARKET,
+      '--polymarket-market-id',
+      'poly-1',
+      '--flashbots-relay-url',
+      'https://relay.flashbots.example',
+      '--paper',
+    ]),
+    /--flashbots-relay-url require --rebalance-route auto, flashbots-private, or flashbots-bundle\./,
   );
 });
 
@@ -429,6 +536,80 @@ test('mirror go reuses trusted manifest pair and skips deploy', async () => {
   assert.equal(emittedPayload.deploy.pandora.marketAddress, TEST_MARKET);
   assert.equal(emittedPayload.deploy.trustManifest.filePath, '/tmp/mirror-pairs.json');
   assert.equal(emittedPayload.diagnostics.some((item) => /deploy step skipped/i.test(item)), true);
+});
+
+test('mirror go suggested sync command preserves flashbots routing flags', async () => {
+  let emittedPayload = null;
+
+  await handleMirrorGo({
+    shared: {
+      rest: ['--polymarket-market-id', 'poly-1'],
+      timeoutMs: 5000,
+      indexerUrl: 'https://indexer.test',
+    },
+    context: { outputMode: 'json' },
+    mirrorGoUsage: 'mirror go usage',
+    deps: {
+      CliError: TestCliError,
+      includesHelpFlag: () => false,
+      emitSuccess: (_mode, _command, payload) => {
+        emittedPayload = payload;
+      },
+      commandHelpPayload: () => ({}),
+      maybeLoadTradeEnv: () => null,
+      resolveIndexerUrl: (url) => url,
+      parseMirrorGoFlags: () => buildGoOptions({
+        executeLive: false,
+        autoSync: false,
+        rebalanceRoute: 'flashbots-bundle',
+        rebalanceRouteFallback: 'public',
+        flashbotsRelayUrl: 'https://relay.flashbots.example',
+        flashbotsAuthKey: `0x${'1'.repeat(64)}`,
+        flashbotsTargetBlockOffset: 3,
+      }),
+      buildMirrorPlan: async () => ({
+        sourceMarket: { marketId: 'poly-1', slug: 'poly-slug-1' },
+        planDigest: 'digest-1',
+      }),
+      deployMirror: async () => ({
+        schemaVersion: '1.0.0',
+        generatedAt: new Date().toISOString(),
+        pandora: {
+          marketAddress: TEST_MARKET,
+          pollAddress: TEST_POLL,
+        },
+      }),
+      resolveTrustedDeployPair: () => {
+        throw new Error('not used');
+      },
+      findMirrorPair: () => ({ filePath: '/tmp/mirror-pairs.json', pair: null }),
+      defaultMirrorManifestFile: () => '/tmp/mirror-pairs.json',
+      hasContractCodeAtAddress: async () => true,
+      verifyMirror: async () => ({
+        pandora: { marketAddress: TEST_MARKET, rules: 'rules' },
+        sourceMarket: { description: 'source' },
+        gateResult: { ok: true },
+      }),
+      runLivePolymarketPreflightForMirror: async () => ({ ok: true }),
+      runMirrorSync: async () => {
+        throw new Error('runMirrorSync should not be called when autoSync is false');
+      },
+      buildQuotePayload: async () => ({}),
+      executeTradeOnchain: async () => ({}),
+      assertLiveWriteAllowed: async () => null,
+      renderMirrorSyncTickLine: () => null,
+      coerceMirrorServiceError: (error) => error,
+      renderMirrorGoTable: () => null,
+    },
+  });
+
+  assert.ok(emittedPayload);
+  assert.match(emittedPayload.suggestedSyncCommand, /--rebalance-route flashbots-bundle/);
+  assert.match(emittedPayload.suggestedSyncCommand, /--rebalance-route-fallback public/);
+  assert.match(emittedPayload.suggestedSyncCommand, /--flashbots-relay-url https:\/\/relay\.flashbots\.example/);
+  assert.match(emittedPayload.suggestedSyncCommand, /--flashbots-auth-key 0x1{64}/);
+  assert.match(emittedPayload.suggestedSyncCommand, /--flashbots-target-block-offset 3/);
+  assert.doesNotMatch(emittedPayload.suggestedSyncCommand, /--no-hedge/);
 });
 
 test('mirror go preflight prefers --polymarket-rpc-url over main --rpc-url', async () => {

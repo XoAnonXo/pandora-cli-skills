@@ -1,4 +1,9 @@
 const { ClobClient, Chain } = require('@polymarket/clob-client');
+const {
+  resolvePolymarketMarket,
+  fetchPolymarketPositionInventory,
+  fetchPolymarketPositionSummary,
+} = require('./polymarket_trade_adapter.cjs');
 
 const POLYMARKET_OPS_SCHEMA_VERSION = '1.0.0';
 const POLYGON_CHAIN_ID = 137;
@@ -130,6 +135,18 @@ function parseBooleanFlag(value, defaultValue = false) {
   return defaultValue;
 }
 
+function normalizePositionSource(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'api') return 'api';
+  if (normalized === 'on-chain' || normalized === 'onchain' || normalized === 'on_chain') return 'on-chain';
+  return 'auto';
+}
+
+function normalizeTokenId(value) {
+  const normalized = String(value || '').trim();
+  return normalized || null;
+}
+
 function toBigIntOrNull(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'bigint') return value;
@@ -183,6 +200,10 @@ function cloneJsonCompatible(value) {
   return value && typeof value === 'object'
     ? JSON.parse(JSON.stringify(value))
     : value;
+}
+
+function dedupeList(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).filter(Boolean)));
 }
 
 function buildSignedUsdcDelta(rawValue) {
@@ -1273,6 +1294,309 @@ async function runPolymarketBalance(options = {}, deps = {}) {
   };
 }
 
+function resolvePositionTokenSelection(options = {}, market = null) {
+  const diagnostics = [];
+  const explicitMap =
+    options.tokenIds && typeof options.tokenIds === 'object' && !Array.isArray(options.tokenIds)
+      ? options.tokenIds
+      : {};
+  const explicitArray = Array.isArray(options.tokenIds)
+    ? options.tokenIds.map((value) => normalizeTokenId(value)).filter(Boolean)
+    : [];
+  let yesTokenId =
+    normalizeTokenId(options.yesTokenId)
+    || normalizeTokenId(explicitMap.yes)
+    || null;
+  let noTokenId =
+    normalizeTokenId(options.noTokenId)
+    || normalizeTokenId(explicitMap.no)
+    || null;
+  const marketYesTokenId = normalizeTokenId(market && market.yesTokenId);
+  const marketNoTokenId = normalizeTokenId(market && market.noTokenId);
+  const singleTokenId = normalizeTokenId(options.tokenId);
+
+  if (!yesTokenId && explicitArray[0]) {
+    yesTokenId = explicitArray[0];
+  }
+  if (!noTokenId && explicitArray[1]) {
+    noTokenId = explicitArray[1];
+  }
+  if (explicitArray.length >= 2) {
+    diagnostics.push('Explicit tokenIds array was interpreted as [YES, NO].');
+  }
+
+  if (singleTokenId && !yesTokenId && !noTokenId) {
+    if (marketYesTokenId && singleTokenId === marketYesTokenId) {
+      yesTokenId = singleTokenId;
+    } else if (marketNoTokenId && singleTokenId === marketNoTokenId) {
+      noTokenId = singleTokenId;
+    } else if (!marketYesTokenId && !marketNoTokenId) {
+      diagnostics.push('Single tokenId provided without YES/NO mapping; balances will remain partially scoped.');
+      yesTokenId = singleTokenId;
+    } else {
+      diagnostics.push('Explicit tokenId did not match resolved market YES/NO token ids.');
+    }
+  }
+
+  if (!yesTokenId && marketYesTokenId) {
+    yesTokenId = marketYesTokenId;
+  }
+  if (!noTokenId && marketNoTokenId) {
+    noTokenId = marketNoTokenId;
+  }
+
+  return {
+    yesTokenId,
+    noTokenId,
+    diagnostics,
+  };
+}
+
+async function runPolymarketPositions(options = {}, deps = {}) {
+  const runtime = resolveRuntime(options);
+  const signerAddress = await deriveSignerAddress(runtime, deps);
+  const rpcSelection = await ensureRpcSelection(runtime, deps);
+  const publicClient = rpcSelection.publicClient;
+  const requestedWallet = normalizeAddress(
+    options.wallet !== undefined ? options.wallet : options.walletAddress || options.ownerAddress,
+    'wallet',
+  );
+  const sourceRequested = normalizePositionSource(options.source);
+  const apiWalletAddress = runtime.funderAddress || signerAddress || null;
+  const ownerAddress = requestedWallet || apiWalletAddress || null;
+  const marketId = normalizeTokenId(options.marketId || options.conditionId);
+  const slug = normalizeTokenId(options.slug);
+  const diagnostics = [];
+  const providedMarket = options.market && typeof options.market === 'object' ? options.market : null;
+
+  const hasTokenSelector = Boolean(
+    normalizeTokenId(options.yesTokenId)
+      || normalizeTokenId(options.noTokenId)
+      || normalizeTokenId(options.tokenId)
+      || (Array.isArray(options.tokenIds) && options.tokenIds.some((value) => normalizeTokenId(value)))
+      || (options.tokenIds && typeof options.tokenIds === 'object' && !Array.isArray(options.tokenIds)
+        && (normalizeTokenId(options.tokenIds.yes) || normalizeTokenId(options.tokenIds.no))),
+  );
+  const hasProvidedMarketSelector = Boolean(
+    providedMarket
+      && (normalizeTokenId(providedMarket.marketId || providedMarket.conditionId) || normalizeTokenId(providedMarket.slug)),
+  );
+  if (!marketId && !slug && !hasTokenSelector && !hasProvidedMarketSelector && !ownerAddress) {
+    throw createServiceError(
+      'MISSING_REQUIRED_INPUT',
+      'Polymarket positions requires a wallet context or a market/token selector.',
+      {
+        supportedSelectors: ['wallet', 'marketId', 'slug', 'yesTokenId', 'noTokenId', 'tokenId'],
+      },
+    );
+  }
+  if (sourceRequested === 'on-chain' && !marketId && !slug && !hasTokenSelector && !hasProvidedMarketSelector) {
+    throw createServiceError(
+      'MISSING_REQUIRED_INPUT',
+      'On-chain Polymarket positions lookup requires --market-id/--slug or explicit token ids.',
+      {
+        supportedSelectors: ['marketId', 'slug', 'yesTokenId', 'noTokenId', 'tokenId'],
+      },
+    );
+  }
+
+  let market = providedMarket;
+  if (!market && (marketId || slug)) {
+    try {
+      market = await resolvePolymarketMarket({
+        host: options.host || runtime.host,
+        mockUrl: options.polymarketMockUrl || options.mockUrl || null,
+        timeoutMs: Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000,
+        marketId,
+        slug,
+      });
+    } catch (err) {
+      if (!hasTokenSelector) {
+        throw createServiceError(
+          'POLYMARKET_MARKET_RESOLUTION_FAILED',
+          'Unable to resolve Polymarket market details for positions lookup.',
+          {
+            marketId,
+            slug,
+            cause: coerceErrorMessage(err),
+          },
+        );
+      }
+      diagnostics.push(`Market resolution failed; continuing with explicit token ids: ${coerceErrorMessage(err)}`);
+      market = null;
+    }
+  }
+
+  const tokenSelection = resolvePositionTokenSelection(options, market);
+  diagnostics.push(...tokenSelection.diagnostics);
+
+  const inventory = await fetchPolymarketPositionInventory({
+    source: sourceRequested,
+    market,
+    marketId: marketId || (market && market.marketId) || null,
+    conditionId: marketId || (market && market.marketId) || null,
+    slug: slug || (market && market.slug) || null,
+    walletAddress: ownerAddress,
+    ownerAddress,
+    tokenIds: [
+      tokenSelection.yesTokenId,
+      tokenSelection.noTokenId,
+      normalizeTokenId(options.tokenId),
+      ...(Array.isArray(options.tokenIds) ? options.tokenIds : []),
+    ].filter(Boolean),
+    host: options.host || runtime.host,
+    gammaUrl: options.gammaUrl || null,
+    dataApiUrl: options.dataApiUrl || null,
+    mockUrl: options.polymarketMockUrl || options.mockUrl || null,
+    timeoutMs: Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000,
+    publicClient,
+    ctfAddress: runtime.ctfAddress,
+    privateKey: runtime.privateKey,
+    funder: runtime.funderAddress,
+    apiKey: runtime.apiKey,
+    apiSecret: runtime.apiSecret,
+    apiPassphrase: runtime.apiPassphrase,
+    env: options.env || process.env,
+  });
+  const position = await fetchPolymarketPositionSummary({
+    source: sourceRequested,
+    market,
+    marketId: marketId || (market && market.marketId) || null,
+    conditionId: marketId || (market && market.marketId) || null,
+    slug: slug || (market && market.slug) || null,
+    walletAddress: ownerAddress,
+    ownerAddress,
+    apiWalletAddress,
+    yesTokenId: tokenSelection.yesTokenId,
+    noTokenId: tokenSelection.noTokenId,
+    host: options.host || runtime.host,
+    mockUrl: options.polymarketMockUrl || options.mockUrl || null,
+    timeoutMs: Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000,
+    publicClient,
+    ctfAddress: runtime.ctfAddress,
+    privateKey: runtime.privateKey,
+    funder: runtime.funderAddress,
+    apiKey: runtime.apiKey,
+    apiSecret: runtime.apiSecret,
+    apiPassphrase: runtime.apiPassphrase,
+  });
+
+  const combinedDiagnostics = dedupeList(
+    diagnostics
+      .concat(Array.isArray(inventory && inventory.diagnostics) ? inventory.diagnostics : [])
+      .concat(Array.isArray(position && position.diagnostics) ? position.diagnostics : []),
+  );
+  const conditionId = position && position.conditionId ? position.conditionId : marketId || (market && market.marketId) || null;
+  const marketPayload = {
+    marketId: conditionId,
+    conditionId,
+    slug: (inventory && inventory.market && inventory.market.slug) || (position && position.slug) || (market && market.slug) || slug || null,
+    question: (inventory && inventory.market && inventory.market.question) || (market && market.question ? market.question : null),
+    url: market && market.url ? market.url : null,
+    yesTokenId:
+      (inventory && inventory.market && inventory.market.yesTokenId)
+      || (position && position.yesTokenId)
+      || tokenSelection.yesTokenId,
+    noTokenId:
+      (inventory && inventory.market && inventory.market.noTokenId)
+      || (position && position.noTokenId)
+      || tokenSelection.noTokenId,
+    yesPrice: position && position.prices ? position.prices.yes : null,
+    noPrice: position && position.prices ? position.prices.no : null,
+    source: market && market.source ? market.source : null,
+  };
+  const summary = inventory && inventory.summary && typeof inventory.summary === 'object'
+    ? inventory.summary
+    : {
+        yesBalance: position && position.yesBalance !== undefined ? position.yesBalance : null,
+        noBalance: position && position.noBalance !== undefined ? position.noBalance : null,
+        openOrdersCount: position && position.openOrdersCount !== undefined ? position.openOrdersCount : null,
+        openOrdersNotionalUsd: position && position.openOrdersNotionalUsd !== undefined ? position.openOrdersNotionalUsd : null,
+        estimatedValueUsd: position && position.estimatedValueUsd !== undefined ? position.estimatedValueUsd : null,
+        positionDeltaApprox: position && position.positionDeltaApprox !== undefined ? position.positionDeltaApprox : null,
+        prices: position && position.prices ? cloneJsonCompatible(position.prices) : null,
+      };
+
+  return {
+    schemaVersion: POLYMARKET_OPS_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    mode: 'read',
+    status: 'ready',
+    action: 'positions',
+    marketId: marketPayload.marketId,
+    conditionId: marketPayload.conditionId,
+    slug: marketPayload.slug,
+    ownerAddress,
+    requestedWallet: requestedWallet || null,
+    yesTokenId: marketPayload.yesTokenId,
+    noTokenId: marketPayload.noTokenId,
+    yesBalance: summary.yesBalance !== undefined ? summary.yesBalance : null,
+    noBalance: summary.noBalance !== undefined ? summary.noBalance : null,
+    openOrdersCount: summary.openOrdersCount !== undefined ? summary.openOrdersCount : null,
+    openOrdersNotionalUsd: summary.openOrdersNotionalUsd !== undefined ? summary.openOrdersNotionalUsd : null,
+    estimatedValueUsd: summary.estimatedValueUsd !== undefined ? summary.estimatedValueUsd : null,
+    positionDeltaApprox: summary.positionDeltaApprox !== undefined ? summary.positionDeltaApprox : null,
+    sourceRequested,
+    sourceResolved:
+      (inventory && inventory.source)
+      || (position && position.source ? position.source.resolved : null),
+    runtime: {
+      rpcUrl: rpcSelection.selectedRpcUrl || runtime.configuredRpcUrl || null,
+      configuredRpcUrl: runtime.configuredRpcUrl || null,
+      rpcSource: rpcSelection.source || runtime.rpcSource || null,
+      host: runtime.host,
+      signerAddress: signerAddress || null,
+      funderAddress: runtime.funderAddress || null,
+      ownerAddress,
+      ctfAddress: runtime.ctfAddress,
+      usdcAddress: runtime.usdcAddress,
+    },
+    rpcSelection: buildRpcSelectionPayload(runtime, { rpcSelection }),
+    selector: {
+      wallet: requestedWallet || null,
+      ownerAddress,
+      marketId: marketPayload.marketId,
+      conditionId: marketPayload.conditionId,
+      slug: marketPayload.slug,
+      sourceRequested,
+      sourceResolved:
+        (inventory && inventory.source)
+        || (position && position.source ? position.source.resolved : null),
+      yesTokenId: marketPayload.yesTokenId,
+      noTokenId: marketPayload.noTokenId,
+    },
+    market: marketPayload,
+    summary: cloneJsonCompatible(summary),
+    positions: inventory && Array.isArray(inventory.positions) ? cloneJsonCompatible(inventory.positions) : [],
+    openOrders: inventory && Array.isArray(inventory.openOrders) ? cloneJsonCompatible(inventory.openOrders) : [],
+    position: {
+      walletAddress: ownerAddress,
+      marketId: position && position.marketId ? position.marketId : marketPayload.marketId,
+      conditionId: position && position.conditionId ? position.conditionId : marketPayload.conditionId,
+      slug: position && position.slug ? position.slug : marketPayload.slug,
+      yesTokenId: position && position.yesTokenId ? position.yesTokenId : marketPayload.yesTokenId,
+      noTokenId: position && position.noTokenId ? position.noTokenId : marketPayload.noTokenId,
+      tokenIds: position && position.tokenIds ? cloneJsonCompatible(position.tokenIds) : null,
+      yesBalance: position && position.yesBalance !== undefined ? position.yesBalance : null,
+      noBalance: position && position.noBalance !== undefined ? position.noBalance : null,
+      balances: position && position.balances ? cloneJsonCompatible(position.balances) : null,
+      openOrdersCount: position && position.openOrdersCount !== undefined ? position.openOrdersCount : null,
+      openOrdersNotionalUsd: position && position.openOrdersNotionalUsd !== undefined ? position.openOrdersNotionalUsd : null,
+      openOrders:
+        position && Array.isArray(position.openOrders)
+          ? cloneJsonCompatible(position.openOrders)
+          : inventory && Array.isArray(inventory.openOrders)
+            ? cloneJsonCompatible(inventory.openOrders)
+            : [],
+      estimatedValueUsd: summary.estimatedValueUsd !== undefined ? summary.estimatedValueUsd : null,
+      positionDeltaApprox: summary.positionDeltaApprox !== undefined ? summary.positionDeltaApprox : null,
+      prices: summary.prices ? cloneJsonCompatible(summary.prices) : position && position.prices ? cloneJsonCompatible(position.prices) : null,
+      source: position && position.source ? cloneJsonCompatible(position.source) : null,
+    },
+    diagnostics: combinedDiagnostics,
+  };
+}
+
 async function runPolymarketFundingTransfer(action, options = {}, deps = {}) {
   const execute = options.execute === true;
   const runtime = resolveRuntime(options);
@@ -1447,6 +1771,7 @@ module.exports = {
   runPolymarketApprove,
   runPolymarketPreflight,
   runPolymarketBalance,
+  runPolymarketPositions,
   runPolymarketDeposit,
   runPolymarketWithdraw,
 };

@@ -203,6 +203,154 @@ function createParsePolymarketBalanceFlags(deps) {
 }
 
 /**
+ * Creates parser for `polymarket positions`.
+ * @param {object} deps
+ * @returns {(args: string[]) => object}
+ */
+function createParsePolymarketPositionsFlags(deps) {
+  const CliError = requireDep(deps, 'CliError');
+  const requireFlagValue = requireDep(deps, 'requireFlagValue');
+  const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
+  const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
+  const parsePolymarketSharedFlags = requireDep(deps, 'parsePolymarketSharedFlags');
+  const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
+  const defaultTimeoutMs = requireNumericDep(deps, 'defaultTimeoutMs');
+
+  return function parsePolymarketPositionsFlags(args) {
+    const options = {
+      wallet: null,
+      conditionId: null,
+      slug: null,
+      tokenIds: [],
+      source: 'auto',
+      dataApiUrl: null,
+      rpcUrl: null,
+      privateKey: null,
+      funder: null,
+      host: null,
+      gammaUrl: null,
+      polymarketMockUrl: null,
+      timeoutMs: defaultTimeoutMs,
+      fork: false,
+      forkRpcUrl: null,
+      forkChainId: null,
+    };
+
+    const sharedArgs = [];
+    for (let i = 0; i < args.length; i += 1) {
+      const token = args[i];
+      if (token === '--wallet') {
+        options.wallet = parseAddressFlag(requireFlagValue(args, i, '--wallet'), '--wallet');
+        i += 1;
+        continue;
+      }
+      if (token === '--condition-id' || token === '--market-id') {
+        options.conditionId = requireFlagValue(args, i, token);
+        i += 1;
+        continue;
+      }
+      if (token === '--slug') {
+        options.slug = requireFlagValue(args, i, '--slug');
+        i += 1;
+        continue;
+      }
+      if (token === '--token-id') {
+        options.tokenIds.push(
+          ...String(requireFlagValue(args, i, '--token-id'))
+            .split(',')
+            .map((item) => String(item || '').trim())
+            .filter(Boolean),
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--source') {
+        const value = String(requireFlagValue(args, i, '--source')).trim().toLowerCase();
+        if (!['auto', 'api', 'on-chain'].includes(value)) {
+          throw new CliError('INVALID_FLAG_VALUE', '--source must be auto|api|on-chain.');
+        }
+        options.source = value;
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-data-api-url') {
+        const dataApiUrl = requireFlagValue(args, i, '--polymarket-data-api-url');
+        if (!isSecureHttpUrlOrLocal(dataApiUrl)) {
+          throw new CliError(
+            'INVALID_FLAG_VALUE',
+            '--polymarket-data-api-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
+          );
+        }
+        options.dataApiUrl = dataApiUrl;
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-host') {
+        const host = requireFlagValue(args, i, '--polymarket-host');
+        if (!isSecureHttpUrlOrLocal(host)) {
+          throw new CliError(
+            'INVALID_FLAG_VALUE',
+            '--polymarket-host must use https:// (or http://localhost/127.0.0.1 for local testing).',
+          );
+        }
+        options.host = host;
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-gamma-url') {
+        const gammaUrl = requireFlagValue(args, i, '--polymarket-gamma-url');
+        if (!isSecureHttpUrlOrLocal(gammaUrl)) {
+          throw new CliError(
+            'INVALID_FLAG_VALUE',
+            '--polymarket-gamma-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
+          );
+        }
+        options.gammaUrl = gammaUrl;
+        i += 1;
+        continue;
+      }
+      if (token === '--polymarket-mock-url') {
+        const mockUrl = requireFlagValue(args, i, '--polymarket-mock-url');
+        if (!isSecureHttpUrlOrLocal(mockUrl)) {
+          throw new CliError(
+            'INVALID_FLAG_VALUE',
+            '--polymarket-mock-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
+          );
+        }
+        options.polymarketMockUrl = mockUrl;
+        i += 1;
+        continue;
+      }
+      if (token === '--timeout-ms') {
+        options.timeoutMs = parsePositiveInteger(requireFlagValue(args, i, '--timeout-ms'), '--timeout-ms');
+        i += 1;
+        continue;
+      }
+      sharedArgs.push(token);
+    }
+
+    options.tokenIds = Array.from(new Set(options.tokenIds));
+    const selectorCount = [options.conditionId, options.slug, options.tokenIds.length ? '__token__' : null].filter(Boolean).length;
+    if (selectorCount > 1) {
+      throw new CliError(
+        'INVALID_ARGS',
+        'Provide only one market selector: --condition-id|--market-id, --slug, or --token-id.',
+      );
+    }
+
+    const shared = parsePolymarketSharedFlags(sharedArgs, 'positions');
+    options.rpcUrl = shared.rpcUrl;
+    options.privateKey = shared.privateKey;
+    options.funder = shared.funder;
+    options.fork = shared.fork;
+    options.forkRpcUrl = shared.forkRpcUrl;
+    options.forkChainId = shared.forkChainId;
+
+    return options;
+  };
+}
+
+/**
  * Creates parser for `polymarket deposit|withdraw`.
  * @param {object} deps
  * @returns {(args: string[], actionLabel?: string) => object}
@@ -426,6 +574,7 @@ module.exports = {
   createParsePolymarketSharedFlags,
   createParsePolymarketApproveFlags,
   createParsePolymarketBalanceFlags,
+  createParsePolymarketPositionsFlags,
   createParsePolymarketFundingFlags,
   createParsePolymarketTradeFlags,
 };

@@ -91,3 +91,20 @@ Use Option 1. Implement an `atomic` rebalance mode with on-chain reserve pricing
 
 **Learnings:**
 - exact reserve provenance in payloads is necessary for agents to trust the execution path
+
+### 2026-03-09 - Recheck and validation audit
+
+**By:** Codex
+
+**Actions:**
+- re-reviewed the atomic sizing and on-chain reserve paths in `cli/lib/mirror_sync/planning.cjs`, `cli/lib/mirror_sync_service.cjs`, and `cli/lib/mirror_sync/reserve_source.cjs`
+- re-checked parser defaults, replay metadata propagation, CLI/docs parity, and reserve provenance surfaces
+- ran targeted Node test slices for atomic reserve planning, parser defaults, replay metadata, CLI help, and docs drift
+
+**Verification:**
+- `node --test --test-name-pattern='atomic|on-chain reserve|reserveSource|rebalanceSizingMode|rebalanceTargetUsdc' tests/unit/new-features.test.cjs tests/unit/mirror_replay_service.test.cjs tests/unit/docs_skills_drift.test.cjs tests/cli/cli.integration.test.cjs tests/cli/mirror_replay.integration.test.cjs`
+- `node --test --test-name-pattern='runMirrorSync paper mode uses on-chain reserves for atomic rebalance planning|runMirrorSync live mode executes rebalance from on-chain reserve drift, not verify payload reserves|runMirrorSync live mode fails closed when on-chain reserve refresh is unavailable|createParseMirrorSyncFlags defaults to atomic on-chain pricing and accepts explicit sizing controls|createParseMirrorGoFlags defaults to atomic on-chain pricing and accepts explicit sizing controls' tests/unit/new-features.test.cjs`
+- both focused validation runs passed with zero failures
+
+**Learnings:**
+- phase 118 currently looks production-consistent: atomic sizing, live fail-closed reserve refresh, parser defaults, replay metadata, and docs/help remain aligned

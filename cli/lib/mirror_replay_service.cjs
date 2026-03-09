@@ -23,6 +23,18 @@ function normalizeText(value) {
   return text || null;
 }
 
+function isLikelyTxHash(value) {
+  const text = normalizeText(value);
+  return Boolean(text && /^0x[a-z0-9]{4,}$/i.test(text));
+}
+
+function firstDefined() {
+  for (const value of arguments) {
+    if (value !== null && value !== undefined && value !== '') return value;
+  }
+  return null;
+}
+
 function isFailureStatus(status) {
   if (!status) return false;
   const normalized = String(status).trim().toLowerCase();
@@ -57,19 +69,29 @@ function buildActionGroupKey(entry = {}, index = 0) {
 function normalizeLeg(entry = {}) {
   const details = entry && entry.details && typeof entry.details === 'object' ? entry.details : {};
   const classification = normalizeText(entry.classification);
+  const directTxHash = firstDefined(details.txHash, details.transactionHash, entry.txHash);
+  const transactionRef = normalizeText(details.transactionRef);
   return {
     classification,
     venue: normalizeText(entry.venue),
     source: normalizeText(entry.source),
     status: normalizeText(entry.status),
     timestamp: toIso(entry.timestamp),
-    amountUsdc: toNumberOrNull(details.amountUsdc),
+    amountUsdc: toNumberOrNull(firstDefined(details.amountUsdc, details.notionalUsdc, entry.amountUsdc, entry.notionalUsdc)),
+    legType: normalizeText(firstDefined(details.legType, details.ledgerLegType, entry.legType)),
+    quantity: toNumberOrNull(firstDefined(details.quantity, details.tokenAmount, entry.quantity)),
+    notionalUsdc: toNumberOrNull(firstDefined(details.notionalUsdc, details.amountUsdc, entry.notionalUsdc, entry.amountUsdc)),
+    feeUsdc: toNumberOrNull(firstDefined(details.feeUsdc, details.feesUsdc, entry.feeUsdc)),
+    gasUsdc: toNumberOrNull(firstDefined(details.gasUsdc, details.gasCostUsdc, entry.gasUsdc)),
+    blockNumber: toNumberOrNull(firstDefined(details.blockNumber, entry.blockNumber)),
+    nonce: toNumberOrNull(firstDefined(details.nonce, entry.nonce)),
+    txHash: isLikelyTxHash(directTxHash) ? normalizeText(directTxHash) : (isLikelyTxHash(transactionRef) ? transactionRef : null),
     rebalanceSide: classification === 'pandora-rebalance' ? normalizeText(details.side) : null,
     hedgeTokenSide: classification === 'polymarket-hedge' ? normalizeText(details.tokenSide) : null,
     hedgeOrderSide: classification === 'polymarket-hedge' ? normalizeText(details.orderSide) : null,
     executionMode: normalizeText(details.executionMode),
     stateDeltaUsdc: toNumberOrNull(details.stateDeltaUsdc),
-    transactionRef: normalizeText(details.transactionRef),
+    transactionRef,
     code: normalizeText(entry.code),
     message: normalizeText(entry.message),
     failed: isFailureStatus(entry.status),
@@ -194,6 +216,7 @@ function buildMirrorReplayPayload(params = {}) {
   const entries = Array.isArray(ledger.entries) ? ledger.entries : [];
   const actions = [];
   const diagnostics = [];
+  const ignoredClassifications = new Set();
   const currentDiagnostics = Array.isArray(params.diagnostics) ? params.diagnostics : [];
   for (const diagnostic of currentDiagnostics.concat(Array.isArray(audit.diagnostics) ? audit.diagnostics : [])) {
     const normalized = normalizeText(diagnostic);
@@ -224,11 +247,18 @@ function buildMirrorReplayPayload(params = {}) {
       if (!current) return;
       if (entry.classification === 'pandora-rebalance' || entry.classification === 'polymarket-hedge') {
         current.legs.push(normalizeLeg(entry));
+        return;
+      }
+      if (entry.classification && entry.classification !== 'runtime-alert') {
+        ignoredClassifications.add(String(entry.classification));
       }
     });
 
   if (current) {
     actions.push(buildReplayAction(current.entry, current.legs, current.key));
+  }
+  if (ignoredClassifications.size) {
+    diagnostics.push(`Replay ignored non-execution ledger classifications: ${Array.from(ignoredClassifications).sort().join(', ')}`);
   }
 
   const summary = {

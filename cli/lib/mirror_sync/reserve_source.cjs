@@ -41,6 +41,20 @@ const TRADING_FEE_ABI = [
   },
 ];
 
+const HISTORICAL_STATE_UNAVAILABLE_PATTERNS = [
+  /missing trie node/i,
+  /header not found/i,
+  /historical state/i,
+  /missing historical/i,
+  /required historical state/i,
+  /archive/i,
+  /prun(?:ed|ing)/i,
+  /state.*not available/i,
+  /old state/i,
+];
+const MAX_RESERVE_TRACE_SNAPSHOTS = 1_000;
+const SUPPORTED_BLOCK_TAGS = new Set(['latest', 'safe', 'finalized', 'pending']);
+
 async function loadViemRuntime(deps = {}) {
   if (deps.viemRuntime && typeof deps.viemRuntime === 'object') {
     return deps.viemRuntime;
@@ -57,6 +71,20 @@ async function createReadClient(options = {}, deps = {}) {
   return runtime.createPublicClient({ transport: runtime.http(options.rpcUrl) });
 }
 
+async function getReadClientForRpc(rpcUrl, options = {}, deps = {}, cache = null) {
+  if (deps.publicClient && typeof deps.publicClient.readContract === 'function') {
+    return deps.publicClient;
+  }
+  if (cache && cache.has(rpcUrl)) {
+    return cache.get(rpcUrl);
+  }
+  const client = await createReadClient({ ...options, rpcUrl }, deps);
+  if (cache) {
+    cache.set(rpcUrl, client);
+  }
+  return client;
+}
+
 function normalizeRpcUrlCandidates(value) {
   const rawValues = Array.isArray(value) ? value : String(value || '').split(',');
   const candidates = rawValues
@@ -71,30 +99,287 @@ function normalizeOptionalAddress(value) {
   return /^0x[a-fA-F0-9]{40}$/.test(trimmed) ? trimmed : null;
 }
 
-async function readOptionalDecimals(publicClient, tokenAddress) {
+function normalizeBlockTag(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (SUPPORTED_BLOCK_TAGS.has(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+function parseBlockTag(value, fieldName = 'blockTag') {
+  const normalized = normalizeBlockTag(value);
+  if (normalized) return normalized;
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const error = new Error(`${fieldName} must be one of: latest, safe, finalized, pending.`);
+  error.code = 'MIRROR_TRACE_INVALID_BLOCK_TAG';
+  error.details = {
+    field: fieldName,
+    value,
+    allowed: Array.from(SUPPORTED_BLOCK_TAGS),
+  };
+  throw error;
+}
+
+function parseTraceBlockNumber(value, fieldName) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === 'bigint' && value >= 0n) {
+    return Number(value);
+  }
+
+  const text = String(value).trim();
+  if (!text) return null;
+  const numeric = /^0x[0-9a-f]+$/i.test(text) ? Number.parseInt(text, 16) : Number(text);
+  if (!Number.isInteger(numeric) || numeric < 0) {
+    const error = new Error(`${fieldName} must be a non-negative integer block number.`);
+    error.code = 'MIRROR_TRACE_INVALID_BLOCK';
+    error.details = {
+      field: fieldName,
+      value,
+    };
+    throw error;
+  }
+  return numeric;
+}
+
+function buildBlockReadOptions(options = {}) {
+  const blockNumber = parseTraceBlockNumber(options.blockNumber, 'blockNumber');
+  const blockTag = parseBlockTag(options.blockTag, 'blockTag');
+  if (blockNumber !== null) {
+    return {
+      blockNumber,
+      blockTag: null,
+      historical: true,
+    };
+  }
+  if (blockTag) {
+    return {
+      blockNumber: null,
+      blockTag,
+      historical: false,
+    };
+  }
+  return {
+    blockNumber: null,
+    blockTag: null,
+    historical: false,
+  };
+}
+
+function buildReadContractOptions(request = {}) {
+  if (request.blockNumber !== null && request.blockNumber !== undefined) {
+    return { blockNumber: BigInt(request.blockNumber) };
+  }
+  if (request.blockTag) {
+    return { blockTag: request.blockTag };
+  }
+  return {};
+}
+
+function buildGetBlockOptions(request = {}) {
+  if (request.blockNumber !== null && request.blockNumber !== undefined) {
+    return { blockNumber: BigInt(request.blockNumber) };
+  }
+  if (request.blockTag) {
+    return { blockTag: request.blockTag };
+  }
+  return { blockTag: 'latest' };
+}
+
+function extractErrorText(err) {
+  const parts = [];
+  if (err && err.code) parts.push(String(err.code));
+  if (err && err.shortMessage) parts.push(String(err.shortMessage));
+  if (err && err.message) parts.push(String(err.message));
+  if (err && err.details) {
+    try {
+      parts.push(typeof err.details === 'string' ? err.details : JSON.stringify(err.details));
+    } catch {
+      // ignore JSON stringify failures
+    }
+  }
+  if (err && err.cause && err.cause !== err) {
+    parts.push(extractErrorText(err.cause));
+  }
+  return parts.join(' | ');
+}
+
+function isHistoricalStateUnavailableError(err) {
+  const errorText = extractErrorText(err);
+  if (!errorText) return false;
+  return HISTORICAL_STATE_UNAVAILABLE_PATTERNS.some((pattern) => pattern.test(errorText));
+}
+
+function wrapHistoricalStateError(err, rpcUrl, request = {}) {
+  if (!request.historical || !isHistoricalStateUnavailableError(err)) return err;
+  const blockRef =
+    request.blockNumber !== null && request.blockNumber !== undefined
+      ? `block ${request.blockNumber}`
+      : request.blockTag
+        ? `block tag ${request.blockTag}`
+        : 'the requested historical state';
+  const error = new Error(
+    `RPC ${rpcUrl} cannot serve ${blockRef}; archive-capable historical state is unavailable.`,
+  );
+  error.code = 'MIRROR_ONCHAIN_ARCHIVE_STATE_UNAVAILABLE';
+  error.details = {
+    rpcUrl,
+    blockNumber: request.blockNumber,
+    blockTag: request.blockTag,
+    cause: err && err.message ? err.message : String(err),
+  };
+  error.cause = err;
+  return error;
+}
+
+async function readOptionalBlockMetadata(publicClient, request = {}) {
+  if (!publicClient || typeof publicClient.getBlock !== 'function') return null;
+  try {
+    const block = await publicClient.getBlock(buildGetBlockOptions(request));
+    return {
+      blockNumber:
+        block && block.number !== undefined && block.number !== null
+          ? Number(block.number)
+          : block && block.blockNumber !== undefined && block.blockNumber !== null
+            ? Number(block.blockNumber)
+            : request.blockNumber !== null && request.blockNumber !== undefined
+              ? request.blockNumber
+              : null,
+      blockHash: block && typeof block.hash === 'string' ? block.hash : null,
+      blockTimestamp:
+        block && block.timestamp !== undefined && block.timestamp !== null
+          ? new Date(Number(block.timestamp) * 1000).toISOString()
+          : null,
+    };
+  } catch {
+    return {
+      blockNumber: request.blockNumber !== null && request.blockNumber !== undefined ? request.blockNumber : null,
+      blockHash: null,
+      blockTimestamp: null,
+    };
+  }
+}
+
+function parseTraceBlockList(value) {
+  if (value === null || value === undefined || value === '') return [];
+  const values = Array.isArray(value) ? value : String(value).split(',');
+  const blocks = [];
+  for (const entry of values) {
+    const blockNumber = parseTraceBlockNumber(entry, 'blocks');
+    if (blockNumber === null) continue;
+    if (!blocks.includes(blockNumber)) {
+      blocks.push(blockNumber);
+    }
+  }
+  return blocks;
+}
+
+function buildTraceBlockSequence(options = {}) {
+  const explicitBlocks = parseTraceBlockList(options.blocks);
+  const limit = parseTraceBlockNumber(options.limit, 'limit');
+  if (explicitBlocks.length) {
+    const limited = limit === null ? explicitBlocks : explicitBlocks.slice(0, limit);
+    if (limited.length > MAX_RESERVE_TRACE_SNAPSHOTS) {
+      const error = new Error(
+        `Requested reserve trace expands to more than ${MAX_RESERVE_TRACE_SNAPSHOTS} snapshots. Narrow the selection or pass --limit.`,
+      );
+      error.code = 'MIRROR_TRACE_RANGE_TOO_LARGE';
+      error.details = {
+        requestedCount: limited.length,
+        maxSnapshots: MAX_RESERVE_TRACE_SNAPSHOTS,
+      };
+      throw error;
+    }
+    return limited;
+  }
+
+  const fromBlock = parseTraceBlockNumber(options.fromBlock, 'fromBlock');
+  const toBlock = parseTraceBlockNumber(options.toBlock, 'toBlock');
+  if (fromBlock === null && toBlock === null) {
+    const blockNumber = parseTraceBlockNumber(options.blockNumber, 'blockNumber');
+    if (blockNumber !== null) return [blockNumber];
+    return [];
+  }
+  if (fromBlock === null || toBlock === null) {
+    const error = new Error('fromBlock and toBlock must be provided together for reserve trace ranges.');
+    error.code = 'MIRROR_TRACE_RANGE_REQUIRED';
+    error.details = {
+      fromBlock,
+      toBlock,
+    };
+    throw error;
+  }
+
+  const stepRaw = parseTraceBlockNumber(options.step === undefined ? 1 : options.step, 'step');
+  const step = stepRaw === null ? 1 : stepRaw;
+  if (step <= 0) {
+    const error = new Error('step must be a positive integer.');
+    error.code = 'MIRROR_TRACE_INVALID_STEP';
+    error.details = { step: options.step };
+    throw error;
+  }
+
+  const direction = fromBlock <= toBlock ? 1 : -1;
+  const blocks = [];
+  for (
+    let current = fromBlock;
+    direction === 1 ? current <= toBlock : current >= toBlock;
+    current += step * direction
+  ) {
+    blocks.push(current);
+    if (limit !== null && blocks.length >= limit) {
+      break;
+    }
+    if (blocks.length > MAX_RESERVE_TRACE_SNAPSHOTS) {
+      const error = new Error(
+        `Requested reserve trace expands to more than ${MAX_RESERVE_TRACE_SNAPSHOTS} snapshots. Narrow the range or increase the step.`,
+      );
+      error.code = 'MIRROR_TRACE_RANGE_TOO_LARGE';
+      error.details = {
+        fromBlock,
+        toBlock,
+        step,
+        maxSnapshots: MAX_RESERVE_TRACE_SNAPSHOTS,
+      };
+      throw error;
+    }
+  }
+
+  return blocks;
+}
+
+async function readOptionalDecimals(publicClient, tokenAddress, request = {}) {
   try {
     const value = await publicClient.readContract({
       address: tokenAddress,
       abi: ERC20_DECIMALS_ABI,
       functionName: 'decimals',
       args: [],
+      ...buildReadContractOptions(request),
     });
     const numeric = Number(value);
     if (!Number.isInteger(numeric) || numeric < 0 || numeric > 36) return null;
     return numeric;
-  } catch {
+  } catch (err) {
+    if (request.historical && isHistoricalStateUnavailableError(err)) {
+      throw err;
+    }
     return null;
   }
 }
 
-async function readOutcomeTokenRefs(publicClient, marketAddress) {
+async function readOutcomeTokenRefs(publicClient, marketAddress, request = {}) {
   for (const abi of OUTCOME_TOKEN_REF_ABI_CANDIDATES) {
     try {
       const yesFn = abi[0].name;
       const noFn = abi[1].name;
       const [yesToken, noToken] = await Promise.all([
-        publicClient.readContract({ address: marketAddress, abi, functionName: yesFn, args: [] }),
-        publicClient.readContract({ address: marketAddress, abi, functionName: noFn, args: [] }),
+        publicClient.readContract({ address: marketAddress, abi, functionName: yesFn, args: [], ...buildReadContractOptions(request) }),
+        publicClient.readContract({ address: marketAddress, abi, functionName: noFn, args: [], ...buildReadContractOptions(request) }),
       ]);
       const yes = normalizeOptionalAddress(yesToken);
       const no = normalizeOptionalAddress(noToken);
@@ -105,24 +390,31 @@ async function readOutcomeTokenRefs(publicClient, marketAddress) {
           source: `${yesFn}/${noFn}`,
         };
       }
-    } catch {
+    } catch (err) {
+      if (request.historical && isHistoricalStateUnavailableError(err)) {
+        throw err;
+      }
       // Try the next ABI candidate.
     }
   }
   return null;
 }
 
-async function readOptionalTradingFee(publicClient, marketAddress) {
+async function readOptionalTradingFee(publicClient, marketAddress, request = {}) {
   try {
     const value = await publicClient.readContract({
       address: marketAddress,
       abi: TRADING_FEE_ABI,
       functionName: 'tradingFee',
       args: [],
+      ...buildReadContractOptions(request),
     });
     const numeric = Number(value);
     return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
-  } catch {
+  } catch (err) {
+    if (request.historical && isHistoricalStateUnavailableError(err)) {
+      throw err;
+    }
     return null;
   }
 }
@@ -213,16 +505,18 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
 
   const runtime = await loadViemRuntime(deps);
   const errors = [];
+  const readRequest = buildBlockReadOptions(options);
+  const clientCache = new Map();
 
   for (let index = 0; index < rpcCandidates.length; index += 1) {
     const rpcUrl = rpcCandidates[index];
     try {
-      const publicClient = await createReadClient({ ...options, rpcUrl }, deps);
+      const publicClient = await getReadClientForRpc(rpcUrl, options, deps, clientCache);
       if (!publicClient) {
         throw new Error('No public client available for Pandora reserve read.');
       }
 
-      const refs = await readOutcomeTokenRefs(publicClient, options.marketAddress);
+      const refs = await readOutcomeTokenRefs(publicClient, options.marketAddress, readRequest);
       if (!refs) {
         const error = new Error('Unable to resolve Pandora outcome token references on-chain.');
         error.code = 'MIRROR_SYNC_OUTCOME_TOKEN_REFS_UNAVAILABLE';
@@ -230,21 +524,23 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
       }
 
       const [yesDecimals, noDecimals, yesRaw, noRaw, feeTier] = await Promise.all([
-        readOptionalDecimals(publicClient, refs.yesToken),
-        readOptionalDecimals(publicClient, refs.noToken),
+        readOptionalDecimals(publicClient, refs.yesToken, readRequest),
+        readOptionalDecimals(publicClient, refs.noToken, readRequest),
         publicClient.readContract({
           address: refs.yesToken,
           abi: ERC20_BALANCE_OF_ABI,
           functionName: 'balanceOf',
           args: [options.marketAddress],
+          ...buildReadContractOptions(readRequest),
         }),
         publicClient.readContract({
           address: refs.noToken,
           abi: ERC20_BALANCE_OF_ABI,
           functionName: 'balanceOf',
           args: [options.marketAddress],
+          ...buildReadContractOptions(readRequest),
         }),
-        readOptionalTradingFee(publicClient, options.marketAddress),
+        readOptionalTradingFee(publicClient, options.marketAddress, readRequest),
       ]);
 
       if (yesDecimals === null || noDecimals === null || feeTier === null) {
@@ -262,6 +558,10 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
       const reserveYesUsdc = round(Number(runtime.formatUnits(yesRaw, yesDecimals)), 6);
       const reserveNoUsdc = round(Number(runtime.formatUnits(noRaw, noDecimals)), 6);
       const fallbackUsed = index > 0;
+      const blockMetadata =
+        options.includeBlockMetadata === true || readRequest.historical
+          ? await readOptionalBlockMetadata(publicClient, readRequest)
+          : null;
 
       return {
         source: fallbackUsed ? 'onchain:outcome-token-balances:fallback' : 'onchain:outcome-token-balances',
@@ -280,28 +580,178 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
         yesToken: refs.yesToken,
         noToken: refs.noToken,
         rpcUrl,
+        blockNumber:
+          blockMetadata && blockMetadata.blockNumber !== null && blockMetadata.blockNumber !== undefined
+            ? blockMetadata.blockNumber
+            : readRequest.blockNumber,
+        blockHash: blockMetadata ? blockMetadata.blockHash : null,
+        blockTimestamp: blockMetadata ? blockMetadata.blockTimestamp : null,
+        blockTag: readRequest.blockNumber === null ? readRequest.blockTag : null,
       };
     } catch (err) {
+      const wrapped = wrapHistoricalStateError(err, rpcUrl, readRequest);
       errors.push({
         rpcUrl,
-        code: err && err.code ? String(err.code) : null,
-        message: err && err.message ? err.message : String(err),
-        details: err && err.details ? err.details : null,
+        code: wrapped && wrapped.code ? String(wrapped.code) : null,
+        message: wrapped && wrapped.message ? wrapped.message : String(wrapped),
+        details: wrapped && wrapped.details ? wrapped.details : null,
       });
     }
   }
 
+  const allArchiveUnavailable =
+    readRequest.historical
+    && errors.length > 0
+    && errors.every((entry) => entry.code === 'MIRROR_ONCHAIN_ARCHIVE_STATE_UNAVAILABLE');
   const error = new Error(
-    `Unable to read Pandora reserves on-chain from any configured RPC candidate: ${errors.map((entry) => `[${entry.rpcUrl}] ${entry.message}`).join(' | ')}`,
+    allArchiveUnavailable
+      ? `Requested Pandora historical reserve state is unavailable on every configured RPC candidate; archive-capable history is required. ${errors.map((entry) => `[${entry.rpcUrl}] ${entry.message}`).join(' | ')}`
+      : `Unable to read Pandora reserves on-chain from any configured RPC candidate: ${errors.map((entry) => `[${entry.rpcUrl}] ${entry.message}`).join(' | ')}`,
   );
-  error.code = 'MIRROR_ONCHAIN_RESERVES_UNAVAILABLE';
-  error.details = { attempts: errors };
+  error.code = allArchiveUnavailable ? 'MIRROR_ONCHAIN_ARCHIVE_STATE_UNAVAILABLE' : 'MIRROR_ONCHAIN_RESERVES_UNAVAILABLE';
+  error.details = {
+    attempts: errors,
+    blockNumber: readRequest.blockNumber,
+    blockTag: readRequest.blockTag,
+  };
   throw error;
+}
+
+async function readPandoraOnchainReserveTrace(options = {}, deps = {}) {
+  const marketAddress = options.marketAddress || options.pandoraMarketAddress || null;
+  if (!marketAddress) {
+    const error = new Error('Pandora market address is required for reserve tracing.');
+    error.code = 'MIRROR_TRACE_MARKET_ADDRESS_REQUIRED';
+    throw error;
+  }
+
+  const blocks = buildTraceBlockSequence(options);
+  const blockTag = parseBlockTag(options.blockTag, 'blockTag');
+  const requestedBlockNumber = parseTraceBlockNumber(options.blockNumber, 'blockNumber');
+  const requestedBlocks = parseTraceBlockList(options.blocks);
+  const hasExplicitBlockList = requestedBlocks.length > 0;
+  const hasRangeSelection =
+    !hasExplicitBlockList
+    && options.fromBlock !== null
+    && options.fromBlock !== undefined
+    && options.toBlock !== null
+    && options.toBlock !== undefined;
+  const requestedStep = hasRangeSelection
+    ? (() => {
+        const parsed = parseTraceBlockNumber(options.step === undefined ? 1 : options.step, 'step');
+        return parsed === null ? 1 : parsed;
+      })()
+    : null;
+  if (!blocks.length && !blockTag) {
+    const error = new Error(
+      'Pandora reserve trace requires --blocks, --from-block/--to-block, or a blockTag/blockNumber input.',
+    );
+    error.code = 'MIRROR_TRACE_BLOCK_SELECTION_REQUIRED';
+    throw error;
+  }
+
+  const snapshots = [];
+  const diagnostics = [];
+
+  if (blocks.length) {
+    for (const blockNumber of blocks) {
+      try {
+        const snapshot = await readPandoraOnchainReserveContext(
+          {
+            ...options,
+            marketAddress,
+            blockNumber,
+            blockTag: null,
+            includeBlockMetadata: true,
+          },
+          deps,
+        );
+        snapshots.push(snapshot);
+      } catch (err) {
+        if (err && err.code === 'MIRROR_ONCHAIN_ARCHIVE_STATE_UNAVAILABLE') {
+          throw err;
+        }
+        diagnostics.push(
+          `Reserve trace read failed for block ${blockNumber}: ${err && err.message ? err.message : String(err)}`,
+        );
+        throw err;
+      }
+    }
+  } else {
+    snapshots.push(
+      await readPandoraOnchainReserveContext(
+        {
+          ...options,
+          marketAddress,
+          blockTag,
+          includeBlockMetadata: true,
+        },
+        deps,
+      ),
+    );
+  }
+
+  const firstSnapshot = snapshots[0] || null;
+  const lastSnapshot = snapshots[snapshots.length - 1] || null;
+  const rpcUrlsUsed = Array.from(
+    new Set(
+      snapshots
+        .map((entry) => String(entry && entry.rpcUrl ? entry.rpcUrl : '').trim())
+        .filter(Boolean),
+    ),
+  );
+  const firstBlockNumber = firstSnapshot && Number.isInteger(firstSnapshot.blockNumber) ? firstSnapshot.blockNumber : null;
+  const lastBlockNumber = lastSnapshot && Number.isInteger(lastSnapshot.blockNumber) ? lastSnapshot.blockNumber : null;
+
+  return {
+    schemaVersion: '1.0.0',
+    generatedAt: new Date().toISOString(),
+    selector: {
+      selectionMode:
+        hasExplicitBlockList
+          ? 'blocks'
+          : hasRangeSelection
+            ? 'range'
+            : requestedBlockNumber !== null
+              ? 'block-number'
+              : blockTag
+                ? 'block-tag'
+                : null,
+      pandoraMarketAddress: marketAddress,
+      rpcUrl: options.rpcUrl || null,
+      blocks: hasExplicitBlockList ? blocks : [],
+      blockNumber: requestedBlockNumber,
+      fromBlock: hasRangeSelection ? parseTraceBlockNumber(options.fromBlock, 'fromBlock') : null,
+      toBlock: hasRangeSelection ? parseTraceBlockNumber(options.toBlock, 'toBlock') : null,
+      step: hasRangeSelection ? requestedStep : null,
+      blockTag: hasExplicitBlockList || hasRangeSelection || requestedBlockNumber !== null ? null : blockTag,
+      limit: options.limit === undefined || options.limit === null ? null : Number(options.limit),
+    },
+    summary: {
+      snapshotCount: snapshots.length,
+      firstBlockNumber,
+      lastBlockNumber,
+      blockSpan:
+        firstBlockNumber === null
+          ? null
+          : firstBlockNumber === lastBlockNumber
+            ? String(firstBlockNumber)
+            : `${firstBlockNumber}..${lastBlockNumber}`,
+      rpcUrl: rpcUrlsUsed.length === 1 ? rpcUrlsUsed[0] : rpcUrlsUsed.length ? 'mixed' : options.rpcUrl || null,
+      rpcUrlsUsed,
+      fallbackRpcCount: snapshots.filter((entry) => entry && entry.fallbackUsed).length,
+      archiveRequired: blockTag ? false : null,
+      archiveRequirement: blockTag ? 'not-required' : 'depends-on-history-depth',
+    },
+    snapshots,
+    diagnostics,
+  };
 }
 
 module.exports = {
   buildReserveContextFromVerifyPayload,
   applyReserveContextToVerifyPayload,
   readPandoraOnchainReserveContext,
+  readPandoraOnchainReserveTrace,
   derivePandoraYesPctFromReserves,
 };

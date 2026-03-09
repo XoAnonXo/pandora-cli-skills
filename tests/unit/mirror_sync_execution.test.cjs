@@ -5,6 +5,7 @@ const {
   buildHedgeExecutionPlan,
   buildIdempotencyKey,
   executeHedgeLeg,
+  normalizeExecutionFailure,
 } = require('../../cli/lib/mirror_sync/execution.cjs');
 
 const VERIFY_PAYLOAD = {
@@ -149,4 +150,36 @@ test('buildIdempotencyKey distinguishes hedge execution mode and order side', ()
   );
 
   assert.notEqual(buyKey, sellKey);
+});
+
+test('normalizeExecutionFailure preserves flashbots route provenance from error details', () => {
+  const error = new Error('Flashbots relay rejected eth_sendBundle.');
+  error.code = 'FLASHBOTS_RPC_ERROR';
+  error.details = {
+    transactionHash: `0x${'8'.repeat(64)}`,
+    requestedRoute: 'flashbots-bundle',
+    resolvedRoute: 'flashbots-bundle',
+    executionRouteFallback: 'fail',
+    relayUrl: 'https://relay.flashbots.example',
+    relayMethod: 'eth_sendBundle',
+    targetBlockNumber: 12345678,
+    relayResponseId: 7,
+    bundleHash: `0x${'7'.repeat(64)}`,
+    simulation: { results: [{ gasUsed: '0x1' }] },
+  };
+
+  const payload = normalizeExecutionFailure(error);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'FLASHBOTS_RPC_ERROR');
+  assert.equal(payload.tradeTxHash, `0x${'8'.repeat(64)}`);
+  assert.equal(payload.txHash, `0x${'8'.repeat(64)}`);
+  assert.equal(payload.executionRouteRequested, 'flashbots-bundle');
+  assert.equal(payload.executionRouteResolved, 'flashbots-bundle');
+  assert.equal(payload.executionRouteFallback, 'fail');
+  assert.equal(payload.flashbotsRelayUrl, 'https://relay.flashbots.example');
+  assert.equal(payload.flashbotsRelayMethod, 'eth_sendBundle');
+  assert.equal(payload.flashbotsTargetBlockNumber, 12345678);
+  assert.equal(payload.flashbotsRelayResponseId, 7);
+  assert.equal(payload.flashbotsBundleHash, `0x${'7'.repeat(64)}`);
+  assert.deepEqual(payload.flashbotsSimulation, { results: [{ gasUsed: '0x1' }] });
 });

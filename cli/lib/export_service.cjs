@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const EXPORT_SCHEMA_VERSION = '1.0.0';
+const EXPORT_SCHEMA_VERSION = '1.1.0';
 
 const CSV_COLUMNS = [
   'timestamp',
@@ -39,6 +39,23 @@ const CSV_COLUMNS = [
   'strategy_hash',
   'state_file',
   'idempotency_key',
+  'ledger_leg_type',
+  'asset',
+  'quantity',
+  'notional_usdc',
+  'fee_usdc',
+  'gas_native',
+  'realized_pnl_usdc',
+  'unrealized_pnl_usdc',
+  'lp_fee_income_usdc',
+  'impermanent_loss_usdc',
+  'funding_flow_usdc',
+  'bridge_flow_usdc',
+  'block_number',
+  'nonce',
+  'provenance_json',
+  'components_json',
+  'details_json',
 ];
 
 function csvEscape(value) {
@@ -53,6 +70,41 @@ function firstDefined() {
     if (value !== null && value !== undefined && value !== '') return value;
   }
   return null;
+}
+
+function toNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function isLikelyTxHash(value) {
+  const text = String(value || '').trim();
+  return /^0x[a-z0-9]{4,}$/i.test(text);
+}
+
+function toJsonStringOrNull(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    try {
+      JSON.parse(value);
+      return value;
+    } catch {
+      return JSON.stringify(value);
+    }
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return JSON.stringify(String(value));
+  }
+}
+
+function pickExportTxHash(item, details) {
+  const direct = firstDefined(item.txHash, details.txHash, details.transactionHash);
+  if (isLikelyTxHash(direct)) return String(direct).trim();
+  const fallback = firstDefined(item.transactionRef, details.transactionRef);
+  return isLikelyTxHash(fallback) ? String(fallback).trim() : null;
 }
 
 function toTimestampMs(value) {
@@ -77,47 +129,68 @@ function toExportRows(historyPayload) {
   const wallet = historyPayload.wallet;
   const strategyHash = historyPayload.strategyHash || null;
   const stateFile = historyPayload.stateFile || null;
-  return (historyPayload.items || []).map((item) => ({
-    date: toReplayDate(item.timestamp),
-    market: firstDefined(item.marketAddress, item.selector && item.selector.pandoraMarketAddress),
-    action: firstDefined(item.tradeType, item.action, item.classification, item.verdict),
-    amount: firstDefined(
-      item.collateralAmountUsdc,
-      item.amount,
-      item.details && item.details.amountUsdc,
-      item.actual && item.actual.spendUsdc,
-    ),
-    price: firstDefined(item.entryPriceUsdcPerToken, item.price),
-    gas_usd: item.feeAmountUsdc === undefined ? null : item.feeAmountUsdc,
-    realized_pnl: item.pnlRealizedApproxUsdc === undefined ? null : item.pnlRealizedApproxUsdc,
-    timestamp: item.timestamp,
-    chain_id: item.chainId,
-    wallet,
-    market_address: firstDefined(item.marketAddress, item.selector && item.selector.pandoraMarketAddress),
-    poll_address: item.pollAddress,
-    question: item.question,
-    side: item.side,
-    trade_type: item.tradeType,
-    amount_in_usdc: item.collateralAmountUsdc,
-    tokens: item.tokenAmount,
-    entry_price: item.entryPriceUsdcPerToken,
-    mark_price: item.markPriceUsdcPerToken,
-    current_value_usdc: item.currentValueUsdc,
-    pnl_unrealized_approx_usdc: item.pnlUnrealizedApproxUsdc,
-    pnl_realized_approx_usdc: item.pnlRealizedApproxUsdc,
-    status: item.status,
-    tx_hash: item.txHash,
-    classification: item.classification || null,
-    venue: item.venue || null,
-    source: item.source || null,
-    code: item.code || null,
-    message: item.message || null,
-    mode: firstDefined(item.mode, item.details && item.details.mode),
-    verdict: item.verdict || null,
-    strategy_hash: firstDefined(item.strategyHash, strategyHash),
-    state_file: firstDefined(item.stateFile, stateFile),
-    idempotency_key: firstDefined(item.idempotencyKey, item.details && item.details.idempotencyKey),
-  }));
+  return (historyPayload.items || []).map((item) => {
+    const details = item && item.details && typeof item.details === 'object' ? item.details : {};
+    return {
+      date: toReplayDate(item.timestamp),
+      market: firstDefined(item.marketAddress, item.selector && item.selector.pandoraMarketAddress),
+      action: firstDefined(item.tradeType, item.action, item.classification, item.verdict, details.legType),
+      amount: firstDefined(
+        item.collateralAmountUsdc,
+        item.amount,
+        details.amountUsdc,
+        details.notionalUsdc,
+        item.actual && item.actual.spendUsdc,
+      ),
+      price: firstDefined(item.entryPriceUsdcPerToken, item.price, details.price),
+      gas_usd: firstDefined(item.feeAmountUsdc, details.gasUsdc, details.gasCostUsdc),
+      realized_pnl: firstDefined(item.pnlRealizedApproxUsdc, details.realizedPnlUsdc),
+      timestamp: item.timestamp,
+      chain_id: item.chainId,
+      wallet: firstDefined(item.wallet, wallet),
+      market_address: firstDefined(item.marketAddress, item.selector && item.selector.pandoraMarketAddress),
+      poll_address: item.pollAddress,
+      question: item.question,
+      side: item.side,
+      trade_type: item.tradeType,
+      amount_in_usdc: item.collateralAmountUsdc,
+      tokens: item.tokenAmount,
+      entry_price: item.entryPriceUsdcPerToken,
+      mark_price: item.markPriceUsdcPerToken,
+      current_value_usdc: item.currentValueUsdc,
+      pnl_unrealized_approx_usdc: item.pnlUnrealizedApproxUsdc,
+      pnl_realized_approx_usdc: item.pnlRealizedApproxUsdc,
+      status: item.status,
+      tx_hash: pickExportTxHash(item, details),
+      classification: item.classification || null,
+      venue: item.venue || null,
+      source: item.source || null,
+      code: item.code || null,
+      message: item.message || null,
+      mode: firstDefined(item.mode, details.mode),
+      verdict: item.verdict || null,
+      strategy_hash: firstDefined(item.strategyHash, strategyHash),
+      state_file: firstDefined(item.stateFile, stateFile),
+      idempotency_key: firstDefined(item.idempotencyKey, details.idempotencyKey),
+      ledger_leg_type: firstDefined(item.legType, details.legType, details.ledgerLegType),
+      asset: firstDefined(item.asset, details.asset, details.assetSymbol, details.symbol),
+      quantity: toNumberOrNull(firstDefined(item.quantity, details.quantity, details.tokenAmount)),
+      notional_usdc: toNumberOrNull(firstDefined(item.notionalUsdc, details.notionalUsdc, details.amountUsdc)),
+      fee_usdc: toNumberOrNull(firstDefined(item.feeUsdc, details.feeUsdc, details.feesUsdc)),
+      gas_native: toNumberOrNull(firstDefined(item.gasNative, details.gasNative)),
+      realized_pnl_usdc: toNumberOrNull(firstDefined(item.realizedPnlUsdc, details.realizedPnlUsdc)),
+      unrealized_pnl_usdc: toNumberOrNull(firstDefined(item.unrealizedPnlUsdc, details.unrealizedPnlUsdc)),
+      lp_fee_income_usdc: toNumberOrNull(firstDefined(item.lpFeeIncomeUsdc, details.lpFeeIncomeUsdc)),
+      impermanent_loss_usdc: toNumberOrNull(firstDefined(item.impermanentLossUsdc, details.impermanentLossUsdc)),
+      funding_flow_usdc: toNumberOrNull(firstDefined(item.fundingFlowUsdc, details.fundingFlowUsdc)),
+      bridge_flow_usdc: toNumberOrNull(firstDefined(item.bridgeFlowUsdc, details.bridgeFlowUsdc)),
+      block_number: toNumberOrNull(firstDefined(item.blockNumber, details.blockNumber)),
+      nonce: toNumberOrNull(firstDefined(item.nonce, details.nonce)),
+      provenance_json: toJsonStringOrNull(firstDefined(item.provenance, details.provenance)),
+      components_json: toJsonStringOrNull(firstDefined(item.components, details.components)),
+      details_json: toJsonStringOrNull(Object.keys(details).length ? details : null),
+    };
+  });
 }
 
 function toReplayDate(timestampSeconds) {

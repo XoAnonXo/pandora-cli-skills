@@ -25,6 +25,7 @@ function renderMirrorAuditTable(data) {
   renderKeyValueRows('Mirror Audit', [
     ['strategyHash', data.strategyHash || ''],
     ['stateFile', data.stateFile || ''],
+    ['accountingMode', summary.accountingMode || 'append-only-ledger'],
     ['runtimeHealth', summary.runtimeHealth || ''],
     ['lastExecutionStatus', summary.lastExecutionStatus || ''],
     ['requiresManualReview', summary.requiresManualReview ? 'yes' : 'no'],
@@ -33,6 +34,10 @@ function renderMirrorAuditTable(data) {
     ['legCount', summary.legCount],
     ['alertCount', summary.alertCount],
     ['errorCount', summary.errorCount],
+    ['reconciledRowCount', summary.reconciledRowCount],
+    ['realizedPnlUsdc', summary.realizedPnlUsdc],
+    ['unrealizedPnlUsdc', summary.unrealizedPnlUsdc],
+    ['netPnlUsdc', summary.netPnlUsdc],
     ['liveCrossVenueStatus', summary.liveCrossVenueStatus || ''],
     ['latestEntry', Array.isArray(ledger.entries) && ledger.entries.length ? ledger.entries[0].classification : ''],
   ]);
@@ -55,7 +60,7 @@ module.exports = async function handleMirrorAudit({ actionArgs, shared, context,
   } = deps;
 
   const usage =
-    'pandora [--output table|json] mirror audit --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]';
+    'pandora [--output table|json] mirror audit --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--reconciled] [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]';
 
   if (includesHelpFlag(actionArgs)) {
     if (context.outputMode === 'json') {
@@ -64,12 +69,14 @@ module.exports = async function handleMirrorAudit({ actionArgs, shared, context,
         'mirror.audit.help',
         commandHelpPayload(usage, [
           'mirror audit reads append-only mirror audit entries when available and falls back to persisted runtime state if no ledger exists yet.',
+          'Use --reconciled to add normalized ledger rows, realized/unrealized components, and source provenance next to the append-only operational ledger.',
           'Add --with-live to attach current cross-venue context next to the persisted audit trail.',
         ]),
       );
     } else {
       console.log(`Usage: ${usage}`);
       console.log('mirror audit reads append-only mirror audit entries when available and falls back to persisted runtime state if no ledger exists yet.');
+      console.log('Use --reconciled to add normalized ledger rows, realized/unrealized components, and source provenance next to the append-only operational ledger.');
       console.log('Add --with-live to attach current cross-venue context next to the persisted audit trail.');
     }
     return;
@@ -158,18 +165,34 @@ module.exports = async function handleMirrorAudit({ actionArgs, shared, context,
 
   const auditLog = loadAuditEntries(loaded.filePath);
 
-  emitSuccess(
-    context.outputMode,
-    'mirror.audit',
-    buildMirrorAuditPayload({
-      stateFile: loaded.filePath,
-      strategyHash: loaded.state.strategyHash || strategyHashValue,
-      selector,
-      state: loaded.state,
-      runtime,
-      live,
-      auditEntries: auditLog.entries,
-    }),
-    renderMirrorAuditTable,
-  );
+  const payload = buildMirrorAuditPayload({
+    stateFile: loaded.filePath,
+    strategyHash: loaded.state.strategyHash || strategyHashValue,
+    selector,
+    state: loaded.state,
+    runtime,
+    live,
+    auditEntries: auditLog.entries,
+    accounting: loaded.state.accounting || null,
+    includeReconciled: options.reconciled,
+  });
+
+  payload.summary = {
+    ...(payload.summary && typeof payload.summary === 'object' ? payload.summary : {}),
+    accountingMode: options.reconciled && payload.reconciled ? payload.reconciled.status : 'append-only-ledger',
+  };
+  payload.reconciliation = {
+    requested: Boolean(options.reconciled),
+    mode: options.reconciled && payload.reconciled ? payload.reconciled.status : 'append-only-ledger',
+    ledgerSource: payload.ledger && payload.ledger.source ? payload.ledger.source : null,
+    missing: payload.reconciled && payload.reconciled.provenance ? payload.reconciled.provenance.missing : [],
+  };
+  payload.diagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics.slice() : [];
+  if (options.reconciled && payload.reconciled && Array.isArray(payload.reconciled.provenance && payload.reconciled.provenance.missing) && payload.reconciled.provenance.missing.length) {
+    payload.diagnostics.push(
+      `Reconciled ledger is partial; missing components: ${payload.reconciled.provenance.missing.join(', ')}.`,
+    );
+  }
+
+  emitSuccess(context.outputMode, 'mirror.audit', payload, renderMirrorAuditTable);
 };

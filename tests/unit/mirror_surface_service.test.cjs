@@ -265,3 +265,327 @@ test('buildMirrorAuditPayload preserves modeled execution metadata on state fall
     rebalanceTargetUsdc: 12.5,
   });
 });
+
+test('buildMirrorPnlPayload exposes reconciled accounting alongside approximate live summary fields', () => {
+  const payload = buildMirrorPnlPayload({
+    stateFile: '/tmp/mirror-state.json',
+    strategyHash: 'feedfacecafebeef',
+    selector: {
+      pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+      polymarketMarketId: 'poly-1',
+    },
+    state: {
+      cumulativeLpFeesApproxUsdc: 2.5,
+      cumulativeHedgeCostApproxUsdc: 1.25,
+      accounting: {
+        provenance: {
+          status: 'complete',
+        },
+        components: {
+          lpFeeIncomeUsdc: 2.5,
+          hedgeCostUsdc: 1.25,
+          markToMarketInventoryUsd: 10.095,
+        },
+        rows: [
+          {
+            component: 'funding',
+            venue: 'bridge',
+            chain: 'polygon',
+            timestamp: '2026-03-09T09:59:00.000Z',
+            cashFlowUsdc: 15,
+            txHash: '0xfunding',
+            source: 'state.accounting.rows',
+          },
+          {
+            component: 'gas-cost',
+            venue: 'pandora',
+            chain: 'ethereum',
+            timestamp: '2026-03-09T10:00:30.000Z',
+            gasUsdc: 0.25,
+            realizedPnlUsdc: -0.25,
+            txHash: '0xgas123',
+            source: 'state.accounting.rows',
+          },
+        ],
+        traceSnapshots: [
+          {
+            blockNumber: 111,
+            blockTimestamp: '2026-03-09T09:55:00.000Z',
+            reserveYesUsdc: 4,
+            reserveNoUsdc: 6,
+            impermanentLossUsdc: 0.75,
+          },
+          {
+            blockNumber: 112,
+            blockTimestamp: '2026-03-09T10:05:00.000Z',
+            reserveYesUsdc: 5,
+            reserveNoUsdc: 5,
+            impermanentLossUsdc: 0.75,
+          },
+        ],
+      },
+    },
+    live: {
+      generatedAt: '2026-03-09T10:06:00.000Z',
+      netPnlApproxUsdc: 1.25,
+      pnlApprox: 11.345,
+      netDeltaApprox: 9.25,
+      cumulativeLpFeesApproxUsdc: 2.5,
+      cumulativeHedgeCostApproxUsdc: 1.25,
+      polymarketPosition: {
+        yesBalance: 12.5,
+        noBalance: 3.25,
+        estimatedValueUsd: 10.095,
+        openOrdersCount: 2,
+        openOrdersNotionalUsd: 4.96,
+      },
+    },
+    auditEntries: [
+      {
+        classification: 'pandora-rebalance',
+        venue: 'pandora',
+        source: 'mirror-sync.execution.rebalance',
+        timestamp: '2026-03-09T10:00:00.000Z',
+        status: 'ok',
+        details: {
+          side: 'yes',
+          amountUsdc: 12.5,
+          transactionRef: '0xrebalance',
+        },
+      },
+      {
+        classification: 'polymarket-hedge',
+        venue: 'polymarket',
+        source: 'mirror-sync.execution.hedge',
+        timestamp: '2026-03-09T10:00:05.000Z',
+        status: 'ok',
+        details: {
+          tokenSide: 'no',
+          orderSide: 'buy',
+          amountUsdc: 7.25,
+          transactionRef: '0xhedge',
+        },
+      },
+    ],
+    includeReconciled: true,
+  });
+
+  assert.equal(payload.summary.netPnlApproxUsdc, 1.25);
+  assert.equal(payload.summary.pnlApprox, 11.345);
+  assert.equal(payload.summary.netDeltaApprox, 9.25);
+  assert.equal(payload.summary.realizedPnlUsdc, 1);
+  assert.equal(payload.summary.unrealizedPnlUsdc, 9.345);
+  assert.equal(payload.summary.netPnlUsdc, 10.345);
+  assert.equal(payload.summary.lpFeeIncomeUsdc, 2.5);
+  assert.equal(payload.summary.hedgeCostUsdc, 1.25);
+  assert.equal(payload.summary.gasCostUsdc, 0.25);
+  assert.equal(payload.summary.impermanentLossUsdc, 0.75);
+  assert.equal(payload.reconciled.status, 'complete');
+  assert.equal(payload.reconciled.summary.rowCount, 8);
+  assert.equal(payload.reconciled.summary.fundingNetUsdc, 15);
+  assert.equal(payload.reconciled.summary.transactionHashCount, 4);
+  assert.deepEqual(payload.reconciled.provenance.missing, []);
+  assert.equal(payload.reconciled.ledger.rows.some((row) => row.component === 'funding' && row.txHash === '0xfunding'), true);
+  assert.equal(payload.reconciled.ledger.rows.some((row) => row.component === 'impermanent-loss'), true);
+  assert.equal(payload.reconciled.ledger.exportRows.length, 8);
+});
+
+test('buildMirrorAuditPayload derives partial reconciled status from missing components even when persisted provenance says complete', () => {
+  const payload = buildMirrorAuditPayload({
+    auditEntries: [
+      {
+        classification: 'sync-action',
+        venue: 'mirror',
+        source: 'mirror-sync.execution',
+        timestamp: '2026-03-09T10:00:00.000Z',
+        status: 'ok',
+        details: {
+          idempotencyKey: 'bucket-4',
+        },
+      },
+    ],
+    state: {
+      accounting: {
+        provenance: {
+          status: 'complete',
+        },
+        components: {
+          lpFeeIncomeUsdc: 2.5,
+          hedgeCostUsdc: 1.25,
+          markToMarketInventoryUsd: 10.095,
+        },
+        rows: [
+          {
+            component: 'funding',
+            venue: 'bridge',
+            timestamp: '2026-03-09T09:59:00.000Z',
+            cashFlowUsdc: 5,
+          },
+        ],
+      },
+    },
+    includeReconciled: true,
+  });
+
+  assert.equal(payload.reconciled.status, 'partial');
+  assert.match(payload.reconciled.provenance.missing.join(','), /gas-cost/);
+  assert.match(payload.reconciled.provenance.missing.join(','), /reserve-trace/);
+});
+
+test('buildMirrorAuditPayload keeps live inventory marks out of reconciled ledger rows when they are not persisted', () => {
+  const payload = buildMirrorAuditPayload({
+    auditEntries: [
+      {
+        classification: 'sync-action',
+        venue: 'mirror',
+        source: 'mirror-sync.execution',
+        timestamp: '2026-03-09T10:00:00.000Z',
+        status: 'ok',
+        details: {
+          idempotencyKey: 'bucket-5',
+        },
+      },
+      {
+        classification: 'polymarket-hedge',
+        venue: 'polymarket',
+        source: 'mirror-sync.execution.hedge',
+        timestamp: '2026-03-09T10:00:02.000Z',
+        status: 'ok',
+        details: {
+          tokenSide: 'no',
+          orderSide: 'buy',
+          amountUsdc: 7.25,
+          transactionRef: 'order-123',
+        },
+      },
+    ],
+    state: {
+      accounting: {
+        provenance: {
+          status: 'partial',
+        },
+      },
+    },
+    live: {
+      polymarketPosition: {
+        estimatedValueUsd: 10.095,
+      },
+    },
+    includeReconciled: true,
+  });
+
+  assert.equal(payload.reconciled.ledger.rows.some((row) => row.component === 'inventory-mark'), false);
+  assert.equal(payload.reconciled.ledger.rows.some((row) => row.component === 'polymarket-hedge' && row.txHash === null && row.orderRef === 'order-123'), true);
+});
+
+test('buildMirrorAuditPayload exposes reconciled ledger rows with venue provenance and tx refs', () => {
+  const payload = buildMirrorAuditPayload({
+    stateFile: '/tmp/mirror-state.json',
+    strategyHash: 'feedfacecafebeef',
+    auditEntries: [
+      {
+        classification: 'sync-action',
+        venue: 'mirror',
+        source: 'mirror-sync.execution',
+        timestamp: '2026-03-09T10:00:00.000Z',
+        status: 'ok',
+        details: {
+          idempotencyKey: 'bucket-3',
+        },
+      },
+      {
+        classification: 'pandora-rebalance',
+        venue: 'pandora',
+        source: 'mirror-sync.execution.rebalance',
+        timestamp: '2026-03-09T10:00:01.000Z',
+        status: 'ok',
+        details: {
+          side: 'yes',
+          amountUsdc: 12.5,
+          transactionRef: '0xrebalance',
+        },
+      },
+      {
+        classification: 'polymarket-hedge',
+        venue: 'polymarket',
+        source: 'mirror-sync.execution.hedge',
+        timestamp: '2026-03-09T10:00:02.000Z',
+        status: 'ok',
+        details: {
+          tokenSide: 'no',
+          orderSide: 'buy',
+          amountUsdc: 7.25,
+          transactionRef: '0xhedge',
+        },
+      },
+    ],
+    state: {
+      cumulativeLpFeesApproxUsdc: 2.5,
+      cumulativeHedgeCostApproxUsdc: 1.25,
+        accounting: {
+          provenance: {
+            status: 'complete',
+          },
+          components: {
+            lpFeeIncomeUsdc: 2.5,
+            hedgeCostUsdc: 1.25,
+            markToMarketInventoryUsd: 10.095,
+          },
+          rows: [
+          {
+            component: 'funding',
+            venue: 'bridge',
+            chain: 'polygon',
+            timestamp: '2026-03-09T09:59:00.000Z',
+            cashFlowUsdc: 15,
+            txHash: '0xfunding',
+            source: 'state.accounting.rows',
+          },
+          {
+            component: 'gas-cost',
+            venue: 'pandora',
+            chain: 'ethereum',
+            timestamp: '2026-03-09T10:00:30.000Z',
+            gasUsdc: 0.25,
+            realizedPnlUsdc: -0.25,
+            txHash: '0xgas123',
+            source: 'state.accounting.rows',
+          },
+        ],
+        traceSnapshots: [
+          {
+            blockNumber: 111,
+            blockTimestamp: '2026-03-09T09:55:00.000Z',
+            reserveYesUsdc: 4,
+            reserveNoUsdc: 6,
+            impermanentLossUsdc: 0.75,
+          },
+        ],
+      },
+    },
+    live: {
+      generatedAt: '2026-03-09T10:06:00.000Z',
+      netPnlApproxUsdc: 1.25,
+      pnlApprox: 11.345,
+      polymarketPosition: {
+        estimatedValueUsd: 10.095,
+      },
+    },
+    includeReconciled: true,
+  });
+
+  assert.equal(payload.summary.entryCount, 3);
+  assert.equal(payload.ledger.source, 'mirror-audit-log');
+  assert.equal(payload.summary.reconciledStatus, 'complete');
+  assert.equal(payload.summary.reconciledRowCount, 8);
+  assert.equal(payload.summary.realizedPnlUsdc, 1);
+  assert.equal(payload.summary.unrealizedPnlUsdc, 9.345);
+  assert.equal(payload.summary.netPnlUsdc, 10.345);
+  assert.equal(payload.reconciled.status, 'complete');
+  assert.deepEqual(payload.reconciled.provenance.missing, []);
+  assert.equal(payload.reconciled.ledger.rows.some((row) => row.component === 'pandora-rebalance' && row.txHash === '0xrebalance'), true);
+  assert.equal(payload.reconciled.ledger.rows.some((row) => row.component === 'polymarket-hedge' && row.txHash === '0xhedge'), true);
+  assert.equal(payload.reconciled.ledger.rows.some((row) => row.component === 'funding' && row.txHash === '0xfunding'), true);
+  assert.equal(payload.reconciled.ledger.rows.some((row) => row.component === 'impermanent-loss'), true);
+  assert.equal(payload.reconciled.ledger.exportRows.length, 8);
+});

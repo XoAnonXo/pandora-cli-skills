@@ -58,8 +58,12 @@ For a faster task-focused path:
   - `mirror status` is the single-mirror operator dashboard surface
   - `mirror health` is the machine-usable daemon/runtime health shell
   - `mirror drift` and `mirror hedge-check` are narrower live actionability surfaces
-  - `mirror pnl` is the dedicated cross-venue scenario model
-  - `mirror audit` is the classified persisted runtime ledger
+  - `mirror pnl` is the canonical mirror accounting-summary surface
+    - current builds still expose approximate/operator scenario metrics
+    - `--reconciled` attaches normalized realized/unrealized, LP fee, hedge-cost, gas, funding, and reserve-trace attribution on that same surface
+  - `mirror audit` is the canonical mirror ledger/audit surface
+    - current builds still expose operational/classified runtime history first
+    - `--reconciled` attaches normalized cross-venue ledger rows, provenance, and export-ready rows on that same surface
   - `mirror logs` returns tailed daemon log lines from state/strategy/selector lookup
   - `mirror replay` compares modeled hedge/rebalance sizing against persisted audit history
   - `fund-check` is the high-level funding planner for the current mirror context

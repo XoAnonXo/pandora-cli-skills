@@ -1,6 +1,6 @@
 # Mirror Operations Guide
 
-Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close`, plus the related top-level `dashboard`, `fund-check`, and `explain` commands.
+Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|trace|logs|close`, plus the related top-level `dashboard`, `fund-check`, and `explain` commands.
 
 ## Canonical Batch 1 routing
 - `dashboard` is a standalone top-level command.
@@ -14,9 +14,11 @@ Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|das
 - `mirror calc` is a standalone command.
   - use it for exact Pandora target-percentage sizing plus the derived hedge inventory.
   - use `mirror hedge-calc` only for offline sizing from explicit reserves or a resolved pair.
+- `mirror trace` is a standalone command.
+  - use it for historical Pandora reserve snapshots instead of current live diagnostics.
 - `fund-check` is a standalone command.
   - use it when you need exact shortfalls and suggested next commands for live hedge readiness.
-  - use `pandora polymarket check` and `pandora polymarket balance` separately when you want the underlying readiness/balance surfaces without mirror aggregation.
+  - use `pandora polymarket check` for lower-level readiness, `pandora polymarket balance` for Polygon USDC.e collateral, and `pandora polymarket positions` for canonical CTF YES/NO inventory without mirror aggregation.
 
 ## Non-negotiable operator rules
 - `mirror plan|deploy|go` do **not** use a generic `+1h` assumption.
@@ -26,6 +28,14 @@ Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|das
 - `mirror go|sync` stay in paper/simulated mode unless you explicitly pass `--execute-live` or `--execute`.
 - `mirror sync` simulates or executes Pandora rebalance and Polymarket hedge as separate legs. It is not atomic across venues.
 - `mirror go --auto-sync` still inherits the same separate-leg sync semantics; it does not turn the cross-venue path into an atomic transaction.
+- `--rebalance-route` and the `flashbots-*` flags apply only to the Ethereum Pandora rebalance leg.
+  - they do **not** make the Polygon hedge leg private
+  - they do **not** make the ETH-plus-Polygon mirror cycle atomic
+- `--rebalance-route public` preserves the current public-submission behavior for the Pandora leg.
+- `--rebalance-route auto` allows the runtime to prefer Flashbots/private routing for the Pandora leg when supported.
+- `--rebalance-route flashbots-private` requests private single-transaction routing for the Pandora leg.
+- `--rebalance-route flashbots-bundle` requests Flashbots bundle routing when the Pandora leg needs approval-plus-trade style submission.
+- `--rebalance-route-fallback fail|public` decides whether unsupported or rejected private routing fails closed or degrades to ordinary public Pandora submission.
 - `mirror deploy|go` require at least **two independent public resolution URLs from different hosts** in `--sources`.
 - Polymarket, Gamma, and CLOB URLs are discovery inputs only and are **not** valid `--sources`.
 - Fresh execute mode is validation-gated. The exact final `question`, `rules`, `sources`, and `targetTimestamp` must be validated before live deployment.
@@ -39,6 +49,9 @@ Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|das
 - Live sync blocks cached Polymarket source snapshots.
   - paper/dry-run may reuse `polymarket:cache` and surfaces that choice in diagnostics
   - live mode requires fresh source data and fails the `POLYMARKET_SOURCE_FRESH` gate otherwise
+- `mirror trace` is the historical reserve forensics surface.
+  - it samples Pandora reserves at explicit blocks or across a block range without mutating state
+  - use an archive-capable RPC for deep history; pruned nodes often fail historical `eth_call` reads outside their retained state window
 - Use `--polymarket-rpc-url` when Polygon preflight or hedge RPC should differ from the main Pandora `--rpc-url`.
   - comma-separated RPC fallbacks are tried in order during live preflight
   - live preflight precedence is `--polymarket-rpc-url`, then `POLYMARKET_RPC_URL`, then `--rpc-url`
@@ -51,6 +64,12 @@ Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|das
   - `incremental` is a fallback/debug mode that sizes by observed drift instead of solving for the target price
   - `on-chain` refreshes Pandora outcome-token balances before sizing; live mode now fails closed if that reserve refresh is unavailable
   - `indexer` reuses verify payload reserves and is mainly for paper/debug runs
+- Private-routing knobs for the Pandora leg are:
+  - `--rebalance-route public|auto|flashbots-private|flashbots-bundle`
+  - `--rebalance-route-fallback fail|public`
+  - `--flashbots-relay-url <url>`
+  - `--flashbots-auth-key <key>`
+  - `--flashbots-target-block-offset <n>`
 - Live mode also rejects stale polled Polymarket data, not just explicit cache snapshots.
   - short-interval sports sync expects websocket-backed source prices
   - if the source is too old or stream-backed prices were expected but not available, the `POLYMARKET_SOURCE_FRESH` gate blocks execution
@@ -59,7 +78,14 @@ Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|das
 
 - `POLYMARKET_FUNDER` / `--funder` must point at the Polymarket proxy wallet (Gnosis Safe), not the signer EOA.
 - Live CLOB collateral is Polygon USDC.e on that proxy wallet.
-- Use `pandora polymarket balance --funder <proxy>` before live sync to inspect signer and proxy balances.
+- Use `pandora polymarket balance --funder <proxy>` before live sync to inspect signer and proxy collateral balances.
+- Use `pandora polymarket positions` when you need the actual CTF hedge inventory rather than collateral.
+  - it is the canonical YES/NO share inventory surface for operators, closeout, and hedge validation
+  - expected fields include inventory identifiers (`conditionId`, `marketId`, `yesTokenId`, `noTokenId`), inventory balances (`yesBalance`, `noBalance`), value fields (`estimatedValueUsd`, `prices.yes`, `prices.no`), open-order fields (`openOrdersCount`, `openOrdersNotionalUsd`), and source/provenance diagnostics when the payload is partial
+  - `--source auto` should be the default operator mode: use API/CLOB enrichment when available, then fall back to raw on-chain CTF balance reads when enrichment is unavailable
+  - `--source api` is for enriched Polymarket inventory, pricing, and open-order visibility
+  - `--source on-chain` forces Polygon RPC / CTF reads and is the fail-safe fallback when API enrichment is down or intentionally bypassed
+  - when the command is running on raw on-chain fallback, treat balances and token ids as canonical and treat open-order/value fields as opportunistic enrichment that may degrade to diagnostics or nulls
 - Use `pandora fund-check` for the high-level mirror funding planner; use `pandora polymarket check` when you need the lower-level readiness surface that validates ownership, approvals, and RPC health directly.
 - Use `pandora polymarket deposit --amount-usdc <n> --dry-run|--execute` to move USDC.e from signer to proxy. `pandora polymarket withdraw` can preview moving funds back or to `--to`, but execute mode only works when the signer controls the source wallet; proxy-originated withdrawals typically require manual execution from the proxy wallet.
 - Treat proxy funding as a separate prerequisite from ETH-mainnet Pandora capital. A healthy Pandora signer balance does not mean the Polygon hedge wallet is funded.
@@ -175,7 +201,9 @@ pandora mirror dashboard --with-live
 pandora mirror status --strategy-hash <hash> --with-live
 pandora mirror drift --market-address <pandora_market> --polymarket-market-id <poly_market_id>
 pandora mirror hedge-check --market-address <pandora_market> --polymarket-market-id <poly_market_id>
+pandora mirror trace --market-address <pandora_market> --rpc-url <archive_rpc_url> --from-block <start> --to-block <end> --step 25
 pandora polymarket balance --funder <proxy-wallet>
+pandora polymarket positions --funder <proxy-wallet> --condition-id <condition_id> --source auto
 ```
 
 ### 8. Close out deterministically
@@ -216,16 +244,45 @@ pandora mirror audit --market-address <pandora_market> --polymarket-market-id <p
   - use it when operators need the required Pandora notional and derived hedge inventory for a target percentage instead of threshold-only alerts.
   - `netPnlApproxUsdc` is cumulative LP fees approx minus cumulative hedge cost approx; `pnlApprox` adds marked Polymarket inventory; `pnlScenarios` projects current token payouts under each outcome
   - these are operator estimates, not realized closeout proceeds, a full cross-chain trade ledger, or tax-ready accounting
-  - use `history`, `export`, `operations` receipts, and `polymarket balance` when you need reconciliation beyond the status dashboard
+  - use `history`, `export`, `operations` receipts, `polymarket positions` for CTF inventory, and `polymarket balance` for collateral when you need reconciliation beyond the status dashboard
 - `mirror pnl` is the dedicated cross-venue scenario surface.
   - it promotes the `mirror status --with-live` scenario model into a compact summary with `netPnlApproxUsdc`, `pnlApprox`, `netDeltaApprox`, `hedgeGapUsdc`, and projected resolution outcomes
   - it also supports selector-first lookup when you do not have a persisted state file yet
+  - the default fields remain approximate/operator accounting
+  - add `--reconciled` to attach explicit realized, unrealized, LP fee, impermanent-loss, gas, funding, provenance, and export-ready rows without leaving this command family
 - `mirror audit` is the classified mirror execution ledger.
   - it prefers the append-only mirror audit log when present and falls back to persisted action/alert state only when the ledger does not exist yet
   - use `--with-live` when you need current cross-venue context attached next to the persisted or append-only history
+  - the base ledger remains operational/classified history
+  - add `--reconciled` to attach deterministic venue, funding, gas, reserve-trace, and inventory-mark provenance into the same payload
+- `mirror trace` is the read-only historical reserve tracing surface.
+  - use it when postmortems or accounting need reserve snapshots at block `N, N+step, ...`
+  - it requires `--market-address`/`--pandora-market-address` plus `--rpc-url`; choose either explicit `--blocks` or a `--from-block` / `--to-block` range
+  - payloads should include reserve values, derived YES percentage, fee tier, block metadata, and RPC provenance
+  - if the selected RPC cannot serve the requested block history, switch to an archive-capable endpoint instead of trusting partial results
+  - traces are capped at 1000 snapshots; narrow the range, increase `--step`, or use `--limit` when a wide postmortem sample would exceed that bound
 - `mirror close` is the deterministic closeout path for stop -> withdraw LP -> claim style cleanup.
   - it runs `stop-daemons`, `withdraw-lp`, then `claim-winnings` in order
   - it does **not** automatically settle remaining Polymarket hedge inventory; that remains manual in this command version
+
+### Reconciled accounting rollout
+
+- Keep the public accounting contract on `mirror pnl` plus `mirror audit`.
+- Do not treat a future `mirror accounting` command as the default plan when the existing surfaces can carry the reconciled model.
+- Current state:
+  - `mirror pnl` still includes the operator-estimate scenario model
+  - `mirror audit` still includes the operational/classified runtime ledger
+- Reconciled attachment now lands on those same two commands:
+  - `mirror pnl --reconciled` adds the summarized accounting breakout
+  - `mirror audit --reconciled` adds the detailed normalized ledger
+- Expected reconciled breakout:
+  - realized P&L
+  - unrealized mark-to-market
+  - LP fee income
+  - impermanent loss
+  - gas
+  - funding and bridge flows
+- Keep using `history`, `export`, `operations` receipts, `mirror trace`, and `polymarket positions` when you need supporting reconciliation evidence beyond what the current reconciled attachment already includes.
 
 ## Compatibility aliases
 - mode aliases:

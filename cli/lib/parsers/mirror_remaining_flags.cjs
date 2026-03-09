@@ -23,6 +23,8 @@ function createParseMirrorSurfaceFlags(deps, config = {}) {
   const defaultIndexerTimeoutMs = parseDefaultIndexerTimeoutMs(deps);
   const commandLabel = String(config.commandLabel || 'mirror status');
   const defaultWithLive = Boolean(config.defaultWithLive);
+  const allowReconciled = Boolean(config.allowReconciled);
+  const allowIncludeLegacyApprox = Boolean(config.allowIncludeLegacyApprox);
 
   return function parseMirrorSurfaceFlags(args) {
     const options = {
@@ -42,6 +44,8 @@ function createParseMirrorSurfaceFlags(deps, config = {}) {
       polymarketGammaUrl: null,
       polymarketGammaMockUrl: null,
       polymarketMockUrl: null,
+      reconciled: false,
+      includeLegacyApprox: false,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -66,6 +70,14 @@ function createParseMirrorSurfaceFlags(deps, config = {}) {
       }
       if (token === '--with-live') {
         options.withLive = true;
+        continue;
+      }
+      if (allowReconciled && token === '--reconciled') {
+        options.reconciled = true;
+        continue;
+      }
+      if (allowIncludeLegacyApprox && token === '--include-legacy-approx') {
+        options.includeLegacyApprox = true;
         continue;
       }
       if (token === '--trust-deploy') {
@@ -168,6 +180,10 @@ function createParseMirrorSurfaceFlags(deps, config = {}) {
         'MISSING_REQUIRED_FLAG',
         `${commandLabel} requires --state-file <path>, --strategy-hash <hash>, or a live selector pair (--pandora-market-address/--market-address plus --polymarket-market-id|--polymarket-slug).`,
       );
+    }
+
+    if (options.includeLegacyApprox) {
+      options.reconciled = true;
     }
 
     return options;
@@ -568,6 +584,8 @@ function createParseMirrorPnlFlags(deps) {
   return createParseMirrorSurfaceFlags(deps, {
     commandLabel: 'mirror pnl',
     defaultWithLive: true,
+    allowReconciled: true,
+    allowIncludeLegacyApprox: true,
   });
 }
 
@@ -575,7 +593,157 @@ function createParseMirrorAuditFlags(deps) {
   return createParseMirrorSurfaceFlags(deps, {
     commandLabel: 'mirror audit',
     defaultWithLive: false,
+    allowReconciled: true,
   });
+}
+
+function parseCsvPositiveIntegerList(value, flagName, parsePositiveInteger, CliError) {
+  const entries = String(value || '').split(',');
+  const parsed = [];
+  for (const entry of entries) {
+    const candidate = String(entry || '').trim();
+    if (!candidate) {
+      throw new CliError('INVALID_FLAG_VALUE', `${flagName} must not contain empty block values.`);
+    }
+    parsed.push(parsePositiveInteger(candidate, flagName));
+  }
+  return Array.from(new Set(parsed));
+}
+
+function parseCsvNonNegativeIntegerList(value, flagName, parseNonNegativeInteger, CliError) {
+  const entries = String(value || '').split(',');
+  const parsed = [];
+  for (const entry of entries) {
+    const candidate = String(entry || '').trim();
+    if (!candidate) {
+      throw new CliError('INVALID_FLAG_VALUE', `${flagName} must not contain empty block values.`);
+    }
+    parsed.push(parseNonNegativeInteger(candidate, flagName));
+  }
+  return Array.from(new Set(parsed));
+}
+
+function parseSecureUrlList(value, flagName, CliError, isSecureHttpUrlOrLocal) {
+  const rawEntries = String(value || '').split(',');
+  const normalized = [];
+  for (const entry of rawEntries) {
+    const candidate = String(entry || '').trim();
+    if (!candidate) {
+      throw new CliError('INVALID_FLAG_VALUE', `${flagName} must not contain empty RPC URL entries.`);
+    }
+    if (!isSecureHttpUrlOrLocal(candidate)) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `${flagName} must use https:// (or http://localhost/127.0.0.1 for local testing).`,
+      );
+    }
+    normalized.push(candidate);
+  }
+
+  return Array.from(new Set(normalized)).join(',');
+}
+
+function createParseMirrorTraceFlags(deps) {
+  const CliError = requireDep(deps, 'CliError');
+  const parseAddressFlag = requireDep(deps, 'parseAddressFlag');
+  const requireFlagValue = requireDep(deps, 'requireFlagValue');
+  const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
+  const parseNonNegativeInteger = requireDep(deps, 'parseNonNegativeInteger');
+  const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
+
+  return function parseMirrorTraceFlags(args) {
+    const options = {
+      pandoraMarketAddress: null,
+      rpcUrl: null,
+      blocks: null,
+      fromBlock: null,
+      toBlock: null,
+      step: 1,
+      limit: null,
+    };
+
+    for (let i = 0; i < args.length; i += 1) {
+      const token = args[i];
+      if (token === '--pandora-market-address' || token === '--market-address') {
+        options.pandoraMarketAddress = parseAddressFlag(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+      if (token === '--rpc-url') {
+        options.rpcUrl = parseSecureUrlList(
+          requireFlagValue(args, i, '--rpc-url'),
+          '--rpc-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--blocks') {
+        options.blocks = parseCsvNonNegativeIntegerList(
+          requireFlagValue(args, i, '--blocks'),
+          '--blocks',
+          parseNonNegativeInteger,
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--from-block') {
+        options.fromBlock = parseNonNegativeInteger(requireFlagValue(args, i, '--from-block'), '--from-block');
+        i += 1;
+        continue;
+      }
+      if (token === '--to-block') {
+        options.toBlock = parseNonNegativeInteger(requireFlagValue(args, i, '--to-block'), '--to-block');
+        i += 1;
+        continue;
+      }
+      if (token === '--step') {
+        options.step = parsePositiveInteger(requireFlagValue(args, i, '--step'), '--step');
+        i += 1;
+        continue;
+      }
+      if (token === '--limit') {
+        options.limit = parsePositiveInteger(requireFlagValue(args, i, '--limit'), '--limit');
+        i += 1;
+        continue;
+      }
+      throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror trace: ${token}`);
+    }
+
+    if (!options.pandoraMarketAddress) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'mirror trace requires --pandora-market-address/--market-address <address>.',
+      );
+    }
+    if (!options.rpcUrl) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'mirror trace requires --rpc-url <url>.');
+    }
+
+    const hasExplicitBlocks = Array.isArray(options.blocks) && options.blocks.length > 0;
+    const hasRange = options.fromBlock !== null || options.toBlock !== null;
+    if (!hasExplicitBlocks && !hasRange) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'mirror trace requires either --blocks <csv> or --from-block <n> plus --to-block <n>.',
+      );
+    }
+    if (hasExplicitBlocks && hasRange) {
+      throw new CliError(
+        'INVALID_ARGS',
+        'mirror trace --blocks <csv> cannot be combined with --from-block/--to-block.',
+      );
+    }
+    if (options.fromBlock === null && options.toBlock !== null) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'mirror trace requires --from-block <n> when --to-block is provided.');
+    }
+    if (options.toBlock === null && options.fromBlock !== null) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'mirror trace requires --to-block <n> when --from-block is provided.');
+    }
+    return options;
+  };
 }
 
 function createParseMirrorReplayFlags(deps) {
@@ -1080,6 +1248,7 @@ module.exports = {
   createParseMirrorStatusFlags,
   createParseMirrorPnlFlags,
   createParseMirrorAuditFlags,
+  createParseMirrorTraceFlags,
   createParseMirrorReplayFlags,
   createParseMirrorLogsFlags,
   createParseMirrorCloseFlags,
