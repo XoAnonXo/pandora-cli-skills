@@ -1915,6 +1915,10 @@ test('capabilities --help succeeds in table mode', () => {
     payload.data.trustDistribution.distribution.embeddedSdks.typescript.packageName,
     typescriptSdkPackage.name,
   );
+  assert.deepEqual(payload.data.transports.sdk.packages.typescript.installExamples, [
+    `npm install ${typescriptSdkPackage.name}@${typescriptSdkPackage.version}`,
+    'npm install /path/to/downloaded/pandora-agent-sdk-<version>.tgz',
+  ]);
   assert.equal(
     payload.data.trustDistribution.distribution.embeddedSdks.python.packageName,
     parseTomlStringField(
@@ -1922,6 +1926,11 @@ test('capabilities --help succeeds in table mode', () => {
       'name',
     ),
   );
+  assert.deepEqual(payload.data.transports.sdk.packages.python.installExamples, [
+    `pip install ${payload.data.trustDistribution.distribution.embeddedSdks.python.packageName}==${payload.data.trustDistribution.distribution.embeddedSdks.python.version}`,
+    'pip install /path/to/downloaded/pandora_agent-<version>-py3-none-any.whl',
+    'pip install /path/to/downloaded/pandora_agent-<version>.tar.gz',
+  ]);
   assert.equal(payload.data.trustDistribution.verification.scripts.build, null);
   assert.equal(payload.data.trustDistribution.verification.scripts.prepack, null);
   assert.equal(payload.data.trustDistribution.verification.scripts.benchmarkCheck, null);

@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const { buildPublishedPackageJson } = require('../../scripts/prepare_publish_manifest.cjs');
 const NPM_CMD = 'npm';
 const NODE_CMD = process.execPath;
+const PACK_TIMEOUT_MS = process.platform === 'win32' ? 180_000 : 120_000;
 const REQUIRED_ENV_KEYS = [
   'CHAIN_ID',
   'RPC_URL',
@@ -146,7 +147,7 @@ function extractTarball(tarballPath, extractDir) {
 
 function getPackResult(packDir) {
   if (process.platform === 'win32') {
-    const fallback = runNpm(['pack', '--silent']);
+    const fallback = runNpm(['pack', '--silent'], { timeoutMs: PACK_TIMEOUT_MS });
     if (fallback.status !== 0) return fallback;
 
     const tarball = fallback.stdout
@@ -161,11 +162,13 @@ function getPackResult(packDir) {
     return fallback;
   }
 
-  const withDestination = runNpm(['pack', '--silent', '--pack-destination', packDir]);
+  const withDestination = runNpm(['pack', '--silent', '--pack-destination', packDir], {
+    timeoutMs: PACK_TIMEOUT_MS,
+  });
   if (withDestination.status === 0) return withDestination;
   if (!/pack-destination/.test(withDestination.output)) return withDestination;
 
-  const fallback = runNpm(['pack', '--silent']);
+  const fallback = runNpm(['pack', '--silent'], { timeoutMs: PACK_TIMEOUT_MS });
   if (fallback.status !== 0) return fallback;
 
   const tarball = fallback.stdout

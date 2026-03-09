@@ -448,6 +448,8 @@ jobs:
             npm publish "$SDK_TARBALL" --access public --tag alpha --provenance
           fi
 
+          npm dist-tag add "${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION}" latest
+
       - name: Publish standalone Python SDK
         uses: pypa/gh-action-pypi-publish@release/v1
         with:

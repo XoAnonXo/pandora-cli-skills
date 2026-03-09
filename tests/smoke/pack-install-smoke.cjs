@@ -23,6 +23,7 @@ const REQUIRED_ENV_KEYS = [
 ];
 const NPM_CMD = 'npm';
 const NODE_CMD = process.execPath;
+const PACK_TIMEOUT_MS = process.platform === 'win32' ? 180_000 : 120_000;
 const EXPECTED_PUBLISHED_SCRIPT_NAMES = [
   'cli',
   'init-env',
@@ -164,7 +165,7 @@ function getPackResult(packDir, options = {}) {
     packArgs.push('--ignore-scripts');
   }
   if (process.platform === 'win32') {
-    const fallback = runNpm(packArgs);
+    const fallback = runNpm(packArgs, { timeoutMs: PACK_TIMEOUT_MS });
     if (fallback.status !== 0) {
       return fallback;
     }
@@ -186,7 +187,9 @@ function getPackResult(packDir, options = {}) {
     return fallback;
   }
 
-  const withDestination = runNpm([...packArgs, '--pack-destination', packDir]);
+  const withDestination = runNpm([...packArgs, '--pack-destination', packDir], {
+    timeoutMs: PACK_TIMEOUT_MS,
+  });
   if (withDestination.status === 0) {
     return withDestination;
   }
@@ -195,7 +198,7 @@ function getPackResult(packDir, options = {}) {
     return withDestination;
   }
 
-  const fallback = runNpm(packArgs);
+  const fallback = runNpm(packArgs, { timeoutMs: PACK_TIMEOUT_MS });
   if (fallback.status !== 0) {
     return fallback;
   }

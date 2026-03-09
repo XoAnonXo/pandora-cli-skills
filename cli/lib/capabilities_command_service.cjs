@@ -1115,6 +1115,19 @@ function buildTransports(options = {}, trustDistribution = null) {
   const distribution = trustDistribution && trustDistribution.distribution ? trustDistribution.distribution : {};
   const embeddedSdks = distribution && distribution.embeddedSdks ? distribution.embeddedSdks : {};
   const generatedArtifacts = distribution && distribution.generatedContractArtifacts ? distribution.generatedContractArtifacts : {};
+  const typescriptPackageName = normalizeString(embeddedSdks.typescript && embeddedSdks.typescript.packageName) || '@thisispandora/agent-sdk';
+  const typescriptPackageVersion = normalizeString(embeddedSdks.typescript && embeddedSdks.typescript.version);
+  const pythonPackageName = normalizeString(embeddedSdks.python && embeddedSdks.python.packageName) || 'pandora-agent';
+  const pythonPackageVersion = normalizeString(embeddedSdks.python && embeddedSdks.python.version);
+  const typescriptInstallExamples = [
+    `npm install ${typescriptPackageName}${typescriptPackageVersion ? `@${typescriptPackageVersion}` : '@alpha'}`,
+    'npm install /path/to/downloaded/pandora-agent-sdk-<version>.tgz',
+  ];
+  const pythonInstallExamples = [
+    `pip install ${pythonPackageName}${pythonPackageVersion ? `==${pythonPackageVersion}` : ''}`,
+    'pip install /path/to/downloaded/pandora_agent-<version>-py3-none-any.whl',
+    'pip install /path/to/downloaded/pandora_agent-<version>.tar.gz',
+  ];
   const remoteTransportNotes = remoteTransportActive
     ? [
         'Remote streamable HTTP MCP gateway is active in this runtime.',
@@ -1154,8 +1167,8 @@ function buildTransports(options = {}, trustDistribution = null) {
       ],
       packages: {
         typescript: {
-          name: normalizeString(embeddedSdks.typescript && embeddedSdks.typescript.packageName),
-          version: normalizeString(embeddedSdks.typescript && embeddedSdks.typescript.version),
+          name: typescriptPackageName,
+          version: typescriptPackageVersion,
           repoPath: normalizeString(embeddedSdks.typescript && embeddedSdks.typescript.packagePath),
           distributionStatus: 'vendored-alpha',
           publicationStatus: 'public-registry-published',
@@ -1163,11 +1176,11 @@ function buildTransports(options = {}, trustDistribution = null) {
           recommendedConsumption: 'public-npm-package',
           vendoredInRootPackage: true,
           releaseAssetPatterns: ['pandora-agent-sdk-*.tgz'],
-          installExamples: ['npm install @thisispandora/agent-sdk@0.1.0-alpha.1', 'npm install /path/to/downloaded/pandora-agent-sdk-<version>.tgz'],
+          installExamples: typescriptInstallExamples,
         },
         python: {
-          name: normalizeString(embeddedSdks.python && embeddedSdks.python.packageName),
-          version: normalizeString(embeddedSdks.python && embeddedSdks.python.version),
+          name: pythonPackageName,
+          version: pythonPackageVersion,
           repoPath: normalizeString(embeddedSdks.python && embeddedSdks.python.projectPath),
           moduleName: 'pandora_agent',
           distributionStatus: 'vendored-alpha',
@@ -1176,11 +1189,7 @@ function buildTransports(options = {}, trustDistribution = null) {
           recommendedConsumption: 'public-pypi-package',
           vendoredInRootPackage: true,
           releaseAssetPatterns: ['pandora_agent-*.whl', 'pandora_agent-*.tar.gz'],
-          installExamples: [
-            'pip install pandora-agent==0.1.0a1',
-            'pip install /path/to/downloaded/pandora_agent-<version>-py3-none-any.whl',
-            'pip install /path/to/downloaded/pandora_agent-<version>.tar.gz',
-          ],
+          installExamples: pythonInstallExamples,
         },
       },
       generatedBundle: {
