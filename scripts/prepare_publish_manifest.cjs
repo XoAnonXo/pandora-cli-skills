@@ -79,6 +79,10 @@ function main() {
     return;
   }
 
+  if (fs.existsSync(BACKUP_DIR)) {
+    fs.rmSync(BACKUP_DIR, { recursive: true, force: true });
+  }
+
   const pkg = readPackageJson();
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
   fs.writeFileSync(BACKUP_PATH, `${JSON.stringify(pkg, null, 2)}\n`);

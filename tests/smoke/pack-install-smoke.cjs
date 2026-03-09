@@ -24,6 +24,7 @@ const REQUIRED_ENV_KEYS = [
 const NPM_CMD = 'npm';
 const NODE_CMD = process.execPath;
 const PACK_TIMEOUT_MS = process.platform === 'win32' ? 180_000 : 120_000;
+const INSTALL_TIMEOUT_MS = process.platform === 'win32' ? 360_000 : 180_000;
 const EXPECTED_PUBLISHED_SCRIPT_NAMES = [
   'cli',
   'init-env',
@@ -150,6 +151,10 @@ function restorePublishManifest() {
   });
 }
 
+function ensurePublishManifestRestored(label = 'restore publish manifest') {
+  ensureExitCode(restorePublishManifest(), 0, label);
+}
+
 function extractTarball(tarballPath, extractDir) {
   fs.mkdirSync(extractDir, { recursive: true });
   ensureExitCode(
@@ -233,6 +238,7 @@ function main() {
   fs.mkdirSync(runtimeDir, { recursive: true });
 
   try {
+    ensurePublishManifestRestored('pre-smoke publish manifest cleanup');
     const prepareResult = preparePublishManifest();
     ensureExitCode(prepareResult, 0, 'prepare publish manifest');
     let pack;
@@ -368,7 +374,7 @@ function main() {
     ensureExitCode(
       runNpm(['install', '--omit=dev', '--ignore-scripts'], {
         cwd: installedPackageRoot,
-        timeoutMs: 180_000,
+        timeoutMs: INSTALL_TIMEOUT_MS,
       }),
       0,
       'npm install --omit=dev --ignore-scripts (installed package)',
@@ -660,6 +666,7 @@ print(json.dumps({
     console.log('Pack/install smoke test passed.');
     console.log(`Tarball: ${tarballPath}`);
   } finally {
+    ensurePublishManifestRestored('post-smoke publish manifest cleanup');
     try {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     } catch (error) {

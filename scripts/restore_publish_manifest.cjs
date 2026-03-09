@@ -21,6 +21,11 @@ function restoreBenchmarkFixtures() {
 
 function main() {
   if (!fs.existsSync(BACKUP_PATH)) {
+    if (fs.existsSync(BACKUP_DIR)) {
+      fs.rmSync(BACKUP_DIR, { recursive: true, force: true });
+      process.stdout.write('Removed stale publish manifest backup directory.\n');
+      return;
+    }
     process.stdout.write('No publish manifest backup found; package.json already restored.\n');
     return;
   }

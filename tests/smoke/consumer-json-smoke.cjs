@@ -7,9 +7,11 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const { buildPublishedPackageJson } = require('../../scripts/prepare_publish_manifest.cjs');
+const RESTORE_PUBLISH_MANIFEST = path.join(ROOT, 'scripts', 'restore_publish_manifest.cjs');
 const NPM_CMD = 'npm';
 const NODE_CMD = process.execPath;
 const PACK_TIMEOUT_MS = process.platform === 'win32' ? 180_000 : 120_000;
+const INSTALL_TIMEOUT_MS = process.platform === 'win32' ? 360_000 : 180_000;
 const REQUIRED_ENV_KEYS = [
   'CHAIN_ID',
   'RPC_URL',
@@ -134,6 +136,17 @@ function runNpm(args, options = {}) {
 
 function runPandora(installedCli, args, options = {}) {
   return run(NODE_CMD, [installedCli, ...args], options);
+}
+
+function restorePublishManifest() {
+  return run(NODE_CMD, [RESTORE_PUBLISH_MANIFEST], {
+    cwd: ROOT,
+    timeoutMs: 120_000,
+  });
+}
+
+function ensurePublishManifestRestored(label = 'restore publish manifest') {
+  ensureExitCode(restorePublishManifest(), 0, label);
 }
 
 function extractTarball(tarballPath, extractDir) {
@@ -393,6 +406,7 @@ function main() {
   fs.mkdirSync(runtimeDir, { recursive: true });
 
   try {
+    ensurePublishManifestRestored('pre-consumer smoke publish manifest cleanup');
     const pack = getPackResult(packDir);
     ensureExitCode(pack, 0, 'npm pack');
 
@@ -522,7 +536,7 @@ function main() {
 
     const installResult = runNpm(['install', '--omit=dev', '--ignore-scripts'], {
       cwd: installedPackageRoot,
-      timeoutMs: 180_000,
+      timeoutMs: INSTALL_TIMEOUT_MS,
     });
     ensureExitCode(installResult, 0, 'npm install --omit=dev --ignore-scripts (installed package)');
 
@@ -823,6 +837,7 @@ print(json.dumps({
     console.log('Consumer JSON smoke test passed.');
     console.log(`Tarball: ${tarballPath}`);
   } finally {
+    ensurePublishManifestRestored('post-consumer smoke publish manifest cleanup');
     try {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     } catch (error) {
