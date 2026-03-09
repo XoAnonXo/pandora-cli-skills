@@ -22,6 +22,7 @@ Sanitized, shareable copy of the Pandora CLI docs, SDK surfaces, generated contr
 
 ## Start Here
 
+- Anthropic skill install: [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
 - Main landing page: [`README.md`](./README.md)
 - Agent bootstrap: [`docs/skills/agent-quickstart.md`](./docs/skills/agent-quickstart.md)
 - Command reference: [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
@@ -86,6 +87,19 @@ Packaging note:
 
 Use this path if you want to inspect the package safely and understand the repo before any live setup.
 
+### Anthropic skill install
+
+If you want to install Pandora as a Claude skill, use the dedicated guide:
+
+- [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
+
+Important:
+
+- build the Anthropic skill with `npm run pack:anthropic-skill`
+- install `dist/pandora-skill/` or `dist/pandora-skill.zip`
+- do **not** upload the repo root as a skill
+- keep Pandora runtime setup separate from skill installation
+
 ### Detailed setup
 
 ```bash
@@ -101,10 +115,11 @@ npx pandora help
 ### Human reading order
 
 1. [`README.md`](./README.md) for the main landing page and task routing.
-2. [`docs/skills/command-reference.md`](./docs/skills/command-reference.md) for command families and flags.
-3. [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md) for discover -> quote -> trade -> claim flows.
-4. [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md) for mirror-specific planning and validation.
-5. [`docs/trust/release-verification.md`](./docs/trust/release-verification.md) before install verification or external handoff.
+2. [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md) for Claude.ai and Claude Code skill installation.
+3. [`docs/skills/command-reference.md`](./docs/skills/command-reference.md) for command families and flags.
+4. [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md) for discover -> quote -> trade -> claim flows.
+5. [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md) for mirror-specific planning and validation.
+6. [`docs/trust/release-verification.md`](./docs/trust/release-verification.md) before install verification or external handoff.
 
 ### Optional live setup
 
@@ -187,6 +202,7 @@ bootstrap
 ## Shareable Bundle Recommendations
 
 - Prefer this package for review, contract inspection, and integration planning.
+- Prefer the generated Anthropic skill bundle when the goal is Claude.ai / Claude Code skill installation.
 - Prefer read-only bootstrap commands first; they work without signer material.
 - Prefer environment variables or a secret-manager wrapper over raw command-line private keys.
 - Prefer shipped docs and trust artifacts over copying operational assumptions from old notes.
@@ -222,6 +238,7 @@ Status notes:
 ## Short Version
 
 ```text
+Anthropic skill?  Upload the generated bundle -> test with Pandora-specific prompts -> keep repo root out of the upload.
 Human?  Install -> bootstrap -> read docs -> run doctor only on live runtimes.
 Agent?  bootstrap -> capabilities -> schema -> policy/profile -> MCP.
 Share?  This bundle is sanitized; secrets and local runtime state are omitted.

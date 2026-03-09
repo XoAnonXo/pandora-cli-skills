@@ -1,0 +1,121 @@
+{
+  "version": "2026-03-09",
+  "purpose": "Trigger and non-trigger prompts for the Anthropic-facing Pandora skill.",
+  "notes": [
+    "Run these prompts against the generated Anthropic skill bundle, not the repo root.",
+    "Use the same model/settings across runs when comparing revisions.",
+    "Judge whether the skill loads at the right time and routes to the right first move."
+  ],
+  "shouldTrigger": [
+    {
+      "id": "bootstrap-agent-runtime",
+      "prompt": "Bootstrap Pandora for an agent and tell me the safest first commands to run.",
+      "expectedFirstMove": "Recommend read-only bootstrap before any mutation or secrets.",
+      "mustMention": [
+        "bootstrap",
+        "capabilities",
+        "schema"
+      ],
+      "mustAvoid": [
+        "--private-key"
+      ]
+    },
+    {
+      "id": "quote-before-buy",
+      "prompt": "Quote this Pandora market before I buy yes shares.",
+      "expectedFirstMove": "Route to quote-first trading guidance before execution.",
+      "mustMention": [
+        "quote"
+      ],
+      "mustAvoid": [
+        "trade --execute without quoting"
+      ]
+    },
+    {
+      "id": "mirror-plan",
+      "prompt": "Help me plan a mirror market from Polymarket without going live yet.",
+      "expectedFirstMove": "Keep the user in browse/plan/dry-run mode and call out validation and source rules.",
+      "mustMention": [
+        "mirror",
+        "plan",
+        "validation"
+      ],
+      "mustAvoid": [
+        "execute live immediately"
+      ]
+    },
+    {
+      "id": "profile-readiness",
+      "prompt": "Check whether my Pandora signer profile is ready for live execution.",
+      "expectedFirstMove": "Route to profile readiness inspection rather than assume a signer is ready.",
+      "mustMention": [
+        "profile list",
+        "profile explain"
+      ],
+      "mustAvoid": [
+        "assume any mutable profile is ready"
+      ]
+    },
+    {
+      "id": "start-mcp",
+      "prompt": "I have Pandora installed. Should I start local MCP or host the HTTP gateway?",
+      "expectedFirstMove": "Differentiate local stdio MCP from hosted HTTP MCP and explain when to use each.",
+      "mustMention": [
+        "pandora mcp",
+        "pandora mcp http"
+      ],
+      "mustAvoid": [
+        "treat remote HTTP as the default for live user funds"
+      ]
+    }
+  ],
+  "paraphraseShouldTrigger": [
+    {
+      "id": "what-first",
+      "prompt": "What should I call first in Pandora if I only want the safe, read-only path?",
+      "expectedFirstMove": "Recommend bootstrap-oriented discovery."
+    },
+    {
+      "id": "mirror-preflight",
+      "prompt": "I want to mirror a Polymarket market but keep it paper-only while I inspect the setup.",
+      "expectedFirstMove": "Use mirror plan or dry-run / paper guidance."
+    },
+    {
+      "id": "agent-transport",
+      "prompt": "Which Pandora interface should an LLM use: CLI JSON, local MCP, or a hosted gateway?",
+      "expectedFirstMove": "Frame the transport choice around runtime ownership and scope."
+    },
+    {
+      "id": "closeout-help",
+      "prompt": "Help me close out Pandora positions safely and see what I still need to claim.",
+      "expectedFirstMove": "Route to portfolio/closeout guidance with inspection before mutation."
+    }
+  ],
+  "shouldNotTrigger": [
+    {
+      "id": "generic-react-help",
+      "prompt": "Help me write a React component for a dashboard card.",
+      "reason": "Unrelated coding task."
+    },
+    {
+      "id": "generic-crypto-news",
+      "prompt": "What happened in bitcoin today?",
+      "reason": "General crypto/news query, not Pandora workflow help."
+    },
+    {
+      "id": "spreadsheet-task",
+      "prompt": "Create a spreadsheet that tracks monthly expenses.",
+      "reason": "Generic spreadsheet work, outside Pandora scope."
+    },
+    {
+      "id": "pdf-summary",
+      "prompt": "Summarize this PDF for me.",
+      "reason": "Generic document task, outside Pandora scope."
+    },
+    {
+      "id": "weather",
+      "prompt": "What is the weather in Dubai this weekend?",
+      "reason": "Clearly unrelated request."
+    }
+  ]
+}

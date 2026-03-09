@@ -24,6 +24,7 @@ Pandora is a production CLI and agent surface for prediction-market workflows: r
 
 If you are reading this page on GitHub, use these jump points first:
 
+- Anthropic skill install: [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
 - Humans: [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
 - Agents: [`docs/skills/agent-quickstart.md`](./docs/skills/agent-quickstart.md)
 - MCP / JSON contracts: [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
@@ -36,6 +37,15 @@ If you are reading this page on GitHub, use these jump points first:
 ## For Humans
 
 Use this path if you want the repo explained in order and prefer detailed guidance over terse machine contracts.
+
+### Anthropic skill install
+
+If you want Claude.ai or Claude Code to use Pandora as a skill, start here:
+
+- [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
+
+Use the generated Anthropic skill bundle from the packaging flow. Do **not** zip and upload the repo root as a skill.
+Build it with `npm run pack:anthropic-skill`, then use `dist/pandora-skill/` or `dist/pandora-skill.zip`.
 
 ### Detailed setup
 
@@ -63,6 +73,8 @@ What each step is for:
 4. [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md) for portfolio inspection, LP exits, and closeout.
 5. [`docs/trust/release-verification.md`](./docs/trust/release-verification.md) before installs, release checks, or operator handoff.
 
+If you are testing the Anthropic skill itself rather than the repo manually, use the install guide first and then come back to the docs above for deeper workflow detail.
+
 ### Safe human-first discovery
 
 If you want to explore without touching signer material:
@@ -81,6 +93,25 @@ Those commands are the preferred front door for both humans and agents because t
 
 Use this path if the consumer is an LLM, automation runtime, SDK client, or MCP host.
 
+### Choose the operating model first
+
+#### Self-custody local runtime
+
+Use this when the agent should execute with the user's own wallet and signer material.
+
+- run `pandora mcp` locally, or `pandora mcp http` on the user's own machine or server
+- keep signer material on the user's own runtime
+- prefer this path for live execution with user-owned funds
+
+#### Hosted read-only / planning gateway
+
+Use this when you want a shared remote endpoint for discovery, bootstrap, schema inspection, recipes, planning, audit, and receipts.
+
+- host `pandora mcp http` centrally
+- keep the shared gateway read-only by default
+- only add hosted mutation if you explicitly want a BYO-signer or custodial model
+- do not require self-custody users to route live execution through the shared gateway
+
 ### One command: bootstrap the contract
 
 ```bash
@@ -95,7 +126,7 @@ Use `bootstrap` first for canonical tools, recommended next steps, default polic
 npm install && npx pandora mcp
 ```
 
-Use local stdio MCP when the agent runs on the same machine as Pandora.
+Use local stdio MCP when the agent runs on the same machine as Pandora. This is the default self-custody path for live execution.
 
 ### One command: host remote read-only HTTP MCP
 
@@ -103,7 +134,7 @@ Use local stdio MCP when the agent runs on the same machine as Pandora.
 npm install && npx pandora mcp http --auth-scopes capabilities:read,contracts:read,help:read,schema:read,operations:read,scan:read,quote:read,portfolio:read,mirror:read,sports:read,network:indexer,network:rpc,network:polymarket,network:sports
 ```
 
-Use remote HTTP MCP only when you intentionally want external agents to connect over the network. Start with read-only scopes and widen later.
+Use remote HTTP MCP only when you intentionally want external agents to connect over the network. Start with read-only scopes and widen later. For most teams, this gateway should be the shared discovery and planning surface, not the default home of user signer material.
 
 ### Recommended agent order
 
@@ -127,6 +158,8 @@ bootstrap
 
 - Prefer `bootstrap` over raw `help` output when the caller is an agent.
 - Prefer canonical tool names. Only use compatibility aliases for legacy callers or migration diffing.
+- Prefer self-custody local runtimes for live execution with user-owned funds.
+- Prefer a hosted HTTP gateway for shared discovery, planning, schema, recipes, audit, and receipt retrieval.
 - Prefer read-only planning first. Do not provision secrets until `requiresSecrets`, `policyScopes`, and `profile explain` say the workflow actually needs them.
 - Prefer `--profile-id` or `--profile-file` over raw `--private-key` when a command family supports profile-directed execution.
 - Prefer `pandora mcp` for local agents and `pandora mcp http` for intentionally hosted remote agents.
@@ -218,6 +251,7 @@ Notes:
 ## Short Version
 
 ```text
+Anthropic skill? Install the generated bundle -> test with Pandora-specific prompts -> keep repo root out of skill upload.
 Human?  Install -> doctor -> build -> read command/workflow docs.
 Agent?  bootstrap -> capabilities -> schema -> policy/profile -> MCP.
 Live?   Add scopes and secrets only after exact readiness checks pass.

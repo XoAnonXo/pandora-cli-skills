@@ -284,4 +284,4 @@ The `core` suite currently covers:
 - seeded operations `get` parity across CLI, stdio MCP, and remote MCP
 - CLI-only seeded operations `cancel` and `close`
 
-See [scenario-catalog.md](/Users/mac/Desktop/pandora-market-setup-shareable/docs/benchmarks/scenario-catalog.md) for the canonical manifest-backed scenario list.
+See [scenario-catalog.md](./scenario-catalog.md) for the canonical manifest-backed scenario list.
