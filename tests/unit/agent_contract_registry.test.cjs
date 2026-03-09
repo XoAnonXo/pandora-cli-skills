@@ -21,7 +21,24 @@ const GENERATED_CONTRACT_GAP_COMMANDS = new Set([
   'policy.recommend',
   'profile',
   'profile.recommend',
+  'markets',
+  'markets.list',
+  'markets.mine',
   'markets.scan',
+  'scan',
+  'quote',
+  'dashboard',
+  'fund-check',
+  'mirror',
+  'mirror.calc',
+  'mirror.dashboard',
+  'mirror.drift',
+  'mirror.hedge-check',
+  'mirror.hedge-calc',
+  'mirror.status',
+  'polymarket.check',
+  'polymarket.preflight',
+  'polymarket.balance',
   'trade.quote',
   'sell.quote',
   'arbitrage',
@@ -359,6 +376,22 @@ test('mirror contract descriptors expose separate-leg sync truth, reserve proven
     /graceful fallback behavior/i,
   );
   assert.match(
+    descriptors['mirror.health'].summary,
+    /machine-usable mirror daemon\/runtime health/i,
+  );
+  assert.match(
+    descriptors['mirror.health'].usage,
+    /--pid-file <path>/,
+  );
+  assert.match(
+    descriptors['mirror.panic'].summary,
+    /global risk panic lock/i,
+  );
+  assert.match(
+    descriptors['mirror.panic'].usage,
+    /--all \[--risk-file <path>\] \[--reason <text>\] \[--actor <id>\] \[--clear\]/,
+  );
+  assert.match(
     descriptors['mirror.status'].usage,
     /--indexer-url <url>/,
   );
@@ -398,6 +431,26 @@ test('mirror contract descriptors expose separate-leg sync truth, reserve proven
     descriptors['mirror.audit'].dataSchema,
     '#/definitions/MirrorAuditPayload',
   );
+  assert.match(
+    descriptors['mirror.hedge-calc'].summary,
+    /offline hedge sizing/i,
+  );
+  assert.match(
+    descriptors['mirror.hedge-calc'].usage,
+    /--reserve-yes-usdc <n> --reserve-no-usdc <n>/,
+  );
+  assert.equal(
+    descriptors['mirror.hedge-calc'].inputSchema.properties['reserve-yes-usdc'].type,
+    'number',
+  );
+  assert.equal(
+    descriptors['mirror.hedge-calc'].inputSchema.properties['reserve-no-usdc'].type,
+    'number',
+  );
+  assert.equal(
+    descriptors['mirror.hedge-calc'].inputSchema.properties['fee-tier'].type,
+    'integer',
+  );
   assert.ok(descriptors['lp.simulate-remove']);
   assert.equal(
     descriptors['lp.simulate-remove'].dataSchema,
@@ -407,6 +460,43 @@ test('mirror contract descriptors expose separate-leg sync truth, reserve proven
     descriptors.lp.usage,
     /lp simulate-remove --market-address <address>/,
   );
+});
+
+test('registry exposes the implemented batch-1 public surfaces and workflow aliases', () => {
+  const descriptors = buildCommandDescriptors();
+  const toolDefinitions = Object.fromEntries(buildMcpToolDefinitions().map((tool) => [tool.name, tool]));
+
+  assert.match(descriptors.quote.usage, /--target-pct <0-100>/);
+  assert.equal(descriptors.quote.inputSchema.properties['target-pct'].type, 'number');
+  assert.match(toolDefinitions.quote.description, /buy-only/i);
+  assert.ok(descriptors.dashboard);
+  assert.ok(descriptors['fund-check']);
+  assert.ok(descriptors['mirror.dashboard']);
+  assert.ok(descriptors['mirror.calc']);
+  assert.match(descriptors.dashboard.summary, /active-mirror operator dashboard/i);
+  assert.match(descriptors['fund-check'].summary, /hedge funding needs/i);
+  assert.match(descriptors['mirror.dashboard'].summary, /operator summary/i);
+  assert.match(descriptors['mirror.calc'].summary, /target percentage/i);
+  assert.ok(descriptors['markets.mine']);
+  assert.match(descriptors['markets.mine'].summary, /wallet-owned/i);
+  assert.equal(toolDefinitions['markets.mine'].canonicalTool, 'markets.mine');
+  assert.match(descriptors['mirror.status'].summary, /dashboard/i);
+  assert.ok(descriptors['mirror.drift']);
+  assert.ok(descriptors['mirror.hedge-check']);
+  assert.ok(descriptors['mirror.logs']);
+  assert.ok(descriptors['mirror.replay']);
+  assert.match(descriptors['mirror.drift'].summary, /drift\/readiness/i);
+  assert.match(descriptors['mirror.hedge-check'].summary, /hedge-gap\/readiness/i);
+  assert.match(descriptors['mirror.logs'].summary, /daemon log/i);
+  assert.match(descriptors['mirror.replay'].summary, /persisted mirror execution history/i);
+  assert.match(toolDefinitions['mirror.status'].description, /status\/dashboard payload/i);
+  assert.match(toolDefinitions['mirror.drift'].description, /drift\/readiness/i);
+  assert.match(toolDefinitions['mirror.hedge-check'].description, /hedge-gap\/readiness/i);
+  assert.equal(toolDefinitions['mirror.logs'].canonicalTool, 'mirror.logs');
+  assert.equal(toolDefinitions['mirror.replay'].canonicalTool, 'mirror.replay');
+  assert.match(descriptors['mirror.hedge-calc'].summary, /offline hedge sizing/i);
+  assert.match(descriptors['polymarket.check'].summary, /lower-level readiness primitive/i);
+  assert.match(toolDefinitions['polymarket.balance'].description, /signer\/proxy funding balances/i);
 });
 
 test('generated descriptor and MCP tool slices stay in sync with the live registry builders', () => {

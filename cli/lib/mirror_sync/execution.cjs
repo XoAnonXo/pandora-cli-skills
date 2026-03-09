@@ -123,6 +123,29 @@ function buildIdempotencyKey(options, snapshot, nowMs) {
   ].join('|');
 }
 
+function buildModeledActionSummary(plan, snapshot, snapshotMetrics) {
+  const actionPlan = snapshot && snapshot.actionPlan && typeof snapshot.actionPlan === 'object'
+    ? snapshot.actionPlan
+    : {};
+  return {
+    driftTriggered: Boolean(snapshotMetrics && snapshotMetrics.driftTriggered),
+    hedgeTriggered: Boolean(plan && plan.hedgeTriggered),
+    rebalanceSide: actionPlan.rebalanceSide || (plan && plan.rebalanceSide) || null,
+    plannedRebalanceUsdc: toNumber(plan && plan.plannedRebalanceUsdc),
+    plannedHedgeUsdc: toNumber(plan && plan.plannedHedgeUsdc),
+    plannedSpendUsdc: toNumber(plan && plan.plannedSpendUsdc),
+    rebalanceSizingMode: actionPlan.rebalanceSizingMode || (plan && plan.rebalanceSizingMode) || null,
+    rebalanceTargetUsdc:
+      actionPlan.rebalanceTargetUsdc !== undefined && actionPlan.rebalanceTargetUsdc !== null
+        ? toNumber(actionPlan.rebalanceTargetUsdc)
+        : toNumber(plan && plan.rebalanceTargetUsdc),
+    reserveSource: actionPlan.reserveSource || (plan && plan.reserveSource) || null,
+    hedgeTokenSide: actionPlan.hedgeTokenSide || (plan && plan.hedgeTokenSide) || null,
+    hedgeOrderSide: actionPlan.hedgeOrderSide || null,
+    hedgeExecutionMode: actionPlan.hedgeExecutionMode || null,
+  };
+}
+
 /**
  * Create an executable action envelope for a triggered tick.
  * @param {{options: object, idempotencyKey: string, gate: object}} params
@@ -210,6 +233,7 @@ function buildMirrorAuditEntries(action) {
         lockNonce: action.lockNonce || null,
         lockRetained: Boolean(action.lockRetained),
         transactionNonce: action.transactionNonce ?? null,
+        model: action.model || null,
       },
     },
   ];
@@ -709,17 +733,7 @@ async function processTriggeredAction(params) {
         polymarketMarketId: options.polymarketMarketId || null,
         polymarketSlug: options.polymarketSlug || null,
       },
-      plan: {
-        driftTriggered: Boolean(snapshotMetrics.driftTriggered),
-        hedgeTriggered: Boolean(plan.hedgeTriggered),
-        rebalanceSide: plan.rebalanceSide || null,
-        plannedRebalanceUsdc: plan.plannedRebalanceUsdc,
-        plannedHedgeUsdc: plan.plannedHedgeUsdc,
-        plannedSpendUsdc: plan.plannedSpendUsdc,
-        hedgeTokenSide: snapshot.actionPlan && snapshot.actionPlan.hedgeTokenSide ? snapshot.actionPlan.hedgeTokenSide : null,
-        hedgeOrderSide: snapshot.actionPlan && snapshot.actionPlan.hedgeOrderSide ? snapshot.actionPlan.hedgeOrderSide : null,
-        hedgeExecutionMode: snapshot.actionPlan && snapshot.actionPlan.hedgeExecutionMode ? snapshot.actionPlan.hedgeExecutionMode : null,
-      },
+      plan: buildModeledActionSummary(plan, snapshot, snapshotMetrics),
     });
 
     if (!lockAttempt.acquired) {
@@ -751,6 +765,7 @@ async function processTriggeredAction(params) {
   }
 
   const action = buildExecutableAction({ options, idempotencyKey, gate });
+  action.model = buildModeledActionSummary(plan, snapshot, snapshotMetrics);
   action.startedAt = tickAt.toISOString();
   state.lastExecution = {
     mode: action.mode,
@@ -759,6 +774,7 @@ async function processTriggeredAction(params) {
     startedAt: tickAt.toISOString(),
     lockFile: livePendingLock ? livePendingLock.lockFile : null,
     lockNonce: livePendingLock ? livePendingLock.lockNonce || null : null,
+    model: action.model,
   };
   saveState(loadedFilePath, state);
 

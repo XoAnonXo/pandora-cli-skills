@@ -1,6 +1,22 @@
 # Mirror Operations Guide
 
-Use this guide for `mirror browse|plan|deploy|verify|go|sync|status|pnl|audit|close`.
+Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close`, plus the related top-level `dashboard`, `fund-check`, and `explain` commands.
+
+## Canonical Batch 1 routing
+- `dashboard` is a standalone top-level command.
+  - it summarizes discovered mirror markets side-by-side.
+  - live enrichment is enabled by default; use `--no-live` when you only want state and daemon context.
+- `mirror dashboard` is the mirror-family version of that active-mirror summary surface.
+- `mirror drift` is a standalone command.
+  - use it for the dedicated drift/readiness surface without the full dashboard payload.
+- `mirror hedge-check` is a standalone command.
+  - use it for the dedicated hedge-gap/readiness surface without the full dashboard payload.
+- `mirror calc` is a standalone command.
+  - use it for exact Pandora target-percentage sizing plus the derived hedge inventory.
+  - use `mirror hedge-calc` only for offline sizing from explicit reserves or a resolved pair.
+- `fund-check` is a standalone command.
+  - use it when you need exact shortfalls and suggested next commands for live hedge readiness.
+  - use `pandora polymarket check` and `pandora polymarket balance` separately when you want the underlying readiness/balance surfaces without mirror aggregation.
 
 ## Non-negotiable operator rules
 - `mirror plan|deploy|go` do **not** use a generic `+1h` assumption.
@@ -44,6 +60,7 @@ Use this guide for `mirror browse|plan|deploy|verify|go|sync|status|pnl|audit|cl
 - `POLYMARKET_FUNDER` / `--funder` must point at the Polymarket proxy wallet (Gnosis Safe), not the signer EOA.
 - Live CLOB collateral is Polygon USDC.e on that proxy wallet.
 - Use `pandora polymarket balance --funder <proxy>` before live sync to inspect signer and proxy balances.
+- Use `pandora fund-check` for the high-level mirror funding planner; use `pandora polymarket check` when you need the lower-level readiness surface that validates ownership, approvals, and RPC health directly.
 - Use `pandora polymarket deposit --amount-usdc <n> --dry-run|--execute` to move USDC.e from signer to proxy. `pandora polymarket withdraw` can preview moving funds back or to `--to`, but execute mode only works when the signer controls the source wallet; proxy-originated withdrawals typically require manual execution from the proxy wallet.
 - Treat proxy funding as a separate prerequisite from ETH-mainnet Pandora capital. A healthy Pandora signer balance does not mean the Polygon hedge wallet is funded.
 
@@ -153,7 +170,11 @@ pandora mirror verify \
 ### 7. Sync and inspect
 ```bash
 pandora mirror sync run --market-address <pandora-market> --polymarket-slug <slug> --paper
+pandora dashboard
+pandora mirror dashboard --with-live
 pandora mirror status --strategy-hash <hash> --with-live
+pandora mirror drift --market-address <pandora_market> --polymarket-market-id <poly_market_id>
+pandora mirror hedge-check --market-address <pandora_market> --polymarket-market-id <poly_market_id>
 pandora polymarket balance --funder <proxy-wallet>
 ```
 
@@ -175,16 +196,24 @@ pandora mirror audit --market-address <pandora_market> --polymarket-market-id <p
 - `mirror sync status` is the daemon-health surface.
   - key metadata fields are `status`, `alive`, `checkedAt`, `pidFile`, `logFile`, and `metadata.pidAlive`
   - stop responses also add `signalSent`, `forceKilled`, and `exitObserved`
-- `mirror status` is the persisted-state dashboard for a strategy hash or state file.
+- `mirror dashboard` is the canonical operator summary for active mirror markets discovered from local state and daemon metadata.
+  - `pandora dashboard` is the top-level convenience alias; it enables live enrichment by default and supports `--no-live`
+- `mirror status` is the persisted-state single-market dashboard for a strategy hash or state file, and it also supports selector-first lookup when persisted state is not available yet.
   - `runtime.health.status` can be `running`, `idle`, `blocked`, `degraded`, `stale`, or `error`
   - start with `runtime.health.code`, `runtime.health.message`, `runtime.health.heartbeatAgeMs`, `runtime.pendingAction`, `runtime.lastAction`, and `runtime.lastError`
   - `blocked` states such as `PENDING_ACTION_LOCK*` or `LAST_ACTION_REQUIRES_REVIEW` are fail-closed; reconcile before restarting or sending another live trade
   - `stale` means daemon metadata still reports alive but the heartbeat aged past threshold; inspect pid/log state before trusting it
-- `mirror status --with-live` is the live diagnostic surface for an existing mirror.
+- `mirror status --with-live` is the live diagnostic surface for an existing mirror, whether it was resolved from persisted state or direct selectors.
   - `live.verifyDiagnostics` carries verify-time feed/match warnings
   - `live.polymarketPosition.diagnostics` carries balance/open-order visibility warnings instead of hard-failing when that view is partial
   - `--drift-trigger-bps`, `--hedge-trigger-usdc`, `--indexer-url`, `--timeout-ms`, and Polymarket host/mock overrides all apply to this live diagnostic projection path
   - the live payload also includes `sourceMarket`, `pandoraMarket`, `netPnlApproxUsdc`, `pnlApprox`, and `netDeltaApprox`
+- `mirror drift` is the dedicated live drift/readiness surface.
+  - use it when operators only need drift, trigger, rebalance-side, and cross-venue status.
+- `mirror hedge-check` is the dedicated live hedge-gap/readiness surface.
+  - use it when operators only need hedge target, current hedge, gap, trigger, and inventory context.
+- `mirror calc` is the exact target-percentage sizing surface.
+  - use it when operators need the required Pandora notional and derived hedge inventory for a target percentage instead of threshold-only alerts.
   - `netPnlApproxUsdc` is cumulative LP fees approx minus cumulative hedge cost approx; `pnlApprox` adds marked Polymarket inventory; `pnlScenarios` projects current token payouts under each outcome
   - these are operator estimates, not realized closeout proceeds, a full cross-chain trade ledger, or tax-ready accounting
   - use `history`, `export`, `operations` receipts, and `polymarket balance` when you need reconciliation beyond the status dashboard

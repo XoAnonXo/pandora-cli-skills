@@ -80,7 +80,7 @@ Notes:
   - `benchmark-runner`
 - if the runtime cannot resolve a home directory, pass `--auth-token` or `--auth-token-file` explicitly instead of relying on auto-generated storage
 - use `--public-base-url` when the bind address is not the public URL agents should see
-- the full read-only planning scope set above covers `help`, `capabilities`, `schema`, `policy.*`, `profile.*`, `operations.list|get`, plus `scan`, `quote`, `portfolio`, `mirror.plan`, and `sports.create.plan`
+- the full read-only planning scope set above covers `help`, `capabilities`, `schema`, `policy.*`, `profile.*`, `operations.list|get`, plus `scan`, `quote`, `portfolio`, `sports schedule`, `sports scores`, `mirror.plan`, and `sports.create.plan`
 - if you omit `--auth-scopes`, Pandora now defaults to a conservative bootstrap scope set: `capabilities:read,contracts:read,help:read,schema:read,operations:read`
 - if you only need catalog bootstrap, use that same conservative scope set explicitly
 - add `operations:write` only when the remote runtime must call `operations.cancel` or `operations.close`; over MCP those mutating calls also require `intent.execute=true`
@@ -245,6 +245,23 @@ pandora scan --output json --limit 10
 ```bash
 pandora quote --output json --market-address 0x... --side yes --amount-usdc 25
 ```
+
+## Canonical routing for common requested names
+
+- `pandora dashboard` is the top-level active-mirror dashboard.
+  - it summarizes discovered mirror contexts side-by-side and enables live enrichment unless you pass `--no-live`.
+- `pandora mirror dashboard` is the mirror-family version of that operator summary.
+- `pandora mirror drift` and `pandora mirror hedge-check` are standalone commands.
+  - use them when you want narrower live drift or hedge-gap surfaces than the full dashboard.
+- `pandora mirror calc` is the exact target-percentage sizing command.
+  - use it when you need precise Pandora notional plus derived hedge inventory.
+  - use `pandora mirror hedge-calc` only for offline sizing from explicit reserves or a resolved pair.
+- `quote --target-pct` is part of the quote contract for AMM buy quotes.
+  - it is mutually exclusive with explicit buy amounts; `--yes-pct` only overrides odds.
+- `pandora markets mine` is the owned-exposure discovery command.
+  - use `pandora markets list --creator <address>` or `pandora scan --creator <address>` only for creator-scoped discovery.
+- `pandora fund-check` is the aggregated hedge-readiness command.
+  - use `pandora polymarket check` for readiness and `pandora polymarket balance` for raw signer/proxy balances when you want the underlying granular surfaces.
 
 ### Portfolio and closeout
 ```bash

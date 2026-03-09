@@ -1,4 +1,9 @@
 const { computeDistributionHint, normalizeProbability } = require('./mirror_sizing_service.cjs');
+const {
+  deriveYesPctFromReserves,
+  simulateDirectionalSwap,
+  solveVolumeForTargetYesPct,
+} = require('./amm_target_pct_service.cjs');
 const { round, clamp, toOptionalNumber } = require('./shared/utils.cjs');
 
 const MIRROR_LP_EXPLAIN_SCHEMA_VERSION = '1.0.0';
@@ -80,15 +85,6 @@ function resolveDistribution(options = {}) {
   };
 }
 
-function deriveYesPctFromReserves(reserveYesUsdc, reserveNoUsdc) {
-  const yesReserve = toOptionalNumber(reserveYesUsdc);
-  const noReserve = toOptionalNumber(reserveNoUsdc);
-  if (yesReserve === null || noReserve === null) return null;
-  const total = yesReserve + noReserve;
-  if (!Number.isFinite(total) || total <= 0) return null;
-  return round((noReserve / total) * 100, 6);
-}
-
 function computeCompleteSetAllocation(options = {}) {
   const liquidityRaw = toRawUsdc(options.liquidityUsdc);
   if (liquidityRaw === null || liquidityRaw <= 0n) {
@@ -147,118 +143,6 @@ function computeCompleteSetAllocation(options = {}) {
     totalNoUsdc: rawUsdcToNumber(totalNoRaw),
     neutralCompleteSets: totalYesRaw === totalNoRaw,
   };
-}
-
-function simulateDirectionalSwap(options = {}) {
-  const reserveYes = Math.max(0, toOptionalNumber(options.reserveYesUsdc) || 0);
-  const reserveNo = Math.max(0, toOptionalNumber(options.reserveNoUsdc) || 0);
-  const volumeUsdc = Math.max(0, toOptionalNumber(options.volumeUsdc) || 0);
-  const feeTier = Number.isFinite(Number(options.feeTier)) ? Number(options.feeTier) : 3000;
-  const feeRate = clamp(feeTier / 1_000_000, 0, 0.1);
-  const side = String(options.side || 'none').toLowerCase();
-
-  if (side !== 'yes' && side !== 'no') {
-    return {
-      side: 'none',
-      volumeUsdc: round(volumeUsdc, 6),
-      feeTier,
-      feeRate: round(feeRate, 8),
-      feesEarnedUsdc: 0,
-      outputShares: 0,
-      reserveYesUsdc: round(reserveYes, 6),
-      reserveNoUsdc: round(reserveNo, 6),
-      postYesPct: deriveYesPctFromReserves(reserveYes, reserveNo),
-    };
-  }
-
-  const effectiveIn = volumeUsdc * (1 - feeRate);
-  const feesEarnedUsdc = volumeUsdc - effectiveIn;
-
-  if (side === 'yes') {
-    const denominator = reserveNo + effectiveIn;
-    const outputYes = denominator > 0 ? (reserveYes * effectiveIn) / denominator : 0;
-    const postReserveYes = Math.max(0, reserveYes - outputYes);
-    const postReserveNo = reserveNo + effectiveIn;
-    return {
-      side,
-      volumeUsdc: round(volumeUsdc, 6),
-      feeTier,
-      feeRate: round(feeRate, 8),
-      feesEarnedUsdc: round(feesEarnedUsdc, 6),
-      outputShares: round(outputYes, 6),
-      reserveYesUsdc: round(postReserveYes, 6),
-      reserveNoUsdc: round(postReserveNo, 6),
-      postYesPct: deriveYesPctFromReserves(postReserveYes, postReserveNo),
-    };
-  }
-
-  const denominator = reserveYes + effectiveIn;
-  const outputNo = denominator > 0 ? (reserveNo * effectiveIn) / denominator : 0;
-  const postReserveNo = Math.max(0, reserveNo - outputNo);
-  const postReserveYes = reserveYes + effectiveIn;
-  return {
-    side,
-    volumeUsdc: round(volumeUsdc, 6),
-    feeTier,
-    feeRate: round(feeRate, 8),
-    feesEarnedUsdc: round(feesEarnedUsdc, 6),
-    outputShares: round(outputNo, 6),
-    reserveYesUsdc: round(postReserveYes, 6),
-    reserveNoUsdc: round(postReserveNo, 6),
-    postYesPct: deriveYesPctFromReserves(postReserveYes, postReserveNo),
-  };
-}
-
-function solveVolumeForTargetYesPct(options = {}) {
-  const targetYesPct = toPercent(options.targetYesPct);
-  const reserveYesUsdc = toOptionalNumber(options.reserveYesUsdc);
-  const reserveNoUsdc = toOptionalNumber(options.reserveNoUsdc);
-  const feeTier = Number.isFinite(Number(options.feeTier)) ? Number(options.feeTier) : 3000;
-
-  if (targetYesPct === null || reserveYesUsdc === null || reserveNoUsdc === null) {
-    return null;
-  }
-
-  const initialYesPct = deriveYesPctFromReserves(reserveYesUsdc, reserveNoUsdc);
-  if (initialYesPct === null) return null;
-  if (Math.abs(initialYesPct - targetYesPct) <= 0.01) return 0;
-
-  const side = targetYesPct > initialYesPct ? 'yes' : 'no';
-  const directionCheck = (yesPct) => (side === 'yes' ? yesPct >= targetYesPct : yesPct <= targetYesPct);
-  const f = (volumeUsdc) =>
-    simulateDirectionalSwap({
-      reserveYesUsdc,
-      reserveNoUsdc,
-      side,
-      volumeUsdc,
-      feeTier,
-    }).postYesPct;
-
-  let lo = 0;
-  let hi = Math.max(1, reserveYesUsdc + reserveNoUsdc);
-  let yesAtHi = f(hi);
-  let iterations = 0;
-  while (!directionCheck(yesAtHi) && iterations < 32) {
-    hi *= 2;
-    yesAtHi = f(hi);
-    iterations += 1;
-  }
-
-  if (!directionCheck(yesAtHi)) {
-    return null;
-  }
-
-  for (let i = 0; i < 56; i += 1) {
-    const mid = (lo + hi) / 2;
-    const yesAtMid = f(mid);
-    if (directionCheck(yesAtMid)) {
-      hi = mid;
-    } else {
-      lo = mid;
-    }
-  }
-
-  return round(hi, 6);
 }
 
 function normalizeVolumeScenarios(value, liquidityUsdc) {

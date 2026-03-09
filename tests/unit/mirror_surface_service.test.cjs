@@ -218,3 +218,50 @@ test('buildMirrorAuditPayload falls back to top-level execution failure counts w
   assert.equal(payload.ledger.entries[0].classification, 'sync-action');
   assert.equal(payload.ledger.entries[0].status, 'failed');
 });
+
+test('buildMirrorAuditPayload preserves modeled execution metadata on state fallback entries', () => {
+  const payload = buildMirrorAuditPayload({
+    stateFile: '/tmp/mirror-state.json',
+    strategyHash: 'feedfacecafebeef',
+    selector: {
+      pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+      polymarketMarketId: 'poly-cond-1',
+    },
+    state: {
+      lastExecution: {
+        mode: 'live',
+        status: 'executed',
+        idempotencyKey: 'bucket-2',
+        startedAt: '2026-03-09T09:58:00.000Z',
+        completedAt: '2026-03-09T10:00:00.000Z',
+        model: {
+          plannedRebalanceUsdc: 12.5,
+          plannedHedgeUsdc: 7.25,
+          plannedSpendUsdc: 19.75,
+          rebalanceSide: 'yes',
+          hedgeTokenSide: 'no',
+          hedgeOrderSide: 'buy',
+          hedgeExecutionMode: 'buy',
+          reserveSource: 'on-chain',
+          rebalanceSizingMode: 'atomic',
+          rebalanceTargetUsdc: 12.5,
+        },
+      },
+    },
+  });
+
+  const syncEntry = payload.ledger.entries.find((entry) => entry.classification === 'sync-action');
+  assert.ok(syncEntry);
+  assert.deepEqual(syncEntry.details.model, {
+    plannedRebalanceUsdc: 12.5,
+    plannedHedgeUsdc: 7.25,
+    plannedSpendUsdc: 19.75,
+    rebalanceSide: 'yes',
+    hedgeTokenSide: 'no',
+    hedgeOrderSide: 'buy',
+    hedgeExecutionMode: 'buy',
+    reserveSource: 'on-chain',
+    rebalanceSizingMode: 'atomic',
+    rebalanceTargetUsdc: 12.5,
+  });
+});

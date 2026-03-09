@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { loadSportsModelInput } = require('./sports_model_input_service.cjs');
+const { buildSportsSchedulePayload, buildSportsScoresPayload } = require('./sports_read_surface_service.cjs');
 const { isMcpMode } = require('./shared/mcp_path_guard.cjs');
 
 function requireDep(deps, name) {
@@ -13,7 +14,7 @@ function requireDep(deps, name) {
 }
 
 const SPORTS_USAGE =
-  'pandora [--output table|json] sports books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]';
+  'pandora [--output table|json] sports schedule|scores|books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]';
 const BULK_ODDS_CACHE_SCHEMA_VERSION = '1.1.0';
 const BULK_ODDS_TTL_GT_24H_MS = 5 * 60_000;
 const BULK_ODDS_TTL_GT_1H_MS = 60_000;
@@ -507,6 +508,104 @@ function toConsensusQuotes(oddsPayload, selection, tier1Books) {
     .filter(Boolean);
 }
 
+async function resolveSportsScoreEntries(providerRegistry, options = {}) {
+  if (options.eventId) {
+    const diagnostics = [];
+    let status = null;
+    let event = null;
+    try {
+      status = await providerRegistry.getEventStatus(options.eventId, {
+        providerMode: options.provider,
+        timeoutMs: options.timeoutMs,
+      });
+    } catch (reason) {
+      diagnostics.push({
+        code: reason && reason.code ? String(reason.code) : 'SPORTS_STATUS_UNAVAILABLE',
+        eventId: options.eventId,
+        message: reason && reason.message ? reason.message : 'Failed to refresh event status; falling back to schedule fields.',
+      });
+      try {
+        const fallbackSchedule = await providerRegistry.listEvents({
+          providerMode: options.provider,
+          competitionId: options.competition,
+          from: options.kickoffAfter,
+          to: options.kickoffBefore,
+          status: options.liveOnly ? 'live' : null,
+          limit: options.limit,
+          timeoutMs: options.timeoutMs,
+        });
+        const fallbackEvents = Array.isArray(fallbackSchedule.events) ? fallbackSchedule.events : [];
+        event = fallbackEvents.find((item) => String(item && item.id) === String(options.eventId)) || null;
+        return {
+          provider: fallbackSchedule.provider || options.provider || 'auto',
+          mode: fallbackSchedule.mode || options.provider || 'auto',
+          entries: [{ event, status: null }],
+          diagnostics,
+        };
+      } catch (fallbackReason) {
+        diagnostics.push({
+          code: fallbackReason && fallbackReason.code ? String(fallbackReason.code) : 'SPORTS_SCHEDULE_FALLBACK_FAILED',
+          eventId: options.eventId,
+          message: fallbackReason && fallbackReason.message ? fallbackReason.message : 'Failed to refresh fallback schedule fields.',
+        });
+      }
+    }
+    return {
+      provider: (status && status.provider) || options.provider || 'auto',
+      mode: (status && status.mode) || options.provider || 'auto',
+      entries: [{ event, status }],
+      diagnostics,
+    };
+  }
+
+  const eventsPayload = await providerRegistry.listEvents({
+    providerMode: options.provider,
+    competitionId: options.competition,
+    from: options.kickoffAfter,
+    to: options.kickoffBefore,
+    status: options.liveOnly ? 'live' : null,
+    limit: options.limit,
+    timeoutMs: options.timeoutMs,
+  });
+
+  const events = Array.isArray(eventsPayload.events) ? eventsPayload.events : [];
+  const settled = await Promise.allSettled(
+    events.map((event) => providerRegistry.getEventStatus(event.id, {
+      providerMode: options.provider,
+      timeoutMs: options.timeoutMs,
+    })),
+  );
+
+  const diagnostics = [];
+  const entries = events.map((event, index) => {
+    const result = settled[index];
+    if (result && result.status === 'fulfilled') {
+      return {
+        event,
+        status: result.value,
+      };
+    }
+
+    const reason = result && result.reason ? result.reason : null;
+    diagnostics.push({
+      code: reason && reason.code ? String(reason.code) : 'SPORTS_STATUS_UNAVAILABLE',
+      eventId: event.id,
+      message: reason && reason.message ? reason.message : 'Failed to refresh event status; falling back to schedule fields.',
+    });
+    return {
+      event,
+      status: null,
+    };
+  });
+
+  return {
+    provider: eventsPayload.provider || options.provider || 'auto',
+    mode: eventsPayload.mode || options.provider || 'auto',
+    entries,
+    diagnostics,
+  };
+}
+
 function renderSportsTable(payload) {
   if (!payload || typeof payload !== 'object') {
     console.log('No data');
@@ -528,6 +627,38 @@ function renderSportsTable(payload) {
         status: item.status,
       })),
     );
+    return;
+  }
+
+  if (Array.isArray(payload.schedule)) {
+    console.table(
+      payload.schedule.map((item) => ({
+        eventId: item.eventId,
+        home: item.homeTeam,
+        away: item.awayTeam,
+        kickoffAt: item.kickoffAt,
+        status: item.status,
+      })),
+    );
+    return;
+  }
+
+  if (Array.isArray(payload.scores)) {
+    console.table(
+      payload.scores.map((item) => ({
+        eventId: item.eventId,
+        home: item.homeTeam,
+        away: item.awayTeam,
+        homeScore: item.homeScore,
+        awayScore: item.awayScore,
+        score: item.score,
+        status: item.status,
+        updatedAt: item.updatedAt,
+      })),
+    );
+    if (Array.isArray(payload.diagnostics) && payload.diagnostics.length) {
+      console.log(`diagnostics: ${payload.diagnostics.map((item) => item && item.message ? item.message : JSON.stringify(item)).join(' | ')}`);
+    }
     return;
   }
 
@@ -610,6 +741,26 @@ function createRunSportsCommand(deps) {
         health,
         books: options.bookPriority || null,
       }, renderSportsTable);
+      return;
+    }
+
+    if (parsed.command === 'sports.schedule') {
+      const payload = await providerRegistry.listEvents({
+        providerMode: options.provider,
+        competitionId: options.competition,
+        from: options.kickoffAfter,
+        to: options.kickoffBefore,
+        status: null,
+        limit: options.limit,
+        timeoutMs: options.timeoutMs,
+      });
+      emitSuccess(context.outputMode, parsed.command, buildSportsSchedulePayload(payload, options), renderSportsTable);
+      return;
+    }
+
+    if (parsed.command === 'sports.scores') {
+      const payload = await resolveSportsScoreEntries(providerRegistry, options);
+      emitSuccess(context.outputMode, parsed.command, buildSportsScoresPayload(payload, options), renderSportsTable);
       return;
     }
 

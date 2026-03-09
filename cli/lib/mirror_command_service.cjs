@@ -15,7 +15,7 @@ const MIRROR_SYNC_USAGE =
   'pandora [--output table|json] mirror sync once|run|start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]';
 
 const INVALID_SUBCOMMAND_MESSAGE =
-  'mirror requires subcommand: browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|pnl|audit|close';
+  'mirror requires subcommand: browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close';
 
 /**
  * Build the `mirror` subcommand dispatcher with lazy-loaded action handlers.
@@ -37,12 +37,20 @@ function createRunMirrorCommand(deps) {
     verify: () => require('./mirror_handlers/verify.cjs'),
     'lp-explain': () => require('./mirror_handlers/lp_explain.cjs'),
     'hedge-calc': () => require('./mirror_handlers/hedge_calc.cjs'),
+    calc: () => require('./mirror_handlers/calc.cjs'),
     simulate: () => require('./mirror_handlers/simulate.cjs'),
     go: () => require('./mirror_handlers/go.cjs'),
     sync: () => require('./mirror_handlers/sync.cjs'),
+    dashboard: () => require('./mirror_handlers/dashboard.cjs'),
     status: () => require('./mirror_handlers/status.cjs'),
+    health: () => require('./mirror_handlers/health.cjs'),
+    panic: () => require('./mirror_handlers/panic.cjs'),
+    drift: () => require('./mirror_handlers/drift.cjs'),
+    'hedge-check': () => require('./mirror_handlers/hedge_check.cjs'),
     pnl: () => require('./mirror_handlers/pnl.cjs'),
     audit: () => require('./mirror_handlers/audit.cjs'),
+    replay: () => require('./mirror_handlers/replay.cjs'),
+    logs: () => require('./mirror_handlers/logs.cjs'),
     close: () => require('./mirror_handlers/close.cjs'),
   };
   const handlerCache = new Map();
@@ -83,8 +91,9 @@ function createRunMirrorCommand(deps) {
           context.outputMode,
           'mirror.help',
           commandHelpPayload(
-            'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|pnl|audit|close ...',
+            'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
             [
+              'mirror dashboard is the canonical operator summary for active mirror markets; top-level `pandora dashboard` is a convenience alias.',
               'mirror go and mirror sync stay in paper/simulated mode unless --execute-live or --execute is supplied.',
               'Mirror sync simulates or executes Pandora rebalance and Polymarket hedge as separate legs; cross-venue settlement is not atomic.',
               'Use --rebalance-mode atomic with --price-source on-chain to size one Pandora rebalance against live reserves instead of incremental drift nudges.',
@@ -94,14 +103,18 @@ function createRunMirrorCommand(deps) {
               'Use --polymarket-rpc-url when Polygon preflight should differ from the main --rpc-url; comma-separated fallbacks are tried in order during live preflight.',
               'Polymarket outage fallback reuses cached snapshots under ~/.pandora/polymarket in paper mode; live mode blocks cached or stale sources through POLYMARKET_SOURCE_FRESH and expects websocket-backed prices for short-interval sports sync.',
               'mirror sync status reports daemon health metadata such as status, alive, checkedAt, pidFile, logFile, and metadata.pidAlive.',
+              'mirror health is the machine-usable daemon/runtime status shell; mirror panic engages the global risk panic plus mirror stop-file and daemon-stop emergency flow.',
+              'mirror drift and mirror hedge-check are dedicated read surfaces for operator actionability: drift isolates drift/cross-venue status, while hedge-check isolates current hedge target, gap, and trigger state.',
+              'mirror logs tails the daemon log file resolved from a state file, strategy hash, or Pandora market selector when daemon metadata exists.',
               'mirror status always includes runtime/daemon health when strategy metadata is available, and --with-live adds crossVenue, actionability, pnlScenarios, verifyDiagnostics, and polymarketPosition.diagnostics while degrading partial visibility into diagnostics instead of hard failures; mirror close runs stop-daemons -> withdraw-lp -> claim-winnings, while Polymarket hedge settlement remains manual.',
               'mirror pnl is the dedicated cross-venue scenario P&L surface; mirror audit classifies persisted lastExecution plus recent runtime alerts, with optional live context via --with-live.',
+              'mirror replay stays read-only and compares modeled rebalance/hedge sizing against persisted execution outcomes from the append-only audit log or lastExecution fallback.',
             ],
           ),
         );
       } else {
         console.log(
-          'Usage: pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|simulate|go|sync|status|pnl|audit|close ...',
+          'Usage: pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
         );
         console.log('');
         console.log('Subcommands:');
@@ -124,6 +137,9 @@ function createRunMirrorCommand(deps) {
           '  hedge-calc [--reserve-yes-usdc <n> --reserve-no-usdc <n>] [--excess-yes-usdc <n>] [--excess-no-usdc <n>] [--polymarket-yes-pct <0-100>] [--hedge-ratio <n>] [--hedge-cost-bps <n>] [--volume-scenarios <csv>] [--pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>]',
         );
         console.log(
+          '  calc   --target-pct <0-100> --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+        );
+        console.log(
           '  simulate --liquidity-usdc <n> [--source-yes-pct <0-100>] [--target-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>] [--fee-tier <500-50000>] [--volume-scenarios <csv>] [--hedge-ratio <n>] [--polymarket-yes-pct <0-100>]',
         );
         console.log(
@@ -135,7 +151,22 @@ function createRunMirrorCommand(deps) {
         console.log('         stop selector: --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all');
         console.log('         status selector: --pid-file <path>|--strategy-hash <hash>');
         console.log(
+          '  dashboard [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+        );
+        console.log(
           '  status --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+        );
+        console.log(
+          '  health --state-file <path>|--strategy-hash <hash>|--pid-file <path>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--stale-after-ms <ms>]',
+        );
+        console.log(
+          '  panic  --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all [--risk-file <path>] [--reason <text>] [--actor <id>] [--clear]',
+        );
+        console.log(
+          '  drift  --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+        );
+        console.log(
+          '  hedge-check --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
         );
         console.log(
           '  pnl    --state-file <path>|--strategy-hash <hash> [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
@@ -144,10 +175,17 @@ function createRunMirrorCommand(deps) {
           '  audit  --state-file <path>|--strategy-hash <hash> [--with-live] [--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
         );
         console.log(
+          '  replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]',
+        );
+        console.log(
+          '  logs   --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>]',
+        );
+        console.log(
           '  close  --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]',
         );
         console.log('');
         console.log('Notes:');
+        console.log('  mirror dashboard is the canonical operator summary for active mirror markets; `pandora dashboard` is a top-level alias.');
         console.log('  mirror go and mirror sync stay in paper/simulated mode unless --execute-live or --execute is supplied.');
         console.log('  Mirror sync runs Pandora rebalance and Polymarket hedge as separate legs; cross-venue settlement is not atomic.');
         console.log('  mirror sync snapshots and actions expose reserveSource, rebalanceSizingMode, and rebalanceTargetUsdc so reserve provenance is explicit.');
@@ -156,8 +194,12 @@ function createRunMirrorCommand(deps) {
         console.log('  Use --polymarket-rpc-url when Polygon preflight should differ from the main --rpc-url; comma-separated fallbacks are tried in order.');
         console.log('  Polymarket outage fallback reuses cached snapshots under ~/.pandora/polymarket in paper mode; live mode blocks cached or stale sources and expects websocket-backed prices for short-interval sports sync.');
         console.log('  mirror sync status reports daemon health metadata such as status, alive, checkedAt, pidFile, logFile, and metadata.pidAlive.');
+        console.log('  mirror health is the machine-usable daemon/runtime status shell; mirror panic engages the global risk panic plus mirror stop-file and daemon-stop emergency flow.');
+        console.log('  mirror drift and mirror hedge-check are dedicated read surfaces for drift and hedge-gap actionability without the full mirror status payload.');
+        console.log('  mirror logs returns tailed daemon log lines from a state file, strategy hash, or Pandora market selector when daemon metadata can identify the log file.');
         console.log('  mirror status includes runtime/daemon health when strategy metadata is available; --with-live adds crossVenue, actionability, pnlScenarios, verifyDiagnostics, and polymarketPosition.diagnostics.');
         console.log('  mirror pnl is the dedicated cross-venue scenario P&L view; mirror audit classifies persisted lastExecution plus recent runtime alerts and can attach live context with --with-live.');
+        console.log('  mirror replay stays read-only and compares modeled rebalance/hedge sizing against persisted execution outcomes from the append-only audit log or lastExecution fallback.');
         console.log('  mirror close runs stop-daemons -> withdraw-lp -> claim-winnings; Polymarket hedge settlement remains manual.');
       }
       return;

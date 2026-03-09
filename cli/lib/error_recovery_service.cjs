@@ -152,6 +152,57 @@ function buildLifecycleStartCommand(cliName, details) {
   return `${cliName} lifecycle start --config ${configPath}`;
 }
 
+function buildContextArgs(details = {}, options = {}) {
+  const args = [];
+  const commandName = cleanToken(
+    options.commandName
+      || details.command
+      || details.commandName
+      || details.tool
+      || details.toolName,
+    '',
+  );
+  const mode = cleanToken(options.mode || details.mode, '');
+  const chainId = cleanToken(options.chainId || details.chainId, '');
+  const category = cleanToken(options.category || details.category || details.categoryName, '');
+  const includePolicyId = options.includePolicyId !== false;
+  const includeProfileId = options.includeProfileId !== false;
+  const policyId = includePolicyId ? cleanToken(options.policyId || details.policyId, '') : '';
+  const profileId = includeProfileId ? cleanToken(options.profileId || details.profileId, '') : '';
+
+  if (commandName) args.push(`--command ${commandName}`);
+  if (mode) args.push(`--mode ${mode}`);
+  if (chainId) args.push(`--chain-id ${chainId}`);
+  if (category) args.push(`--category ${category}`);
+  if (policyId) args.push(`--policy-id ${policyId}`);
+  if (profileId) args.push(`--profile-id ${profileId}`);
+  return args;
+}
+
+function buildPolicyCommand(cliName, details = {}, preferredId = null) {
+  const policyId = cleanToken(preferredId || details.policyId || details.id, '');
+  const contextArgs = buildContextArgs(details, { includePolicyId: false });
+  if (policyId) {
+    return `${cliName} --output json policy explain --id ${policyId}${contextArgs.length ? ` ${contextArgs.join(' ')}` : ''}`;
+  }
+  if (contextArgs.length) {
+    return `${cliName} --output json policy recommend ${contextArgs.join(' ')}`;
+  }
+  return `${cliName} --output json policy list`;
+}
+
+function buildProfileCommand(cliName, details = {}, preferredId = null) {
+  const profileId = cleanToken(preferredId || details.profileId || details.id, '');
+  const contextArgs = buildContextArgs(details, { includeProfileId: false });
+  if (profileId) {
+    return `${cliName} --output json profile explain --id ${profileId}${contextArgs.length ? ` ${contextArgs.join(' ')}` : ''}`;
+  }
+  if (contextArgs.length) {
+    return `${cliName} --output json profile recommend ${contextArgs.join(' ')}`;
+  }
+  return `${cliName} --output json profile list`;
+}
+
 function buildOddsRecordCommand(cliName, details) {
   const competition = cleanToken(details && details.competition, '<competition>');
   return `${cliName} odds record --competition ${competition} --interval 60 --max-samples 1`;
@@ -194,19 +245,221 @@ function buildModelDiagnoseCommand(cliName) {
   return `${cliName} model diagnose --help`;
 }
 
+function normalizeErrorLike(errorLike) {
+  if (typeof errorLike === 'string') {
+    return {
+      code: cleanToken(errorLike, ''),
+      message: null,
+      details: {},
+    };
+  }
+
+  const source = errorLike && typeof errorLike === 'object' ? errorLike : {};
+  const details =
+    source.details && typeof source.details === 'object' && !Array.isArray(source.details)
+      ? source.details
+      : {};
+
+  return {
+    code: cleanToken(source.code, ''),
+    message: cleanToken(source.message, '') || null,
+    details,
+  };
+}
+
+function deriveErrorCategory(code) {
+  const normalized = cleanToken(code, '').toUpperCase();
+  if (!normalized) return 'unknown';
+  if (normalized === 'UNEXPECTED_ERROR') return 'internal';
+  if (
+    normalized === 'MISSING_REQUIRED_FLAG'
+    || normalized === 'MISSING_FLAG_VALUE'
+    || normalized === 'INVALID_FLAG_VALUE'
+    || normalized === 'UNKNOWN_FLAG'
+    || normalized === 'INVALID_ARGS'
+    || normalized === 'INVALID_USAGE'
+    || normalized === 'INVALID_OUTPUT_MODE'
+    || normalized === 'UNSUPPORTED_OUTPUT_MODE'
+    || normalized === 'UNKNOWN_COMMAND'
+  ) {
+    return 'usage';
+  }
+  if (normalized.startsWith('RISK_') || normalized === 'ERR_RISK_LIMIT') return 'risk';
+  if (normalized.startsWith('MIRROR_')) return 'mirror';
+  if (normalized.startsWith('POLYMARKET_')) return 'polymarket';
+  if (normalized.startsWith('MCP_')) return 'mcp';
+  if (normalized.startsWith('SPORTS_')) return 'sports';
+  if (normalized.startsWith('LIFECYCLE_')) return 'lifecycle';
+  if (normalized.startsWith('ODDS_')) return 'odds';
+  if (normalized.startsWith('SIMULATE_')) return 'simulate';
+  if (normalized.startsWith('MODEL_') || normalized.startsWith('BRIER_') || normalized.startsWith('FORECAST_')) {
+    return 'model';
+  }
+  if (normalized.startsWith('TRADE_') || normalized.startsWith('APPROVE_')) return 'trade';
+  if (normalized.startsWith('RESOLVE_')) return 'resolve';
+  if (normalized.startsWith('CLAIM_')) return 'claim';
+  if (normalized.startsWith('POLICY_')) return 'policy';
+  if (normalized.startsWith('PROFILE_')) return 'profile';
+  if (normalized.startsWith('RECIPE_')) return 'recipe';
+  return 'unknown';
+}
+
+function inferCategoryFromMessage(message) {
+  const normalized = cleanToken(message, '').toLowerCase();
+  if (!normalized) return 'unknown';
+  if (/^risk requires subcommand:/.test(normalized)) return 'risk';
+  if (/^policy /.test(normalized) || normalized.includes('policy pack')) return 'policy';
+  if (/^profile /.test(normalized) || normalized.includes('signer profile')) return 'profile';
+  if (/^mirror requires subcommand:/.test(normalized)) return 'mirror';
+  return 'unknown';
+}
+
+function buildExplanationSummary(code, details = {}) {
+  const normalized = cleanToken(code, '').toUpperCase();
+  switch (normalized) {
+    case 'RISK_PANIC_ACTIVE':
+    case 'RISK_KILL_SWITCH_ACTIVE':
+      return 'The global risk panic lock is active, so live writes are intentionally blocked until the lock is cleared.';
+    case 'ERR_RISK_LIMIT':
+    case 'RISK_GUARDRAIL_BLOCKED':
+      if (cleanToken(details.guardrail, '')) {
+        return `Risk guardrail ${details.guardrail} blocked the requested live action.`;
+      }
+      return 'A risk guardrail blocked the requested live action.';
+    case 'MIRROR_GO_VERIFY_PENDING':
+      return 'The mirror pair already exists, so deployment should stop and verification should be retried against the deployed market.';
+    case 'MCP_LONG_RUNNING_MODE_BLOCKED':
+      return 'The requested MCP tool was rejected because it is long-running or daemon-like and must be replaced with a bounded command.';
+    case 'UNEXPECTED_ERROR':
+      return 'The CLI hit an unexpected internal failure and could not classify it into a stable command error family.';
+    default:
+      break;
+  }
+
+  switch (deriveErrorCategory(normalized)) {
+    case 'usage':
+      return 'The CLI invocation is incomplete, contradictory, or uses an unsupported flag/command combination.';
+    case 'risk':
+      return 'A risk-state lock or guardrail blocked execution.';
+    case 'mirror':
+      return 'A mirror validation, deployment, or sync step failed and should be retried through the suggested bounded surface.';
+    case 'polymarket':
+      return 'A Polymarket wallet, approval, market-resolution, or trade preflight step failed.';
+    case 'mcp':
+      return 'An MCP policy, validation, or tool-shape constraint blocked the request.';
+    case 'sports':
+      return 'A sportsbook/provider read or sports workflow safety check failed.';
+    case 'lifecycle':
+      return 'A lifecycle state transition or lifecycle lookup failed.';
+    case 'odds':
+      return 'An odds recording or history read path failed.';
+    case 'simulate':
+      return 'A simulation input or bounded simulation run failed validation.';
+    case 'model':
+      return 'A model, forecast, correlation, or calibration surface failed validation or artifact access.';
+    case 'trade':
+      return 'A trade or approval path failed during planning or execution.';
+    case 'resolve':
+      return 'A resolve flow failed because the caller, finalization window, or runtime prerequisites were not satisfied.';
+    case 'claim':
+      return 'A claim flow failed because the market, wallet, or runtime prerequisites were not satisfied.';
+    case 'policy':
+      return 'A policy surface rejected the requested execution context.';
+    case 'profile':
+      return 'A signer profile lookup, compatibility check, or runtime readiness check failed.';
+    case 'recipe':
+      return 'A recipe definition or recipe execution step failed validation.';
+    case 'internal':
+      return 'The CLI hit an unexpected internal failure.';
+    default:
+      return 'No canonical explanation is registered for this error code yet.';
+  }
+}
+
+function buildExplanationDiagnostics(details = {}) {
+  const diagnostics = [];
+  if (cleanToken(details.normalizedCode, '')) {
+    diagnostics.push({
+      code: 'NORMALIZED_CODE',
+      normalizedCode: cleanToken(details.normalizedCode, ''),
+    });
+  }
+  if (cleanToken(details.guardrail, '')) {
+    diagnostics.push({
+      code: 'GUARDRAIL',
+      guardrail: cleanToken(details.guardrail, ''),
+    });
+  }
+  if (cleanToken(details.riskFile, '')) {
+    diagnostics.push({
+      code: 'RISK_FILE',
+      riskFile: cleanToken(details.riskFile, ''),
+    });
+  }
+  if (cleanToken(details.toolName, '')) {
+    diagnostics.push({
+      code: 'TOOL_NAME',
+      toolName: cleanToken(details.toolName, ''),
+    });
+  }
+  return diagnostics;
+}
+
 /**
  * Build deterministic Next-Best-Action recovery hints for JSON errors.
  * @param {{cliName?: string}} [options]
- * @returns {{getRecoveryForError: (errorLike: any) => (null|{action: string, command: string, retryable: boolean})}}
+ * @returns {{getRecoveryForError: (errorLike: any) => (null|{action: string, command: string, retryable: boolean}), getExplanationForError: (errorLike: any) => object}}
  */
 function createErrorRecoveryService(options = {}) {
   const cliName = cleanToken(options.cliName, 'pandora');
 
   function getRecoveryForError(errorLike) {
     const code = cleanToken(errorLike && errorLike.code, '');
+    const normalizedCode = cleanToken(errorLike && errorLike.normalizedCode, code).toUpperCase();
+    const message = cleanToken(errorLike && errorLike.message, '');
     const details = errorLike && typeof errorLike.details === 'object' && errorLike.details ? errorLike.details : {};
 
-    switch (code) {
+    if (normalizedCode.startsWith('POLICY_')) {
+      return {
+        action: 'Inspect the policy decision surface and use a compatible policy or execution mode.',
+        command: buildPolicyCommand(cliName, details),
+        retryable: true,
+      };
+    }
+
+    if (normalizedCode.startsWith('PROFILE_')) {
+      return {
+        action: 'Inspect profile compatibility/readiness and use a compatible signer profile or execution context.',
+        command: buildProfileCommand(cliName, details),
+        retryable: true,
+      };
+    }
+
+    if (!normalizedCode && message) {
+      if (/^risk requires subcommand:/i.test(message)) {
+        return {
+          action: 'Retry with a concrete risk subcommand instead of the family root.',
+          command: buildRiskShowCommand(cliName, details),
+          retryable: true,
+        };
+      }
+      if (/^policy requires subcommand:/i.test(message)) {
+        return {
+          action: 'Retry with a concrete policy subcommand or ask for a recommendation for the target workflow.',
+          command: buildPolicyCommand(cliName, details),
+          retryable: true,
+        };
+      }
+      if (/^profile requires subcommand:/i.test(message)) {
+        return {
+          action: 'Retry with a concrete profile subcommand or request a compatible signer recommendation.',
+          command: buildProfileCommand(cliName, details),
+          retryable: true,
+        };
+      }
+    }
+
+    switch (normalizedCode) {
       case 'TRADE_RISK_GUARD':
         return {
           action: 'Adjust risk guard inputs',
@@ -533,6 +786,39 @@ function createErrorRecoveryService(options = {}) {
 
   return {
     getRecoveryForError,
+    getExplanationForError(errorLike) {
+      const normalized = normalizeErrorLike(errorLike);
+      const recovery = getRecoveryForError(normalized);
+      const normalizedCode = cleanToken(normalized.details && normalized.details.normalizedCode, normalized.code || null);
+      const category = deriveErrorCategory(normalizedCode || normalized.code) !== 'unknown'
+        ? deriveErrorCategory(normalizedCode || normalized.code)
+        : inferCategoryFromMessage(normalized.message);
+      const recognized = Boolean(recovery || (normalizedCode || normalized.code) && category !== 'unknown');
+
+      return {
+        code: normalized.code || null,
+        normalizedCode: normalizedCode || null,
+        message: normalized.message || null,
+        details: normalized.details,
+        recognized,
+        category,
+        summary: buildExplanationSummary(normalizedCode || normalized.code, normalized.details),
+        retryable: recovery ? recovery.retryable : null,
+        recovery,
+        remediation: recovery
+          ? [
+              {
+                type: 'run_command',
+                action: recovery.action,
+                command: recovery.command,
+                retryable: recovery.retryable,
+                canonical: true,
+              },
+            ]
+          : [],
+        diagnostics: buildExplanationDiagnostics(normalized.details),
+      };
+    },
   };
 }
 

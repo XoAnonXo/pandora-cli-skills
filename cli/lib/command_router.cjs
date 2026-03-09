@@ -2,6 +2,8 @@ const ROUTED_TOP_LEVEL_COMMANDS = Object.freeze([
   'init-env',
   'doctor',
   'setup',
+  'dashboard',
+  'fund-check',
   'markets',
   'scan',
   'sports',
@@ -34,6 +36,7 @@ const ROUTED_TOP_LEVEL_COMMANDS = Object.freeze([
   'profile',
   'recipe',
   'risk',
+  'explain',
   'operations',
   'model',
   'mcp',
@@ -64,6 +67,8 @@ function createCommandRouter(deps = {}) {
     runInitEnv,
     runDoctor,
     runSetup,
+    runDashboardCommand,
+    runFundCheckCommand,
     runMarketsCommand,
     runScanCommand,
     runSportsCommand,
@@ -96,6 +101,7 @@ function createCommandRouter(deps = {}) {
     runProfileCommand,
     runRecipeCommand,
     runRiskCommand,
+    runExplainCommand,
     runOperationsCommand,
     runModelCommand,
     runMcpCommand,
@@ -127,6 +133,8 @@ function createCommandRouter(deps = {}) {
   requireFn('runInitEnv', runInitEnv);
   requireFn('runDoctor', runDoctor);
   requireFn('runSetup', runSetup);
+  requireFn('runDashboardCommand', runDashboardCommand);
+  requireFn('runFundCheckCommand', runFundCheckCommand);
   requireFn('runMarketsCommand', runMarketsCommand);
   requireFn('runScanCommand', runScanCommand);
   requireFn('runSportsCommand', runSportsCommand);
@@ -159,6 +167,7 @@ function createCommandRouter(deps = {}) {
   requireFn('runProfileCommand', runProfileCommand);
   requireFn('runRecipeCommand', runRecipeCommand);
   requireFn('runRiskCommand', runRiskCommand);
+  requireFn('runExplainCommand', runExplainCommand);
   requireFn('runOperationsCommand', runOperationsCommand);
   requireFn('runModelCommand', runModelCommand);
   requireFn('runMcpCommand', runMcpCommand);
@@ -231,6 +240,8 @@ function createCommandRouter(deps = {}) {
         }
         await runSetup(handlerArgs, handlerContext.outputMode);
       },
+      dashboard: async (handlerArgs, handlerContext) => runDashboardCommand(handlerArgs, handlerContext),
+      'fund-check': async (handlerArgs, handlerContext) => runFundCheckCommand(handlerArgs, handlerContext),
       markets: async (handlerArgs, handlerContext) => runMarketsCommand(handlerArgs, handlerContext),
       scan: async (handlerArgs, handlerContext) => runScanCommand(handlerArgs, handlerContext),
       sports: async (handlerArgs, handlerContext) => runSportsCommand(handlerArgs, handlerContext),
@@ -263,6 +274,7 @@ function createCommandRouter(deps = {}) {
       profile: async (handlerArgs, handlerContext) => runProfileCommand(handlerArgs, handlerContext),
       recipe: async (handlerArgs, handlerContext) => runRecipeCommand(handlerArgs, handlerContext),
       risk: async (handlerArgs, handlerContext) => runRiskCommand(handlerArgs, handlerContext),
+      explain: async (handlerArgs, handlerContext) => runExplainCommand(handlerArgs, handlerContext),
       operations: async (handlerArgs, handlerContext) => runOperationsCommand(handlerArgs, handlerContext),
       model: async (handlerArgs, handlerContext) => runModelCommand(handlerArgs, handlerContext),
       mcp: async (handlerArgs, handlerContext) => {

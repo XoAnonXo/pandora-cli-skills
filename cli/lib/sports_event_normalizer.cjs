@@ -54,6 +54,18 @@ function toIsoTimestamp(value) {
   return new Date(parsed).toISOString();
 }
 
+function extractScoreValue(row, side) {
+  if (!row || typeof row !== 'object') return null;
+
+  const direct =
+    row[`${side}Score`]
+    ?? row[`${side}_score`]
+    ?? (row.score && typeof row.score === 'object' ? row.score[side] : null)
+    ?? (row.scores && typeof row.scores === 'object' ? row.scores[side] : null);
+
+  return toNumberOrNull(direct);
+}
+
 function normalizeToken(value) {
   return String(value || '')
     .trim()
@@ -376,16 +388,30 @@ function normalizeSoccerWinnerOdds(payload, context = {}) {
 function normalizeEventStatus(payload, context = {}) {
   const row = payload && (payload.event || payload.fixture || payload.match || payload);
   const event = normalizeSoccerWinnerEvent(row || {}, context);
+  const homeScore = extractScoreValue(row, 'home');
+  const awayScore = extractScoreValue(row, 'away');
+  const score =
+    toStringOrNull(row && (row.score || row.scoreline || row.scoreLine || row.resultScore || row.finalScore))
+    || (homeScore !== null && awayScore !== null ? `${homeScore}-${awayScore}` : null);
+
   return {
     schemaVersion: NORMALIZER_SCHEMA_VERSION,
     provider: toStringOrNull(context.provider) || null,
     eventId: toStringOrNull(context.eventId) || (event ? event.id : null),
+    competitionId: event ? event.competitionId : null,
+    homeTeam: event ? event.homeTeam : null,
+    awayTeam: event ? event.awayTeam : null,
     status: normalizeStatus(row && (row.status || row.state || row.matchStatus || row.match_status)),
     startTime:
       toIsoTimestamp(row && (row.startTime || row.startsAt || row.commenceTime || row.commence_time || row.kickoff))
       || (event ? event.startTime : null),
-    updatedAt: toIsoTimestamp(row && (row.updatedAt || row.lastUpdated || row.timestamp)) || new Date().toISOString(),
+    updatedAt: toIsoTimestamp(row && (row.updatedAt || row.lastUpdated || row.timestamp)) || null,
     inPlay: normalizeStatus(row && (row.status || row.state || row.matchStatus || row.match_status)) === 'live',
+    score,
+    homeScore,
+    awayScore,
+    result: toStringOrNull(row && (row.result || row.outcome || row.answer)),
+    finalResult: toStringOrNull(row && (row.finalResult || row.final_result)),
   };
 }
 

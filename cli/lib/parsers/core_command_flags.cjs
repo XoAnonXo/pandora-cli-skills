@@ -506,6 +506,7 @@ function createCoreCommandFlagParsers(deps) {
       amount: null,
       amounts: [],
       yesPct: null,
+      targetPct: null,
       slippageBps: 100,
     };
 
@@ -566,6 +567,12 @@ function createCoreCommandFlagParsers(deps) {
         continue;
       }
 
+      if (token === '--target-pct') {
+        options.targetPct = parseProbabilityPercent(requireFlagValue(args, i, '--target-pct'), '--target-pct');
+        i += 1;
+        continue;
+      }
+
       if (token === '--slippage-bps') {
         options.slippageBps = parseNonNegativeInteger(requireFlagValue(args, i, '--slippage-bps'), '--slippage-bps');
         if (options.slippageBps > 10_000) {
@@ -584,6 +591,9 @@ function createCoreCommandFlagParsers(deps) {
     if (!options.side) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing side. Use --side yes|no.');
     }
+    if (options.targetPct !== null && options.mode === 'sell') {
+      throw new CliError('INVALID_FLAG_COMBINATION', '--target-pct is only supported for buy quotes.');
+    }
     if (options.mode === 'buy') {
       if (options.amountUsdc === null && options.amount !== null) {
         options.amountUsdc = options.amount;
@@ -591,10 +601,28 @@ function createCoreCommandFlagParsers(deps) {
       if (!options.amountsUsdc.length && options.amounts.length) {
         options.amountsUsdc = [...options.amounts];
       }
-      if (options.amountUsdc === null && (!Array.isArray(options.amountsUsdc) || !options.amountsUsdc.length)) {
+      if (
+        options.targetPct !== null
+        && (options.amountUsdc !== null || (Array.isArray(options.amountsUsdc) && options.amountsUsdc.length))
+      ) {
+        throw new CliError(
+          'INVALID_FLAG_COMBINATION',
+          'Use either --target-pct or --amount-usdc/--amounts for quote buy.',
+        );
+      }
+      if (
+        options.targetPct === null
+        && options.amountUsdc === null
+        && (!Array.isArray(options.amountsUsdc) || !options.amountsUsdc.length)
+      ) {
         throw new CliError('MISSING_REQUIRED_FLAG', 'Missing trade amount. Use --amount-usdc <amount> or --amounts <csv>.');
       }
-      if (options.amountUsdc === null && Array.isArray(options.amountsUsdc) && options.amountsUsdc.length) {
+      if (
+        options.targetPct === null
+        && options.amountUsdc === null
+        && Array.isArray(options.amountsUsdc)
+        && options.amountsUsdc.length
+      ) {
         options.amountUsdc = options.amountsUsdc[0];
       }
     } else {

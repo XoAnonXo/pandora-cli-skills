@@ -53,10 +53,17 @@ For a faster task-focused path:
 - `pandora operations get|list|receipt|verify-receipt|cancel|close`
   - inspect and control persisted mutable-operation records
   - terminal mutable operations also emit durable receipt artifacts in the operation store
-- `pandora [--output json] mirror status|pnl|audit`
-  - `mirror status` is the operator dashboard surface
+- `pandora [--output json] dashboard|mirror dashboard|mirror status|mirror health|mirror drift|mirror hedge-check|mirror pnl|mirror audit|mirror logs|mirror replay|fund-check|explain`
+  - `dashboard` / `mirror dashboard` are the multi-market operator summary surfaces
+  - `mirror status` is the single-mirror operator dashboard surface
+  - `mirror health` is the machine-usable daemon/runtime health shell
+  - `mirror drift` and `mirror hedge-check` are narrower live actionability surfaces
   - `mirror pnl` is the dedicated cross-venue scenario model
   - `mirror audit` is the classified persisted runtime ledger
+  - `mirror logs` returns tailed daemon log lines from state/strategy/selector lookup
+  - `mirror replay` compares modeled hedge/rebalance sizing against persisted audit history
+  - `fund-check` is the high-level funding planner for the current mirror context
+  - `explain` turns Pandora failures or freeform error text into canonical remediation commands
 - `pandora --output json agent market autocomplete ...`
 - `pandora --output json agent market validate ...`
 
@@ -459,7 +466,7 @@ Mirror runtime notes:
 - `runtime.health.status` is the operator rollup and can be `running`, `idle`, `blocked`, `degraded`, `stale`, or `error`.
   - `blocked` covers fail-closed runtime cases such as `PENDING_ACTION_LOCK*` and `LAST_ACTION_REQUIRES_REVIEW`
   - `stale` means daemon metadata still reports alive while the heartbeat exceeded threshold
-- `mirror status --with-live` is the live diagnostic surface for a persisted mirror state.
+- `mirror status --with-live` is the live diagnostic surface for a mirror resolved from persisted state or direct selectors.
   - `live.verifyDiagnostics` carries verify-time feed and matching warnings
   - `live.polymarketPosition.diagnostics` carries balance/open-order visibility warnings instead of hard-failing when that view is partial
   - `--drift-trigger-bps`, `--hedge-trigger-usdc`, `--indexer-url`, `--timeout-ms`, and Polymarket host/mock overrides shape that live diagnostic projection path
