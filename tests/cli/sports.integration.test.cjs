@@ -67,6 +67,34 @@ test('sports env mocked URLs do not break JSON help/version command flows', asyn
   assert.equal(mock.requests.length, 0);
 });
 
+test('sports schedule help is subcommand-specific in json and table modes', () => {
+  const jsonResult = runCli(['--output', 'json', 'sports', 'schedule', '--help']);
+  const jsonPayload = parseJsonEnvelopeStrict(jsonResult, 'sports schedule --help');
+
+  assert.equal(jsonPayload.command, 'sports.schedule.help');
+  assert.match(jsonPayload.data.usage, /sports schedule \[--provider/);
+  assert.match(jsonPayload.data.notes[0], /lists normalized events/i);
+
+  const tableResult = runCli(['sports', 'schedule', '--help']);
+  assert.equal(tableResult.status, 0, tableResult.output);
+  assert.match(String(tableResult.stdout || ''), /Usage: pandora \[--output table\|json\] sports schedule/);
+  assert.match(String(tableResult.stdout || ''), /lists normalized events/i);
+});
+
+test('sports scores help is subcommand-specific in json and table modes', () => {
+  const jsonResult = runCli(['--output', 'json', 'sports', 'scores', '--help']);
+  const jsonPayload = parseJsonEnvelopeStrict(jsonResult, 'sports scores --help');
+
+  assert.equal(jsonPayload.command, 'sports.scores.help');
+  assert.match(jsonPayload.data.usage, /sports scores \[--event-id <id>\|--game <id>\]/);
+  assert.match(jsonPayload.data.notes[0], /normalized score and status rows/i);
+
+  const tableResult = runCli(['sports', 'scores', '--help']);
+  assert.equal(tableResult.status, 0, tableResult.output);
+  assert.match(String(tableResult.stdout || ''), /Usage: pandora \[--output table\|json\] sports scores/);
+  assert.match(String(tableResult.stdout || ''), /normalized score and status rows/i);
+});
+
 test('sports provider registry returns normalized JSON from mocked sportsbook URLs', async (t) => {
   const mock = await startJsonHttpServer(({ url }) => {
     if (url.startsWith('/events?')) {

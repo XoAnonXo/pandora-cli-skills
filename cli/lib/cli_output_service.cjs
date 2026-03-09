@@ -18,6 +18,11 @@ function createCliOutputService(options = {}) {
   let failureAlreadyEmitted = false;
   const COMPACT_JSON_COMMANDS = new Set(['bootstrap', 'capabilities', 'schema']);
 
+  function useCompactJson(outputMode, command) {
+    if (outputMode !== 'json') return false;
+    return process.env.PANDORA_DAEMON_LOG_JSONL === '1' || COMPACT_JSON_COMMANDS.has(command);
+  }
+
   function emitJson(payload, options = {}) {
     const compact = options.compact === true;
     console.log(compact ? JSON.stringify(payload) : JSON.stringify(payload, null, 2));
@@ -99,7 +104,7 @@ function createCliOutputService(options = {}) {
     const envelope = toErrorEnvelope(error);
 
     if (outputMode === 'json') {
-      emitJson(envelope);
+      emitJson(envelope, { compact: useCompactJson(outputMode) });
     } else {
       console.error(`[${envelope.error.code}] ${envelope.error.message}`);
       if (envelope.error.details && Array.isArray(envelope.error.details.errors) && envelope.error.details.errors.length) {
@@ -135,7 +140,7 @@ function createCliOutputService(options = {}) {
     if (outputMode === 'json') {
       emitJson(
         { ok: true, command, data: attachJsonMetadata(data) },
-        { compact: COMPACT_JSON_COMMANDS.has(command) },
+        { compact: useCompactJson(outputMode, command) },
       );
       return;
     }

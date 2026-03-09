@@ -4,11 +4,12 @@ const path = require('path');
 const { buildMirrorRuntimeTelemetry } = require('../mirror_sync/state.cjs');
 const { resolveMirrorSurfaceState } = require('../mirror_surface_service.cjs');
 const { daemonStatus, findPidFilesByMarketAddress } = require('../mirror_daemon_service.cjs');
+const { readMirrorLogFromLine, readMirrorLogTail } = require('../mirror_log_format.cjs');
 const { createParseMirrorLogsFlags } = require('../parsers/mirror_remaining_flags.cjs');
 
 const MIRROR_LOGS_SCHEMA_VERSION = '1.0.0';
 const MIRROR_LOGS_USAGE =
-  'pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>]';
+  'pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>] [--follow] [--poll-interval-ms <ms>] [--follow-timeout-ms <ms>]';
 
 function parseAddressFlag(value, flagName, CliError) {
   if (!/^0x[a-fA-F0-9]{40}$/.test(String(value || ''))) {
@@ -51,6 +52,10 @@ function fileExists(filePath) {
   } catch {
     return false;
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function defaultMirrorLogFile(strategyHash) {
@@ -142,23 +147,92 @@ function resolveLogsDaemonStatus(selector = {}, state = {}) {
   };
 }
 
-function readTailEntries(filePath, requestedLines) {
-  const text = fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
-  const lines = text.split('\n');
-  if (lines.length && lines[lines.length - 1] === '') {
-    lines.pop();
-  }
-  const totalLines = lines.length;
-  const start = Math.max(0, totalLines - requestedLines);
-  const sliced = lines.slice(start);
-  return {
-    totalLines,
-    truncated: totalLines > sliced.length,
-    entries: sliced.map((line, index) => ({
-      lineNumber: start + index + 1,
-      text: line,
-    })),
+function buildLogSummary(logFile, requestedLines, diagnostics) {
+  const log = {
+    file: logFile,
+    requestedLines,
+    exists: false,
+    returnedLines: 0,
+    totalLines: 0,
+    truncated: false,
+    readError: null,
+    format: 'empty',
+    structuredEntryCount: 0,
+    textEntryCount: 0,
+    entries: [],
   };
+
+  if (!logFile) {
+    diagnostics.push('No mirror log file could be resolved from daemon metadata or the default strategy-hash log path.');
+    return log;
+  }
+  if (!fileExists(logFile)) {
+    diagnostics.push(`Mirror log file not found at ${logFile}.`);
+    return log;
+  }
+
+  try {
+    const tailed = readMirrorLogTail(logFile, requestedLines);
+    log.exists = true;
+    log.returnedLines = tailed.entries.length;
+    log.totalLines = tailed.totalLines;
+    log.truncated = tailed.truncated;
+    log.format = tailed.format;
+    log.structuredEntryCount = tailed.structuredEntryCount;
+    log.textEntryCount = tailed.textEntryCount;
+    log.entries = tailed.entries;
+  } catch (err) {
+    log.readError = err && err.message ? err.message : String(err);
+    diagnostics.push(`Failed to read mirror log file: ${log.readError}`);
+  }
+
+  return log;
+}
+
+function buildResponsePayload({
+  options,
+  stateFile,
+  strategyHash,
+  selector,
+  resolution,
+  runtime,
+  log,
+  diagnostics,
+  logFileFromDaemon,
+  inferredLogFile,
+  follow,
+}) {
+  return {
+    schemaVersion: MIRROR_LOGS_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    stateFile,
+    strategyHash,
+    selector: normalizeSelector(selector),
+    resolution: {
+      matchedBy:
+        options.stateFile
+          ? 'state-file'
+          : options.strategyHash
+            ? 'strategy-hash'
+            : resolution.matchedBy || 'market-selector',
+      stateResolved: fileExists(stateFile),
+      daemonResolved: Boolean(runtime.daemon && runtime.daemon.found),
+      selectedPidFile: runtime.daemon && runtime.daemon.pidFile ? runtime.daemon.pidFile : null,
+      ambiguousPidFiles: Array.isArray(resolution.ambiguousPidFiles) ? resolution.ambiguousPidFiles : [],
+      logFileSource: logFileFromDaemon ? 'daemon-metadata' : inferredLogFile ? 'strategy-hash-default' : null,
+    },
+    runtime: {
+      health: runtime.health || null,
+      daemon: runtime.daemon || null,
+    },
+    log,
+    diagnostics,
+    follow: follow || null,
+  };
+}
+
+function renderMirrorLogEntryTable(entry) {
+  console.log(`${entry.lineNumber}: ${entry.text}`);
 }
 
 function renderMirrorLogsTable(data) {
@@ -172,16 +246,74 @@ function renderMirrorLogsTable(data) {
   console.log(`available: ${log.exists ? 'yes' : 'no'}`);
   console.log(`requestedLines: ${log.requestedLines || 0}`);
   console.log(`returnedLines: ${log.returnedLines || 0}`);
+  console.log(`format: ${log.format || 'empty'}`);
+  console.log(`structuredEntries: ${log.structuredEntryCount || 0}`);
   console.log(`truncated: ${log.truncated ? 'yes' : 'no'}`);
   console.log(`daemonStatus: ${daemon.status || ''}`);
+  if (data.follow && data.follow.active) {
+    const timeoutText = data.follow.timeoutMs ? ` timeout=${data.follow.timeoutMs}ms` : '';
+    console.log(`follow: yes poll=${data.follow.pollIntervalMs}ms${timeoutText}`);
+  }
   if (Array.isArray(data.diagnostics) && data.diagnostics.length) {
     console.log(`diagnostics: ${data.diagnostics.join(' | ')}`);
   }
   if (Array.isArray(log.entries) && log.entries.length) {
     console.log('');
     for (const entry of log.entries) {
-      console.log(`${entry.lineNumber}: ${entry.text}`);
+      renderMirrorLogEntryTable(entry);
     }
+  }
+}
+
+function emitJsonLine(command, data) {
+  console.log(
+    JSON.stringify({
+      ok: true,
+      command,
+      data: {
+        schemaVersion: MIRROR_LOGS_SCHEMA_VERSION,
+        generatedAt: new Date().toISOString(),
+        ...data,
+      },
+    }),
+  );
+}
+
+async function followMirrorLogFile({
+  logFile,
+  pollIntervalMs,
+  followTimeoutMs,
+  initialTotalLines,
+  onEntries,
+}) {
+  let lastSeenLine = Number.isInteger(initialTotalLines) && initialTotalLines >= 0 ? initialTotalLines : 0;
+  const startedAt = Date.now();
+
+  while (true) {
+    if (followTimeoutMs && Date.now() - startedAt >= followTimeoutMs) {
+      return {
+        reason: 'timeout',
+        lastSeenLine,
+      };
+    }
+
+    if (fileExists(logFile)) {
+      try {
+        const delta = readMirrorLogFromLine(logFile, lastSeenLine + 1);
+        if (delta.entries.length) {
+          await onEntries(delta.entries);
+        }
+        lastSeenLine = delta.totalLines;
+      } catch (err) {
+        return {
+          reason: 'read-error',
+          lastSeenLine,
+          error: err && err.message ? err.message : String(err),
+        };
+      }
+    }
+
+    await sleep(pollIntervalMs);
   }
 }
 
@@ -197,7 +329,8 @@ module.exports = async function handleMirrorLogs({ actionArgs, context, deps }) 
     const notes = [
       'mirror logs resolves daemon log files from a state file, strategy hash, or Pandora market selector when daemon metadata exists.',
       '--polymarket-market-id and --polymarket-slug narrow market-selector matches when more than one daemon shares the same Pandora market address.',
-      'The payload returns tailed log entries plus runtime/daemon metadata; missing log files surface diagnostics instead of hard failures.',
+      'Structured daemon logs are compact JSONL records; legacy plain-text lines are still surfaced with raw text for compatibility.',
+      '--follow behaves like tail -f: it returns the requested tail first, then polls for appended lines until interrupted or --follow-timeout-ms elapses.',
     ];
     if (context.outputMode === 'json') {
       emitSuccess(context.outputMode, 'mirror.logs.help', commandHelpPayload(MIRROR_LOGS_USAGE, notes));
@@ -274,64 +407,90 @@ module.exports = async function handleMirrorLogs({ actionArgs, context, deps }) 
   const inferredLogFile = !logFileFromDaemon ? defaultMirrorLogFile(strategyHash) : null;
   const logFile = logFileFromDaemon || inferredLogFile || null;
   const diagnostics = Array.isArray(resolution.diagnostics) ? [...resolution.diagnostics] : [];
-  const log = {
-    file: logFile,
-    requestedLines: options.lines,
-    exists: false,
-    returnedLines: 0,
-    totalLines: 0,
-    truncated: false,
-    readError: null,
-    entries: [],
-  };
+  const log = buildLogSummary(logFile, options.lines, diagnostics);
+  const follow = options.follow
+    ? {
+        active: true,
+        pollIntervalMs: options.pollIntervalMs,
+        timeoutMs: options.followTimeoutMs,
+      }
+    : null;
+  const payload = buildResponsePayload({
+    options,
+    stateFile,
+    strategyHash,
+    selector,
+    resolution,
+    runtime,
+    log,
+    diagnostics,
+    logFileFromDaemon,
+    inferredLogFile,
+    follow,
+  });
 
-  if (!logFile) {
-    diagnostics.push('No mirror log file could be resolved from daemon metadata or the default strategy-hash log path.');
-  } else if (!fileExists(logFile)) {
-    diagnostics.push(`Mirror log file not found at ${logFile}.`);
-  } else {
-    try {
-      const tailed = readTailEntries(logFile, options.lines);
-      log.exists = true;
-      log.returnedLines = tailed.entries.length;
-      log.totalLines = tailed.totalLines;
-      log.truncated = tailed.truncated;
-      log.entries = tailed.entries;
-    } catch (err) {
-      log.readError = err && err.message ? err.message : String(err);
-      diagnostics.push(`Failed to read mirror log file: ${log.readError}`);
-    }
+  if (!options.follow) {
+    emitSuccess(
+      context.outputMode,
+      'mirror.logs',
+      payload,
+      renderMirrorLogsTable,
+    );
+    return;
   }
 
-  emitSuccess(
-    context.outputMode,
-    'mirror.logs',
-    {
-      schemaVersion: MIRROR_LOGS_SCHEMA_VERSION,
-      generatedAt: new Date().toISOString(),
-      stateFile,
+  if (context.outputMode === 'json') {
+    emitJsonLine('mirror.logs.follow', payload);
+  } else {
+    renderMirrorLogsTable(payload);
+    console.log('');
+    console.log('Following log file for new entries. Press Ctrl+C to stop.');
+  }
+
+  if (!logFile) {
+    const completion = {
       strategyHash,
-      selector: normalizeSelector(selector),
-      resolution: {
-        matchedBy:
-          options.stateFile
-            ? 'state-file'
-            : options.strategyHash
-              ? 'strategy-hash'
-              : resolution.matchedBy || 'market-selector',
-        stateResolved: fileExists(stateFile),
-        daemonResolved: Boolean(runtime.daemon && runtime.daemon.found),
-        selectedPidFile: runtime.daemon && runtime.daemon.pidFile ? runtime.daemon.pidFile : null,
-        ambiguousPidFiles: Array.isArray(resolution.ambiguousPidFiles) ? resolution.ambiguousPidFiles : [],
-        logFileSource: logFileFromDaemon ? 'daemon-metadata' : inferredLogFile ? 'strategy-hash-default' : null,
-      },
-      runtime: {
-        health: runtime.health || null,
-        daemon: runtime.daemon || null,
-      },
-      log,
-      diagnostics,
+      logFile: null,
+      reason: 'unresolved-log-file',
+      lastSeenLine: log.totalLines,
+    };
+    if (context.outputMode === 'json') {
+      emitJsonLine('mirror.logs.follow.complete', completion);
+    } else {
+      console.log('Follow stopped: no log file could be resolved.');
+    }
+    return;
+  }
+
+  const completion = await followMirrorLogFile({
+    logFile,
+    pollIntervalMs: options.pollIntervalMs,
+    followTimeoutMs: options.followTimeoutMs,
+    initialTotalLines: log.totalLines,
+    onEntries: async (entries) => {
+      for (const entry of entries) {
+        if (context.outputMode === 'json') {
+          emitJsonLine('mirror.logs.entry', {
+            strategyHash,
+            logFile,
+            entry,
+          });
+        } else {
+          renderMirrorLogEntryTable(entry);
+        }
+      }
     },
-    renderMirrorLogsTable,
-  );
+  });
+
+  if (context.outputMode === 'json') {
+    emitJsonLine('mirror.logs.follow.complete', {
+      strategyHash,
+      logFile,
+      ...completion,
+    });
+  } else if (completion.reason === 'timeout') {
+    console.log(`Follow stopped after ${options.followTimeoutMs}ms.`);
+  } else if (completion.reason === 'read-error') {
+    console.log(`Follow stopped after a log read error: ${completion.error}`);
+  }
 };

@@ -834,6 +834,9 @@ function createParseMirrorLogsFlags(deps) {
       polymarketMarketId: null,
       polymarketSlug: null,
       lines: 50,
+      follow: false,
+      pollIntervalMs: 500,
+      followTimeoutMs: null,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -873,6 +876,26 @@ function createParseMirrorLogsFlags(deps) {
       }
       if (token === '--lines') {
         options.lines = parsePositiveInteger(requireFlagValue(args, i, '--lines'), '--lines');
+        i += 1;
+        continue;
+      }
+      if (token === '--follow') {
+        options.follow = true;
+        continue;
+      }
+      if (token === '--poll-interval-ms') {
+        options.pollIntervalMs = parsePositiveInteger(
+          requireFlagValue(args, i, '--poll-interval-ms'),
+          '--poll-interval-ms',
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--follow-timeout-ms') {
+        options.followTimeoutMs = parsePositiveInteger(
+          requireFlagValue(args, i, '--follow-timeout-ms'),
+          '--follow-timeout-ms',
+        );
         i += 1;
         continue;
       }

@@ -434,6 +434,12 @@ function createRunFundCheckCommand(deps) {
   const parsePositiveInteger = requireDep(deps, 'parsePositiveInteger');
   const parseInteger = requireDep(deps, 'parseInteger');
   const parseProbabilityPercent = requireDep(deps, 'parseProbabilityPercent');
+  const resolveSignerAddressFn = typeof deps.resolveSignerAddress === 'function'
+    ? deps.resolveSignerAddress
+    : resolveSignerAddress;
+  const readVenueBalancesFn = typeof deps.readVenueBalances === 'function'
+    ? deps.readVenueBalances
+    : readVenueBalances;
 
   return async function runFundCheckCommand(args, context) {
     const usage =
@@ -527,10 +533,10 @@ function createRunFundCheckCommand(deps) {
       ? options.targetPct
       : toNumber(live && live.sourceMarket && live.sourceMarket.yesPct);
     const requirement = determinePandoraRequirement(live, targetPct);
-    const signer = await resolveSignerAddress(options);
+    const signer = await resolveSignerAddressFn(options);
     const chainId = Number.isInteger(Number(options.chainId)) && Number(options.chainId) > 0 ? Number(options.chainId) : 1;
     const pandoraRpcUrl = String(options.rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[chainId] || '').trim();
-    const pandoraBalances = await readVenueBalances({
+    const pandoraBalances = await readVenueBalancesFn({
       chainId,
       rpcUrl: pandoraRpcUrl,
       walletAddress: signer.address,
@@ -612,6 +618,35 @@ function createRunFundCheckCommand(deps) {
           'fund-polymarket-proxy',
           `Polymarket owner/funder wallet is short ${polymarketShortfallUsdc} USDC for the target hedge.`,
           `pandora polymarket deposit --amount-usdc ${polymarketShortfallUsdc}`,
+        ),
+      );
+      if (Number.isFinite(pandoraAvailableUsdc) && pandoraAvailableUsdc >= polymarketShortfallUsdc) {
+        pushSuggestion(
+          suggestions,
+          buildSuggestion(
+            'bridge-plan-polymarket',
+            'warn',
+            'plan-bridge-to-polygon',
+            `Ethereum-side Pandora liquidity can cover the Polygon shortfall; plan a cross-chain bridge for ${polymarketShortfallUsdc} USDC before depositing to the proxy.`,
+            `pandora bridge plan --target polymarket --amount-usdc ${polymarketShortfallUsdc}`,
+          ),
+        );
+      }
+    }
+    if (
+      Number.isFinite(pandoraShortfallUsdc)
+      && pandoraShortfallUsdc > 0
+      && Number.isFinite(polymarketAvailableUsdc)
+      && polymarketAvailableUsdc >= pandoraShortfallUsdc
+    ) {
+      pushSuggestion(
+        suggestions,
+        buildSuggestion(
+          'bridge-plan-pandora',
+          'warn',
+          'plan-bridge-to-ethereum',
+          `Polygon-side liquidity can cover the Pandora signer shortfall; plan a cross-chain bridge for ${pandoraShortfallUsdc} USDC back to Ethereum.`,
+          `pandora bridge plan --target pandora --amount-usdc ${pandoraShortfallUsdc}`,
         ),
       );
     }

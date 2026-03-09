@@ -1273,6 +1273,8 @@ test('help prints usage with zero exit code', () => {
   assert.equal(result.status, 0);
   assert.match(result.output, /pandora - Prediction market CLI/);
   assert.match(result.output, /Usage:/);
+  assert.match(result.output, /pandora \[--output table\|json\] markets mine/);
+  assert.match(result.output, /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|calc\|simulate\|go\|sync\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl\|audit\|replay\|logs\|close/);
 });
 
 test('help accepts optional leading pandora token for npx compatibility', () => {
@@ -2053,6 +2055,8 @@ test('capabilities command can include compatibility aliases explicitly', () => 
     const payload = parseJsonOutput(result);
   assert.equal(payload.ok, true);
   assert.ok(Array.isArray(payload.data.notes));
+  assert.ok(payload.data.usage.some((line) => /markets mine/.test(line)));
+  assert.ok(payload.data.usage.some((line) => /mirror .*logs/.test(line)));
   assert.deepEqual(payload.data.modeRouting, {
     jsonOnly: ['bootstrap', 'capabilities', 'schema'],
     stdioOnly: ['mcp'],
@@ -2064,6 +2068,8 @@ test('capabilities command can include compatibility aliases explicitly', () => 
     ),
   );
   assert.ok(payload.data.notes.some((note) => /mcp/i.test(note) && /stdio server mode/i.test(note)));
+  assert.ok(payload.data.usage.some((entry) => /markets mine/.test(String(entry))));
+  assert.ok(payload.data.usage.some((entry) => /mirror .*logs/.test(String(entry))));
   });
 
 test('capabilities command rejects unknown trailing flags', () => {
@@ -6492,6 +6498,10 @@ test('mirror go --help json includes flashbots routing flag contract', () => {
   assert.match(payload.data.usage, /--flashbots-relay-url <url>/);
   assert.match(payload.data.usage, /--flashbots-auth-key <key>/);
   assert.match(payload.data.usage, /--flashbots-target-block-offset <n>/);
+  assert.match(payload.data.usage, /--auto-resolve/);
+  assert.match(payload.data.usage, /--auto-close/);
+  assert.match(payload.data.usage, /--resolve-answer yes\|no/);
+  assert.match(payload.data.usage, /--resolve-reason <text>/);
 });
 
 test('mirror trace --help json includes historical reserve tracing usage and archive notes', () => {
@@ -6519,6 +6529,9 @@ test('command descriptors expose flashbots routing flags for mirror go and sync 
   assert.match(descriptors['mirror.go'].usage, /--flashbots-relay-url <url>/);
   assert.match(descriptors['mirror.go'].usage, /--flashbots-auth-key <key>/);
   assert.match(descriptors['mirror.go'].usage, /--flashbots-target-block-offset <n>/);
+  assert.match(descriptors['mirror.go'].usage, /--auto-resolve/);
+  assert.match(descriptors['mirror.go'].usage, /--auto-close/);
+  assert.match(descriptors['mirror.go'].usage, /--resolve-answer yes\|no/);
 
   for (const commandName of ['mirror.sync.once', 'mirror.sync.run', 'mirror.sync.start']) {
     assert.ok(descriptors[commandName], `missing descriptor for ${commandName}`);

@@ -1,4 +1,258 @@
 const { normalizeMirrorRebalanceTradeOptions, selectHealthyPolymarketRpc } = require('./sync.cjs');
+const { isResolvePayloadExecutable } = require('../resolve_command_service.cjs');
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeLifecycleError(error, fallbackCode) {
+  return {
+    code: error && error.code ? error.code : fallbackCode,
+    message: error && error.message ? error.message : String(error),
+    details: error && error.details ? error.details : null,
+  };
+}
+
+function quoteShellValue(value) {
+  return JSON.stringify(String(value));
+}
+
+function buildLifecycleResolveCommand(options, pollAddress) {
+  const parts = [
+    'pandora resolve',
+    `--poll-address ${pollAddress}`,
+    `--answer ${options.resolveAnswer}`,
+    `--reason ${quoteShellValue(options.resolveReason)}`,
+    '--watch',
+    `--watch-interval-ms ${options.resolveWatchIntervalMs}`,
+    `--watch-timeout-ms ${options.resolveWatchTimeoutMs}`,
+    '--execute',
+  ];
+  if (Number.isInteger(options.chainId)) {
+    parts.push(`--chain-id ${options.chainId}`);
+  }
+  if (options.rpcUrl) {
+    parts.push(`--rpc-url ${options.rpcUrl}`);
+  }
+  if (options.profileId) {
+    parts.push(`--profile-id ${options.profileId}`);
+  } else if (options.profileFile) {
+    parts.push(`--profile-file ${options.profileFile}`);
+  }
+  return parts.join(' ');
+}
+
+function buildLifecycleCloseCommand(options, pandoraMarketAddress, sourceSelector = {}) {
+  const parts = [
+    'pandora mirror close',
+    `--market-address ${pandoraMarketAddress}`,
+  ];
+  if (sourceSelector.polymarketMarketId) {
+    parts.push(`--polymarket-market-id ${sourceSelector.polymarketMarketId}`);
+  } else if (sourceSelector.polymarketSlug) {
+    parts.push(`--polymarket-slug ${sourceSelector.polymarketSlug}`);
+  }
+  parts.push('--execute');
+  if (Number.isInteger(options.chainId)) {
+    parts.push(`--chain-id ${options.chainId}`);
+  }
+  if (options.rpcUrl) {
+    parts.push(`--rpc-url ${options.rpcUrl}`);
+  }
+  if (options.profileId) {
+    parts.push(`--profile-id ${options.profileId}`);
+  } else if (options.profileFile) {
+    parts.push(`--profile-file ${options.profileFile}`);
+  }
+  return parts.join(' ');
+}
+
+function extractCloseStepStatus(closePayload, stepName) {
+  const step = closePayload && Array.isArray(closePayload.steps)
+    ? closePayload.steps.find((item) => item && item.step === stepName)
+    : null;
+  if (!step) return 'unknown';
+  return step.ok ? 'completed' : 'failed';
+}
+
+function buildLifecycleFinalReport({
+  pandoraMarketAddress,
+  pollAddress,
+  sourceSelector,
+  resolveResult,
+  closeResult,
+}) {
+  return {
+    pandoraMarketAddress,
+    pollAddress: pollAddress || null,
+    polymarketMarketId: sourceSelector.polymarketMarketId || null,
+    polymarketSlug: sourceSelector.polymarketSlug || null,
+    resolveStatus: resolveResult ? resolveResult.status : 'disabled',
+    closeStatus: closeResult ? closeResult.status : 'disabled',
+    daemonStopStatus: closeResult && closeResult.payload ? extractCloseStepStatus(closeResult.payload, 'stop-daemons') : 'not-run',
+    lpWithdrawalStatus: closeResult && closeResult.payload ? extractCloseStepStatus(closeResult.payload, 'withdraw-lp') : 'not-run',
+    claimStatus: closeResult && closeResult.payload ? extractCloseStepStatus(closeResult.payload, 'claim-winnings') : 'not-run',
+    polymarketSettlement: 'manual',
+  };
+}
+
+async function runLifecycleResolve(options, deps) {
+  const {
+    runResolve,
+    assertLiveWriteAllowed,
+    sleep = sleepMs,
+  } = deps;
+  const step = {
+    enabled: true,
+    status: 'pending',
+    pollAddress: options.pollAddress,
+    answer: options.resolveAnswer,
+    reason: options.resolveReason,
+    attempts: 0,
+    watch: {
+      intervalMs: options.resolveWatchIntervalMs,
+      timeoutMs: options.resolveWatchTimeoutMs,
+      startedAt: new Date().toISOString(),
+      ready: false,
+      executionTriggered: true,
+    },
+    payload: null,
+    lastPayload: null,
+    error: null,
+    resumeCommand: buildLifecycleResolveCommand(options, options.pollAddress),
+  };
+
+  if (typeof runResolve !== 'function') {
+    step.status = 'unsupported';
+    step.error = normalizeLifecycleError(new Error('runResolve dependency is unavailable.'), 'MIRROR_GO_AUTO_RESOLVE_UNAVAILABLE');
+    return step;
+  }
+
+  const baseResolveOptions = {
+    pollAddress: options.pollAddress,
+    answer: options.resolveAnswer,
+    reason: options.resolveReason,
+    chainId: options.chainId,
+    rpcUrl: options.rpcUrl,
+    fork: Boolean(options.fork),
+    forkRpcUrl: options.forkRpcUrl || null,
+    forkChainId: options.forkChainId || null,
+    privateKey: options.privateKey || null,
+    profileId: options.profileId || null,
+    profileFile: options.profileFile || null,
+  };
+  const timeoutAt = Date.now() + options.resolveWatchTimeoutMs;
+
+  while (true) {
+    step.attempts += 1;
+    try {
+      step.lastPayload = await runResolve({
+        ...baseResolveOptions,
+        dryRun: true,
+        execute: false,
+      });
+    } catch (error) {
+      step.status = 'failed';
+      step.error = normalizeLifecycleError(error, 'MIRROR_GO_AUTO_RESOLVE_FAILED');
+      return step;
+    }
+
+    if (isResolvePayloadExecutable(step.lastPayload)) {
+      step.watch.ready = true;
+      step.watch.checkedAt = new Date().toISOString();
+      try {
+        if (typeof assertLiveWriteAllowed === 'function') {
+          await assertLiveWriteAllowed('mirror.go.resolve.execute', {
+            runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+          });
+        }
+        step.payload = await runResolve({
+          ...baseResolveOptions,
+          dryRun: false,
+          execute: true,
+        });
+        step.status = 'completed';
+      } catch (error) {
+        step.status = 'failed';
+        step.error = normalizeLifecycleError(error, 'MIRROR_GO_AUTO_RESOLVE_FAILED');
+      }
+      return step;
+    }
+
+    if (Date.now() >= timeoutAt) {
+      step.status = 'timed-out';
+      step.watch.checkedAt = new Date().toISOString();
+      return step;
+    }
+
+    await sleep(options.resolveWatchIntervalMs);
+  }
+}
+
+async function runLifecycleClose(options, deps) {
+  const {
+    runMirrorClose,
+    assertLiveWriteAllowed,
+    deriveWalletAddressFromPrivateKey,
+  } = deps;
+  const step = {
+    enabled: true,
+    status: 'pending',
+    payload: null,
+    error: null,
+    resumeCommand: buildLifecycleCloseCommand(options, options.pandoraMarketAddress, options.sourceSelector),
+  };
+
+  if (typeof runMirrorClose !== 'function') {
+    step.status = 'unsupported';
+    step.error = normalizeLifecycleError(new Error('runMirrorClose dependency is unavailable.'), 'MIRROR_GO_AUTO_CLOSE_UNAVAILABLE');
+    return step;
+  }
+
+  try {
+    if (typeof assertLiveWriteAllowed === 'function') {
+      await assertLiveWriteAllowed('mirror.go.close.execute', {
+        runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
+      });
+    }
+    step.payload = await runMirrorClose(
+      {
+        execute: true,
+        dryRun: false,
+        all: false,
+        pandoraMarketAddress: options.pandoraMarketAddress,
+        polymarketMarketId: options.sourceSelector.polymarketMarketId || null,
+        polymarketSlug: options.sourceSelector.polymarketSlug || null,
+        wallet:
+          options.wallet
+          || (typeof deriveWalletAddressFromPrivateKey === 'function' && options.privateKey
+            ? deriveWalletAddressFromPrivateKey(options.privateKey)
+            : null),
+        chainId: options.chainId || null,
+        rpcUrl: options.rpcUrl || null,
+        privateKey: options.privateKey || null,
+        profileId: options.profileId || null,
+        profileFile: options.profileFile || null,
+        indexerUrl: options.indexerUrl || null,
+        timeoutMs: options.timeoutMs || null,
+      },
+      {
+        stopMirrorDaemon: deps.stopMirrorDaemon,
+        runLp: deps.runLp,
+        runClaim: deps.runClaim,
+        decorateOperationPayload: deps.decorateOperationPayload,
+        deriveWalletAddressFromPrivateKey,
+      },
+    );
+    const summary = step.payload && step.payload.summary ? step.payload.summary : {};
+    step.status = Number(summary.failureCount || 0) > 0 ? 'partial' : 'completed';
+  } catch (error) {
+    step.status = 'failed';
+    step.error = normalizeLifecycleError(error, 'MIRROR_GO_AUTO_CLOSE_FAILED');
+  }
+
+  return step;
+}
 
 /**
  * Handle `mirror go` command execution.
@@ -28,6 +282,12 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     verifyMirror,
     runLivePolymarketPreflightForMirror,
     runMirrorSync,
+    runResolve,
+    runMirrorClose,
+    stopMirrorDaemon,
+    runLp,
+    runClaim,
+    decorateOperationPayload,
     buildQuotePayload,
     enforceTradeRiskGuards,
     executeTradeOnchain,
@@ -35,6 +295,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     renderMirrorSyncTickLine,
     coerceMirrorServiceError,
     renderMirrorGoTable,
+    deriveWalletAddressFromPrivateKey,
   } = deps;
 
   if (includesHelpFlag(shared.rest)) {
@@ -171,6 +432,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
 
   let verifyPayload = null;
   let syncPayload = null;
+  let lifecycle = null;
   let polymarketPreflight = null;
   let suggestedSyncCommand = null;
   let trustManifest =
@@ -434,6 +696,121 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     diagnostics.push('Verify skipped because deploy mode was dry-run (no Pandora market address available).');
   }
 
+  if (options.autoResolve) {
+    const pollAddress =
+      (deployPayload && deployPayload.pandora && deployPayload.pandora.pollAddress)
+      || (verifyPayload && verifyPayload.pandora && verifyPayload.pandora.pollAddress)
+      || null;
+    if (!pollAddress) {
+      throw new CliError(
+        'MIRROR_GO_AUTO_RESOLVE_REQUIRES_POLL',
+        'mirror go lifecycle automation requires the deployed Pandora poll address.',
+        {
+          pandoraMarketAddress,
+          polymarketMarketId: sourceSelector.polymarketMarketId || null,
+          polymarketSlug: sourceSelector.polymarketSlug || null,
+        },
+      );
+    }
+
+    const resolveResult = await runLifecycleResolve(
+      {
+        pollAddress,
+        resolveAnswer: options.resolveAnswer,
+        resolveReason: options.resolveReason,
+        resolveWatchIntervalMs: options.resolveWatchIntervalMs,
+        resolveWatchTimeoutMs: options.resolveWatchTimeoutMs,
+        chainId: options.chainId,
+        rpcUrl: options.rpcUrl,
+        fork: options.fork,
+        forkRpcUrl: options.forkRpcUrl,
+        forkChainId: options.forkChainId,
+        privateKey: options.privateKey,
+        profileId: options.profileId || null,
+        profileFile: options.profileFile || null,
+      },
+      {
+        runResolve,
+        assertLiveWriteAllowed,
+        sleep: deps.sleep,
+      },
+    );
+
+    let closeResult = {
+      enabled: Boolean(options.autoClose),
+      status: options.autoClose ? 'skipped' : 'disabled',
+      payload: null,
+      error: null,
+      resumeCommand: options.autoClose ? buildLifecycleCloseCommand(options, pandoraMarketAddress, sourceSelector) : null,
+    };
+
+    if (options.autoClose) {
+      if (resolveResult.status === 'completed') {
+        closeResult = await runLifecycleClose(
+          {
+            pandoraMarketAddress,
+            sourceSelector,
+            wallet: null,
+            chainId: options.chainId,
+            rpcUrl: options.rpcUrl,
+            privateKey: options.privateKey,
+            profileId: options.profileId || null,
+            profileFile: options.profileFile || null,
+            indexerUrl,
+            timeoutMs: shared.timeoutMs,
+            fork: options.fork,
+            forkRpcUrl: options.forkRpcUrl,
+          },
+          {
+            runMirrorClose,
+            stopMirrorDaemon,
+            runLp,
+            runClaim,
+            decorateOperationPayload,
+            assertLiveWriteAllowed,
+            deriveWalletAddressFromPrivateKey,
+          },
+        );
+      } else {
+        closeResult.error = {
+          code: 'MIRROR_GO_AUTO_CLOSE_SKIPPED',
+          message: 'Auto-close skipped because auto-resolve did not complete successfully.',
+          details: {
+            resolveStatus: resolveResult.status,
+          },
+        };
+      }
+    }
+
+    const suggestedLifecycleCommands = [];
+    if (resolveResult.status !== 'completed' && resolveResult.resumeCommand) {
+      suggestedLifecycleCommands.push(resolveResult.resumeCommand);
+    }
+    if (options.autoClose && closeResult.status !== 'completed' && closeResult.resumeCommand) {
+      suggestedLifecycleCommands.push(closeResult.resumeCommand);
+    }
+
+    lifecycle = {
+      enabled: true,
+      status:
+        resolveResult.status !== 'completed'
+          ? resolveResult.status
+          : closeResult.enabled
+            ? closeResult.status
+            : 'completed',
+      resolve: resolveResult,
+      close: closeResult,
+      finalReport: buildLifecycleFinalReport({
+        pandoraMarketAddress,
+        pollAddress,
+        sourceSelector,
+        resolveResult,
+        closeResult,
+      }),
+      suggestedResumeCommands: suggestedLifecycleCommands,
+    };
+  }
+
   emitSuccess(
     context.outputMode,
     'mirror.go',
@@ -445,6 +822,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
       deploy: deployPayload,
       verify: verifyPayload,
       sync: syncPayload,
+      lifecycle,
       polymarketPreflight,
       suggestedSyncCommand,
       trustManifest,

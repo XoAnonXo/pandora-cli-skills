@@ -259,6 +259,66 @@ test('parseMirrorSyncFlags accepts --polymarket-rpc-url and enforces companion l
   );
 });
 
+test('mirror go lifecycle flags require live finite execution plus explicit resolve inputs', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildGoParserDeps());
+
+  const parsed = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--execute-live',
+    '--max-open-exposure-usdc',
+    '100',
+    '--max-trades-per-day',
+    '5',
+    '--auto-sync',
+    '--sync-once',
+    '--auto-resolve',
+    '--auto-close',
+    '--resolve-answer',
+    'yes',
+    '--resolve-reason',
+    'Official result confirmed.',
+    '--resolve-watch-interval-ms',
+    '1500',
+    '--resolve-watch-timeout-ms',
+    '120000',
+  ]);
+
+  assert.equal(parsed.autoResolve, true);
+  assert.equal(parsed.autoClose, true);
+  assert.equal(parsed.resolveAnswer, 'yes');
+  assert.equal(parsed.resolveReason, 'Official result confirmed.');
+  assert.equal(parsed.resolveWatchIntervalMs, 1500);
+  assert.equal(parsed.resolveWatchTimeoutMs, 120000);
+
+  assert.throws(
+    () => parseMirrorGoFlags(['--polymarket-market-id', 'poly-1', '--auto-close']),
+    /--auto-close requires --auto-resolve/,
+  );
+  assert.throws(
+    () => parseMirrorGoFlags(['--polymarket-market-id', 'poly-1', '--auto-resolve', '--resolve-answer', 'yes', '--resolve-reason', 'x']),
+    /lifecycle automation requires live mode/i,
+  );
+  assert.throws(
+    () => parseMirrorGoFlags([
+      '--polymarket-market-id',
+      'poly-1',
+      '--execute-live',
+      '--max-open-exposure-usdc',
+      '100',
+      '--max-trades-per-day',
+      '5',
+      '--auto-sync',
+      '--auto-resolve',
+      '--resolve-answer',
+      'yes',
+      '--resolve-reason',
+      'x',
+    ]),
+    /requires a finite mirror go run/i,
+  );
+});
+
 test('mirror go and sync parsers accept flashbots routing flags and reject invalid fallback/relay/block values', () => {
   const parseMirrorGoFlags = createParseMirrorGoFlags(buildGoParserDeps());
   const parseMirrorSyncFlags = createParseMirrorSyncFlags(buildSyncParserDeps());

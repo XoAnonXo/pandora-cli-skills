@@ -191,7 +191,11 @@ function startDaemon(options = {}) {
   const logFd = fs.openSync(logFile, 'a', 0o600);
   const child = spawn(process.execPath, [cliPath, ...cliArgs], {
     cwd: options.cwd || process.cwd(),
-    env: options.env || process.env,
+    env: {
+      ...process.env,
+      ...(options.env || {}),
+      PANDORA_DAEMON_LOG_JSONL: '1',
+    },
     detached: true,
     stdio: ['ignore', logFd, logFd],
   });
@@ -214,6 +218,7 @@ function startDaemon(options = {}) {
     status: isPidAlive(child.pid) ? 'running' : 'unknown',
     pidFile,
     logFile,
+    logFormat: 'jsonl',
     cliPath,
     cliArgs: sanitizedCliArgs,
     stateFile: options.stateFile || null,

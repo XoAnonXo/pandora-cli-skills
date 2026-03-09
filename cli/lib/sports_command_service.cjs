@@ -15,6 +15,10 @@ function requireDep(deps, name) {
 
 const SPORTS_USAGE =
   'pandora [--output table|json] sports schedule|scores|books list|events list|events live|odds snapshot|odds bulk|consensus|create plan|create run|sync once|sync run|sync start|sync stop|sync status|resolve plan [flags]';
+const SPORTS_SCHEDULE_USAGE =
+  'pandora [--output table|json] sports schedule [--provider primary|backup|auto] [--competition <id|slug>] [--date <YYYY-MM-DD>] [--kickoff-after <iso>] [--kickoff-before <iso>] [--limit <n>] [--timeout-ms <ms>]';
+const SPORTS_SCORES_USAGE =
+  'pandora [--output table|json] sports scores [--event-id <id>|--game <id>] [--provider primary|backup|auto] [--competition <id|slug>] [--date <YYYY-MM-DD>] [--kickoff-after <iso>] [--kickoff-before <iso>] [--limit <n>] [--timeout-ms <ms>]';
 const BULK_ODDS_CACHE_SCHEMA_VERSION = '1.1.0';
 const BULK_ODDS_TTL_GT_24H_MS = 5 * 60_000;
 const BULK_ODDS_TTL_GT_1H_MS = 60_000;
@@ -695,6 +699,46 @@ function renderSportsTable(payload) {
   console.log('Done.');
 }
 
+function renderSportsHelpTable(helpPayload) {
+  console.log(`Usage: ${helpPayload.usage}`);
+  const notes = Array.isArray(helpPayload.notes) ? helpPayload.notes : [];
+  for (const note of notes) {
+    console.log(note);
+  }
+}
+
+function resolveSportsHelpPayload(args = [], commandHelpPayload) {
+  const filtered = Array.isArray(args)
+    ? args.filter((token) => token !== '--help' && token !== '-h')
+    : [];
+  const topic = filtered.length ? String(filtered[0]) : '';
+
+  if (topic === 'schedule') {
+    return {
+      command: 'sports.schedule.help',
+      payload: commandHelpPayload(SPORTS_SCHEDULE_USAGE, [
+        'sports schedule lists normalized events for the requested competition/date window.',
+        'Use --date for shorthand day filtering or kickoff-after/before for a custom window.',
+      ]),
+    };
+  }
+
+  if (topic === 'scores') {
+    return {
+      command: 'sports.scores.help',
+      payload: commandHelpPayload(SPORTS_SCORES_USAGE, [
+        'sports scores returns normalized score and status rows for an event, competition, or date window.',
+        'Use --event-id or --game for one event, or --competition plus --date/window flags for a slate.',
+      ]),
+    };
+  }
+
+  return {
+    command: 'sports.help',
+    payload: commandHelpPayload(SPORTS_USAGE),
+  };
+}
+
 /**
  * Create sports command runner.
  * @param {object} deps
@@ -728,11 +772,8 @@ function createRunSportsCommand(deps) {
 
   return async function runSportsCommand(args, context) {
     if (!args.length || includesHelpFlag(args)) {
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'sports.help', commandHelpPayload(SPORTS_USAGE));
-      } else {
-        console.log(`Usage: ${SPORTS_USAGE}`);
-      }
+      const help = resolveSportsHelpPayload(args, commandHelpPayload);
+      emitSuccess(context.outputMode, help.command, help.payload, renderSportsHelpTable);
       return;
     }
 

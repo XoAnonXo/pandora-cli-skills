@@ -65,3 +65,14 @@ test('fund-check top-level help advertises wallet shortfall guidance', async () 
   assert.match(payload.data.usage, /pandora \[--output table\|json\] fund-check/);
   assert.match(payload.data.notes[0], /estimates immediate hedge funding needs/i);
 });
+
+test('dashboard top-level table help renders usage instead of generic done output', async () => {
+  const result = runCli(['dashboard', '--help']);
+
+  assert.equal(result.status, 0, result.output);
+  assert.match(String(result.stdout || ''), /Usage: pandora \[--output table\|json\] dashboard/);
+  assert.match(String(result.stdout || ''), /--watch/);
+  assert.match(String(result.stdout || ''), /--wallet <address>/);
+  assert.match(String(result.stdout || ''), /dashboard summarizes discovered mirror markets/i);
+  assert.doesNotMatch(String(result.stdout || ''), /^Done\.\s*$/m);
+});

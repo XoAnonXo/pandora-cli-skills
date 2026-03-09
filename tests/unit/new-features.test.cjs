@@ -273,6 +273,7 @@ function withMcpMode(fn) {
 
 const TEST_WALLET = '0x1111111111111111111111111111111111111111';
 const TEST_MARKET = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const TEST_POLL = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const TEST_PRIVATE_KEY = `0x${'1'.repeat(64)}`;
 const TEST_USDC = '0x3333333333333333333333333333333333333333';
 const POLYMARKET_TEST_SPENDERS = {
@@ -2490,6 +2491,306 @@ test('mirror go auto-sync live execution reuses normalized rebalance trade shape
   assert.equal(captured.rebalanceResult.quote, quotePayload);
   assert.equal(captured.rebalanceResult.ammDeadlineEpoch, '1710000905');
   assert.equal(emittedPayload.sync.actions[0].rebalance.result.quote, quotePayload);
+});
+
+test('mirror go lifecycle automation resolves then closes with explicit final report', async () => {
+  let emittedPayload = null;
+  const resolveCalls = [];
+  const liveWriteScopes = [];
+  let closeCalls = 0;
+
+  await handleMirrorGo({
+    shared: {
+      rest: [],
+      timeoutMs: 1000,
+    },
+    context: {
+      outputMode: 'json',
+    },
+    deps: {
+      CliError: ParserCliError,
+      includesHelpFlag: () => false,
+      emitSuccess: (_mode, _command, payload) => {
+        emittedPayload = payload;
+      },
+      commandHelpPayload: () => ({}),
+      maybeLoadTradeEnv: () => {},
+      resolveIndexerUrl: (value) => value || 'https://indexer.example/graphql',
+      parseMirrorGoFlags: () => ({
+        executeLive: true,
+        autoSync: true,
+        syncOnce: true,
+        autoResolve: true,
+        autoClose: true,
+        resolveAnswer: 'yes',
+        resolveReason: 'Official result confirmed.',
+        resolveWatchIntervalMs: 1,
+        resolveWatchTimeoutMs: 250,
+        noHedge: true,
+        hedgeRatio: 1,
+        syncIntervalMs: 1000,
+        driftTriggerBps: 25,
+        hedgeTriggerUsdc: 10,
+        maxRebalanceUsdc: 50,
+        maxHedgeUsdc: 20,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        chainId: 1,
+        rpcUrl: 'https://rpc.example',
+        polymarketRpcUrl: null,
+        privateKey: TEST_PRIVATE_KEY,
+        profileId: null,
+        profileFile: null,
+        funder: '0x2222222222222222222222222222222222222222',
+        usdc: TEST_USDC,
+        polymarketHost: 'https://clob.polymarket.com',
+        polymarketGammaUrl: null,
+        polymarketGammaMockUrl: null,
+        polymarketMockUrl: 'https://polymarket.example/mock',
+        forceGate: false,
+        skipGateChecks: [],
+        trustDeploy: false,
+        liquidityUsdc: 100,
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: null,
+        manifestFile: null,
+        withRules: false,
+        includeSimilarity: false,
+        fork: false,
+        forkRpcUrl: null,
+        forkChainId: null,
+      }),
+      buildMirrorPlan: async () => ({
+        sourceMarket: {
+          marketId: 'poly-cond-1',
+          slug: 'poly-slug',
+        },
+      }),
+      deployMirror: async () => ({
+        pandora: {
+          marketAddress: TEST_MARKET,
+          pollAddress: TEST_POLL,
+        },
+      }),
+      resolveTrustedDeployPair: () => {
+        throw new Error('resolveTrustedDeployPair should not run without trustDeploy');
+      },
+      findMirrorPair: () => null,
+      defaultMirrorManifestFile: () => null,
+      hasContractCodeAtAddress: async () => true,
+      verifyMirror: async () => ({
+        pandora: { marketAddress: TEST_MARKET, pollAddress: TEST_POLL },
+        sourceMarket: { marketId: 'poly-cond-1', slug: 'poly-slug' },
+      }),
+      selectHealthyPolymarketRpc: async () => ({
+        selectedRpcUrl: 'https://polygon-rpc.example',
+        fallbackUsed: false,
+        attempts: [{ rpcUrl: 'https://polygon-rpc.example', ok: true, order: 1, chainId: 137 }],
+        diagnostics: [],
+      }),
+      runLivePolymarketPreflightForMirror: async () => ({ ok: true }),
+      runMirrorSync: async () => ({
+        mode: 'once',
+        strategyHash: 'go-sync-hash',
+        actionCount: 0,
+        actions: [],
+        snapshots: [],
+        diagnostics: [],
+        state: { tradesToday: 0, idempotencyKeys: [] },
+      }),
+      runResolve: async (options) => {
+        resolveCalls.push({ ...options });
+        if (!options.execute) {
+          return {
+            precheck: {
+              claimable: resolveCalls.length >= 2,
+              epochsUntilFinalization: resolveCalls.length >= 2 ? 0 : 1,
+            },
+          };
+        }
+        return {
+          tx: { txHash: '0xresolve' },
+          precheck: { claimable: true, epochsUntilFinalization: 0 },
+        };
+      },
+      runMirrorClose: async () => {
+        closeCalls += 1;
+        return {
+          summary: {
+            successCount: 3,
+            failureCount: 0,
+          },
+          steps: [
+            { step: 'stop-daemons', ok: true },
+            { step: 'withdraw-lp', ok: true },
+            { step: 'claim-winnings', ok: true },
+          ],
+          diagnostics: ['Polymarket hedge settlement remains manual in this command version; use polymarket trade/close flows as needed.'],
+        };
+      },
+      stopMirrorDaemon: async () => ({}),
+      runLp: async () => ({}),
+      runClaim: async () => ({}),
+      decorateOperationPayload: async (payload) => payload,
+      buildQuotePayload: async () => ({ quoteAvailable: true }),
+      enforceTradeRiskGuards: () => {},
+      executeTradeOnchain: async () => ({}),
+      assertLiveWriteAllowed: async (scope) => {
+        liveWriteScopes.push(scope);
+      },
+      renderMirrorSyncTickLine: () => {},
+      coerceMirrorServiceError: (error) => error,
+      renderMirrorGoTable: () => {},
+      deriveWalletAddressFromPrivateKey: () => '0x3333333333333333333333333333333333333333',
+      sleep: async () => {},
+    },
+    mirrorGoUsage: 'pandora mirror go ...',
+  });
+
+  assert.ok(emittedPayload.lifecycle);
+  assert.equal(emittedPayload.lifecycle.status, 'completed');
+  assert.equal(emittedPayload.lifecycle.resolve.status, 'completed');
+  assert.equal(emittedPayload.lifecycle.close.status, 'completed');
+  assert.equal(emittedPayload.lifecycle.finalReport.resolveStatus, 'completed');
+  assert.equal(emittedPayload.lifecycle.finalReport.claimStatus, 'completed');
+  assert.equal(emittedPayload.lifecycle.finalReport.polymarketSettlement, 'manual');
+  assert.deepEqual(emittedPayload.lifecycle.suggestedResumeCommands, []);
+  assert.equal(resolveCalls.length, 3);
+  assert.equal(closeCalls, 1);
+  assert.deepEqual(liveWriteScopes, [
+    'mirror.go.deploy.execute',
+    'mirror.go.resolve.execute',
+    'mirror.go.close.execute',
+  ]);
+});
+
+test('mirror go lifecycle automation stays resumable when resolve watch times out', async () => {
+  let emittedPayload = null;
+  let closeCalls = 0;
+
+  await handleMirrorGo({
+    shared: {
+      rest: [],
+      timeoutMs: 1000,
+    },
+    context: {
+      outputMode: 'json',
+    },
+    deps: {
+      CliError: ParserCliError,
+      includesHelpFlag: () => false,
+      emitSuccess: (_mode, _command, payload) => {
+        emittedPayload = payload;
+      },
+      commandHelpPayload: () => ({}),
+      maybeLoadTradeEnv: () => {},
+      resolveIndexerUrl: (value) => value || 'https://indexer.example/graphql',
+      parseMirrorGoFlags: () => ({
+        executeLive: true,
+        autoSync: false,
+        syncOnce: false,
+        autoResolve: true,
+        autoClose: true,
+        resolveAnswer: 'yes',
+        resolveReason: 'Official result pending.',
+        resolveWatchIntervalMs: 1,
+        resolveWatchTimeoutMs: 2,
+        noHedge: true,
+        hedgeRatio: 1,
+        syncIntervalMs: 1000,
+        driftTriggerBps: 25,
+        hedgeTriggerUsdc: 10,
+        maxRebalanceUsdc: 50,
+        maxHedgeUsdc: 20,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        chainId: 1,
+        rpcUrl: 'https://rpc.example',
+        polymarketRpcUrl: null,
+        privateKey: TEST_PRIVATE_KEY,
+        profileId: null,
+        profileFile: null,
+        funder: '0x2222222222222222222222222222222222222222',
+        usdc: TEST_USDC,
+        polymarketHost: 'https://clob.polymarket.com',
+        polymarketGammaUrl: null,
+        polymarketGammaMockUrl: null,
+        polymarketMockUrl: 'https://polymarket.example/mock',
+        forceGate: false,
+        skipGateChecks: [],
+        trustDeploy: false,
+        liquidityUsdc: 100,
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: null,
+        manifestFile: null,
+        withRules: false,
+        includeSimilarity: false,
+        fork: false,
+        forkRpcUrl: null,
+        forkChainId: null,
+      }),
+      buildMirrorPlan: async () => ({
+        sourceMarket: {
+          marketId: 'poly-cond-1',
+          slug: 'poly-slug',
+        },
+      }),
+      deployMirror: async () => ({
+        pandora: {
+          marketAddress: TEST_MARKET,
+          pollAddress: TEST_POLL,
+        },
+      }),
+      resolveTrustedDeployPair: () => {
+        throw new Error('resolveTrustedDeployPair should not run without trustDeploy');
+      },
+      findMirrorPair: () => null,
+      defaultMirrorManifestFile: () => null,
+      hasContractCodeAtAddress: async () => true,
+      verifyMirror: async () => ({
+        pandora: { marketAddress: TEST_MARKET, pollAddress: TEST_POLL },
+        sourceMarket: { marketId: 'poly-cond-1', slug: 'poly-slug' },
+      }),
+      runLivePolymarketPreflightForMirror: async () => ({ ok: true }),
+      runMirrorSync: async () => ({ actionCount: 0, actions: [], snapshots: [], diagnostics: [], state: {} }),
+      runResolve: async () => ({
+        precheck: {
+          claimable: false,
+          epochsUntilFinalization: 2,
+        },
+      }),
+      runMirrorClose: async () => {
+        closeCalls += 1;
+        return {};
+      },
+      stopMirrorDaemon: async () => ({}),
+      runLp: async () => ({}),
+      runClaim: async () => ({}),
+      decorateOperationPayload: async (payload) => payload,
+      buildQuotePayload: async () => ({ quoteAvailable: true }),
+      enforceTradeRiskGuards: () => {},
+      executeTradeOnchain: async () => ({}),
+      assertLiveWriteAllowed: async () => {},
+      renderMirrorSyncTickLine: () => {},
+      coerceMirrorServiceError: (error) => error,
+      renderMirrorGoTable: () => {},
+      deriveWalletAddressFromPrivateKey: () => '0x3333333333333333333333333333333333333333',
+      sleep: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 3));
+      },
+    },
+    mirrorGoUsage: 'pandora mirror go ...',
+  });
+
+  assert.ok(emittedPayload.lifecycle);
+  assert.equal(emittedPayload.lifecycle.status, 'timed-out');
+  assert.equal(emittedPayload.lifecycle.resolve.status, 'timed-out');
+  assert.equal(emittedPayload.lifecycle.close.status, 'skipped');
+  assert.equal(emittedPayload.lifecycle.suggestedResumeCommands.length >= 1, true);
+  assert.match(emittedPayload.lifecycle.suggestedResumeCommands[0], /pandora resolve/);
+  assert.equal(closeCalls, 0);
 });
 
 test('runMirrorSync live mode prioritizes CLI hedge credentials over env defaults', async () => {

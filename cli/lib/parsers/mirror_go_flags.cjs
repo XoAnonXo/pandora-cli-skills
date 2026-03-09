@@ -155,8 +155,14 @@ function createParseMirrorGoFlags(deps) {
       paper: true,
       executeLive: false,
       autoSync: false,
+      autoResolve: false,
+      autoClose: false,
       syncOnce: false,
       syncIntervalMs: 5_000,
+      resolveAnswer: null,
+      resolveReason: null,
+      resolveWatchIntervalMs: 5_000,
+      resolveWatchTimeoutMs: 15 * 60_000,
       driftTriggerBps: 150,
       hedgeTriggerUsdc: 10,
       hedgeRatio: 1,
@@ -268,12 +274,50 @@ function createParseMirrorGoFlags(deps) {
         options.autoSync = true;
         continue;
       }
+      if (token === '--auto-resolve') {
+        options.autoResolve = true;
+        continue;
+      }
+      if (token === '--auto-close') {
+        options.autoClose = true;
+        continue;
+      }
       if (token === '--sync-once') {
         options.syncOnce = true;
         continue;
       }
       if (token === '--sync-interval-ms') {
         options.syncIntervalMs = parsePositiveInteger(requireFlagValue(args, i, '--sync-interval-ms'), '--sync-interval-ms');
+        i += 1;
+        continue;
+      }
+      if (token === '--resolve-answer') {
+        const value = String(requireFlagValue(args, i, '--resolve-answer')).trim().toLowerCase();
+        if (value !== 'yes' && value !== 'no') {
+          throw new CliError('INVALID_FLAG_VALUE', '--resolve-answer must be yes|no.');
+        }
+        options.resolveAnswer = value;
+        i += 1;
+        continue;
+      }
+      if (token === '--resolve-reason') {
+        options.resolveReason = requireFlagValue(args, i, '--resolve-reason');
+        i += 1;
+        continue;
+      }
+      if (token === '--resolve-watch-interval-ms') {
+        options.resolveWatchIntervalMs = parsePositiveInteger(
+          requireFlagValue(args, i, '--resolve-watch-interval-ms'),
+          '--resolve-watch-interval-ms',
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--resolve-watch-timeout-ms') {
+        options.resolveWatchTimeoutMs = parsePositiveInteger(
+          requireFlagValue(args, i, '--resolve-watch-timeout-ms'),
+          '--resolve-watch-timeout-ms',
+        );
         i += 1;
         continue;
       }
@@ -627,6 +671,27 @@ function createParseMirrorGoFlags(deps) {
 
     if (!options.polymarketMarketId && !options.polymarketSlug) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'mirror go requires --polymarket-market-id <id> or --polymarket-slug <slug>.');
+    }
+    if (options.autoClose && !options.autoResolve) {
+      throw new CliError('INVALID_ARGS', '--auto-close requires --auto-resolve.');
+    }
+    if ((options.autoResolve || options.autoClose) && !options.executeLive) {
+      throw new CliError(
+        'INVALID_ARGS',
+        'mirror go lifecycle automation requires live mode (--execute-live or --execute).',
+      );
+    }
+    if (options.autoResolve && options.autoSync && !options.syncOnce) {
+      throw new CliError(
+        'INVALID_ARGS',
+        '--auto-resolve requires a finite mirror go run. Use --sync-once with --auto-sync or disable --auto-sync.',
+      );
+    }
+    if (options.autoResolve && !options.resolveAnswer) {
+      throw new CliError('MISSING_REQUIRED_FLAG', '--auto-resolve requires --resolve-answer yes|no.');
+    }
+    if (options.autoResolve && !String(options.resolveReason || '').trim()) {
+      throw new CliError('MISSING_REQUIRED_FLAG', '--auto-resolve requires --resolve-reason <text>.');
     }
     if (sawPaperModeFlag && sawExecuteLiveModeFlag) {
       throw new CliError(

@@ -324,6 +324,18 @@ test('mirror contract descriptors expose separate-leg sync truth, reserve proven
     descriptors['mirror.go'].inputSchema.properties['strict-close-time-delta'].type,
     'boolean',
   );
+  assert.equal(
+    descriptors['mirror.go'].inputSchema.properties['auto-resolve'].type,
+    'boolean',
+  );
+  assert.deepEqual(
+    descriptors['mirror.go'].inputSchema.properties['resolve-answer'].enum,
+    ['yes', 'no'],
+  );
+  assert.match(
+    descriptors['mirror.go'].usage,
+    /--auto-resolve.*--auto-close.*--resolve-answer yes\|no.*--resolve-reason <text>/,
+  );
   assert.match(
     descriptors['mirror.go'].usage,
     /--depth-slippage-bps <n>.*--min-time-to-close-sec <n>.*--strict-close-time-delta/,
@@ -503,11 +515,16 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
     ),
   );
   assert.match(descriptors['mirror.logs'].summary, /daemon log/i);
+  assert.match(descriptors['mirror.logs'].usage, /--follow/);
+  assert.equal(descriptors['mirror.logs'].inputSchema.properties.follow.type, 'boolean');
+  assert.equal(descriptors['mirror.logs'].inputSchema.properties['poll-interval-ms'].type, 'integer');
+  assert.equal(descriptors['mirror.logs'].inputSchema.properties['follow-timeout-ms'].type, 'integer');
   assert.match(descriptors['mirror.replay'].summary, /persisted mirror execution history/i);
   assert.match(toolDefinitions['mirror.status'].description, /status\/dashboard payload/i);
   assert.match(toolDefinitions['mirror.drift'].description, /drift\/readiness/i);
   assert.match(toolDefinitions['mirror.hedge-check'].description, /hedge-gap\/readiness/i);
   assert.equal(toolDefinitions['mirror.logs'].canonicalTool, 'mirror.logs');
+  assert.match(toolDefinitions['mirror.logs'].description, /structured daemon JSONL/i);
   assert.equal(toolDefinitions['mirror.replay'].canonicalTool, 'mirror.replay');
   assert.match(descriptors['mirror.hedge-calc'].summary, /offline hedge sizing/i);
   assert.match(descriptors['polymarket.check'].summary, /lower-level readiness primitive/i);

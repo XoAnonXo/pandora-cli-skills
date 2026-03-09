@@ -237,6 +237,8 @@ async function runMirrorClose(options = {}, deps = {}) {
         chainId: options.chainId || null,
         rpcUrl: options.rpcUrl || null,
         privateKey: options.privateKey || null,
+        profileId: options.profileId || null,
+        profileFile: options.profileFile || null,
         indexerUrl: options.indexerUrl || null,
         timeoutMs: options.timeoutMs || null,
       });
@@ -262,6 +264,8 @@ async function runMirrorClose(options = {}, deps = {}) {
         chainId: options.chainId || null,
         rpcUrl: options.rpcUrl || null,
         privateKey: options.privateKey || null,
+        profileId: options.profileId || null,
+        profileFile: options.profileFile || null,
         indexerUrl: options.indexerUrl || null,
         timeoutMs: options.timeoutMs || null,
       });

@@ -1,9 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const {
-  createRunDashboardCommand,
-} = require('../../cli/lib/dashboard_fund_service.cjs');
+const { createRunDashboardCommand } = require('../../cli/lib/dashboard_fund_service.cjs');
 
 class TestCliError extends Error {
   constructor(code, message, details = null) {
@@ -14,151 +12,156 @@ class TestCliError extends Error {
   }
 }
 
-function createDashboardContext(overrides = {}) {
+function createDashboardDeps(overrides = {}) {
   return {
-    strategyHash: overrides.strategyHash || 'alpha',
-    stateFile: overrides.stateFile || `/tmp/${overrides.strategyHash || 'alpha'}.json`,
-    selector: overrides.selector || {
-      pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      polymarketMarketId: 'poly-alpha',
-      polymarketSlug: 'alpha',
-    },
-    state: {
-      strategyHash: overrides.strategyHash || 'alpha',
-      pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      polymarketMarketId: 'poly-alpha',
-      polymarketSlug: 'alpha',
-      alerts: [],
-      currentHedgeUsdc: 0,
-      cumulativeLpFeesApproxUsdc: 0,
-      cumulativeHedgeCostApproxUsdc: 0,
-      ...(overrides.state || {}),
-    },
-    daemonStatus: overrides.daemonStatus || null,
-  };
-}
-
-test('runDashboardCommand emits live mirror summary with suggested next commands', async () => {
-  const verifyCalls = [];
-  const emitted = [];
-  let maybeLoadIndexerEnvCalls = 0;
-  let maybeLoadTradeEnvCalls = 0;
-
-  const runDashboardCommand = createRunDashboardCommand({
     CliError: TestCliError,
     includesHelpFlag: () => false,
-    emitSuccess: (mode, command, payload) => {
-      emitted.push({ mode, command, payload });
-    },
+    emitSuccess: () => {},
     commandHelpPayload: (usage, notes) => ({ usage, notes }),
-    parseIndexerSharedFlags: () => ({
-      indexerUrl: 'https://indexer.test',
-      timeoutMs: 4321,
-      rest: [],
+    parseIndexerSharedFlags: (args) => ({
+      rest: args,
+      indexerUrl: 'https://indexer.example',
+      timeoutMs: 5_000,
+      envFile: null,
+      envFileExplicit: false,
+      useEnvFile: false,
     }),
-    maybeLoadIndexerEnv: () => {
-      maybeLoadIndexerEnvCalls += 1;
-    },
-    maybeLoadTradeEnv: () => {
-      maybeLoadTradeEnvCalls += 1;
-    },
-    resolveIndexerUrl: (value) => value,
-    resolveTrustedDeployPair: () => null,
+    maybeLoadIndexerEnv: () => {},
+    maybeLoadTradeEnv: () => {},
+    resolveIndexerUrl: (value) => value || 'https://indexer.example',
+    resolveTrustedDeployPair: () => {},
+    verifyMirror: async () => ({
+      sourceMarket: {
+        marketId: 'poly-alpha',
+        question: 'Alpha market',
+      },
+      pandora: {
+        marketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
+    }),
+    toMirrorStatusLivePayload: async () => ({
+      crossVenue: { status: 'attention' },
+      actionability: { status: 'action-needed', recommendedAction: 'rebalance-yes' },
+      netPnlApproxUsdc: 1.5,
+      pnlApprox: 1.5,
+      driftBps: 200,
+      driftTriggerBps: 150,
+      hedgeGapUsdc: 3,
+      hedgeTriggerUsdc: 10,
+      hedgeStatus: { hedgeGapUsdc: 3, triggered: false },
+      sourceMarket: { marketId: 'poly-alpha', question: 'Alpha market' },
+      pandoraMarket: { marketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+    }),
     loadMirrorDashboardContexts: () => [
-      createDashboardContext({
-        strategyHash: 'alpha',
+      {
+        strategyHash: 'alpha-hash',
+        stateFile: '/tmp/alpha.json',
         selector: {
           pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
           polymarketMarketId: 'poly-alpha',
-          polymarketSlug: 'alpha',
         },
-      }),
-      createDashboardContext({
-        strategyHash: 'beta',
-        selector: {
-          pandoraMarketAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-          polymarketMarketId: 'poly-beta',
-          polymarketSlug: 'beta',
+        state: {
+          strategyHash: 'alpha-hash',
+          pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          polymarketMarketId: 'poly-alpha',
+          alerts: [],
         },
-      }),
+        daemonStatus: null,
+      },
     ],
-    buildMirrorRuntimeTelemetry: ({ state }) => ({
-      health: {
-        status: state.strategyHash === 'beta' ? 'blocked' : 'running',
-      },
-      daemon: {
-        alive: state.strategyHash !== 'beta',
-      },
-      alerts: [],
-      pendingAction: null,
-      lastAction: null,
-      lastError: null,
-    }),
-    verifyMirror: async (options) => {
-      verifyCalls.push(options);
-      return {
-        sourceMarket: {
-          question: options.polymarketMarketId === 'poly-beta' ? 'Beta question' : 'Alpha question',
+    discoverOwnedMarkets: async () => ({
+      wallet: '0x1111111111111111111111111111111111111111',
+      walletSource: 'flag',
+      chainId: 1,
+      count: 1,
+      exposureCounts: { token: 0, lp: 1, claimable: 1 },
+      items: [
+        {
+          marketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          question: 'Alpha market',
+          hasClaimableExposure: true,
+          exposure: {
+            claimable: {
+              estimatedClaimUsdc: '3.5',
+              pollFinalized: true,
+              pollAnswer: 'yes',
+            },
+          },
+          diagnostics: [],
         },
-        pandora: {
-          question: options.polymarketMarketId === 'poly-beta' ? 'Beta question' : 'Alpha question',
-        },
-      };
-    },
-    toMirrorStatusLivePayload: async (verifyPayload, state) => ({
-      sourceMarket: { question: verifyPayload.sourceMarket.question, source: 'polymarket:live' },
-      pandoraMarket: { question: verifyPayload.pandora.question, yesPct: 52, noPct: 48 },
-      driftBps: state.strategyHash === 'beta' ? 220 : 15,
-      driftTriggerBps: 150,
-      driftTriggered: state.strategyHash === 'beta',
-      hedgeStatus: {
-        rebalanceSide: state.strategyHash === 'beta' ? 'yes' : 'no',
-        hedgeSide: state.strategyHash === 'beta' ? 'yes' : null,
-      },
-      targetHedgeUsdc: state.strategyHash === 'beta' ? 25 : 0,
-      currentHedgeUsdc: 0,
-      hedgeGapUsdc: state.strategyHash === 'beta' ? 25 : 0,
-      hedgeTriggerUsdc: 10,
-      hedgeTriggered: state.strategyHash === 'beta',
-      netPnlApproxUsdc: state.strategyHash === 'beta' ? -3 : 2,
-      pnlApprox: state.strategyHash === 'beta' ? -1 : 4,
-      reserveTotalUsdc: 100,
-      crossVenue: { status: state.strategyHash === 'beta' ? 'rebalance-needed' : 'aligned' },
-      actionability: {
-        status: state.strategyHash === 'beta' ? 'action-needed' : 'monitor',
-        recommendedAction: state.strategyHash === 'beta' ? 'hedge-now' : 'monitor',
-      },
-      verifyDiagnostics: [],
-      actionableDiagnostics: [],
-      polymarketPosition: { diagnostics: [] },
+      ],
+      diagnostics: [],
     }),
-  });
+    readPandoraWalletBalances: async () => ({
+      enabled: true,
+      walletAddress: '0x1111111111111111111111111111111111111111',
+      chainId: 1,
+      rpcUrl: 'https://ethereum.example',
+      usdcAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      nativeBalance: 0.42,
+      usdcBalance: 11.25,
+      diagnostics: [],
+    }),
+    runPolymarketBalance: async () => ({
+      requestedWallet: '0x1111111111111111111111111111111111111111',
+      runtime: {
+        rpcUrl: 'https://polygon.example',
+        signerAddress: '0x1111111111111111111111111111111111111111',
+        funderAddress: '0x2222222222222222222222222222222222222222',
+        ownerAddress: '0x2222222222222222222222222222222222222222',
+      },
+      balances: {
+        wallet: { ok: true, formatted: '4.25' },
+        signer: { ok: true, formatted: '4.25' },
+        funder: { ok: true, formatted: '5.75' },
+        owner: { ok: true, formatted: '5.75' },
+      },
+      diagnostics: [],
+    }),
+    sleepMs: async () => {},
+    ...overrides,
+  };
+}
 
-  await runDashboardCommand([], { outputMode: 'json' });
+test('dashboard watch mode emits stable JSON snapshots with portfolio rollups', async () => {
+  const observed = [];
+  const runDashboardCommand = createRunDashboardCommand(createDashboardDeps({
+    emitSuccess: (...args) => observed.push(args),
+  }));
 
-  assert.equal(maybeLoadIndexerEnvCalls, 1);
-  assert.equal(maybeLoadTradeEnvCalls, 1);
-  assert.equal(verifyCalls.length, 2);
-  assert.equal(verifyCalls[0].indexerUrl, 'https://indexer.test');
-  assert.equal(verifyCalls[0].timeoutMs, 4321);
-
-  assert.equal(emitted.length, 1);
-  assert.equal(emitted[0].command, 'dashboard');
-  assert.equal(emitted[0].payload.summary.marketCount, 2);
-  assert.equal(emitted[0].payload.summary.liveCount, 2);
-  assert.equal(emitted[0].payload.summary.actionNeededCount, 1);
-  assert.deepEqual(
-    emitted[0].payload.items[1].suggestedNextCommands,
-    [
-      'pandora mirror status --strategy-hash beta --with-live',
-      'pandora mirror sync status --strategy-hash beta',
-    ],
+  await runDashboardCommand(
+    ['--watch', '--iterations', '2', '--refresh-ms', '1', '--wallet', '0x1111111111111111111111111111111111111111', '--no-live'],
+    { outputMode: 'json' },
   );
-  assert.deepEqual(
-    emitted[0].payload.suggestedNextCommands,
-    [
-      'pandora mirror status --strategy-hash beta --with-live',
-      'pandora mirror sync status --strategy-hash beta',
-    ],
+
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0][1], 'dashboard');
+  const payload = observed[0][2];
+  assert.equal(payload.watch.enabled, true);
+  assert.equal(payload.watch.count, 2);
+  assert.equal(payload.snapshots.length, 2);
+  assert.equal(payload.summary.marketCount, 1);
+  assert.deepEqual(payload.suggestedNextCommands, [
+    'pandora mirror status --strategy-hash alpha-hash',
+    'pandora mirror sync status --strategy-hash alpha-hash',
+  ]);
+  assert.equal(payload.portfolio.active.marketCount, 1);
+  assert.equal(payload.portfolio.claimable.marketCount, 1);
+  assert.equal(payload.portfolio.claimable.estimatedClaimUsdcTotal, 3.5);
+  assert.equal(payload.portfolio.liquidCapital.pandora.usdcBalance, 11.25);
+  assert.equal(payload.portfolio.liquidCapital.polymarket.totalDistinctUsdc, 10);
+  assert.equal(payload.portfolio.liquidCapital.totalDistinctUsdc, 21.25);
+});
+
+test('dashboard watch mode in JSON requires explicit iterations', async () => {
+  const runDashboardCommand = createRunDashboardCommand(createDashboardDeps());
+
+  await assert.rejects(
+    () => runDashboardCommand(['--watch', '--no-live'], { outputMode: 'json' }),
+    (error) => {
+      assert.equal(error.code, 'MISSING_REQUIRED_FLAG');
+      assert.match(error.message, /requires --iterations <n>/);
+      return true;
+    },
   );
 });

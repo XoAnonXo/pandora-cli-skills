@@ -1150,6 +1150,7 @@ Usage:
   pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
   pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
   pandora [--output table|json] markets scan [scan options]
+  pandora [--output table|json] markets mine [options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
   pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
   pandora [--output table|json] polls get --id <id>
@@ -1170,9 +1171,10 @@ Usage:
   pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
   pandora [--output table|json] arbitrage [--chain-id <id>] [--venues pandora,polymarket] [--limit <n>] [--min-spread-pct <n>] [--min-liquidity-usdc <n>] [--max-close-diff-hours <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--cross-venue-only|--allow-same-venue] [--with-rules] [--include-similarity] [--question-contains <text>] [--polymarket-host <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] autopilot run|once --market-address <address> --side yes|no --amount-usdc <amount> [--trigger-yes-below <0-100>] [--trigger-yes-above <0-100>] [--paper|--execute-live] [--interval-ms <ms>] [--cooldown-ms <ms>] [--max-amount-usdc <amount>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--state-file <path>] [--kill-switch-file <path>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]
-  pandora [--output table|json] dashboard [--with-live|--no-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
+  pandora [--output table|json] dashboard [--with-live|--no-live] [--watch] [--refresh-ms <ms>] [--iterations <n>] [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] fund-check --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--target-pct <0-100>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
-  pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|close ...
+  pandora [--output table|json] bridge plan --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]
+  pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...
   pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
@@ -1498,6 +1500,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] doctor ...',
       'pandora [--output table|json] setup ...',
       'pandora [--output table|json] markets list|get|scan ...',
+      'pandora [--output table|json] markets mine ...',
       'pandora [--output table|json] polls list|get ...',
       'pandora [--output table|json] events list|get ...',
       'pandora [--output table|json] positions list ...',
@@ -1517,7 +1520,8 @@ function helpJsonPayload() {
       'pandora [--output table|json] autopilot run|once ...',
       'pandora [--output table|json] dashboard ...',
       'pandora [--output table|json] fund-check ...',
-      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|close ...',
+      'pandora [--output table|json] bridge plan ...',
+      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
       'pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...',
       'pandora [--output table|json] webhook test ...',
       'pandora [--output table|json] leaderboard ...',
@@ -1860,7 +1864,7 @@ function buildMirrorSyncStrategy(options) {
 }
 
 function buildMirrorSyncDaemonCliArgs(options, shared) {
-  const args = ['mirror', 'sync', 'run'];
+  const args = ['--output', 'json', 'mirror', 'sync', 'run'];
 
   if (!shared.useEnvFile) {
     args.push('--skip-dotenv');
@@ -1883,7 +1887,7 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
   args.push(options.executeLive ? '--execute-live' : '--paper');
 
   if (!options.hedgeEnabled) args.push('--no-hedge');
-  if (options.stream) args.push('--stream');
+  args.push('--stream');
   args.push('--interval-ms', String(options.intervalMs));
   args.push('--drift-trigger-bps', String(options.driftTriggerBps));
   args.push('--hedge-trigger-usdc', String(options.hedgeTriggerUsdc));
@@ -3016,6 +3020,7 @@ function renderMirrorCloseTable(data) {
 }
 
 function renderMirrorGoTable(data) {
+  const lifecycle = data.lifecycle || {};
   printTable(
     ['Field', 'Value'],
     [
@@ -3024,6 +3029,8 @@ function renderMirrorGoTable(data) {
       ['deployedMarket', data.deploy && data.deploy.pandora ? data.deploy.pandora.marketAddress || '' : ''],
       ['verifyGateOk', data.verify && data.verify.gateResult ? (data.verify.gateResult.ok ? 'yes' : 'no') : ''],
       ['syncStarted', data.sync ? 'yes' : 'no'],
+      ['lifecycleStatus', lifecycle.status || ''],
+      ['suggestedLifecycleCommand', Array.isArray(lifecycle.suggestedResumeCommands) ? lifecycle.suggestedResumeCommands[0] || '' : ''],
       ['suggestedSyncCommand', data.suggestedSyncCommand || ''],
     ],
   );
@@ -7177,12 +7184,19 @@ const runDashboardCommandFromService = createLazyFactoryRunner('./lib/dashboard_
   parseAddressFlag,
   requireFlagValue,
   parsePositiveInteger,
+  parsePrivateKeyFlag,
+  parseInteger,
   maybeLoadIndexerEnv,
   maybeLoadTradeEnv,
   resolveIndexerUrl,
   resolveTrustedDeployPair,
   verifyMirror,
   toMirrorStatusLivePayload,
+  runPolymarketBalance,
+  discoverOwnedMarkets: (options) => getMarketsMineService().discoverOwnedMarkets(options, {
+    collectPortfolioSnapshot,
+    runClaim,
+  }),
 }));
 const runFundCheckCommandFromService = createLazyFactoryRunner('./lib/fund_check_command_service.cjs', 'createRunFundCheckCommand', () => ({
   CliError,
@@ -7207,6 +7221,15 @@ const runFundCheckCommandFromService = createLazyFactoryRunner('./lib/fund_check
   parsePositiveInteger,
   parseInteger,
   parseProbabilityPercent,
+}));
+const runBridgeCommandFromService = createLazyFactoryRunner('./lib/bridge_command_service.cjs', 'createRunBridgeCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadTradeEnv,
+  runPolymarketBalance,
 }));
 
 const runResolveCommandFromService = createLazyFactoryRunner('./lib/resolve_command_service.cjs', 'createRunResolveCommand', () => ({
@@ -8238,6 +8261,7 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   mirrorDaemonStatus,
   defaultMirrorKillSwitchFile,
   runMirrorClose,
+  runResolve,
   runLp,
   runClaim,
   decorateOperationPayload,
@@ -8553,6 +8577,10 @@ async function runFundCheckCommand(args, context) {
   return runFundCheckCommandFromService(args, context);
 }
 
+async function runBridgeCommand(args, context) {
+  return runBridgeCommandFromService(args, context);
+}
+
 async function runResolveCommand(args, context) {
   return runResolveCommandFromService(args, context);
 }
@@ -8736,6 +8764,7 @@ const dispatch = createCommandRouter({
   runSetup,
   runDashboardCommand,
   runFundCheckCommand,
+  runBridgeCommand,
   runMarketsCommand,
   runScanCommand,
   runSportsCommand,

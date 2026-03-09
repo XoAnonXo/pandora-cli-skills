@@ -365,6 +365,8 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
             errors: 'runtime.errorCount and runtime.summary.errorCount report aggregated runtime error alerts.',
             nextAction: 'runtime.nextAction and runtime.summary.nextAction report the operator follow-up the daemon needs next.',
           },
+          daemonLogging:
+            'Daemon children write compact JSONL records to their log file; inspect them with pandora mirror logs --follow.',
           staleCacheFallback:
             'When Polymarket is unreachable, mirror commands reuse cached snapshots from ~/.pandora/polymarket. Live mode blocks cached sources.',
         },
@@ -383,6 +385,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       console.log('Hedge inventory can be recycled with sell-side orders only when runtime depth proves the sell path is safe; otherwise sync keeps buy-side hedging.');
       console.log('Polymarket RPC preflight accepts comma-separated --polymarket-rpc-url / POLYMARKET_RPC_URL fallbacks and tries them in order.');
       console.log('Daemon status payloads expose runtime.health, runtime.lastTrade, runtime.errorCount, and runtime.nextAction for operator health checks.');
+      console.log('Daemon children write compact JSONL records to their log file; use pandora mirror logs --follow to stream parsed entries.');
       console.log(
         'Polymarket outage fallback: cached snapshots under ~/.pandora/polymarket are reused; live mode blocks cached sources.',
       );
@@ -580,7 +583,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     return;
   }
 
-  if (context.outputMode === 'json' && options.stream) {
+  if (context.outputMode === 'json' && options.stream && process.env.PANDORA_DAEMON_LOG_JSONL !== '1') {
     throw new CliError(
       'INVALID_ARGS',
       '--stream is only supported in table output mode. Use --output table or remove --stream.',

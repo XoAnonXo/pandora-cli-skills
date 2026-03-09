@@ -2207,6 +2207,332 @@
     "agentWorkflow": null,
     "aliasOf": null,
     "canRunConcurrent": true,
+    "canonicalTool": "bridge.plan",
+    "command": [
+      "bridge",
+      "plan"
+    ],
+    "controlInputNames": [],
+    "description": "Read-only bridge planner for Ethereum <-> Polygon operator funding gaps. It returns explicit source/destination chain and token assumptions, balance shortfalls, gas expectations, and manual next steps; it does not execute the bridge.",
+    "executeFlags": [],
+    "expectedLatencyMs": 1500,
+    "externalDependencies": [
+      "wallet-secrets",
+      "chain-rpc",
+      "rpc"
+    ],
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "amount-usdc": {
+          "description": "Amount of collateral that must land on the destination side.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "funder": {
+          "description": "Polymarket proxy wallet override.",
+          "type": "string"
+        },
+        "polymarket-rpc-url": {
+          "description": "Polygon RPC URL override used for destination-side balance reads.",
+          "type": "string"
+        },
+        "private-key": {
+          "description": "Hex private key.",
+          "type": "string"
+        },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
+        "target": {
+          "description": "Funding destination to plan for.",
+          "enum": [
+            "pandora",
+            "polymarket"
+          ]
+        },
+        "timeout-ms": {
+          "description": "Request timeout in milliseconds.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "to-wallet": {
+          "description": "Destination wallet override.",
+          "type": "string"
+        },
+        "usdc": {
+          "description": "USDC token address override.",
+          "type": "string"
+        },
+        "wallet": {
+          "description": "Wallet address.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "amount-usdc"
+      ],
+      "type": "object",
+      "xPandora": {
+        "agentPreflightRequired": false,
+        "agentPreflightRequiredForExecuteMode": false,
+        "agentWorkflow": null,
+        "aliasOf": null,
+        "canRunConcurrent": true,
+        "canonicalCommandTokens": [
+          "bridge",
+          "plan"
+        ],
+        "canonicalName": "bridge.plan",
+        "canonicalTool": "bridge.plan",
+        "canonicalUsage": "pandora [--output table|json] bridge plan --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]",
+        "command": [
+          "bridge",
+          "plan"
+        ],
+        "compatibilityAlias": false,
+        "controlInputNames": [],
+        "dataSchema": "#/definitions/GenericCommandData",
+        "emits": [
+          "bridge.plan",
+          "bridge.plan.help",
+          "bridge.help"
+        ],
+        "executeFlags": [],
+        "executeIntentRequired": false,
+        "executeIntentRequiredForLiveMode": false,
+        "expectedLatencyMs": 1500,
+        "externalDependencies": [
+          "wallet-secrets",
+          "chain-rpc",
+          "rpc"
+        ],
+        "helpDataSchema": "#/definitions/CommandHelpPayload",
+        "idempotency": "idempotent",
+        "isCanonical": true,
+        "jobCapable": false,
+        "longRunningBlocked": false,
+        "mcpExposed": true,
+        "mcpLongRunningBlocked": false,
+        "mcpMutating": false,
+        "metadataProvenance": {
+          "descriptorDerived": [
+            "summary",
+            "usage",
+            "emits",
+            "outputModes",
+            "dataSchema",
+            "helpDataSchema",
+            "canonicalTool",
+            "canonicalCommandTokens",
+            "canonicalUsage",
+            "aliasOf",
+            "preferred",
+            "compatibilityAlias",
+            "riskLevel",
+            "idempotency",
+            "expectedLatencyMs",
+            "requiresSecrets",
+            "recommendedPreflightTool",
+            "safeEquivalent",
+            "externalDependencies",
+            "canRunConcurrent",
+            "returnsOperationId",
+            "returnsRuntimeHandle",
+            "jobCapable",
+            "supportsRemote",
+            "remoteEligible",
+            "supportsWebhook",
+            "policyScopes",
+            "agentWorkflow"
+          ],
+          "runtimeEnforced": [
+            "mutating",
+            "mcpMutating",
+            "longRunningBlocked",
+            "mcpLongRunningBlocked",
+            "placeholderBlocked",
+            "controlInputNames",
+            "safeFlags",
+            "executeFlags"
+          ]
+        },
+        "mutating": false,
+        "name": "bridge.plan",
+        "outputModes": [
+          "table",
+          "json"
+        ],
+        "placeholderBlocked": false,
+        "policyScopes": [
+          "bridge:read",
+          "secrets:use",
+          "network:rpc"
+        ],
+        "preferred": true,
+        "recommendedPreflightTool": null,
+        "registryName": "bridge.plan",
+        "remoteEligible": true,
+        "requiresSecrets": true,
+        "returnsOperationId": false,
+        "returnsRuntimeHandle": false,
+        "riskLevel": "medium",
+        "safeEquivalent": null,
+        "safeFlags": [],
+        "summary": "Read a planner-only ETH <-> Polygon USDC funding route for Pandora or Polymarket shortfalls.",
+        "supportsRemote": true,
+        "supportsWebhook": false,
+        "usage": "pandora [--output table|json] bridge plan --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]"
+      }
+    },
+    "jobCapable": false,
+    "longRunningBlocked": false,
+    "mutating": false,
+    "name": "bridge.plan",
+    "placeholderBlocked": false,
+    "policyScopes": [
+      "bridge:read",
+      "secrets:use",
+      "network:rpc"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": true,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "medium",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "xPandora": {
+      "agentPreflightRequired": false,
+      "agentPreflightRequiredForExecuteMode": false,
+      "agentWorkflow": null,
+      "aliasOf": null,
+      "canRunConcurrent": true,
+      "canonicalCommandTokens": [
+        "bridge",
+        "plan"
+      ],
+      "canonicalName": "bridge.plan",
+      "canonicalTool": "bridge.plan",
+      "canonicalUsage": "pandora [--output table|json] bridge plan --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]",
+      "command": [
+        "bridge",
+        "plan"
+      ],
+      "compatibilityAlias": false,
+      "controlInputNames": [],
+      "dataSchema": "#/definitions/GenericCommandData",
+      "emits": [
+        "bridge.plan",
+        "bridge.plan.help",
+        "bridge.help"
+      ],
+      "executeFlags": [],
+      "executeIntentRequired": false,
+      "executeIntentRequiredForLiveMode": false,
+      "expectedLatencyMs": 1500,
+      "externalDependencies": [
+        "wallet-secrets",
+        "chain-rpc",
+        "rpc"
+      ],
+      "helpDataSchema": "#/definitions/CommandHelpPayload",
+      "idempotency": "idempotent",
+      "isCanonical": true,
+      "jobCapable": false,
+      "longRunningBlocked": false,
+      "mcpExposed": true,
+      "mcpLongRunningBlocked": false,
+      "mcpMutating": false,
+      "metadataProvenance": {
+        "descriptorDerived": [
+          "summary",
+          "usage",
+          "emits",
+          "outputModes",
+          "dataSchema",
+          "helpDataSchema",
+          "canonicalTool",
+          "canonicalCommandTokens",
+          "canonicalUsage",
+          "aliasOf",
+          "preferred",
+          "compatibilityAlias",
+          "riskLevel",
+          "idempotency",
+          "expectedLatencyMs",
+          "requiresSecrets",
+          "recommendedPreflightTool",
+          "safeEquivalent",
+          "externalDependencies",
+          "canRunConcurrent",
+          "returnsOperationId",
+          "returnsRuntimeHandle",
+          "jobCapable",
+          "supportsRemote",
+          "remoteEligible",
+          "supportsWebhook",
+          "policyScopes",
+          "agentWorkflow"
+        ],
+        "runtimeEnforced": [
+          "mutating",
+          "mcpMutating",
+          "longRunningBlocked",
+          "mcpLongRunningBlocked",
+          "placeholderBlocked",
+          "controlInputNames",
+          "safeFlags",
+          "executeFlags"
+        ]
+      },
+      "mutating": false,
+      "name": "bridge.plan",
+      "outputModes": [
+        "table",
+        "json"
+      ],
+      "placeholderBlocked": false,
+      "policyScopes": [
+        "bridge:read",
+        "secrets:use",
+        "network:rpc"
+      ],
+      "preferred": true,
+      "recommendedPreflightTool": null,
+      "registryName": "bridge.plan",
+      "remoteEligible": true,
+      "requiresSecrets": true,
+      "returnsOperationId": false,
+      "returnsRuntimeHandle": false,
+      "riskLevel": "medium",
+      "safeEquivalent": null,
+      "safeFlags": [],
+      "summary": "Read a planner-only ETH <-> Polygon USDC funding route for Pandora or Polymarket shortfalls.",
+      "supportsRemote": true,
+      "supportsWebhook": false,
+      "usage": "pandora [--output table|json] bridge plan --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]"
+    }
+  },
+  {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canRunConcurrent": true,
     "canonicalTool": "capabilities",
     "command": [
       "capabilities"
@@ -2828,11 +3154,13 @@
       "dashboard"
     ],
     "controlInputNames": [],
-    "description": "Read the active-mirror operator dashboard across discovered mirror contexts. This is the top-level convenience surface over `mirror dashboard`, with live enrichment enabled unless `--no-live` is supplied.",
+    "description": "Read the active-mirror operator dashboard across discovered mirror contexts. This top-level operator cockpit can refresh on an interval, and it can compose claimable exposure plus liquid-capital rollups when wallet credentials are available.",
     "executeFlags": [],
-    "expectedLatencyMs": 1500,
+    "expectedLatencyMs": 2500,
     "externalDependencies": [
+      "wallet-secrets",
       "indexer-api",
+      "chain-rpc",
       "filesystem",
       "polymarket-api"
     ],
@@ -2840,10 +3168,19 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "chain-id": {
+          "description": "Chain id.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "drift-trigger-bps": {
           "description": "Drift trigger in basis points used when projecting live sync posture.",
           "minimum": 1,
           "type": "integer"
+        },
+        "funder": {
+          "description": "Polymarket proxy wallet override used for liquid-capital balance reads.",
+          "type": "string"
         },
         "hedge-trigger-usdc": {
           "description": "Hedge trigger size in USDC used when projecting live sync posture.",
@@ -2853,6 +3190,11 @@
         "indexer-url": {
           "description": "Indexer base URL.",
           "type": "string"
+        },
+        "iterations": {
+          "description": "Number of snapshots to collect in watch mode.",
+          "minimum": 1,
+          "type": "integer"
         },
         "manifest-file": {
           "description": "Mirror manifest path.",
@@ -2878,6 +3220,31 @@
           "description": "Polymarket mock CLOB URL for live diagnostics.",
           "type": "string"
         },
+        "polymarket-rpc-url": {
+          "description": "Polymarket RPC URL override used for liquid-capital balance reads.",
+          "type": "string"
+        },
+        "private-key": {
+          "description": "Hex private key.",
+          "type": "string"
+        },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
+        "refresh-ms": {
+          "description": "Refresh interval in milliseconds.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
         "timeout-ms": {
           "description": "Request timeout in milliseconds.",
           "minimum": 1,
@@ -2885,6 +3252,18 @@
         },
         "trust-deploy": {
           "description": "Trust manifest deploy pairs during live enrichment.",
+          "type": "boolean"
+        },
+        "usdc": {
+          "description": "USDC token address override.",
+          "type": "string"
+        },
+        "wallet": {
+          "description": "Wallet address.",
+          "type": "string"
+        },
+        "watch": {
+          "description": "Refresh the dashboard on an interval. JSON mode requires a bounded `--iterations` count.",
           "type": "boolean"
         },
         "with-live": {
@@ -2904,7 +3283,7 @@
         ],
         "canonicalName": "dashboard",
         "canonicalTool": "dashboard",
-        "canonicalUsage": "pandora [--output table|json] dashboard [--with-live|--no-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
+        "canonicalUsage": "pandora [--output table|json] dashboard [--with-live|--no-live] [--watch] [--refresh-ms <ms>] [--iterations <n>] [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
         "command": [
           "dashboard"
         ],
@@ -2918,9 +3297,11 @@
         "executeFlags": [],
         "executeIntentRequired": false,
         "executeIntentRequiredForLiveMode": false,
-        "expectedLatencyMs": 1500,
+        "expectedLatencyMs": 2500,
         "externalDependencies": [
+          "wallet-secrets",
           "indexer-api",
+          "chain-rpc",
           "filesystem",
           "polymarket-api"
         ],
@@ -2983,6 +3364,8 @@
         "placeholderBlocked": false,
         "policyScopes": [
           "dashboard:read",
+          "secrets:use",
+          "network:rpc",
           "network:indexer",
           "network:polymarket"
         ],
@@ -2990,16 +3373,16 @@
         "recommendedPreflightTool": null,
         "registryName": "dashboard",
         "remoteEligible": true,
-        "requiresSecrets": false,
+        "requiresSecrets": true,
         "returnsOperationId": false,
         "returnsRuntimeHandle": false,
-        "riskLevel": "low",
+        "riskLevel": "medium",
         "safeEquivalent": null,
         "safeFlags": [],
-        "summary": "Read the active-mirror operator dashboard across discovered mirror contexts, with live enrichment enabled by default.",
+        "summary": "Read the active-mirror operator dashboard across discovered mirror contexts, with optional refresh mode plus claimable and liquid-capital rollups.",
         "supportsRemote": true,
         "supportsWebhook": false,
-        "usage": "pandora [--output table|json] dashboard [--with-live|--no-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
+        "usage": "pandora [--output table|json] dashboard [--with-live|--no-live] [--watch] [--refresh-ms <ms>] [--iterations <n>] [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
       }
     },
     "jobCapable": false,
@@ -3009,16 +3392,18 @@
     "placeholderBlocked": false,
     "policyScopes": [
       "dashboard:read",
+      "secrets:use",
+      "network:rpc",
       "network:indexer",
       "network:polymarket"
     ],
     "preferred": true,
     "recommendedPreflightTool": null,
     "remoteEligible": true,
-    "requiresSecrets": false,
+    "requiresSecrets": true,
     "returnsOperationId": false,
     "returnsRuntimeHandle": false,
-    "riskLevel": "low",
+    "riskLevel": "medium",
     "safeEquivalent": null,
     "safeFlags": [],
     "supportsRemote": true,
@@ -3034,7 +3419,7 @@
       ],
       "canonicalName": "dashboard",
       "canonicalTool": "dashboard",
-      "canonicalUsage": "pandora [--output table|json] dashboard [--with-live|--no-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
+      "canonicalUsage": "pandora [--output table|json] dashboard [--with-live|--no-live] [--watch] [--refresh-ms <ms>] [--iterations <n>] [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
       "command": [
         "dashboard"
       ],
@@ -3048,9 +3433,11 @@
       "executeFlags": [],
       "executeIntentRequired": false,
       "executeIntentRequiredForLiveMode": false,
-      "expectedLatencyMs": 1500,
+      "expectedLatencyMs": 2500,
       "externalDependencies": [
+        "wallet-secrets",
         "indexer-api",
+        "chain-rpc",
         "filesystem",
         "polymarket-api"
       ],
@@ -3113,6 +3500,8 @@
       "placeholderBlocked": false,
       "policyScopes": [
         "dashboard:read",
+        "secrets:use",
+        "network:rpc",
         "network:indexer",
         "network:polymarket"
       ],
@@ -3120,16 +3509,16 @@
       "recommendedPreflightTool": null,
       "registryName": "dashboard",
       "remoteEligible": true,
-      "requiresSecrets": false,
+      "requiresSecrets": true,
       "returnsOperationId": false,
       "returnsRuntimeHandle": false,
-      "riskLevel": "low",
+      "riskLevel": "medium",
       "safeEquivalent": null,
       "safeFlags": [],
-      "summary": "Read the active-mirror operator dashboard across discovered mirror contexts, with live enrichment enabled by default.",
+      "summary": "Read the active-mirror operator dashboard across discovered mirror contexts, with optional refresh mode plus claimable and liquid-capital rollups.",
       "supportsRemote": true,
       "supportsWebhook": false,
-      "usage": "pandora [--output table|json] dashboard [--with-live|--no-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
+      "usage": "pandora [--output table|json] dashboard [--with-live|--no-live] [--watch] [--refresh-ms <ms>] [--iterations <n>] [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
     }
   },
   {
@@ -13884,7 +14273,7 @@
     "controlInputNames": [
       "agentPreflight"
     ],
-    "description": "Plan/deploy/verify/go orchestration. Rebalance-route flags affect only the Ethereum Pandora leg. Auto-sync still executes separate Pandora rebalance and Polymarket hedge legs; cross-venue settlement is not atomic.",
+    "description": "Plan/deploy/verify/go orchestration. Rebalance-route flags affect only the Ethereum Pandora leg. Auto-sync still executes separate Pandora rebalance and Polymarket hedge legs, cross-venue settlement is not atomic, and lifecycle automation can optionally chain explicit resolve-watch plus closeout while keeping Polymarket settlement manual.",
     "executeFlags": [
       "--execute-live",
       "--execute"
@@ -14467,6 +14856,14 @@
           "description": "Arbiter address.",
           "type": "string"
         },
+        "auto-close": {
+          "description": "After auto-resolve completes, run mirror close automatically. Polymarket settlement still remains manual.",
+          "type": "boolean"
+        },
+        "auto-resolve": {
+          "description": "After deploy/verify and any finite sync step, watch until resolution is executable and submit resolve automatically. Requires live mode plus explicit resolve inputs.",
+          "type": "boolean"
+        },
         "auto-sync": {
           "description": "Start sync automatically after deploy.",
           "type": "boolean"
@@ -14765,6 +15162,27 @@
             "public"
           ]
         },
+        "resolve-answer": {
+          "description": "Explicit resolution answer used by lifecycle automation.",
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "resolve-reason": {
+          "description": "Operator reason recorded in the lifecycle resolve payload.",
+          "type": "string"
+        },
+        "resolve-watch-interval-ms": {
+          "description": "Polling interval used by mirror go lifecycle resolve watch.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resolve-watch-timeout-ms": {
+          "description": "Timeout used by mirror go lifecycle resolve watch.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
@@ -14871,7 +15289,7 @@
         ],
         "canonicalName": "mirror.go",
         "canonicalTool": "mirror.go",
-        "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
+        "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
         "command": [
           "mirror",
           "go"
@@ -14980,7 +15398,7 @@
         "summary": "Run mirror deploy, verify, and optional sync workflow. Rebalance-route flags apply only to the Ethereum Pandora leg; any sync leg still remains separate Pandora rebalance and Polymarket hedge legs, not atomic.",
         "supportsRemote": true,
         "supportsWebhook": false,
-        "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
+        "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
       }
     },
     "jobCapable": true,
@@ -15035,7 +15453,7 @@
       ],
       "canonicalName": "mirror.go",
       "canonicalTool": "mirror.go",
-      "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
+      "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
       "command": [
         "mirror",
         "go"
@@ -15144,7 +15562,7 @@
       "summary": "Run mirror deploy, verify, and optional sync workflow. Rebalance-route flags apply only to the Ethereum Pandora leg; any sync leg still remains separate Pandora rebalance and Polymarket hedge legs, not atomic.",
       "supportsRemote": true,
       "supportsWebhook": false,
-      "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
+      "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
     }
   },
   {
@@ -16704,7 +17122,7 @@
       "logs"
     ],
     "controlInputNames": [],
-    "description": "Tail mirror daemon logs resolved from state, strategy hash, or Pandora market selector. Missing or unreadable logs degrade into diagnostics instead of a transport failure.",
+    "description": "Read mirror daemon logs resolved from state, strategy hash, or Pandora market selector. The surface parses structured daemon JSONL when present, preserves raw text compatibility for legacy logs, supports follow mode, and degrades missing or unreadable logs into diagnostics instead of a transport failure.",
     "executeFlags": [],
     "expectedLatencyMs": 1000,
     "externalDependencies": [
@@ -16860,6 +17278,15 @@
         }
       ],
       "properties": {
+        "follow": {
+          "description": "Keep polling for appended daemon log lines after returning the initial tail.",
+          "type": "boolean"
+        },
+        "follow-timeout-ms": {
+          "description": "Optional timeout for mirror logs --follow.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "lines": {
           "description": "Maximum number of results.",
           "minimum": 1,
@@ -16872,6 +17299,11 @@
         "pandora-market-address": {
           "description": "Market address.",
           "type": "string"
+        },
+        "poll-interval-ms": {
+          "description": "Polling interval used by mirror logs --follow.",
+          "minimum": 1,
+          "type": "integer"
         },
         "polymarket-market-id": {
           "description": "Optional Polymarket market id used to disambiguate selector-first log lookup.",
@@ -16903,7 +17335,7 @@
         ],
         "canonicalName": "mirror.logs",
         "canonicalTool": "mirror.logs",
-        "canonicalUsage": "pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>]",
+        "canonicalUsage": "pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>] [--follow] [--poll-interval-ms <ms>] [--follow-timeout-ms <ms>]",
         "command": [
           "mirror",
           "logs"
@@ -16996,10 +17428,10 @@
         "riskLevel": "low",
         "safeEquivalent": null,
         "safeFlags": [],
-        "summary": "Tail mirror daemon logs via state, strategy hash, or Pandora market selector, preserving diagnostics instead of hard-failing when the log file is missing.",
+        "summary": "Read mirror daemon logs via state, strategy hash, or Pandora market selector, including structured JSONL parsing, follow mode, and missing-file diagnostics.",
         "supportsRemote": true,
         "supportsWebhook": false,
-        "usage": "pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>]"
+        "usage": "pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>] [--follow] [--poll-interval-ms <ms>] [--follow-timeout-ms <ms>]"
       }
     },
     "jobCapable": false,
@@ -17035,7 +17467,7 @@
       ],
       "canonicalName": "mirror.logs",
       "canonicalTool": "mirror.logs",
-      "canonicalUsage": "pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>]",
+      "canonicalUsage": "pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>] [--follow] [--poll-interval-ms <ms>] [--follow-timeout-ms <ms>]",
       "command": [
         "mirror",
         "logs"
@@ -17128,10 +17560,10 @@
       "riskLevel": "low",
       "safeEquivalent": null,
       "safeFlags": [],
-      "summary": "Tail mirror daemon logs via state, strategy hash, or Pandora market selector, preserving diagnostics instead of hard-failing when the log file is missing.",
+      "summary": "Read mirror daemon logs via state, strategy hash, or Pandora market selector, including structured JSONL parsing, follow mode, and missing-file diagnostics.",
       "supportsRemote": true,
       "supportsWebhook": false,
-      "usage": "pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>]"
+      "usage": "pandora [--output table|json] mirror logs --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address> [--polymarket-market-id <id>|--polymarket-slug <slug>] [--lines <n>] [--follow] [--poll-interval-ms <ms>] [--follow-timeout-ms <ms>]"
     }
   },
   {
@@ -45566,6 +45998,7 @@
         "dataSchema": "#/definitions/SportsSchedulePayload",
         "emits": [
           "sports.schedule",
+          "sports.schedule.help",
           "sports.help"
         ],
         "executeFlags": [],
@@ -45694,6 +46127,7 @@
       "dataSchema": "#/definitions/SportsSchedulePayload",
       "emits": [
         "sports.schedule",
+        "sports.schedule.help",
         "sports.help"
       ],
       "executeFlags": [],
@@ -45866,6 +46300,7 @@
         "dataSchema": "#/definitions/SportsScoresPayload",
         "emits": [
           "sports.scores",
+          "sports.scores.help",
           "sports.help"
         ],
         "executeFlags": [],
@@ -45994,6 +46429,7 @@
       "dataSchema": "#/definitions/SportsScoresPayload",
       "emits": [
         "sports.scores",
+        "sports.scores.help",
         "sports.help"
       ],
       "executeFlags": [],
