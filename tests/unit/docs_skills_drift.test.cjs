@@ -14,6 +14,12 @@ function readJson(relativePath) {
   return JSON.parse(read(relativePath));
 }
 
+function readPythonSdkVersion() {
+  const match = read('sdk/python/pyproject.toml').match(/^version\s*=\s*"([^"]+)"\s*$/m);
+  assert.ok(match, 'sdk/python/pyproject.toml must declare [project].version');
+  return match[1];
+}
+
 function assertMentionsAll(text, values, messagePrefix) {
   for (const value of values) {
     assert.match(
@@ -255,10 +261,14 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   }
 
   const sdkPackages = capabilities.data.transports.sdk.packages;
+  const pythonSdkVersion = readPythonSdkVersion();
   assert.equal(sdkPackages.typescript.publicRegistryPublished, true);
   assert.equal(sdkPackages.python.publicRegistryPublished, true);
   assert.match(quickstartText, /npm install @thisispandora\/agent-sdk@alpha/i);
-  assert.match(quickstartText, /pip install pandora-agent==0\.1\.0a3/i);
+  assert.match(
+    quickstartText,
+    new RegExp(`pip install pandora-agent==${pythonSdkVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'),
+  );
   assertMentionsAll(supportMatrixText, [
     sdkPackages.typescript.name,
     sdkPackages.python.name,

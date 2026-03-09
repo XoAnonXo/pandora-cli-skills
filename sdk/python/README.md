@@ -31,7 +31,7 @@ Current validated install paths:
 Preferred for external consumers:
 
 ```bash
-pip install pandora-agent==0.1.0a3
+pip install pandora-agent==0.1.0a4
 ```
 
 Or install from a signed GitHub release artifact:

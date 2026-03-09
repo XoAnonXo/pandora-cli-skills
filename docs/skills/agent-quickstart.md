@@ -216,7 +216,7 @@ Status:
 - release flow already builds and verifies standalone SDK artifacts for those package identities
 - public publication is live:
   - `npm install @thisispandora/agent-sdk@alpha`
-  - `pip install pandora-agent==0.1.0a3`
+  - `pip install pandora-agent==0.1.0a4`
 - signed GitHub release assets remain the parity and audit-friendly distribution path
 - the repository and the root Pandora package also vendor matching SDK copies under `sdk/typescript` and `sdk/python`
 
@@ -233,7 +233,7 @@ Status:
 
 ### Python
 - standalone package identity: `pandora-agent`
- - external install path: public PyPI package `pandora-agent==0.1.0a3` or signed GitHub release wheel or sdist attached to the tagged Pandora release
+ - external install path: public PyPI package `pandora-agent==0.1.0a4` or signed GitHub release wheel or sdist attached to the tagged Pandora release
  - repository checkout path: `sdk/python` for maintainers and in-tree consumers
 - module/import name: `pandora_agent`
 - vendored root-package copy: `sdk/python`

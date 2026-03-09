@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-09T15:44:19.442Z",
+  "generatedAt": "2026-03-09T16:19:46.514Z",
   "suite": "core",
   "runtime": {
-    "packageVersion": "1.1.76"
+    "packageVersion": "1.1.77"
   },
   "summary": {
     "scenarioCount": 19,
@@ -135,19 +135,19 @@
     "commandDescriptorVersion": "1.4.3",
     "generatedManifestVersion": "1.0.0",
     "generatedManifestCommandDescriptorVersion": "1.4.3",
-    "generatedManifestPackageVersion": "0.1.0-alpha.3",
+    "generatedManifestPackageVersion": "0.1.0-alpha.4",
     "generatedManifestRegistryDigest": {
       "canonicalHash": "f07fc0c12e214d3e7fc33da629fb272595b2c405e82e169f65b5c1c1c7947dee",
       "commandDigestHash": "097c5962b0f46694e81418ed90355e6a108fad28cd78f7b200c2012f780d53ec",
       "descriptorHash": "46ebe41f97c0d880841b1a56007b81222fe4d6183f4c7b81591ba8e92651a3d0",
-      "documentationHash": "b26199ef39d42002232d40fe801fa4da9353dab09293f8815d28718ada333901",
+      "documentationHash": "eac4a714fbfb42172d5fdc587432c155cf75530ec1307e4c14b8b8f18f063cb2",
       "fullDescriptorHash": "d43d124b243c11db491097ccf46ef0f627817bf01bff648893960b6a8108ded1",
       "namespaceHash": "83b548c6b3be31f7ff544df57a5d0fa2aae748c7929c089841b0c539f7a55cc0",
       "policyProfilesHash": "353bc5f443bf14f9b5d16c04fe0bc9cc0350beb83104208a0f1361515dbf8f8e",
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "fdfa1ebe53b5ff34ee029b8464348a345aefac73ee8fd8d1a39c195f0571c886",
       "topLevelHash": "cce379250f0a7a808a65e87930f848c0a04a4be32bd4a62208ce6af083ed6ba8",
-      "trustDistributionHash": "2cd209f06816a2888a02a27ce5ed0952499dc0c9a9e98c9d4b7177468dda2579"
+      "trustDistributionHash": "20c2d2f097677a2074f60a95b6cf7d433d533173d879d41d39cafa2b1012b6c9"
     },
     "registryDigest": {
       "descriptorHash": "46ebe41f97c0d880841b1a56007b81222fe4d6183f4c7b81591ba8e92651a3d0",
@@ -157,29 +157,29 @@
       "topLevelHash": "cce379250f0a7a808a65e87930f848c0a04a4be32bd4a62208ce6af083ed6ba8",
       "routedTopLevelHash": "fdfa1ebe53b5ff34ee029b8464348a345aefac73ee8fd8d1a39c195f0571c886",
       "namespaceHash": "83b548c6b3be31f7ff544df57a5d0fa2aae748c7929c089841b0c539f7a55cc0",
-      "documentationHash": "b26199ef39d42002232d40fe801fa4da9353dab09293f8815d28718ada333901",
-      "trustDistributionHash": "2cd209f06816a2888a02a27ce5ed0952499dc0c9a9e98c9d4b7177468dda2579",
+      "documentationHash": "eac4a714fbfb42172d5fdc587432c155cf75530ec1307e4c14b8b8f18f063cb2",
+      "trustDistributionHash": "20c2d2f097677a2074f60a95b6cf7d433d533173d879d41d39cafa2b1012b6c9",
       "policyProfilesHash": "353bc5f443bf14f9b5d16c04fe0bc9cc0350beb83104208a0f1361515dbf8f8e",
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740"
     },
-    "documentationContentHash": "b9cf8155459cdcd53f2a708f9c786c2564699a1eca3a627e4437f8641b4f725d",
-    "documentationRegistryHash": "b26199ef39d42002232d40fe801fa4da9353dab09293f8815d28718ada333901",
-    "schemaHash": "79a78ef3167c0e43bac3639c35e8e1a7419e633449510c6bdbf08db70c9c26e3",
-    "capabilitiesLocalHash": "c37af83fafe418af1f8fa411fcaa355f2818ac6873c32b079c89e9e53b73f100",
-    "capabilitiesRemoteTemplateHash": "8d58a6dc1f53052840cdeb5889901d6bd79efdefaabb3011c09b64ceb11c3ffe",
+    "documentationContentHash": "4f7f524bd5484d152ecf9e3fee239ec4bb7d6c5c7f1b6f13e7787d604cca2cb8",
+    "documentationRegistryHash": "eac4a714fbfb42172d5fdc587432c155cf75530ec1307e4c14b8b8f18f063cb2",
+    "schemaHash": "90b95b39aa428258e0d6d6045dd3368e2d232dfc4f4b3853796c27419df0694b",
+    "capabilitiesLocalHash": "fd74d46d3846227724a9ab7863736e8f2aa1854deb9018323efedf6c4665d549",
+    "capabilitiesRemoteTemplateHash": "fd1dcd0f89c19531b32718c802db2abdc7208aad6cdfb598be96025e31e83fd9",
     "generatedArtifactHashes": {
-      "generatedContractRegistry": "b28a1242c8a439333b9869815cb7cc4877c494ae13eb7d5875fd0336078b1ae9",
+      "generatedContractRegistry": "b253ff0b67b8aecc0883f167f313cd65519fb84aa0d22130f4cb16b64e5400e9",
       "generatedCommandDescriptors": "74f1cf8a2d2c1be416e09abfb06aefc939f10cff1e5a6fb35558575c07f574f5",
       "generatedMcpToolDefinitions": "823d274e35d1856cb49f211ad005097d10a6f5474d994b9ab64c235397a731f2",
-      "generatedManifest": "1c5bd8a274dbded180337f95b26b9fcf46c43b121a4137088aaee86fc2f6b4b9",
-      "tsContractRegistry": "b28a1242c8a439333b9869815cb7cc4877c494ae13eb7d5875fd0336078b1ae9",
+      "generatedManifest": "48eac44395185ca8d86de453ee3229529443c93b04fd3f87c9b65f48f3d7a32b",
+      "tsContractRegistry": "b253ff0b67b8aecc0883f167f313cd65519fb84aa0d22130f4cb16b64e5400e9",
       "tsCommandDescriptors": "74f1cf8a2d2c1be416e09abfb06aefc939f10cff1e5a6fb35558575c07f574f5",
       "tsMcpToolDefinitions": "823d274e35d1856cb49f211ad005097d10a6f5474d994b9ab64c235397a731f2",
-      "tsManifest": "048598fd71ab3b400aea892d6477eb1808c6d64edc9c7b8002754f457a7fb045",
-      "pyContractRegistry": "b28a1242c8a439333b9869815cb7cc4877c494ae13eb7d5875fd0336078b1ae9",
+      "tsManifest": "3a775db00f5dbbbb11cf316906c9e2512084f3d3a2d7952afb437bc3ba295ba7",
+      "pyContractRegistry": "b253ff0b67b8aecc0883f167f313cd65519fb84aa0d22130f4cb16b64e5400e9",
       "pyCommandDescriptors": "74f1cf8a2d2c1be416e09abfb06aefc939f10cff1e5a6fb35558575c07f574f5",
       "pyMcpToolDefinitions": "823d274e35d1856cb49f211ad005097d10a6f5474d994b9ab64c235397a731f2",
-      "pyManifest": "c3582b0691139de00a91a5beac92fbc8d6fe172a24e0059340799fadbe10ff95"
+      "pyManifest": "feae3606dd3b934676ed857ec7fd8fa270ff69419230bc9a463c7a82ed5246ed"
     }
   },
   "expectedContractLockPath": "benchmarks/locks/core.lock.json",
@@ -208,7 +208,7 @@
         "matches": true,
         "hashCount": 1,
         "hashes": [
-          "8d42783b3c2e096a676faf3ea7c49977c9708e2264c6b5eb38b68f75d26142e6"
+          "928d3a823c01343129399173cd0a0b8ff0e6d93dba573c4fcdf014fc79c5812f"
         ]
       },
       {
@@ -274,7 +274,7 @@
         "matches": true,
         "hashCount": 1,
         "hashes": [
-          "bde8f8d077cb296bded36be8931708ee40ea203d7530b971d79a79404a3a65de"
+          "7249aedeaaa8435ad72e1a496f1c845b1e2aa3ee8f745f3b2201b5db3c671f9e"
         ]
       },
       {
@@ -339,7 +339,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 219,
+      "durationMs": 259,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -472,7 +472,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "8d42783b3c2e096a676faf3ea7c49977c9708e2264c6b5eb38b68f75d26142e6",
+      "parityHash": "928d3a823c01343129399173cd0a0b8ff0e6d93dba573c4fcdf014fc79c5812f",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -495,7 +495,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 227,
+      "durationMs": 235,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -628,7 +628,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "8d42783b3c2e096a676faf3ea7c49977c9708e2264c6b5eb38b68f75d26142e6",
+      "parityHash": "928d3a823c01343129399173cd0a0b8ff0e6d93dba573c4fcdf014fc79c5812f",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -651,7 +651,7 @@
       ],
       "weight": 12,
       "passed": true,
-      "durationMs": 227,
+      "durationMs": 242,
       "checks": [
         {
           "id": "capabilities.ok",
@@ -784,7 +784,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "8d42783b3c2e096a676faf3ea7c49977c9708e2264c6b5eb38b68f75d26142e6",
+      "parityHash": "928d3a823c01343129399173cd0a0b8ff0e6d93dba573c4fcdf014fc79c5812f",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -864,7 +864,7 @@
       ],
       "weight": 20,
       "passed": true,
-      "durationMs": 3,
+      "durationMs": 2,
       "checks": [
         {
           "id": "execute-intent.transport-error",
@@ -924,7 +924,7 @@
       ],
       "weight": 15,
       "passed": true,
-      "durationMs": 46,
+      "durationMs": 53,
       "checks": [
         {
           "id": "workspace-denial.transport-error",
@@ -978,7 +978,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 192,
+      "durationMs": 220,
       "checks": [
         {
           "id": "operations-list.ok",
@@ -1036,7 +1036,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 232,
+      "durationMs": 216,
       "checks": [
         {
           "id": "schema.ok",
@@ -1144,7 +1144,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "bde8f8d077cb296bded36be8931708ee40ea203d7530b971d79a79404a3a65de",
+      "parityHash": "7249aedeaaa8435ad72e1a496f1c845b1e2aa3ee8f745f3b2201b5db3c671f9e",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1168,7 +1168,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 223,
+      "durationMs": 230,
       "checks": [
         {
           "id": "schema.ok",
@@ -1276,7 +1276,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "bde8f8d077cb296bded36be8931708ee40ea203d7530b971d79a79404a3a65de",
+      "parityHash": "7249aedeaaa8435ad72e1a496f1c845b1e2aa3ee8f745f3b2201b5db3c671f9e",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1300,7 +1300,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 219,
+      "durationMs": 236,
       "checks": [
         {
           "id": "schema.ok",
@@ -1408,7 +1408,7 @@
         "mcp-stdio",
         "mcp-http"
       ],
-      "parityHash": "bde8f8d077cb296bded36be8931708ee40ea203d7530b971d79a79404a3a65de",
+      "parityHash": "7249aedeaaa8435ad72e1a496f1c845b1e2aa3ee8f745f3b2201b5db3c671f9e",
       "failure": null,
       "runtimeState": {
         "before": {
@@ -1431,7 +1431,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 190,
+      "durationMs": 205,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1502,7 +1502,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 189,
+      "durationMs": 222,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1573,7 +1573,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 191,
+      "durationMs": 201,
       "checks": [
         {
           "id": "operations-get.ok",
@@ -1705,7 +1705,7 @@
       ],
       "weight": 15,
       "passed": true,
-      "durationMs": 43,
+      "durationMs": 44,
       "checks": [
         {
           "id": "workspace-denial.transport-error",
@@ -1761,7 +1761,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 18,
+      "durationMs": 19,
       "checks": [
         {
           "id": "tools-list.ok",
@@ -1867,7 +1867,7 @@
       ],
       "weight": 10,
       "passed": true,
-      "durationMs": 14,
+      "durationMs": 15,
       "checks": [
         {
           "id": "tools-list.ok",
@@ -1972,7 +1972,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 200,
+      "durationMs": 205,
       "checks": [
         {
           "id": "operations-cancel.ok",
@@ -2034,7 +2034,7 @@
       ],
       "weight": 8,
       "passed": true,
-      "durationMs": 199,
+      "durationMs": 207,
       "checks": [
         {
           "id": "operations-close.ok",
