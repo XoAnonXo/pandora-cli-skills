@@ -6,6 +6,7 @@ const {
   writeSuiteLock,
   defaultSuiteLockPath,
   getSuiteExpectation,
+  normalizeBenchmarkReportForFreshness,
 } = require('../benchmarks/lib/runner.cjs');
 
 function parseArgs(argv) {
@@ -62,7 +63,7 @@ function parseArgs(argv) {
   if (options.out) {
     const outPath = path.resolve(process.cwd(), options.out);
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, `${JSON.stringify(report, null, 2)}\n`);
+    fs.writeFileSync(outPath, `${JSON.stringify(normalizeBenchmarkReportForFreshness(report), null, 2)}\n`);
   }
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 })().catch((error) => {

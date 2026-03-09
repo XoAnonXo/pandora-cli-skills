@@ -11,6 +11,7 @@ const {
   validateScenarioManifest,
   compareContractLock,
   createPublishedBenchmarkReport,
+  normalizeBenchmarkReportForFreshness,
 } = require('../../benchmarks/lib/runner.cjs');
 const { getAssertion } = require('../../benchmarks/lib/assertions.cjs');
 const {
@@ -291,6 +292,162 @@ test('public benchmark bundle avoids absolute machine-specific paths such as wri
   assert.equal(path.isAbsolute(report.expectedContractLockPath), false);
   assert.match(report.writtenLockPath, /\.tmp-benchmark-run-/);
   assert.match(report.expectedContractLockPath, /\.tmp-benchmark-run-/);
+});
+
+test('run_agent_benchmarks writes the published deterministic report to disk', (t) => {
+  const rootDir = path.resolve(__dirname, '..', '..');
+  const tempDir = fs.mkdtempSync(path.join(rootDir, '.tmp-benchmark-published-'));
+  const outPath = path.join(tempDir, 'core-report.json');
+  const lockPath = path.join(tempDir, 'core.lock.json');
+  t.after(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const output = execFileSync(
+    process.execPath,
+    [
+      'scripts/run_agent_benchmarks.cjs',
+      '--suite',
+      'core',
+      '--write-lock',
+      '--out',
+      path.relative(rootDir, outPath),
+      '--lock-path',
+      path.relative(rootDir, lockPath),
+    ],
+    {
+      cwd: rootDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+
+  const stdoutReport = JSON.parse(output);
+  const writtenReport = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+
+  assert.ok(typeof stdoutReport.generatedAt === 'string' && stdoutReport.generatedAt.length > 0);
+  assert.ok(Array.isArray(stdoutReport.scenarios) && stdoutReport.scenarios.length > 0);
+  assert.equal(typeof stdoutReport.scenarios[0].durationMs, 'number');
+  assert.deepEqual(writtenReport, normalizeBenchmarkReportForFreshness(stdoutReport));
+  assert.equal('generatedAt' in writtenReport, false);
+  assert.equal('durationMs' in writtenReport.scenarios[0], false);
+  assert.equal('runtimeState' in writtenReport.scenarios[0], false);
+  assert.equal('parityHash' in writtenReport.scenarios[0], false);
+  assert.equal('writtenLockPath' in writtenReport, false);
+});
+
+test('benchmark publication artifacts reuse the current version generatedAt when report output is deterministic', (t) => {
+  const rootDir = path.resolve(__dirname, '..', '..');
+  const tempDir = fs.mkdtempSync(path.join(rootDir, '.tmp-benchmark-history-'));
+  t.after(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const packagePath = path.join(tempDir, 'package.json');
+  const reportPath = path.join(tempDir, 'core-report.json');
+  const lockPath = path.join(tempDir, 'core.lock.json');
+  const bundlePath = path.join(tempDir, 'core-bundle.json');
+  const historyPath = path.join(tempDir, 'core-history.json');
+  const docsHistoryPath = path.join(tempDir, 'docs-history.json');
+  const generatedAt = '2026-03-09T16:19:46.514Z';
+
+  fs.writeFileSync(packagePath, `${JSON.stringify({
+    name: 'pandora-cli-skills',
+    version: '9.9.9',
+  }, null, 2)}\n`);
+
+  fs.writeFileSync(reportPath, `${JSON.stringify(createPublishedBenchmarkReport({
+    schemaVersion: '1.0.0',
+    suite: 'core',
+    runtime: { packageVersion: '9.9.9' },
+    summary: {
+      scenarioCount: 1,
+      passedCount: 1,
+      failedCount: 0,
+      latencyPassRate: 1,
+      failedParityGroupCount: 0,
+      overallPass: true,
+      weightedScore: 100,
+    },
+    contractLock: {},
+    expectedContractLockPath: 'benchmarks/locks/core.lock.json',
+    contractLockMatchesExpected: true,
+    contractLockMismatches: [],
+    parity: { groups: [], failedGroups: [] },
+    scenarios: [{
+      id: 'scenario',
+      title: 'Scenario',
+      description: 'desc',
+      transport: 'cli-json',
+      dimensions: ['bootstrap'],
+      weight: 1,
+      passed: true,
+      score: { weighted: 100, latencyPass: true },
+      failure: null,
+      checks: [],
+    }],
+  }), null, 2)}\n`);
+
+  fs.writeFileSync(lockPath, `${JSON.stringify({
+    schemaVersion: '1.0.0',
+    suite: 'core',
+    publication: {
+      contractLockHash: 'lock-hash',
+      lockDocumentHash: 'doc-hash',
+    },
+    contractLock: {},
+  }, null, 2)}\n`);
+
+  fs.writeFileSync(historyPath, `${JSON.stringify({
+    schemaVersion: '1.0.0',
+    suite: 'core',
+    generatedAt,
+    latestVersion: '9.9.9',
+    latestGeneratedAt: generatedAt,
+    entries: [{
+      schemaVersion: '1.0.0',
+      suite: 'core',
+      packageName: 'pandora-cli-skills',
+      version: '9.9.9',
+      packageVersion: '9.9.9',
+      generatedAt,
+      summary: {
+        weightedScore: 100,
+        overallPass: true,
+        scenarioCount: 1,
+        passedCount: 1,
+        failedCount: 0,
+        failedParityGroupCount: 0,
+      },
+      weightedScore: 100,
+      overallPass: true,
+      scenarioCount: 1,
+      passedCount: 1,
+      failedCount: 0,
+      failedParityGroupCount: 0,
+      contractLockMatchesExpected: true,
+      parityFailedGroups: [],
+      descriptorHash: null,
+      documentationContentHash: null,
+      reportSha256: 'old-report-sha',
+      lockSha256: 'old-lock-sha',
+      lockSchemaVersion: '1.0.0',
+    }],
+  }, null, 2)}\n`);
+
+  const artifacts = buildPublicationArtifacts({
+    packagePath,
+    reportPath,
+    lockPath,
+    bundlePath,
+    historyPath,
+    docsHistoryPath,
+  });
+
+  assert.equal(artifacts.bundle.generatedAt, generatedAt);
+  assert.equal(artifacts.history.generatedAt, generatedAt);
+  assert.equal(artifacts.history.latestGeneratedAt, generatedAt);
+  assert.equal(artifacts.history.entries[0].generatedAt, generatedAt);
 });
 
 test('benchmark trust failure messaging distinguishes benchmark refresh from publication history refresh', () => {

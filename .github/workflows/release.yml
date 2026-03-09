@@ -114,7 +114,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Assert tracked worktree clean after release prep
-        run: node scripts/check_release_drift.cjs --tag "${GITHUB_REF_NAME}" --require-clean-tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+            echo "Tracked worktree changed during release prep. Refresh or normalize the committed benchmark artifacts before tagging." >&2
+            git status --short --untracked-files=no >&2
+            git diff --stat -- . >&2 || true
+            exit 1
+          fi
 
       - name: Build standalone SDK artifacts
         run: npm run release:build-sdk-artifacts
@@ -136,7 +145,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify publish manifest restored after pack
-        run: node scripts/check_release_drift.cjs --tag "${GITHUB_REF_NAME}" --require-clean-tree
+        run: node scripts/check_release_drift.cjs --tag "${GITHUB_REF_NAME}"
 
       - name: Assert tracked worktree clean after npm pack
         shell: bash

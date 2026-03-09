@@ -78,8 +78,11 @@ function buildPublicationManifest(options) {
   const docsHistoryPath = requiredPath(options, 'docsHistory');
 
   const report = readJson(reportPath);
+  const bundle = readJson(bundlePath);
   const lock = readJson(lockPath);
-  const generatedAt = report && report.generatedAt ? report.generatedAt : new Date().toISOString();
+  const generatedAt = bundle && typeof bundle.generatedAt === 'string' && bundle.generatedAt.trim()
+    ? bundle.generatedAt
+    : report && report.generatedAt ? report.generatedAt : new Date().toISOString();
 
   return {
     schemaVersion: '1.0.0',

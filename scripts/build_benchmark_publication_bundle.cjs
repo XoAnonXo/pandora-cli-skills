@@ -48,6 +48,39 @@ function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
+function findExistingHistoryEntry(existingHistory, version, suite) {
+  const entries = Array.isArray(existingHistory && existingHistory.entries)
+    ? existingHistory.entries
+    : [];
+  return entries.find((entry) =>
+    entry
+    && entry.packageVersion === version
+    && entry.suite === suite
+    && typeof entry.generatedAt === 'string'
+    && entry.generatedAt.trim()) || null;
+}
+
+function resolveGeneratedAt(options) {
+  const reportGeneratedAt = options.report && typeof options.report.generatedAt === 'string'
+    ? options.report.generatedAt.trim()
+    : '';
+  if (reportGeneratedAt) return reportGeneratedAt;
+
+  const historyEntry = findExistingHistoryEntry(options.existingHistory, options.packageVersion, options.suite);
+  if (historyEntry) return historyEntry.generatedAt;
+
+  const bundleGeneratedAt = options.existingBundle && typeof options.existingBundle.generatedAt === 'string'
+    ? options.existingBundle.generatedAt.trim()
+    : '';
+  const bundleVersion = options.existingBundle && options.existingBundle.package && options.existingBundle.package.version;
+  const bundleSuite = options.existingBundle && options.existingBundle.suite;
+  if (bundleGeneratedAt && bundleVersion === options.packageVersion && bundleSuite === options.suite) {
+    return bundleGeneratedAt;
+  }
+
+  return new Date().toISOString();
+}
+
 function sha256File(filePath) {
   const absolutePath = path.resolve(filePath);
   if (absolutePath.endsWith('.json')) {
@@ -59,7 +92,7 @@ function sha256File(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(absolutePath)).digest('hex');
 }
 
-function buildHistoryEntry(pkg, report, lockDocument, digests) {
+function buildHistoryEntry(pkg, report, lockDocument, digests, generatedAt) {
   const summary = report && report.summary ? report.summary : {};
   const contractLock = report && report.contractLock ? report.contractLock : {};
   return {
@@ -68,7 +101,7 @@ function buildHistoryEntry(pkg, report, lockDocument, digests) {
     packageName: pkg.name,
     version: pkg.version,
     packageVersion: pkg.version,
-    generatedAt: report && report.generatedAt ? report.generatedAt : new Date().toISOString(),
+    generatedAt,
     summary: {
       weightedScore: Number(summary.weightedScore || 0),
       overallPass: summary.overallPass === true,
@@ -118,25 +151,34 @@ function buildPublicationArtifacts(options = {}) {
   const docHistoryPath = path.resolve(options.docsHistoryPath || DEFAULT_DOC_HISTORY_PATH);
   const report = readJson(reportPath);
   const lockDocument = readJson(lockPath);
+  const existingHistory = fs.existsSync(historyPath) ? readJson(historyPath) : null;
+  const existingBundle = fs.existsSync(bundlePath) ? readJson(bundlePath) : null;
   const digests = {
     reportSha256: sha256File(reportPath),
     lockSha256: sha256File(lockPath),
   };
-  const generatedAt = report && report.generatedAt ? report.generatedAt : new Date().toISOString();
+  const suite = report && report.suite ? report.suite : 'core';
+  const generatedAt = resolveGeneratedAt({
+    report,
+    existingHistory,
+    existingBundle,
+    packageVersion: pkg.version,
+    suite,
+  });
 
-  const nextHistoryEntry = buildHistoryEntry(pkg, report, lockDocument, digests);
+  const nextHistoryEntry = buildHistoryEntry(pkg, report, lockDocument, digests, generatedAt);
   const history = {
     schemaVersion: '1.0.0',
-    suite: report && report.suite ? report.suite : 'core',
+    suite,
     generatedAt,
     latestVersion: pkg.version,
     latestGeneratedAt: generatedAt,
-    entries: normalizeHistory(fs.existsSync(historyPath) ? readJson(historyPath) : null, nextHistoryEntry),
+    entries: normalizeHistory(existingHistory, nextHistoryEntry),
   };
 
   const bundle = {
     schemaVersion: '1.0.0',
-    suite: report && report.suite ? report.suite : 'core',
+    suite,
     generatedAt,
     package: {
       name: pkg.name,
