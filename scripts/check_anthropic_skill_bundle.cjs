@@ -37,7 +37,8 @@ function relativePath(value) {
 }
 
 function parseFrontmatter(text) {
-  const match = String(text).match(/^---\n([\s\S]*?)\n---\n?/);
+  const normalized = String(text).replace(/\r\n/g, '\n');
+  const match = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
   assert(match, 'bundle SKILL.md is missing YAML frontmatter');
   const frontmatter = match[1];
   const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
