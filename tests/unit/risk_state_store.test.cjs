@@ -18,6 +18,40 @@ test('defaultRiskFile resolves to ~/.pandora/risk.json', () => {
   assert.equal(filePath.endsWith(`${path.sep}.pandora${path.sep}risk.json`), true);
 });
 
+test('defaultRiskFile and touchPanicStopFiles honor env home overrides', () => {
+  const tempDir = createTempDir('pandora-risk-home-override-');
+  const previousHome = process.env.HOME;
+  const previousUserProfile = process.env.USERPROFILE;
+
+  try {
+    delete process.env.HOME;
+    process.env.USERPROFILE = tempDir;
+
+    const riskFile = defaultRiskFile();
+    const stopFiles = touchPanicStopFiles();
+
+    assert.equal(riskFile, path.join(tempDir, '.pandora', 'risk.json'));
+    assert.deepEqual(stopFiles, [
+      path.join(tempDir, '.pandora', 'autopilot', 'STOP'),
+      path.join(tempDir, '.pandora', 'mirror', 'STOP'),
+    ]);
+    assert.equal(fs.existsSync(stopFiles[0]), true);
+    assert.equal(fs.existsSync(stopFiles[1]), true);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    if (previousUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = previousUserProfile;
+    }
+    removeDir(tempDir);
+  }
+});
+
 test('loadRiskState returns defaults when file is missing', () => {
   const tempDir = createTempDir('pandora-risk-load-default-');
   const riskFile = path.join(tempDir, 'risk.json');

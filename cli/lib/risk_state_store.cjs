@@ -14,15 +14,19 @@ function createStoreError(code, message, details) {
   return error;
 }
 
+function resolveHomeDir() {
+  return process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
+}
+
 function expandHome(filePath) {
   if (!filePath) return filePath;
-  if (filePath === '~') return os.homedir();
-  if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2));
+  if (filePath === '~') return resolveHomeDir();
+  if (filePath.startsWith('~/')) return path.join(resolveHomeDir(), filePath.slice(2));
   return filePath;
 }
 
 function defaultRiskFile() {
-  return path.join(os.homedir(), '.pandora', 'risk.json');
+  return path.join(resolveHomeDir(), '.pandora', 'risk.json');
 }
 
 function coerceNullablePositiveNumber(value) {
@@ -240,11 +244,11 @@ function touchPanicStopFiles(options = {}) {
   const autopilotStopFile =
     typeof options.autopilotStopFile === 'string' && options.autopilotStopFile.trim()
       ? options.autopilotStopFile.trim()
-      : path.join(os.homedir(), '.pandora', 'autopilot', 'STOP');
+      : path.join(resolveHomeDir(), '.pandora', 'autopilot', 'STOP');
   const mirrorStopFile =
     typeof options.mirrorStopFile === 'string' && options.mirrorStopFile.trim()
       ? options.mirrorStopFile.trim()
-      : path.join(os.homedir(), '.pandora', 'mirror', 'STOP');
+      : path.join(resolveHomeDir(), '.pandora', 'mirror', 'STOP');
 
   const targets = [autopilotStopFile, mirrorStopFile];
   const touched = [];
