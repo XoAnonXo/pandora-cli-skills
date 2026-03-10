@@ -885,6 +885,13 @@ async function startIndexerMockServer(overrides = {}) {
     const query = (bodyJson && bodyJson.query) || '';
     const variables = (bodyJson && bodyJson.variables) || {};
 
+    if (typeof overrides.handleRequest === 'function') {
+      const customResponse = overrides.handleRequest({ bodyJson, query, variables, fixtures });
+      if (customResponse) {
+        return customResponse;
+      }
+    }
+
     if (query.includes('marketss(')) {
       const items = applyListControls(applyWhereFilter(fixtures.markets, variables.where), variables);
       return { body: { data: { marketss: asPage(items) } } };
@@ -4028,6 +4035,96 @@ test('debug market returns market, poll, position, trade, and liquidity context'
     assert.equal(payload.data.summary.trades.count, 1);
     assert.equal(payload.data.summary.liquidityEvents.count, 1);
     assert.equal(payload.data.summary.claimEvents.count, 1);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('debug market falls back when marketUsers token fields are unavailable', async () => {
+  const marketAddress = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+  let rejectedLegacyFieldQuery = false;
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '5000000',
+        currentTvl: '2000000',
+        reserveYes: '600000',
+        reserveNo: '400000',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Will debug market tolerate schema drift?',
+        status: 0,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhash-debug-market-compat',
+      },
+    ],
+    positions: [
+      {
+        id: 'pos-compat-1',
+        chainId: 1,
+        marketAddress,
+        user: ADDRESSES.wallet1,
+        lastTradeAt: 1700000400,
+        yesBalance: '750000',
+        noBalance: '250000',
+      },
+    ],
+    handleRequest: ({ query, variables, fixtures }) => {
+      if (query.includes('marketUserss(') && query.includes('yesTokenAmount')) {
+        rejectedLegacyFieldQuery = true;
+        return {
+          body: {
+            errors: [{ message: 'Cannot query field "yesTokenAmount" on type "marketUsers".' }],
+          },
+        };
+      }
+      if (query.includes('marketUserss(')) {
+        const items = applyListControls(applyWhereFilter(fixtures.positions, variables.where), variables);
+        return { body: { data: { marketUserss: asPage(items) } } };
+      }
+      return null;
+    },
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'debug',
+      'market',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--market-address',
+      marketAddress,
+    ]);
+
+    assert.equal(result.status, 0);
+    assert.equal(rejectedLegacyFieldQuery, true);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'debug.market');
+    assert.equal(payload.data.summary.positions.count, 1);
+    assert.equal(payload.data.recent.positions[0].yesTokenAmount, '750000');
+    assert.equal(payload.data.recent.positions[0].yesBalance, '750000');
+    assert.equal(payload.data.recent.positions[0].noTokenAmount, '250000');
+    assert.equal(payload.data.recent.positions[0].noBalance, '250000');
+    assert.match(payload.data.diagnostics.join('\n'), /compatibility fallback/i);
   } finally {
     await indexer.close();
   }

@@ -1610,7 +1610,7 @@
       "run"
     ],
     "controlInputNames": [],
-    "description": "Start continuous autopilot loop (blocked in MCP v1).",
+    "description": "Start continuous autopilot loop. Long-running execution remains blocked in MCP v1, and live mutation requires intent.execute with execute-live.",
     "executeFlags": [
       "--execute-live"
     ],
@@ -26483,7 +26483,7 @@
       "run"
     ],
     "controlInputNames": [],
-    "description": "Continuous mirror sync loop (blocked in MCP v1). Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.",
+    "description": "Continuous mirror sync loop. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance. Long-running execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.",
     "executeFlags": [
       "--execute-live",
       "--execute"
@@ -29632,7 +29632,7 @@
       "start"
     ],
     "controlInputNames": [],
-    "description": "Start detached mirror sync daemon (blocked in MCP v1). Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.",
+    "description": "Start detached mirror sync daemon. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance. Detached execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.",
     "executeFlags": [
       "--execute-live",
       "--execute"
@@ -42210,7 +42210,7 @@
       "preflight"
     ],
     "controlInputNames": [],
-    "description": "Run strict Polymarket trade preflight checks. Use this after `polymarket check` when you need the execute-mode go/no-go gate.",
+    "description": "Run strict Polymarket readiness preflight, optionally with trade context. Add condition/slug, token or token-id, side, and amount-usdc when you need a concrete trade go/no-go gate rather than wallet-only readiness.",
     "executeFlags": [],
     "expectedLatencyMs": 5000,
     "externalDependencies": [
@@ -42222,6 +42222,15 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "amount-usdc": {
+          "description": "Trade notional in USDC for trade-context preflight.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "condition-id": {
+          "description": "Polymarket condition/market id for trade-context preflight.",
+          "type": "string"
+        },
         "fork": {
           "description": "Run in fork mode.",
           "type": "boolean"
@@ -42238,12 +42247,47 @@
           "description": "Polymarket proxy wallet.",
           "type": "string"
         },
+        "polymarket-host": {
+          "description": "Polymarket host override for market-resolution checks.",
+          "type": "string"
+        },
+        "polymarket-mock-url": {
+          "description": "Polymarket mock host override for local/forked trade-context checks.",
+          "type": "string"
+        },
         "private-key": {
           "description": "Hex private key.",
           "type": "string"
         },
         "rpc-url": {
           "description": "RPC URL.",
+          "type": "string"
+        },
+        "side": {
+          "description": "Trade side for trade-context preflight.",
+          "enum": [
+            "buy",
+            "sell"
+          ]
+        },
+        "slug": {
+          "description": "Polymarket slug for trade-context preflight.",
+          "type": "string"
+        },
+        "timeout-ms": {
+          "description": "Request timeout in milliseconds.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "token": {
+          "description": "Outcome token for trade-context preflight when token-id is not supplied.",
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "token-id": {
+          "description": "Explicit token id for trade-context preflight.",
           "type": "string"
         }
       },
@@ -42260,7 +42304,7 @@
         ],
         "canonicalName": "polymarket.preflight",
         "canonicalTool": "polymarket.preflight",
-        "canonicalUsage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
+        "canonicalUsage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
         "command": [
           "polymarket",
           "preflight"
@@ -42355,11 +42399,11 @@
         "riskLevel": "medium",
         "safeEquivalent": null,
         "safeFlags": [],
-        "summary": "Run strict Polymarket trade preflight checks.",
+        "summary": "Run strict Polymarket readiness and optional trade-context preflight checks.",
         "supportsRemote": true,
         "supportsWebhook": false,
         "topLevelInputConstraints": null,
-        "usage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
+        "usage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
       }
     },
     "jobCapable": false,
@@ -42396,7 +42440,7 @@
       ],
       "canonicalName": "polymarket.preflight",
       "canonicalTool": "polymarket.preflight",
-      "canonicalUsage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
+      "canonicalUsage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
       "command": [
         "polymarket",
         "preflight"
@@ -42491,11 +42535,11 @@
       "riskLevel": "medium",
       "safeEquivalent": null,
       "safeFlags": [],
-      "summary": "Run strict Polymarket trade preflight checks.",
+      "summary": "Run strict Polymarket readiness and optional trade-context preflight checks.",
       "supportsRemote": true,
       "supportsWebhook": false,
       "topLevelInputConstraints": null,
-      "usage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
+      "usage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
     }
   },
   {
@@ -53931,7 +53975,7 @@
       "run"
     ],
     "controlInputNames": [],
-    "description": "Continuous sports sync loop (blocked in MCP v1).",
+    "description": "Continuous sports sync loop. Use paper or dry-run flags for safe planning; long-running execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.",
     "executeFlags": [
       "--execute-live",
       "--execute"
@@ -54264,7 +54308,7 @@
       "start"
     ],
     "controlInputNames": [],
-    "description": "Start detached sports sync runtime (blocked in MCP v1).",
+    "description": "Start detached sports sync runtime. Long-running detached execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.",
     "executeFlags": [
       "--execute-live",
       "--execute"
@@ -56094,7 +56138,7 @@
       "watch"
     ],
     "controlInputNames": [],
-    "description": "Run watch snapshots with optional quote alerts and watch-scoped exposure or hedge-gap guardrails (blocked in MCP v1 because it is long-running).",
+    "description": "Run watch snapshots with optional quote alerts and watch-scoped exposure or hedge-gap guardrails. Use `once=true` for a single bounded snapshot in MCP; unbounded watch-style polling remains blocked in MCP v1 because it is long-running.",
     "executeFlags": [],
     "expectedLatencyMs": 60000,
     "externalDependencies": [
@@ -56214,6 +56258,10 @@
           "description": "Skip event aggregation.",
           "type": "boolean"
         },
+        "once": {
+          "description": "Run exactly one watch snapshot (equivalent to --once / --iterations 1).",
+          "type": "boolean"
+        },
         "side": {
           "description": "Outcome side.",
           "enum": [
@@ -56248,7 +56296,7 @@
         ],
         "canonicalName": "watch",
         "canonicalTool": "watch",
-        "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
+        "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--once|--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
         "command": [
           "watch"
         ],
@@ -56343,7 +56391,7 @@
         "supportsRemote": true,
         "supportsWebhook": false,
         "topLevelInputConstraints": null,
-        "usage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]"
+        "usage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--once|--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]"
       }
     },
     "jobCapable": true,
@@ -56378,7 +56426,7 @@
       ],
       "canonicalName": "watch",
       "canonicalTool": "watch",
-      "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
+      "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--once|--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
       "command": [
         "watch"
       ],
@@ -56473,7 +56521,7 @@
       "supportsRemote": true,
       "supportsWebhook": false,
       "topLevelInputConstraints": null,
-      "usage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]"
+      "usage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--once|--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]"
     }
   },
   {

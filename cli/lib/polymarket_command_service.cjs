@@ -149,6 +149,151 @@ function parsePolymarketBalanceFlags(actionArgs, CliError, parsePolymarketShared
   };
 }
 
+function parsePolymarketPreflightFlags(
+  actionArgs,
+  CliError,
+  parsePolymarketSharedFlags,
+  isSecureHttpUrlOrLocal,
+) {
+  const options = {
+    conditionId: null,
+    slug: null,
+    token: null,
+    tokenId: null,
+    side: 'buy',
+    amountUsdc: null,
+    host: null,
+    polymarketMockUrl: null,
+    timeoutMs: null,
+    rpcUrl: null,
+    privateKey: null,
+    funder: null,
+    fork: false,
+    forkRpcUrl: null,
+    forkChainId: null,
+  };
+
+  let sawTradeSelector = false;
+  let sawTradeInput = false;
+  const sharedArgs = [];
+
+  for (let i = 0; i < actionArgs.length; i += 1) {
+    const token = actionArgs[i];
+    if (token === '--condition-id' || token === '--market-id') {
+      options.conditionId = requireFlagValue(actionArgs, i, token, CliError);
+      sawTradeSelector = true;
+      i += 1;
+      continue;
+    }
+    if (token === '--slug') {
+      options.slug = requireFlagValue(actionArgs, i, '--slug', CliError);
+      sawTradeSelector = true;
+      i += 1;
+      continue;
+    }
+    if (token === '--token') {
+      const value = String(requireFlagValue(actionArgs, i, '--token', CliError)).trim().toLowerCase();
+      if (!['yes', 'no'].includes(value)) {
+        throw new CliError('INVALID_FLAG_VALUE', '--token must be yes|no.');
+      }
+      options.token = value;
+      sawTradeInput = true;
+      i += 1;
+      continue;
+    }
+    if (token === '--token-id') {
+      options.tokenId = requireFlagValue(actionArgs, i, '--token-id', CliError);
+      sawTradeSelector = true;
+      sawTradeInput = true;
+      i += 1;
+      continue;
+    }
+    if (token === '--side') {
+      const value = String(requireFlagValue(actionArgs, i, '--side', CliError)).trim().toLowerCase();
+      if (!['buy', 'sell'].includes(value)) {
+        throw new CliError('INVALID_FLAG_VALUE', '--side must be buy|sell.');
+      }
+      options.side = value;
+      sawTradeInput = true;
+      i += 1;
+      continue;
+    }
+    if (token === '--amount-usdc') {
+      options.amountUsdc = parsePositiveNumberFlag(
+        requireFlagValue(actionArgs, i, '--amount-usdc', CliError),
+        '--amount-usdc',
+        CliError,
+      );
+      sawTradeInput = true;
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-host') {
+      const host = requireFlagValue(actionArgs, i, '--polymarket-host', CliError);
+      if (!isSecureHttpUrlOrLocal(host)) {
+        throw new CliError(
+          'INVALID_FLAG_VALUE',
+          '--polymarket-host must use https:// (or http://localhost/127.0.0.1 for local testing).',
+        );
+      }
+      options.host = host;
+      i += 1;
+      continue;
+    }
+    if (token === '--polymarket-mock-url') {
+      const mockUrl = requireFlagValue(actionArgs, i, '--polymarket-mock-url', CliError);
+      if (!isSecureHttpUrlOrLocal(mockUrl)) {
+        throw new CliError(
+          'INVALID_FLAG_VALUE',
+          '--polymarket-mock-url must use https:// (or http://localhost/127.0.0.1 for local testing).',
+        );
+      }
+      options.polymarketMockUrl = mockUrl;
+      i += 1;
+      continue;
+    }
+    if (token === '--timeout-ms') {
+      options.timeoutMs = parsePositiveIntegerFlag(
+        requireFlagValue(actionArgs, i, '--timeout-ms', CliError),
+        '--timeout-ms',
+        CliError,
+      );
+      i += 1;
+      continue;
+    }
+    sharedArgs.push(token);
+  }
+
+  const shared = parsePolymarketSharedFlags(sharedArgs, 'preflight');
+  const tradeContextRequested = sawTradeSelector || sawTradeInput;
+  if (tradeContextRequested) {
+    if (options.amountUsdc === null) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'Trade preflight requires --amount-usdc <amount>.');
+    }
+    if (!options.tokenId && !options.token) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'Trade preflight requires --token yes|no (or --token-id <id>).');
+    }
+    if (!options.tokenId && !options.conditionId && !options.slug) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'Trade preflight requires --condition-id <id> or --slug <slug> when --token-id is not set.',
+      );
+    }
+  }
+
+  return {
+    ...options,
+    timeoutMs: options.timeoutMs ?? shared.timeoutMs ?? null,
+    rpcUrl: shared.rpcUrl,
+    privateKey: shared.privateKey,
+    funder: shared.funder,
+    fork: shared.fork,
+    forkRpcUrl: shared.forkRpcUrl,
+    forkChainId: shared.forkChainId,
+    tradeContextRequested,
+  };
+}
+
 /**
  * Creates `polymarket` command runner.
  * @param {object} deps
@@ -370,7 +515,7 @@ function createRunPolymarketCommand(deps) {
     if (action === 'preflight') {
       if (includesHelpFlag(actionArgs)) {
         const usage =
-          'pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
+          'pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
         if (context.outputMode === 'json') {
           emitSuccess(context.outputMode, 'polymarket.preflight.help', commandHelpPayload(usage));
         } else {
@@ -380,7 +525,12 @@ function createRunPolymarketCommand(deps) {
         return;
       }
 
-      const options = parsePolymarketSharedFlags(actionArgs, 'preflight');
+      const options = parsePolymarketPreflightFlags(
+        actionArgs,
+        CliError,
+        parsePolymarketSharedFlags,
+        isSecureHttpUrlOrLocal,
+      );
       const runtime = resolvePolymarketForkRuntime(options);
       if (runtime.mode === 'fork') {
         options.rpcUrl = runtime.rpcUrl;

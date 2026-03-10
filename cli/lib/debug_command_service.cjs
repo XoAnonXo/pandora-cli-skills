@@ -1,4 +1,9 @@
-const { createIndexerClient, IndexerClientError } = require('./indexer_client.cjs');
+const {
+  createIndexerClient,
+  IndexerClientError,
+  buildGraphqlListQuery,
+  normalizePageResult,
+} = require('./indexer_client.cjs');
 const { DEFAULT_INDEXER_URL } = require('./shared/constants.cjs');
 
 const DEBUG_SCHEMA_VERSION = '1.0.0';
@@ -37,6 +42,11 @@ const TRADE_FIELDS = ['id', 'chainId', 'marketAddress', 'pollAddress', 'trader',
 const LIQUIDITY_FIELDS = ['id', 'chainId', 'chainName', 'provider', 'marketAddress', 'pollAddress', 'eventType', 'collateralAmount', 'lpTokens', 'yesTokenAmount', 'noTokenAmount', 'yesTokensReturned', 'noTokensReturned', 'txHash', 'timestamp'];
 const CLAIM_FIELDS = ['id', 'campaignAddress', 'userAddress', 'amount', 'signature', 'blockNumber', 'timestamp', 'txHash'];
 const ORACLE_FEE_FIELDS = ['id', 'chainId', 'chainName', 'oracleAddress', 'eventName', 'newFee', 'to', 'amount', 'txHash', 'blockNumber', 'timestamp'];
+const POSITION_COMPAT_FIELD_SETS = [
+  POSITION_FIELDS,
+  ['id', 'chainId', 'marketAddress', 'user', 'lastTradeAt', 'yesBalance', 'noBalance'],
+  ['id', 'chainId', 'marketAddress', 'user', 'lastTradeAt'],
+];
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -148,6 +158,73 @@ function buildPositionsSummary(items) {
     count: positions.length,
     uniqueUsers: Array.from(new Set(positions.map((item) => String(item && item.user ? item.user : '').trim().toLowerCase()).filter(Boolean))).length,
   };
+}
+
+function pickFirstDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function normalizePositionRow(item) {
+  const row = item && typeof item === 'object' ? item : {};
+  const yesBalance = pickFirstDefined(row.yesBalance, row.yesTokenAmount);
+  const noBalance = pickFirstDefined(row.noBalance, row.noTokenAmount);
+  return {
+    ...row,
+    yesTokenAmount: pickFirstDefined(row.yesTokenAmount, row.yesBalance),
+    noTokenAmount: pickFirstDefined(row.noTokenAmount, row.noBalance),
+    yesBalance,
+    noBalance,
+  };
+}
+
+function isGraphqlMissingFieldError(error, fields) {
+  if (!(error instanceof IndexerClientError) || error.code !== 'INDEXER_GRAPHQL_ERROR') {
+    return false;
+  }
+  const messages = [];
+  if (error.message) messages.push(String(error.message));
+  if (error.details && Array.isArray(error.details.errors)) {
+    for (const entry of error.details.errors) {
+      if (entry && entry.message) messages.push(String(entry.message));
+    }
+  }
+  const haystack = messages.join('\n');
+  return fields.some((field) => haystack.includes(`"${field}"`) || haystack.includes(`'${field}'`) || haystack.includes(field));
+}
+
+async function listWithFieldFallback(client, options) {
+  const {
+    queryName,
+    filterType,
+    fieldSets,
+    variables,
+  } = options;
+  let lastError = null;
+
+  for (let index = 0; index < fieldSets.length; index += 1) {
+    const fields = fieldSets[index];
+    try {
+      const query = buildGraphqlListQuery(queryName, filterType, fields);
+      const data = await client.request(query, variables || {});
+      return {
+        page: normalizePageResult(data[queryName]),
+        fields,
+        fallbackUsed: index > 0,
+      };
+    } catch (error) {
+      lastError = error;
+      if (!isGraphqlMissingFieldError(error, fields)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 function buildLiquiditySummary(items) {
@@ -319,7 +396,24 @@ async function fetchDebugMarketPayload(indexerUrl, options, timeoutMs, CliError)
   }
 
   const pollAddress = market.pollAddress || options.pollAddress;
-  const [poll, positionsPage, tradesPage, liquidityPage, claimsPage] = await Promise.all([
+  const positionsPromise = listWithFieldFallback(client, {
+    queryName: 'marketUserss',
+    filterType: 'marketUsersFilter',
+    fieldSets: POSITION_COMPAT_FIELD_SETS,
+    variables: {
+      where: {
+        marketAddress: market.id,
+        ...(options.chainId !== null ? { chainId: options.chainId } : {}),
+      },
+      orderBy: 'lastTradeAt',
+      orderDirection: 'desc',
+      before: null,
+      after: null,
+      limit: options.limit,
+    },
+  });
+
+  const [poll, positionsResult, tradesPage, liquidityPage, claimsPage] = await Promise.all([
     pollAddress
       ? client.getById({
           queryName: 'polls',
@@ -327,22 +421,7 @@ async function fetchDebugMarketPayload(indexerUrl, options, timeoutMs, CliError)
           id: pollAddress,
         })
       : null,
-    client.list({
-      queryName: 'marketUserss',
-      filterType: 'marketUsersFilter',
-      fields: POSITION_FIELDS,
-      variables: {
-        where: {
-          marketAddress: market.id,
-          ...(options.chainId !== null ? { chainId: options.chainId } : {}),
-        },
-        orderBy: 'lastTradeAt',
-        orderDirection: 'desc',
-        before: null,
-        after: null,
-        limit: options.limit,
-      },
-    }),
+    positionsPromise,
     client.list({
       queryName: 'tradess',
       filterType: 'tradesFilter',
@@ -389,6 +468,8 @@ async function fetchDebugMarketPayload(indexerUrl, options, timeoutMs, CliError)
       },
     }),
   ]);
+  const positionsPage = positionsResult.page;
+  const normalizedPositions = (positionsPage.items || []).map((item) => normalizePositionRow(item));
 
   const normalizedMarket = buildMarketSummary(market);
   const payload = {
@@ -404,13 +485,13 @@ async function fetchDebugMarketPayload(indexerUrl, options, timeoutMs, CliError)
     market: normalizedMarket,
     poll: poll || null,
     summary: {
-      positions: buildPositionsSummary(positionsPage.items),
+      positions: buildPositionsSummary(normalizedPositions),
       trades: buildTradeSummary(tradesPage.items),
       liquidityEvents: buildLiquiditySummary(liquidityPage.items),
       claimEvents: buildClaimSummary(claimsPage.items),
     },
     recent: {
-      positions: positionsPage.items || [],
+      positions: normalizedPositions,
       trades: tradesPage.items || [],
       liquidityEvents: liquidityPage.items || [],
       claimEvents: claimsPage.items || [],
@@ -435,6 +516,9 @@ async function fetchDebugMarketPayload(indexerUrl, options, timeoutMs, CliError)
   }
   if (claimsPage.pageInfo && claimsPage.pageInfo.hasNextPage) {
     payload.diagnostics.push('Claim-event rows were truncated by --limit.');
+  }
+  if (positionsResult.fallbackUsed) {
+    payload.diagnostics.push('Position rows were loaded via compatibility fallback because the indexer does not expose the full marketUsers field set.');
   }
 
   return payload;

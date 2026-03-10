@@ -18277,7 +18277,7 @@
       "preflight"
     ],
     "canonicalTool": "polymarket.preflight",
-    "canonicalUsage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
+    "canonicalUsage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/PolymarketPayload",
     "emits": [
@@ -18299,6 +18299,15 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "amount-usdc": {
+          "description": "Trade notional in USDC for trade-context preflight.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "condition-id": {
+          "description": "Polymarket condition/market id for trade-context preflight.",
+          "type": "string"
+        },
         "fork": {
           "description": "Run in fork mode.",
           "type": "boolean"
@@ -18315,12 +18324,47 @@
           "description": "Polymarket proxy wallet.",
           "type": "string"
         },
+        "polymarket-host": {
+          "description": "Polymarket host override for market-resolution checks.",
+          "type": "string"
+        },
+        "polymarket-mock-url": {
+          "description": "Polymarket mock host override for local/forked trade-context checks.",
+          "type": "string"
+        },
         "private-key": {
           "description": "Hex private key.",
           "type": "string"
         },
         "rpc-url": {
           "description": "RPC URL.",
+          "type": "string"
+        },
+        "side": {
+          "description": "Trade side for trade-context preflight.",
+          "enum": [
+            "buy",
+            "sell"
+          ]
+        },
+        "slug": {
+          "description": "Polymarket slug for trade-context preflight.",
+          "type": "string"
+        },
+        "timeout-ms": {
+          "description": "Request timeout in milliseconds.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "token": {
+          "description": "Outcome token for trade-context preflight when token-id is not supplied.",
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "token-id": {
+          "description": "Explicit token id for trade-context preflight.",
           "type": "string"
         }
       },
@@ -18349,10 +18393,10 @@
     "riskLevel": "medium",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Run strict Polymarket trade preflight checks.",
+    "summary": "Run strict Polymarket readiness and optional trade-context preflight checks.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
+    "usage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
   },
   "polymarket.trade": {
     "agentWorkflow": null,
@@ -23341,7 +23385,7 @@
       "watch"
     ],
     "canonicalTool": "watch",
-    "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
+    "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--once|--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/WatchPayload",
     "emits": [
@@ -23470,6 +23514,10 @@
           "description": "Skip event aggregation.",
           "type": "boolean"
         },
+        "once": {
+          "description": "Run exactly one watch snapshot (equivalent to --once / --iterations 1).",
+          "type": "boolean"
+        },
         "side": {
           "description": "Outcome side.",
           "enum": [
@@ -23519,7 +23567,7 @@
     "summary": "Poll portfolio and/or market snapshots with alert thresholds plus watch-scoped exposure and hedge-gap risk limits.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]"
+    "usage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--once|--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]"
   },
   "webhook": {
     "agentWorkflow": null,

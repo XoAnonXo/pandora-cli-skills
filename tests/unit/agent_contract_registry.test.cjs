@@ -695,9 +695,13 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
     ),
   );
   assert.match(descriptors['polymarket.check'].summary, /lower-level readiness primitive/i);
+  assert.equal(descriptors['polymarket.preflight'].inputSchema.properties['condition-id'].type, 'string');
+  assert.equal(descriptors['polymarket.preflight'].inputSchema.properties.token.enum.includes('yes'), true);
+  assert.equal(descriptors['polymarket.preflight'].inputSchema.properties['amount-usdc'].type, 'number');
   assert.equal(descriptors['polymarket.preflight'].inputSchema.properties.fork.type, 'boolean');
   assert.equal(descriptors['polymarket.preflight'].inputSchema.properties['fork-rpc-url'].type, 'string');
   assert.equal(descriptors['polymarket.preflight'].inputSchema.properties['fork-chain-id'].type, 'integer');
+  assert.equal(descriptors.watch.inputSchema.properties.once.type, 'boolean');
   assert.equal(descriptors['polymarket.positions'].dataSchema, '#/definitions/PolymarketPositionsPayload');
   assert.deepEqual(
     getCompositeBranches(descriptors['polymarket.positions'].inputSchema, 'oneOf').map((branch) => branch.required),
@@ -927,6 +931,7 @@ test('shared agent contract registry normalizes MCP metadata defaults and alias 
 
     const polymarketPreflightDescriptor = descriptors['polymarket.preflight'];
     assert.equal(polymarketPreflightDescriptor.riskLevel, 'medium');
+    assert.match(polymarketPreflightDescriptor.summary, /trade-context preflight/i);
 
     const doctorDescriptor = descriptors.doctor;
     assert.equal(doctorDescriptor.recommendedPreflightTool, null);
