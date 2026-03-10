@@ -1,6 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
+const { DEFAULT_ARBITRAGE_MATCHER, normalizeArbitrageMatcher } = require('../arb_match_service.cjs');
+const {
+  DEFAULT_ARB_AI_CONFIDENCE_THRESHOLD,
+  DEFAULT_ARB_AI_MAX_CANDIDATES,
+  DEFAULT_ARB_AI_PROVIDER,
+  DEFAULT_ARB_AI_TIMEOUT_MS,
+  normalizeArbAiProvider,
+} = require('../arb_adjudication_provider.cjs');
 
 function requireFn(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -1243,8 +1251,14 @@ function createCoreCommandFlagParsers(deps) {
       minSpreadPct: 3,
       minLiquidityUsd: 1000,
       maxCloseDiffHours: 24,
+      matcher: DEFAULT_ARBITRAGE_MATCHER,
       similarityThreshold: 0.7,
       minTokenScore: 0.12,
+      aiProvider: DEFAULT_ARB_AI_PROVIDER,
+      aiModel: null,
+      aiThreshold: DEFAULT_ARB_AI_CONFIDENCE_THRESHOLD,
+      aiMaxCandidates: DEFAULT_ARB_AI_MAX_CANDIDATES,
+      aiTimeoutMs: DEFAULT_ARB_AI_TIMEOUT_MS,
       crossVenueOnly: true,
       withRules: false,
       includeSimilarity: false,
@@ -1295,6 +1309,11 @@ function createCoreCommandFlagParsers(deps) {
         i += 1;
         continue;
       }
+      if (token === '--matcher') {
+        options.matcher = String(requireFlagValue(args, i, '--matcher')).trim().toLowerCase();
+        i += 1;
+        continue;
+      }
       if (token === '--similarity-threshold') {
         options.similarityThreshold = parseNumber(
           requireFlagValue(args, i, '--similarity-threshold'),
@@ -1311,6 +1330,34 @@ function createCoreCommandFlagParsers(deps) {
         if (options.minTokenScore < 0 || options.minTokenScore > 1) {
           throw new CliError('INVALID_FLAG_VALUE', '--min-token-score must be between 0 and 1.');
         }
+        i += 1;
+        continue;
+      }
+      if (token === '--ai-provider') {
+        options.aiProvider = String(requireFlagValue(args, i, '--ai-provider')).trim().toLowerCase();
+        i += 1;
+        continue;
+      }
+      if (token === '--ai-model') {
+        options.aiModel = String(requireFlagValue(args, i, '--ai-model')).trim() || null;
+        i += 1;
+        continue;
+      }
+      if (token === '--ai-threshold') {
+        options.aiThreshold = parseNumber(requireFlagValue(args, i, '--ai-threshold'), '--ai-threshold');
+        if (options.aiThreshold < 0 || options.aiThreshold > 1) {
+          throw new CliError('INVALID_FLAG_VALUE', '--ai-threshold must be between 0 and 1.');
+        }
+        i += 1;
+        continue;
+      }
+      if (token === '--ai-max-candidates') {
+        options.aiMaxCandidates = parsePositiveInteger(requireFlagValue(args, i, '--ai-max-candidates'), '--ai-max-candidates');
+        i += 1;
+        continue;
+      }
+      if (token === '--ai-timeout-ms') {
+        options.aiTimeoutMs = parsePositiveInteger(requireFlagValue(args, i, '--ai-timeout-ms'), '--ai-timeout-ms');
         i += 1;
         continue;
       }
@@ -1351,6 +1398,12 @@ function createCoreCommandFlagParsers(deps) {
 
     if (options.minSpreadPct < 0) {
       throw new CliError('INVALID_FLAG_VALUE', '--min-spread-pct must be >= 0.');
+    }
+    if (!normalizeArbitrageMatcher(options.matcher)) {
+      throw new CliError('INVALID_FLAG_VALUE', '--matcher supports heuristic|hybrid.');
+    }
+    if (!normalizeArbAiProvider(options.aiProvider)) {
+      throw new CliError('INVALID_FLAG_VALUE', '--ai-provider supports auto|none|mock|openai|anthropic.');
     }
 
     return options;

@@ -4990,7 +4990,7 @@ test('arbitrage combines pandora + polymarket fixtures', async () => {
     const payload = parseJsonOutput(result);
     assert.equal(payload.ok, true);
     assert.equal(payload.command, 'arbitrage');
-    assert.equal(payload.data.schemaVersion, '1.1.0');
+    assert.equal(payload.data.schemaVersion, '1.3.0');
     assert.equal(payload.data.parameters.crossVenueOnly, true);
     assert.equal(payload.data.count >= 1, true);
     assert.equal(Array.isArray(payload.data.opportunities), true);
@@ -5114,6 +5114,235 @@ test('arbitrage defaults to cross-venue-only and allows same-venue override', as
   }
 });
 
+test('arbitrage hybrid matcher rejects cross-topic price-target collisions by default', async () => {
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: 'market-btc-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-btc-1',
+        creator: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        marketType: 'amm',
+        marketCloseTimestamp: '1773072000',
+        totalVolume: '12345',
+        currentTvl: '4567000000',
+        yesChance: '0.42',
+        reserveYes: '42',
+        reserveNo: '58',
+        createdAt: '1700000001',
+      },
+    ],
+    polls: [
+      {
+        id: 'poll-btc-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        question: 'Will Bitcoin hit $75K in 2026?',
+        status: 1,
+        category: 4,
+        deadlineEpoch: 1773072000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpoll-btc-1',
+      },
+    ],
+  });
+  const polymarket = await startPolymarketMockServer({
+    markets: [
+      {
+        question: 'Will NFLX close above $750 in 2026?',
+        condition_id: 'poly-cond-nflx-1',
+        question_id: 'poly-q-nflx-1',
+        market_slug: 'nflx-close-above-750',
+        end_date_iso: '2026-03-09T16:00:00Z',
+        active: true,
+        closed: false,
+        volume24hr: 100000,
+        tokens: [
+          { outcome: 'Yes', price: '0.63', token_id: 'poly-yes-nflx-1' },
+          { outcome: 'No', price: '0.37', token_id: 'poly-no-nflx-1' },
+        ],
+      },
+    ],
+    orderbooks: {
+      'poly-yes-nflx-1': {
+        bids: [{ price: '0.62', size: '500' }],
+        asks: [{ price: '0.63', size: '600' }],
+      },
+      'poly-no-nflx-1': {
+        bids: [{ price: '0.36', size: '500' }],
+        asks: [{ price: '0.37', size: '600' }],
+      },
+    },
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'arbitrage',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--venues',
+      'pandora,polymarket',
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--limit',
+      '10',
+      '--min-spread-pct',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.parameters.matcher, 'hybrid');
+    assert.equal(payload.data.count, 0);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
+test('arbitrage hybrid matcher can use mock AI adjudication to rescue borderline equivalents', async () => {
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: 'market-mavs-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-mavs-1',
+        creator: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        marketType: 'amm',
+        marketCloseTimestamp: '1773072000',
+        totalVolume: '12345',
+        currentTvl: '4567000000',
+        yesChance: '0.42',
+        reserveYes: '42',
+        reserveNo: '58',
+        createdAt: '1700000001',
+      },
+    ],
+    polls: [
+      {
+        id: 'poll-mavs-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        question: 'Will Dallas Mavericks beat Boston Celtics?',
+        status: 1,
+        category: 4,
+        deadlineEpoch: 1773072000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpoll-mavs-1',
+      },
+    ],
+  });
+  const polymarket = await startPolymarketMockServer({
+    markets: [
+      {
+        question: 'Mavericks vs Celtics winner',
+        condition_id: 'poly-cond-mavs-1',
+        question_id: 'poly-q-mavs-1',
+        market_slug: 'mavericks-vs-celtics-winner',
+        end_date_iso: '2026-03-09T16:00:00Z',
+        active: true,
+        closed: false,
+        volume24hr: 100000,
+        tokens: [
+          { outcome: 'Yes', price: '0.63', token_id: 'poly-yes-mavs-1' },
+          { outcome: 'No', price: '0.37', token_id: 'poly-no-mavs-1' },
+        ],
+      },
+    ],
+    orderbooks: {
+      'poly-yes-mavs-1': {
+        bids: [{ price: '0.62', size: '500' }],
+        asks: [{ price: '0.63', size: '600' }],
+      },
+      'poly-no-mavs-1': {
+        bids: [{ price: '0.36', size: '500' }],
+        asks: [{ price: '0.37', size: '600' }],
+      },
+    },
+  });
+
+  try {
+    const withoutAi = await runCliAsync([
+      '--output',
+      'json',
+      'arbitrage',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--venues',
+      'pandora,polymarket',
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--limit',
+      '10',
+      '--min-spread-pct',
+      '1',
+      '--similarity-threshold',
+      '0.9',
+      '--include-similarity',
+    ]);
+
+    assert.equal(withoutAi.status, 0);
+    const withoutAiPayload = parseJsonOutput(withoutAi);
+    assert.equal(withoutAiPayload.data.count, 0);
+
+    const withAi = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'arbitrage',
+        '--skip-dotenv',
+        '--indexer-url',
+        indexer.url,
+        '--venues',
+        'pandora,polymarket',
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--limit',
+        '10',
+        '--min-spread-pct',
+        '1',
+        '--similarity-threshold',
+        '0.9',
+        '--include-similarity',
+        '--ai-provider',
+        'mock',
+      ],
+      {
+        env: {
+          PANDORA_ARB_AI_MOCK_RESPONSE: JSON.stringify({
+            equivalent: true,
+            confidence: 0.95,
+            reason: 'Same teams and same winner condition.',
+            blockers: [],
+            topic: 'sports',
+            marketType: 'sports.team_result',
+          }),
+        },
+      },
+    );
+
+    assert.equal(withAi.status, 0);
+    const withAiPayload = parseJsonOutput(withAi);
+    assert.equal(withAiPayload.ok, true);
+    assert.equal(withAiPayload.data.parameters.aiProvider, 'mock');
+    assert.equal(withAiPayload.data.count >= 1, true);
+    assert.equal(withAiPayload.data.opportunities[0].matchSummary.aiAppliedPairCount >= 1, true);
+    assert.equal(withAiPayload.data.opportunities[0].similarityChecks.some((entry) => entry.decisionSource === 'ai-overridden'), true);
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
 test('arbitrage exposes rules and similarity checks for agent verification', async () => {
   const indexer = await startIndexerMockServer({
     polls: [
@@ -5160,14 +5389,17 @@ test('arbitrage exposes rules and similarity checks for agent verification', asy
     const payload = parseJsonOutput(result);
     assert.equal(payload.ok, true);
     assert.equal(payload.command, 'arbitrage');
+    assert.equal(payload.data.parameters.matcher, 'hybrid');
     assert.equal(payload.data.parameters.withRules, true);
     assert.equal(payload.data.parameters.includeSimilarity, true);
     assert.equal(payload.data.count >= 1, true);
 
     const opportunity = payload.data.opportunities[0];
+    assert.equal(opportunity.matchSummary.matcher, 'hybrid');
     assert.equal(Array.isArray(opportunity.similarityChecks), true);
     assert.equal(opportunity.similarityChecks.length >= 1, true);
     assert.equal(opportunity.similarityChecks.some((entry) => entry.accepted === true), true);
+    assert.equal(opportunity.similarityChecks.every((entry) => Array.isArray(entry.semanticBlockers)), true);
     const pandoraLeg = opportunity.legs.find((leg) => leg.venue === 'pandora');
     assert.equal(Boolean(pandoraLeg), true);
     assert.equal(typeof pandoraLeg.rules, 'string');

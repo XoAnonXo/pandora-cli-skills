@@ -1,3 +1,12 @@
+const { DEFAULT_ARBITRAGE_MATCHER, normalizeArbitrageMatcher } = require('./arb_match_service.cjs');
+const {
+  DEFAULT_ARB_AI_CONFIDENCE_THRESHOLD,
+  DEFAULT_ARB_AI_MAX_CANDIDATES,
+  DEFAULT_ARB_AI_PROVIDER,
+  DEFAULT_ARB_AI_TIMEOUT_MS,
+  normalizeArbAiProvider,
+} = require('./arb_adjudication_provider.cjs');
+
 const ARB_MARKET_FIELDS = [
   'id',
   'chainId',
@@ -14,12 +23,13 @@ const ARB_MARKET_FIELDS = [
 ];
 
 const ARB_USAGE =
-  'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
+  'pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--matcher heuristic|hybrid] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--ai-provider auto|none|mock|openai|anthropic] [--ai-model <id>] [--ai-threshold <0-1>] [--ai-max-candidates <n>] [--ai-timeout-ms <ms>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
 
 const ARB_NOTES = [
   'arb scan is the canonical arbitrage command for both streaming and bounded one-shot scans.',
   '`pandora arbitrage` remains a backward-compatible one-shot convenience wrapper over the same cross-venue engine.',
   'Use --output json --iterations 1 for bounded agent/MCP workflows; use --output ndjson for continuous scans.',
+  'Hybrid matching will use provider-backed AI adjudication for borderline pairs when credentials are available.',
 ];
 
 function requireDep(deps, name) {
@@ -346,8 +356,14 @@ function parseArbScanFlags(args, deps) {
     amountUsdc: 100,
     combinatorial: false,
     maxBundleSize: 4,
+    matcher: DEFAULT_ARBITRAGE_MATCHER,
     similarityThreshold: 0.7,
     minTokenScore: 0.12,
+    aiProvider: DEFAULT_ARB_AI_PROVIDER,
+    aiModel: null,
+    aiThreshold: DEFAULT_ARB_AI_CONFIDENCE_THRESHOLD,
+    aiMaxCandidates: DEFAULT_ARB_AI_MAX_CANDIDATES,
+    aiTimeoutMs: DEFAULT_ARB_AI_TIMEOUT_MS,
     maxCloseDiffHours: 24,
     questionContains: null,
     intervalMs: 5_000,
@@ -416,6 +432,11 @@ function parseArbScanFlags(args, deps) {
       i += 1;
       continue;
     }
+    if (token === '--matcher') {
+      options.matcher = String(requireFlagValue(rest, i, '--matcher')).trim().toLowerCase();
+      i += 1;
+      continue;
+    }
     if (token === '--similarity-threshold') {
       options.similarityThreshold = parseNumber(requireFlagValue(rest, i, '--similarity-threshold'), '--similarity-threshold');
       i += 1;
@@ -423,6 +444,31 @@ function parseArbScanFlags(args, deps) {
     }
     if (token === '--min-token-score') {
       options.minTokenScore = parseNumber(requireFlagValue(rest, i, '--min-token-score'), '--min-token-score');
+      i += 1;
+      continue;
+    }
+    if (token === '--ai-provider') {
+      options.aiProvider = String(requireFlagValue(rest, i, '--ai-provider')).trim().toLowerCase();
+      i += 1;
+      continue;
+    }
+    if (token === '--ai-model') {
+      options.aiModel = String(requireFlagValue(rest, i, '--ai-model')).trim() || null;
+      i += 1;
+      continue;
+    }
+    if (token === '--ai-threshold') {
+      options.aiThreshold = parseNumber(requireFlagValue(rest, i, '--ai-threshold'), '--ai-threshold');
+      i += 1;
+      continue;
+    }
+    if (token === '--ai-max-candidates') {
+      options.aiMaxCandidates = parsePositiveInteger(requireFlagValue(rest, i, '--ai-max-candidates'), '--ai-max-candidates');
+      i += 1;
+      continue;
+    }
+    if (token === '--ai-timeout-ms') {
+      options.aiTimeoutMs = parsePositiveInteger(requireFlagValue(rest, i, '--ai-timeout-ms'), '--ai-timeout-ms');
       i += 1;
       continue;
     }
@@ -481,6 +527,15 @@ function parseArbScanFlags(args, deps) {
   }
   if (options.minTokenScore < 0 || options.minTokenScore > 1) {
     throw new CliError('INVALID_FLAG_VALUE', '--min-token-score must be between 0 and 1.');
+  }
+  if (!normalizeArbitrageMatcher(options.matcher)) {
+    throw new CliError('INVALID_FLAG_VALUE', '--matcher supports heuristic|hybrid.');
+  }
+  if (!normalizeArbAiProvider(options.aiProvider)) {
+    throw new CliError('INVALID_FLAG_VALUE', '--ai-provider supports auto|none|mock|openai|anthropic.');
+  }
+  if (options.aiThreshold < 0 || options.aiThreshold > 1) {
+    throw new CliError('INVALID_FLAG_VALUE', '--ai-threshold must be between 0 and 1.');
   }
 
   if (!Number.isInteger(options.maxBundleSize) || options.maxBundleSize < 3) {
@@ -606,9 +661,15 @@ function createRunArbCommand(deps) {
           limit: Math.max(options.limit * 4, 100),
           minSpreadPct: options.minNetSpreadPct,
           minLiquidityUsd: options.minTvlUsdc,
+          matcher: options.matcher,
           maxCloseDiffHours: options.maxCloseDiffHours,
           similarityThreshold: options.similarityThreshold,
           minTokenScore: options.minTokenScore,
+          aiProvider: options.aiProvider,
+          aiModel: options.aiModel,
+          aiThreshold: options.aiThreshold,
+          aiMaxCandidates: options.aiMaxCandidates,
+          aiTimeoutMs: options.aiTimeoutMs,
           crossVenueOnly: true,
           withRules: false,
           includeSimilarity: false,
@@ -700,8 +761,14 @@ function createRunArbCommand(deps) {
           amountUsdc: options.amountUsdc,
           combinatorial: options.combinatorial,
           maxBundleSize: options.maxBundleSize,
+          matcher: options.matcher,
           similarityThreshold: options.similarityThreshold,
           minTokenScore: options.minTokenScore,
+          aiProvider: options.aiProvider,
+          aiModel: options.aiModel,
+          aiThreshold: options.aiThreshold,
+          aiMaxCandidates: options.aiMaxCandidates,
+          aiTimeoutMs: options.aiTimeoutMs,
           maxCloseDiffHours: options.maxCloseDiffHours,
           questionContains: options.questionContains,
         },

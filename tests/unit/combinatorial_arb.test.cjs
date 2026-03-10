@@ -9,7 +9,9 @@ const {
 const {
   buildCombinatorialBundleOpportunities,
   evaluateArbitrageQuestionMatch,
+  evaluateArbitrageQuestionMatchAsync,
 } = require('../../cli/lib/arbitrage_service.cjs');
+const { shouldAdjudicateArbitrageMatch } = require('../../cli/lib/arb_match_service.cjs');
 
 class CliError extends Error {
   constructor(code, message) {
@@ -73,8 +75,13 @@ test('arb scan combinatorial flags parse with strict defaults', () => {
   assert.equal(parsed.combinatorial, false);
   assert.equal(parsed.slippagePctPerLeg, 0);
   assert.equal(parsed.maxBundleSize, 4);
+  assert.equal(parsed.matcher, 'hybrid');
   assert.equal(parsed.similarityThreshold, 0.7);
   assert.equal(parsed.minTokenScore, 0.12);
+  assert.equal(parsed.aiProvider, 'auto');
+  assert.equal(parsed.aiThreshold, 0.8);
+  assert.equal(parsed.aiMaxCandidates, 12);
+  assert.equal(parsed.aiTimeoutMs, 6000);
 });
 
 test('arb scan default similarity settings reject the reported fuzzy mismatches', () => {
@@ -82,6 +89,8 @@ test('arb scan default similarity settings reject the reported fuzzy mismatches'
   const mismatches = [
     ['Adam Fox (NHL)', 'Israel strike on Damascus'],
     ['Arsenal Premier League', 'VJ Edgecombe NBA Rookie of the Year'],
+    ['Will Bitcoin hit $75K in 2026?', 'Will NFLX close above $750 in 2026?'],
+    ['Will Arsenal win the Premier League in 2026?', 'Will Joao Pedro score 20 goals in 2026?'],
     ['Trump death', 'Trump legislation'],
     ['Will Donald Trump die in 2025?', 'Will Trump legislation pass in 2025?'],
     ['Will Trump die before April 01?', 'Will Trump sign 7 pieces of legislation in March?'],
@@ -131,6 +140,84 @@ test('arb matching requires more than a weak single-name overlap', () => {
   assert.equal(strong.contentSharedTokenCount >= 2, true);
 });
 
+test('arb hybrid matcher surfaces semantic blocker diagnostics for disjoint entity types', () => {
+  const priceVsEquity = evaluateArbitrageQuestionMatch(
+    'Will Bitcoin hit $75K in 2026?',
+    'Will NFLX close above $750 in 2026?',
+    {
+      matcher: 'hybrid',
+      similarityThreshold: 0.7,
+      minTokenScore: 0.12,
+    },
+  );
+  assert.equal(priceVsEquity.accepted, false);
+  assert.equal(priceVsEquity.semanticBlockers.includes('ASSET_SUBJECT_MISMATCH'), true);
+
+  const teamVsPlayer = evaluateArbitrageQuestionMatch(
+    'Will Arsenal win the Premier League in 2026?',
+    'Will Joao Pedro score 20 goals in 2026?',
+    {
+      matcher: 'hybrid',
+      similarityThreshold: 0.7,
+      minTokenScore: 0.12,
+    },
+  );
+  assert.equal(teamVsPlayer.accepted, false);
+  assert.equal(teamVsPlayer.semanticBlockers.includes('MARKET_TYPE_MISMATCH'), true);
+});
+
+test('arb hybrid matcher blocks price-target threshold mismatches for the same asset', () => {
+  const thresholdMismatch = evaluateArbitrageQuestionMatch(
+    'Will Bitcoin hit $75K in 2026?',
+    'Will Bitcoin hit $80K in 2026?',
+    {
+      matcher: 'hybrid',
+      similarityThreshold: 0.7,
+      minTokenScore: 0.12,
+    },
+  );
+  assert.equal(thresholdMismatch.accepted, false);
+  assert.equal(thresholdMismatch.semanticBlockers.includes('THRESHOLD_MISMATCH'), true);
+});
+
+test('arb hybrid mock adjudicator can rescue strong semantic matches near the threshold', async () => {
+  const base = evaluateArbitrageQuestionMatch(
+    'Will Dallas Mavericks beat Boston Celtics?',
+    'Mavericks vs Celtics winner',
+    {
+      matcher: 'hybrid',
+      similarityThreshold: 0.9,
+      minTokenScore: 0.12,
+    },
+  );
+  assert.equal(base.accepted, false);
+  const plan = shouldAdjudicateArbitrageMatch(base, { aiProvider: 'mock' });
+  assert.equal(plan.eligible, true);
+
+  const rescued = await evaluateArbitrageQuestionMatchAsync(
+    'Will Dallas Mavericks beat Boston Celtics?',
+    'Mavericks vs Celtics winner',
+    {
+      matcher: 'hybrid',
+      similarityThreshold: 0.9,
+      minTokenScore: 0.12,
+      aiProvider: 'mock',
+      mockResponse: {
+        equivalent: true,
+        confidence: 0.93,
+        reason: 'Same teams and same winner market.',
+        blockers: [],
+        topic: 'sports',
+        marketType: 'sports.team_result',
+      },
+    },
+  );
+  assert.equal(rescued.accepted, true);
+  assert.equal(rescued.decisionSource, 'ai-overridden');
+  assert.equal(rescued.aiApplied, true);
+  assert.equal(rescued.aiAdjudication.provider, 'mock');
+});
+
 test('arb scan combinatorial mode enforces minimum market count', () => {
   assert.throws(
     () => parseFlags(['scan', '--markets', 'm1,m2', '--combinatorial']),
@@ -143,18 +230,36 @@ test('arb scan accepts cross-venue matching controls', () => {
     'scan',
     '--source',
     'polymarket',
+    '--matcher',
+    'heuristic',
     '--similarity-threshold',
     '0.42',
     '--min-token-score',
     '0.2',
+    '--ai-provider',
+    'mock',
+    '--ai-model',
+    'arb-mini',
+    '--ai-threshold',
+    '0.85',
+    '--ai-max-candidates',
+    '5',
+    '--ai-timeout-ms',
+    '4200',
     '--max-close-diff-hours',
     '6',
     '--question-contains',
     'bitcoin',
   ]);
   assert.equal(parsed.source, 'polymarket');
+  assert.equal(parsed.matcher, 'heuristic');
   assert.equal(parsed.similarityThreshold, 0.42);
   assert.equal(parsed.minTokenScore, 0.2);
+  assert.equal(parsed.aiProvider, 'mock');
+  assert.equal(parsed.aiModel, 'arb-mini');
+  assert.equal(parsed.aiThreshold, 0.85);
+  assert.equal(parsed.aiMaxCandidates, 5);
+  assert.equal(parsed.aiTimeoutMs, 4200);
   assert.equal(parsed.maxCloseDiffHours, 6);
   assert.equal(parsed.questionContains, 'bitcoin');
 });
@@ -166,6 +271,18 @@ test('arb scan rejects out-of-range similarity controls', () => {
   );
   assert.throws(
     () => parseFlags(['scan', '--source', 'polymarket', '--min-token-score', '-0.1']),
+    (err) => err && err.code === 'INVALID_FLAG_VALUE',
+  );
+  assert.throws(
+    () => parseFlags(['scan', '--source', 'polymarket', '--matcher', 'ai']),
+    (err) => err && err.code === 'INVALID_FLAG_VALUE',
+  );
+  assert.throws(
+    () => parseFlags(['scan', '--source', 'polymarket', '--ai-provider', 'bogus']),
+    (err) => err && err.code === 'INVALID_FLAG_VALUE',
+  );
+  assert.throws(
+    () => parseFlags(['scan', '--source', 'polymarket', '--ai-threshold', '2']),
     (err) => err && err.code === 'INVALID_FLAG_VALUE',
   );
 });

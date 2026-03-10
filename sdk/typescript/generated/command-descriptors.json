@@ -340,7 +340,7 @@
       "scan"
     ],
     "canonicalTool": "arb.scan",
-    "canonicalUsage": "pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
+    "canonicalUsage": "pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--matcher heuristic|hybrid] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--ai-provider auto|none|mock|openai|anthropic] [--ai-model <id>] [--ai-threshold <0-1>] [--ai-max-candidates <n>] [--ai-timeout-ms <ms>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/ArbScanPayload",
     "emits": [
@@ -359,6 +359,36 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "ai-max-candidates": {
+          "description": "Maximum borderline pairs to adjudicate per scan.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "ai-model": {
+          "description": "Optional provider model override.",
+          "type": "string"
+        },
+        "ai-provider": {
+          "description": "Provider-backed adjudication mode.",
+          "enum": [
+            "auto",
+            "none",
+            "mock",
+            "openai",
+            "anthropic"
+          ]
+        },
+        "ai-threshold": {
+          "description": "Minimum model confidence required to override deterministic matching.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "ai-timeout-ms": {
+          "description": "Timeout for each provider adjudication request.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "amount-usdc": {
           "description": "Sizing notional in USDC.",
           "minimum": 0,
@@ -385,6 +415,13 @@
         "markets": {
           "description": "Comma-delimited market ids when source=pandora.",
           "type": "string"
+        },
+        "matcher": {
+          "description": "Arbitrage matcher mode.",
+          "enum": [
+            "heuristic",
+            "hybrid"
+          ]
         },
         "max-bundle-size": {
           "description": "Maximum combinatorial bundle size.",
@@ -471,7 +508,7 @@
     "summary": "Canonical arbitrage scan command for streaming or bounded spread detection.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]"
+    "usage": "pandora arb scan [--source pandora|polymarket] [--markets <csv>] --output ndjson|json [--limit <n>] [--min-net-spread-pct <n>|--min-spread-pct <n>] [--min-tvl <usdc>] [--fee-pct-per-leg <n>] [--slippage-pct-per-leg <n>] [--amount-usdc <n>] [--combinatorial] [--max-bundle-size <n>] [--matcher heuristic|hybrid] [--similarity-threshold <0-1>] [--min-token-score <0-1>] [--ai-provider auto|none|mock|openai|anthropic] [--ai-model <id>] [--ai-threshold <0-1>] [--ai-max-candidates <n>] [--ai-timeout-ms <ms>] [--max-close-diff-hours <n>] [--question-contains <text>] [--interval-ms <ms>] [--iterations <n>] [--indexer-url <url>] [--timeout-ms <ms>]"
   },
   "autopilot": {
     "agentWorkflow": null,

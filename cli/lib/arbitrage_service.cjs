@@ -1,13 +1,23 @@
 const { createIndexerClient } = require('./indexer_client.cjs');
 const { fetchPolymarketMarkets } = require('./polymarket_adapter.cjs');
+const { normalizeQuestion, questionSimilarity } = require('./similarity_service.cjs');
 const {
-  normalizeQuestion,
-  questionSimilarityBreakdown,
-  questionSimilarity,
-} = require('./similarity_service.cjs');
+  DEFAULT_ARBITRAGE_MATCHER,
+  evaluateArbitrageQuestionMatch,
+  evaluateArbitrageQuestionMatchAsync,
+  normalizeArbitrageMatcher,
+  shouldAdjudicateArbitrageMatch,
+} = require('./arb_match_service.cjs');
+const {
+  resolveArbAiConfidenceThreshold,
+  resolveArbAiMaxCandidates,
+  resolveArbAiModel,
+  resolveArbAiProvider,
+  resolveArbAiTimeoutMs,
+} = require('./arb_adjudication_provider.cjs');
 const { toNumber, round } = require('./shared/utils.cjs');
 
-const ARBITRAGE_SCHEMA_VERSION = '1.1.0';
+const ARBITRAGE_SCHEMA_VERSION = '1.3.0';
 const DEFAULT_MIN_TOKEN_SCORE = 0.12;
 const DEFAULT_SIMILARITY_THRESHOLD = 0.7;
 
@@ -81,44 +91,6 @@ function normalizeSources(value) {
       .filter(Boolean);
   }
   return [];
-}
-
-function resolveSimilarityThreshold(options = {}) {
-  return Number.isFinite(options && options.similarityThreshold)
-    ? Number(options.similarityThreshold)
-    : DEFAULT_SIMILARITY_THRESHOLD;
-}
-
-function resolveMinTokenScore(options = {}) {
-  return Number.isFinite(options && options.minTokenScore)
-    ? Number(options.minTokenScore)
-    : DEFAULT_MIN_TOKEN_SCORE;
-}
-
-function evaluateArbitrageQuestionMatch(leftQuestion, rightQuestion, options = {}) {
-  const similarity = questionSimilarityBreakdown(leftQuestion, rightQuestion);
-  const similarityThreshold = resolveSimilarityThreshold(options);
-  const minTokenScore = resolveMinTokenScore(options);
-  const sharedContentTokenCount = Number(similarity.contentSharedTokenCount) || 0;
-  const passesTokenScore = similarity.tokenScore >= minTokenScore;
-  const passesSimilarity = similarity.score >= similarityThreshold;
-  const passesContentOverlap =
-    sharedContentTokenCount >= 2
-    || (
-      sharedContentTokenCount === 1
-      && similarity.score >= Math.max(similarityThreshold + 0.12, 0.65)
-      && similarity.jaroWinkler >= 0.88
-    );
-
-  return {
-    ...similarity,
-    similarityThreshold,
-    minTokenScore,
-    passesTokenScore,
-    passesSimilarity,
-    passesContentOverlap,
-    accepted: passesTokenScore && passesSimilarity && passesContentOverlap,
-  };
 }
 
 async function fetchPandoraPollDetails(client, pollIds, diagnostics) {
@@ -209,10 +181,103 @@ async function fetchPandoraLegs(options, diagnostics) {
   return legs;
 }
 
-function buildGroups(legs, options) {
+function makePairKey(leftLegId, rightLegId) {
+  return [leftLegId, rightLegId].sort().join('|');
+}
+
+function buildPairCheck(evaluation) {
+  const { closeDiffHours, left, match, passesCloseWindow, passesVenueRule, right } = evaluation;
+  return {
+    leftLegId: left.legId,
+    rightLegId: right.legId,
+    leftVenue: left.venue,
+    rightVenue: right.venue,
+    leftMarketId: left.marketId,
+    rightMarketId: right.marketId,
+    leftQuestion: left.question,
+    rightQuestion: right.question,
+    normalizedLeft: match.normalizedLeft,
+    normalizedRight: match.normalizedRight,
+    similarityScore: match.score,
+    tokenScore: match.tokenScore,
+    contentTokenScore: match.contentTokenScore,
+    semanticScore: match.semanticScore,
+    sharedTokenCount: match.sharedTokenCount,
+    contentSharedTokenCount: match.contentSharedTokenCount,
+    sharedSubjects: match.sharedSubjects,
+    sharedPredicateFamilies: match.sharedPredicateFamilies,
+    sharedNumericHints: match.sharedNumericHints,
+    sharedYears: match.sharedYears,
+    jaroWinkler: match.jaroWinkler,
+    closeDiffHours: closeDiffHours === null ? null : round(closeDiffHours, 6),
+    matcher: match.matcher,
+    decisionSource: match.decisionSource,
+    passesTokenScore: match.passesTokenScore,
+    passesSimilarity: match.passesSimilarity,
+    passesContentOverlap: match.passesContentOverlap,
+    passesSemanticFilters: match.passesSemanticFilters,
+    semanticBlockers: match.semanticBlockers,
+    semanticWarnings: match.semanticWarnings,
+    strongSemanticEquivalent: match.strongSemanticEquivalent,
+    leftSignature: match.leftSignature,
+    rightSignature: match.rightSignature,
+    heuristicAccepted: match.heuristicAccepted,
+    aiProvider: match.aiProvider,
+    aiModel: match.aiModel,
+    aiEligible: match.aiEligible,
+    aiConsidered: match.aiConsidered,
+    aiAdjudicated: match.aiAdjudicated,
+    aiApplied: match.aiApplied,
+    aiConfidenceThreshold: match.aiConfidenceThreshold,
+    aiEligibilityReason: match.aiEligibilityReason,
+    aiHighConfidence: match.aiHighConfidence,
+    aiAdjudication: match.aiAdjudication,
+    aiError: match.aiError,
+    passesCloseWindow,
+    passesVenueRule,
+    accepted: Boolean(match.accepted && passesCloseWindow && passesVenueRule),
+  };
+}
+
+function buildPairEvaluations(legs, options) {
+  const pairEvaluations = [];
+  for (let i = 0; i < legs.length; i += 1) {
+    for (let j = i + 1; j < legs.length; j += 1) {
+      const left = legs[i];
+      const right = legs[j];
+
+      let closeDiffHours = null;
+      if (left.closeTimestamp && right.closeTimestamp) {
+        closeDiffHours = Math.abs(left.closeTimestamp - right.closeTimestamp) / 3600;
+      }
+
+      const match = evaluateArbitrageQuestionMatch(left.question, right.question, {
+        ...options,
+        leftMarketId: left.marketId,
+        leftRules: left.rules,
+        leftVenue: left.venue,
+        rightMarketId: right.marketId,
+        rightRules: right.rules,
+        rightVenue: right.venue,
+      });
+      pairEvaluations.push({
+        closeDiffHours,
+        left,
+        match,
+        pairKey: makePairKey(left.legId, right.legId),
+        passesCloseWindow: closeDiffHours === null ? true : closeDiffHours <= options.maxCloseDiffHours,
+        passesVenueRule: options.crossVenueOnly ? left.venue !== right.venue : true,
+        right,
+      });
+    }
+  }
+  return pairEvaluations;
+}
+
+async function buildGroups(legs, options) {
   const parent = new Map();
+  const allPairChecks = new Map();
   const acceptedPairChecks = new Map();
-  const makePairKey = (a, b) => [a, b].sort().join('|');
   const find = (x) => {
     const p = parent.get(x);
     if (p === x) return x;
@@ -234,43 +299,46 @@ function buildGroups(legs, options) {
     parent.set(leg.legId, leg.legId);
   }
 
-  for (let i = 0; i < legs.length; i += 1) {
-    for (let j = i + 1; j < legs.length; j += 1) {
-      const left = legs[i];
-      const right = legs[j];
-
-      if (options.crossVenueOnly && left.venue === right.venue) continue;
-
-      const match = evaluateArbitrageQuestionMatch(left.question, right.question, options);
-      if (!match.accepted) continue;
-
-      let closeDiffHours = null;
-      if (left.closeTimestamp && right.closeTimestamp) {
-        closeDiffHours = Math.abs(left.closeTimestamp - right.closeTimestamp) / 3600;
-        if (closeDiffHours > options.maxCloseDiffHours) continue;
-      }
-
-      union(left.legId, right.legId);
-      acceptedPairChecks.set(makePairKey(left.legId, right.legId), {
-        leftLegId: left.legId,
-        rightLegId: right.legId,
-        leftVenue: left.venue,
-        rightVenue: right.venue,
-        leftMarketId: left.marketId,
-        rightMarketId: right.marketId,
-        leftQuestion: left.question,
-        rightQuestion: right.question,
-        normalizedLeft: match.normalizedLeft,
-        normalizedRight: match.normalizedRight,
-        similarityScore: match.score,
-        tokenScore: match.tokenScore,
-        contentTokenScore: match.contentTokenScore,
-        sharedTokenCount: match.sharedTokenCount,
-        contentSharedTokenCount: match.contentSharedTokenCount,
-        jaroWinkler: match.jaroWinkler,
-        closeDiffHours: closeDiffHours === null ? null : round(closeDiffHours, 6),
+  const pairEvaluations = buildPairEvaluations(legs, options);
+  const aiMaxCandidates = resolveArbAiMaxCandidates(options);
+  const aiCandidates = pairEvaluations
+    .map((evaluation) => {
+      evaluation.adjudicationPlan = shouldAdjudicateArbitrageMatch(evaluation.match, {
+        ...options,
+        leftMarketId: evaluation.left.marketId,
+        leftRules: evaluation.left.rules,
+        leftVenue: evaluation.left.venue,
+        rightMarketId: evaluation.right.marketId,
+        rightRules: evaluation.right.rules,
+        rightVenue: evaluation.right.venue,
       });
-    }
+      return evaluation;
+    })
+    .filter((evaluation) => evaluation.adjudicationPlan.eligible)
+    .sort((left, right) => right.adjudicationPlan.priority - left.adjudicationPlan.priority)
+    .slice(0, aiMaxCandidates);
+
+  for (const evaluation of aiCandidates) {
+    evaluation.match = await evaluateArbitrageQuestionMatchAsync(evaluation.left.question, evaluation.right.question, {
+      ...options,
+      adjudicationPlan: evaluation.adjudicationPlan,
+      baseMatch: evaluation.match,
+      leftMarketId: evaluation.left.marketId,
+      leftRules: evaluation.left.rules,
+      leftVenue: evaluation.left.venue,
+      rightMarketId: evaluation.right.marketId,
+      rightRules: evaluation.right.rules,
+      rightVenue: evaluation.right.venue,
+    });
+  }
+
+  for (const evaluation of pairEvaluations) {
+    const pairCheck = buildPairCheck(evaluation);
+    allPairChecks.set(evaluation.pairKey, pairCheck);
+    if (!pairCheck.accepted) continue;
+
+    union(evaluation.left.legId, evaluation.right.legId);
+    acceptedPairChecks.set(evaluation.pairKey, pairCheck);
   }
 
   const grouped = new Map();
@@ -282,54 +350,53 @@ function buildGroups(legs, options) {
 
   return {
     groups: Array.from(grouped.values()).filter((group) => group.length >= 2),
+    allPairChecks,
     acceptedPairChecks,
   };
 }
 
-function buildGroupPairChecks(group, options, acceptedPairChecks) {
+function buildGroupPairChecks(group, options, allPairChecks, acceptedPairChecks) {
   const out = [];
-  const makePairKey = (a, b) => [a, b].sort().join('|');
   for (let i = 0; i < group.length; i += 1) {
     for (let j = i + 1; j < group.length; j += 1) {
       const left = group[i];
       const right = group[j];
-      const match = evaluateArbitrageQuestionMatch(left.question, right.question, options);
+      const pairKey = makePairKey(left.legId, right.legId);
+      const cached = allPairChecks.get(pairKey);
+      if (cached) {
+        out.push({
+          ...cached,
+          accepted: acceptedPairChecks.has(pairKey),
+        });
+        continue;
+      }
+
+      const match = evaluateArbitrageQuestionMatch(left.question, right.question, {
+        ...options,
+        leftRules: left.rules,
+        rightRules: right.rules,
+      });
       let closeDiffHours = null;
       if (left.closeTimestamp && right.closeTimestamp) {
         closeDiffHours = Math.abs(left.closeTimestamp - right.closeTimestamp) / 3600;
       }
-      const accepted = acceptedPairChecks.has(makePairKey(left.legId, right.legId));
       out.push({
-        leftLegId: left.legId,
-        rightLegId: right.legId,
-        leftVenue: left.venue,
-        rightVenue: right.venue,
-        leftMarketId: left.marketId,
-        rightMarketId: right.marketId,
-        leftQuestion: left.question,
-        rightQuestion: right.question,
-        normalizedLeft: match.normalizedLeft,
-        normalizedRight: match.normalizedRight,
-        similarityScore: match.score,
-        tokenScore: match.tokenScore,
-        contentTokenScore: match.contentTokenScore,
-        sharedTokenCount: match.sharedTokenCount,
-        contentSharedTokenCount: match.contentSharedTokenCount,
-        jaroWinkler: match.jaroWinkler,
-        closeDiffHours: closeDiffHours === null ? null : round(closeDiffHours, 6),
-        passesTokenScore: match.passesTokenScore,
-        passesSimilarity: match.passesSimilarity,
-        passesContentOverlap: match.passesContentOverlap,
-        passesCloseWindow: closeDiffHours === null ? true : closeDiffHours <= options.maxCloseDiffHours,
-        passesVenueRule: options.crossVenueOnly ? left.venue !== right.venue : true,
-        accepted,
+        ...buildPairCheck({
+          closeDiffHours,
+          left,
+          match,
+          passesCloseWindow: closeDiffHours === null ? true : closeDiffHours <= options.maxCloseDiffHours,
+          passesVenueRule: options.crossVenueOnly ? left.venue !== right.venue : true,
+          right,
+        }),
+        accepted: acceptedPairChecks.has(pairKey),
       });
     }
   }
   return out;
 }
 
-function summarizeGroup(group, options, acceptedPairChecks) {
+function summarizeGroup(group, options, allPairChecks, acceptedPairChecks) {
   const venues = Array.from(new Set(group.map((leg) => leg.venue))).sort();
   if (options.crossVenueOnly && venues.length < 2) {
     return null;
@@ -381,16 +448,38 @@ function summarizeGroup(group, options, acceptedPairChecks) {
     }
   }
 
-  const pairChecks = buildGroupPairChecks(group, options, acceptedPairChecks);
+  const pairChecks = buildGroupPairChecks(group, options, allPairChecks, acceptedPairChecks);
   const crossVenueChecks = pairChecks.filter((pair) => pair.leftVenue !== pair.rightVenue);
   const comparisonSet = crossVenueChecks.length ? crossVenueChecks : pairChecks;
+  const aiAdjudicatedPairs = comparisonSet.filter((pair) => pair.aiAdjudicated);
+  const aiAppliedPairs = comparisonSet.filter((pair) => pair.aiApplied);
+  const aiErroredPairs = comparisonSet.filter((pair) => pair.aiError);
+  if (comparisonSet.some((pair) => Array.isArray(pair.semanticWarnings) && pair.semanticWarnings.length)) {
+    riskFlags.push('SEMANTIC_WARNING');
+  }
+  if (aiAppliedPairs.length) {
+    riskFlags.push('AI_ASSISTED_MATCH');
+  }
+  if (aiErroredPairs.length) {
+    riskFlags.push('AI_ADJUDICATION_DEGRADED');
+  }
   if (comparisonSet.some((pair) => !pair.accepted)) {
     return null;
   }
   const minPairSimilarity = comparisonSet.length
     ? Math.min(...comparisonSet.map((pair) => toNumber(pair.similarityScore)).filter((value) => value !== null))
     : null;
-  if (minPairSimilarity !== null && minPairSimilarity < options.similarityThreshold) {
+  const minSemanticScore = comparisonSet.length
+    ? Math.min(...comparisonSet.map((pair) => toNumber(pair.semanticScore)).filter((value) => value !== null))
+    : null;
+  const aiRescuedLowSimilarity = comparisonSet.some(
+    (pair) => pair.accepted && pair.aiApplied && toNumber(pair.similarityScore) !== null
+      && toNumber(pair.similarityScore) < options.similarityThreshold,
+  );
+  if (minPairSimilarity !== null && minPairSimilarity < options.similarityThreshold && !aiRescuedLowSimilarity) {
+    return null;
+  }
+  if (comparisonSet.some((pair) => Array.isArray(pair.semanticBlockers) && pair.semanticBlockers.length)) {
     return null;
   }
 
@@ -435,10 +524,17 @@ function summarizeGroup(group, options, acceptedPairChecks) {
     confidenceScore: confidence,
     riskFlags: Array.from(new Set(riskFlags)),
     matchSummary: {
+      matcher: options.matcher,
       similarityThreshold: options.similarityThreshold,
       minPairSimilarity,
+      minSemanticScore,
       pairCount: pairChecks.length,
       crossVenuePairCount: crossVenueChecks.length,
+      aiAdjudicatedPairCount: aiAdjudicatedPairs.length,
+      aiAppliedPairCount: aiAppliedPairs.length,
+      aiErrorPairCount: aiErroredPairs.length,
+      aiProvider: aiAdjudicatedPairs[0] ? aiAdjudicatedPairs[0].aiProvider : null,
+      aiModel: aiAdjudicatedPairs[0] ? aiAdjudicatedPairs[0].aiModel : null,
     },
     similarityChecks: options.includeSimilarity ? pairChecks : undefined,
     legs: group.map((leg) => ({
@@ -599,14 +695,23 @@ function buildCombinatorialBundleOpportunities(group, summary, options) {
 }
 
 async function scanArbitrage(options) {
+  const matcher = normalizeArbitrageMatcher(options && options.matcher) || DEFAULT_ARBITRAGE_MATCHER;
   const venues = Array.from(new Set((options.venues || ['pandora', 'polymarket']).map((value) => String(value).toLowerCase())));
   const combinatorialSettings = resolveCombinatorialSettings(options);
+  const aiProvider = resolveArbAiProvider(options);
+  const aiModel = aiProvider === 'none' ? null : resolveArbAiModel(aiProvider, options);
+  const aiThreshold = resolveArbAiConfidenceThreshold(options);
+  const aiMaxCandidates = resolveArbAiMaxCandidates(options);
+  const aiTimeoutMs = resolveArbAiTimeoutMs(options);
 
   const sources = {};
   const allLegs = [];
   const diagnostics = [];
   if (options.crossVenueOnly && venues.length < 2) {
     diagnostics.push('cross-venue-only is enabled but fewer than two venues were selected; no opportunities will match.');
+  }
+  if (matcher === 'hybrid' && aiProvider === 'none') {
+    diagnostics.push('AI adjudication is unavailable; hybrid matcher is running in deterministic-only mode.');
   }
 
   if (venues.includes('pandora')) {
@@ -674,6 +779,7 @@ async function scanArbitrage(options) {
       generatedAt: new Date().toISOString(),
       parameters: {
         chainId: options.chainId,
+        matcher,
         venues,
         limit: options.limit,
         minSpreadPct: options.minSpreadPct,
@@ -683,6 +789,11 @@ async function scanArbitrage(options) {
         minTokenScore: Number.isFinite(options.minTokenScore)
           ? options.minTokenScore
           : DEFAULT_MIN_TOKEN_SCORE,
+        aiProvider,
+        aiModel,
+        aiThreshold,
+        aiMaxCandidates,
+        aiTimeoutMs,
         crossVenueOnly: options.crossVenueOnly,
         withRules: options.withRules,
         includeSimilarity: options.includeSimilarity,
@@ -702,15 +813,15 @@ async function scanArbitrage(options) {
             bundleCount: 0,
             bundleOpportunities: [],
           }
-        : {}),
+      : {}),
     };
   }
 
-  const grouped = buildGroups(allLegs, options);
+  const grouped = await buildGroups(allLegs, options);
   const groupSummaries = grouped.groups
     .map((group) => ({
       group,
-      summary: summarizeGroup(group, options, grouped.acceptedPairChecks),
+      summary: summarizeGroup(group, options, grouped.allPairChecks, grouped.acceptedPairChecks),
     }))
     .filter((entry) => Boolean(entry.summary));
 
@@ -744,6 +855,7 @@ async function scanArbitrage(options) {
     generatedAt: new Date().toISOString(),
     parameters: {
       chainId: options.chainId,
+      matcher,
       venues,
       limit: options.limit,
       minSpreadPct: options.minSpreadPct,
@@ -753,6 +865,11 @@ async function scanArbitrage(options) {
       minTokenScore: Number.isFinite(options.minTokenScore)
         ? options.minTokenScore
         : DEFAULT_MIN_TOKEN_SCORE,
+      aiProvider,
+      aiModel,
+      aiThreshold,
+      aiMaxCandidates,
+      aiTimeoutMs,
       crossVenueOnly: options.crossVenueOnly,
       withRules: options.withRules,
       includeSimilarity: options.includeSimilarity,
@@ -780,6 +897,7 @@ module.exports = {
   ARBITRAGE_SCHEMA_VERSION,
   buildCombinatorialBundleOpportunities,
   evaluateArbitrageQuestionMatch,
+  evaluateArbitrageQuestionMatchAsync,
   normalizeQuestion,
   questionSimilarity,
   scanArbitrage,
