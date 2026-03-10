@@ -8999,7 +8999,7 @@
       "replay"
     ],
     "canonicalTool": "mirror.replay",
-    "canonicalUsage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]",
+    "canonicalUsage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|[--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--limit <n>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/GenericCommandData",
     "emits": [
@@ -9111,7 +9111,7 @@
     "summary": "Replay persisted mirror execution history against modeled rebalance and hedge outcomes using the append-only audit log, or lastExecution fallback when no ledger exists.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]"
+    "usage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|[--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--limit <n>]"
   },
   "mirror.simulate": {
     "agentWorkflow": null,
@@ -17651,7 +17651,7 @@
       "preflight"
     ],
     "canonicalTool": "polymarket.preflight",
-    "canonicalUsage": "pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/PolymarketPayload",
     "emits": [
@@ -17673,16 +17673,20 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "fork": {
+          "description": "Run in fork mode.",
+          "type": "boolean"
+        },
+        "fork-chain-id": {
+          "description": "Fork chain id.",
+          "type": "integer"
+        },
+        "fork-rpc-url": {
+          "description": "Fork RPC URL.",
+          "type": "string"
+        },
         "funder": {
           "description": "Polymarket proxy wallet.",
-          "type": "string"
-        },
-        "polymarket-host": {
-          "description": "Polymarket host override.",
-          "type": "string"
-        },
-        "polymarket-mock-url": {
-          "description": "Polymarket mock URL.",
           "type": "string"
         },
         "private-key": {
@@ -17692,11 +17696,6 @@
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
-        },
-        "timeout-ms": {
-          "description": "Request timeout in milliseconds.",
-          "minimum": 1,
-          "type": "integer"
         }
       },
       "type": "object"
@@ -17727,7 +17726,7 @@
     "summary": "Run strict Polymarket trade preflight checks.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]"
+    "usage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
   },
   "polymarket.trade": {
     "agentWorkflow": null,
@@ -17764,11 +17763,11 @@
       "properties": {
         "amount-usdc": {
           "description": "Trade notional in USDC.",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "type": "number"
         },
         "condition-id": {
-          "description": "Polymarket condition id.",
+          "description": "Polymarket condition id or market id.",
           "type": "string"
         },
         "dry-run": {
@@ -17851,10 +17850,93 @@
         }
       },
       "required": [
-        "token",
         "amount-usdc"
       ],
-      "type": "object"
+      "type": "object",
+      "xPandora": {
+        "exclusiveOneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "execute"
+                  ]
+                },
+                {
+                  "required": [
+                    "execute"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "dry-run"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "dry-run"
+                  ]
+                },
+                {
+                  "required": [
+                    "dry-run"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "execute"
+            ]
+          }
+        ],
+        "requiredAnyOf": [
+          {
+            "required": [
+              "token-id",
+              "dry-run"
+            ]
+          },
+          {
+            "required": [
+              "token-id",
+              "execute"
+            ]
+          },
+          {
+            "required": [
+              "condition-id",
+              "token",
+              "dry-run"
+            ]
+          },
+          {
+            "required": [
+              "condition-id",
+              "token",
+              "execute"
+            ]
+          },
+          {
+            "required": [
+              "slug",
+              "token",
+              "dry-run"
+            ]
+          },
+          {
+            "required": [
+              "slug",
+              "token",
+              "execute"
+            ]
+          }
+        ]
+      }
     },
     "jobCapable": false,
     "mcpExposed": true,
@@ -20428,7 +20510,98 @@
           "type": "boolean"
         }
       },
-      "type": "object"
+      "type": "object",
+      "xPandora": {
+        "exclusiveOneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "input"
+                  ]
+                },
+                {
+                  "required": [
+                    "input"
+                  ]
+                },
+                {
+                  "required": [
+                    "stdin"
+                  ]
+                },
+                {
+                  "required": [
+                    "stdin"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "observations-json"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "observations-json"
+                  ]
+                },
+                {
+                  "required": [
+                    "observations-json"
+                  ]
+                },
+                {
+                  "required": [
+                    "stdin"
+                  ]
+                },
+                {
+                  "required": [
+                    "stdin"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "input"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "observations-json"
+                  ]
+                },
+                {
+                  "required": [
+                    "observations-json"
+                  ]
+                },
+                {
+                  "required": [
+                    "input"
+                  ]
+                },
+                {
+                  "required": [
+                    "input"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "stdin"
+            ]
+          }
+        ]
+      }
     },
     "jobCapable": false,
     "mcpExposed": true,

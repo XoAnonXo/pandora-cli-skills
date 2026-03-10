@@ -8395,6 +8395,59 @@ test('mirror status can infer the paired source selector from persisted state wh
   }
 });
 
+test('mirror replay can infer persisted state from --market-address alone', () => {
+  const tempDir = createTempDir('pandora-mirror-replay-selector-hint-');
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const statePath = path.join(stateDir, 'feedfacecafebeef.json');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'feedfacecafebeef',
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: 'poly-game-1',
+        lastExecution: {
+          mode: 'paper',
+          status: 'executed',
+          startedAt: '2026-03-09T09:58:00.000Z',
+          completedAt: '2026-03-09T10:00:00.000Z',
+          model: {
+            plannedRebalanceUsdc: 12.5,
+            plannedHedgeUsdc: 7.25,
+            plannedSpendUsdc: 19.75,
+            rebalanceSide: 'yes',
+            hedgeTokenSide: 'no',
+            hedgeOrderSide: 'buy',
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const result = runCli(['--output', 'json', 'mirror', 'replay', '--market-address', ADDRESSES.mirrorMarket], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.replay');
+    assert.equal(payload.data.stateFile, statePath);
+    assert.equal(payload.data.selector.pandoraMarketAddress, ADDRESSES.mirrorMarket);
+    assert.equal(payload.data.selector.polymarketMarketId, 'poly-cond-1');
+    assert.equal(payload.data.selector.polymarketSlug, 'poly-game-1');
+    assert.equal(payload.data.summary.actionCount, 1);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
 test('mirror status surfaces unreadable pending-action locks as blocked runtime state', () => {
   const tempDir = createTempDir('pandora-mirror-status-lock-invalid-');
   const stateFile = path.join(tempDir, 'mirror-state.json');

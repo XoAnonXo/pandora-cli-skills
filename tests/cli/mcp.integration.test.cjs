@@ -1584,6 +1584,71 @@ test('mcp rejects invalid typed values before CLI parser execution', async () =>
   });
 });
 
+test('mcp polymarket.trade rejects selectorless dry-run payloads at the schema boundary', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'polymarket.trade',
+      arguments: {
+        token: 'yes',
+        'amount-usdc': 10,
+        'dry-run': true,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_INVALID_ARGUMENTS');
+    assert.match(envelope.error.message, /supported input shape|required/i);
+    assert.equal(call.isError, true);
+  });
+});
+
+test('mcp polymarket.trade rejects selector payloads without an execution mode at the schema boundary', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'polymarket.trade',
+      arguments: {
+        'condition-id': '0xcondition',
+        token: 'yes',
+        'amount-usdc': 10,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_INVALID_ARGUMENTS');
+    assert.match(envelope.error.message, /supported input shape|required/i);
+    assert.equal(call.isError, true);
+  });
+});
+
+test('mcp simulate.particle-filter rejects missing or conflicting input sources at the schema boundary', async () => {
+  await withMcpClient(async (client) => {
+    const missingSource = await client.callTool({
+      name: 'simulate.particle-filter',
+      arguments: {},
+    });
+    const missingEnvelope = extractStructuredEnvelope(missingSource);
+    assert.equal(missingEnvelope.ok, false);
+    assert.equal(missingEnvelope.error.code, 'MCP_INVALID_ARGUMENTS');
+    assert.match(missingEnvelope.error.message, /exclusive|required/i);
+    assert.equal(missingSource.isError, true);
+
+    const conflictingSources = await client.callTool({
+      name: 'simulate.particle-filter',
+      arguments: {
+        input: '/tmp/obs.json',
+        stdin: true,
+      },
+    });
+    const conflictingEnvelope = extractStructuredEnvelope(conflictingSources);
+    assert.equal(conflictingEnvelope.ok, false);
+    assert.equal(conflictingEnvelope.error.code, 'MCP_INVALID_ARGUMENTS');
+    assert.match(conflictingEnvelope.error.message, /multiple mutually-exclusive|exclusive/i);
+    assert.equal(conflictingSources.isError, true);
+  });
+});
+
 test('mcp rejects mutually-exclusive mirror argument combinations at the tool boundary', async () => {
   await withMcpClient(async (client) => {
     const call = await client.callTool({
@@ -1695,6 +1760,47 @@ test('mcp safe-mode mutating tools default without execute intent', async () => 
     assert.equal(envelope.ok, true);
     assert.equal(envelope.command, 'trade');
     assert.equal(envelope.data.mode, 'dry-run');
+  });
+});
+
+test('mcp normalizes explicit camelCase aliases before trade CLI dispatch', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'trade',
+      arguments: {
+        marketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        side: 'yes',
+        amountUsdc: 10,
+        dryRun: true,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.command, 'trade');
+    assert.equal(envelope.data.marketAddress, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    assert.equal(envelope.data.amountUsdc, 10);
+    assert.equal(envelope.data.mode, 'dry-run');
+  });
+});
+
+test('mcp normalizes explicit snake_case aliases before agent validation CLI dispatch', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'agent.market.validate',
+      arguments: {
+        question: 'Will Arsenal beat Chelsea?',
+        rules: 'YES if Arsenal wins in official full-time result.',
+        target_timestamp: 1777777777,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.command, 'agent.market.validate');
+    assert.equal(typeof envelope.data.ticket, 'string');
+    assert.equal(envelope.data.ticket.startsWith('market-validate:'), true);
+    assert.equal(envelope.data.requiredAttestation.validationDecision, 'PASS');
   });
 });
 

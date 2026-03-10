@@ -649,7 +649,26 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
   assert.match(toolDefinitions['mirror.logs'].description, /structured daemon JSONL/i);
   assert.equal(toolDefinitions['mirror.replay'].canonicalTool, 'mirror.replay');
   assert.match(descriptors['mirror.hedge-calc'].summary, /offline hedge sizing/i);
+  assert.deepEqual(
+    getCompositeBranches(descriptors['simulate.particle-filter'].inputSchema, 'oneOf').map((branch) => branch.required),
+    [['observations-json'], ['input'], ['stdin']],
+  );
+  assert.deepEqual(
+    getCompositeBranches(descriptors['polymarket.trade'].inputSchema, 'oneOf').map((branch) => branch.required),
+    [['dry-run'], ['execute']],
+  );
+  assert.ok(
+    getCompositeBranches(descriptors['polymarket.trade'].inputSchema, 'anyOf').some((branch) =>
+      Array.isArray(branch.required)
+      && branch.required.includes('condition-id')
+      && branch.required.includes('token')
+      && branch.required.includes('dry-run')
+    ),
+  );
   assert.match(descriptors['polymarket.check'].summary, /lower-level readiness primitive/i);
+  assert.equal(descriptors['polymarket.preflight'].inputSchema.properties.fork.type, 'boolean');
+  assert.equal(descriptors['polymarket.preflight'].inputSchema.properties['fork-rpc-url'].type, 'string');
+  assert.equal(descriptors['polymarket.preflight'].inputSchema.properties['fork-chain-id'].type, 'integer');
   assert.equal(descriptors['polymarket.positions'].dataSchema, '#/definitions/PolymarketPositionsPayload');
   assert.deepEqual(
     getCompositeBranches(descriptors['polymarket.positions'].inputSchema, 'oneOf').map((branch) => branch.required),

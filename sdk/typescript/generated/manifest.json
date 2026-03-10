@@ -79,7 +79,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.91"
+          "version": "1.1.92"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -106,7 +106,7 @@
           "format": "node",
           "name": "@thisispandora/agent-sdk",
           "sourceProjectPath": "sdk/typescript/package.json",
-          "version": "0.1.0-alpha.10"
+          "version": "0.1.0-alpha.11"
         }
       },
       "supported": true,
@@ -273,7 +273,7 @@
   "commandCount": 161,
   "commandDescriptorVersion": "1.4.3",
   "contractCommandDescriptorVersion": "1.4.3",
-  "contractPackageVersion": "1.1.91",
+  "contractPackageVersion": "1.1.92",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
@@ -303,9 +303,9 @@
     "format": "node",
     "name": "@thisispandora/agent-sdk",
     "sourceProjectPath": "sdk/typescript/package.json",
-    "version": "0.1.0-alpha.10"
+    "version": "0.1.0-alpha.11"
   },
-  "packageVersion": "0.1.0-alpha.10",
+  "packageVersion": "0.1.0-alpha.11",
   "publishedSurfaces": {
     "python": {
       "artifactSubpaths": {
@@ -355,7 +355,7 @@
       "main": "cli/pandora.cjs",
       "name": "pandora-cli-skills",
       "sourceProjectPath": "package.json",
-      "version": "1.1.91"
+      "version": "1.1.92"
     },
     "typescript": {
       "artifactSubpaths": {
@@ -382,21 +382,21 @@
       "format": "node",
       "name": "@thisispandora/agent-sdk",
       "sourceProjectPath": "sdk/typescript/package.json",
-      "version": "0.1.0-alpha.10"
+      "version": "0.1.0-alpha.11"
     }
   },
   "registryDigest": {
     "canonicalHash": "2fa6435db3d98676f12f7280fa46fdf2ca5dbc310da7131a323991d160cecb29",
-    "commandDigestHash": "89f8322220654b945647c71d0c8ab7e8d261a43628fdee5f12a7dae323ae7f14",
-    "descriptorHash": "2018dec5cc671d76f3afaab553594b2d20ff7d05a79acefd1fecb7c28f3be8d9",
+    "commandDigestHash": "aaf46a8d53227d9bf50bdeb20ff862bf8e959855546433ba28161e0c2f1828d5",
+    "descriptorHash": "9fd165dde56cf7ce720364d06ffa7de18dfe2f58bfc2bf66866b06a05528fb58",
     "documentationHash": "861462b91dd1da73bf3d98cd764d00241b3991ef641c10a096cec32fe84600af",
-    "fullDescriptorHash": "e755409790cb42cda6badd40823c9c2cf1a0bc21f69c1dc8a75d5a1135aee40d",
+    "fullDescriptorHash": "e5034158015b743fbeee047322cd542383564538735fbc097df5d877d5010049",
     "namespaceHash": "eacf06b999731e206aee036dcdeb0174cb32dd69d3c4a80efe8aeda78a1c1ed5",
     "policyProfilesHash": "a9716d3d21380d48f1accf7d86cb83d4db0ea726ab50fb5f87d7bc217741e60c",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "a8bc62dd2a16330c6a88d0c4b6666f90465982ab71546344ab1671274e73d8db",
-    "trustDistributionHash": "606d2389606a9ca0393babfa4367df21fbbe733cffa8efef4b6d4d52a2cbceb6"
+    "trustDistributionHash": "d7979b314c3e2cada7bb22365a7545c7150a25d0f28c1657ead6b3ab07b49385"
   },
   "schemaVersion": "1.0.0"
 }

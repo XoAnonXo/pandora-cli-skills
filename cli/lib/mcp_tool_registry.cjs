@@ -155,6 +155,39 @@ function sortToolDefinitions(definitions) {
   return (Array.isArray(definitions) ? definitions : []).slice().sort(compareToolDefinitions);
 }
 
+const EXPLICIT_MCP_INPUT_ALIASES = Object.freeze({
+  marketAddress: 'market-address',
+  market_address: 'market-address',
+  amountUsdc: 'amount-usdc',
+  amount_usdc: 'amount-usdc',
+  dryRun: 'dry-run',
+  dry_run: 'dry-run',
+  targetTimestamp: 'target-timestamp',
+  target_timestamp: 'target-timestamp',
+  profileId: 'profile-id',
+  profile_id: 'profile-id',
+  profileFile: 'profile-file',
+  profile_file: 'profile-file',
+  chainId: 'chain-id',
+  chain_id: 'chain-id',
+  rpcUrl: 'rpc-url',
+  rpc_url: 'rpc-url',
+  indexerUrl: 'indexer-url',
+  indexer_url: 'indexer-url',
+  timeoutMs: 'timeout-ms',
+  timeout_ms: 'timeout-ms',
+  privateKey: 'private-key',
+  private_key: 'private-key',
+  polymarketMarketId: 'polymarket-market-id',
+  polymarket_market_id: 'polymarket-market-id',
+  pandoraMarketAddress: 'pandora-market-address',
+  pandora_market_address: 'pandora-market-address',
+  forkRpcUrl: 'fork-rpc-url',
+  fork_rpc_url: 'fork-rpc-url',
+  forkChainId: 'fork-chain-id',
+  fork_chain_id: 'fork-chain-id',
+});
+
 /**
  * Normalize a flag token to a CLI-prefixed name.
  * Leaves existing `--foo`/`-f` tokens unchanged and prefixes bare names.
@@ -280,6 +313,53 @@ function normalizeLegacyFlagKey(name) {
   const normalized = normalizeFlagName(name);
   if (!normalized) return '';
   return normalized.replace(/^--/, '');
+}
+
+function resolveExplicitMcpAlias(allowedNames, rawName, options = {}) {
+  const treatAsFlag = Boolean(options.legacyFlag);
+  const normalizedName = treatAsFlag ? normalizeLegacyFlagKey(rawName) : String(rawName || '').trim();
+  if (!normalizedName) return normalizedName;
+  const canonicalName = EXPLICIT_MCP_INPUT_ALIASES[normalizedName];
+  if (!canonicalName) {
+    return normalizedName;
+  }
+  return allowedNames.has(canonicalName) ? canonicalName : normalizedName;
+}
+
+function normalizeInvocationArgs(definition, args) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    return args;
+  }
+
+  const normalized = { ...args };
+  const allowedTopLevelInputs = getAllowedTopLevelInputNames(definition);
+
+  for (const [rawName, rawValue] of Object.entries(args)) {
+    if (rawName === 'flags') continue;
+    const canonicalName = resolveExplicitMcpAlias(allowedTopLevelInputs, rawName);
+    if (canonicalName === rawName) continue;
+    delete normalized[rawName];
+    if (!Object.prototype.hasOwnProperty.call(args, canonicalName)) {
+      normalized[canonicalName] = rawValue;
+    }
+  }
+
+  if (args.flags && typeof args.flags === 'object' && !Array.isArray(args.flags)) {
+    const allowedFlagInputs = new Set(getTopLevelFlagNames(definition));
+    const normalizedFlags = { ...args.flags };
+    for (const [rawName, rawValue] of Object.entries(args.flags)) {
+      const canonicalName = resolveExplicitMcpAlias(allowedFlagInputs, rawName, { legacyFlag: true });
+      const normalizedRawName = normalizeLegacyFlagKey(rawName);
+      if (!canonicalName || canonicalName === normalizedRawName) continue;
+      delete normalizedFlags[rawName];
+      if (!Object.prototype.hasOwnProperty.call(normalizedFlags, canonicalName)) {
+        normalizedFlags[canonicalName] = rawValue;
+      }
+    }
+    normalized.flags = normalizedFlags;
+  }
+
+  return normalized;
 }
 
 function listUnknownTopLevelInputs(definition, args) {
@@ -979,13 +1059,14 @@ function createMcpToolRegistry(options = {}) {
       throw blocked;
     }
 
-    validateInvocationArgs(definition, args);
+    const normalizedArgs = normalizeInvocationArgs(definition, args);
+    validateInvocationArgs(definition, normalizedArgs);
 
-    const positionals = Array.isArray(args.positionals)
-      ? args.positionals.map((value) => String(value))
+    const positionals = Array.isArray(normalizedArgs.positionals)
+      ? normalizedArgs.positionals.map((value) => String(value))
       : [];
-    const controlInputs = extractControlInputs(definition, args);
-    const invocationFlags = extractInvocationFlags(definition, args);
+    const controlInputs = extractControlInputs(definition, normalizedArgs);
+    const invocationFlags = extractInvocationFlags(definition, normalizedArgs);
     const flagArgv = buildFlagArgv(invocationFlags);
     const argv = [...definition.command, ...positionals, ...flagArgv];
     let willExecute = false;
@@ -997,7 +1078,7 @@ function createMcpToolRegistry(options = {}) {
       const modeFlags = [...safeFlags, ...executeFlags].filter((flag) => flagSet.has(flag));
       const hasSafe = safeFlags.some((flag) => flagSet.has(flag));
       const hasExecute = executeFlags.some((flag) => flagSet.has(flag));
-      const executeIntent = Boolean(args && args.intent && args.intent.execute === true);
+      const executeIntent = Boolean(normalizedArgs && normalizedArgs.intent && normalizedArgs.intent.execute === true);
       const hasModeFlags = safeFlags.length > 0 || executeFlags.length > 0;
 
       if (modeFlags.length > 1) {

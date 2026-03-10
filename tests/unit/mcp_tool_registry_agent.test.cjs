@@ -98,6 +98,60 @@ test('prepareInvocation rejects unknown top-level MCP arguments', () => {
   );
 });
 
+test('prepareInvocation normalizes explicit camelCase MCP aliases to canonical CLI flags', () => {
+  const registry = createMcpToolRegistry();
+  const invocation = registry.prepareInvocation('trade', {
+    marketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    side: 'yes',
+    amountUsdc: 10,
+    dryRun: true,
+  });
+
+  assert.deepEqual(invocation.argv, [
+    'trade',
+    '--market-address',
+    '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    '--side',
+    'yes',
+    '--amount-usdc',
+    '10',
+    '--dry-run',
+  ]);
+});
+
+test('prepareInvocation normalizes explicit snake_case MCP aliases only when the canonical input exists', () => {
+  const registry = createMcpToolRegistry();
+  const invocation = registry.prepareInvocation('agent.market.validate', {
+    question: 'Will Arsenal beat Chelsea?',
+    rules: 'YES if Arsenal wins in official full-time result.',
+    target_timestamp: 1777777777,
+  });
+
+  assert.deepEqual(invocation.argv, [
+    'agent',
+    'market',
+    'validate',
+    '--question',
+    'Will Arsenal beat Chelsea?',
+    '--rules',
+    'YES if Arsenal wins in official full-time result.',
+    '--target-timestamp',
+    '1777777777',
+  ]);
+});
+
+test('prepareInvocation keeps explicit alias normalization narrow for tools that do not declare the canonical input', () => {
+  const registry = createMcpToolRegistry();
+
+  assert.throws(
+    () =>
+      registry.prepareInvocation('help', {
+        marketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      }),
+    (error) => error && error.code === 'MCP_UNKNOWN_ARGUMENTS' && /marketAddress/.test(error.message),
+  );
+});
+
 test('prepareInvocation rejects raw positional MCP arguments', () => {
   const registry = createMcpToolRegistry();
 

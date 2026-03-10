@@ -745,6 +745,15 @@ const mirrorLogsLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupA
 const mirrorSyncStopSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStopSelectorAnyOf);
 const mirrorSyncStatusSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStatusSelectorAnyOf);
 const polymarketPositionsSelectorOneOf = buildExclusivePresenceBranches(polymarketPositionsSelectorChoices);
+const polymarketTradeSelectorChoices = [['token-id'], ['condition-id', 'token'], ['slug', 'token']];
+const polymarketTradeModeChoices = [['dry-run'], ['execute']];
+const polymarketTradeSelectorAndModeAnyOf = buildRequiredSetCombinations(
+  polymarketTradeSelectorChoices,
+  polymarketTradeModeChoices,
+);
+const polymarketTradeModeOneOf = buildExclusivePresenceBranches(polymarketTradeModeChoices);
+const simulateParticleFilterSourceChoices = [['observations-json'], ['input'], ['stdin']];
+const simulateParticleFilterSourceOneOf = buildExclusivePresenceBranches(simulateParticleFilterSourceChoices);
 const mirrorTraceSelectorOneOf = buildExclusivePresenceBranches([['blocks'], ['from-block', 'to-block']]);
 
 const commandContracts = [
@@ -2501,6 +2510,7 @@ const commandContracts = [
           'credible-interval': numberSchema('Credible interval level.', { minimum: 50, maximum: 100 }),
           seed: integerSchema('Deterministic random seed.'),
         },
+        oneOf: simulateParticleFilterSourceOneOf,
       }),
       preferred: true,
     },
@@ -3758,13 +3768,13 @@ const commandContracts = [
       name: 'mirror.replay',
       summary: 'Replay persisted mirror execution history against modeled rebalance and hedge outcomes using the append-only audit log, or lastExecution fallback when no ledger exists.',
       usage:
-        'pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]',
+        'pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|[--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--limit <n>]',
       emits: ['mirror.replay', 'mirror.replay.help'],
       dataSchema: GENERIC_DATA_SCHEMA_REF,
       mcpExposed: true,
       mcp: {
         command: ['mirror', 'replay'],
-        description: 'Replay persisted mirror execution history against modeled rebalance and hedge outcomes. Uses the append-only audit log when available and falls back to lastExecution state when needed.',
+        description: 'Replay persisted mirror execution history against modeled rebalance and hedge outcomes. Uses the append-only audit log when available, falls back to lastExecution state when needed, and can start from a single selector hint when a persisted local mirror state matches.',
         inputSchema: buildInputSchema({
           flagProperties: {
             'state-file': commonFlags.stateFile,
@@ -4279,7 +4289,7 @@ const commandContracts = [
       name: 'polymarket.preflight',
     summary: 'Run strict Polymarket trade preflight checks.',
     usage:
-      'pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]',
+      'pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
     emits: ['polymarket.preflight', 'polymarket.preflight.help', 'polymarket.help'],
     dataSchema: '#/definitions/PolymarketPayload',
     mcpExposed: true,
@@ -4288,9 +4298,9 @@ const commandContracts = [
       description: 'Run strict Polymarket trade preflight checks. Use this after `polymarket check` when you need the execute-mode go/no-go gate.',
       inputSchema: buildInputSchema({
         flagProperties: {
-          'polymarket-host': stringSchema('Polymarket host override.'),
-          'polymarket-mock-url': stringSchema('Polymarket mock URL.'),
-          'timeout-ms': commonFlags.timeoutMs,
+          fork: booleanSchema('Run in fork mode.'),
+          'fork-rpc-url': stringSchema('Fork RPC URL.'),
+          'fork-chain-id': integerSchema('Fork chain id.'),
           'private-key': commonFlags.privateKey,
           funder: stringSchema('Polymarket proxy wallet.'),
           'rpc-url': commonFlags.rpcUrl,
@@ -4444,11 +4454,11 @@ const commandContracts = [
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
-          'condition-id': stringSchema('Polymarket condition id.'),
+          'condition-id': stringSchema('Polymarket condition id or market id.'),
           slug: stringSchema('Polymarket slug.'),
           'token-id': stringSchema('Polymarket token id.'),
           token: enumSchema(['yes', 'no'], 'Token/outcome side.'),
-          'amount-usdc': numberSchema('Trade notional in USDC.', { minimum: 0 }),
+          'amount-usdc': numberSchema('Trade notional in USDC.', { exclusiveMinimum: 0 }),
           'dry-run': booleanSchema('Run dry-run mode.'),
           execute: booleanSchema('Execute live trade.'),
           side: enumSchema(['buy', 'sell'], 'Order side.'),
@@ -4462,7 +4472,9 @@ const commandContracts = [
           'private-key': commonFlags.privateKey,
           funder: stringSchema('Polymarket proxy wallet.'),
         },
-        requiredFlags: ['token', 'amount-usdc'],
+        requiredFlags: ['amount-usdc'],
+        anyOf: polymarketTradeSelectorAndModeAnyOf,
+        oneOf: polymarketTradeModeOneOf,
       }),
       preferred: true,
       mutating: true,

@@ -110,7 +110,7 @@ module.exports = async function handleMirrorReplay({ actionArgs, context, deps }
   } = deps;
 
   const usage =
-    'pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]';
+    'pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|[--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--limit <n>]';
 
   if (includesHelpFlag(actionArgs)) {
     if (context.outputMode === 'json') {
@@ -120,14 +120,14 @@ module.exports = async function handleMirrorReplay({ actionArgs, context, deps }
         commandHelpPayload(usage, [
           'mirror replay is read-only and compares modeled rebalance/hedge sizing against persisted execution outcomes from the mirror audit log.',
           'When no append-only audit log exists yet, replay falls back to persisted lastExecution state so operators still get a machine-usable summary.',
-          'Selector-first replay resolves a matching daemon state file when one is running; otherwise it returns an empty replay with diagnostics instead of submitting any live lookup.',
+          'Selector-first replay can start from a single selector hint when a persisted local mirror state matches; when no match exists it returns an empty replay with diagnostics instead of submitting any live lookup.',
         ]),
       );
     } else {
       console.log(`Usage: ${usage}`);
       console.log('mirror replay is read-only and compares modeled rebalance/hedge sizing against persisted execution outcomes from the mirror audit log.');
       console.log('When no append-only audit log exists yet, replay falls back to persisted lastExecution state so operators still get a machine-usable summary.');
-      console.log('Selector-first replay resolves a matching daemon state file when one is running; otherwise it returns an empty replay with diagnostics instead of submitting any live lookup.');
+      console.log('Selector-first replay can start from a single selector hint when a persisted local mirror state matches; when no match exists it returns an empty replay with diagnostics instead of submitting any live lookup.');
     }
     return;
   }

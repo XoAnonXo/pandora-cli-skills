@@ -20876,7 +20876,7 @@
       "replay"
     ],
     "controlInputNames": [],
-    "description": "Replay persisted mirror execution history against modeled rebalance and hedge outcomes. Uses the append-only audit log when available and falls back to lastExecution state when needed.",
+    "description": "Replay persisted mirror execution history against modeled rebalance and hedge outcomes. Uses the append-only audit log when available, falls back to lastExecution state when needed, and can start from a single selector hint when a persisted local mirror state matches.",
     "executeFlags": [],
     "expectedLatencyMs": 1200,
     "externalDependencies": [
@@ -20931,7 +20931,7 @@
         ],
         "canonicalName": "mirror.replay",
         "canonicalTool": "mirror.replay",
-        "canonicalUsage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]",
+        "canonicalUsage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|[--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--limit <n>]",
         "command": [
           "mirror",
           "replay"
@@ -21061,7 +21061,7 @@
             }
           ]
         },
-        "usage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]"
+        "usage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|[--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--limit <n>]"
       }
     },
     "jobCapable": false,
@@ -21097,7 +21097,7 @@
       ],
       "canonicalName": "mirror.replay",
       "canonicalTool": "mirror.replay",
-      "canonicalUsage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]",
+      "canonicalUsage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|[--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--limit <n>]",
       "command": [
         "mirror",
         "replay"
@@ -21227,7 +21227,7 @@
           }
         ]
       },
-      "usage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--limit <n>]"
+      "usage": "pandora [--output table|json] mirror replay --state-file <path>|--strategy-hash <hash>|[--pandora-market-address <address>|--market-address <address>] [--polymarket-market-id <id>|--polymarket-slug <slug>] [--limit <n>]"
     }
   },
   {
@@ -40837,16 +40837,20 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "fork": {
+          "description": "Run in fork mode.",
+          "type": "boolean"
+        },
+        "fork-chain-id": {
+          "description": "Fork chain id.",
+          "type": "integer"
+        },
+        "fork-rpc-url": {
+          "description": "Fork RPC URL.",
+          "type": "string"
+        },
         "funder": {
           "description": "Polymarket proxy wallet.",
-          "type": "string"
-        },
-        "polymarket-host": {
-          "description": "Polymarket host override.",
-          "type": "string"
-        },
-        "polymarket-mock-url": {
-          "description": "Polymarket mock URL.",
           "type": "string"
         },
         "private-key": {
@@ -40856,11 +40860,6 @@
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
-        },
-        "timeout-ms": {
-          "description": "Request timeout in milliseconds.",
-          "minimum": 1,
-          "type": "integer"
         }
       },
       "type": "object",
@@ -40876,7 +40875,7 @@
         ],
         "canonicalName": "polymarket.preflight",
         "canonicalTool": "polymarket.preflight",
-        "canonicalUsage": "pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]",
+        "canonicalUsage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
         "command": [
           "polymarket",
           "preflight"
@@ -40975,7 +40974,7 @@
         "supportsRemote": true,
         "supportsWebhook": false,
         "topLevelInputConstraints": null,
-        "usage": "pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]"
+        "usage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
       }
     },
     "jobCapable": false,
@@ -41012,7 +41011,7 @@
       ],
       "canonicalName": "polymarket.preflight",
       "canonicalTool": "polymarket.preflight",
-      "canonicalUsage": "pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]",
+      "canonicalUsage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
       "command": [
         "polymarket",
         "preflight"
@@ -41111,7 +41110,7 @@
       "supportsRemote": true,
       "supportsWebhook": false,
       "topLevelInputConstraints": null,
-      "usage": "pandora [--output table|json] polymarket preflight [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--private-key <hex>] [--funder <address>] [--rpc-url <url>]"
+      "usage": "pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
     }
   },
   {
@@ -41140,11 +41139,11 @@
       "properties": {
         "amount-usdc": {
           "description": "Trade notional in USDC.",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "type": "number"
         },
         "condition-id": {
-          "description": "Polymarket condition id.",
+          "description": "Polymarket condition id or market id.",
           "type": "string"
         },
         "dry-run": {
@@ -41227,7 +41226,6 @@
         }
       },
       "required": [
-        "token",
         "amount-usdc"
       ],
       "type": "object",
@@ -41346,7 +41344,90 @@
         "summary": "Dry-run or execute a Polymarket trade.",
         "supportsRemote": true,
         "supportsWebhook": false,
-        "topLevelInputConstraints": null,
+        "topLevelInputConstraints": {
+          "exclusiveOneOf": [
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "execute"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "execute"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "dry-run"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "dry-run"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "dry-run"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "execute"
+              ]
+            }
+          ],
+          "requiredAnyOf": [
+            {
+              "required": [
+                "token-id",
+                "dry-run"
+              ]
+            },
+            {
+              "required": [
+                "token-id",
+                "execute"
+              ]
+            },
+            {
+              "required": [
+                "condition-id",
+                "token",
+                "dry-run"
+              ]
+            },
+            {
+              "required": [
+                "condition-id",
+                "token",
+                "execute"
+              ]
+            },
+            {
+              "required": [
+                "slug",
+                "token",
+                "dry-run"
+              ]
+            },
+            {
+              "required": [
+                "slug",
+                "token",
+                "execute"
+              ]
+            }
+          ]
+        },
         "usage": "pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
       }
     },
@@ -41489,7 +41570,90 @@
       "summary": "Dry-run or execute a Polymarket trade.",
       "supportsRemote": true,
       "supportsWebhook": false,
-      "topLevelInputConstraints": null,
+      "topLevelInputConstraints": {
+        "exclusiveOneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "execute"
+                  ]
+                },
+                {
+                  "required": [
+                    "execute"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "dry-run"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "dry-run"
+                  ]
+                },
+                {
+                  "required": [
+                    "dry-run"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "execute"
+            ]
+          }
+        ],
+        "requiredAnyOf": [
+          {
+            "required": [
+              "token-id",
+              "dry-run"
+            ]
+          },
+          {
+            "required": [
+              "token-id",
+              "execute"
+            ]
+          },
+          {
+            "required": [
+              "condition-id",
+              "token",
+              "dry-run"
+            ]
+          },
+          {
+            "required": [
+              "condition-id",
+              "token",
+              "execute"
+            ]
+          },
+          {
+            "required": [
+              "slug",
+              "token",
+              "dry-run"
+            ]
+          },
+          {
+            "required": [
+              "slug",
+              "token",
+              "execute"
+            ]
+          }
+        ]
+      },
       "usage": "pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
     }
   },
@@ -48274,7 +48438,97 @@
         "summary": "Run sequential Monte Carlo filtering with ESS diagnostics and credible intervals.",
         "supportsRemote": true,
         "supportsWebhook": false,
-        "topLevelInputConstraints": null,
+        "topLevelInputConstraints": {
+          "exclusiveOneOf": [
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "input"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "input"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "stdin"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "stdin"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "observations-json"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "observations-json"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "observations-json"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "stdin"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "stdin"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "input"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "observations-json"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "observations-json"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "input"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "input"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "stdin"
+              ]
+            }
+          ]
+        },
         "usage": "pandora [--output table|json] simulate particle-filter (--observations-json <json>|--input <path>|--stdin) [--particles <n>] [--process-noise <n>] [--observation-noise <n>] [--drift-bps <n>] [--initial-yes-pct <0-100>] [--initial-spread <n>] [--resample-threshold <0-1>] [--resample-method systematic|multinomial] [--credible-interval <50-100>] [--seed <n>]"
       }
     },
@@ -48400,7 +48654,97 @@
       "summary": "Run sequential Monte Carlo filtering with ESS diagnostics and credible intervals.",
       "supportsRemote": true,
       "supportsWebhook": false,
-      "topLevelInputConstraints": null,
+      "topLevelInputConstraints": {
+        "exclusiveOneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "input"
+                  ]
+                },
+                {
+                  "required": [
+                    "input"
+                  ]
+                },
+                {
+                  "required": [
+                    "stdin"
+                  ]
+                },
+                {
+                  "required": [
+                    "stdin"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "observations-json"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "observations-json"
+                  ]
+                },
+                {
+                  "required": [
+                    "observations-json"
+                  ]
+                },
+                {
+                  "required": [
+                    "stdin"
+                  ]
+                },
+                {
+                  "required": [
+                    "stdin"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "input"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "observations-json"
+                  ]
+                },
+                {
+                  "required": [
+                    "observations-json"
+                  ]
+                },
+                {
+                  "required": [
+                    "input"
+                  ]
+                },
+                {
+                  "required": [
+                    "input"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "stdin"
+            ]
+          }
+        ]
+      },
       "usage": "pandora [--output table|json] simulate particle-filter (--observations-json <json>|--input <path>|--stdin) [--particles <n>] [--process-noise <n>] [--observation-noise <n>] [--drift-bps <n>] [--initial-yes-pct <0-100>] [--initial-spread <n>] [--resample-threshold <0-1>] [--resample-method systematic|multinomial] [--credible-interval <50-100>] [--seed <n>]"
     }
   },
