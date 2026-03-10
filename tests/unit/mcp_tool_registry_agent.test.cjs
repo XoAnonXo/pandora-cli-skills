@@ -207,7 +207,7 @@ test('prepareInvocation enforces typed schema values at the MCP boundary', () =>
       registry.prepareInvocation('mirror.deploy', {
         'polymarket-market-id': '0x-market',
         'dry-run': true,
-        category: 'Gaming',
+        category: 3,
       }),
     (error) => error && error.code === 'MCP_INVALID_ARGUMENTS' && /category/i.test(error.message),
   );
