@@ -1,9 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFile } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const SCRIPT = path.join(ROOT, 'scripts', 'check_runtime_local_readiness.cjs');
@@ -37,8 +38,66 @@ function createTempHome(t) {
   return { homeDir };
 }
 
-test('runtime-local readiness helper auto-loads ~/.pandora-cli.env and certifies when two mutable built-ins are ready', (t) => {
+async function createRpcProbeServer(t) {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      requests.push({
+        method: req.method,
+        url: req.url,
+        body,
+      });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        result: '0x1',
+      }));
+    });
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+
+  t.after(() => new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  }));
+
+  const address = server.address();
+  assert.ok(address && typeof address === 'object' && address.port, 'rpc probe server should expose a port');
+  return {
+    requests,
+    rpcUrl: `http://127.0.0.1:${address.port}`,
+  };
+}
+
+function execFileAsync(file, args, options) {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, options, (error, stdout, stderr) => {
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+test('runtime-local readiness helper auto-loads ~/.pandora-cli.env and certifies when two mutable built-ins are ready', async (t) => {
   const { homeDir } = createTempHome(t);
+  const rpcProbe = await createRpcProbeServer(t);
   const envFile = path.join(homeDir, '.pandora-cli.env');
   const keystoreDir = path.join(homeDir, '.pandora', 'keys');
   const policyDir = path.join(homeDir, 'policies');
@@ -50,7 +109,7 @@ test('runtime-local readiness helper auto-loads ~/.pandora-cli.env and certifies
     envFile,
     [
       `PRIVATE_KEY=0x${'33'.repeat(32)}`,
-      'RPC_URL=https://ethereum.publicnode.com',
+      `RPC_URL=${rpcProbe.rpcUrl}`,
       'CHAIN_ID=1',
       `PANDORA_KEYSTORE_PASSWORD=${BUILTIN_KEYSTORE_PASSWORD}`,
       '',
@@ -58,12 +117,18 @@ test('runtime-local readiness helper auto-loads ~/.pandora-cli.env and certifies
     'utf8',
   );
 
-  const stdout = execFileSync(process.execPath, [SCRIPT], {
+  const { stdout } = await execFileAsync(process.execPath, [SCRIPT], {
     cwd: ROOT,
     env: {
       ...process.env,
       HOME: homeDir,
       USERPROFILE: homeDir,
+      NO_PROXY: '127.0.0.1,localhost',
+      no_proxy: '127.0.0.1,localhost',
+      HTTP_PROXY: '',
+      HTTPS_PROXY: '',
+      http_proxy: '',
+      https_proxy: '',
       PANDORA_PROFILE_FILE: path.join(homeDir, 'profiles.json'),
       PANDORA_POLICY_DIR: policyDir,
       PANDORA_POLICIES_DIR: policyDir,
@@ -91,4 +156,5 @@ test('runtime-local readiness helper auto-loads ~/.pandora-cli.env and certifies
   assert.ok(readinessCheck);
   assert.equal(readinessCheck.status, 'pass');
   assert.deepEqual(readinessCheck.actual.readyMutableBuiltinIds.sort(), ['dev_keystore_operator', 'prod_trader_a']);
+  assert.equal(rpcProbe.requests.length >= 2, true);
 });
