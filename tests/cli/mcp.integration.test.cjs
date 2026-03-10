@@ -1572,7 +1572,7 @@ test('mcp rejects invalid typed values before CLI parser execution', async () =>
       arguments: {
         'polymarket-market-id': '0x-market',
         'dry-run': true,
-        category: 'Gaming',
+        category: 3,
       },
     });
     const envelope = extractStructuredEnvelope(call);
