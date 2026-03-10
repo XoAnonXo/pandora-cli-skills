@@ -8,6 +8,10 @@ const generatedMcpToolDefinitions = require('../../sdk/generated/mcp-tool-defini
 const { buildCommandDescriptors, buildMcpToolDefinitions } = require('../../cli/lib/agent_contract_registry.cjs');
 const { ROUTED_TOP_LEVEL_COMMANDS } = require('../../cli/lib/command_router.cjs');
 const { buildSdkContractComponents } = require('../../cli/lib/sdk_contract_service.cjs');
+const {
+  normalizeCommandDescriptorsForParity,
+  normalizeToolDefinitionsForParity,
+} = require('../helpers/contract_parity_assertions.cjs');
 
 const CLI_ROOT = path.resolve(__dirname, '../../cli');
 const EXCLUDED_FILES = new Set([
@@ -87,6 +91,24 @@ function omitGeneratedGapToolDefinitions(definitions) {
   return definitions.filter((definition) => definition && !GENERATED_CONTRACT_GAP_COMMANDS.has(definition.name));
 }
 
+function getCompositeBranches(schema, keyword) {
+  if (!schema || typeof schema !== 'object') return [];
+  const allOf = Array.isArray(schema.allOf) ? schema.allOf : [];
+  const branch = allOf.find((entry) => entry && typeof entry === 'object' && Array.isArray(entry[keyword]));
+  if (branch && Array.isArray(branch[keyword])) {
+    return branch[keyword];
+  }
+  const pandora = schema.xPandora && typeof schema.xPandora === 'object' ? schema.xPandora : null;
+  if (!pandora) return [];
+  if (keyword === 'anyOf' && Array.isArray(pandora.requiredAnyOf)) {
+    return pandora.requiredAnyOf;
+  }
+  if (keyword === 'oneOf' && Array.isArray(pandora.exclusiveOneOf)) {
+    return pandora.exclusiveOneOf;
+  }
+  return [];
+}
+
 test('shared agent contract registry covers all MCP tools with canonical metadata', () => {
   const descriptors = buildCommandDescriptors();
   const mcpTools = buildMcpToolDefinitions();
@@ -122,6 +144,15 @@ test('shared agent contract registry covers all MCP tools with canonical metadat
     if (descriptor.mcpExposed) {
       assert.ok(mcpToolNames.has(commandName), `descriptor marked ${commandName} as MCP-exposed but no MCP tool exists`);
     }
+  }
+});
+
+test('generated MCP tool schemas avoid top-level anyOf/oneOf combinators', () => {
+  const toolDefinitions = buildMcpToolDefinitions();
+
+  for (const tool of toolDefinitions) {
+    assert.equal(Array.isArray(tool.inputSchema && tool.inputSchema.anyOf), false, `${tool.name} should not expose top-level anyOf`);
+    assert.equal(Array.isArray(tool.inputSchema && tool.inputSchema.oneOf), false, `${tool.name} should not expose top-level oneOf`);
   }
 });
 
@@ -163,39 +194,43 @@ test('mirror and sports create schemas expose category names and required select
     ['Politics', 'Sports', 'Finance', 'Crypto', 'Culture', 'Technology', 'Science', 'Entertainment', 'Health', 'Environment', 'Other'],
   );
   assert.ok(
-    mirrorDeploy.inputSchema.anyOf.some((branch) => Array.isArray(branch.required) && branch.required.includes('plan-file') && branch.required.includes('dry-run')),
+    getCompositeBranches(mirrorDeploy.inputSchema, 'anyOf').some((branch) =>
+      Array.isArray(branch.required) && branch.required.includes('plan-file') && branch.required.includes('dry-run')),
     'mirror.deploy should require a selector plus mode branch',
   );
   assert.ok(
-    Array.isArray(mirrorDeploy.inputSchema.oneOf)
-      && mirrorDeploy.inputSchema.oneOf.some((branch) =>
-        Array.isArray(branch.required)
-          && branch.required.includes('plan-file')
-          && branch.required.includes('dry-run')
-          && branch.not
-          && Array.isArray(branch.not.anyOf),
-      ),
+    getCompositeBranches(mirrorDeploy.inputSchema, 'oneOf').some((branch) =>
+      Array.isArray(branch.required)
+        && branch.required.includes('plan-file')
+        && branch.required.includes('dry-run')
+        && branch.not
+        && Array.isArray(branch.not.anyOf),
+    ),
     'mirror.deploy should encode exclusive selector/mode branches',
   );
 
   const mirrorClose = descriptors['mirror.close'];
   assert.ok(
-    mirrorClose.inputSchema.anyOf.some((branch) => Array.isArray(branch.required) && branch.required.includes('all') && branch.required.includes('execute')),
+    getCompositeBranches(mirrorClose.inputSchema, 'anyOf').some((branch) =>
+      Array.isArray(branch.required) && branch.required.includes('all') && branch.required.includes('execute')),
     'mirror.close should allow all+execute branch',
   );
   assert.ok(
-    mirrorClose.inputSchema.anyOf.some((branch) => Array.isArray(branch.required) && branch.required.includes('pandora-market-address') && branch.required.includes('polymarket-market-id') && branch.required.includes('dry-run')),
+    getCompositeBranches(mirrorClose.inputSchema, 'anyOf').some((branch) =>
+      Array.isArray(branch.required)
+        && branch.required.includes('pandora-market-address')
+        && branch.required.includes('polymarket-market-id')
+        && branch.required.includes('dry-run')),
     'mirror.close should allow paired selector dry-run branch',
   );
   assert.ok(
-    Array.isArray(mirrorClose.inputSchema.oneOf)
-      && mirrorClose.inputSchema.oneOf.some((branch) =>
-        Array.isArray(branch.required)
-          && branch.required.includes('all')
-          && branch.required.includes('execute')
-          && branch.not
-          && Array.isArray(branch.not.anyOf),
-      ),
+    getCompositeBranches(mirrorClose.inputSchema, 'oneOf').some((branch) =>
+      Array.isArray(branch.required)
+        && branch.required.includes('all')
+        && branch.required.includes('execute')
+        && branch.not
+        && Array.isArray(branch.not.anyOf),
+    ),
     'mirror.close should encode exclusive selector/mode branches',
   );
 
@@ -483,10 +518,21 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
   assert.match(toolDefinitions.quote.description, /buy-only/i);
   assert.ok(descriptors.dashboard);
   assert.ok(descriptors['fund-check']);
+  assert.ok(descriptors.fees);
+  assert.ok(descriptors['fees.withdraw']);
+  assert.ok(descriptors['debug.market']);
+  assert.ok(descriptors['debug.tx']);
   assert.ok(descriptors['mirror.dashboard']);
   assert.ok(descriptors['mirror.calc']);
   assert.match(descriptors.dashboard.summary, /active-mirror operator dashboard/i);
   assert.match(descriptors['fund-check'].summary, /hedge funding needs/i);
+  assert.match(descriptors.fees.summary, /oracle-fee history/i);
+  assert.match(descriptors['fees.withdraw'].summary, /withdrawProtocolFees/i);
+  assert.equal(descriptors['fees.withdraw'].mcpMutating, true);
+  assert.deepEqual(descriptors['fees.withdraw'].safeFlags, ['--dry-run']);
+  assert.deepEqual(descriptors['fees.withdraw'].executeFlags, ['--execute']);
+  assert.match(descriptors['debug.market'].summary, /single-market forensic snapshot/i);
+  assert.match(descriptors['debug.tx'].summary, /transaction hash/i);
   assert.match(descriptors['mirror.dashboard'].summary, /operator summary/i);
   assert.match(descriptors['mirror.calc'].summary, /target percentage/i);
   assert.ok(descriptors['markets.mine']);
@@ -502,15 +548,15 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
   assert.equal(descriptors['mirror.trace'].dataSchema, '#/definitions/MirrorTracePayload');
   assert.deepEqual(descriptors['mirror.trace'].inputSchema.required, ['rpc-url']);
   assert.deepEqual(
-    descriptors['mirror.trace'].inputSchema.oneOf.map((branch) => branch.required),
+    getCompositeBranches(descriptors['mirror.trace'].inputSchema, 'oneOf').map((branch) => branch.required),
     [['blocks'], ['from-block', 'to-block']],
   );
   assert.deepEqual(
-    descriptors['mirror.trace'].inputSchema.oneOf[0].not.anyOf,
+    getCompositeBranches(descriptors['mirror.trace'].inputSchema, 'oneOf')[0].not.anyOf,
     [{ required: ['from-block', 'to-block'] }, { required: ['from-block'] }, { required: ['to-block'] }],
   );
   assert.ok(
-    descriptors['mirror.trace'].inputSchema.oneOf[1].not.anyOf.some((branch) =>
+    getCompositeBranches(descriptors['mirror.trace'].inputSchema, 'oneOf')[1].not.anyOf.some((branch) =>
       Array.isArray(branch.required) && branch.required.length === 1 && branch.required[0] === 'blocks'
     ),
   );
@@ -530,25 +576,29 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
   assert.match(descriptors['polymarket.check'].summary, /lower-level readiness primitive/i);
   assert.equal(descriptors['polymarket.positions'].dataSchema, '#/definitions/PolymarketPositionsPayload');
   assert.deepEqual(
-    descriptors['polymarket.positions'].inputSchema.oneOf.map((branch) => branch.required),
+    getCompositeBranches(descriptors['polymarket.positions'].inputSchema, 'oneOf').map((branch) => branch.required),
     [undefined, ['condition-id'], ['slug'], ['token-id']],
   );
   assert.match(toolDefinitions['polymarket.positions'].description, /YES\/NO inventory/i);
   assert.match(toolDefinitions['polymarket.balance'].description, /signer\/proxy funding balances/i);
+  assert.match(toolDefinitions.fees.description, /oracle-fee events/i);
+  assert.match(toolDefinitions['fees.withdraw'].description, /withdrawProtocolFees/i);
+  assert.match(toolDefinitions['debug.market'].description, /forensic snapshot/i);
+  assert.match(toolDefinitions['debug.tx'].description, /transaction hash/i);
 });
 
 test('generated descriptor and MCP tool slices stay in sync with the live registry builders', () => {
   assert.deepEqual(
-    omitGeneratedGapDescriptors(generatedCommandDescriptors),
-    omitGeneratedGapDescriptors(buildCommandDescriptors()),
+    normalizeCommandDescriptorsForParity(omitGeneratedGapDescriptors(generatedCommandDescriptors)),
+    normalizeCommandDescriptorsForParity(omitGeneratedGapDescriptors(buildCommandDescriptors())),
   );
   const compiled = buildSdkContractComponents({
     packageVersion: require('../../package.json').version,
     remoteTransportActive: false,
   });
   assert.deepEqual(
-    omitGeneratedGapToolDefinitions(generatedMcpToolDefinitions),
-    omitGeneratedGapToolDefinitions(compiled.mcpToolDefinitions.slice().sort(sortByName)),
+    normalizeToolDefinitionsForParity(omitGeneratedGapToolDefinitions(generatedMcpToolDefinitions)),
+    normalizeToolDefinitionsForParity(omitGeneratedGapToolDefinitions(compiled.mcpToolDefinitions.slice().sort(sortByName))),
   );
 });
 

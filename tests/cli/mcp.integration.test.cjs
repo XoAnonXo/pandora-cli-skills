@@ -25,6 +25,7 @@ const {
   omitTrustDistributionFromCapabilities,
   omitTrustDistributionDefinitions,
   normalizeCapabilitiesForTransportParity,
+  normalizeCommandDescriptorsForParity,
   assertManifestParity,
   createIsolatedPandoraEnv,
   withTemporaryEnv,
@@ -537,7 +538,9 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
     const sell = byName.get('sell');
     assert.ok(sell);
     assert.equal(sell.inputSchema.properties.shares.type, 'number');
-    assert.equal(Array.isArray(sell.inputSchema.anyOf), true);
+    assert.equal(Array.isArray(sell.inputSchema.anyOf), false);
+    assert.equal(Array.isArray(sell.inputSchema.oneOf), false);
+    assert.equal(sell.inputSchema.xPandora.topLevelInputConstraints, null);
     assert.equal(sell.inputSchema.xPandora.canonicalTool, 'sell');
     assert.equal(sell.inputSchema.xPandora.preferred, true);
 
@@ -587,6 +590,11 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
       assert.ok(riskPanic);
       assert.equal(riskPanic.inputSchema.xPandora.executeIntentRequired, true);
       assert.equal(riskPanic.inputSchema.xPandora.executeIntentRequiredForLiveMode, false);
+
+      const topLevelCombinatorOffenders = tools.filter(
+        (tool) => Array.isArray(tool.inputSchema && tool.inputSchema.anyOf) || Array.isArray(tool.inputSchema && tool.inputSchema.oneOf),
+      );
+      assert.deepEqual(topLevelCombinatorOffenders.map((tool) => tool.name), []);
     });
 
   const localTools = createMcpToolRegistry().listTools();
@@ -648,7 +656,10 @@ test('mcp schema/capabilities calls preserve contract-export parity for SDK cons
       assert.equal(capabilitiesEnvelope.data.transports.sdk.supported, true);
       assert.equal(capabilitiesEnvelope.data.transports.sdk.status, 'alpha');
       if (generatedArtifactsAligned) {
-        assert.deepEqual(generatedContractRegistry.commandDescriptors, schemaEnvelope.data.commandDescriptors);
+        assert.deepEqual(
+          normalizeCommandDescriptorsForParity(generatedContractRegistry.commandDescriptors),
+          normalizeCommandDescriptorsForParity(schemaEnvelope.data.commandDescriptors),
+        );
         assert.deepEqual(
           omitTrustDistributionDefinitions(generatedContractRegistry.schemas.envelope.definitions),
           omitTrustDistributionDefinitions(schemaEnvelope.data.definitions),
@@ -1029,7 +1040,10 @@ test('mcp http exposes schema/capabilities exports for remote SDK bootstrap clie
       );
 
       if (generatedArtifactsAligned) {
-        assert.deepEqual(generatedContractRegistry.commandDescriptors, schemaEnvelope.data.commandDescriptors);
+        assert.deepEqual(
+          normalizeCommandDescriptorsForParity(generatedContractRegistry.commandDescriptors),
+          normalizeCommandDescriptorsForParity(schemaEnvelope.data.commandDescriptors),
+        );
         assert.deepEqual(generatedContractRegistry.schemas.envelope.definitions, schemaEnvelope.data.definitions);
       }
       assert.equal(

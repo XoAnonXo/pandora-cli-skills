@@ -942,6 +942,13 @@ const LIQUIDITY_EVENT_ODDS_FIELDS = [
 const ERC20_ABI = [
   {
     type: 'function',
+    name: 'decimals',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint8' }],
+  },
+  {
+    type: 'function',
     name: 'approve',
     stateMutability: 'nonpayable',
     inputs: [
@@ -1174,6 +1181,9 @@ Usage:
   pandora [--output table|json] dashboard [--with-live|--no-live] [--watch] [--refresh-ms <ms>] [--iterations <n>] [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] fund-check --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--target-pct <0-100>] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]
   pandora [--output table|json] bridge plan --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]
+  pandora [--output table|json] fees [--wallet <address>] [--chain-id <id>] [--tx-hash <hash>] [--event-name <name>] [--limit <n>] [--before <cursor>] [--after <cursor>] [--order-direction asc|desc] [--indexer-url <url>] [--timeout-ms <ms>]
+  pandora [--output table|json] fees withdraw --market-address <address> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]
+  pandora [--output table|json] debug market|tx ...
   pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...
   pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
@@ -1521,6 +1531,9 @@ function helpJsonPayload() {
       'pandora [--output table|json] dashboard ...',
       'pandora [--output table|json] fund-check ...',
       'pandora [--output table|json] bridge plan ...',
+      'pandora [--output table|json] fees ...',
+      'pandora [--output table|json] fees withdraw ...',
+      'pandora [--output table|json] debug market|tx ...',
       'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
       'pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...',
       'pandora [--output table|json] webhook test ...',
@@ -4260,13 +4273,27 @@ function buildHedgeablePandoraCandidates(items, pollsByKey) {
   }).filter((item) => item.key && item.question);
 }
 
+const HEDGEABLE_MATCH_MIN_TOKEN_SCORE = 0.12;
+const HEDGEABLE_MATCH_SIMILARITY_THRESHOLD = 0.7;
+
 function findBestHedgeablePolymarketMatch(candidate, polymarketItems) {
   const maxCloseDiffHours = 24;
   let best = null;
   for (const item of polymarketItems) {
     if (!item || !item.question) continue;
     const similarity = questionSimilarityBreakdown(candidate.question, item.question);
-    if (similarity.tokenScore < 0.12 || similarity.score < 0.35) continue;
+    const passesContentOverlap =
+      similarity.contentSharedTokenCount >= 2
+      || (
+        similarity.contentSharedTokenCount === 1
+        && similarity.score >= Math.max(HEDGEABLE_MATCH_SIMILARITY_THRESHOLD + 0.12, 0.65)
+        && similarity.jaroWinkler >= 0.88
+      );
+    if (
+      similarity.tokenScore < HEDGEABLE_MATCH_MIN_TOKEN_SCORE
+      || similarity.score < HEDGEABLE_MATCH_SIMILARITY_THRESHOLD
+      || !passesContentOverlap
+    ) continue;
 
     let closeDiffHours = null;
     const leftClose = toOptionalNumber(candidate.closeTimestamp);
@@ -6358,6 +6385,23 @@ function pickFiniteNumber(...values) {
   return null;
 }
 
+function isExplicitZeroBalance(value) {
+  const numeric = toOptionalNumber(value);
+  return Number.isFinite(numeric) && Math.abs(numeric) <= 1e-9;
+}
+
+function reconcilePortfolioBalance(...balances) {
+  if (balances.some((balance) => isExplicitZeroBalance(balance))) {
+    return 0;
+  }
+  return pickFiniteNumber(...balances);
+}
+
+function isResolvedPollStatus(statusRaw) {
+  const status = Number(statusRaw);
+  return Number.isFinite(status) && status !== 0;
+}
+
 function derivePositionSide(yesBalance, noBalance) {
   const hasYes = Number.isFinite(yesBalance) && yesBalance > 0;
   const hasNo = Number.isFinite(noBalance) && noBalance > 0;
@@ -6367,7 +6411,41 @@ function derivePositionSide(yesBalance, noBalance) {
   return null;
 }
 
-function computePositionMarkValue(yesBalance, noBalance, odds) {
+function computeParimutuelPositionMarkValue(yesBalance, noBalance, liquidity) {
+  const poolYes = toOptionalNumber(liquidity && liquidity.poolYes);
+  const poolNo = toOptionalNumber(liquidity && liquidity.poolNo);
+  const totalPool = pickFiniteNumber(
+    liquidity && liquidity.totalPool,
+    Number.isFinite(poolYes) && Number.isFinite(poolNo) ? poolYes + poolNo : null,
+  );
+  if (!Number.isFinite(totalPool) || totalPool <= 0) return null;
+
+  let markValueUsdc = 0;
+  let hasExposure = false;
+
+  const yesAmount = Number.isFinite(yesBalance) ? yesBalance : 0;
+  if (yesAmount > 0 && Number.isFinite(poolYes) && poolYes > 0) {
+    markValueUsdc += (yesAmount / poolYes) * totalPool;
+    hasExposure = true;
+  }
+
+  const noAmount = Number.isFinite(noBalance) ? noBalance : 0;
+  if (noAmount > 0 && Number.isFinite(poolNo) && poolNo > 0) {
+    markValueUsdc += (noAmount / poolNo) * totalPool;
+    hasExposure = true;
+  }
+
+  return hasExposure ? round(markValueUsdc, 6) : null;
+}
+
+function computePositionMarkValue(yesBalance, noBalance, odds, options = {}) {
+  if (String(options.marketType || '').trim().toLowerCase() === 'pari') {
+    const pariMarkValue = computeParimutuelPositionMarkValue(yesBalance, noBalance, options.liquidity);
+    if (Number.isFinite(pariMarkValue)) {
+      return pariMarkValue;
+    }
+  }
+
   const yesProbability = toOptionalNumber(odds && odds.yesProbability);
   const noProbability = toOptionalNumber(odds && odds.noProbability);
   if (!Number.isFinite(yesProbability) || !Number.isFinite(noProbability)) return null;
@@ -6384,6 +6462,15 @@ function parseTokenAmountMaybeRaw(value) {
 
   const rawText = typeof value === 'string' ? value.trim() : '';
   if (rawText.includes('.')) {
+    const [, fractionPart = ''] = rawText.split('.');
+    if (
+      fractionPart
+      && /^0+$/.test(fractionPart)
+      && Number.isInteger(numeric)
+      && Math.abs(numeric) >= 1_000_000
+    ) {
+      return round(numeric / 1_000_000, 6);
+    }
     return round(numeric, 6);
   }
 
@@ -6391,6 +6478,122 @@ function parseTokenAmountMaybeRaw(value) {
     return round(numeric / 1_000_000, 6);
   }
   return round(numeric, 6);
+}
+
+function normalizePositionBalanceValue(value, market, liquidity) {
+  const normalized = parseTokenAmountMaybeRaw(value);
+  if (!Number.isFinite(normalized)) return null;
+
+  const rawText = typeof value === 'string' ? value.trim() : '';
+  if (!rawText || rawText.includes('.')) {
+    return normalized;
+  }
+
+  const marketType = String(market && market.marketType ? market.marketType : '').trim().toLowerCase();
+  if (marketType !== 'pari') {
+    return normalized;
+  }
+
+  const totalPool = pickFiniteNumber(
+    liquidity && liquidity.totalPool,
+    Number.isFinite(liquidity && liquidity.reserveYes) && Number.isFinite(liquidity && liquidity.reserveNo)
+      ? Number(liquidity.reserveYes) + Number(liquidity.reserveNo)
+      : null,
+    market && market.currentTvl,
+  );
+
+  if (Number.isFinite(totalPool) && totalPool > 0 && Math.abs(normalized) > totalPool * 10) {
+    return round(normalized / 1_000_000, 6);
+  }
+
+  return normalized;
+}
+
+async function readPortfolioOnchainBalance(publicClient, walletAddress, marketAddress, formatUnits) {
+  const [yesTokenAddress, noTokenAddress] = await Promise.all([
+    readOutcomeTokenAddressForSide(publicClient, marketAddress, 'yes'),
+    readOutcomeTokenAddressForSide(publicClient, marketAddress, 'no'),
+  ]);
+
+  const readSide = async (tokenAddress) => {
+    if (!tokenAddress) {
+      return {
+        tokenAddress: null,
+        balance: null,
+        balanceRaw: null,
+      };
+    }
+
+    let decimals = 18;
+    try {
+      const value = await publicClient.readContract({
+        address: tokenAddress,
+        abi: ERC20_ABI,
+        functionName: 'decimals',
+        args: [],
+      });
+      const numeric = Number(value);
+      if (Number.isInteger(numeric) && numeric >= 0 && numeric <= 36) {
+        decimals = numeric;
+      }
+    } catch {
+      decimals = 18;
+    }
+
+    const balanceRaw = await publicClient.readContract({
+      address: tokenAddress,
+      abi: ERC20_ABI,
+      functionName: 'balanceOf',
+      args: [walletAddress],
+    });
+
+    return {
+      tokenAddress,
+      balanceRaw: balanceRaw.toString(),
+      balance: Number(formatUnits(balanceRaw, decimals)),
+    };
+  };
+
+  const [yes, no] = await Promise.all([readSide(yesTokenAddress), readSide(noTokenAddress)]);
+  return {
+    yes,
+    no,
+  };
+}
+
+async function fetchPortfolioOnchainBalanceMap(marketAddresses, options = {}) {
+  const balancesByMarket = new Map();
+  const diagnostics = [];
+  const walletAddress = String(options.wallet || '').trim();
+  if (!walletAddress) {
+    return { balancesByMarket, diagnostics };
+  }
+
+  const publicClient = await createReadOnlyPublicClient(options.chainId, options.rpcUrl);
+  if (!publicClient) {
+    return { balancesByMarket, diagnostics };
+  }
+
+  const { formatUnits } = await loadViemRuntime();
+  await Promise.all(
+    (Array.isArray(marketAddresses) ? marketAddresses : []).map(async (marketAddress) => {
+      if (!marketAddress) return;
+      try {
+        const entry = await readPortfolioOnchainBalance(publicClient, walletAddress, marketAddress, formatUnits);
+        balancesByMarket.set(marketAddress, entry);
+        const normalizedKey = normalizeLookupKey(marketAddress);
+        if (normalizedKey) {
+          balancesByMarket.set(normalizedKey, entry);
+        }
+      } catch (error) {
+        diagnostics.push(
+          `On-chain position reconciliation failed for ${marketAddress}: ${error && error.message ? error.message : String(error)}`,
+        );
+      }
+    }),
+  );
+
+  return { balancesByMarket, diagnostics };
 }
 
 function normalizeTradeSide(value) {
@@ -6495,6 +6698,8 @@ async function enrichPortfolioPositions(indexerUrl, positions, options, timeoutM
 
   const tradeBalances = await fetchPortfolioTradeBalanceMap(indexerUrl, options, timeoutMs);
   const tradeBalanceByMarket = tradeBalances.balancesByMarket;
+  const onchainBalances = await fetchPortfolioOnchainBalanceMap(uniqueMarketAddresses, options);
+  const onchainBalanceByMarket = onchainBalances.balancesByMarket;
 
   const items = positions.map((position) => {
     const marketKey = normalizeLookupKey(position && position.marketAddress);
@@ -6512,18 +6717,39 @@ async function enrichPortfolioPositions(indexerUrl, positions, options, timeoutM
       ? firstMappedValue(pollsByKey, [market.pollAddress, market.pollId, market.poll && market.poll.id])
       : null;
 
-    const tradeBalance = marketKey ? tradeBalanceByMarket.get(marketKey) : null;
-    const yesBalance = pickFiniteNumber(
-      position && position.yesTokenAmount,
-      position && position.yesBalance,
-      tradeBalance && tradeBalance.yesBalance,
+    const allowTradeBalanceFallback = !isResolvedPollStatus(poll && poll.status);
+    const tradeBalance = allowTradeBalanceFallback && marketKey ? tradeBalanceByMarket.get(marketKey) : null;
+    const onchainBalance = marketKey ? onchainBalanceByMarket.get(marketKey) : null;
+    const onchainYesBalance =
+      onchainBalance && onchainBalance.yes && Number.isFinite(onchainBalance.yes.balance) && onchainBalance.yes.balance >= 0
+        ? onchainBalance.yes.balance
+        : null;
+    const onchainNoBalance =
+      onchainBalance && onchainBalance.no && Number.isFinite(onchainBalance.no.balance) && onchainBalance.no.balance >= 0
+        ? onchainBalance.no.balance
+        : null;
+    const tradeYesBalance =
+      tradeBalance && Number.isFinite(tradeBalance.yesBalance) && tradeBalance.yesBalance >= 0
+        ? tradeBalance.yesBalance
+        : null;
+    const tradeNoBalance =
+      tradeBalance && Number.isFinite(tradeBalance.noBalance) && tradeBalance.noBalance >= 0
+        ? tradeBalance.noBalance
+        : null;
+    const indexedYesBalance = pickFiniteNumber(
+      normalizePositionBalanceValue(position && position.yesTokenAmount, market, liquidity),
+      normalizePositionBalanceValue(position && position.yesBalance, market, liquidity),
     );
-    const noBalance = pickFiniteNumber(
-      position && position.noTokenAmount,
-      position && position.noBalance,
-      tradeBalance && tradeBalance.noBalance,
+    const indexedNoBalance = pickFiniteNumber(
+      normalizePositionBalanceValue(position && position.noTokenAmount, market, liquidity),
+      normalizePositionBalanceValue(position && position.noBalance, market, liquidity),
     );
-    const markValueUsdc = computePositionMarkValue(yesBalance, noBalance, odds);
+    const yesBalance = reconcilePortfolioBalance(onchainYesBalance, indexedYesBalance, tradeYesBalance);
+    const noBalance = reconcilePortfolioBalance(onchainNoBalance, indexedNoBalance, tradeNoBalance);
+    const markValueUsdc = computePositionMarkValue(yesBalance, noBalance, odds, {
+      marketType: market && market.marketType ? market.marketType : null,
+      liquidity,
+    });
 
     return {
       ...position,
@@ -6545,9 +6771,30 @@ async function enrichPortfolioPositions(indexerUrl, positions, options, timeoutM
     };
   });
 
+  const reconciledItems = items.filter((item) => {
+    const yesBalance = toOptionalNumber(item && item.yesBalance);
+    const noBalance = toOptionalNumber(item && item.noBalance);
+    const hasKnownBalance = Number.isFinite(yesBalance) || Number.isFinite(noBalance);
+    if (!hasKnownBalance) {
+      return true;
+    }
+    return (Number.isFinite(yesBalance) && yesBalance > 0) || (Number.isFinite(noBalance) && noBalance > 0);
+  });
+
+  const diagnostics = [
+    ...(Array.isArray(tradeBalances.diagnostics) ? tradeBalances.diagnostics : []),
+    ...(Array.isArray(onchainBalances.diagnostics) ? onchainBalances.diagnostics : []),
+  ];
+  const suppressedCount = items.length - reconciledItems.length;
+  if (suppressedCount > 0) {
+    diagnostics.push(
+      `Suppressed ${suppressedCount} zero-balance portfolio position row${suppressedCount === 1 ? '' : 's'} after balance reconciliation.`,
+    );
+  }
+
   return {
-    items,
-    diagnostics: tradeBalances.diagnostics,
+    items: reconciledItems,
+    diagnostics,
   };
 }
 
@@ -7230,6 +7477,24 @@ const runBridgeCommandFromService = createLazyFactoryRunner('./lib/bridge_comman
   parseIndexerSharedFlags,
   maybeLoadTradeEnv,
   runPolymarketBalance,
+}));
+const runFeesCommandFromService = createLazyFactoryRunner('./lib/fees_command_service.cjs', 'createRunFeesCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadIndexerEnv,
+  maybeLoadTradeEnv,
+  assertLiveWriteAllowed,
+}));
+const runDebugCommandFromService = createLazyFactoryRunner('./lib/debug_command_service.cjs', 'createRunDebugCommand', () => ({
+  CliError,
+  includesHelpFlag,
+  emitSuccess,
+  commandHelpPayload,
+  parseIndexerSharedFlags,
+  maybeLoadIndexerEnv,
 }));
 
 const runResolveCommandFromService = createLazyFactoryRunner('./lib/resolve_command_service.cjs', 'createRunResolveCommand', () => ({
@@ -8581,6 +8846,14 @@ async function runBridgeCommand(args, context) {
   return runBridgeCommandFromService(args, context);
 }
 
+async function runFeesCommand(args, context) {
+  return runFeesCommandFromService(args, context);
+}
+
+async function runDebugCommand(args, context) {
+  return runDebugCommandFromService(args, context);
+}
+
 async function runResolveCommand(args, context) {
   return runResolveCommandFromService(args, context);
 }
@@ -8765,6 +9038,8 @@ const dispatch = createCommandRouter({
   runDashboardCommand,
   runFundCheckCommand,
   runBridgeCommand,
+  runFeesCommand,
+  runDebugCommand,
   runMarketsCommand,
   runScanCommand,
   runSportsCommand,

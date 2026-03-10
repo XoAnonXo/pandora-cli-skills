@@ -1919,6 +1919,18 @@ function resolvePositionOutcome(row, market, tokenId) {
   return null;
 }
 
+function inferMarketTokenIdForOutcome(market, outcome) {
+  const normalizedOutcome = normalizeText(outcome);
+  if (!market || !normalizedOutcome) return null;
+  if (normalizedOutcome === 'yes') {
+    return toStringOrNull(market.yesTokenId);
+  }
+  if (normalizedOutcome === 'no') {
+    return toStringOrNull(market.noTokenId);
+  }
+  return null;
+}
+
 function normalizeOpenOrders(rows, market) {
   const orders = Array.isArray(rows) ? rows : [];
   return orders.map((order) => {
@@ -2119,9 +2131,12 @@ async function fetchPolymarketPositionInventory(options = {}) {
       }
 
       for (const row of apiRows) {
-        const tokenId = extractPositionTokenId(row);
+        let tokenId = extractPositionTokenId(row);
         const conditionId = extractPositionConditionId(row);
         const outcome = resolvePositionOutcome(row, market, tokenId);
+        if (!tokenId) {
+          tokenId = inferMarketTokenIdForOutcome(market, outcome);
+        }
         if (selector.conditionId && normalizeText(conditionId || market && market.marketId) !== normalizeText(selector.conditionId)) {
           continue;
         }
@@ -2239,7 +2254,7 @@ async function fetchPolymarketPositionInventory(options = {}) {
   if (source !== 'api' && walletAddress && options.publicClient && selector.tokenIds.length) {
     await Promise.all(
       selector.tokenIds.map(async (tokenId) => {
-        if (!tokenId || balanceSourceByToken.has(tokenId) && source !== 'on-chain') return;
+        if (!tokenId) return;
         try {
           const rawBalance = await options.publicClient.readContract({
             address: options.ctfAddress || DEFAULT_POLYMARKET_CTF_ADDRESS,

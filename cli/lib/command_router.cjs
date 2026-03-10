@@ -5,6 +5,8 @@ const ROUTED_TOP_LEVEL_COMMANDS = Object.freeze([
   'dashboard',
   'fund-check',
   'bridge',
+  'fees',
+  'debug',
   'markets',
   'scan',
   'sports',
@@ -71,6 +73,8 @@ function createCommandRouter(deps = {}) {
     runDashboardCommand,
     runFundCheckCommand,
     runBridgeCommand,
+    runFeesCommand,
+    runDebugCommand,
     runMarketsCommand,
     runScanCommand,
     runSportsCommand,
@@ -137,6 +141,8 @@ function createCommandRouter(deps = {}) {
   requireFn('runSetup', runSetup);
   requireFn('runDashboardCommand', runDashboardCommand);
   requireFn('runFundCheckCommand', runFundCheckCommand);
+  requireFn('runFeesCommand', runFeesCommand);
+  requireFn('runDebugCommand', runDebugCommand);
   requireFn('runMarketsCommand', runMarketsCommand);
   requireFn('runScanCommand', runScanCommand);
   requireFn('runSportsCommand', runSportsCommand);
@@ -245,6 +251,8 @@ function createCommandRouter(deps = {}) {
       dashboard: async (handlerArgs, handlerContext) => runDashboardCommand(handlerArgs, handlerContext),
       'fund-check': async (handlerArgs, handlerContext) => runFundCheckCommand(handlerArgs, handlerContext),
       bridge: async (handlerArgs, handlerContext) => runBridgeCommand(handlerArgs, handlerContext),
+      fees: async (handlerArgs, handlerContext) => runFeesCommand(handlerArgs, handlerContext),
+      debug: async (handlerArgs, handlerContext) => runDebugCommand(handlerArgs, handlerContext),
       markets: async (handlerArgs, handlerContext) => runMarketsCommand(handlerArgs, handlerContext),
       scan: async (handlerArgs, handlerContext) => runScanCommand(handlerArgs, handlerContext),
       sports: async (handlerArgs, handlerContext) => runSportsCommand(handlerArgs, handlerContext),

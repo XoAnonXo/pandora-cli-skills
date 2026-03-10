@@ -84,6 +84,46 @@ function compareToolDefinitions(left, right) {
   return compareStableStrings(left && left.name, right && right.name);
 }
 
+function cloneJsonCompatible(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function sanitizeInputSchemaForMcp(schema) {
+  const cloned = cloneJsonCompatible(schema) || {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  };
+
+  const allOf = Array.isArray(cloned.allOf) ? [...cloned.allOf] : [];
+  const pandora = isPlainObject(cloned.xPandora) ? cloned.xPandora : null;
+  if (Array.isArray(cloned.anyOf) && cloned.anyOf.length) {
+    allOf.push({ anyOf: cloneJsonCompatible(cloned.anyOf) });
+    delete cloned.anyOf;
+  }
+  if (pandora && Array.isArray(pandora.requiredAnyOf) && pandora.requiredAnyOf.length) {
+    allOf.push({ anyOf: cloneJsonCompatible(pandora.requiredAnyOf) });
+  }
+  if (Array.isArray(cloned.oneOf) && cloned.oneOf.length) {
+    allOf.push({ oneOf: cloneJsonCompatible(cloned.oneOf) });
+    delete cloned.oneOf;
+  }
+  if (pandora && Array.isArray(pandora.exclusiveOneOf) && pandora.exclusiveOneOf.length) {
+    allOf.push({ oneOf: cloneJsonCompatible(pandora.exclusiveOneOf) });
+  }
+  if (allOf.length) {
+    cloned.allOf = allOf;
+  } else {
+    delete cloned.allOf;
+  }
+
+  return {
+    inputSchema: cloned,
+    topLevelInputConstraints: null,
+  };
+}
+
 function sortToolDefinitions(definitions) {
   return (Array.isArray(definitions) ? definitions : []).slice().sort(compareToolDefinitions);
 }
@@ -267,6 +307,15 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function getSchemaBranchSet(schema, key) {
+  if (!schema || typeof schema !== 'object') return [];
+  if (Array.isArray(schema[key]) && schema[key].length) {
+    return schema[key];
+  }
+  const pandora = isPlainObject(schema.xPandora) ? schema.xPandora : null;
+  return pandora && Array.isArray(pandora[key]) && pandora[key].length ? pandora[key] : [];
+}
+
 function schemaMatchesValue(toolName, schema, value, path) {
   try {
     validateSchemaValue(toolName, schema, value, path);
@@ -281,15 +330,27 @@ function validateSchemaValue(toolName, schema, value, path = []) {
     return;
   }
 
-  if (Array.isArray(schema.anyOf) && schema.anyOf.length) {
-    const anyOfMatch = schema.anyOf.some((branch) => schemaMatchesValue(toolName, branch, value, path));
+  if (Array.isArray(schema.allOf) && schema.allOf.length) {
+    for (const branch of schema.allOf) {
+      validateSchemaValue(toolName, branch, value, path);
+    }
+  }
+
+  const anyOfBranches = getSchemaBranchSet(schema, 'anyOf');
+  const requiredAnyOfBranches = getSchemaBranchSet(schema, 'requiredAnyOf');
+  if (anyOfBranches.length || requiredAnyOfBranches.length) {
+    const branches = anyOfBranches.length ? anyOfBranches : requiredAnyOfBranches;
+    const anyOfMatch = branches.some((branch) => schemaMatchesValue(toolName, branch, value, path));
     if (!anyOfMatch) {
       throw buildSchemaValidationError(toolName, path, 'does not satisfy any supported input shape.');
     }
   }
 
-  if (Array.isArray(schema.oneOf) && schema.oneOf.length) {
-    const oneOfMatches = schema.oneOf.filter((branch) => schemaMatchesValue(toolName, branch, value, path)).length;
+  const oneOfBranches = getSchemaBranchSet(schema, 'oneOf');
+  const exclusiveOneOfBranches = getSchemaBranchSet(schema, 'exclusiveOneOf');
+  if (oneOfBranches.length || exclusiveOneOfBranches.length) {
+    const branches = oneOfBranches.length ? oneOfBranches : exclusiveOneOfBranches;
+    const oneOfMatches = branches.filter((branch) => schemaMatchesValue(toolName, branch, value, path)).length;
     if (oneOfMatches !== 1) {
       throw buildSchemaValidationError(
         toolName,
@@ -645,6 +706,12 @@ function toToolDescriptor(definition, options = {}) {
     && definition.agentWorkflow.executeRequiresValidation,
   );
   const remoteTransportActive = Boolean(options.remoteTransportActive);
+  const rawInputSchema = definition.inputSchema || {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  };
+  const sanitizedSchema = sanitizeInputSchemaForMcp(rawInputSchema);
   const xPandora = {
     name: definition.name,
     registryName: definition.name,
@@ -690,38 +757,39 @@ function toToolDescriptor(definition, options = {}) {
       descriptor && Array.isArray(descriptor.externalDependencies)
         ? [...descriptor.externalDependencies]
         : [],
-      canRunConcurrent: descriptor ? Boolean(descriptor.canRunConcurrent) : false,
-      returnsOperationId: descriptor ? Boolean(descriptor.returnsOperationId) : false,
-      returnsRuntimeHandle: descriptor ? Boolean(descriptor.returnsRuntimeHandle) : false,
-      jobCapable: descriptor ? Boolean(descriptor.jobCapable) : false,
-      supportsRemote: descriptor ? Boolean(descriptor.supportsRemote) : false,
-      remoteEligible: descriptor ? Boolean(descriptor.remoteEligible) : false,
-      remoteTransportActive: Boolean(remoteTransportActive),
-      supportsWebhook: descriptor ? Boolean(descriptor.supportsWebhook) : false,
-      executeIntentRequired,
-      executeIntentRequiredForLiveMode,
-      agentPreflightRequired: Boolean(agentPreflightRequiredForExecuteMode && executeIntentRequired),
-      agentPreflightRequiredForExecuteMode,
-      policyScopes:
-        descriptor && Array.isArray(descriptor.policyScopes)
-          ? [...descriptor.policyScopes]
-          : [],
-      metadataProvenance: {
-        runtimeEnforced: [
+    topLevelInputConstraints: sanitizedSchema.topLevelInputConstraints,
+    canRunConcurrent: descriptor ? Boolean(descriptor.canRunConcurrent) : false,
+    returnsOperationId: descriptor ? Boolean(descriptor.returnsOperationId) : false,
+    returnsRuntimeHandle: descriptor ? Boolean(descriptor.returnsRuntimeHandle) : false,
+    jobCapable: descriptor ? Boolean(descriptor.jobCapable) : false,
+    supportsRemote: descriptor ? Boolean(descriptor.supportsRemote) : false,
+    remoteEligible: descriptor ? Boolean(descriptor.remoteEligible) : false,
+    remoteTransportActive: Boolean(remoteTransportActive),
+    supportsWebhook: descriptor ? Boolean(descriptor.supportsWebhook) : false,
+    executeIntentRequired,
+    executeIntentRequiredForLiveMode,
+    agentPreflightRequired: Boolean(agentPreflightRequiredForExecuteMode && executeIntentRequired),
+    agentPreflightRequiredForExecuteMode,
+    policyScopes:
+      descriptor && Array.isArray(descriptor.policyScopes)
+        ? [...descriptor.policyScopes]
+        : [],
+    metadataProvenance: {
+      runtimeEnforced: [
         'mutating',
         'mcpMutating',
         'longRunningBlocked',
         'mcpLongRunningBlocked',
-          'placeholderBlocked',
-          'controlInputNames',
-          'safeFlags',
-          'executeFlags',
-          ...(executeIntentRequired ? ['executeIntentRequired'] : []),
-          ...(executeIntentRequiredForLiveMode ? ['executeIntentRequiredForLiveMode'] : []),
-          ...(agentPreflightRequiredForExecuteMode && executeIntentRequired ? ['agentPreflightRequired'] : []),
-          ...(agentPreflightRequiredForExecuteMode ? ['agentPreflightRequiredForExecuteMode'] : []),
-        ],
-        descriptorDerived: [
+        'placeholderBlocked',
+        'controlInputNames',
+        'safeFlags',
+        'executeFlags',
+        ...(executeIntentRequired ? ['executeIntentRequired'] : []),
+        ...(executeIntentRequiredForLiveMode ? ['executeIntentRequiredForLiveMode'] : []),
+        ...(agentPreflightRequiredForExecuteMode && executeIntentRequired ? ['agentPreflightRequired'] : []),
+        ...(agentPreflightRequiredForExecuteMode ? ['agentPreflightRequiredForExecuteMode'] : []),
+      ],
+      descriptorDerived: [
         'summary',
         'usage',
         'emits',
@@ -730,41 +798,36 @@ function toToolDescriptor(definition, options = {}) {
         'helpDataSchema',
         'canonicalTool',
         'canonicalCommandTokens',
-          'canonicalUsage',
-          'aliasOf',
-          'preferred',
-          'compatibilityAlias',
-          ...(compatibilityAlias ? ['compatibilityOptInRequired', 'defaultDiscoveryVisible', 'discoveryTier'] : []),
-          'riskLevel',
+        'canonicalUsage',
+        'aliasOf',
+        'preferred',
+        'compatibilityAlias',
+        ...(compatibilityAlias ? ['compatibilityOptInRequired', 'defaultDiscoveryVisible', 'discoveryTier'] : []),
+        'riskLevel',
         'idempotency',
         'expectedLatencyMs',
         'requiresSecrets',
         'recommendedPreflightTool',
         'safeEquivalent',
         'externalDependencies',
-          'canRunConcurrent',
-          'returnsOperationId',
-          'returnsRuntimeHandle',
-          'jobCapable',
-          'supportsRemote',
-          'remoteEligible',
-          'remoteTransportActive',
-          'supportsWebhook',
-          'policyScopes',
-          'agentWorkflow',
-        ],
-      },
+        'canRunConcurrent',
+        'returnsOperationId',
+        'returnsRuntimeHandle',
+        'jobCapable',
+        'supportsRemote',
+        'remoteEligible',
+        'remoteTransportActive',
+        'supportsWebhook',
+        'policyScopes',
+        'agentWorkflow',
+      ],
+    },
   };
   if (compatibilityAlias) {
     xPandora.compatibilityOptInRequired = true;
     xPandora.defaultDiscoveryVisible = false;
     xPandora.discoveryTier = 'compatibility';
   }
-  const inputSchema = definition.inputSchema || {
-    type: 'object',
-    properties: {},
-    additionalProperties: false,
-  };
 
   return {
     name: definition.name,
@@ -772,7 +835,7 @@ function toToolDescriptor(definition, options = {}) {
       ? `${definition.description} Compatibility alias for ${xPandora.canonicalTool}; hidden from default MCP discovery and intended only for explicit compatibility/debug workflows. Prefer ${xPandora.canonicalTool} (${xPandora.canonicalCommandTokens.join(' ')}).`
       : definition.description,
     inputSchema: {
-      ...inputSchema,
+      ...sanitizedSchema.inputSchema,
       xPandora,
     },
     xPandora,

@@ -93,6 +93,92 @@ function omitTrustDistributionFromCapabilities(value) {
   return clone;
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeTopLevelCompositeInputSchema(schema) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return schema;
+  }
+
+  const clone = cloneJson(schema);
+  const allOf = Array.isArray(clone.allOf) ? [...clone.allOf] : [];
+  const pandora = clone.xPandora && typeof clone.xPandora === 'object' && !Array.isArray(clone.xPandora)
+    ? { ...clone.xPandora }
+    : null;
+
+  if (Array.isArray(clone.anyOf) && clone.anyOf.length) {
+    allOf.push({ anyOf: clone.anyOf });
+    delete clone.anyOf;
+  }
+  if (Array.isArray(clone.oneOf) && clone.oneOf.length) {
+    allOf.push({ oneOf: clone.oneOf });
+    delete clone.oneOf;
+  }
+  if (pandora && Array.isArray(pandora.requiredAnyOf) && pandora.requiredAnyOf.length) {
+    allOf.push({ anyOf: pandora.requiredAnyOf });
+    delete pandora.requiredAnyOf;
+  }
+  if (pandora && Array.isArray(pandora.exclusiveOneOf) && pandora.exclusiveOneOf.length) {
+    allOf.push({ oneOf: pandora.exclusiveOneOf });
+    delete pandora.exclusiveOneOf;
+  }
+
+  if (allOf.length) {
+    clone.allOf = allOf;
+  } else {
+    delete clone.allOf;
+  }
+
+  if (pandora) {
+    clone.xPandora = pandora;
+  }
+
+  return clone;
+}
+
+function normalizeCommandDescriptor(descriptor) {
+  if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor)) {
+    return descriptor;
+  }
+  const clone = cloneJson(descriptor);
+  if (clone.inputSchema && typeof clone.inputSchema === 'object' && !Array.isArray(clone.inputSchema)) {
+    clone.inputSchema = normalizeTopLevelCompositeInputSchema(clone.inputSchema);
+  }
+  return clone;
+}
+
+function normalizeCommandDescriptorsForParity(descriptors) {
+  return Object.fromEntries(
+    Object.entries(descriptors || {}).map(([name, descriptor]) => [name, normalizeCommandDescriptor(descriptor)]),
+  );
+}
+
+function normalizeToolDefinitionForParity(definition) {
+  if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
+    return definition;
+  }
+  const clone = cloneJson(definition);
+  if (clone.inputSchema && typeof clone.inputSchema === 'object' && !Array.isArray(clone.inputSchema)) {
+    clone.inputSchema = normalizeTopLevelCompositeInputSchema(clone.inputSchema);
+  }
+  if (clone.commandDescriptor && typeof clone.commandDescriptor === 'object' && !Array.isArray(clone.commandDescriptor)) {
+    clone.commandDescriptor = normalizeCommandDescriptor(clone.commandDescriptor);
+  }
+  return clone;
+}
+
+function normalizeToolDefinitionsForParity(definitions) {
+  return (Array.isArray(definitions) ? definitions : []).map((definition) => normalizeToolDefinitionForParity(definition));
+}
+
+function normalizeToolCatalogForParity(tools) {
+  return Object.fromEntries(
+    Object.entries(tools || {}).map(([name, definition]) => [name, normalizeToolDefinitionForParity(definition)]),
+  );
+}
+
 function omitTrustDistributionDefinitions(value) {
   const clone = JSON.parse(JSON.stringify(value));
   for (const definitionName of TRUST_DISTRIBUTION_SCHEMA_DEFINITION_NAMES) {
@@ -170,6 +256,9 @@ module.exports = {
   omitTrustDistributionFromCapabilities,
   omitTrustDistributionDefinitions,
   normalizeCapabilitiesForTransportParity,
+  normalizeCommandDescriptorsForParity,
+  normalizeToolDefinitionsForParity,
+  normalizeToolCatalogForParity,
   assertManifestParity,
   createIsolatedPandoraEnv,
   withTemporaryEnv,

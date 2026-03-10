@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const http = require('node:http');
 
 const {
   runPolymarketBalance,
@@ -196,4 +197,59 @@ test('runPolymarketPositions returns on-chain CTF balances with inventory proven
     ['on-chain', 'on-chain'],
   );
   assert.equal(payload.openOrders.length, 0);
+});
+
+test('runPolymarketPositions maps outcome-only API rows onto market token ids so on-chain zero balances win', async () => {
+  const wallet = '0x8888888888888888888888888888888888888888';
+  const conditionId = `0x${'b'.repeat(64)}`;
+  const server = http.createServer((req, res) => {
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({
+      positions: [
+        {
+          conditionId,
+          outcome: 'NO',
+          size: 336,
+          curPrice: 0.41,
+          question: 'Will Mavericks beat Celtics?',
+        },
+      ],
+    }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const mockUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const payload = await runPolymarketPositions(
+      {
+        wallet,
+        source: 'auto',
+        market: {
+          marketId: conditionId,
+          slug: 'mavericks-vs-celtics',
+          question: 'Will Mavericks beat Celtics?',
+          yesTokenId: '101',
+          noTokenId: '102',
+          yesPct: 59,
+          noPct: 41,
+        },
+        polymarketMockUrl: mockUrl,
+        rpcUrl: 'https://polygon.example',
+      },
+      {
+        publicClient: {
+          readContract: async () => 0n,
+        },
+      },
+    );
+
+    assert.equal(payload.summary.noBalance, 0);
+    assert.equal(payload.positions.some((item) => item.balance === 336), false);
+    assert.equal(payload.positions.some((item) => item.tokenId === '102' && item.balance === 0), true);
+    assert.equal(payload.positions.filter((item) => item.tokenId === null).length, 0);
+  } finally {
+    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
 });

@@ -346,7 +346,7 @@ function parseArbScanFlags(args, deps) {
     amountUsdc: 100,
     combinatorial: false,
     maxBundleSize: 4,
-    similarityThreshold: 0.35,
+    similarityThreshold: 0.7,
     minTokenScore: 0.12,
     maxCloseDiffHours: 24,
     questionContains: null,

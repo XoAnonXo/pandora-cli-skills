@@ -1237,7 +1237,7 @@ function createCoreCommandFlagParsers(deps) {
       minSpreadPct: 3,
       minLiquidityUsd: 1000,
       maxCloseDiffHours: 24,
-      similarityThreshold: 0.86,
+      similarityThreshold: 0.7,
       minTokenScore: 0.12,
       crossVenueOnly: true,
       withRules: false,

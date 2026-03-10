@@ -6,7 +6,10 @@ const {
   buildCrossVenueArbOpportunities,
   buildCombinatorialArbOpportunities,
 } = require('../../cli/lib/arb_command_service.cjs');
-const { buildCombinatorialBundleOpportunities } = require('../../cli/lib/arbitrage_service.cjs');
+const {
+  buildCombinatorialBundleOpportunities,
+  evaluateArbitrageQuestionMatch,
+} = require('../../cli/lib/arbitrage_service.cjs');
 
 class CliError extends Error {
   constructor(code, message) {
@@ -70,8 +73,62 @@ test('arb scan combinatorial flags parse with strict defaults', () => {
   assert.equal(parsed.combinatorial, false);
   assert.equal(parsed.slippagePctPerLeg, 0);
   assert.equal(parsed.maxBundleSize, 4);
-  assert.equal(parsed.similarityThreshold, 0.35);
+  assert.equal(parsed.similarityThreshold, 0.7);
   assert.equal(parsed.minTokenScore, 0.12);
+});
+
+test('arb scan default similarity settings reject the reported fuzzy mismatches', () => {
+  const threshold = parseFlags(['scan', '--source', 'polymarket']).similarityThreshold;
+  const mismatches = [
+    ['Adam Fox (NHL)', 'Israel strike on Damascus'],
+    ['Arsenal Premier League', 'VJ Edgecombe NBA Rookie of the Year'],
+    ['Trump death', 'Trump legislation'],
+    ['Will Donald Trump die in 2025?', 'Will Trump legislation pass in 2025?'],
+    ['Will Trump die before April 01?', 'Will Trump sign 7 pieces of legislation in March?'],
+  ];
+
+  for (const [left, right] of mismatches) {
+    const match = evaluateArbitrageQuestionMatch(left, right, {
+      similarityThreshold: threshold,
+      minTokenScore: 0.12,
+    });
+    assert.equal(match.accepted, false, `${left} vs ${right} should be rejected by the default arb matcher`);
+  }
+
+  const legitimate = evaluateArbitrageQuestionMatch(
+    'Will Arsenal FC win the Premier League in 2026?',
+    'Will Arsenal win Premier League 2026?',
+    {
+      similarityThreshold: threshold,
+      minTokenScore: 0.12,
+    },
+  );
+  assert.equal(legitimate.accepted, true);
+  assert.equal(legitimate.score <= 1, true);
+});
+
+test('arb matching requires more than a weak single-name overlap', () => {
+  const weak = evaluateArbitrageQuestionMatch(
+    'Will Donald Trump die in 2025?',
+    'Will Trump legislation pass in 2025?',
+    {
+      similarityThreshold: 0.7,
+      minTokenScore: 0.12,
+    },
+  );
+  assert.equal(weak.accepted, false);
+  assert.equal(weak.contentSharedTokenCount, 1);
+
+  const strong = evaluateArbitrageQuestionMatch(
+    'Will Dallas Mavericks beat Boston Celtics?',
+    'Mavericks vs Celtics winner',
+    {
+      similarityThreshold: 0.7,
+      minTokenScore: 0.12,
+    },
+  );
+  assert.equal(strong.accepted, true);
+  assert.equal(strong.contentSharedTokenCount >= 2, true);
 });
 
 test('arb scan combinatorial mode enforces minimum market count', () => {

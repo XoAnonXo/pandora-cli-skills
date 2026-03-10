@@ -9,6 +9,7 @@ const { toNumber, round } = require('./shared/utils.cjs');
 
 const ARBITRAGE_SCHEMA_VERSION = '1.1.0';
 const DEFAULT_MIN_TOKEN_SCORE = 0.12;
+const DEFAULT_SIMILARITY_THRESHOLD = 0.7;
 
 function toUsdc(raw) {
   const numeric = toNumber(raw);
@@ -80,6 +81,44 @@ function normalizeSources(value) {
       .filter(Boolean);
   }
   return [];
+}
+
+function resolveSimilarityThreshold(options = {}) {
+  return Number.isFinite(options && options.similarityThreshold)
+    ? Number(options.similarityThreshold)
+    : DEFAULT_SIMILARITY_THRESHOLD;
+}
+
+function resolveMinTokenScore(options = {}) {
+  return Number.isFinite(options && options.minTokenScore)
+    ? Number(options.minTokenScore)
+    : DEFAULT_MIN_TOKEN_SCORE;
+}
+
+function evaluateArbitrageQuestionMatch(leftQuestion, rightQuestion, options = {}) {
+  const similarity = questionSimilarityBreakdown(leftQuestion, rightQuestion);
+  const similarityThreshold = resolveSimilarityThreshold(options);
+  const minTokenScore = resolveMinTokenScore(options);
+  const sharedContentTokenCount = Number(similarity.contentSharedTokenCount) || 0;
+  const passesTokenScore = similarity.tokenScore >= minTokenScore;
+  const passesSimilarity = similarity.score >= similarityThreshold;
+  const passesContentOverlap =
+    sharedContentTokenCount >= 2
+    || (
+      sharedContentTokenCount === 1
+      && similarity.score >= Math.max(similarityThreshold + 0.12, 0.65)
+      && similarity.jaroWinkler >= 0.88
+    );
+
+  return {
+    ...similarity,
+    similarityThreshold,
+    minTokenScore,
+    passesTokenScore,
+    passesSimilarity,
+    passesContentOverlap,
+    accepted: passesTokenScore && passesSimilarity && passesContentOverlap,
+  };
 }
 
 async function fetchPandoraPollDetails(client, pollIds, diagnostics) {
@@ -171,9 +210,6 @@ async function fetchPandoraLegs(options, diagnostics) {
 }
 
 function buildGroups(legs, options) {
-  const minTokenScore = Number.isFinite(options && options.minTokenScore)
-    ? Number(options.minTokenScore)
-    : DEFAULT_MIN_TOKEN_SCORE;
   const parent = new Map();
   const acceptedPairChecks = new Map();
   const makePairKey = (a, b) => [a, b].sort().join('|');
@@ -205,9 +241,8 @@ function buildGroups(legs, options) {
 
       if (options.crossVenueOnly && left.venue === right.venue) continue;
 
-      const similarity = questionSimilarityBreakdown(left.question, right.question);
-      if (similarity.tokenScore < minTokenScore) continue;
-      if (similarity.score < options.similarityThreshold) continue;
+      const match = evaluateArbitrageQuestionMatch(left.question, right.question, options);
+      if (!match.accepted) continue;
 
       let closeDiffHours = null;
       if (left.closeTimestamp && right.closeTimestamp) {
@@ -225,11 +260,14 @@ function buildGroups(legs, options) {
         rightMarketId: right.marketId,
         leftQuestion: left.question,
         rightQuestion: right.question,
-        normalizedLeft: similarity.normalizedLeft,
-        normalizedRight: similarity.normalizedRight,
-        similarityScore: similarity.score,
-        tokenScore: similarity.tokenScore,
-        jaroWinkler: similarity.jaroWinkler,
+        normalizedLeft: match.normalizedLeft,
+        normalizedRight: match.normalizedRight,
+        similarityScore: match.score,
+        tokenScore: match.tokenScore,
+        contentTokenScore: match.contentTokenScore,
+        sharedTokenCount: match.sharedTokenCount,
+        contentSharedTokenCount: match.contentSharedTokenCount,
+        jaroWinkler: match.jaroWinkler,
         closeDiffHours: closeDiffHours === null ? null : round(closeDiffHours, 6),
       });
     }
@@ -255,7 +293,7 @@ function buildGroupPairChecks(group, options, acceptedPairChecks) {
     for (let j = i + 1; j < group.length; j += 1) {
       const left = group[i];
       const right = group[j];
-      const similarity = questionSimilarityBreakdown(left.question, right.question);
+      const match = evaluateArbitrageQuestionMatch(left.question, right.question, options);
       let closeDiffHours = null;
       if (left.closeTimestamp && right.closeTimestamp) {
         closeDiffHours = Math.abs(left.closeTimestamp - right.closeTimestamp) / 3600;
@@ -270,13 +308,18 @@ function buildGroupPairChecks(group, options, acceptedPairChecks) {
         rightMarketId: right.marketId,
         leftQuestion: left.question,
         rightQuestion: right.question,
-        normalizedLeft: similarity.normalizedLeft,
-        normalizedRight: similarity.normalizedRight,
-        similarityScore: similarity.score,
-        tokenScore: similarity.tokenScore,
-        jaroWinkler: similarity.jaroWinkler,
+        normalizedLeft: match.normalizedLeft,
+        normalizedRight: match.normalizedRight,
+        similarityScore: match.score,
+        tokenScore: match.tokenScore,
+        contentTokenScore: match.contentTokenScore,
+        sharedTokenCount: match.sharedTokenCount,
+        contentSharedTokenCount: match.contentSharedTokenCount,
+        jaroWinkler: match.jaroWinkler,
         closeDiffHours: closeDiffHours === null ? null : round(closeDiffHours, 6),
-        passesSimilarity: similarity.score >= options.similarityThreshold,
+        passesTokenScore: match.passesTokenScore,
+        passesSimilarity: match.passesSimilarity,
+        passesContentOverlap: match.passesContentOverlap,
         passesCloseWindow: closeDiffHours === null ? true : closeDiffHours <= options.maxCloseDiffHours,
         passesVenueRule: options.crossVenueOnly ? left.venue !== right.venue : true,
         accepted,
@@ -341,19 +384,21 @@ function summarizeGroup(group, options, acceptedPairChecks) {
   const pairChecks = buildGroupPairChecks(group, options, acceptedPairChecks);
   const crossVenueChecks = pairChecks.filter((pair) => pair.leftVenue !== pair.rightVenue);
   const comparisonSet = crossVenueChecks.length ? crossVenueChecks : pairChecks;
+  if (comparisonSet.some((pair) => !pair.accepted)) {
+    return null;
+  }
   const minPairSimilarity = comparisonSet.length
     ? Math.min(...comparisonSet.map((pair) => toNumber(pair.similarityScore)).filter((value) => value !== null))
     : null;
   if (minPairSimilarity !== null && minPairSimilarity < options.similarityThreshold) {
-    riskFlags.push('TRANSITIVE_MATCH_GAP');
+    return null;
   }
 
-  let confidence = 1;
+  let confidence = minPairSimilarity === null ? 0 : minPairSimilarity;
   if (riskFlags.includes('LOW_LIQUIDITY')) confidence -= 0.2;
   if (riskFlags.includes('UNKNOWN_LIQUIDITY')) confidence -= 0.1;
   if (riskFlags.includes('CLOSE_TIME_DRIFT')) confidence -= 0.1;
   if (riskFlags.includes('NON_STANDARD_MARKET_MAPPING')) confidence -= 0.15;
-  if (riskFlags.includes('TRANSITIVE_MATCH_GAP')) confidence -= 0.15;
   if (riskFlags.includes('SINGLE_VENUE_GROUP')) confidence -= 0.1;
   confidence = round(Math.max(0, Math.min(1, confidence)), 4);
 
@@ -734,6 +779,7 @@ async function scanArbitrage(options) {
 module.exports = {
   ARBITRAGE_SCHEMA_VERSION,
   buildCombinatorialBundleOpportunities,
+  evaluateArbitrageQuestionMatch,
   normalizeQuestion,
   questionSimilarity,
   scanArbitrage,

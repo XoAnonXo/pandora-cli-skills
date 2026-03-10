@@ -1,4 +1,5 @@
 const { round } = require('./shared/utils.cjs');
+const YEAR_TOKEN_PATTERN = /^\d{4}$/;
 
 function normalizeQuestion(question) {
   return String(question || '')
@@ -9,8 +10,31 @@ function normalizeQuestion(question) {
     .trim();
 }
 
+function tokenizeNormalized(normalizedQuestion) {
+  return String(normalizedQuestion || '').split(' ').filter(Boolean);
+}
+
 function tokenize(question) {
-  return new Set(normalizeQuestion(question).split(' ').filter(Boolean));
+  return new Set(tokenizeNormalized(normalizeQuestion(question)));
+}
+
+function buildContentTokenSet(tokensInput) {
+  const tokens = Array.isArray(tokensInput)
+    ? tokensInput
+    : tokenizeNormalized(normalizeQuestion(tokensInput));
+  return new Set(
+    tokens.filter((token) => typeof token === 'string' && token.length > 1 && !YEAR_TOKEN_PATTERN.test(token)),
+  );
+}
+
+function setIntersection(left, right) {
+  const shared = [];
+  for (const token of left) {
+    if (right.has(token)) {
+      shared.push(token);
+    }
+  }
+  return shared.sort();
 }
 
 function jaccard(left, right) {
@@ -21,6 +45,12 @@ function jaccard(left, right) {
   }
   const union = left.size + right.size - intersection;
   return union ? intersection / union : 0;
+}
+
+function overlapCoverage(sharedCount, leftSize, rightSize) {
+  const denominator = Math.min(leftSize, rightSize);
+  if (!denominator) return 0;
+  return sharedCount / denominator;
 }
 
 function jaroDistance(leftInput, rightInput) {
@@ -76,14 +106,48 @@ function jaroWinkler(left, right) {
 function questionSimilarityBreakdown(leftQuestion, rightQuestion) {
   const normalizedLeft = normalizeQuestion(leftQuestion);
   const normalizedRight = normalizeQuestion(rightQuestion);
-  const tokenScore = jaccard(tokenize(normalizedLeft), tokenize(normalizedRight));
+  const leftTokens = tokenizeNormalized(normalizedLeft);
+  const rightTokens = tokenizeNormalized(normalizedRight);
+  const leftTokenSet = new Set(leftTokens);
+  const rightTokenSet = new Set(rightTokens);
+  const contentLeft = buildContentTokenSet(leftTokens);
+  const contentRight = buildContentTokenSet(rightTokens);
+  const sharedTokens = setIntersection(leftTokenSet, rightTokenSet);
+  const contentSharedTokens = setIntersection(contentLeft, contentRight);
+  const tokenScore = jaccard(leftTokenSet, rightTokenSet);
+  const contentTokenScore = jaccard(contentLeft, contentRight);
+  const contentCoverage = overlapCoverage(contentSharedTokens.length, contentLeft.size, contentRight.size);
   const jw = jaroWinkler(normalizedLeft, normalizedRight);
+  let score =
+    tokenScore * 0.15
+    + contentTokenScore * 0.25
+    + contentCoverage * 0.4
+    + jw * 0.2;
+
+  if (contentSharedTokens.length >= 2) {
+    score = Math.max(
+      score,
+      0.55
+        + Math.min(0.25, contentCoverage * 0.25)
+        + Math.min(0.15, contentTokenScore * 0.25)
+        + Math.min(0.1, jw * 0.1),
+    );
+  }
+
+  score = Math.max(0, Math.min(1, score));
+
   return {
     normalizedLeft,
     normalizedRight,
+    sharedTokens,
+    sharedTokenCount: sharedTokens.length,
+    contentSharedTokens,
+    contentSharedTokenCount: contentSharedTokens.length,
     tokenScore: round(tokenScore, 6),
+    contentTokenScore: round(contentTokenScore, 6),
+    contentCoverage: round(contentCoverage, 6),
     jaroWinkler: round(jw, 6),
-    score: round(tokenScore * 0.55 + jw * 0.45, 6),
+    score: round(score, 6),
   };
 }
 

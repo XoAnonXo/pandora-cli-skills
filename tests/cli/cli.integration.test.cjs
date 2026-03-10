@@ -413,8 +413,86 @@ function encodeAddress(address) {
   return `0x${normalized.padStart(64, '0')}`;
 }
 
+function encodeString(value) {
+  const hex = Buffer.from(String(value || ''), 'utf8').toString('hex');
+  const offset = `${'0'.repeat(63)}20`;
+  const length = (hex.length / 2).toString(16).padStart(64, '0');
+  const padded = hex.padEnd(Math.max(64, Math.ceil(hex.length / 64) * 64), '0');
+  return `0x${offset}${length}${padded}`;
+}
+
 function encodeHexQuantity(value) {
   return `0x${BigInt(value || 0).toString(16)}`;
+}
+
+async function startFeesWithdrawRpcMock(options = {}) {
+  const marketAddress = String(options.marketAddress || ADDRESSES.mirrorMarket).toLowerCase();
+  const factory = String(options.factory || ADDRESSES.factory).toLowerCase();
+  const collateralToken = String(options.collateralToken || ADDRESSES.usdc).toLowerCase();
+  const creator = String(options.creator || ADDRESSES.wallet1).toLowerCase();
+  const platformTreasury = String(options.platformTreasury || ADDRESSES.wallet2).toLowerCase();
+  const protocolFeesCollected = BigInt(options.protocolFeesCollected || 0n);
+  const decimals = BigInt(options.decimals === undefined ? 6 : options.decimals);
+  const symbol = String(options.symbol || 'USDC');
+  const chainIdHex = options.chainIdHex || '0x1';
+
+  return startJsonHttpServer(({ bodyJson }) => {
+    const requests = Array.isArray(bodyJson) ? bodyJson : [bodyJson];
+    const responses = requests.map((request, index) => {
+      const id = request && request.id !== undefined ? request.id : index + 1;
+      if (!request || typeof request !== 'object') {
+        return { jsonrpc: '2.0', id, error: { message: 'Invalid JSON-RPC payload' } };
+      }
+
+      if (request.method === 'eth_chainId') {
+        return { jsonrpc: '2.0', id, result: chainIdHex };
+      }
+
+      if (request.method === 'eth_call') {
+        const tx = request.params && request.params[0] ? request.params[0] : {};
+        const target = String(tx.to || '').toLowerCase();
+        const selector = String(tx.data || '').toLowerCase().slice(0, 10);
+
+        if (target === marketAddress && selector === '0xcc08b834') {
+          return { jsonrpc: '2.0', id, result: encodeUint256(protocolFeesCollected) };
+        }
+        if (target === marketAddress && selector === '0xb2016bd4') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(collateralToken) };
+        }
+        if (target === marketAddress && selector === '0x02d05d3f') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(creator) };
+        }
+        if (target === marketAddress && selector === '0xc45a0155') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(factory) };
+        }
+        if (target === factory && selector === '0xe138818c') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(platformTreasury) };
+        }
+        if (target === collateralToken && selector === '0x313ce567') {
+          return { jsonrpc: '2.0', id, result: encodeUint256(decimals) };
+        }
+        if (target === collateralToken && selector === '0x95d89b41') {
+          return { jsonrpc: '2.0', id, result: encodeString(symbol) };
+        }
+
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { message: `Unsupported eth_call target/selector ${target} ${selector}` },
+        };
+      }
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        error: { message: `Unsupported method ${request.method}` },
+      };
+    });
+
+    return {
+      body: Array.isArray(bodyJson) ? responses : responses[0],
+    };
+  });
 }
 
 async function startMirrorTraceRpcMock(options = {}) {
@@ -1274,6 +1352,8 @@ test('help prints usage with zero exit code', () => {
   assert.match(result.output, /pandora - Prediction market CLI/);
   assert.match(result.output, /Usage:/);
   assert.match(result.output, /pandora \[--output table\|json\] markets mine/);
+  assert.match(result.output, /pandora \[--output table\|json\] fees/);
+  assert.match(result.output, /pandora \[--output table\|json\] debug market\|tx/);
   assert.match(result.output, /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|calc\|simulate\|go\|sync\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl\|audit\|replay\|logs\|close/);
 });
 
@@ -2844,6 +2924,18 @@ test('markets list --hedgeable matches against the current page without a second
           currentTvl: '3210',
           createdAt: '1700000001',
         },
+        {
+          id: 'market-hedgeable-3',
+          chainId: 1,
+          chainName: 'ethereum',
+          pollAddress: 'poll-hedgeable-3',
+          creator: ADDRESSES.wallet1,
+          marketType: 'amm',
+          marketCloseTimestamp: '1893466800',
+          totalVolume: '7654',
+          currentTvl: '2100',
+          createdAt: '1700000002',
+        },
       ],
       polls: [
         {
@@ -2859,6 +2951,13 @@ test('markets list --hedgeable matches against the current page without a second
           status: 0,
           category: 3,
           deadlineEpoch: 1893463200,
+        },
+        {
+          id: 'poll-hedgeable-3',
+          question: 'Will Trump die before April 01?',
+          status: 0,
+          category: 3,
+          deadlineEpoch: 1893466800,
         },
       ],
     };
@@ -2909,6 +3008,15 @@ test('markets list --hedgeable matches against the current page without a second
         tokens: [
           { outcome: 'Yes', price: 0.55 },
           { outcome: 'No', price: 0.45 },
+        ],
+      },
+      {
+        conditionId: 'poly-hedgeable-3',
+        question: 'Will Trump sign 7 pieces of legislation in March?',
+        endDateIso: '2030-01-01T03:00:00Z',
+        tokens: [
+          { outcome: 'Yes', price: 0.48 },
+          { outcome: 'No', price: 0.52 },
         ],
       },
     ],
@@ -3593,6 +3701,107 @@ test('events list with --chain-id does not send chainId to claim filters', async
   }
 });
 
+test('fees summarizes indexed oracle-fee history for a recipient wallet', async () => {
+  const indexer = await startIndexerMockServer({
+    oracleFeeEvents: [
+      {
+        id: 'evt-oracle-summary-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        oracleAddress: ADDRESSES.oracle,
+        eventName: 'FeeUpdated',
+        newFee: '250',
+        to: ADDRESSES.wallet2,
+        amount: '0',
+        txHash: '0xtx-oracle-summary-1',
+        blockNumber: 300,
+        timestamp: 1700001200,
+      },
+      {
+        id: 'evt-oracle-summary-2',
+        chainId: 1,
+        chainName: 'ethereum',
+        oracleAddress: ADDRESSES.oracle,
+        eventName: 'FeesWithdrawn',
+        newFee: '250',
+        to: ADDRESSES.wallet2,
+        amount: '2500000',
+        txHash: '0xtx-oracle-summary-2',
+        blockNumber: 301,
+        timestamp: 1700001300,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'fees',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet2,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'fees');
+    assert.equal(payload.data.summary.count, 2);
+    assert.equal(payload.data.summary.totalAmountUsdc, 2.5);
+    assert.equal(payload.data.summary.lastUpdatedFeeBps, 250);
+    assert.equal(payload.data.items[0].eventName, 'FeesWithdrawn');
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('fees withdraw dry-run previews market-level protocol fee splits', async () => {
+  const rpc = await startFeesWithdrawRpcMock({
+    marketAddress: ADDRESSES.mirrorMarket,
+    factory: ADDRESSES.factory,
+    collateralToken: ADDRESSES.usdc,
+    creator: ADDRESSES.wallet1,
+    platformTreasury: ADDRESSES.wallet2,
+    protocolFeesCollected: 106_000_001n,
+    decimals: 6,
+    symbol: 'USDC',
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'fees',
+      'withdraw',
+      '--skip-dotenv',
+      '--market-address',
+      ADDRESSES.mirrorMarket,
+      '--dry-run',
+      '--rpc-url',
+      rpc.url,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'fees.withdraw');
+    assert.equal(payload.data.mode, 'dry-run');
+    assert.equal(payload.data.status, 'planned');
+    assert.equal(payload.data.marketAddress, ADDRESSES.mirrorMarket.toLowerCase());
+    assert.equal(payload.data.contract.platformTreasury, ADDRESSES.wallet2.toLowerCase());
+    assert.equal(payload.data.contract.creator, ADDRESSES.wallet1.toLowerCase());
+    assert.equal(payload.data.feeState.withdrawableRaw, '106000001');
+    assert.equal(payload.data.feeState.withdrawable, '106.000001');
+    assert.equal(payload.data.feeState.platformShare, '53');
+    assert.equal(payload.data.feeState.creatorShare, '53.000001');
+    assert.equal(payload.data.preflight.executeSupported, true);
+    assert.equal(payload.data.preflight.simulationAttempted, false);
+  } finally {
+    await rpc.close();
+  }
+});
+
 test('table-mode GraphQL errors render human-readable messages', async () => {
   const indexer = await startJsonHttpServer(() => ({
     body: {
@@ -3614,6 +3823,263 @@ test('table-mode GraphQL errors render human-readable messages', async () => {
     assert.match(result.output, /Indexer GraphQL query failed\./);
     assert.match(result.output, /- Invalid field for orderBy/);
     assert.doesNotMatch(result.output, /\[object Object\]/);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('debug market returns market, poll, position, trade, and liquidity context', async () => {
+  const marketAddress = '0xdededededededededededededededededededede';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '5000000',
+        currentTvl: '2000000',
+        reserveYes: '600000',
+        reserveNo: '400000',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Will debug market show a stitched forensic view?',
+        status: 0,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhash-debug-market',
+      },
+    ],
+    positions: [
+      {
+        id: 'pos-debug-1',
+        chainId: 1,
+        marketAddress,
+        user: ADDRESSES.wallet1,
+        lastTradeAt: 1700000400,
+        yesTokenAmount: '1000000',
+        noTokenAmount: '0',
+      },
+      {
+        id: 'pos-debug-2',
+        chainId: 1,
+        marketAddress,
+        user: ADDRESSES.wallet2,
+        lastTradeAt: 1700000500,
+        yesTokenAmount: '0',
+        noTokenAmount: '300000',
+      },
+    ],
+    trades: [
+      {
+        id: 'trade-debug-1',
+        chainId: 1,
+        marketAddress,
+        pollAddress: marketAddress,
+        trader: ADDRESSES.wallet1,
+        side: 'yes',
+        tradeType: 'buy',
+        collateralAmount: '1500000',
+        tokenAmount: '2500000',
+        tokenAmountOut: '2500000',
+        feeAmount: '15000',
+        timestamp: 1700000600,
+        txHash: '0xdebug-market-trade-1',
+      },
+    ],
+    liquidityEvents: [
+      {
+        id: 'liq-debug-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        provider: ADDRESSES.wallet1,
+        marketAddress,
+        pollAddress: marketAddress,
+        eventType: 'addLiquidity',
+        collateralAmount: '2000000',
+        lpTokens: '500000',
+        yesTokenAmount: '1200000',
+        noTokenAmount: '800000',
+        yesTokensReturned: '0',
+        noTokensReturned: '0',
+        txHash: '0xdebug-market-liq-1',
+        timestamp: 1700000200,
+      },
+    ],
+    claimEvents: [
+      {
+        id: 'claim-debug-1',
+        campaignAddress: marketAddress,
+        userAddress: ADDRESSES.wallet1,
+        amount: '500000',
+        signature: '0xsig-debug',
+        blockNumber: 450,
+        timestamp: 1700000800,
+        txHash: '0xdebug-market-claim-1',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'debug',
+      'market',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--market-address',
+      marketAddress,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'debug.market');
+    assert.equal(payload.data.market.id, marketAddress);
+    assert.equal(payload.data.poll.question, 'Will debug market show a stitched forensic view?');
+    assert.equal(payload.data.summary.positions.count, 2);
+    assert.equal(payload.data.summary.trades.count, 1);
+    assert.equal(payload.data.summary.liquidityEvents.count, 1);
+    assert.equal(payload.data.summary.claimEvents.count, 1);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('debug tx correlates indexed trades and events for one transaction hash', async () => {
+  const marketAddress = '0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed';
+  const txHash = '0xdebug-tx-1';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '5000000',
+        currentTvl: '2000000',
+        reserveYes: '600000',
+        reserveNo: '400000',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Will debug tx correlate the indexed sections?',
+        status: 0,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhash-debug-tx',
+      },
+    ],
+    trades: [
+      {
+        id: 'trade-debug-tx-1',
+        chainId: 1,
+        marketAddress,
+        pollAddress: marketAddress,
+        trader: ADDRESSES.wallet1,
+        side: 'yes',
+        tradeType: 'buy',
+        collateralAmount: '1000000',
+        tokenAmount: '2000000',
+        tokenAmountOut: '2000000',
+        feeAmount: '10000',
+        timestamp: 1700000600,
+        txHash,
+      },
+    ],
+    liquidityEvents: [
+      {
+        id: 'liq-debug-tx-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        provider: ADDRESSES.wallet1,
+        marketAddress,
+        pollAddress: marketAddress,
+        eventType: 'addLiquidity',
+        collateralAmount: '1000000',
+        lpTokens: '250000',
+        yesTokenAmount: '600000',
+        noTokenAmount: '400000',
+        yesTokensReturned: '0',
+        noTokensReturned: '0',
+        txHash,
+        timestamp: 1700000200,
+      },
+    ],
+    oracleFeeEvents: [
+      {
+        id: 'fee-debug-tx-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        oracleAddress: ADDRESSES.oracle,
+        eventName: 'FeesWithdrawn',
+        newFee: '200',
+        to: ADDRESSES.wallet1,
+        amount: '300000',
+        txHash,
+        blockNumber: 500,
+        timestamp: 1700000700,
+      },
+    ],
+    claimEvents: [
+      {
+        id: 'claim-debug-tx-1',
+        campaignAddress: marketAddress,
+        userAddress: ADDRESSES.wallet1,
+        amount: '420000',
+        signature: '0xsig-debug-tx',
+        blockNumber: 501,
+        timestamp: 1700000800,
+        txHash,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'debug',
+      'tx',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--tx-hash',
+      txHash,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'debug.tx');
+    assert.equal(payload.data.txHash, txHash);
+    assert.equal(payload.data.summary.trades, 1);
+    assert.equal(payload.data.summary.liquidityEvents, 1);
+    assert.equal(payload.data.summary.oracleFeeEvents, 1);
+    assert.equal(payload.data.summary.claimEvents, 1);
+    assert.equal(payload.data.relatedMarkets[0].id, marketAddress);
+    assert.equal(payload.data.relatedPolls[0].question, 'Will debug tx correlate the indexed sections?');
   } finally {
     await indexer.close();
   }
@@ -3780,6 +4246,326 @@ test('portfolio enriches positions with question, odds, liquidity, and mark valu
     assert.equal(payload.data.positions[0].positionSide, 'both');
     assert.equal(payload.data.positions[0].odds.yesPct, 37.5);
     assert.equal(payload.data.positions[0].liquidity.reserveYes, 625);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('portfolio suppresses stale zero-balance rows after trade reconciliation', async () => {
+  const marketAddress = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '5000',
+        currentTvl: '1000',
+        reserveYes: '600',
+        reserveNo: '400',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Will the stale position be suppressed?',
+        status: 0,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpollstale',
+      },
+    ],
+    positions: [
+      {
+        id: 'pos-stale-1',
+        chainId: 1,
+        marketAddress,
+        user: ADDRESSES.wallet1,
+        lastTradeAt: 1700000400,
+        noTokenAmount: '336',
+      },
+    ],
+    trades: [
+      {
+        id: 'trade-stale-buy',
+        chainId: 1,
+        marketAddress,
+        trader: ADDRESSES.wallet1,
+        side: 'no',
+        tradeType: 'buy',
+        tokenAmountOut: '336',
+        timestamp: 1700000100,
+      },
+      {
+        id: 'trade-stale-sell',
+        chainId: 1,
+        marketAddress,
+        trader: ADDRESSES.wallet1,
+        side: 'no',
+        tradeType: 'sell',
+        tokenAmount: '336',
+        timestamp: 1700000200,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'portfolio',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--chain-id',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.data.summary.positionCount, 0);
+    assert.equal(payload.data.positions.length, 0);
+    assert.equal(payload.data.summary.totalPositionMarkValueUsdc, 0);
+    assert.match(payload.data.diagnostics.positions.join(' '), /Suppressed 1 zero-balance portfolio position row/i);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('portfolio suppresses stale reconstructed balances when the indexer already reports zero', async () => {
+  const marketAddress = '0xbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '5000',
+        currentTvl: '1000',
+        reserveYes: '600',
+        reserveNo: '400',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Will the indexed zero balance beat stale trade reconstruction?',
+        status: 0,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpollzero',
+      },
+    ],
+    positions: [
+      {
+        id: 'pos-zero-1',
+        chainId: 1,
+        marketAddress,
+        user: ADDRESSES.wallet1,
+        lastTradeAt: 1700000400,
+        noTokenAmount: '0',
+      },
+    ],
+    trades: [
+      {
+        id: 'trade-zero-buy',
+        chainId: 1,
+        marketAddress,
+        trader: ADDRESSES.wallet1,
+        side: 'no',
+        tradeType: 'buy',
+        tokenAmountOut: '336',
+        timestamp: 1700000100,
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'portfolio',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--chain-id',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.data.summary.positionCount, 0);
+    assert.equal(payload.data.positions.length, 0);
+    assert.equal(payload.data.summary.totalPositionMarkValueUsdc, 0);
+    assert.match(payload.data.diagnostics.positions.join(' '), /Suppressed 1 zero-balance portfolio position row/i);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('portfolio normalizes pari-mutuel micro-unit balances before computing mark value', async () => {
+  const marketAddress = '0xcccccccccccccccccccccccccccccccccccccccc';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'pari',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '1000',
+        currentTvl: '1000',
+        reserveYes: '2',
+        reserveNo: '998',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Will the pari portfolio mark value stay human scaled?',
+        status: 1,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpollpari',
+      },
+    ],
+    positions: [
+      {
+        id: 'pos-pari-1',
+        chainId: 1,
+        marketAddress,
+        user: ADDRESSES.wallet1,
+        lastTradeAt: 1700000400,
+        yesTokenAmount: '998775',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'portfolio',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--chain-id',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.data.positions.length, 1);
+    assert.equal(payload.data.positions[0].marketType, 'pari');
+    assert.equal(payload.data.positions[0].yesBalance, 0.998775);
+    assert.equal(payload.data.positions[0].markValueUsdc, 499.3875);
+    assert.equal(payload.data.summary.totalPositionMarkValueUsdc, 499.3875);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('portfolio normalizes raw parimutuel position balances before computing mark value', async () => {
+  const marketAddress = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'pari',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '1000000',
+        currentTvl: '1',
+        yesChance: '0.998775',
+        reserveYes: '1000000',
+        reserveNo: '1225',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Will the CLARITY Act pass?',
+        status: 1,
+        category: 3,
+        deadlineEpoch: 1710000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashpoll-pari-1',
+      },
+    ],
+    positions: [
+      {
+        id: 'pos-pari-1',
+        chainId: 1,
+        marketAddress,
+        user: ADDRESSES.wallet1,
+        lastTradeAt: 1700000400,
+        yesTokenAmount: '1000000.000000',
+        noTokenAmount: '0',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'portfolio',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--chain-id',
+      '1',
+    ]);
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'portfolio');
+    assert.equal(payload.data.positions.length, 1);
+    assert.equal(payload.data.positions[0].yesBalance, 1);
+    assert.equal(payload.data.positions[0].markValueUsdc, 1.001225);
+    assert.equal(payload.data.summary.totalPositionMarkValueUsdc, 1.001225);
   } finally {
     await indexer.close();
   }

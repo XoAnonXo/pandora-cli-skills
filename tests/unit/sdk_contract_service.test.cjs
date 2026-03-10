@@ -22,6 +22,9 @@ const {
   omitGeneratedAt,
   createIsolatedPandoraEnv,
   withTemporaryEnv,
+  normalizeCommandDescriptorsForParity,
+  normalizeToolDefinitionsForParity,
+  normalizeToolCatalogForParity,
 } = require('../helpers/contract_parity_assertions.cjs');
 
 function withIsolatedRuntime(t, fn) {
@@ -69,14 +72,27 @@ test('generated SDK manifest and contract bundle stay in lockstep with the artif
     assert.equal(generatedManifest.packageVersion, artifact.packageVersion);
     assert.equal(generatedManifest.commandDescriptorVersion, artifact.commandDescriptorVersion);
     assert.deepEqual(generatedManifest.backends || {}, artifact.backends || {});
-    assert.deepEqual(generatedCommandDescriptors, artifact.commandDescriptors);
-    assert.deepEqual(generatedContractRegistry.commandDescriptors, artifact.commandDescriptors);
-    assert.deepEqual(generatedContractRegistry.tools, artifact.tools);
+    assert.deepEqual(
+      normalizeCommandDescriptorsForParity(generatedCommandDescriptors),
+      normalizeCommandDescriptorsForParity(artifact.commandDescriptors),
+    );
+    assert.deepEqual(
+      normalizeCommandDescriptorsForParity(generatedContractRegistry.commandDescriptors),
+      normalizeCommandDescriptorsForParity(artifact.commandDescriptors),
+    );
+    assert.deepEqual(
+      normalizeToolCatalogForParity(generatedContractRegistry.tools),
+      normalizeToolCatalogForParity(artifact.tools),
+    );
     const generatedToolDefinitions = new Map(generatedMcpToolDefinitions.map((tool) => [tool.name, tool]));
     const liveToolDefinitions = new Map(components.mcpToolDefinitions.map((tool) => [tool.name, tool]));
     assert.deepEqual(
       generatedMcpToolDefinitions.map((tool) => tool.name),
       components.mcpToolDefinitions.map((tool) => tool.name),
+    );
+    assert.deepEqual(
+      normalizeToolDefinitionsForParity(generatedMcpToolDefinitions),
+      normalizeToolDefinitionsForParity(components.mcpToolDefinitions),
     );
     assert.equal(
       generatedToolDefinitions.get('help').inputSchema.xPandora.remoteTransportActive,

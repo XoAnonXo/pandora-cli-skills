@@ -113,16 +113,28 @@ function buildInputSchema({
     schema.properties.intent = buildIntentSchema();
   }
 
+  const allOf = [];
+
   if (Array.isArray(anyOf) && anyOf.length) {
-    schema.anyOf = anyOf
+    const branches = anyOf
       .filter((requiredSet) => Array.isArray(requiredSet) && requiredSet.length)
       .map((requiredSet) => ({ required: [...requiredSet] }));
+    if (branches.length) {
+      allOf.push({ anyOf: branches });
+    }
   }
 
   if (Array.isArray(oneOf) && oneOf.length) {
-    schema.oneOf = oneOf
+    const branches = oneOf
       .filter((branch) => branch && typeof branch === 'object')
       .map((branch) => ({ ...branch }));
+    if (branches.length) {
+      allOf.push({ oneOf: branches });
+    }
+  }
+
+  if (allOf.length) {
+    schema.allOf = allOf;
   }
 
   return schema;
@@ -3937,6 +3949,148 @@ const commandContracts = [
     agentPlatform: {
       externalDependencies: ['wallet-secrets', 'rpc'],
       expectedLatencyMs: 1500,
+    },
+  }),
+  commandContract({
+    name: 'fees',
+    summary: 'Read indexed oracle-fee history and recipient summaries. Use `fees.withdraw` for market-level protocol-fee withdrawals.',
+    usage:
+      'pandora [--output table|json] fees [--wallet <address>] [--chain-id <id>] [--tx-hash <hash>] [--event-name <name>] [--limit <n>] [--before <cursor>] [--after <cursor>] [--order-direction asc|desc] [--indexer-url <url>] [--timeout-ms <ms>]',
+    emits: ['fees', 'fees.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['fees'],
+      description: 'Read indexed oracle-fee events and recipient history. Use `fees withdraw` when you need the live market-level protocol-fee withdrawal surface.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          wallet: commonFlags.wallet,
+          'chain-id': commonFlags.chainId,
+          'tx-hash': stringSchema('Transaction hash filter.'),
+          'event-name': stringSchema('Oracle-fee event name filter.'),
+          limit: commonFlags.limit,
+          before: stringSchema('Cursor before.'),
+          after: stringSchema('Cursor after.'),
+          'order-direction': enumSchema(['asc', 'desc'], 'Sort direction.'),
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+        },
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      externalDependencies: ['indexer'],
+      expectedLatencyMs: 800,
+    },
+  }),
+  commandContract({
+    name: 'fees.withdraw',
+    summary: 'Dry-run or execute a market-level `withdrawProtocolFees()` call on a Pandora AMM market contract.',
+    usage:
+      'pandora [--output table|json] fees withdraw --market-address <address> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]',
+    emits: ['fees.withdraw', 'fees.withdraw.help', 'fees.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['fees', 'withdraw'],
+      description: 'Dry-run or execute a Pandora market contract `withdrawProtocolFees()` call. This withdraws collected collateral fees and splits them between the platform treasury and market creator.',
+      inputSchema: buildInputSchema({
+        includeIntent: true,
+        flagProperties: {
+          'dotenv-path': stringSchema('Env file path.'),
+          'skip-dotenv': booleanSchema('Skip env loading.'),
+          'market-address': commonFlags.marketAddress,
+          'dry-run': booleanSchema('Run dry-run mode.'),
+          execute: booleanSchema('Execute the withdrawal transaction.'),
+          fork: booleanSchema('Run in fork mode.'),
+          'fork-rpc-url': stringSchema('Fork RPC URL.'),
+          'fork-chain-id': integerSchema('Fork chain id.', { minimum: 1 }),
+          'chain-id': commonFlags.chainId,
+          'rpc-url': commonFlags.rpcUrl,
+          'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
+          'timeout-ms': commonFlags.timeoutMs,
+        },
+        requiredFlags: ['market-address'],
+      }),
+      preferred: true,
+      mutating: true,
+      safeFlags: ['--dry-run'],
+      executeFlags: ['--execute'],
+    },
+    agentPlatform: {
+      externalDependencies: ['rpc', 'wallet-secrets'],
+      expectedLatencyMs: 1200,
+      canRunConcurrent: false,
+      idempotency: 'conditional',
+      riskLevel: 'medium',
+      policyScopes: ['fees:write', 'network:rpc'],
+    },
+  }),
+  commandContract({
+    name: 'debug',
+    summary: 'Debug command family help and routing entrypoint.',
+    usage: 'pandora [--output table|json] debug market|tx ...',
+    emits: ['debug.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+  }),
+  commandContract({
+    name: 'debug.market',
+    summary: 'Read a single-market forensic snapshot with poll, position, trade, liquidity, and claim context.',
+    usage:
+      'pandora [--output table|json] debug market --market-address <address>|--poll-address <address> [--chain-id <id>] [--limit <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
+    emits: ['debug.market', 'debug.market.help', 'debug.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['debug', 'market'],
+      description: 'Read a single-market forensic snapshot with poll, position, trade, liquidity-event, and claim-event context for debugging and operator triage.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'market-address': commonFlags.marketAddress,
+          'poll-address': commonFlags.pollAddress,
+          'chain-id': commonFlags.chainId,
+          limit: commonFlags.limit,
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+        },
+        anyOf: [['market-address'], ['poll-address']],
+        oneOf: buildExclusivePresenceBranches([['market-address'], ['poll-address']]),
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      externalDependencies: ['indexer'],
+      expectedLatencyMs: 1200,
+    },
+  }),
+  commandContract({
+    name: 'debug.tx',
+    summary: 'Correlate indexed trades and events for a single transaction hash.',
+    usage:
+      'pandora [--output table|json] debug tx --tx-hash <hash> [--chain-id <id>] [--limit <n>] [--indexer-url <url>] [--timeout-ms <ms>]',
+    emits: ['debug.tx', 'debug.tx.help', 'debug.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['debug', 'tx'],
+      description: 'Correlate indexed trades, liquidity events, oracle-fee events, and claim events for a single transaction hash.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          'tx-hash': stringSchema('Transaction hash.'),
+          'chain-id': commonFlags.chainId,
+          limit: commonFlags.limit,
+          'indexer-url': commonFlags.indexerUrl,
+          'timeout-ms': commonFlags.timeoutMs,
+        },
+        requiredFlags: ['tx-hash'],
+      }),
+      preferred: true,
+    },
+    agentPlatform: {
+      externalDependencies: ['indexer'],
+      expectedLatencyMs: 1200,
     },
   }),
   commandContract({
