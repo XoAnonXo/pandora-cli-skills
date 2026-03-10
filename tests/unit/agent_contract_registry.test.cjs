@@ -26,6 +26,9 @@ const GENERATED_CONTRACT_GAP_COMMANDS = new Set([
   'profile',
   'profile.recommend',
   'markets',
+  'markets.create',
+  'markets.create.plan',
+  'markets.create.run',
   'markets.list',
   'markets.mine',
   'markets.scan',
@@ -614,6 +617,32 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
   assert.ok(descriptors['markets.mine']);
   assert.match(descriptors['markets.mine'].summary, /wallet-owned/i);
   assert.equal(toolDefinitions['markets.mine'].canonicalTool, 'markets.mine');
+  assert.ok(descriptors['markets.create']);
+  assert.match(descriptors['markets.create'].summary, /script-native/i);
+  assert.ok(descriptors['markets.create.plan']);
+  assert.deepEqual(descriptors['markets.create.plan'].inputSchema.required, ['question', 'rules', 'sources', 'target-timestamp', 'liquidity-usdc']);
+  assert.deepEqual(descriptors['markets.create.plan'].inputSchema.properties['market-type'].enum, ['amm', 'parimutuel']);
+  assert.equal(descriptors['markets.create.plan'].inputSchema.properties.sources.type, 'array');
+  assert.equal(descriptors['markets.create.plan'].inputSchema.properties['target-timestamp'].type, 'string');
+  assert.equal(descriptors['markets.create.plan'].inputSchema.properties['curve-offset'].minimum, 0);
+  assert.ok(toolDefinitions['markets.create.run']);
+  assert.equal(toolDefinitions['markets.create.run'].canonicalTool, 'markets.create.run');
+  assert.deepEqual(toolDefinitions['markets.create.run'].safeFlags, ['--dry-run']);
+  assert.deepEqual(toolDefinitions['markets.create.run'].executeFlags, ['--execute']);
+  assert.deepEqual(toolDefinitions['markets.create.run'].controlInputNames, ['agentPreflight']);
+  assert.deepEqual(toolDefinitions['markets.create.run'].agentWorkflow.requiredTools, ['agent.market.validate']);
+  assert.deepEqual(toolDefinitions['markets.create.run'].inputSchema.required, ['question', 'rules', 'sources', 'target-timestamp', 'liquidity-usdc']);
+  assert.deepEqual(toolDefinitions['markets.create.run'].inputSchema.properties['market-type'].enum, ['amm', 'parimutuel']);
+  assert.equal(toolDefinitions['markets.create.run'].inputSchema.properties['rpc-url'].type, 'string');
+  assert.equal(toolDefinitions['markets.create.run'].inputSchema.properties['validation-ticket'].type, 'string');
+  assert.ok(
+    getCompositeBranches(toolDefinitions['markets.create.run'].inputSchema, 'oneOf').some((branch) =>
+      Array.isArray(branch.required)
+      && branch.required.includes('dry-run')
+      && branch.not
+      && Array.isArray(branch.not.anyOf),
+    ),
+  );
   assert.match(descriptors['mirror.status'].summary, /dashboard/i);
   assert.ok(descriptors['mirror.drift']);
   assert.ok(descriptors['mirror.hedge-check']);

@@ -77,7 +77,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.92"
+          "version": "1.1.93"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -104,7 +104,7 @@
           "format": "node",
           "name": "@thisispandora/agent-sdk",
           "sourceProjectPath": "sdk/typescript/package.json",
-          "version": "0.1.0-alpha.11"
+          "version": "0.1.0-alpha.12"
         }
       },
       "supported": true,
@@ -158,6 +158,9 @@
       "lp.positions",
       "lp.remove",
       "lp.simulate-remove",
+      "markets.create",
+      "markets.create.plan",
+      "markets.create.run",
       "markets.get",
       "markets.list",
       "markets.mine",
@@ -261,21 +264,21 @@
     "compatibilityAliasTools": 1,
     "compatibilityRegistryPath": "compatibility",
     "defaultCatalogMode": "canonical-only",
-    "mutatingTools": 34,
+    "mutatingTools": 35,
     "operationBackedCommands": 6,
-    "remoteEligibleTools": 129,
+    "remoteEligibleTools": 132,
     "topLevelCommands": 52,
-    "totalCommands": 161,
-    "totalMcpTools": 129
+    "totalCommands": 164,
+    "totalMcpTools": 132
   },
-  "commandCount": 161,
+  "commandCount": 164,
   "commandDescriptorVersion": "1.4.3",
   "contractCommandDescriptorVersion": "1.4.3",
-  "contractPackageVersion": "1.1.92",
+  "contractPackageVersion": "1.1.93",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
-  "mcpToolCount": 129,
+  "mcpToolCount": 132,
   "package": {
     "artifactSubpaths": {
       "bundle": "pandora_agent/generated/contract-registry.json",
@@ -339,7 +342,7 @@
       "main": "cli/pandora.cjs",
       "name": "pandora-cli-skills",
       "sourceProjectPath": "package.json",
-      "version": "1.1.92"
+      "version": "1.1.93"
     },
     "typescript": {
       "artifactSubpaths": {
@@ -366,21 +369,21 @@
       "format": "node",
       "name": "@thisispandora/agent-sdk",
       "sourceProjectPath": "sdk/typescript/package.json",
-      "version": "0.1.0-alpha.11"
+      "version": "0.1.0-alpha.12"
     }
   },
   "registryDigest": {
-    "canonicalHash": "2fa6435db3d98676f12f7280fa46fdf2ca5dbc310da7131a323991d160cecb29",
-    "commandDigestHash": "aaf46a8d53227d9bf50bdeb20ff862bf8e959855546433ba28161e0c2f1828d5",
-    "descriptorHash": "9fd165dde56cf7ce720364d06ffa7de18dfe2f58bfc2bf66866b06a05528fb58",
-    "documentationHash": "861462b91dd1da73bf3d98cd764d00241b3991ef641c10a096cec32fe84600af",
-    "fullDescriptorHash": "e5034158015b743fbeee047322cd542383564538735fbc097df5d877d5010049",
-    "namespaceHash": "eacf06b999731e206aee036dcdeb0174cb32dd69d3c4a80efe8aeda78a1c1ed5",
-    "policyProfilesHash": "a9716d3d21380d48f1accf7d86cb83d4db0ea726ab50fb5f87d7bc217741e60c",
+    "canonicalHash": "f0a183669ee134dcb771badc5a2b7cab53e9ef46af78e5a424ed384a6457d9ae",
+    "commandDigestHash": "642b9062a1b2a03c63acaee10c7b601f6c39b07e23a44794f4e5150d5625fb9c",
+    "descriptorHash": "b67767ccf174575159a30110976210fba8c42a2ceeb7a766c933ae57db045f17",
+    "documentationHash": "91125fd6bed882a88879cbafe5d8b7a987343ea74f463297281d79ac8387f30f",
+    "fullDescriptorHash": "faff15e0fd46b7b9f81ee3d909f811bf40d7004d508c6a8f3cc5bfc4936bde9d",
+    "namespaceHash": "d7c4138d54769239bb561f9eb6de2c09d7e644b4bea878564b4cf10220eac4aa",
+    "policyProfilesHash": "f4013cc2b8fb7e2687c9b69d392196a7f35ea8b792777e3f15e0e1af5fdf8657",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
-    "topLevelHash": "a8bc62dd2a16330c6a88d0c4b6666f90465982ab71546344ab1671274e73d8db",
-    "trustDistributionHash": "d7979b314c3e2cada7bb22365a7545c7150a25d0f28c1657ead6b3ab07b49385"
+    "topLevelHash": "a18c159ccd1f83038658262fc79fabd8bfbcf79c024822e52a298ec6f4eaf8ae",
+    "trustDistributionHash": "dca5033cbfaf8223e01f694ca44545743d3e872175655bf53cc546a97d8b925c"
   },
   "schemaVersion": "1.0.0"
 }

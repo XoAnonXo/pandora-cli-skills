@@ -91,6 +91,28 @@ const normalizeBetChoice = (input: string): 'yes' | 'no' => {
   throw new Error('Invalid --bet-on value. Use: --bet-on yes|no');
 };
 
+const normalizeCloneBetMarketType = (input: string): 'parimutuel' => {
+  const key = String(input || 'parimutuel').trim().toLowerCase();
+  if (!key || ['parimutuel', 'pari', 'pm'].includes(key)) {
+    return 'parimutuel';
+  }
+  if (key === 'amm') {
+    throw new Error(
+      'clone-bet currently supports only pari-mutuel markets. Use pandora launch for generic AMM/parimutuel market creation.',
+    );
+  }
+  throw new Error(`Invalid --market-type value "${input}". clone-bet supports parimutuel only.`);
+};
+
+const parseCloneBetMarketType = (input: string): 'parimutuel' => {
+  try {
+    return normalizeCloneBetMarketType(input);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+};
+
 const toInt = (value: string, fallback: number): number => {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return fallback;
@@ -141,10 +163,16 @@ Required:
 Common options:
   --bet-on yes|no
   --bet-usd <amount>
-  --market-type amm|parimutuel
+  --market-type parimutuel
   --category <id|name> (${POLL_CATEGORY_ENUM_TEXT})
   --liquidity <usdc>
+  --curve-flattener <1-11>
+  --curve-offset <raw>
   --allow-duplicate
+
+Notes:
+  - clone-bet creates a pari-mutuel market and places an initial bet.
+  - Use pandora launch for generic AMM or pari-mutuel creation without the bet step.
 `);
   process.exit(0);
 }
@@ -162,6 +190,7 @@ const distributionNo = arg('distribution-no', '500000000');
 const curveFlattener = toInt(arg('curve-flattener', '7'), 7);
 const curveOffset = toInt(arg('curve-offset', '30000'), 30000);
 const betUsd = toNumber(arg('bet-usd', '10'), Number.NaN);
+const marketType = parseCloneBetMarketType(arg('market-type', 'parimutuel'));
 
 const dryRun = hasFlag('dry-run');
 const execute = hasFlag('execute');
@@ -475,6 +504,7 @@ async function main() {
 
   if (dryRun && !execute) {
     console.log('DRY RUN:', {
+      marketType,
       question,
       rules,
       sources,

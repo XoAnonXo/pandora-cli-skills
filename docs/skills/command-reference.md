@@ -92,9 +92,9 @@ pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--al
 pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
 pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
 pandora [--output table|json] markets scan [scan flags]  # backward-compatible alias of scan; legacy/debug only
-pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv>|--target-pct <0-100> [--yes-pct <0-100>] [--slippage-bps <0-10000>]  # --target-pct is buy-only and mutually exclusive with explicit buy amounts
-pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
-pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]
+pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv>|--target-pct <0-100> [--yes-pct <0-100>] [--slippage-bps <0-10000>]  # --target-pct is buy-only, AMM-only, and mutually exclusive with explicit buy amounts
+pandora [--output table|json] trade [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --amount-usdc <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-shares-out-raw <uint>] [--max-amount-usdc <amount>] [--min-probability-pct <0-100>] [--max-probability-pct <0-100>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]  # buy-side auto-detects AMM vs pari-mutuel
+pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--allow-unquoted-execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]  # sell is AMM-only; pari-mutuel markets do not expose sell()
 pandora [--output table|json] claim [--dotenv-path <path>] [--skip-dotenv] --market-address <address>|--all [--wallet <address>] --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]
 pandora [--output table|json] history --wallet <address> [--chain-id <id>] [--market-address <address>] [--side yes|no|both] [--status all|open|won|lost|closed] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by timestamp|pnl|entry-price|mark-price] [--order-direction asc|desc] [--include-seed]
 pandora [--output table|json] export --wallet <address> --format csv|json [--chain-id <id>] [--year <yyyy>] [--from <unix>] [--to <unix>] [--out <path>]
@@ -327,6 +327,7 @@ Use `pandora --output json schema` for the exact live contract and `pandora spor
 
 Execution note:
 - `sports create run` is the mutating path. On CLI it uses `--dry-run|--execute`; on MCP execute-mode calls it also requires `agentPreflight` from `agent.market.validate`.
+- `sports create run --market-type parimutuel` is planning-only today. Dry-run emits the pari-mutuel template, but live execute currently supports AMM only.
 
 ### Sports exact paths
 
@@ -356,7 +357,27 @@ pandora [--output table|json] sports resolve plan ...
 | `sports odds bulk` | Fetch all odds for a competition and refresh local cache. | `--competition`, `--provider`, `--timeout-ms`, `--limit` |
 | `sports consensus` | Compute trimmed-median consensus from live or offline checks. | `--event-id` or `--checks-json`, `--trim-percent`, `--book-priority` |
 | `sports create plan` | Build conservative creation plan and safety gates. | `--event-id`, `--selection`, `--market-type`, `--category`, `--creation-window-open-min`, `--creation-window-close-min`, `--book-priority`, `--model-file/--model-stdin` |
-| `sports create run` | Dry-run or execute creation path. | `--event-id`, `--dry-run/--execute`, `--liquidity-usdc`, `--chain-id`, `--rpc-url`, `--category`, `agentPreflight` (MCP execute). For exact fields, inspect `schema` or the specific command descriptor. |
+| `sports create run` | Dry-run or execute creation path. Pari-mutuel stays planning-only; live execute currently supports AMM only. | `--event-id`, `--dry-run/--execute`, `--market-type`, `--liquidity-usdc`, `--chain-id`, `--rpc-url`, `--category`, `agentPreflight` (MCP execute). For exact fields, inspect `schema` or the specific command descriptor. |
+
+## Pari-mutuel operator notes
+
+- Creation:
+  - `pandora launch --market-type parimutuel` is the current generic scripted creator for standalone pari-mutuel markets.
+  - `pandora clone-bet` is pari-mutuel-only and immediately places an initial buy after creation.
+  - `sports create plan` can build pari-mutuel templates, but `sports create run --execute` remains AMM-only.
+- Curve controls:
+  - `--curve-flattener` controls how sharply the pool pricing curve approaches the implied final probability.
+  - `--curve-offset` controls how far the initial pool starts from the neutral 50/50 baseline.
+- Trading:
+  - `trade` supports buy-side execution on both AMM and pari-mutuel markets by auto-detecting the market interface.
+  - `sell` is AMM-only. Pari-mutuel markets do not expose a sell path.
+  - `quote --target-pct` is AMM-only; pari-mutuel quote output is pool/share based, not reserve-rebalance targeting.
+- Quote interpretation:
+  - pari-mutuel quote payloads include `poolYes`, `poolNo`, `totalPool`, `sharePct`, `payoutIfWin`, `profitIfWin`, and `breakevenProbability`.
+  - those fields describe your pool ownership and conditional payout if the selected side wins.
+- Portfolio and valuation:
+  - portfolio normalizes pari-mutuel raw balances and micro-unit balances before computing `markValueUsdc`.
+  - pari-mutuel mark value is derived from pool share against `totalPool`, not from AMM probability times token count.
 | `sports sync once|run|start|stop|status` | Evaluate and operate sports sync runtime state. | `--event-id` (required for `once|run|start`), `--risk-profile`, `--state-file`, `--paper/--execute-live` |
 | `sports resolve plan` | Build manual-final resolution recommendation. | `--event-id` or `--checks-json/--checks-file`, `--poll-address`, `--settle-delay-ms`, `--consecutive-checks-required` |
 

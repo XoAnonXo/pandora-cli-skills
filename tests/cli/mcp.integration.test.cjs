@@ -1763,6 +1763,73 @@ test('mcp safe-mode mutating tools default without execute intent', async () => 
   });
 });
 
+test('mcp markets.create.run rejects missing liquidity at the schema boundary', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'markets.create.run',
+      arguments: {
+        question: 'Will ETH close above $8k by end of 2026?',
+        rules: 'YES: ETH/USD closes above $8k. NO: ETH/USD closes at or below $8k. EDGE: Unresolved/cancelled markets resolve NO.',
+        sources: ['https://example.com/a', 'https://example.com/b'],
+        'target-timestamp': '2030-01-01T00:00:00Z',
+        'dry-run': true,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_INVALID_ARGUMENTS');
+    assert.match(envelope.error.message, /liquidity-usdc/i);
+    assert.equal(call.isError, true);
+  });
+});
+
+test('mcp markets.create.run rejects missing execution mode at the schema boundary', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'markets.create.run',
+      arguments: {
+        question: 'Will ETH close above $8k by end of 2026?',
+        rules: 'YES: ETH/USD closes above $8k. NO: ETH/USD closes at or below $8k. EDGE: Unresolved/cancelled markets resolve NO.',
+        sources: ['https://example.com/a', 'https://example.com/b'],
+        'target-timestamp': '2030-01-01T00:00:00Z',
+        'liquidity-usdc': 100,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MCP_INVALID_ARGUMENTS');
+    assert.match(envelope.error.message, /exclusive argument combination|dry-run|execute/i);
+    assert.equal(call.isError, true);
+  });
+});
+
+test('mcp markets.create.plan returns canonical normalized plan payload', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'markets.create.plan',
+      arguments: {
+        question: 'Will BTC close above $120k by end of 2026?',
+        rules: 'YES: BTC/USD closes above $120k. NO: BTC/USD closes at or below $120k. EDGE: Unresolved/cancelled markets resolve NO.',
+        sources: ['https://example.com/a', 'https://example.com/b'],
+        'target-timestamp': '2030-01-01T00:00:00Z',
+        'liquidity-usdc': 100,
+        'market-type': 'parimutuel',
+        'curve-flattener': 7,
+        'curve-offset': 30000,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.command, 'markets.create.plan');
+    assert.equal(envelope.data.mode, 'plan');
+    assert.equal(envelope.data.marketTemplate.marketType, 'parimutuel');
+    assert.equal(envelope.data.requiredValidation.promptTool, 'agent.market.validate');
+  });
+});
+
 test('mcp normalizes explicit camelCase aliases before trade CLI dispatch', async () => {
   await withMcpClient(async (client) => {
     const call = await client.callTool({

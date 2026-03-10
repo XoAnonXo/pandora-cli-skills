@@ -89,12 +89,32 @@ const FACTORY_ABI = [
     ],
     outputs: [{ name: 'marketAddress', type: 'address' }],
   },
+  {
+    name: 'createPariMutuel',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: '_pollAddress', type: 'address' },
+      { name: '_collateral', type: 'address' },
+      { name: '_initialLiquidity', type: 'uint256' },
+      { name: '_distributionHint', type: 'uint256[2]' },
+      { name: '_curveFlattener', type: 'uint8' },
+      { name: '_curveOffset', type: 'uint24' },
+    ],
+    outputs: [{ name: 'marketAddress', type: 'address' }],
+  },
 ];
 
 const MAX_UINT24 = 16_777_215;
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+const DEFAULT_PARIMUTUEL_CURVE_FLATTENER = 7;
+const DEFAULT_PARIMUTUEL_CURVE_OFFSET = 30_000;
+const MIN_PARIMUTUEL_CURVE_FLATTENER = 1;
+const MAX_PARIMUTUEL_CURVE_FLATTENER = 11;
 const DEFAULT_CREATE_POLL_GAS_UNITS = 350_000n;
 const DEFAULT_APPROVE_GAS_UNITS = 65_000n;
 const DEFAULT_CREATE_MARKET_GAS_UNITS = 650_000n;
+const DEFAULT_CREATE_PARIMUTUEL_GAS_UNITS = 650_000n;
 const GAS_RESERVE_BUFFER_BPS = 2_500n;
 const DEFAULT_FALLBACK_GAS_PRICE_WEI = 2_000_000_000n;
 
@@ -201,6 +221,8 @@ async function buildGasReservePlan({
   publicClient,
   pollRequest,
   approveRequest,
+  marketRequest,
+  marketFallbackUnits,
   needsApproval,
   parseEtherFn,
 }) {
@@ -220,7 +242,9 @@ async function buildGasReservePlan({
     needsApproval && approveRequest
       ? await estimateContractGasUnits(publicClient, approveRequest, DEFAULT_APPROVE_GAS_UNITS)
       : 0n;
-  const marketGasUnits = DEFAULT_CREATE_MARKET_GAS_UNITS;
+  const marketGasUnits = marketRequest
+    ? await estimateContractGasUnits(publicClient, marketRequest, marketFallbackUnits || DEFAULT_CREATE_MARKET_GAS_UNITS)
+    : (marketFallbackUnits || DEFAULT_CREATE_MARKET_GAS_UNITS);
   const totalGasUnits = pollGasUnits + approveGasUnits + marketGasUnits;
 
   return {
@@ -280,6 +304,43 @@ function resolveChain(chainId, rpcUrl) {
   };
 }
 
+function normalizeDeploymentMarketType(value) {
+  const key = String(value || 'amm').trim().toLowerCase();
+  if (!key || key === 'amm') return 'amm';
+  if (key === 'parimutuel' || key === 'pari' || key === 'pm') return 'parimutuel';
+  throw new Error('marketType must be amm or parimutuel.');
+}
+
+function buildFactoryCreateConfig({ pollAddress, usdc, liquidityRaw, distributionHint, args }) {
+  if (args.marketType === 'parimutuel') {
+    return {
+      functionName: 'createPariMutuel',
+      callArgs: [
+        pollAddress,
+        usdc,
+        liquidityRaw,
+        distributionHint,
+        args.curveFlattener,
+        args.curveOffset,
+      ],
+      fallbackGasUnits: DEFAULT_CREATE_PARIMUTUEL_GAS_UNITS,
+    };
+  }
+
+  return {
+    functionName: 'createMarket',
+    callArgs: [
+      pollAddress,
+      usdc,
+      liquidityRaw,
+      distributionHint,
+      args.feeTier,
+      args.maxImbalance,
+    ],
+    fallbackGasUnits: DEFAULT_CREATE_MARKET_GAS_UNITS,
+  };
+}
+
 function buildDeploymentArgs(options = {}) {
   const sourceQuestion = String(options.question || '').trim();
   const sourceRules = String(options.rules || '').trim();
@@ -321,14 +382,40 @@ function buildDeploymentArgs(options = {}) {
     throw new Error('distributionYes + distributionNo must equal 1000000000.');
   }
 
-  const feeTier = Number(options.feeTier);
-  if (feeTier < MIN_AMM_FEE_TIER || feeTier > MAX_AMM_FEE_TIER) {
-    throw new Error(`feeTier must be between ${MIN_AMM_FEE_TIER} and ${MAX_AMM_FEE_TIER} (max 5%).`);
-  }
+  const marketType = normalizeDeploymentMarketType(options.marketType);
+  let feeTier = null;
+  let maxImbalance = null;
+  let curveFlattener = null;
+  let curveOffset = null;
 
-  const maxImbalance = Number(options.maxImbalance);
-  if (!Number.isInteger(maxImbalance) || maxImbalance < 0 || maxImbalance > MAX_UINT24) {
-    throw new Error(`maxImbalance must be an integer between 0 and ${MAX_UINT24}.`);
+  if (marketType === 'parimutuel') {
+    curveFlattener = Number.isFinite(Number(options.curveFlattener))
+      ? Number(options.curveFlattener)
+      : DEFAULT_PARIMUTUEL_CURVE_FLATTENER;
+    if (!Number.isInteger(curveFlattener)
+      || curveFlattener < MIN_PARIMUTUEL_CURVE_FLATTENER
+      || curveFlattener > MAX_PARIMUTUEL_CURVE_FLATTENER) {
+      throw new Error(
+        `curveFlattener must be an integer between ${MIN_PARIMUTUEL_CURVE_FLATTENER} and ${MAX_PARIMUTUEL_CURVE_FLATTENER}.`,
+      );
+    }
+
+    curveOffset = Number.isFinite(Number(options.curveOffset))
+      ? Number(options.curveOffset)
+      : DEFAULT_PARIMUTUEL_CURVE_OFFSET;
+    if (!Number.isInteger(curveOffset) || curveOffset < 0 || curveOffset > MAX_UINT24) {
+      throw new Error(`curveOffset must be an integer between 0 and ${MAX_UINT24}.`);
+    }
+  } else {
+    feeTier = Number(options.feeTier);
+    if (feeTier < MIN_AMM_FEE_TIER || feeTier > MAX_AMM_FEE_TIER) {
+      throw new Error(`feeTier must be between ${MIN_AMM_FEE_TIER} and ${MAX_AMM_FEE_TIER} (max 5%).`);
+    }
+
+    maxImbalance = Number(options.maxImbalance);
+    if (!Number.isInteger(maxImbalance) || maxImbalance < 0 || maxImbalance > MAX_UINT24) {
+      throw new Error(`maxImbalance must be an integer between 0 and ${MAX_UINT24}.`);
+    }
   }
 
   const category = Number.isInteger(Number(options.category)) ? Number(options.category) : 3;
@@ -341,8 +428,11 @@ function buildDeploymentArgs(options = {}) {
     liquidityUsdc,
     distributionYes,
     distributionNo,
+    marketType,
     feeTier,
     maxImbalance,
+    curveFlattener,
+    curveOffset,
     arbiter: String(options.arbiter || DEFAULT_ARBITER).toLowerCase(),
     category,
   };
@@ -489,6 +579,7 @@ async function deployPandoraAmmMarket(options = {}) {
   }
 
   const needsApproval = currentAllowance < liquidityRaw;
+  const distributionHint = [BigInt(args.distributionYes), BigInt(args.distributionNo)];
 
   let pollSimulation;
   try {
@@ -513,11 +604,26 @@ async function deployPandoraAmmMarket(options = {}) {
         args: [factory, liquidityRaw],
       }
     : null;
+  const marketConfigForReserve = buildFactoryCreateConfig({
+    pollAddress: pollSimulation.result || ZERO_ADDRESS,
+    usdc,
+    liquidityRaw,
+    distributionHint,
+    args,
+  });
   const gasReservePlan = await buildGasReservePlan({
     options,
     publicClient,
     pollRequest: pollSimulation.request,
     approveRequest,
+    marketRequest: {
+      account,
+      address: factory,
+      abi: FACTORY_ABI,
+      functionName: marketConfigForReserve.functionName,
+      args: marketConfigForReserve.callArgs,
+    },
+    marketFallbackUnits: marketConfigForReserve.fallbackGasUnits,
     needsApproval,
     parseEtherFn: runtime.parseEther,
   });
@@ -608,7 +714,13 @@ async function deployPandoraAmmMarket(options = {}) {
     }
   }
 
-  const distributionHint = [BigInt(args.distributionYes), BigInt(args.distributionNo)];
+  const marketConfig = buildFactoryCreateConfig({
+    pollAddress,
+    usdc,
+    liquidityRaw,
+    distributionHint,
+    args,
+  });
 
   let marketSimulation;
   try {
@@ -616,11 +728,16 @@ async function deployPandoraAmmMarket(options = {}) {
       account,
       address: factory,
       abi: FACTORY_ABI,
-      functionName: 'createMarket',
-      args: [pollAddress, usdc, liquidityRaw, distributionHint, args.feeTier, args.maxImbalance],
+      functionName: marketConfig.functionName,
+      args: marketConfig.callArgs,
     });
   } catch (err) {
-    throw await wrapDeployExecutionError(err, 'MARKET_SIMULATION_FAILED', 'createMarket simulation failed.');
+    throw await wrapDeployExecutionError(
+      err,
+      'MARKET_SIMULATION_FAILED',
+      `${marketConfig.functionName} simulation failed.`,
+      { marketFunctionName: marketConfig.functionName },
+    );
   }
 
   let marketTxHash;
@@ -628,9 +745,15 @@ async function deployPandoraAmmMarket(options = {}) {
     marketTxHash = await walletClient.writeContract(marketSimulation.request);
     await publicClient.waitForTransactionReceipt({ hash: marketTxHash });
   } catch (err) {
-    throw await wrapDeployExecutionError(err, 'MARKET_EXECUTION_FAILED', 'createMarket transaction failed.', {
-      marketTxHash: marketTxHash || null,
-    });
+    throw await wrapDeployExecutionError(
+      err,
+      'MARKET_EXECUTION_FAILED',
+      `${marketConfig.functionName} transaction failed.`,
+      {
+        marketTxHash: marketTxHash || null,
+        marketFunctionName: marketConfig.functionName,
+      },
+    );
   }
 
   payload.tx = {
@@ -653,4 +776,5 @@ async function deployPandoraAmmMarket(options = {}) {
 module.exports = {
   buildDeploymentArgs,
   deployPandoraAmmMarket,
+  deployPandoraMarket: deployPandoraAmmMarket,
 };

@@ -96,6 +96,22 @@ const toNumber = (value: string, fallback: number): number => {
   return parsed;
 };
 
+const normalizeLaunchMarketType = (input: string): 'amm' | 'parimutuel' => {
+  const key = String(input || 'amm').trim().toLowerCase();
+  if (!key || key === 'amm') return 'amm';
+  if (['parimutuel', 'pari', 'pm'].includes(key)) return 'parimutuel';
+  throw new Error(`Invalid --market-type value "${input}". Use amm or parimutuel.`);
+};
+
+const parseLaunchMarketType = (input: string): 'amm' | 'parimutuel' => {
+  try {
+    return normalizeLaunchMarketType(input);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+};
+
 const parseCategoryArg = (value: string, fallback: number): number => {
   try {
     return parsePollCategory(value || String(fallback), { flagName: '--category' });
@@ -189,6 +205,10 @@ if (hasFlag('help')) {
 Usage:
   pandora launch --dry-run|--execute [options]
 
+Description:
+  Legacy generic market launcher. Use --market-type parimutuel for the current live
+  pari-mutuel creation path with curve flags, or --market-type amm for AMM creation.
+
 Required:
   --question "<text>"
   --rules "<resolution rules>"
@@ -200,14 +220,20 @@ Common options:
   --category <id|name> (${POLL_CATEGORY_ENUM_TEXT})
   --liquidity <usdc>
   --fee-tier <bps>
+  --max-imbalance <raw>
   --distribution-yes <parts-per-billion>
   --distribution-no <parts-per-billion>
+  --curve-flattener <1-11>
+  --curve-offset <raw>
+
+Notes:
+  - Use --market-type parimutuel with --curve-flattener/--curve-offset for pari-mutuel creation.
+  - Use --market-type amm with --fee-tier/--max-imbalance for AMM creation.
 `);
   process.exit(0);
 }
 
-const marketTypeArg = arg('market-type', 'amm').toLowerCase();
-const marketType = marketTypeArg === 'parimutuel' || marketTypeArg === 'pari' || marketTypeArg === 'pm' ? 'parimutuel' : 'amm';
+const marketType = parseLaunchMarketType(arg('market-type', 'amm'));
 
 const args = {
   dryRun: hasFlag('dry-run'),

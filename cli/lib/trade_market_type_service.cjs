@@ -64,6 +64,13 @@ const PREDICTION_AMM_MARKER_ABI = [
 
 const DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC = 15 * 60;
 
+function normalizePandoraMarketType(value) {
+  const marketType = String(value || '').trim().toLowerCase();
+  if (!marketType) return '';
+  if (marketType === 'pari' || marketType === 'parimutuel') return 'parimutuel';
+  return marketType;
+}
+
 function createTradeTypeError(code, message, details = undefined) {
   const err = new Error(message);
   err.code = code;
@@ -146,7 +153,7 @@ function toEpochSeconds(value, fallback) {
  * @returns {{marketType:'parimutuel'|'amm', abi: object[], functionName: 'buy', args: (boolean|bigint)[], signature: string, ammDeadlineEpoch?: string}}
  */
 function buildTradeBuyCall(input) {
-  const marketType = String(input.marketType || '').toLowerCase();
+  const marketType = normalizePandoraMarketType(input.marketType);
   const isYes = String(input.side || '').toLowerCase() === 'yes';
   const amountRaw = input.amountRaw;
   const minSharesOutRaw = input.minSharesOutRaw;
@@ -192,7 +199,7 @@ function buildTradeBuyCall(input) {
  * @returns {{marketType:'amm', abi: object[], functionName: 'sell', args: (boolean|bigint)[], signature: string, ammDeadlineEpoch?: string}}
  */
 function buildTradeSellCall(input) {
-  const marketType = String(input.marketType || '').toLowerCase();
+  const marketType = normalizePandoraMarketType(input.marketType);
   const isYes = String(input.side || '').toLowerCase() === 'yes';
   const amountRaw = input.amountRaw;
   const minAmountOutRaw = input.minAmountOutRaw;
@@ -285,6 +292,7 @@ module.exports = {
   PREDICTION_AMM_BUY_ABI,
   PREDICTION_AMM_SELL_ABI,
   DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC,
+  normalizePandoraMarketType,
   detectTradeMarketType,
   buildTradeBuyCall,
   buildTradeSellCall,

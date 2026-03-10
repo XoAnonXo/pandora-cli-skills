@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC,
+  normalizePandoraMarketType,
   detectTradeMarketType,
   buildTradeBuyCall,
   buildTradeSellCall,
@@ -56,6 +57,13 @@ test('detectTradeMarketType throws unsupported interface when neither marker exi
   );
 });
 
+test('normalizePandoraMarketType canonicalizes pari and parimutuel spellings', () => {
+  assert.equal(normalizePandoraMarketType('pari'), 'parimutuel');
+  assert.equal(normalizePandoraMarketType('parimutuel'), 'parimutuel');
+  assert.equal(normalizePandoraMarketType('AMM'), 'amm');
+  assert.equal(normalizePandoraMarketType(''), '');
+});
+
 test('buildTradeBuyCall uses 3-arg buy for parimutuel', () => {
   const call = buildTradeBuyCall({
     marketType: 'parimutuel',
@@ -67,6 +75,19 @@ test('buildTradeBuyCall uses 3-arg buy for parimutuel', () => {
   assert.equal(call.signature, 'buy(bool,uint256,uint256)');
   assert.deepEqual(call.args, [true, 1_000_000n, 0n]);
   assert.equal(call.ammDeadlineEpoch, null);
+});
+
+test('buildTradeBuyCall accepts pari shorthand as parimutuel', () => {
+  const call = buildTradeBuyCall({
+    marketType: 'pari',
+    side: 'no',
+    amountRaw: 500_000n,
+    minSharesOutRaw: 1n,
+  });
+
+  assert.equal(call.marketType, 'parimutuel');
+  assert.equal(call.signature, 'buy(bool,uint256,uint256)');
+  assert.deepEqual(call.args, [false, 500_000n, 1n]);
 });
 
 test('buildTradeBuyCall uses 4-arg deadline buy for amm', () => {
@@ -90,6 +111,22 @@ test('buildTradeSellCall rejects parimutuel sell paths', () => {
     () =>
       buildTradeSellCall({
         marketType: 'parimutuel',
+        side: 'yes',
+        amountRaw: 10n,
+        minAmountOutRaw: 0n,
+      }),
+    (error) => {
+      assert.equal(error.code, 'UNSUPPORTED_MARKET_TRADE_INTERFACE');
+      return true;
+    },
+  );
+});
+
+test('buildTradeSellCall rejects pari shorthand sell paths too', () => {
+  assert.throws(
+    () =>
+      buildTradeSellCall({
+        marketType: 'pari',
         side: 'yes',
         amountRaw: 10n,
         minAmountOutRaw: 0n,

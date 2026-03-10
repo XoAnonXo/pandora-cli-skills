@@ -3395,6 +3395,53 @@ test('quote --target-pct rejects explicit buy amounts in the same request', () =
   assert.match(payload.error.message, /Use either --target-pct or --amount-usdc\/--amounts/);
 });
 
+test('quote --target-pct rejects pari-mutuel markets explicitly', async () => {
+  const marketAddress = '0xdddddddddddddddddddddddddddddddddddddddd';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'parimutuel',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '1000',
+        currentTvl: '1000',
+        reserveYes: '400',
+        reserveNo: '600',
+        createdAt: '1700000000',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'quote',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--market-address',
+      marketAddress,
+      '--side',
+      'yes',
+      '--target-pct',
+      '55',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'INVALID_FLAG_COMBINATION');
+    assert.match(payload.error.message, /only supported for AMM quote requests/i);
+  } finally {
+    await indexer.close();
+  }
+});
+
 test('quote --help prints command help without parser errors', () => {
   const result = runCli(['quote', '--help']);
   assert.equal(result.status, 0);
@@ -4594,6 +4641,64 @@ test('portfolio normalizes raw parimutuel position balances before computing mar
     assert.equal(payload.data.positions[0].yesBalance, 1);
     assert.equal(payload.data.positions[0].markValueUsdc, 1.001225);
     assert.equal(payload.data.summary.totalPositionMarkValueUsdc, 1.001225);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('portfolio computes pari-mutuel mark value when indexer uses full parimutuel spelling', async () => {
+  const marketAddress = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: marketAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'parimutuel',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '1000',
+        currentTvl: '1000',
+        reserveYes: '2',
+        reserveNo: '998',
+        createdAt: '1700000000',
+      },
+    ],
+    positions: [
+      {
+        id: 'pos-pari-spelling-1',
+        chainId: 1,
+        marketAddress,
+        user: ADDRESSES.wallet1,
+        lastTradeAt: 1700000400,
+        yesTokenAmount: '998775',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'portfolio',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--wallet',
+      ADDRESSES.wallet1,
+      '--chain-id',
+      '1',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.positions.length, 1);
+    assert.equal(payload.data.positions[0].marketType, 'parimutuel');
+    assert.equal(payload.data.positions[0].yesBalance, 0.998775);
+    assert.equal(payload.data.positions[0].markValueUsdc, 499.3875);
+    assert.equal(payload.data.summary.totalPositionMarkValueUsdc, 499.3875);
   } finally {
     await indexer.close();
   }
@@ -11046,6 +11151,9 @@ test('clone-bet --help prints usage without stack traces', () => {
   assert.equal(result.status, 0);
   assert.match(result.output, /Usage:/);
   assert.match(result.output, /pandora clone-bet --dry-run\|--execute/);
+  assert.match(result.output, /--market-type parimutuel/);
+  assert.doesNotMatch(result.output, /--market-type amm\|parimutuel/);
+  assert.match(result.output, /pari-mutuel market and places an initial bet/i);
   assert.match(result.output, /Politics=0/);
   assert.doesNotMatch(result.output, /Missing value for --help|at parseArgs/);
 });
@@ -11055,8 +11163,206 @@ test('launch --help prints usage without requiring env file', () => {
   assert.equal(result.status, 0);
   assert.match(result.output, /Usage:/);
   assert.match(result.output, /pandora launch --dry-run\|--execute/);
+  assert.match(result.output, /Legacy generic market launcher/i);
+  assert.match(result.output, /--curve-flattener <1-11>/);
+  assert.match(result.output, /--curve-offset <raw>/);
+  assert.match(result.output, /Use --market-type parimutuel with --curve-flattener\/--curve-offset/i);
   assert.match(result.output, /Other=10/);
   assert.doesNotMatch(result.output, /Env file not found/);
+});
+
+test('clone-bet rejects amm market-type before env-dependent validation', () => {
+  const result = runCli([
+    'clone-bet',
+    '--skip-dotenv',
+    '--market-type',
+    'amm',
+    '--question',
+    'Will this clone integration test pass?',
+    '--rules',
+    buildRules(),
+    '--sources',
+    'https://example.com/a',
+    'https://example.com/b',
+    '--target-timestamp',
+    FIXED_FUTURE_TIMESTAMP,
+    '--liquidity',
+    '10',
+    '--dry-run',
+  ], {
+    unsetEnvKeys: DOCTOR_ENV_KEYS,
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.output, /clone-bet currently supports only pari-mutuel markets/i);
+  assert.match(result.output, /Use pandora launch for generic AMM\/parimutuel market creation/i);
+  assert.doesNotMatch(result.output, /at normalizeCloneBetMarketType|Error:/);
+});
+
+test('launch rejects invalid market-type before env-dependent validation', () => {
+  const result = runCli([
+    'launch',
+    '--skip-dotenv',
+    '--market-type',
+    'binary',
+    '--question',
+    'Will this launch integration test pass?',
+    '--rules',
+    buildRules(),
+    '--sources',
+    'https://example.com/a',
+    'https://example.com/b',
+    '--target-timestamp',
+    FIXED_FUTURE_TIMESTAMP,
+    '--liquidity',
+    '10',
+    '--dry-run',
+  ], {
+    unsetEnvKeys: DOCTOR_ENV_KEYS,
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.output, /Invalid --market-type value "binary"\. Use amm or parimutuel\./);
+  assert.doesNotMatch(result.output, /Unsupported CHAIN_ID|at normalizeLaunchMarketType|Error:/);
+});
+
+test('launch accepts pari-mutuel curve flags during dry-run preflight', () => {
+  const result = runCli([
+    ...buildLaunchArgs(),
+    '--market-type',
+    'parimutuel',
+    '--curve-flattener',
+    '7',
+    '--curve-offset',
+    '30000',
+    '--dry-run',
+  ], {
+    unsetEnvKeys: DOCTOR_ENV_KEYS,
+    env: {
+      CHAIN_ID: '999',
+      PRIVATE_KEY: `0x${'1'.repeat(64)}`,
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.output, /Unsupported CHAIN_ID=999\. Supported: 1 or 146/);
+  assert.doesNotMatch(result.output, /Invalid --curve-flattener|Invalid --fee-tier for AMM/);
+});
+
+test('markets --help includes canonical create surface', () => {
+  const result = runCli(['markets', '--help']);
+  assert.equal(result.status, 0);
+  assert.match(result.output, /markets create plan\|run/i);
+});
+
+test('markets create plan emits canonical pari-mutuel plan payload', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'markets',
+    'create',
+    'plan',
+    '--market-type',
+    'parimutuel',
+    '--question',
+    'Will BTC close above $120k by end of 2026?',
+    '--rules',
+    buildRules(),
+    '--sources',
+    'https://example.com/a',
+    'https://example.com/b',
+    '--target-timestamp',
+    FIXED_FUTURE_TIMESTAMP,
+    '--liquidity-usdc',
+    '100',
+    '--curve-flattener',
+    '7',
+    '--curve-offset',
+    '30000',
+  ], {
+    unsetEnvKeys: DOCTOR_ENV_KEYS,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.command, 'markets.create.plan');
+  assert.equal(payload.data.mode, 'plan');
+  assert.equal(payload.data.marketTemplate.marketType, 'parimutuel');
+  assert.equal(payload.data.marketTemplate.curveFlattener, 7);
+  assert.equal(payload.data.marketTemplate.curveOffset, 30000);
+  assert.equal(payload.data.requiredValidation.promptTool, 'agent.market.validate');
+});
+
+test('markets create run --dry-run emits canonical deployment payload', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'markets',
+    'create',
+    'run',
+    '--market-type',
+    'amm',
+    '--question',
+    'Will ETH close above $8k by end of 2026?',
+    '--rules',
+    buildRules(),
+    '--sources',
+    'https://example.com/a',
+    'https://example.com/b',
+    '--target-timestamp',
+    FIXED_FUTURE_TIMESTAMP,
+    '--liquidity-usdc',
+    '100',
+    '--fee-tier',
+    '3000',
+    '--dry-run',
+  ], {
+    unsetEnvKeys: DOCTOR_ENV_KEYS,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.command, 'markets.create.run');
+  assert.equal(payload.data.mode, 'dry-run');
+  assert.equal(payload.data.marketTemplate.marketType, 'amm');
+  assert.equal(payload.data.deployment.mode, 'dry-run');
+  assert.equal(payload.data.deployment.deploymentArgs.marketType, 'amm');
+  assert.equal(payload.data.deployment.requiredValidation.promptTool, 'agent.market.validate');
+});
+
+test('markets create run --execute fails fast without a matching validation ticket', () => {
+  const result = runCli([
+    'markets',
+    'create',
+    'run',
+    '--market-type',
+    'amm',
+    '--question',
+    'Will SOL close above $500 by end of 2026?',
+    '--rules',
+    buildRules(),
+    '--sources',
+    'https://example.com/a',
+    'https://example.com/b',
+    '--target-timestamp',
+    FIXED_FUTURE_TIMESTAMP,
+    '--liquidity-usdc',
+    '100',
+    '--fee-tier',
+    '3000',
+    '--execute',
+    '--private-key',
+    `0x${'1'.repeat(64)}`,
+    '--rpc-url',
+    'https://ethereum.publicnode.com',
+    '--skip-dotenv',
+  ], {
+    unsetEnvKeys: DOCTOR_ENV_KEYS,
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.output, /validation-ticket/i);
+  assert.match(result.output, /agent market validate/i);
 });
 
 test('clone-bet rejects unsupported category names before env-dependent validation', () => {

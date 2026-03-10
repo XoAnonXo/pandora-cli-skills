@@ -158,6 +158,7 @@ function buildSportsParserDeps() {
 function baseDeployOptions(overrides = {}) {
   return {
     execute: true,
+    marketType: 'amm',
     question: 'Will deploy parser tests pass?',
     rules: 'Rules text',
     sources: ['https://one.test', 'https://two.test'],
@@ -180,6 +181,8 @@ function baseDeployOptions(overrides = {}) {
 
 function createDeployClients(overrides = {}) {
   const hashes = ['0xaaa', '0xbbb', '0xccc'];
+  const simulateCalls = [];
+  const writeCalls = [];
   const publicClient = {
     readContract: async ({ functionName }) => {
       if (functionName === 'operatorGasFee') return 1_000n;
@@ -194,9 +197,13 @@ function createDeployClients(overrides = {}) {
     estimateContractGas: async (request) => {
       if (request.functionName === 'createPoll') return 120_000n;
       if (request.functionName === 'approve') return 40_000n;
+      if (request.functionName === 'createMarket') return 50_000n;
+      if (request.functionName === 'createPariMutuel') return 55_000n;
       return 50_000n;
     },
-    simulateContract: async ({ functionName }) => {
+    simulateContract: async (request) => {
+      simulateCalls.push(request);
+      const { functionName } = request;
       if (functionName === 'createPoll') {
         return {
           request: {
@@ -222,6 +229,18 @@ function createDeployClients(overrides = {}) {
           result: TEST_MARKET,
         };
       }
+      if (functionName === 'createPariMutuel') {
+        return {
+          request: {
+            account: TEST_ACCOUNT,
+            address: TEST_FACTORY,
+            abi: [],
+            functionName: 'createPariMutuel',
+            args: [],
+          },
+          result: TEST_MARKET,
+        };
+      }
       throw new Error(`Unexpected simulateContract: ${functionName}`);
     },
     waitForTransactionReceipt: async () => ({ logs: [] }),
@@ -229,11 +248,14 @@ function createDeployClients(overrides = {}) {
   };
 
   const walletClient = {
-    writeContract: async () => hashes.shift() || '0xddd',
+    writeContract: async (request) => {
+      writeCalls.push(request);
+      return hashes.shift() || '0xddd';
+    },
     ...overrides.walletClient,
   };
 
-  return { publicClient, walletClient };
+  return { publicClient, walletClient, simulateCalls, writeCalls };
 }
 
 test('buildDeploymentArgs accepts zero and max uint24 maxImbalance bounds', () => {
@@ -277,6 +299,72 @@ test('buildDeploymentArgs accepts zero and max uint24 maxImbalance bounds', () =
         maxImbalance: MAX_UINT24 + 1,
       }),
     /between 0 and 16777215/,
+  );
+});
+
+test('buildDeploymentArgs supports pari-mutuel market type with curve bounds', () => {
+  const parsed = buildDeploymentArgs({
+    question: 'Q',
+    rules: 'R',
+    sources: ['https://one.test', 'https://two.test'],
+    targetTimestamp: FUTURE_TS,
+    liquidityUsdc: 100,
+    distributionYes: 500_000_000,
+    distributionNo: 500_000_000,
+    marketType: 'parimutuel',
+    curveFlattener: 11,
+    curveOffset: MAX_UINT24,
+  });
+
+  assert.equal(parsed.marketType, 'parimutuel');
+  assert.equal(parsed.feeTier, null);
+  assert.equal(parsed.maxImbalance, null);
+  assert.equal(parsed.curveFlattener, 11);
+  assert.equal(parsed.curveOffset, MAX_UINT24);
+
+  const defaults = buildDeploymentArgs({
+    question: 'Q',
+    rules: 'R',
+    sources: ['https://one.test', 'https://two.test'],
+    targetTimestamp: FUTURE_TS,
+    liquidityUsdc: 100,
+    distributionYes: 500_000_000,
+    distributionNo: 500_000_000,
+    marketType: 'parimutuel',
+  });
+  assert.equal(defaults.curveFlattener, 7);
+  assert.equal(defaults.curveOffset, 30_000);
+
+  assert.throws(
+    () =>
+      buildDeploymentArgs({
+        question: 'Q',
+        rules: 'R',
+        sources: ['https://one.test', 'https://two.test'],
+        targetTimestamp: FUTURE_TS,
+        liquidityUsdc: 100,
+        distributionYes: 500_000_000,
+        distributionNo: 500_000_000,
+        marketType: 'parimutuel',
+        curveFlattener: 12,
+      }),
+    /curveFlattener must be an integer between 1 and 11/,
+  );
+
+  assert.throws(
+    () =>
+      buildDeploymentArgs({
+        question: 'Q',
+        rules: 'R',
+        sources: ['https://one.test', 'https://two.test'],
+        targetTimestamp: FUTURE_TS,
+        liquidityUsdc: 100,
+        distributionYes: 500_000_000,
+        distributionNo: 500_000_000,
+        marketType: 'parimutuel',
+        curveOffset: MAX_UINT24 + 1,
+      }),
+    /curveOffset must be an integer between 0 and 16777215/,
   );
 });
 
@@ -668,4 +756,55 @@ test('deployPandoraAmmMarket computes dynamic gas reserve from live fee data', a
   assert.equal(highPayload.preflight.gasReserveSource, 'dynamic');
   assert.notEqual(lowPayload.preflight.gasReserveNative, '0.005');
   assert.notEqual(lowPayload.preflight.gasReserveNative, highPayload.preflight.gasReserveNative);
+});
+
+test('deployPandoraAmmMarket dry-run payload includes pari-mutuel deployment args', async () => {
+  const payload = await deployPandoraAmmMarket(
+    baseDeployOptions({
+      execute: false,
+      marketType: 'parimutuel',
+      curveFlattener: 9,
+      curveOffset: 12_345,
+    }),
+  );
+
+  assert.equal(payload.mode, 'dry-run');
+  assert.equal(payload.deploymentArgs.marketType, 'parimutuel');
+  assert.equal(payload.deploymentArgs.curveFlattener, 9);
+  assert.equal(payload.deploymentArgs.curveOffset, 12_345);
+  assert.equal(payload.deploymentArgs.feeTier, null);
+  assert.equal(payload.deploymentArgs.maxImbalance, null);
+  assert.equal(payload.tx, null);
+  assert.equal(payload.preflight, null);
+});
+
+test('deployPandoraAmmMarket executes createPariMutuel when marketType is parimutuel', async () => {
+  const { publicClient, walletClient, simulateCalls, writeCalls } = createDeployClients();
+
+  const payload = await deployPandoraAmmMarket(
+    baseDeployOptions({
+      marketType: 'parimutuel',
+      curveFlattener: 9,
+      curveOffset: 12_345,
+      publicClient,
+      walletClient,
+    }),
+  );
+
+  assert.equal(payload.deploymentArgs.marketType, 'parimutuel');
+  assert.equal(payload.deploymentArgs.curveFlattener, 9);
+  assert.equal(payload.deploymentArgs.curveOffset, 12_345);
+  assert.equal(payload.tx.pollTxHash, '0xaaa');
+  assert.equal(payload.tx.approveTxHash, '0xbbb');
+  assert.equal(payload.tx.marketTxHash, '0xccc');
+  assert.equal(payload.pandora.pollAddress, TEST_POLL);
+  assert.equal(payload.pandora.marketAddress, TEST_MARKET);
+  assert.deepEqual(
+    simulateCalls.map((entry) => entry.functionName),
+    ['createPoll', 'createPariMutuel'],
+  );
+  assert.deepEqual(
+    writeCalls.map((entry) => entry.functionName),
+    ['createPoll', 'approve', 'createPariMutuel'],
+  );
 });

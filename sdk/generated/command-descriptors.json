@@ -4055,7 +4055,633 @@
     "summary": "Market command family help and routing entrypoint.",
     "supportsRemote": false,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] markets list|get|scan|mine ..."
+    "usage": "pandora [--output table|json] markets list|get|mine|create plan|create run|scan ..."
+  },
+  "markets.create": {
+    "agentWorkflow": {
+      "executeRequiresValidation": true,
+      "notes": [
+        "Use markets.create.plan to normalize a launch payload into a JSON-safe agent contract.",
+        "Legacy launch remains script-native; use markets.create.run for the canonical agent/MCP creation surface."
+      ],
+      "recommendedTools": [
+        "agent.market.autocomplete"
+      ],
+      "requiredTools": [
+        "agent.market.validate"
+      ]
+    },
+    "aliasOf": null,
+    "canRunConcurrent": true,
+    "canonicalCommandTokens": [
+      "markets",
+      "create"
+    ],
+    "canonicalTool": "markets.create",
+    "canonicalUsage": "pandora [--output table|json] markets create plan|run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> [--market-type amm|parimutuel] ...",
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/GenericCommandData",
+    "emits": [
+      "markets.create.help",
+      "markets.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 5000,
+    "externalDependencies": [
+      "indexer-api"
+    ],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "markets:read",
+      "network:indexer"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": "agent.market.validate",
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Canonical JSON-safe market creation surface for agents and MCP clients. Legacy `launch` remains script-native.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] markets create plan|run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> [--market-type amm|parimutuel] ..."
+  },
+  "markets.create.plan": {
+    "agentWorkflow": {
+      "executeRequiresValidation": false,
+      "notes": [
+        "Use agent.market.autocomplete when the question, rules, or target timestamp still need refinement before creation.",
+        "markets.create.plan is the canonical JSON-safe planning surface; legacy launch remains script-native."
+      ],
+      "recommendedTools": [
+        "agent.market.autocomplete"
+      ],
+      "requiredTools": []
+    },
+    "aliasOf": null,
+    "canRunConcurrent": true,
+    "canonicalCommandTokens": [
+      "markets",
+      "create",
+      "plan"
+    ],
+    "canonicalTool": "markets.create.plan",
+    "canonicalUsage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]",
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/GenericCommandData",
+    "emits": [
+      "markets.create.plan",
+      "markets.create.help",
+      "markets.help"
+    ],
+    "executeFlags": [],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": false,
+    "expectedLatencyMs": 5000,
+    "externalDependencies": [
+      "indexer-api",
+      "chain-rpc"
+    ],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "arbiter": {
+          "description": "Arbiter address.",
+          "type": "string"
+        },
+        "category": {
+          "description": "Category id or canonical category name.",
+          "examples": [
+            "Sports",
+            "3"
+          ],
+          "type": "string",
+          "xPandora": {
+            "acceptsIntegerStrings": true,
+            "allowedCategoryNames": [
+              "Politics",
+              "Sports",
+              "Finance",
+              "Crypto",
+              "Culture",
+              "Technology",
+              "Science",
+              "Entertainment",
+              "Health",
+              "Environment",
+              "Other"
+            ],
+            "caseInsensitivePattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$"
+          }
+        },
+        "chain-id": {
+          "description": "Chain id.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "curve-flattener": {
+          "description": "Pari-mutuel curve flattener.",
+          "maximum": 11,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "curve-offset": {
+          "description": "Pari-mutuel curve offset.",
+          "maximum": 16777215,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "distribution-no": {
+          "description": "Initial NO distribution in parts-per-billion.",
+          "maximum": 1000000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "distribution-no-pct": {
+          "description": "Initial NO distribution in percent.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
+        "distribution-yes": {
+          "description": "Initial YES distribution in parts-per-billion.",
+          "maximum": 1000000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "distribution-yes-pct": {
+          "description": "Initial YES distribution in percent.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
+        "factory": {
+          "description": "Factory contract address.",
+          "type": "string"
+        },
+        "fee-tier": {
+          "description": "Fee tier in hundredths of a bip.",
+          "maximum": 50000,
+          "minimum": 500,
+          "type": "integer"
+        },
+        "liquidity-usdc": {
+          "description": "Initial liquidity amount in USDC.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "market-type": {
+          "description": "Market type.",
+          "enum": [
+            "amm",
+            "parimutuel"
+          ]
+        },
+        "max-imbalance": {
+          "description": "Maximum AMM price imbalance guard.",
+          "maximum": 16777215,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min-close-lead-seconds": {
+          "description": "Minimum required lead time before close.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "oracle": {
+          "description": "Oracle contract address.",
+          "type": "string"
+        },
+        "question": {
+          "description": "Exact market question.",
+          "type": "string"
+        },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
+        "rules": {
+          "description": "Exact resolution rules.",
+          "type": "string"
+        },
+        "sources": {
+          "description": "Source URL list.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "target-timestamp": {
+          "description": "Resolution timestamp in unix seconds or ISO-8601 datetime.",
+          "examples": [
+            "1777777777",
+            "2026-12-31T00:00:00Z"
+          ],
+          "type": "string",
+          "xPandora": {
+            "acceptsIsoDatetime": true,
+            "acceptsUnixSeconds": true
+          }
+        },
+        "usdc": {
+          "description": "Collateral token address.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question",
+        "rules",
+        "sources",
+        "target-timestamp",
+        "liquidity-usdc"
+      ],
+      "type": "object"
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": false,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "markets:read",
+      "network:rpc",
+      "network:indexer"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "summary": "Normalize a market creation payload for agents and MCP clients. Legacy `launch` remains script-native.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]"
+  },
+  "markets.create.run": {
+    "agentWorkflow": {
+      "executeRequiresValidation": true,
+      "notes": [
+        "Run agent.market.validate on the exact final market payload before execute mode.",
+        "Legacy launch remains script-native; markets.create.run is the canonical agent/MCP market creation surface."
+      ],
+      "recommendedTools": [
+        "agent.market.autocomplete"
+      ],
+      "requiredTools": [
+        "agent.market.validate"
+      ]
+    },
+    "aliasOf": null,
+    "canRunConcurrent": false,
+    "canonicalCommandTokens": [
+      "markets",
+      "create",
+      "run"
+    ],
+    "canonicalTool": "markets.create.run",
+    "canonicalUsage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]",
+    "controlInputNames": [
+      "agentPreflight"
+    ],
+    "dataSchema": "#/definitions/GenericCommandData",
+    "emits": [
+      "markets.create.run",
+      "markets.create.help",
+      "markets.help"
+    ],
+    "executeFlags": [
+      "--execute"
+    ],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": true,
+    "expectedLatencyMs": 60000,
+    "externalDependencies": [
+      "wallet-secrets",
+      "indexer-api",
+      "chain-rpc"
+    ],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "conditional",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "agentPreflight": {
+          "additionalProperties": false,
+          "description": "Agent validation attestation for execute mode.",
+          "properties": {
+            "autocompleteTicket": {
+              "description": "Optional ticket from agent.market.autocomplete when the agent drafted the market.",
+              "type": "string"
+            },
+            "validationDecision": {
+              "description": "Validation verdict from the agent AI run.",
+              "enum": [
+                "PASS",
+                "FAIL"
+              ]
+            },
+            "validationSummary": {
+              "description": "Short summary of the validation result.",
+              "type": "string"
+            },
+            "validationTicket": {
+              "description": "Ticket returned by agent.market.validate for the exact market payload.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "validationTicket",
+            "validationDecision",
+            "validationSummary"
+          ],
+          "type": "object"
+        },
+        "arbiter": {
+          "description": "Arbiter address.",
+          "type": "string"
+        },
+        "category": {
+          "description": "Category id or canonical category name.",
+          "examples": [
+            "Sports",
+            "3"
+          ],
+          "type": "string",
+          "xPandora": {
+            "acceptsIntegerStrings": true,
+            "allowedCategoryNames": [
+              "Politics",
+              "Sports",
+              "Finance",
+              "Crypto",
+              "Culture",
+              "Technology",
+              "Science",
+              "Entertainment",
+              "Health",
+              "Environment",
+              "Other"
+            ],
+            "caseInsensitivePattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$"
+          }
+        },
+        "chain-id": {
+          "description": "Chain id.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "curve-flattener": {
+          "description": "Pari-mutuel curve flattener.",
+          "maximum": 11,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "curve-offset": {
+          "description": "Pari-mutuel curve offset.",
+          "maximum": 16777215,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "distribution-no": {
+          "description": "Initial NO distribution in parts-per-billion.",
+          "maximum": 1000000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "distribution-no-pct": {
+          "description": "Initial NO distribution in percent.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
+        "distribution-yes": {
+          "description": "Initial YES distribution in parts-per-billion.",
+          "maximum": 1000000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "distribution-yes-pct": {
+          "description": "Initial YES distribution in percent.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
+        "dry-run": {
+          "description": "Run dry-run mode.",
+          "type": "boolean"
+        },
+        "execute": {
+          "description": "Execute live creation.",
+          "type": "boolean"
+        },
+        "factory": {
+          "description": "Factory contract address.",
+          "type": "string"
+        },
+        "fee-tier": {
+          "description": "Fee tier in hundredths of a bip.",
+          "maximum": 50000,
+          "minimum": 500,
+          "type": "integer"
+        },
+        "intent": {
+          "additionalProperties": false,
+          "properties": {
+            "execute": {
+              "description": "Set true to permit live/mutating execution when supported by the tool.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "liquidity-usdc": {
+          "description": "Initial liquidity amount in USDC.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "market-type": {
+          "description": "Market type.",
+          "enum": [
+            "amm",
+            "parimutuel"
+          ]
+        },
+        "max-imbalance": {
+          "description": "Maximum AMM price imbalance guard.",
+          "maximum": 16777215,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min-close-lead-seconds": {
+          "description": "Minimum required lead time before close.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "oracle": {
+          "description": "Oracle contract address.",
+          "type": "string"
+        },
+        "private-key": {
+          "description": "Hex private key.",
+          "type": "string"
+        },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
+        "question": {
+          "description": "Exact market question.",
+          "type": "string"
+        },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
+        "rules": {
+          "description": "Exact resolution rules.",
+          "type": "string"
+        },
+        "sources": {
+          "description": "Source URL list.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "target-timestamp": {
+          "description": "Resolution timestamp in unix seconds or ISO-8601 datetime.",
+          "examples": [
+            "1777777777",
+            "2026-12-31T00:00:00Z"
+          ],
+          "type": "string",
+          "xPandora": {
+            "acceptsIsoDatetime": true,
+            "acceptsUnixSeconds": true
+          }
+        },
+        "usdc": {
+          "description": "Collateral token address.",
+          "type": "string"
+        },
+        "validation-ticket": {
+          "description": "Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question",
+        "rules",
+        "sources",
+        "target-timestamp",
+        "liquidity-usdc"
+      ],
+      "type": "object",
+      "xPandora": {
+        "exclusiveOneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "execute"
+                  ]
+                },
+                {
+                  "required": [
+                    "execute"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "dry-run"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "dry-run"
+                  ]
+                },
+                {
+                  "required": [
+                    "dry-run"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "execute"
+            ]
+          }
+        ]
+      }
+    },
+    "jobCapable": true,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": true,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "markets:run",
+      "secrets:use",
+      "network:rpc",
+      "network:indexer",
+      "jobs:run"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": "agent.market.validate",
+    "remoteEligible": true,
+    "requiresSecrets": true,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "high",
+    "safeEquivalent": null,
+    "safeFlags": [
+      "--dry-run"
+    ],
+    "summary": "Dry-run or execute a canonical JSON-safe market creation payload. Legacy `launch` remains script-native.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]"
   },
   "markets.get": {
     "agentWorkflow": null,
@@ -21166,7 +21792,7 @@
       "--dry-run",
       "--paper"
     ],
-    "summary": "Execute or dry-run sports market creation.",
+    "summary": "Execute or dry-run sports market creation; pari-mutuel execute remains unsupported.",
     "supportsRemote": true,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] sports create run --event-id <id> [--market-type amm|parimutuel] [--category <id|name>] [--dry-run|--execute] [--liquidity-usdc <n>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]"

@@ -10,6 +10,11 @@ These commands are legacy script wrappers. They remain supported, but they are n
 - That offset flag is a script-layer legacy behavior and does **not** define mirror timing.
 - For mirror deployment, use `mirror plan|deploy|go` and follow [`mirror-operations.md`](./mirror-operations.md).
 
+## Current launcher split
+- `pandora launch` is the generic legacy market creator. It supports both `--market-type amm` and `--market-type parimutuel`.
+- `pandora launch --market-type parimutuel` is the supported way to create a pari-mutuel market today, including `--curve-flattener` and `--curve-offset`.
+- `pandora clone-bet` is pari-mutuel-only. It creates a pari-mutuel market and immediately places an initial `buy` bet. It does not support AMM creation.
+
 ## PollCategory mapping
 | Name | Id |
 | --- | --- |
@@ -29,6 +34,7 @@ These commands are legacy script wrappers. They remain supported, but they are n
 ```bash
 pandora clone-bet \
   --dry-run \
+  --market-type parimutuel \
   --question "Will Arsenal FC win against Chelsea FC on 2026-03-01?" \
   --rules "Resolves YES if Arsenal FC wins in regulation time on March 1, 2026. Resolves NO for draw/Chelsea win. If cancelled, postponed beyond 48h, abandoned, or unresolved by official competition records, resolves NO." \
   --sources "https://www.premierleague.com" "https://www.bbc.com/sport/football" \
@@ -60,9 +66,28 @@ pandora launch \
   --distribution-no 400000000
 ```
 
+## Launch example (sports pari-mutuel)
+```bash
+pandora launch \
+  --dry-run \
+  --market-type parimutuel \
+  --question "Will Arsenal FC win against Chelsea FC on 2026-03-01?" \
+  --rules "Resolves YES if Arsenal FC wins in regulation time on March 1, 2026. Resolves NO for draw/Chelsea win. If cancelled, postponed beyond 48h, abandoned, or unresolved by official competition records, resolves NO." \
+  --sources "https://www.premierleague.com" "https://www.bbc.com/sport/football" \
+  --target-timestamp 1772323200 \
+  --target-timestamp-offset-hours 1 \
+  --category Sports \
+  --liquidity 10 \
+  --distribution-yes 500000000 \
+  --distribution-no 500000000 \
+  --curve-flattener 7 \
+  --curve-offset 30000
+```
+
 ## Notes
 - `--category Sports` maps to `PollCategory.Sports` (`1`).
 - `--category Crypto` maps to `PollCategory.Crypto` (`3`).
+- `clone-bet` accepts `--market-type parimutuel` for explicitness, but rejects `amm`.
 - Use `--allow-duplicate` only when intentionally bypassing duplicate-question checks.
 - If `pandora` is not linked globally, use `node cli/pandora.cjs launch ...` or `node cli/pandora.cjs clone-bet ...`.
 - For script implementation detail, see [`references/creation-script.md`](../../references/creation-script.md).

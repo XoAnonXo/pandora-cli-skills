@@ -8,7 +8,11 @@ const { createCommandRouter } = require('./lib/command_router.cjs');
 const { createCliOutputService } = require('./lib/cli_output_service.cjs');
 const { createErrorRecoveryService } = require('./lib/error_recovery_service.cjs');
 const { createCoreCommandFlagParsers } = require('./lib/parsers/core_command_flags.cjs');
-const { resolveTradeBuyCall, resolveTradeSellCall } = require('./lib/trade_market_type_service.cjs');
+const {
+  resolveTradeBuyCall,
+  resolveTradeSellCall,
+  normalizePandoraMarketType,
+} = require('./lib/trade_market_type_service.cjs');
 const {
   DEFAULT_FLASHBOTS_RELAY_URL,
   DEFAULT_FLASHBOTS_TARGET_BLOCK_OFFSET,
@@ -824,9 +828,23 @@ function buildSportsCreatePlan(...args) {
   return getSportsCreationService().buildSportsCreatePlan(...args);
 }
 
-/** AMM deployment service proxy. */
+/** Deployment argument normalizer proxy. */
+function buildDeploymentArgs(...args) {
+  return getPandoraDeployService().buildDeploymentArgs(...args);
+}
+
+/** Shared Pandora deployment service proxy. */
+function deployPandoraMarket(...args) {
+  const service = getPandoraDeployService();
+  if (typeof service.deployPandoraMarket === 'function') {
+    return service.deployPandoraMarket(...args);
+  }
+  return service.deployPandoraAmmMarket(...args);
+}
+
+/** Backward-compatible AMM deployment service proxy. */
 function deployPandoraAmmMarket(...args) {
-  return getPandoraDeployService().deployPandoraAmmMarket(...args);
+  return deployPandoraMarket(...args);
 }
 
 /** Venue connector factory proxy. */
@@ -1159,6 +1177,7 @@ Usage:
   pandora [--output table|json] markets scan [scan options]
   pandora [--output table|json] markets mine [options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
+  pandora [--output table|json] markets create plan|run [create options]
   pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
   pandora [--output table|json] polls get --id <id>
   pandora [--output table|json] events list [--type all|liquidity|oracle-fee|claim] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-direction asc|desc] [--chain-id <id>] [--wallet <address>] [--market-address <address>] [--poll-address <address>] [--tx-hash <hash>]
@@ -1216,6 +1235,8 @@ Examples:
   pandora --output json doctor --check-usdc-code --check-polymarket
   pandora markets list --active --with-odds --limit 10
   pandora markets get --id market-1 --id market-2
+  pandora --output json markets create plan --market-type parimutuel --question "Will BTC close above $120k by end of 2026?" --rules "YES: ... NO: ... EDGE: ..." --sources https://example.com/a https://example.com/b --target-timestamp 1798675200 --liquidity-usdc 100 --curve-flattener 7 --curve-offset 30000
+  pandora --output json markets create run --market-type amm --question "Will ETH close above $8k by end of 2026?" --rules "YES: ... NO: ... EDGE: ..." --sources https://example.com/a https://example.com/b --target-timestamp 1798675200 --liquidity-usdc 100 --fee-tier 3000 --dry-run
   pandora polls get --id 0xabc...
   pandora events list --type all --limit 25
   pandora positions list --wallet 0x1234...
@@ -1370,6 +1391,7 @@ Usage:
   pandora [--output table|json] markets scan [options]
   pandora [--output table|json] markets mine [options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
+  pandora [--output table|json] markets create plan|run [options]
 `);
 }
 
@@ -1514,6 +1536,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] setup ...',
       'pandora [--output table|json] markets list|get|scan ...',
       'pandora [--output table|json] markets mine ...',
+      'pandora [--output table|json] markets create plan|run ...',
       'pandora [--output table|json] polls list|get ...',
       'pandora [--output table|json] events list|get ...',
       'pandora [--output table|json] positions list ...',
@@ -4017,7 +4040,7 @@ function buildMarketLiquidityMetrics(item) {
   const reservePair = deriveMarketReservePair(item || {});
   const reserveYes = reservePair.reserveYes;
   const reserveNo = reservePair.reserveNo;
-  const marketType = String(item && item.marketType ? item.marketType : '').toLowerCase();
+  const marketType = normalizePandoraMarketType(item && item.marketType ? item.marketType : '');
   const totalPool = Number.isFinite(reserveYes) && Number.isFinite(reserveNo) ? reserveYes + reserveNo : null;
   const yesPrice =
     Number.isFinite(totalPool) && totalPool > 0 && Number.isFinite(reserveNo)
@@ -4037,9 +4060,9 @@ function buildMarketLiquidityMetrics(item) {
     noPrice: Number.isFinite(noPrice) ? round(noPrice, 6) : null,
     kValue: Number.isFinite(kValue) ? round(kValue, 6) : null,
     depth,
-    poolYes: marketType === 'pari' && Number.isFinite(reserveYes) ? round(reserveYes, 6) : null,
-    poolNo: marketType === 'pari' && Number.isFinite(reserveNo) ? round(reserveNo, 6) : null,
-    totalPool: marketType === 'pari' && Number.isFinite(totalPool) ? round(totalPool, 6) : null,
+    poolYes: marketType === 'parimutuel' && Number.isFinite(reserveYes) ? round(reserveYes, 6) : null,
+    poolNo: marketType === 'parimutuel' && Number.isFinite(reserveNo) ? round(reserveNo, 6) : null,
+    totalPool: marketType === 'parimutuel' && Number.isFinite(totalPool) ? round(totalPool, 6) : null,
     deadPool: Number.isFinite(reserveYes) && Number.isFinite(reserveNo) ? reserveYes <= 1 || reserveNo <= 1 : null,
     estimated: reservePair.estimated,
     reserveSource: reservePair.source,
@@ -4628,7 +4651,7 @@ function buildQuoteEstimate(odds, side, inputAmount, slippageBps, marketContext 
   if (normalizedMode === 'sell') {
     let sellEstimate = explicitEstimate;
     if (!sellEstimate) {
-      const marketType = String(marketContext && marketContext.marketType ? marketContext.marketType : '').toLowerCase();
+      const marketType = normalizePandoraMarketType(marketContext && marketContext.marketType ? marketContext.marketType : '');
       if (marketType === 'amm') {
         sellEstimate = buildAmmSellEstimateFromReserves(marketContext && marketContext.liquidity, side, inputAmount);
       }
@@ -4663,7 +4686,7 @@ function buildQuoteEstimate(odds, side, inputAmount, slippageBps, marketContext 
   let estimatedShares = amountUsdc / pricePerShare;
   let slippagePct = 0;
 
-  const marketType = String(marketContext && marketContext.marketType ? marketContext.marketType : '').toLowerCase();
+  const marketType = normalizePandoraMarketType(marketContext && marketContext.marketType ? marketContext.marketType : '');
   if (marketType === 'amm') {
     const ammEstimate = computeAmmBuySharesFromReserves(marketContext && marketContext.liquidity, side, amountUsdc);
     if (ammEstimate) {
@@ -4894,7 +4917,7 @@ async function maybeReadAmmSellEstimateFromContract(options) {
 async function buildQuotePayload(indexerUrl, options, timeoutMs) {
   const market = await fetchMarketSnapshot(indexerUrl, options.marketAddress, timeoutMs);
   const liquidity = buildMarketLiquidityMetrics(market || {});
-  const marketType = String(market && market.marketType ? market.marketType : '').toLowerCase();
+  const marketType = normalizePandoraMarketType(market && market.marketType ? market.marketType : '');
   const marketContext = { marketType, liquidity };
   const quoteMode = String(options && options.mode ? options.mode : 'buy').toLowerCase();
   let odds;
@@ -4919,6 +4942,13 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
   let resolvedAmountsUsdc =
     Array.isArray(options.amountsUsdc) && options.amountsUsdc.length ? options.amountsUsdc : [options.amountUsdc];
   if (quoteMode !== 'sell' && options.targetPct !== null && options.targetPct !== undefined) {
+    if (marketType !== 'amm') {
+      throw new CliError(
+        'INVALID_FLAG_COMBINATION',
+        '--target-pct is only supported for AMM quote requests.',
+        { marketType: marketType || null },
+      );
+    }
     const { planAmmTradeToTargetYesPct } = getAmmTargetPctService();
     targeting = planAmmTradeToTargetYesPct({
       targetYesPct: options.targetPct,
@@ -4988,7 +5018,7 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
         explicitSellEstimates,
       )
     : [];
-  const parimutuel = quoteMode !== 'sell' && marketType === 'pari'
+  const parimutuel = quoteMode !== 'sell' && marketType === 'parimutuel'
     ? buildParimutuelEstimate(liquidity, options.side, resolvedAmountUsdc)
     : null;
   const diagnostics = [];
@@ -5840,7 +5870,7 @@ async function runMarketsCommand(args, context) {
 
   if (!action || action === '--help' || action === '-h') {
     if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get|scan|mine ...'));
+      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get|scan|mine|create ...'));
     } else {
       printMarketsHelpTable();
     }
@@ -5891,6 +5921,11 @@ async function runMarketsCommand(args, context) {
 
   if (action === 'scan') {
     await runScanCommand(actionArgs, context);
+    return;
+  }
+
+  if (action === 'create') {
+    await runMarketsCreateCommandFromService(actionArgs, context);
     return;
   }
 
@@ -6009,7 +6044,7 @@ async function runMarketsCommand(args, context) {
     return;
   }
 
-  throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get|scan|mine');
+  throw new CliError('INVALID_ARGS', 'markets requires a subcommand: list|get|scan|mine|create');
 }
 
 const runScanCommand = createLazyFactoryRunner('./lib/scan_command_service.cjs', 'createRunScanCommand', () => ({
@@ -6442,7 +6477,7 @@ function computeParimutuelPositionMarkValue(yesBalance, noBalance, liquidity) {
 }
 
 function computePositionMarkValue(yesBalance, noBalance, odds, options = {}) {
-  if (String(options.marketType || '').trim().toLowerCase() === 'pari') {
+  if (normalizePandoraMarketType(options.marketType) === 'parimutuel') {
     const pariMarkValue = computeParimutuelPositionMarkValue(yesBalance, noBalance, options.liquidity);
     if (Number.isFinite(pariMarkValue)) {
       return pariMarkValue;
@@ -6492,8 +6527,8 @@ function normalizePositionBalanceValue(value, market, liquidity) {
     return normalized;
   }
 
-  const marketType = String(market && market.marketType ? market.marketType : '').trim().toLowerCase();
-  if (marketType !== 'pari') {
+  const marketType = normalizePandoraMarketType(market && market.marketType ? market.marketType : '');
+  if (marketType !== 'parimutuel') {
     return normalized;
   }
 
@@ -7100,6 +7135,13 @@ const parseTradeFlagsFromModule = createLazyFactoryRunner('./lib/parsers/trade_f
   ...sharedParserDeps,
   parseBigIntString,
 }));
+const parseMarketsCreateFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/markets_create_flags.cjs',
+  'createParseMarketsCreateFlags',
+  () => ({
+    ...sharedParserDeps,
+  }),
+);
 const parseMarketsMineFlagsFromModule = createLazyFactoryRunner(
   './lib/parsers/markets_mine_flags.cjs',
   'createParseMarketsMineFlags',
@@ -7558,6 +7600,21 @@ const runSportsCommandFromService = createLazyFactoryRunner('./lib/sports_comman
   deployPandoraAmmMarket,
   assertLiveWriteAllowed,
 }));
+const runMarketsCreateCommandFromService = createLazyFactoryRunner(
+  './lib/markets_create_command_service.cjs',
+  'createRunMarketsCreateCommand',
+  () => ({
+    CliError,
+    includesHelpFlag,
+    emitSuccess,
+    commandHelpPayload,
+    parseMarketsCreateFlags: parseMarketsCreateFlagsFromModule,
+    buildDeploymentArgs,
+    deployPandoraMarket,
+    renderSingleEntityTable,
+    assertLiveWriteAllowed,
+  }),
+);
 const runRiskCommandFromService = createLazyFactoryRunner('./lib/risk_command_service.cjs', 'createRunRiskCommand', () => ({
   CliError,
   includesHelpFlag,

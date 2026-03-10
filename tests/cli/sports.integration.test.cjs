@@ -857,3 +857,201 @@ test('sports create plan accepts --model-file BYOM input and attributes model so
   assert.equal(requestedPaths[0], '/events/evt-1/odds?marketType=soccer_winner');
   assert.equal(requestedPaths[1], '/events/evt-1/status');
 });
+
+test('sports create run dry-run keeps pari-mutuel creation in planning-only mode', async (t) => {
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url.startsWith('/events/evt-pari/odds?')) {
+      return {
+        body: {
+          event: {
+            id: 'evt-pari',
+            competitionId: 'prem',
+            home_team: 'Arsenal',
+            away_team: 'Chelsea',
+            startTime: '2030-01-01T12:00:00Z',
+            status: 'scheduled',
+          },
+          updatedAt: '2030-01-01T10:00:00Z',
+          bookmakers: [
+            {
+              book: 'bet365',
+              outcomes: [
+                { name: 'Arsenal', price: '2.2' },
+                { name: 'Draw', price: '3.3' },
+                { name: 'Chelsea', price: '3.4' },
+              ],
+            },
+            {
+              book: 'williamhill',
+              outcomes: [
+                { name: 'Arsenal', price: '2.25' },
+                { name: 'Draw', price: '3.25' },
+                { name: 'Chelsea', price: '3.35' },
+              ],
+            },
+            {
+              book: 'ladbrokes',
+              outcomes: [
+                { name: 'Arsenal', price: '2.15' },
+                { name: 'Draw', price: '3.4' },
+                { name: 'Chelsea', price: '3.5' },
+              ],
+            },
+          ],
+        },
+      };
+    }
+
+    if (url === '/events/evt-pari/status') {
+      return {
+        body: {
+          event: {
+            id: 'evt-pari',
+            homeTeam: 'Arsenal',
+            awayTeam: 'Chelsea',
+            startTime: '2030-01-01T12:00:00Z',
+            status: 'scheduled',
+            updatedAt: '2030-01-01T10:00:00Z',
+          },
+        },
+      };
+    }
+
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+  });
+
+  const env = {
+    SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+    SPORTSBOOK_PROVIDER_MODE: 'primary',
+  };
+
+  const result = await runCliAsync([
+    '--output',
+    'json',
+    'sports',
+    'create',
+    'run',
+    '--event-id',
+    'evt-pari',
+    '--market-type',
+    'parimutuel',
+    '--dry-run',
+    '--now-ms',
+    String(Date.parse('2030-01-01T10:00:00Z')),
+  ], { env });
+
+  assert.equal(result.status, 0, result.output);
+  const payload = parseJsonEnvelopeStrict(result, 'sports create run --market-type parimutuel --dry-run');
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'sports.create.run');
+  assert.equal(payload.data.marketTemplate.marketType, 'parimutuel');
+  assert.equal(payload.data.mode, 'dry-run');
+  assert.equal(
+    payload.data.diagnostics.includes('Parimutuel execution is currently planning-only in sports v1.'),
+    true,
+  );
+});
+
+test('sports create run execute rejects pari-mutuel markets with an explicit blocker', async (t) => {
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url.startsWith('/events/evt-pari/odds?')) {
+      return {
+        body: {
+          event: {
+            id: 'evt-pari',
+            competitionId: 'prem',
+            home_team: 'Arsenal',
+            away_team: 'Chelsea',
+            startTime: '2030-01-01T12:00:00Z',
+            status: 'scheduled',
+          },
+          updatedAt: '2030-01-01T10:00:00Z',
+          bookmakers: [
+            {
+              book: 'bet365',
+              outcomes: [
+                { name: 'Arsenal', price: '2.2' },
+                { name: 'Draw', price: '3.3' },
+                { name: 'Chelsea', price: '3.4' },
+              ],
+            },
+            {
+              book: 'williamhill',
+              outcomes: [
+                { name: 'Arsenal', price: '2.25' },
+                { name: 'Draw', price: '3.25' },
+                { name: 'Chelsea', price: '3.35' },
+              ],
+            },
+            {
+              book: 'ladbrokes',
+              outcomes: [
+                { name: 'Arsenal', price: '2.15' },
+                { name: 'Draw', price: '3.4' },
+                { name: 'Chelsea', price: '3.5' },
+              ],
+            },
+          ],
+        },
+      };
+    }
+
+    if (url === '/events/evt-pari/status') {
+      return {
+        body: {
+          event: {
+            id: 'evt-pari',
+            homeTeam: 'Arsenal',
+            awayTeam: 'Chelsea',
+            startTime: '2030-01-01T12:00:00Z',
+            status: 'scheduled',
+            updatedAt: '2030-01-01T10:00:00Z',
+          },
+        },
+      };
+    }
+
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+  });
+
+  const env = {
+    SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+    SPORTSBOOK_PROVIDER_MODE: 'primary',
+  };
+
+  const result = await runCliAsync([
+    '--output',
+    'json',
+    'sports',
+    'create',
+    'run',
+    '--event-id',
+    'evt-pari',
+    '--market-type',
+    'parimutuel',
+    '--execute',
+    '--min-total-books',
+    '3',
+    '--min-tier1-books',
+    '3',
+    '--now-ms',
+    String(Date.parse('2030-01-01T10:00:00Z')),
+  ], { env });
+
+  assert.equal(result.status, 1, result.output);
+  const payload = parseJsonEnvelopeLoose(result, 'sports create run --market-type parimutuel --execute');
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'UNSUPPORTED_OPERATION');
+  assert.match(payload.error.message, /supports AMM only/i);
+  assert.equal(Array.isArray(payload.error.details.hints), true);
+  assert.match(payload.error.details.hints[0], /sports create plan/i);
+  assert.match(payload.error.details.hints[0], /launch/i);
+});

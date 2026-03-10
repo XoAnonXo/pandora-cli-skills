@@ -48,6 +48,31 @@ pandora quote --output json \
   --amounts 25,50,75,100
 ```
 
+## Pari-mutuel specifics
+
+Pari-mutuel markets are supported, but they behave differently from AMMs and need to be treated as a separate operator path.
+
+Creation:
+- Use `pandora launch --market-type parimutuel` for the current generic scripted creation path.
+- Use `pandora clone-bet` when you want a pari-mutuel market plus an immediate initial buy.
+- `sports create plan --market-type parimutuel` can build a pari-mutuel template, but `sports create run --execute` is still AMM-only.
+
+Quote interpretation:
+- `pandora quote` on a pari-mutuel market emits pool/share math rather than AMM target-reserve math.
+- Read `poolYes`, `poolNo`, and `totalPool` as the live pool composition.
+- Read `sharePct` as the fraction of the selected winning pool your buy would own after the trade.
+- Read `payoutIfWin` and `profitIfWin` as conditional outcomes if the selected side wins.
+- Read `breakevenProbability` as the implied minimum win probability needed for neutral expected value.
+
+Execution constraints:
+- `trade` supports pari-mutuel buy execution.
+- `sell` is not available for pari-mutuel markets.
+- `quote --target-pct` is AMM-only and will reject pari-mutuel markets explicitly.
+
+Valuation:
+- `portfolio` normalizes pari-mutuel raw balances and micro-unit balances before computing `markValueUsdc`.
+- Pari-mutuel mark value is derived from pool share against `totalPool`, not from AMM probability times token balance.
+
 ## Safe buy-side execution
 
 ### Dry-run first
@@ -96,6 +121,9 @@ Key controls:
 - `--slippage-bps`
 - `--min-amount-out-raw`
 - `--fork`
+
+Pari-mutuel note:
+- `sell` is AMM-only. If the market is pari-mutuel, use `quote` plus `portfolio`/`claim` workflows instead of expecting a live exit trade.
 
 ## Fork mode
 Use `--fork` for previewing chain execution without live settlement:
