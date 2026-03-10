@@ -104,7 +104,7 @@ function writeJsonFile(filePath, payload) {
 }
 
 function buildBulkOddsSnapshotKey(provider, marketType) {
-  return `${normalizeCacheToken(provider, 'auto')}|${normalizeCacheToken(marketType, 'soccer_winner')}`;
+  return `${normalizeCacheToken(provider, 'auto')}|${normalizeCacheToken(marketType, 'auto')}`;
 }
 
 function parseDateMs(value) {
@@ -156,13 +156,13 @@ function deriveBulkOddsTtlPolicy(event, nowMs = Date.now()) {
   };
 }
 
-function resolveBulkOddsCacheFile(options, competition, marketType = 'soccer_winner') {
+function resolveBulkOddsCacheFile(options, competition, marketType = 'auto') {
   if (options.bulkOddsCacheFile || process.env.SPORTS_BULK_ODDS_CACHE_FILE) {
     return options.bulkOddsCacheFile || process.env.SPORTS_BULK_ODDS_CACHE_FILE;
   }
   const baseDir = options.bulkOddsCacheDir || process.env.SPORTS_BULK_ODDS_CACHE_DIR || defaultBulkOddsCacheDir();
   const competitionToken = normalizeCacheToken(competition, 'competition');
-  const marketToken = normalizeCacheToken(marketType, 'soccer_winner');
+  const marketToken = normalizeCacheToken(marketType, 'auto');
   return path.join(baseDir, `${competitionToken}__${marketToken}.json`);
 }
 
@@ -231,14 +231,24 @@ function withOddsSource(payload, sourceMeta) {
 
 function pickCacheSnapshot(cachePayload, providerMode, marketType) {
   const snapshots = cachePayload && cachePayload.snapshots ? cachePayload.snapshots : {};
-  const marketSuffix = `|${normalizeCacheToken(marketType, 'soccer_winner')}`;
   const mode = normalizeCacheToken(providerMode, 'auto');
-  const directKey = `${mode}${marketSuffix}`;
-  if (snapshots[directKey]) {
+  if (marketType) {
+    const marketSuffix = `|${normalizeCacheToken(marketType, 'auto')}`;
+    const directKey = `${mode}${marketSuffix}`;
+    if (snapshots[directKey]) {
+      return { key: directKey, snapshot: snapshots[directKey] };
+    }
+
+    const keys = Object.keys(snapshots).filter((key) => key.endsWith(marketSuffix));
+    if (!keys.length) return null;
+    keys.sort((a, b) => Number(snapshots[b].cachedAtMs || 0) - Number(snapshots[a].cachedAtMs || 0));
+    return { key: keys[0], snapshot: snapshots[keys[0]] };
+  }
+  const directKey = Object.keys(snapshots).find((key) => key.startsWith(`${mode}|`));
+  if (directKey) {
     return { key: directKey, snapshot: snapshots[directKey] };
   }
-
-  const keys = Object.keys(snapshots).filter((key) => key.endsWith(marketSuffix));
+  const keys = Object.keys(snapshots);
   if (!keys.length) return null;
   keys.sort((a, b) => Number(snapshots[b].cachedAtMs || 0) - Number(snapshots[a].cachedAtMs || 0));
   return { key: keys[0], snapshot: snapshots[keys[0]] };
@@ -277,7 +287,7 @@ function writeCompetitionSnapshot(cacheFile, competition, snapshotKey, snapshot)
   writeJsonFile(cacheFile, payload);
 }
 
-function buildBulkCompetitionPayload(snapshot, sourceMeta, competition, marketType = 'soccer_winner') {
+function buildBulkCompetitionPayload(snapshot, sourceMeta, competition, marketType = 'auto') {
   const rows = compactSnapshotRows(snapshot && snapshot.rows, Date.now());
   const ttlValues = rows
     .map((row) => Number(row && row.ttlMs))
@@ -312,7 +322,7 @@ function buildBulkCompetitionPayload(snapshot, sourceMeta, competition, marketTy
   };
 }
 
-async function fetchCompetitionSnapshot(providerRegistry, options, competition, marketType = 'soccer_winner') {
+async function fetchCompetitionSnapshot(providerRegistry, options, competition, marketType = null) {
   const bulkSnapshot = await providerRegistry.listCompetitionOdds({
     providerMode: options.provider,
     competitionId: competition,
@@ -328,13 +338,13 @@ async function fetchCompetitionSnapshot(providerRegistry, options, competition, 
     schemaVersion: bulkSnapshot && bulkSnapshot.schemaVersion ? bulkSnapshot.schemaVersion : BULK_ODDS_CACHE_SCHEMA_VERSION,
     provider: bulkSnapshot && bulkSnapshot.provider ? bulkSnapshot.provider : options.provider || 'auto',
     mode: bulkSnapshot && bulkSnapshot.mode ? bulkSnapshot.mode : options.provider || 'auto',
-    marketType,
+    marketType: bulkSnapshot && bulkSnapshot.marketType ? bulkSnapshot.marketType : (marketType || 'auto'),
     cachedAtMs,
     rows,
   };
 }
 
-async function resolveCompetitionOddsPayload(providerRegistry, options, marketType = 'soccer_winner') {
+async function resolveCompetitionOddsPayload(providerRegistry, options, marketType = null) {
   const competition = String(options.competition || '').trim();
   const cacheFile = resolveBulkOddsCacheFile(options, competition, marketType);
   const cachePayload = normalizeCachePayload(readJsonFile(cacheFile), competition);
@@ -364,7 +374,7 @@ async function resolveCompetitionOddsPayload(providerRegistry, options, marketTy
   );
 }
 
-async function resolveEventOddsPayload(providerRegistry, options, eventId, marketType = 'soccer_winner') {
+async function resolveEventOddsPayload(providerRegistry, options, eventId, marketType = null) {
   const competition = String(options.competition || '').trim();
   if (!competition) {
     const payload = await providerRegistry.getEventOdds(eventId, marketType, {
@@ -500,6 +510,10 @@ function resolveRiskThresholds(riskProfile) {
 
 function toConsensusQuotes(oddsPayload, selection, tier1Books) {
   const books = Array.isArray(oddsPayload && oddsPayload.books) ? oddsPayload.books : [];
+  const marketType = oddsPayload && oddsPayload.marketType ? String(oddsPayload.marketType) : null;
+  if (marketType === 'moneyline' && selection === 'draw') {
+    return [];
+  }
   const key = selection === 'away' ? 'away' : selection === 'draw' ? 'draw' : 'home';
   const tier1Set = new Set((Array.isArray(tier1Books) ? tier1Books : []).map((item) => normalizeBookToken(item)));
 
@@ -886,7 +900,7 @@ function createRunSportsCommand(deps) {
     }
 
     if (parsed.command === 'sports.odds.snapshot') {
-      const payload = await resolveEventOddsPayload(providerRegistry, options, options.eventId, 'soccer_winner');
+      const payload = await resolveEventOddsPayload(providerRegistry, options, options.eventId, null);
       const quotes = toConsensusQuotes(payload, options.selection, options.bookPriority || payload.preferredBooks);
       const consensus = computeSportsConsensus(quotes, {
         trimPercent: options.trimPercent,
@@ -907,7 +921,7 @@ function createRunSportsCommand(deps) {
     }
 
     if (parsed.command === 'sports.odds.bulk') {
-      const payload = await resolveCompetitionOddsPayload(providerRegistry, options, 'soccer_winner');
+      const payload = await resolveCompetitionOddsPayload(providerRegistry, options, null);
       emitSuccess(context.outputMode, parsed.command, payload, renderSportsTable);
       return;
     }
@@ -919,7 +933,13 @@ function createRunSportsCommand(deps) {
       if (Array.isArray(options.checksJson)) {
         quotes = options.checksJson;
       } else {
-        const odds = await resolveEventOddsPayload(providerRegistry, options, options.eventId, 'soccer_winner');
+        const odds = await resolveEventOddsPayload(providerRegistry, options, options.eventId, null);
+        if (odds.marketType === 'moneyline' && options.selection === 'draw') {
+          throw new CliError('INVALID_FLAG_VALUE', 'sports consensus does not support --selection draw for moneyline events.', {
+            eventId: options.eventId,
+            marketType: odds.marketType,
+          });
+        }
         quotes = toConsensusQuotes(odds, options.selection, options.bookPriority || odds.preferredBooks);
         diagnostics = [`quotes:${quotes.length}`];
         source = odds.source && typeof odds.source === 'object' ? odds.source : null;
@@ -947,11 +967,21 @@ function createRunSportsCommand(deps) {
       } catch (err) {
         throw toCliError(err, 'INVALID_FLAG_VALUE', 'Invalid sports model input.');
       }
-      const odds = await resolveEventOddsPayload(providerRegistry, options, options.eventId, 'soccer_winner');
-      const status = await providerRegistry.getEventStatus(options.eventId);
+      const odds = await resolveEventOddsPayload(providerRegistry, options, options.eventId, null);
+      if (odds.marketType === 'moneyline' && options.selection === 'draw') {
+        throw new CliError('INVALID_FLAG_VALUE', 'sports create does not support --selection draw for moneyline events.', {
+          eventId: options.eventId,
+          marketType: odds.marketType,
+        });
+      }
+      const status = await providerRegistry.getEventStatus(options.eventId, {
+        providerMode: options.provider,
+        timeoutMs: options.timeoutMs,
+      });
       const event = {
         ...(odds.event || {}),
         status: status.status || (odds.event && odds.event.status) || 'unknown',
+        marketType: odds.marketType || (odds.event && odds.event.marketType) || null,
       };
       const plan = buildSportsCreatePlan({ event, oddsPayload: odds, options, modelInput });
       const planWithSource = {
@@ -1108,8 +1138,17 @@ function createRunSportsCommand(deps) {
         return;
       }
 
-      const odds = await resolveEventOddsPayload(providerRegistry, options, options.eventId, 'soccer_winner');
-      const status = await providerRegistry.getEventStatus(options.eventId);
+      const odds = await resolveEventOddsPayload(providerRegistry, options, options.eventId, null);
+      if (odds.marketType === 'moneyline' && options.selection === 'draw') {
+        throw new CliError('INVALID_FLAG_VALUE', 'sports sync does not support --selection draw for moneyline events.', {
+          eventId: options.eventId,
+          marketType: odds.marketType,
+        });
+      }
+      const status = await providerRegistry.getEventStatus(options.eventId, {
+        providerMode: options.provider,
+        timeoutMs: options.timeoutMs,
+      });
       const quotes = toConsensusQuotes(odds, options.selection, options.bookPriority || odds.preferredBooks);
       const consensus = computeSportsConsensus(quotes, {
         trimPercent: options.trimPercent,

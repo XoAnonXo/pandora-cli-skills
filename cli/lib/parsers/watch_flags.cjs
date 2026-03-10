@@ -29,6 +29,7 @@ function createParseWatchFlags(deps) {
       marketAddress: null,
       side: 'yes',
       amountUsdc: 1,
+      once: false,
       yesPct: null,
       slippageBps: 100,
       chainId: null,
@@ -133,7 +134,14 @@ function createParseWatchFlags(deps) {
 
       if (token === '--iterations') {
         options.iterations = parsePositiveInteger(requireFlagValue(args, i, '--iterations'), '--iterations');
+        options.once = options.iterations === 1 ? options.once : false;
         i += 1;
+        continue;
+      }
+
+      if (token === '--once') {
+        options.once = true;
+        options.iterations = 1;
         continue;
       }
 

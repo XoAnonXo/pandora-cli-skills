@@ -168,6 +168,12 @@ function formatUnits6(raw) {
   return fractionText ? `${sign}${whole.toString()}.${fractionText}` : `${sign}${whole.toString()}`;
 }
 
+function decimalUsdcToRaw(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return BigInt(Math.round(numeric * 1_000_000));
+}
+
 function buildUsdcBalanceSnapshot(address, readResult) {
   const raw = toBigIntOrNull(readResult && readResult.value);
   return {
@@ -1205,9 +1211,110 @@ function buildPreflightChecks(checkPayload) {
   return checks;
 }
 
+async function resolvePreflightTradeContext(options = {}, checkPayload = {}, deps = {}) {
+  const tradeContextRequested = Boolean(
+    options.tradeContextRequested
+    || options.tokenId
+    || options.token
+    || options.conditionId
+    || options.slug
+    || Number.isFinite(Number(options.amountUsdc)),
+  );
+  if (!tradeContextRequested) return null;
+
+  const resolveMarket = typeof deps.resolvePolymarketMarket === 'function'
+    ? deps.resolvePolymarketMarket
+    : resolvePolymarketMarket;
+  const amountUsdc = Number.isFinite(Number(options.amountUsdc)) ? Number(options.amountUsdc) : null;
+  const amountRaw = amountUsdc === null ? null : decimalUsdcToRaw(amountUsdc);
+  const requestedToken = typeof options.token === 'string' ? String(options.token).trim().toLowerCase() : null;
+  const requestedSide = typeof options.side === 'string' ? String(options.side).trim().toLowerCase() : 'buy';
+  let market = null;
+  let marketError = null;
+  let resolvedTokenId = options.tokenId || null;
+
+  if (!resolvedTokenId && (options.conditionId || options.slug)) {
+    try {
+      market = await resolveMarket({
+        host: options.host || process.env.POLYMARKET_HOST || null,
+        timeoutMs: options.timeoutMs,
+        marketId: options.conditionId,
+        slug: options.slug,
+      });
+    } catch (error) {
+      marketError = coerceErrorMessage(error);
+    }
+  }
+
+  if (!resolvedTokenId && market && requestedToken) {
+    resolvedTokenId = requestedToken === 'yes' ? market.yesTokenId || null : market.noTokenId || null;
+  }
+
+  const ownerUsdcRaw = toBigIntOrNull(checkPayload && checkPayload.balances && checkPayload.balances.usdc && checkPayload.balances.usdc.raw);
+  return {
+    requested: {
+      conditionId: options.conditionId || null,
+      slug: options.slug || null,
+      token: requestedToken,
+      tokenId: options.tokenId || null,
+      side: requestedSide,
+      amountUsdc,
+      amountRaw: amountRaw === null ? null : amountRaw.toString(),
+      host: options.host || null,
+      timeoutMs: Number.isFinite(Number(options.timeoutMs)) ? Number(options.timeoutMs) : null,
+    },
+    resolved: {
+      tokenId: resolvedTokenId,
+      marketId: market && market.marketId ? market.marketId : options.conditionId || null,
+      slug: market && market.slug ? market.slug : options.slug || null,
+      question: market && market.question ? market.question : null,
+      yesTokenId: market && market.yesTokenId ? market.yesTokenId : null,
+      noTokenId: market && market.noTokenId ? market.noTokenId : null,
+      ownerUsdcRaw: ownerUsdcRaw === null ? null : ownerUsdcRaw.toString(),
+      ownerUsdc: formatUnits6(ownerUsdcRaw),
+    },
+    diagnostics: marketError ? [`Market resolution failed: ${marketError}`] : [],
+    checks: [
+      {
+        code: 'TRADE_MARKET_RESOLVED',
+        ok: Boolean(options.tokenId || market),
+        message: 'Trade target market must resolve when token-id is not provided.',
+        details: {
+          conditionId: options.conditionId || null,
+          slug: options.slug || null,
+          host: options.host || null,
+          error: marketError,
+        },
+      },
+      {
+        code: 'TRADE_TOKEN_RESOLVED',
+        ok: Boolean(resolvedTokenId),
+        message: 'Trade token id must be derivable from token selection or provided directly.',
+        details: {
+          requestedToken,
+          requestedTokenId: options.tokenId || null,
+          resolvedTokenId,
+        },
+      },
+      {
+        code: 'TRADE_NOTIONAL_COVERED',
+        ok: amountRaw !== null && ownerUsdcRaw !== null ? ownerUsdcRaw >= amountRaw : false,
+        message: 'Owner wallet must hold enough Polygon USDC.e for the requested trade amount.',
+        details: {
+          requestedAmountUsdc: amountUsdc,
+          requestedAmountRaw: amountRaw === null ? null : amountRaw.toString(),
+          ownerUsdcRaw: ownerUsdcRaw === null ? null : ownerUsdcRaw.toString(),
+          ownerUsdc: formatUnits6(ownerUsdcRaw),
+        },
+      },
+    ],
+  };
+}
+
 async function runPolymarketPreflight(options = {}, deps = {}) {
   const checkPayload = await runPolymarketCheck(options, deps);
-  const checks = buildPreflightChecks(checkPayload);
+  const trade = await resolvePreflightTradeContext(options, checkPayload, deps);
+  const checks = buildPreflightChecks(checkPayload).concat(trade && Array.isArray(trade.checks) ? trade.checks : []);
   const failedChecks = checks.filter((item) => !item.ok).map((item) => item.code);
   const payload = {
     schemaVersion: POLYMARKET_OPS_SCHEMA_VERSION,
@@ -1216,6 +1323,7 @@ async function runPolymarketPreflight(options = {}, deps = {}) {
     failedChecks,
     checks,
     check: checkPayload,
+    trade,
   };
 
   if (!payload.ok) {

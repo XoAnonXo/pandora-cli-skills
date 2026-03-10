@@ -1,5 +1,10 @@
-const NORMALIZER_SCHEMA_VERSION = '1.0.0';
+const NORMALIZER_SCHEMA_VERSION = '1.1.0';
 const SOCCER_WINNER_MARKET_TYPE = 'soccer_winner';
+const MONEYLINE_MARKET_TYPE = 'moneyline';
+const SUPPORTED_MARKET_TYPES = Object.freeze([
+  SOCCER_WINNER_MARKET_TYPE,
+  MONEYLINE_MARKET_TYPE,
+]);
 
 /**
  * UK tier-1 sportsbook keys used as default preference/filter set.
@@ -85,6 +90,53 @@ function normalizeStatus(value) {
   return 'unknown';
 }
 
+function normalizeMarketType(value) {
+  const token = normalizeToken(value);
+  if (!token) return null;
+  if (['soccerwinner', 'soccer_winner', '1x2', 'threeway', '3way'].includes(token)) {
+    return SOCCER_WINNER_MARKET_TYPE;
+  }
+  if (['moneyline', 'h2h', 'winner', 'matchwinner', 'twoway', '2way'].includes(token)) {
+    return MONEYLINE_MARKET_TYPE;
+  }
+  return null;
+}
+
+function inferSportToken(value) {
+  const token = normalizeToken(value);
+  if (!token) return null;
+  if (token.includes('soccer') || token.includes('football') || token.includes('premierleague') || token.includes('uefa')) {
+    return 'soccer';
+  }
+  if (token.includes('nba') || token.includes('wnba') || token.includes('ncaab') || token.includes('ncaaw')) {
+    return 'basketball';
+  }
+  if (token.includes('nfl') || token.includes('ncaafootball') || token.includes('cfb')) {
+    return 'football';
+  }
+  if (token.includes('nhl') || token.includes('hockey')) {
+    return 'hockey';
+  }
+  if (token.includes('mlb') || token.includes('baseball')) {
+    return 'baseball';
+  }
+  return null;
+}
+
+function inferCompetitionSport(row) {
+  return (
+    inferSportToken(row && row.sport)
+    || inferSportToken(row && row.sportKey)
+    || inferSportToken(row && row.sport_key)
+    || inferSportToken(row && row.competition)
+    || inferSportToken(row && row.competitionName)
+    || inferSportToken(row && row.league)
+    || inferSportToken(row && row.leagueName)
+    || inferSportToken(row && row.title)
+    || null
+  );
+}
+
 function fallbackId(parts, fallback) {
   const normalized = parts.map((part) => normalizeToken(part)).filter(Boolean).join('-');
   return normalized || fallback;
@@ -121,7 +173,7 @@ function normalizeCompetition(row, context = {}) {
     id: (id || '').toLowerCase(),
     name: name || id,
     country: toStringOrNull(row.country) || toStringOrNull(row.region) || toStringOrNull(row.area) || null,
-    sport: 'soccer',
+    sport: inferCompetitionSport(row) || 'soccer',
     provider: toStringOrNull(context.provider) || null,
   };
 }
@@ -238,6 +290,44 @@ function normalizeBookOdds(bookRow, homeTeam, awayTeam) {
   return normalized;
 }
 
+function normalizeBookMoneylineOdds(bookRow, homeTeam, awayTeam) {
+  const outcomes = extractOutcomesFromBook(bookRow);
+  const normalized = { home: null, away: null };
+
+  for (const outcome of outcomes) {
+    const key = outcomeNameKey(
+      outcome && (outcome.name || outcome.label || outcome.outcome),
+      homeTeam,
+      awayTeam,
+    );
+    if (key !== 'home' && key !== 'away') continue;
+    const price = decimalOdds(
+      outcome
+      && (
+        outcome.price
+        || outcome.odds
+        || outcome.decimal
+        || outcome.value
+        || outcome.point
+      ),
+    );
+    if (price === null) continue;
+    normalized[key] = price;
+  }
+
+  if (normalized.home === null) {
+    normalized.home = decimalOdds(bookRow && (bookRow.home || bookRow.homeOdds || bookRow.priceHome));
+  }
+  if (normalized.away === null) {
+    normalized.away = decimalOdds(bookRow && (bookRow.away || bookRow.awayOdds || bookRow.priceAway));
+  }
+
+  if (normalized.home === null && normalized.away === null) {
+    return null;
+  }
+  return normalized;
+}
+
 /**
  * Normalize a soccer event row into deterministic winner-event shape.
  * @param {object} row
@@ -295,6 +385,89 @@ function normalizeSoccerWinnerEvent(row, context = {}) {
     competitionId: competitionId ? competitionId.toLowerCase() : null,
     sport: 'soccer',
     marketType: SOCCER_WINNER_MARKET_TYPE,
+    homeTeam,
+    awayTeam,
+    startTime,
+    status: normalizeStatus(row.status || row.state || row.matchStatus || row.match_status),
+    provider: toStringOrNull(context.provider) || null,
+  };
+}
+
+function inferEventSport(row, context = {}) {
+  return (
+    inferSportToken(context.sport)
+    || inferSportToken(row && row.sport)
+    || inferSportToken(row && row.sportKey)
+    || inferSportToken(row && row.sport_key)
+    || inferSportToken(row && row.competitionId)
+    || inferSportToken(row && row.competition_id)
+    || inferSportToken(row && row.league)
+    || inferSportToken(row && row.leagueId)
+    || inferSportToken(row && row.league_id)
+    || null
+  );
+}
+
+function inferEventMarketType(row, context = {}) {
+  const explicit = normalizeMarketType(context.marketType);
+  if (explicit) return explicit;
+  const sport = inferEventSport(row, context);
+  if (sport === 'soccer') return SOCCER_WINNER_MARKET_TYPE;
+  if (sport) return MONEYLINE_MARKET_TYPE;
+  return SOCCER_WINNER_MARKET_TYPE;
+}
+
+function normalizeMoneylineEvent(row, context = {}) {
+  if (!row || typeof row !== 'object') return null;
+
+  const homeTeam =
+    toStringOrNull(row.homeTeam)
+    || toStringOrNull(row.home_team)
+    || toStringOrNull(row.home_name)
+    || toStringOrNull(row.home)
+    || toStringOrNull(row.team1)
+    || (Array.isArray(row.teams) && row.teams.length > 0 ? toStringOrNull(row.teams[0]) : null);
+  const awayTeam =
+    toStringOrNull(row.awayTeam)
+    || toStringOrNull(row.away_team)
+    || toStringOrNull(row.away_name)
+    || toStringOrNull(row.away)
+    || toStringOrNull(row.team2)
+    || (Array.isArray(row.teams) && row.teams.length > 1 ? toStringOrNull(row.teams[1]) : null);
+
+  const startTime =
+    toIsoTimestamp(row.startTime)
+    || toIsoTimestamp(row.startsAt)
+    || toIsoTimestamp(row.commenceTime)
+    || toIsoTimestamp(row.commence_time)
+    || toIsoTimestamp(row.kickoff)
+    || null;
+
+  const competitionId =
+    toStringOrNull(row.competitionId)
+    || toStringOrNull(row.competition_id)
+    || toStringOrNull(row.sportKey)
+    || toStringOrNull(row.sport_key)
+    || toStringOrNull(row.sport)
+    || toStringOrNull(row.leagueId)
+    || toStringOrNull(row.league_id)
+    || toStringOrNull(row.tournamentId)
+    || null;
+
+  const id =
+    toStringOrNull(row.id)
+    || toStringOrNull(row.eventId)
+    || toStringOrNull(row.event_id)
+    || toStringOrNull(row.fixtureId)
+    || fallbackId([competitionId, homeTeam, awayTeam, startTime], null);
+
+  if (!id || !homeTeam || !awayTeam) return null;
+
+  return {
+    id: id.toLowerCase(),
+    competitionId: competitionId ? competitionId.toLowerCase() : null,
+    sport: inferEventSport(row, context) || 'sport',
+    marketType: MONEYLINE_MARKET_TYPE,
     homeTeam,
     awayTeam,
     startTime,
@@ -379,6 +552,92 @@ function normalizeSoccerWinnerOdds(payload, context = {}) {
   };
 }
 
+function inferOddsMarketType(payload, context = {}) {
+  const explicit = normalizeMarketType(context.marketType);
+  if (explicit) return explicit;
+
+  const eventRow = payload && (payload.event || payload.fixture || payload.match || payload);
+  if ((inferEventSport(eventRow, context) || null) === 'soccer') {
+    return SOCCER_WINNER_MARKET_TYPE;
+  }
+
+  const bookRows = extractBookRows(payload);
+  for (const bookRow of bookRows) {
+    const outcomes = extractOutcomesFromBook(bookRow);
+    if (outcomes.some((outcome) => outcomeNameKey(outcome && (outcome.name || outcome.label || outcome.outcome)) === 'draw')) {
+      return SOCCER_WINNER_MARKET_TYPE;
+    }
+  }
+
+  return MONEYLINE_MARKET_TYPE;
+}
+
+function normalizeMoneylineOdds(payload, context = {}) {
+  const eventRow = payload && (payload.event || payload.fixture || payload.match || payload);
+  const event = normalizeMoneylineEvent(eventRow || {}, context) || {
+    id: toStringOrNull(context.eventId) || null,
+    competitionId: null,
+    sport: inferEventSport(eventRow || {}, context) || 'sport',
+    marketType: MONEYLINE_MARKET_TYPE,
+    homeTeam: toStringOrNull(payload && (payload.homeTeam || payload.home_team || payload.home_name || payload.home)) || null,
+    awayTeam: toStringOrNull(payload && (payload.awayTeam || payload.away_team || payload.away_name || payload.away)) || null,
+    startTime: null,
+    status: 'unknown',
+    provider: toStringOrNull(context.provider) || null,
+  };
+
+  const preferredBooks = Array.isArray(context.preferredBooks) && context.preferredBooks.length
+    ? context.preferredBooks.map((item) => normalizeToken(item)).filter(Boolean)
+    : UK_TIER1_DEFAULT_BOOKS;
+  const preferredBookSet = new Set(preferredBooks);
+
+  const books = [];
+  for (const bookRow of extractBookRows(payload)) {
+    const book = normalizeBookKey(bookRow);
+    if (!book) continue;
+    const outcomes = normalizeBookMoneylineOdds(bookRow, event.homeTeam, event.awayTeam);
+    if (!outcomes) continue;
+    books.push({
+      book,
+      bookName:
+        toStringOrNull(bookRow.name)
+        || toStringOrNull(bookRow.title)
+        || toStringOrNull(bookRow.book)
+        || book,
+      outcomes,
+    });
+  }
+
+  const preferredOnly = books.filter((bookRow) => preferredBookSet.has(bookRow.book));
+  const selectedBooks = (preferredOnly.length ? preferredOnly : books)
+    .sort((a, b) => a.book.localeCompare(b.book));
+
+  const bestOdds = {
+    home: null,
+    away: null,
+  };
+  for (const bookRow of selectedBooks) {
+    if (bookRow.outcomes.home !== null && (bestOdds.home === null || bookRow.outcomes.home > bestOdds.home)) {
+      bestOdds.home = bookRow.outcomes.home;
+    }
+    if (bookRow.outcomes.away !== null && (bestOdds.away === null || bookRow.outcomes.away > bestOdds.away)) {
+      bestOdds.away = bookRow.outcomes.away;
+    }
+  }
+
+  return {
+    schemaVersion: NORMALIZER_SCHEMA_VERSION,
+    provider: toStringOrNull(context.provider) || null,
+    marketType: MONEYLINE_MARKET_TYPE,
+    event,
+    updatedAt: toIsoTimestamp(payload && (payload.updatedAt || payload.lastUpdated || payload.timestamp)) || new Date().toISOString(),
+    preferredBooks,
+    bookCount: selectedBooks.length,
+    books: selectedBooks,
+    bestOdds,
+  };
+}
+
 /**
  * Normalize an event-status payload into deterministic shape.
  * @param {object} payload
@@ -387,7 +646,10 @@ function normalizeSoccerWinnerOdds(payload, context = {}) {
  */
 function normalizeEventStatus(payload, context = {}) {
   const row = payload && (payload.event || payload.fixture || payload.match || payload);
-  const event = normalizeSoccerWinnerEvent(row || {}, context);
+  const marketType = inferEventMarketType(row || {}, context);
+  const event = marketType === SOCCER_WINNER_MARKET_TYPE
+    ? normalizeSoccerWinnerEvent(row || {}, context)
+    : normalizeMoneylineEvent(row || {}, context);
   const homeScore = extractScoreValue(row, 'home');
   const awayScore = extractScoreValue(row, 'away');
   const score =
@@ -453,14 +715,49 @@ function normalizeSoccerWinnerEvents(rows, context = {}) {
   return normalized;
 }
 
+function normalizeEvents(rows, context = {}) {
+  const normalized = (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const marketType = inferEventMarketType(row, context);
+      if (marketType === SOCCER_WINNER_MARKET_TYPE) {
+        return normalizeSoccerWinnerEvent(row, context);
+      }
+      return normalizeMoneylineEvent(row, context);
+    })
+    .filter(Boolean);
+  normalized.sort((a, b) => {
+    const timeA = a.startTime || '';
+    const timeB = b.startTime || '';
+    const timeCmp = timeA.localeCompare(timeB);
+    if (timeCmp !== 0) return timeCmp;
+    return a.id.localeCompare(b.id);
+  });
+  return normalized;
+}
+
+function normalizeOdds(payload, context = {}) {
+  const marketType = inferOddsMarketType(payload, context);
+  if (marketType === SOCCER_WINNER_MARKET_TYPE) {
+    return normalizeSoccerWinnerOdds(payload, { ...context, marketType });
+  }
+  return normalizeMoneylineOdds(payload, { ...context, marketType });
+}
+
 module.exports = {
   NORMALIZER_SCHEMA_VERSION,
   SOCCER_WINNER_MARKET_TYPE,
+  MONEYLINE_MARKET_TYPE,
+  SUPPORTED_MARKET_TYPES,
   UK_TIER1_DEFAULT_BOOKS,
+  normalizeMarketType,
   normalizeCompetition,
   normalizeCompetitions,
   normalizeSoccerWinnerEvent,
   normalizeSoccerWinnerEvents,
   normalizeSoccerWinnerOdds,
+  normalizeMoneylineEvent,
+  normalizeMoneylineOdds,
+  normalizeEvents,
+  normalizeOdds,
   normalizeEventStatus,
 };

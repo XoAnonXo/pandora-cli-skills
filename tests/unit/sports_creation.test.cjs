@@ -100,3 +100,40 @@ test('sports create plan rejects BYOM probability outside [0.01, 0.99]', () => {
     (err) => err && err.code === 'INVALID_FLAG_VALUE',
   );
 });
+
+test('sports create plan uses moneyline rules for non-soccer events', () => {
+  const input = buildInput('home');
+  input.event.competitionId = 'nba';
+  input.event.marketType = 'moneyline';
+  input.oddsPayload.marketType = 'moneyline';
+  input.oddsPayload.event.competitionId = 'nba';
+  input.oddsPayload.event.marketType = 'moneyline';
+  input.oddsPayload.books = [
+    { book: 'Bet365', outcomes: { home: 1.9, away: 2.1 } },
+    { book: 'William Hill', outcomes: { home: 1.95, away: 2.05 } },
+  ];
+
+  const plan = buildSportsCreatePlan(input);
+  assert.equal(plan.event.marketType, 'moneyline');
+  assert.equal(plan.marketTemplate.oddsMarketType, 'moneyline');
+  assert.equal(plan.marketTemplate.question, 'Will Arsenal beat Chelsea?');
+  assert.equal(plan.marketTemplate.rules.includes('match ends draw'), false);
+  assert.equal(plan.marketTemplate.rules.includes('Resolves NO if Chelsea wins.'), true);
+});
+
+test('sports create plan rejects draw selection for moneyline events', () => {
+  const input = buildInput('draw');
+  input.event.competitionId = 'nba';
+  input.event.marketType = 'moneyline';
+  input.oddsPayload.marketType = 'moneyline';
+  input.oddsPayload.event.competitionId = 'nba';
+  input.oddsPayload.event.marketType = 'moneyline';
+  input.oddsPayload.books = [
+    { book: 'Bet365', outcomes: { home: 1.9, away: 2.1 } },
+  ];
+
+  assert.throws(
+    () => buildSportsCreatePlan(input),
+    (err) => err && err.code === 'INVALID_FLAG_VALUE',
+  );
+});

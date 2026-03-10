@@ -89,7 +89,7 @@ pandora [--output table|json] events list [--type all|liquidity|oracle-fee|claim
 pandora [--output table|json] events get --id <id> [--type all|liquidity|oracle-fee|claim]
 pandora [--output table|json] positions list [--wallet <address>] [--market-address <address>] [--chain-id <id>] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--where-json <json>]
 pandora [--output table|json] portfolio --wallet <address> [--chain-id <id>|--all-chains] [--limit <n>] [--include-events|--no-events] [--with-lp] [--rpc-url <url>]
-pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
+pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--once|--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]
 pandora [--output table|json] scan [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
 pandora [--output table|json] markets scan [scan flags]  # backward-compatible alias of scan; legacy/debug only
 pandora [--output table|json] quote [--indexer-url <url>] [--timeout-ms <ms>] --market-address <address> --side yes|no [--mode buy|sell] --amount-usdc <amount>|--shares <amount>|--amounts <csv>|--target-pct <0-100> [--yes-pct <0-100>] [--slippage-bps <0-10000>]  # --target-pct is buy-only, AMM-only, and mutually exclusive with explicit buy amounts
@@ -278,7 +278,7 @@ Mirror runtime notes:
 ```text
 check [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
 approve --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
-preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
+preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
 balance [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
 positions [--wallet <address>|--funder <address>] [--condition-id <id>|--market-id <id>|--slug <slug>|--token-id <id>] [--source auto|api|on-chain] [--rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>]
 deposit --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]
@@ -349,15 +349,19 @@ pandora [--output table|json] sports resolve plan ...
 | Command | Purpose | Primary flags |
 | --- | --- | --- |
 | `sports books list` | Show sportsbook provider health and active book preference list. | `--provider`, `--book-priority`, `--timeout-ms` |
-| `sports schedule` | List normalized soccer fixtures in kickoff order for operator readouts. | `--competition`, `--date`, `--kickoff-after`, `--kickoff-before`, `--limit` |
+| `sports schedule` | List normalized sports fixtures in kickoff order for operator readouts. Soccer remains `soccer_winner`; supported US-sports feeds now normalize to `moneyline`. | `--competition`, `--date`, `--kickoff-after`, `--kickoff-before`, `--limit` |
 | `sports scores` | Return current live score and status rows for one event or the active slate. | `--event-id` or `--game`, `--competition`, `--date`, `--kickoff-after`, `--kickoff-before`, `--limit`, `--timeout-ms` |
-| `sports events list` | List normalized soccer events. | `--competition`, `--kickoff-after`, `--kickoff-before`, `--limit` |
+| `sports events list` | List normalized sports events. | `--competition`, `--kickoff-after`, `--kickoff-before`, `--limit` |
 | `sports events live` | List only live/in-play events. | `--competition`, `--limit`, `--provider` |
 | `sports odds snapshot` | Fetch event odds snapshot plus consensus context. | `--event-id`, `--trim-percent`, `--min-tier1-books`, `--min-total-books` |
 | `sports odds bulk` | Fetch all odds for a competition and refresh local cache. | `--competition`, `--provider`, `--timeout-ms`, `--limit` |
 | `sports consensus` | Compute trimmed-median consensus from live or offline checks. | `--event-id` or `--checks-json`, `--trim-percent`, `--book-priority` |
 | `sports create plan` | Build conservative creation plan and safety gates. | `--event-id`, `--selection`, `--market-type`, `--category`, `--creation-window-open-min`, `--creation-window-close-min`, `--book-priority`, `--model-file/--model-stdin` |
 | `sports create run` | Dry-run or execute creation path. Pari-mutuel stays planning-only; live execute currently supports AMM only. | `--event-id`, `--dry-run/--execute`, `--market-type`, `--liquidity-usdc`, `--chain-id`, `--rpc-url`, `--category`, `agentPreflight` (MCP execute). For exact fields, inspect `schema` or the specific command descriptor. |
+
+- Sports provider auth:
+  - `SPORTSBOOK_PRIMARY_API_KEY_MODE` / `SPORTSBOOK_BACKUP_API_KEY_MODE` support `header` (default) or `query`.
+  - Query mode injects the key into `apiKey` by default; override the parameter name with `SPORTSBOOK_PRIMARY_API_KEY_QUERY_PARAM` / `SPORTSBOOK_BACKUP_API_KEY_QUERY_PARAM`.
 
 ## Pari-mutuel operator notes
 

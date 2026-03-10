@@ -239,6 +239,7 @@ function createRunWatchCommand(deps) {
       indexerUrl,
       iterationsRequested: options.iterations,
       intervalMs: options.intervalMs,
+      once: Boolean(options.once),
       count: snapshots.length,
       alertCount: alerts.length,
       parameters: {
@@ -246,6 +247,7 @@ function createRunWatchCommand(deps) {
         marketAddress: options.marketAddress,
         side: options.side,
         amountUsdc: options.amountUsdc,
+        once: Boolean(options.once),
         chainId: options.chainId,
         includeEvents: options.includeEvents,
         yesPct: options.yesPct,

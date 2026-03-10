@@ -1922,6 +1922,53 @@ test('runPolymarketPreflight fails with structured payload when funder is missin
   );
 });
 
+test('runPolymarketPreflight includes trade-context checks and resolved token ids', async () => {
+  await assert.rejects(
+    () =>
+      runPolymarketPreflight(
+        {
+          privateKey: TEST_PRIVATE_KEY,
+          funder: TEST_WALLET,
+          conditionId: 'cond-1',
+          token: 'yes',
+          side: 'buy',
+          amountUsdc: 5,
+          timeoutMs: 2_000,
+          tradeContextRequested: true,
+          env: { POLYMARKET_SKIP_API_KEY_SANITY: '1' },
+        },
+        {
+          viemRuntime: buildPolymarketOpsTestViemRuntime({
+            signerAddress: TEST_WALLET,
+            funderAddress: TEST_WALLET,
+            usdcBalanceRaw: 10_000_000n,
+          }),
+          resolvePolymarketMarket: async () => ({
+            marketId: 'cond-1',
+            slug: 'market-1',
+            question: 'Will test market resolve YES?',
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+          }),
+        },
+      ),
+    (error) => {
+      assert.equal(error && error.code, 'POLYMARKET_PREFLIGHT_FAILED');
+      assert.equal(error.details.trade.requested.conditionId, 'cond-1');
+      assert.equal(error.details.trade.resolved.tokenId, 'yes-token');
+      assert.equal(
+        error.details.trade.checks.some((item) => item.code === 'TRADE_MARKET_RESOLVED' && item.ok === true),
+        true,
+      );
+      assert.equal(
+        error.details.trade.checks.some((item) => item.code === 'TRADE_TOKEN_RESOLVED' && item.ok === true),
+        true,
+      );
+      return true;
+    },
+  );
+});
+
 test('runPolymarketCheck returns deterministic payload structure without RPC', async () => {
   const payload = await runPolymarketCheck({
     env: { POLYMARKET_SKIP_API_KEY_SANITY: '1' },
@@ -4255,6 +4302,16 @@ test('createParseWatchFlags supports --amount alias with wallet target', () => {
   assert.equal(options.wallet, TEST_WALLET);
   assert.equal(options.amountUsdc, 2.5);
   assert.equal(options.marketAddress, null);
+});
+
+test('createParseWatchFlags supports --once snapshot alias', () => {
+  const parseWatchFlags = createParseWatchFlags(buildParserDeps());
+
+  const options = parseWatchFlags(['--wallet', TEST_WALLET, '--once']);
+
+  assert.equal(options.wallet, TEST_WALLET);
+  assert.equal(options.once, true);
+  assert.equal(options.iterations, 1);
 });
 
 test('createParseWatchFlags requires --wallet for exposure and hedge-gap thresholds', () => {

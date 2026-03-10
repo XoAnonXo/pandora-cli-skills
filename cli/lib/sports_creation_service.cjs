@@ -2,6 +2,7 @@ const { computeSportsConsensus } = require('./sports_consensus_service.cjs');
 const { getCreationWindowStatus, planResolveWindow } = require('./sports_timing_service.cjs');
 const { createSyncOperationBridge } = require('./shared/operation_bridge.cjs');
 const { DEFAULT_SPORTS_POLL_CATEGORY } = require('./shared/poll_categories.cjs');
+const { MONEYLINE_MARKET_TYPE, SOCCER_WINNER_MARKET_TYPE } = require('./sports_event_normalizer.cjs');
 
 const PPB_TOTAL = 1_000_000_000;
 
@@ -27,7 +28,24 @@ function toPartsPerBillionFromPct(pct) {
   return Math.round((bounded / 100) * PPB_TOTAL);
 }
 
-function buildRules(homeTeam, awayTeam, selection = 'home') {
+function buildRules(homeTeam, awayTeam, selection = 'home', oddsMarketType = SOCCER_WINNER_MARKET_TYPE) {
+  if (oddsMarketType === MONEYLINE_MARKET_TYPE) {
+    if (selection === 'draw') {
+      throw createCreatePlanError('INVALID_FLAG_VALUE', 'Moneyline events do not support draw selection.');
+    }
+    if (selection === 'away') {
+      return [
+        `Resolves YES if ${awayTeam} wins in official final result.`,
+        `Resolves NO if ${homeTeam} wins.`,
+        'Canceled/postponed/abandoned/void/unresolved events resolve NO.',
+      ].join(' ');
+    }
+    return [
+      `Resolves YES if ${homeTeam} wins in official final result.`,
+      `Resolves NO if ${awayTeam} wins.`,
+      'Canceled/postponed/abandoned/void/unresolved events resolve NO.',
+    ].join(' ');
+  }
   if (selection === 'away') {
     return [
       `Resolves YES if ${awayTeam} wins in official full-time result.`,
@@ -49,7 +67,10 @@ function buildRules(homeTeam, awayTeam, selection = 'home') {
   ].join(' ');
 }
 
-function buildQuestion(event, selection) {
+function buildQuestion(event, selection, oddsMarketType = SOCCER_WINNER_MARKET_TYPE) {
+  if (oddsMarketType === MONEYLINE_MARKET_TYPE && selection === 'draw') {
+    throw createCreatePlanError('INVALID_FLAG_VALUE', 'Moneyline events do not support draw selection.');
+  }
   if (selection === 'away') {
     return `Will ${event.awayTeam} beat ${event.homeTeam}?`;
   }
@@ -61,6 +82,10 @@ function buildQuestion(event, selection) {
 
 function buildConsensusQuotes(oddsPayload, selection, priorityBooks) {
   const books = Array.isArray(oddsPayload && oddsPayload.books) ? oddsPayload.books : [];
+  const oddsMarketType = oddsPayload && oddsPayload.marketType ? String(oddsPayload.marketType) : SOCCER_WINNER_MARKET_TYPE;
+  if (oddsMarketType === MONEYLINE_MARKET_TYPE && selection === 'draw') {
+    throw createCreatePlanError('INVALID_FLAG_VALUE', 'Moneyline events do not support draw selection.');
+  }
   const selectionKey = selection === 'away' ? 'away' : selection === 'draw' ? 'draw' : 'home';
   const tier1Set = new Set(
     (Array.isArray(priorityBooks) ? priorityBooks : [])
@@ -146,6 +171,11 @@ function buildSportsCreatePlan(input = {}) {
   const options = input.options || {};
   const modelInput = input.modelInput && typeof input.modelInput === 'object' ? input.modelInput : null;
   const selection = options.selection || 'home';
+  const oddsMarketType = String(
+    (oddsPayload && oddsPayload.marketType)
+    || (event && event.marketType)
+    || SOCCER_WINNER_MARKET_TYPE,
+  );
   const ensuredOperationId = operation.ensure({
     phase: 'sports.create.plan.start',
     eventId: event.id || null,
@@ -208,8 +238,8 @@ function buildSportsCreatePlan(input = {}) {
     blockedReasons.push('Insufficient book coverage for creation policy.');
   }
 
-  const question = buildQuestion(event, selection);
-  const rules = buildRules(event.homeTeam || 'Home Team', event.awayTeam || 'Away Team', selection);
+  const question = buildQuestion(event, selection, oddsMarketType);
+  const rules = buildRules(event.homeTeam || 'Home Team', event.awayTeam || 'Away Team', selection, oddsMarketType);
   const sources = quotes.slice(0, 5).map((item) => `https://odds.example/${encodeURIComponent(item.book)}`);
   const targetTimestamp = toUnixSeconds(kickoff);
 
@@ -229,6 +259,7 @@ function buildSportsCreatePlan(input = {}) {
     event: {
       id: event.id || null,
       competitionId: event.competitionId || null,
+      marketType: oddsMarketType,
       homeTeam: event.homeTeam || null,
       awayTeam: event.awayTeam || null,
       status: event.status || null,
@@ -266,6 +297,7 @@ function buildSportsCreatePlan(input = {}) {
     },
     marketTemplate: {
       marketType: options.marketType || 'amm',
+      oddsMarketType,
       selection,
       question,
       rules,

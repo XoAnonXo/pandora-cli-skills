@@ -137,7 +137,7 @@ test('sports provider registry returns normalized JSON from mocked sportsbook UR
       };
     }
 
-    if (url.startsWith('/events/evt-1/odds?')) {
+    if (url === '/events/evt-1/odds') {
       return {
         body: {
           event: {
@@ -243,9 +243,115 @@ test('sports provider registry returns normalized JSON from mocked sportsbook UR
   assert.ok(requestedPaths[0].startsWith('/events?'));
   assert.ok(requestedPaths[0].includes('competitionId=prem'));
   assert.equal(requestedPaths[0].includes('sport='), false);
-  assert.equal(requestedPaths[1], '/events/evt-1/odds?marketType=soccer_winner');
+  assert.equal(requestedPaths[1], '/events/evt-1/odds');
   assert.equal(requestedPaths[2], '/events/evt-1/status');
   assert.equal(requestedPaths[3], '/health');
+});
+
+test('sports provider registry supports query-param API key auth', async (t) => {
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url.startsWith('/events?')) {
+      return {
+        body: {
+          events: [
+            {
+              id: 'evt-1',
+              competitionId: 'prem',
+              home_team: 'Arsenal',
+              away_team: 'Chelsea',
+              startTime: '2030-01-01T12:00:00Z',
+              status: 'scheduled',
+            },
+          ],
+        },
+      };
+    }
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+  });
+
+  const registry = createSportsProviderRegistry({
+    env: {
+      SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+      SPORTSBOOK_PROVIDER_MODE: 'primary',
+      SPORTSBOOK_PRIMARY_API_KEY: 'test-api-key',
+      SPORTSBOOK_PRIMARY_API_KEY_MODE: 'query',
+    },
+    fetch: globalThis.fetch,
+  });
+
+  const events = await registry.listEvents({ competitionId: 'prem' });
+  assert.equal(events.count, 1);
+  assert.ok(String(mock.requests[0].url).includes('apiKey=test-api-key'));
+  assert.equal(mock.requests[0].headers['x-api-key'], undefined);
+});
+
+test('sports provider registry infers moneyline market type for nba odds payloads', async (t) => {
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url.startsWith('/events?')) {
+      return {
+        body: {
+          events: [
+            {
+              id: 'nba-bos-cle-2030-01-01',
+              competitionId: 'nba',
+              home_team: 'Celtics',
+              away_team: 'Cavaliers',
+              startTime: '2030-01-01T12:00:00Z',
+              status: 'scheduled',
+            },
+          ],
+        },
+      };
+    }
+    if (url === '/events/nba-bos-cle-2030-01-01/odds') {
+      return {
+        body: {
+          event: {
+            id: 'nba-bos-cle-2030-01-01',
+            competitionId: 'nba',
+            home_team: 'Celtics',
+            away_team: 'Cavaliers',
+            startTime: '2030-01-01T12:00:00Z',
+            status: 'scheduled',
+          },
+          bookmakers: [
+            {
+              book: 'bet365',
+              outcomes: [
+                { name: 'Celtics', price: '1.9' },
+                { name: 'Cavaliers', price: '2.1' },
+              ],
+            },
+          ],
+        },
+      };
+    }
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+  });
+
+  const registry = createSportsProviderRegistry({
+    env: {
+      SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+      SPORTSBOOK_PROVIDER_MODE: 'primary',
+    },
+    fetch: globalThis.fetch,
+  });
+
+  const events = await registry.listEvents({ competitionId: 'nba' });
+  assert.equal(events.events[0].marketType, 'moneyline');
+
+  const odds = await registry.getEventOdds('nba-bos-cle-2030-01-01');
+  assert.equal(odds.marketType, 'moneyline');
+  assert.deepEqual(odds.bestOdds, { home: 1.9, away: 2.1 });
+  assert.equal(odds.books[0].outcomes.draw, undefined);
 });
 
 test('sports schedule accepts --date shorthand and returns normalized schedule rows', async (t) => {
@@ -613,7 +719,7 @@ test('sports resolve plan unsafe error includes structured blockers and retry gu
 
 test('sports odds snapshot/consensus use bulk competition endpoint with disk cache across invocations', async (t) => {
   const tempDir = createTempDir('pandora-sports-bulk-cache-');
-  const expectedCacheFile = path.join(tempDir, '.pandora', 'cache', 'odds', 'soccer_epl__soccer_winner.json');
+  const expectedCacheFile = path.join(tempDir, '.pandora', 'cache', 'odds', 'soccer_epl__auto.json');
   const mock = await startJsonHttpServer(({ url }) => {
     if (url.startsWith('/odds?')) {
       return {
@@ -766,7 +872,7 @@ test('sports create plan accepts --model-file BYOM input and attributes model so
   );
 
   const mock = await startJsonHttpServer(({ url }) => {
-    if (url.startsWith('/events/evt-1/odds?')) {
+    if (url === '/events/evt-1/odds') {
       return {
         body: {
           event: {
@@ -854,13 +960,13 @@ test('sports create plan accepts --model-file BYOM input and attributes model so
 
   const requestedPaths = mock.requests.map((request) => String(request.url));
   assert.equal(requestedPaths.length, 2);
-  assert.equal(requestedPaths[0], '/events/evt-1/odds?marketType=soccer_winner');
+  assert.equal(requestedPaths[0], '/events/evt-1/odds');
   assert.equal(requestedPaths[1], '/events/evt-1/status');
 });
 
 test('sports create run dry-run keeps pari-mutuel creation in planning-only mode', async (t) => {
   const mock = await startJsonHttpServer(({ url }) => {
-    if (url.startsWith('/events/evt-pari/odds?')) {
+    if (url === '/events/evt-pari/odds') {
       return {
         body: {
           event: {
@@ -958,7 +1064,7 @@ test('sports create run dry-run keeps pari-mutuel creation in planning-only mode
 
 test('sports create run execute rejects pari-mutuel markets with an explicit blocker', async (t) => {
   const mock = await startJsonHttpServer(({ url }) => {
-    if (url.startsWith('/events/evt-pari/odds?')) {
+    if (url === '/events/evt-pari/odds') {
       return {
         body: {
           event: {

@@ -1632,19 +1632,20 @@ const commandContracts = [
     name: 'watch',
     summary: 'Poll portfolio and/or market snapshots with alert thresholds plus watch-scoped exposure and hedge-gap risk limits.',
     usage:
-      'pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]',
+      'pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--once|--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]',
     emits: ['watch', 'watch.help'],
     dataSchema: '#/definitions/WatchPayload',
     mcpExposed: true,
     mcp: {
       command: ['watch'],
-      description: 'Run watch snapshots with optional quote alerts and watch-scoped exposure or hedge-gap guardrails (blocked in MCP v1 because it is long-running).',
+      description: 'Run watch snapshots with optional quote alerts and watch-scoped exposure or hedge-gap guardrails. Use `once=true` for a single bounded snapshot in MCP; unbounded watch-style polling remains blocked in MCP v1 because it is long-running.',
       inputSchema: buildInputSchema({
         flagProperties: {
           wallet: commonFlags.wallet,
           'market-address': commonFlags.marketAddress,
           side: enumSchema(['yes', 'no'], 'Outcome side.'),
           'amount-usdc': numberSchema('Trade notional in USDC.', { minimum: 0 }),
+          once: booleanSchema('Run exactly one watch snapshot (equivalent to --once / --iterations 1).'),
           iterations: integerSchema('Number of watch iterations.', { minimum: 1 }),
           'interval-ms': integerSchema('Delay between watch iterations.', { minimum: 1 }),
           'chain-id': commonFlags.chainId,
@@ -2388,7 +2389,7 @@ const commandContracts = [
     mcpExposed: true,
     mcp: {
       command: ['sports', 'sync', 'run'],
-      description: 'Continuous sports sync loop (blocked in MCP v1).',
+      description: 'Continuous sports sync loop. Use paper or dry-run flags for safe planning; long-running execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -2418,7 +2419,7 @@ const commandContracts = [
     mcpExposed: true,
       mcp: {
       command: ['sports', 'sync', 'start'],
-      description: 'Start detached sports sync runtime (blocked in MCP v1).',
+      description: 'Start detached sports sync runtime. Long-running detached execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -2855,7 +2856,7 @@ const commandContracts = [
     mcpExposed: true,
     mcp: {
       command: ['autopilot', 'run'],
-      description: 'Start continuous autopilot loop (blocked in MCP v1).',
+      description: 'Start continuous autopilot loop. Long-running execution remains blocked in MCP v1, and live mutation requires intent.execute with execute-live.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3467,7 +3468,7 @@ const commandContracts = [
     mcpExposed: true,
     mcp: {
       command: ['mirror', 'sync', 'run'],
-      description: 'Continuous mirror sync loop (blocked in MCP v1). Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
+      description: 'Continuous mirror sync loop. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance. Long-running execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3545,7 +3546,7 @@ const commandContracts = [
     mcpExposed: true,
       mcp: {
       command: ['mirror', 'sync', 'start'],
-      description: 'Start detached mirror sync daemon (blocked in MCP v1). Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
+      description: 'Start detached mirror sync daemon. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance. Detached execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -4425,17 +4426,26 @@ const commandContracts = [
   }),
   commandContract({
       name: 'polymarket.preflight',
-    summary: 'Run strict Polymarket trade preflight checks.',
+    summary: 'Run strict Polymarket readiness and optional trade-context preflight checks.',
     usage:
-      'pandora [--output table|json] polymarket preflight [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
+      'pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
     emits: ['polymarket.preflight', 'polymarket.preflight.help', 'polymarket.help'],
     dataSchema: '#/definitions/PolymarketPayload',
     mcpExposed: true,
       mcp: {
       command: ['polymarket', 'preflight'],
-      description: 'Run strict Polymarket trade preflight checks. Use this after `polymarket check` when you need the execute-mode go/no-go gate.',
+      description: 'Run strict Polymarket readiness preflight, optionally with trade context. Add condition/slug, token or token-id, side, and amount-usdc when you need a concrete trade go/no-go gate rather than wallet-only readiness.',
       inputSchema: buildInputSchema({
         flagProperties: {
+          'condition-id': stringSchema('Polymarket condition/market id for trade-context preflight.'),
+          slug: stringSchema('Polymarket slug for trade-context preflight.'),
+          token: enumSchema(['yes', 'no'], 'Outcome token for trade-context preflight when token-id is not supplied.'),
+          'token-id': stringSchema('Explicit token id for trade-context preflight.'),
+          side: enumSchema(['buy', 'sell'], 'Trade side for trade-context preflight.'),
+          'amount-usdc': numberSchema('Trade notional in USDC for trade-context preflight.', { minimum: 0 }),
+          'polymarket-host': stringSchema('Polymarket host override for market-resolution checks.'),
+          'polymarket-mock-url': stringSchema('Polymarket mock host override for local/forked trade-context checks.'),
+          'timeout-ms': commonFlags.timeoutMs,
           fork: booleanSchema('Run in fork mode.'),
           'fork-rpc-url': stringSchema('Fork RPC URL.'),
           'fork-chain-id': integerSchema('Fork chain id.'),

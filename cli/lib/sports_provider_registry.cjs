@@ -1,10 +1,13 @@
 const {
   NORMALIZER_SCHEMA_VERSION,
   SOCCER_WINNER_MARKET_TYPE,
+  MONEYLINE_MARKET_TYPE,
+  SUPPORTED_MARKET_TYPES,
   UK_TIER1_DEFAULT_BOOKS,
   normalizeCompetitions,
-  normalizeSoccerWinnerEvents,
-  normalizeSoccerWinnerOdds,
+  normalizeEvents,
+  normalizeOdds,
+  normalizeMarketType,
   normalizeEventStatus,
 } = require('./sports_event_normalizer.cjs');
 
@@ -24,6 +27,10 @@ const DEFAULT_PROVIDER_ENDPOINTS = Object.freeze({
 });
 
 const DEFAULT_TIMEOUT_MS = 12_000;
+const API_KEY_MODES = Object.freeze({
+  HEADER: 'header',
+  QUERY: 'query',
+});
 
 function toStringOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -54,6 +61,12 @@ function normalizeProviderMode(value) {
   if (mode === SPORTS_PROVIDER_MODES.PRIMARY) return SPORTS_PROVIDER_MODES.PRIMARY;
   if (mode === SPORTS_PROVIDER_MODES.BACKUP) return SPORTS_PROVIDER_MODES.BACKUP;
   return SPORTS_PROVIDER_MODES.AUTO;
+}
+
+function normalizeApiKeyMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  if (mode === API_KEY_MODES.QUERY) return API_KEY_MODES.QUERY;
+  return API_KEY_MODES.HEADER;
 }
 
 function normalizeEndpointPath(value, fallbackPath) {
@@ -173,17 +186,25 @@ function buildProviderConfig(role, options = {}, env = process.env) {
 
   const apiKey = toStringOrNull(pickFirst(explicit.apiKey, env[`SPORTSBOOK_${upper}_API_KEY`]));
   const apiKeyHeader = toStringOrNull(pickFirst(explicit.apiKeyHeader, env[`SPORTSBOOK_${upper}_API_KEY_HEADER`])) || 'x-api-key';
+  const apiKeyMode = normalizeApiKeyMode(pickFirst(explicit.apiKeyMode, env[`SPORTSBOOK_${upper}_API_KEY_MODE`]));
+  const apiKeyQueryParam = toStringOrNull(pickFirst(explicit.apiKeyQueryParam, env[`SPORTSBOOK_${upper}_API_KEY_QUERY_PARAM`])) || 'apiKey';
   const headers = mergeHeaders(
     parseJsonObject(pickFirst(explicit.headers, env[`SPORTSBOOK_${upper}_HEADERS_JSON`])),
-    apiKey ? { [apiKeyHeader]: apiKey } : {},
+    apiKey && apiKeyMode === API_KEY_MODES.HEADER ? { [apiKeyHeader]: apiKey } : {},
   );
+  const defaultQuery = parseJsonObject(pickFirst(explicit.defaultQuery, env[`SPORTSBOOK_${upper}_DEFAULT_QUERY_JSON`]));
+  if (apiKey && apiKeyMode === API_KEY_MODES.QUERY && !Object.prototype.hasOwnProperty.call(defaultQuery, apiKeyQueryParam)) {
+    defaultQuery[apiKeyQueryParam] = apiKey;
+  }
 
   return {
     role,
     baseUrl,
     timeoutMs,
     headers,
-    defaultQuery: parseJsonObject(pickFirst(explicit.defaultQuery, env[`SPORTSBOOK_${upper}_DEFAULT_QUERY_JSON`])),
+    defaultQuery,
+    apiKeyMode,
+    apiKeyQueryParam,
     endpoints: {
       competitions: normalizeEndpointPath(
         pickFirst(explicit.competitionsPath, explicit.endpoints && explicit.endpoints.competitions, env[`SPORTSBOOK_${upper}_COMPETITIONS_PATH`]),
@@ -463,7 +484,7 @@ function createSportsProviderRegistry(options = {}) {
         timeoutMs: filters.timeoutMs,
       });
 
-      const events = normalizeSoccerWinnerEvents(
+      const events = normalizeEvents(
         extractListFromPayload(response.payload, ['events', 'fixtures', 'matches', 'results']),
         { provider: response.provider },
       );
@@ -471,7 +492,7 @@ function createSportsProviderRegistry(options = {}) {
         schemaVersion: NORMALIZER_SCHEMA_VERSION,
         mode,
         provider: response.provider,
-        marketType: SOCCER_WINNER_MARKET_TYPE,
+        marketType: filters.marketType ? normalizeMarketType(filters.marketType) || filters.marketType : 'mixed',
         count: events.length,
         events,
       };
@@ -489,11 +510,11 @@ function createSportsProviderRegistry(options = {}) {
       throw providerError('MISSING_REQUIRED_INPUT', 'listCompetitionOdds requires competitionId.');
     }
 
-    const normalizedMarketType = toStringOrNull(filters.marketType) || SOCCER_WINNER_MARKET_TYPE;
-    if (normalizedMarketType !== SOCCER_WINNER_MARKET_TYPE) {
+    const normalizedMarketType = normalizeMarketType(filters.marketType) || null;
+    if (normalizedMarketType && !SUPPORTED_MARKET_TYPES.includes(normalizedMarketType)) {
       throw providerError(
         'UNSUPPORTED_MARKET_TYPE',
-        `Unsupported market type "${normalizedMarketType}". Only "${SOCCER_WINNER_MARKET_TYPE}" is supported.`,
+        `Unsupported market type "${normalizedMarketType}". Supported: ${SUPPORTED_MARKET_TYPES.join(', ')}.`,
       );
     }
 
@@ -513,7 +534,7 @@ function createSportsProviderRegistry(options = {}) {
       const rows = extractListFromPayload(response.payload, ['events', 'fixtures', 'matches', 'results']);
       const byId = new Map();
       for (const row of rows) {
-        const normalized = normalizeSoccerWinnerOdds(row, {
+        const normalized = normalizeOdds(row, {
           provider: response.provider,
           eventId: row && (row.id || row.eventId || row.event_id || row.fixtureId || null),
           marketType: normalizedMarketType,
@@ -543,7 +564,7 @@ function createSportsProviderRegistry(options = {}) {
         mode,
         provider: response.provider,
         competitionId: competitionId.toLowerCase(),
-        marketType: normalizedMarketType,
+        marketType: normalizedMarketType || 'mixed',
         count: odds.length,
         odds,
       };
@@ -557,16 +578,16 @@ function createSportsProviderRegistry(options = {}) {
    * @param {{preferBulk?: boolean, competition?: string, providerMode?: string, timeoutMs?: number, limit?: number, from?: string, to?: string}} [options]
    * @returns {Promise<object>}
    */
-  async function getEventOdds(eventId, marketType = SOCCER_WINNER_MARKET_TYPE, options = {}) {
+  async function getEventOdds(eventId, marketType = null, options = {}) {
     const normalizedEventId = toStringOrNull(eventId);
     if (!normalizedEventId) {
       throw providerError('MISSING_REQUIRED_INPUT', 'getEventOdds requires eventId.');
     }
-    const normalizedMarketType = toStringOrNull(marketType) || SOCCER_WINNER_MARKET_TYPE;
-    if (normalizedMarketType !== SOCCER_WINNER_MARKET_TYPE) {
+    const normalizedMarketType = normalizeMarketType(marketType) || null;
+    if (normalizedMarketType && !SUPPORTED_MARKET_TYPES.includes(normalizedMarketType)) {
       throw providerError(
         'UNSUPPORTED_MARKET_TYPE',
-        `Unsupported market type "${normalizedMarketType}". Only "${SOCCER_WINNER_MARKET_TYPE}" is supported.`,
+        `Unsupported market type "${normalizedMarketType}". Supported: ${SUPPORTED_MARKET_TYPES.join(', ')}.`,
       );
     }
 
@@ -606,7 +627,7 @@ function createSportsProviderRegistry(options = {}) {
         pathParams: { eventId: normalizedEventId },
         query: { marketType: normalizedMarketType },
       });
-      const normalized = normalizeSoccerWinnerOdds(response.payload, {
+      const normalized = normalizeOdds(response.payload, {
         provider: response.provider,
         eventId: normalizedEventId,
         marketType: normalizedMarketType,
