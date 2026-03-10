@@ -399,9 +399,9 @@
   "registryDigest": {
     "canonicalHash": "b501a15ce9f61731613d044e2c97a03142a261af386b1182638eb069a5f7ea0a",
     "commandDigestHash": "d44d4b52bc59aa8da9ba7a19f1a85a188d48c20a6ad59a70fd5e0b583acdce08",
-    "descriptorHash": "003190b44a3d1fc205ce419221393b08e51286eccf226f1faa6793ec1558b721",
+    "descriptorHash": "2ae206133a8203abbb37247facc5610d8fc8bfce9d684be868eae387c3c2ce49",
     "documentationHash": "861462b91dd1da73bf3d98cd764d00241b3991ef641c10a096cec32fe84600af",
-    "fullDescriptorHash": "bbe33e0cc59d9a8a1322fa3d7a170fa249348f1da65ec6717411521f87376b46",
+    "fullDescriptorHash": "9893fd822e5431d69c0971d14bca374c10e07ddf26c34328f6fd7eb785b73db0",
     "namespaceHash": "111925823f74b9dd80c31aa375ceee6a9bc652739e5f9ed0c19263e524d310c5",
     "policyProfilesHash": "6dfcf1c27d5d5d89ee85bbb9ad19636b1bd621b91e89e2b4c3c9282764df81ed",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",

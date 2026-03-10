@@ -538,9 +538,15 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
     const sell = byName.get('sell');
     assert.ok(sell);
     assert.equal(sell.inputSchema.properties.shares.type, 'number');
+    assert.equal(Array.isArray(sell.inputSchema.allOf), false);
     assert.equal(Array.isArray(sell.inputSchema.anyOf), false);
     assert.equal(Array.isArray(sell.inputSchema.oneOf), false);
-    assert.equal(sell.inputSchema.xPandora.topLevelInputConstraints, null);
+    assert.deepEqual(sell.inputSchema.xPandora.topLevelInputConstraints, {
+      requiredAnyOf: [
+        { required: ['shares'] },
+        { required: ['amount'] },
+      ],
+    });
     assert.equal(sell.inputSchema.xPandora.canonicalTool, 'sell');
     assert.equal(sell.inputSchema.xPandora.preferred, true);
 
@@ -592,7 +598,10 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
       assert.equal(riskPanic.inputSchema.xPandora.executeIntentRequiredForLiveMode, false);
 
       const topLevelCombinatorOffenders = tools.filter(
-        (tool) => Array.isArray(tool.inputSchema && tool.inputSchema.anyOf) || Array.isArray(tool.inputSchema && tool.inputSchema.oneOf),
+        (tool) =>
+          Array.isArray(tool.inputSchema && tool.inputSchema.allOf)
+          || Array.isArray(tool.inputSchema && tool.inputSchema.anyOf)
+          || Array.isArray(tool.inputSchema && tool.inputSchema.oneOf),
       );
       assert.deepEqual(topLevelCombinatorOffenders.map((tool) => tool.name), []);
     });

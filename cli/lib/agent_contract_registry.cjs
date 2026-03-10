@@ -113,14 +113,14 @@ function buildInputSchema({
     schema.properties.intent = buildIntentSchema();
   }
 
-  const allOf = [];
+  const xPandora = {};
 
   if (Array.isArray(anyOf) && anyOf.length) {
     const branches = anyOf
       .filter((requiredSet) => Array.isArray(requiredSet) && requiredSet.length)
       .map((requiredSet) => ({ required: [...requiredSet] }));
     if (branches.length) {
-      allOf.push({ anyOf: branches });
+      xPandora.requiredAnyOf = branches;
     }
   }
 
@@ -129,12 +129,12 @@ function buildInputSchema({
       .filter((branch) => branch && typeof branch === 'object')
       .map((branch) => ({ ...branch }));
     if (branches.length) {
-      allOf.push({ oneOf: branches });
+      xPandora.exclusiveOneOf = branches;
     }
   }
 
-  if (allOf.length) {
-    schema.allOf = allOf;
+  if (Object.keys(xPandora).length) {
+    schema.xPandora = xPandora;
   }
 
   return schema;

@@ -96,31 +96,58 @@ function sanitizeInputSchemaForMcp(schema) {
     additionalProperties: false,
   };
 
-  const allOf = Array.isArray(cloned.allOf) ? [...cloned.allOf] : [];
   const pandora = isPlainObject(cloned.xPandora) ? cloned.xPandora : null;
+  const topLevelInputConstraints = {};
+  const requiredAnyOf = [];
+  const exclusiveOneOf = [];
+
   if (Array.isArray(cloned.anyOf) && cloned.anyOf.length) {
-    allOf.push({ anyOf: cloneJsonCompatible(cloned.anyOf) });
-    delete cloned.anyOf;
+    requiredAnyOf.push(...cloneJsonCompatible(cloned.anyOf));
   }
   if (pandora && Array.isArray(pandora.requiredAnyOf) && pandora.requiredAnyOf.length) {
-    allOf.push({ anyOf: cloneJsonCompatible(pandora.requiredAnyOf) });
+    requiredAnyOf.push(...cloneJsonCompatible(pandora.requiredAnyOf));
   }
   if (Array.isArray(cloned.oneOf) && cloned.oneOf.length) {
-    allOf.push({ oneOf: cloneJsonCompatible(cloned.oneOf) });
-    delete cloned.oneOf;
+    exclusiveOneOf.push(...cloneJsonCompatible(cloned.oneOf));
   }
   if (pandora && Array.isArray(pandora.exclusiveOneOf) && pandora.exclusiveOneOf.length) {
-    allOf.push({ oneOf: cloneJsonCompatible(pandora.exclusiveOneOf) });
+    exclusiveOneOf.push(...cloneJsonCompatible(pandora.exclusiveOneOf));
   }
-  if (allOf.length) {
-    cloned.allOf = allOf;
-  } else {
-    delete cloned.allOf;
+
+  if (Array.isArray(cloned.allOf) && cloned.allOf.length) {
+    for (const branch of cloned.allOf) {
+      if (!isPlainObject(branch)) continue;
+      if (Array.isArray(branch.anyOf) && branch.anyOf.length) {
+        requiredAnyOf.push(...cloneJsonCompatible(branch.anyOf));
+      }
+      if (Array.isArray(branch.oneOf) && branch.oneOf.length) {
+        exclusiveOneOf.push(...cloneJsonCompatible(branch.oneOf));
+      }
+    }
+  }
+
+  delete cloned.anyOf;
+  delete cloned.oneOf;
+  delete cloned.allOf;
+
+  if (requiredAnyOf.length) {
+    topLevelInputConstraints.requiredAnyOf = requiredAnyOf;
+  }
+  if (exclusiveOneOf.length) {
+    topLevelInputConstraints.exclusiveOneOf = exclusiveOneOf;
+  }
+
+  if (pandora) {
+    delete pandora.requiredAnyOf;
+    delete pandora.exclusiveOneOf;
+    if (!Object.keys(pandora).length) {
+      delete cloned.xPandora;
+    }
   }
 
   return {
     inputSchema: cloned,
-    topLevelInputConstraints: null,
+    topLevelInputConstraints: Object.keys(topLevelInputConstraints).length ? topLevelInputConstraints : null,
   };
 }
 

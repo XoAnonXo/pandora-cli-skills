@@ -147,10 +147,11 @@ test('shared agent contract registry covers all MCP tools with canonical metadat
   }
 });
 
-test('generated MCP tool schemas avoid top-level anyOf/oneOf combinators', () => {
+test('generated MCP tool schemas avoid top-level allOf/anyOf/oneOf combinators', () => {
   const toolDefinitions = buildMcpToolDefinitions();
 
   for (const tool of toolDefinitions) {
+    assert.equal(Array.isArray(tool.inputSchema && tool.inputSchema.allOf), false, `${tool.name} should not expose top-level allOf`);
     assert.equal(Array.isArray(tool.inputSchema && tool.inputSchema.anyOf), false, `${tool.name} should not expose top-level anyOf`);
     assert.equal(Array.isArray(tool.inputSchema && tool.inputSchema.oneOf), false, `${tool.name} should not expose top-level oneOf`);
   }
