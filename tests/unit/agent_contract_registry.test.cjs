@@ -109,6 +109,30 @@ function getCompositeBranches(schema, keyword) {
   return [];
 }
 
+function collectNestedPropertyCombinators(schema, basePath = '') {
+  const offenders = [];
+
+  function visit(node, pathLabel) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach((entry, index) => visit(entry, `${pathLabel}[${index}]`));
+      return;
+    }
+    for (const keyword of ['allOf', 'anyOf', 'oneOf']) {
+      if (Array.isArray(node[keyword])) {
+        offenders.push(`${pathLabel}.${keyword}`);
+      }
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'xPandora') continue;
+      visit(value, pathLabel ? `${pathLabel}.${key}` : key);
+    }
+  }
+
+  visit(schema, basePath);
+  return offenders;
+}
+
 test('shared agent contract registry covers all MCP tools with canonical metadata', () => {
   const descriptors = buildCommandDescriptors();
   const mcpTools = buildMcpToolDefinitions();
@@ -157,6 +181,23 @@ test('generated MCP tool schemas avoid top-level allOf/anyOf/oneOf combinators',
   }
 });
 
+test('generated MCP tool property schemas avoid nested allOf/anyOf/oneOf combinators', () => {
+  const toolDefinitions = buildMcpToolDefinitions();
+  const offenders = [];
+
+  for (const tool of toolDefinitions) {
+    const properties = tool && tool.inputSchema && tool.inputSchema.properties;
+    if (!properties || typeof properties !== 'object') continue;
+    for (const [propertyName, propertySchema] of Object.entries(properties)) {
+      offenders.push(
+        ...collectNestedPropertyCombinators(propertySchema, `${tool.name}.inputSchema.properties.${propertyName}`),
+      );
+    }
+  }
+
+  assert.deepEqual(offenders, []);
+});
+
 test('shared agent contract registry declares every emitted help command', () => {
   const descriptors = buildCommandDescriptors();
   const declaredHelps = new Set();
@@ -187,13 +228,24 @@ test('shared agent contract registry covers every routed top-level command famil
 
 test('mirror and sports create schemas expose category names and required selector invariants', () => {
   const descriptors = buildCommandDescriptors();
+  const expectedCategoryNames = [
+    'Politics',
+    'Sports',
+    'Finance',
+    'Crypto',
+    'Culture',
+    'Technology',
+    'Science',
+    'Entertainment',
+    'Health',
+    'Environment',
+    'Other',
+  ];
 
   const mirrorDeploy = descriptors['mirror.deploy'];
   assert.ok(mirrorDeploy);
-  assert.deepEqual(
-    mirrorDeploy.inputSchema.properties.category.anyOf[1].enum,
-    ['Politics', 'Sports', 'Finance', 'Crypto', 'Culture', 'Technology', 'Science', 'Entertainment', 'Health', 'Environment', 'Other'],
-  );
+  assert.equal(mirrorDeploy.inputSchema.properties.category.type, 'string');
+  assert.deepEqual(mirrorDeploy.inputSchema.properties.category.xPandora.allowedCategoryNames, expectedCategoryNames);
   assert.ok(
     getCompositeBranches(mirrorDeploy.inputSchema, 'anyOf').some((branch) =>
       Array.isArray(branch.required) && branch.required.includes('plan-file') && branch.required.includes('dry-run')),
@@ -237,7 +289,26 @@ test('mirror and sports create schemas expose category names and required select
 
   const sportsCreatePlan = descriptors['sports.create.plan'];
   assert.ok(sportsCreatePlan);
-  assert.equal(sportsCreatePlan.inputSchema.properties.category.anyOf[1].enum[1], 'Sports');
+  assert.equal(sportsCreatePlan.inputSchema.properties.category.type, 'string');
+  assert.equal(sportsCreatePlan.inputSchema.properties.category.xPandora.allowedCategoryNames[1], 'Sports');
+});
+
+test('flattened MCP-friendly property schemas preserve CLI parsing hints', () => {
+  const descriptors = buildCommandDescriptors();
+
+  assert.equal(descriptors['markets.get'].inputSchema.properties.id.type, 'string');
+  assert.equal(descriptors['markets.get'].inputSchema.properties.id.xPandora.acceptsCommaSeparatedList, true);
+
+  assert.equal(descriptors['model.correlation'].inputSchema.properties.series.type, 'string');
+  assert.equal(
+    descriptors['model.correlation'].inputSchema.properties.series.xPandora.acceptsSemicolonSeparatedList,
+    true,
+  );
+
+  assert.equal(descriptors['mirror.deploy'].inputSchema.properties['target-timestamp'].type, 'string');
+  assert.equal(descriptors['mirror.go'].inputSchema.properties['target-timestamp'].type, 'string');
+  assert.equal(descriptors['mirror.go'].inputSchema.properties['skip-gate'].type, 'string');
+  assert.equal(descriptors['mirror.go'].inputSchema.properties['skip-gate'].xPandora.acceptsBooleanString, true);
 });
 
 test('policy and profile command contracts are exposed with typed MCP schemas', () => {

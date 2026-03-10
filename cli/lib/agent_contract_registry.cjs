@@ -49,16 +49,16 @@ function flexibleArraySchema(itemSchema, description, extras = {}) {
 }
 
 function buildMirrorSkipGateSchema() {
-  return {
-    description: 'Skip all mirror sync gates (boolean) or provide a comma-delimited named skip list.',
-    anyOf: [
-      booleanSchema('Skip all mirror sync gates.'),
-      stringSchema('Comma-delimited gate skip list.'),
-    ],
-    xPandora: {
-      allowedGateCodes: MIRROR_SYNC_GATE_CODES,
+  return stringSchema(
+    'Set to "true" to skip all mirror sync gates, or provide a comma-delimited named skip list.',
+    {
+      examples: ['true', MIRROR_SYNC_GATE_CODES.slice(0, 2).join(',')],
+      xPandora: {
+        allowedGateCodes: MIRROR_SYNC_GATE_CODES,
+        acceptsBooleanString: true,
+      },
     },
-  };
+  );
 }
 
 function buildAgentPreflightSchema(description) {
@@ -244,24 +244,24 @@ function buildExclusivePresenceBranches(...groups) {
 
 function buildPollCategorySchema(description = 'Category id or canonical category name.') {
   const categoryNames = [...POLL_CATEGORY_NAME_LIST];
-  return {
-    description,
-    anyOf: [
-      integerSchema('Category id.', { minimum: 0 }),
-      {
-        type: 'string',
-        enum: categoryNames,
-        description: 'Canonical category name.',
-        examples: categoryNames,
-      },
-      {
-        type: 'string',
-        pattern: buildCaseInsensitiveEnumPattern(categoryNames),
-        description: 'Case-insensitive category name accepted by the CLI.',
-        examples: categoryNames,
-      },
-    ],
-  };
+  return stringSchema(description, {
+    examples: ['Sports', '3'],
+    xPandora: {
+      allowedCategoryNames: categoryNames,
+      acceptsIntegerStrings: true,
+      caseInsensitivePattern: buildCaseInsensitiveEnumPattern(categoryNames),
+    },
+  });
+}
+
+function buildTargetTimestampSchema(description = 'Resolution timestamp in unix seconds or ISO-8601 datetime.') {
+  return stringSchema(description, {
+    examples: ['1777777777', '2026-12-31T00:00:00Z'],
+    xPandora: {
+      acceptsUnixSeconds: true,
+      acceptsIsoDatetime: true,
+    },
+  });
 }
 
 function commandContract(options) {
@@ -1030,9 +1030,12 @@ const commandContracts = [
       description: 'Get one or more markets by id.',
       inputSchema: buildInputSchema({
         flagProperties: {
-          id: {
-            oneOf: [stringSchema('Market id.'), stringArraySchema('Market ids.')],
-          },
+          id: stringSchema('Market id, or a comma-delimited list of market ids.', {
+            minLength: 1,
+            xPandora: {
+              acceptsCommaSeparatedList: true,
+            },
+          }),
           stdin: booleanSchema('Read newline-delimited ids from stdin.'),
         },
       }),
@@ -2541,7 +2544,12 @@ const commandContracts = [
       inputSchema: buildInputSchema({
         flagProperties: {
           series: {
-            oneOf: [stringSchema('Series specification id:v1,v2,...'), stringArraySchema('Series specifications.')],
+            ...stringSchema('Series specification id:v1,v2,..., or a semicolon-delimited list of series specifications.', {
+              xPandora: {
+                acceptsSemicolonSeparatedList: true,
+              },
+            }),
+            minLength: 1,
           },
           copula: enumSchema(['t', 'gaussian', 'clayton', 'gumbel'], 'Copula family.'),
           compare: stringSchema('Comma-delimited comparison list.'),
@@ -2825,13 +2833,7 @@ const commandContracts = [
           'distribution-no': numberSchema('Initial NO distribution parts.', { minimum: 0 }),
           sources: flexibleArraySchema(stringSchema(), 'Source URL list.'),
           'validation-ticket': stringSchema('Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).'),
-          'target-timestamp': {
-            description: 'Explicit target timestamp override.',
-            anyOf: [
-              integerSchema('Explicit target timestamp in unix seconds.', { minimum: 1 }),
-              stringSchema('Explicit ISO date/time override for target timestamp.'),
-            ],
-          },
+          'target-timestamp': buildTargetTimestampSchema('Explicit target timestamp override.'),
           'manifest-file': stringSchema('Mirror manifest path.'),
           'polymarket-host': stringSchema('Polymarket host override.'),
           'polymarket-gamma-url': stringSchema('Polymarket Gamma API base URL.'),
@@ -3172,13 +3174,7 @@ const commandContracts = [
           'distribution-no-pct': numberSchema('Initial NO distribution percent.', { minimum: 0, maximum: 100 }),
           sources: flexibleArraySchema(stringSchema(), 'Independent public source URL list.'),
           'validation-ticket': stringSchema('Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).'),
-          'target-timestamp': {
-            description: 'Explicit target timestamp override.',
-            anyOf: [
-              integerSchema('Explicit target timestamp in unix seconds.', { minimum: 1 }),
-              stringSchema('Explicit ISO date/time override for target timestamp.'),
-            ],
-          },
+          'target-timestamp': buildTargetTimestampSchema('Explicit target timestamp override.'),
           'manifest-file': stringSchema('Mirror manifest path.'),
           'trust-deploy': booleanSchema('Trust manifest deploy pair.'),
           'skip-gate': buildMirrorSkipGateSchema(),

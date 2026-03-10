@@ -84,6 +84,17 @@ test('createParseModelCorrelationFlags parses multiple series and compare mode',
   assert.equal(options.degreesOfFreedom, 7);
 });
 
+test('createParseModelCorrelationFlags parses semicolon-delimited series lists from one flag', () => {
+  const parse = buildParser();
+  const options = parse([
+    '--series',
+    'a:0.01,-0.01,0.02,-0.03,0.01;b:0.02,-0.02,0.01,-0.01,0.02',
+  ]);
+
+  assert.equal(options.series.length, 2);
+  assert.deepEqual(options.series.map((item) => item.id), ['a', 'b']);
+});
+
 test('createParseModelCorrelationFlags enforces equal-length series', () => {
   const parse = buildParser();
   assert.throws(

@@ -297,12 +297,18 @@ function createCoreCommandFlagParsers(deps) {
       ids: [],
       readFromStdin: false,
     };
+    const appendIds = (rawValue, flagName) => {
+      const values = parseCsvList(rawValue, flagName)
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+      options.ids.push(...values);
+    };
 
     for (let i = 0; i < args.length; i += 1) {
       const token = args[i];
 
       if (token === '--id') {
-        options.ids.push(requireFlagValue(args, i, '--id'));
+        appendIds(requireFlagValue(args, i, '--id'), '--id');
         i += 1;
         continue;
       }
@@ -316,7 +322,7 @@ function createCoreCommandFlagParsers(deps) {
         throw new CliError('UNKNOWN_FLAG', `Unknown flag for markets get: ${token}`);
       }
 
-      options.ids.push(token);
+      appendIds(token, '--id');
     }
 
     if (!options.ids.length && !options.readFromStdin) {

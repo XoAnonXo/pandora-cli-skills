@@ -3889,19 +3889,12 @@
       "additionalProperties": false,
       "properties": {
         "id": {
-          "oneOf": [
-            {
-              "description": "Market id.",
-              "type": "string"
-            },
-            {
-              "description": "Market ids.",
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            }
-          ]
+          "description": "Market id, or a comma-delimited list of market ids.",
+          "minLength": 1,
+          "type": "string",
+          "xPandora": {
+            "acceptsCommaSeparatedList": true
+          }
         },
         "stdin": {
           "description": "Read newline-delimited ids from stdin.",
@@ -6848,62 +6841,29 @@
           "type": "string"
         },
         "category": {
-          "anyOf": [
-            {
-              "description": "Category id.",
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "description": "Canonical category name.",
-              "enum": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "examples": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Case-insensitive category name accepted by the CLI.",
-              "examples": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "pattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$",
-              "type": "string"
-            }
+          "description": "Category id or canonical category name.",
+          "examples": [
+            "Sports",
+            "3"
           ],
-          "description": "Category id or canonical category name."
+          "type": "string",
+          "xPandora": {
+            "acceptsIntegerStrings": true,
+            "allowedCategoryNames": [
+              "Politics",
+              "Sports",
+              "Finance",
+              "Crypto",
+              "Culture",
+              "Technology",
+              "Science",
+              "Entertainment",
+              "Health",
+              "Environment",
+              "Other"
+            ],
+            "caseInsensitivePattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$"
+          }
         },
         "chain-id": {
           "description": "Chain id.",
@@ -7023,18 +6983,16 @@
           "type": "array"
         },
         "target-timestamp": {
-          "anyOf": [
-            {
-              "description": "Explicit target timestamp in unix seconds.",
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "description": "Explicit ISO date/time override for target timestamp.",
-              "type": "string"
-            }
+          "description": "Explicit target timestamp override.",
+          "examples": [
+            "1777777777",
+            "2026-12-31T00:00:00Z"
           ],
-          "description": "Explicit target timestamp override."
+          "type": "string",
+          "xPandora": {
+            "acceptsIsoDatetime": true,
+            "acceptsUnixSeconds": true
+          }
         },
         "usdc": {
           "description": "USDC token address.",
@@ -8098,62 +8056,29 @@
           "type": "boolean"
         },
         "category": {
-          "anyOf": [
-            {
-              "description": "Category id.",
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "description": "Canonical category name.",
-              "enum": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "examples": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Case-insensitive category name accepted by the CLI.",
-              "examples": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "pattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$",
-              "type": "string"
-            }
+          "description": "Category id or canonical category name.",
+          "examples": [
+            "Sports",
+            "3"
           ],
-          "description": "Category id or canonical category name."
+          "type": "string",
+          "xPandora": {
+            "acceptsIntegerStrings": true,
+            "allowedCategoryNames": [
+              "Politics",
+              "Sports",
+              "Finance",
+              "Crypto",
+              "Culture",
+              "Technology",
+              "Science",
+              "Entertainment",
+              "Health",
+              "Environment",
+              "Other"
+            ],
+            "caseInsensitivePattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$"
+          }
         },
         "chain-id": {
           "description": "Chain id.",
@@ -8417,18 +8342,14 @@
           "type": "string"
         },
         "skip-gate": {
-          "anyOf": [
-            {
-              "description": "Skip all mirror sync gates.",
-              "type": "boolean"
-            },
-            {
-              "description": "Comma-delimited gate skip list.",
-              "type": "string"
-            }
+          "description": "Set to \"true\" to skip all mirror sync gates, or provide a comma-delimited named skip list.",
+          "examples": [
+            "true",
+            "MATCH_AND_RULES,POLYMARKET_SOURCE_FRESH"
           ],
-          "description": "Skip all mirror sync gates (boolean) or provide a comma-delimited named skip list.",
+          "type": "string",
           "xPandora": {
+            "acceptsBooleanString": true,
             "allowedGateCodes": [
               "MATCH_AND_RULES",
               "POLYMARKET_SOURCE_FRESH",
@@ -8461,18 +8382,16 @@
           "type": "boolean"
         },
         "target-timestamp": {
-          "anyOf": [
-            {
-              "description": "Explicit target timestamp in unix seconds.",
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "description": "Explicit ISO date/time override for target timestamp.",
-              "type": "string"
-            }
+          "description": "Explicit target timestamp override.",
+          "examples": [
+            "1777777777",
+            "2026-12-31T00:00:00Z"
           ],
-          "description": "Explicit target timestamp override."
+          "type": "string",
+          "xPandora": {
+            "acceptsIsoDatetime": true,
+            "acceptsUnixSeconds": true
+          }
         },
         "trust-deploy": {
           "description": "Trust manifest deploy pair.",
@@ -12913,18 +12832,14 @@
           "type": "string"
         },
         "skip-gate": {
-          "anyOf": [
-            {
-              "description": "Skip all mirror sync gates.",
-              "type": "boolean"
-            },
-            {
-              "description": "Comma-delimited gate skip list.",
-              "type": "string"
-            }
+          "description": "Set to \"true\" to skip all mirror sync gates, or provide a comma-delimited named skip list.",
+          "examples": [
+            "true",
+            "MATCH_AND_RULES,POLYMARKET_SOURCE_FRESH"
           ],
-          "description": "Skip all mirror sync gates (boolean) or provide a comma-delimited named skip list.",
+          "type": "string",
           "xPandora": {
+            "acceptsBooleanString": true,
             "allowedGateCodes": [
               "MATCH_AND_RULES",
               "POLYMARKET_SOURCE_FRESH",
@@ -14538,18 +14453,14 @@
           "type": "string"
         },
         "skip-gate": {
-          "anyOf": [
-            {
-              "description": "Skip all mirror sync gates.",
-              "type": "boolean"
-            },
-            {
-              "description": "Comma-delimited gate skip list.",
-              "type": "string"
-            }
+          "description": "Set to \"true\" to skip all mirror sync gates, or provide a comma-delimited named skip list.",
+          "examples": [
+            "true",
+            "MATCH_AND_RULES,POLYMARKET_SOURCE_FRESH"
           ],
-          "description": "Skip all mirror sync gates (boolean) or provide a comma-delimited named skip list.",
+          "type": "string",
           "xPandora": {
+            "acceptsBooleanString": true,
             "allowedGateCodes": [
               "MATCH_AND_RULES",
               "POLYMARKET_SOURCE_FRESH",
@@ -16160,18 +16071,14 @@
           "type": "string"
         },
         "skip-gate": {
-          "anyOf": [
-            {
-              "description": "Skip all mirror sync gates.",
-              "type": "boolean"
-            },
-            {
-              "description": "Comma-delimited gate skip list.",
-              "type": "string"
-            }
+          "description": "Set to \"true\" to skip all mirror sync gates, or provide a comma-delimited named skip list.",
+          "examples": [
+            "true",
+            "MATCH_AND_RULES,POLYMARKET_SOURCE_FRESH"
           ],
-          "description": "Skip all mirror sync gates (boolean) or provide a comma-delimited named skip list.",
+          "type": "string",
           "xPandora": {
+            "acceptsBooleanString": true,
             "allowedGateCodes": [
               "MATCH_AND_RULES",
               "POLYMARKET_SOURCE_FRESH",
@@ -18623,19 +18530,12 @@
           "type": "string"
         },
         "series": {
-          "oneOf": [
-            {
-              "description": "Series specification id:v1,v2,...",
-              "type": "string"
-            },
-            {
-              "description": "Series specifications.",
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            }
-          ]
+          "description": "Series specification id:v1,v2,..., or a semicolon-delimited list of series specifications.",
+          "minLength": 1,
+          "type": "string",
+          "xPandora": {
+            "acceptsSemicolonSeparatedList": true
+          }
         },
         "tail-alpha": {
           "description": "Tail alpha level.",
@@ -23954,62 +23854,29 @@
           "type": "string"
         },
         "category": {
-          "anyOf": [
-            {
-              "description": "Category id.",
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "description": "Canonical category name.",
-              "enum": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "examples": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Case-insensitive category name accepted by the CLI.",
-              "examples": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "pattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$",
-              "type": "string"
-            }
+          "description": "Category id or canonical category name.",
+          "examples": [
+            "Sports",
+            "3"
           ],
-          "description": "Category id or canonical category name."
+          "type": "string",
+          "xPandora": {
+            "acceptsIntegerStrings": true,
+            "allowedCategoryNames": [
+              "Politics",
+              "Sports",
+              "Finance",
+              "Crypto",
+              "Culture",
+              "Technology",
+              "Science",
+              "Entertainment",
+              "Health",
+              "Environment",
+              "Other"
+            ],
+            "caseInsensitivePattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$"
+          }
         },
         "creation-window-close-min": {
           "description": "Creation window close minutes before kickoff.",
@@ -24159,62 +24026,29 @@
           "type": "object"
         },
         "category": {
-          "anyOf": [
-            {
-              "description": "Category id.",
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "description": "Canonical category name.",
-              "enum": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "examples": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Case-insensitive category name accepted by the CLI.",
-              "examples": [
-                "Politics",
-                "Sports",
-                "Finance",
-                "Crypto",
-                "Culture",
-                "Technology",
-                "Science",
-                "Entertainment",
-                "Health",
-                "Environment",
-                "Other"
-              ],
-              "pattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$",
-              "type": "string"
-            }
+          "description": "Category id or canonical category name.",
+          "examples": [
+            "Sports",
+            "3"
           ],
-          "description": "Category id or canonical category name."
+          "type": "string",
+          "xPandora": {
+            "acceptsIntegerStrings": true,
+            "allowedCategoryNames": [
+              "Politics",
+              "Sports",
+              "Finance",
+              "Crypto",
+              "Culture",
+              "Technology",
+              "Science",
+              "Entertainment",
+              "Health",
+              "Environment",
+              "Other"
+            ],
+            "caseInsensitivePattern": "^(?:[pP][oO][lL][iI][tT][iI][cC][sS]|[sS][pP][oO][rR][tT][sS]|[fF][iI][nN][aA][nN][cC][eE]|[cC][rR][yY][pP][tT][oO]|[cC][uU][lL][tT][uU][rR][eE]|[tT][eE][cC][hH][nN][oO][lL][oO][gG][yY]|[sS][cC][iI][eE][nN][cC][eE]|[eE][nN][tT][eE][rR][tT][aA][iI][nN][mM][eE][nN][tT]|[hH][eE][aA][lL][tT][hH]|[eE][nN][vV][iI][rR][oO][nN][mM][eE][nN][tT]|[oO][tT][hH][eE][rR])$"
+          }
         },
         "chain-id": {
           "description": "Chain id.",

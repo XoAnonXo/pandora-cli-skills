@@ -39,6 +39,14 @@ function parseSeriesArg(rawValue, parseCsvList, parseNumber, CliError) {
   return { id, values };
 }
 
+function parseSeriesListArg(rawValue, parseCsvList, parseNumber, CliError) {
+  const text = String(rawValue || '').trim();
+  const entries = text.includes(';')
+    ? text.split(';').map((item) => String(item || '').trim()).filter(Boolean)
+    : [text];
+  return entries.map((entry) => parseSeriesArg(entry, parseCsvList, parseNumber, CliError));
+}
+
 function createParseModelCalibrateFlags(deps) {
   const CliError = requireDep(deps, 'CliError');
   const requireFlagValue = requireDep(deps, 'requireFlagValue');
@@ -150,7 +158,7 @@ function createParseModelCorrelationFlags(deps) {
       const token = args[i];
       if (token === '--series') {
         options.series.push(
-          parseSeriesArg(requireFlagValue(args, i, '--series'), parseCsvList, parseNumber, CliError),
+          ...parseSeriesListArg(requireFlagValue(args, i, '--series'), parseCsvList, parseNumber, CliError),
         );
         i += 1;
         continue;

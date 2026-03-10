@@ -77,7 +77,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.88"
+          "version": "1.1.89"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -104,7 +104,7 @@
           "format": "node",
           "name": "@thisispandora/agent-sdk",
           "sourceProjectPath": "sdk/typescript/package.json",
-          "version": "0.1.0-alpha.7"
+          "version": "0.1.0-alpha.8"
         }
       },
       "supported": true,
@@ -270,7 +270,7 @@
   "commandCount": 160,
   "commandDescriptorVersion": "1.4.3",
   "contractCommandDescriptorVersion": "1.4.3",
-  "contractPackageVersion": "1.1.88",
+  "contractPackageVersion": "1.1.89",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
@@ -338,7 +338,7 @@
       "main": "cli/pandora.cjs",
       "name": "pandora-cli-skills",
       "sourceProjectPath": "package.json",
-      "version": "1.1.88"
+      "version": "1.1.89"
     },
     "typescript": {
       "artifactSubpaths": {
@@ -365,21 +365,21 @@
       "format": "node",
       "name": "@thisispandora/agent-sdk",
       "sourceProjectPath": "sdk/typescript/package.json",
-      "version": "0.1.0-alpha.7"
+      "version": "0.1.0-alpha.8"
     }
   },
   "registryDigest": {
     "canonicalHash": "b501a15ce9f61731613d044e2c97a03142a261af386b1182638eb069a5f7ea0a",
     "commandDigestHash": "d44d4b52bc59aa8da9ba7a19f1a85a188d48c20a6ad59a70fd5e0b583acdce08",
-    "descriptorHash": "2ae206133a8203abbb37247facc5610d8fc8bfce9d684be868eae387c3c2ce49",
+    "descriptorHash": "c94a1f4dab4102e7c6076e113c3eeaefa34ea99657a69f18156f65a61a3e9ec1",
     "documentationHash": "861462b91dd1da73bf3d98cd764d00241b3991ef641c10a096cec32fe84600af",
-    "fullDescriptorHash": "9893fd822e5431d69c0971d14bca374c10e07ddf26c34328f6fd7eb785b73db0",
+    "fullDescriptorHash": "637fa1f19ce131291afc90f047aafe7abd3679c7347ebeff703300f40680af7f",
     "namespaceHash": "111925823f74b9dd80c31aa375ceee6a9bc652739e5f9ed0c19263e524d310c5",
     "policyProfilesHash": "6dfcf1c27d5d5d89ee85bbb9ad19636b1bd621b91e89e2b4c3c9282764df81ed",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "b2363d86a80d53dcb1cf2ce05cd547a79df52cdadc9c53c45d29597fa9b5ce6e",
-    "trustDistributionHash": "40bd63f41304d9c653969fba60a606c12942aa13be30e04ef119c3526e9f08a1"
+    "trustDistributionHash": "9cd87c141bb5a1c1784e0a5fe8c9e4e66251b14d03a6356cc7c906158fc106df"
   },
   "schemaVersion": "1.0.0"
 }

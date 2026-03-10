@@ -2709,6 +2709,34 @@ test('markets get supports repeated --id values and reports missing ids', async 
   }
 });
 
+test('markets get accepts comma-delimited ids in one flag', async () => {
+  const indexer = await startIndexerMockServer();
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'get',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--id',
+      'market-1,market-missing',
+    ]);
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'markets.get');
+    assert.equal(payload.data.requestedCount, 2);
+    assert.equal(payload.data.count, 1);
+    assert.equal(payload.data.items[0].id, 'market-1');
+    assert.deepEqual(payload.data.missingIds, ['market-missing']);
+  } finally {
+    await indexer.close();
+  }
+});
+
 test('markets list validates lifecycle flag combinations', () => {
   const conflicting = runCli([
     '--output',
