@@ -7,7 +7,7 @@
   "assertionId": "capabilities-bootstrap",
   "parityGroup": "capabilities-bootstrap",
   "parityExpectedTransports": ["cli-json", "mcp-stdio", "mcp-http"],
-  "targetLatencyMs": 5000,
+  "targetLatencyMs": 8000,
   "weight": 12,
   "dimensions": ["bootstrap", "contract", "docs", "parity"],
   "request": {

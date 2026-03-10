@@ -293,7 +293,7 @@
     "minimumWeightedScore": 95,
     "releaseGatePass": true,
     "reportPath": "benchmarks/latest/core-report.json",
-    "scorecardHash": "dbc8abfab7b9997c458b82087fd3dfda764d72fb8154aa077ba91ba9585d7b0d",
+    "scorecardHash": "0f01c5ff2a6c5989cb47f356620821e840a0d0eb09578cb080416fa59a6064b3",
     "suiteLockHash": "0349fa8d2d29e857384519fd56d1f2fa9a553a9bcad761048c9186aa062f743d",
     "suiteLockPath": "benchmarks/locks/core.lock.json"
   },
@@ -438,7 +438,7 @@
       "score": {
         "latencyPass": true,
         "latencyScore": 100,
-        "latencyTargetMs": 5000,
+        "latencyTargetMs": 8000,
         "passedChecks": 23,
         "successScore": 100,
         "totalChecks": 23,

@@ -11,7 +11,7 @@
     "lockPath": "benchmarks/locks/core.lock.json",
     "historyPath": "benchmarks/latest/core-history.json",
     "docsHistoryPath": "docs/benchmarks/history.json",
-    "reportSha256": "af59d3ad5fbf968092243f2e09e7afcc0c743cd8a869ab46699f6c8454c3c677",
+    "reportSha256": "fd686a7c4ca43e1e77885fb43427abaef0db927bb67192e3a136252c9567d84b",
     "lockSha256": "0349fa8d2d29e857384519fd56d1f2fa9a553a9bcad761048c9186aa062f743d"
   },
   "latest": {
@@ -231,7 +231,7 @@
         "parityFailedGroups": [],
         "descriptorHash": "2018dec5cc671d76f3afaab553594b2d20ff7d05a79acefd1fecb7c28f3be8d9",
         "documentationContentHash": "5bb4bb3a181dc43ed07adfd68f7a00a902d9cf9de3e3206e358fb11928ca540a",
-        "reportSha256": "af59d3ad5fbf968092243f2e09e7afcc0c743cd8a869ab46699f6c8454c3c677",
+        "reportSha256": "fd686a7c4ca43e1e77885fb43427abaef0db927bb67192e3a136252c9567d84b",
         "lockSha256": "0349fa8d2d29e857384519fd56d1f2fa9a553a9bcad761048c9186aa062f743d",
         "lockSchemaVersion": "1.0.0"
       },
