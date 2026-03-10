@@ -2617,16 +2617,25 @@ test('mirror go lifecycle automation resolves then closes with explicit final re
       runMirrorClose: async () => {
         closeCalls += 1;
         return {
+          status: 'completed',
           summary: {
-            successCount: 3,
+            successCount: 4,
             failureCount: 0,
           },
+          resumeCommands: [],
+          polymarketSettlement: {
+            status: 'not-needed',
+            wallet: '0x3333333333333333333333333333333333333333',
+            estimatedValueUsd: 0,
+            resumeCommand: null,
+          },
           steps: [
-            { step: 'stop-daemons', ok: true },
-            { step: 'withdraw-lp', ok: true },
-            { step: 'claim-winnings', ok: true },
+            { step: 'stop-daemons', ok: true, status: 'completed' },
+            { step: 'withdraw-lp', ok: true, status: 'completed' },
+            { step: 'claim-winnings', ok: true, status: 'completed' },
+            { step: 'settle-polymarket', ok: true, status: 'not-needed' },
           ],
-          diagnostics: ['Polymarket hedge settlement remains manual in this command version; use polymarket trade/close flows as needed.'],
+          diagnostics: [],
         };
       },
       stopMirrorDaemon: async () => ({}),
@@ -2654,7 +2663,9 @@ test('mirror go lifecycle automation resolves then closes with explicit final re
   assert.equal(emittedPayload.lifecycle.close.status, 'completed');
   assert.equal(emittedPayload.lifecycle.finalReport.resolveStatus, 'completed');
   assert.equal(emittedPayload.lifecycle.finalReport.claimStatus, 'completed');
-  assert.equal(emittedPayload.lifecycle.finalReport.polymarketSettlement, 'manual');
+  assert.equal(emittedPayload.lifecycle.finalReport.polymarketSettlement, 'not-needed');
+  assert.equal(emittedPayload.lifecycle.finalReport.polymarketSettlementWallet, '0x3333333333333333333333333333333333333333');
+  assert.equal(emittedPayload.lifecycle.finalReport.polymarketSettlementValueUsd, 0);
   assert.deepEqual(emittedPayload.lifecycle.suggestedResumeCommands, []);
   assert.equal(resolveCalls.length, 3);
   assert.equal(closeCalls, 1);
@@ -4244,6 +4255,27 @@ test('createParseWatchFlags supports --amount alias with wallet target', () => {
   assert.equal(options.wallet, TEST_WALLET);
   assert.equal(options.amountUsdc, 2.5);
   assert.equal(options.marketAddress, null);
+});
+
+test('createParseWatchFlags requires --wallet for exposure and hedge-gap thresholds', () => {
+  const parseWatchFlags = createParseWatchFlags(buildParserDeps());
+
+  assert.throws(
+    () => parseWatchFlags(['--market-address', TEST_MARKET, '--alert-hedge-gap-above', '5']),
+    /Hedge-gap thresholds require --wallet/,
+  );
+  assert.throws(
+    () => parseWatchFlags(['--market-address', TEST_MARKET, '--max-hedge-gap-usdc', '5']),
+    /Hedge-gap thresholds require --wallet/,
+  );
+  assert.throws(
+    () => parseWatchFlags(['--market-address', TEST_MARKET, '--alert-exposure-above', '5']),
+    /Exposure thresholds require --wallet/,
+  );
+  assert.throws(
+    () => parseWatchFlags(['--market-address', TEST_MARKET, '--max-per-market-exposure-usdc', '5']),
+    /Exposure thresholds require --wallet/,
+  );
 });
 
 test('createParseAutopilotFlags applies default state files and paper-mode limits', () => {

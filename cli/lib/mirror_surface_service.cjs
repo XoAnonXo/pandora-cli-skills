@@ -85,6 +85,40 @@ function resolveMirrorSurfaceState(options = {}) {
     );
     return loadMirrorState(stateFile, strategyHash);
   }
+  const selector = normalizeSelector(options);
+  if (hasSelector(selector)) {
+    const stateDir = defaultMirrorStateDir();
+    if (fs.existsSync(stateDir)) {
+      const matches = [];
+      for (const entry of fs.readdirSync(stateDir, { withFileTypes: true })) {
+        if (!entry || !entry.isFile() || !String(entry.name || '').endsWith('.json')) continue;
+        const filePath = path.join(stateDir, entry.name);
+        const loaded = loadMirrorState(filePath, null);
+        if (!loaded || !loaded.state || !metadataMatchesSelector(loaded.state, selector)) continue;
+        let mtimeMs = 0;
+        try {
+          mtimeMs = fs.statSync(filePath).mtimeMs || 0;
+        } catch {
+          mtimeMs = 0;
+        }
+        matches.push({
+          filePath: loaded.filePath,
+          state: loaded.state,
+          mtimeMs,
+        });
+      }
+      if (matches.length) {
+        matches.sort((left, right) => {
+          if (right.mtimeMs !== left.mtimeMs) return right.mtimeMs - left.mtimeMs;
+          return String(left.filePath || '').localeCompare(String(right.filePath || ''));
+        });
+        return {
+          filePath: matches[0].filePath,
+          state: matches[0].state,
+        };
+      }
+    }
+  }
   return {
     filePath: null,
     state: createState(null, {}),

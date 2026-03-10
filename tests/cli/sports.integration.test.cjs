@@ -37,6 +37,29 @@ function parseJsonEnvelopeStrict(result, label) {
   return payload;
 }
 
+function parseJsonEnvelopeLoose(result, label) {
+  const stdout = String(result.stdout || '').trim();
+  const stderr = String(result.stderr || '').trim();
+
+  assert.equal(
+    stderr,
+    '',
+    `${label} wrote to stderr in JSON mode.\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+  );
+  assert.notEqual(stdout, '', `${label} returned empty stdout.`);
+
+  let payload;
+  try {
+    payload = JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(`${label} returned non-JSON stdout: ${error.message}\nstdout:\n${result.stdout}`);
+  }
+
+  assert.equal(typeof payload, 'object');
+  assert.notEqual(payload, null);
+  return payload;
+}
+
 test('sports env mocked URLs do not break JSON help/version command flows', async (t) => {
   const mock = await startJsonHttpServer(() => ({ body: { ok: true } }));
   t.after(async () => {
@@ -448,6 +471,144 @@ test('sports scores falls back to schedule data when event-status refresh times 
   );
   assert.equal(tableResult.status, 0, tableResult.output);
   assert.match(tableResult.stdout, /diagnostics:/i);
+});
+
+test('sports resolve plan returns a strict machine-usable execution payload when safe', () => {
+  const checksJson = JSON.stringify([
+    {
+      checkId: 'c1',
+      checkedAt: '2026-03-01T10:00:00.000Z',
+      sources: [{ name: 'official-feed', official: true, finalResult: 'yes', checkedAt: '2026-03-01T10:00:00.000Z' }],
+    },
+    {
+      checkId: 'c2',
+      checkedAt: '2026-03-01T10:05:00.000Z',
+      sources: [{ name: 'official-feed', official: true, finalResult: 'yes', checkedAt: '2026-03-01T10:05:00.000Z' }],
+    },
+  ]);
+
+  const result = runCli([
+    '--output',
+    'json',
+    'sports',
+    'resolve',
+    'plan',
+    '--checks-json',
+    checksJson,
+    '--poll-address',
+    '0x1111111111111111111111111111111111111111',
+    '--settle-delay-ms',
+    '600000',
+    '--consecutive-checks-required',
+    '2',
+    '--now',
+    '2026-03-01T10:10:00.000Z',
+    '--reason',
+    'Official final score confirmed.',
+    '--rpc-url',
+    'https://rpc.example',
+  ]);
+
+  assert.equal(result.status, 0, result.output || result.stderr);
+  const payload = parseJsonEnvelopeStrict(result, 'sports resolve plan safe');
+  assert.equal(payload.command, 'sports.resolve.plan');
+  assert.equal(payload.data.safeToResolve, true);
+  assert.equal(payload.data.status, 'safe');
+  assert.equal(payload.data.summary.executionReady, true);
+  assert.equal(payload.data.execution.ready, true);
+  assert.equal(payload.data.execution.commandName, 'resolve');
+  assert.equal(payload.data.execution.flags.answer, 'yes');
+  assert.equal(payload.data.execution.flags.execute, true);
+  assert.deepEqual(payload.data.execution.flags.extraFlags, ['--rpc-url', 'https://rpc.example']);
+  assert.deepEqual(
+    payload.data.execution.argv,
+    [
+      'resolve',
+      '--poll-address',
+      '0x1111111111111111111111111111111111111111',
+      '--answer',
+      'yes',
+      '--reason',
+      'Official final score confirmed.',
+      '--execute',
+      '--rpc-url',
+      'https://rpc.example',
+    ],
+  );
+  assert.equal(payload.data.resolution.sourceTier, 'official');
+
+  const tableResult = runCli([
+    'sports',
+    'resolve',
+    'plan',
+    '--checks-json',
+    checksJson,
+    '--poll-address',
+    '0x1111111111111111111111111111111111111111',
+    '--settle-delay-ms',
+    '600000',
+    '--consecutive-checks-required',
+    '2',
+    '--now',
+    '2026-03-01T10:10:00.000Z',
+    '--reason',
+    'Official final score confirmed.',
+    '--rpc-url',
+    'https://rpc.example',
+  ]);
+  assert.equal(tableResult.status, 0, tableResult.output);
+  assert.match(String(tableResult.stdout || ''), /Resolve plan: safe/);
+  assert.match(String(tableResult.stdout || ''), /next: pandora resolve --poll-address/);
+  assert.match(String(tableResult.stdout || ''), /--rpc-url https:\/\/rpc\.example/);
+});
+
+test('sports resolve plan unsafe error includes structured blockers and retry guidance', () => {
+  const checksJson = JSON.stringify([
+    {
+      checkId: 'c1',
+      checkedAt: '2026-03-01T10:00:00.000Z',
+      sources: [{ name: 'official-feed', official: true, finalResult: 'yes', checkedAt: '2026-03-01T10:00:00.000Z' }],
+    },
+    {
+      checkId: 'c2',
+      checkedAt: '2026-03-01T10:05:00.000Z',
+      sources: [{ name: 'official-feed', official: true, finalResult: 'yes', checkedAt: '2026-03-01T10:05:00.000Z' }],
+    },
+  ]);
+
+  const result = runCli([
+    '--output',
+    'json',
+    'sports',
+    'resolve',
+    'plan',
+    '--checks-json',
+    checksJson,
+    '--poll-address',
+    '0x1111111111111111111111111111111111111111',
+    '--settle-delay-ms',
+    '600000',
+    '--consecutive-checks-required',
+    '2',
+    '--now',
+    '2026-03-01T10:09:00.000Z',
+    '--event-id',
+    'nba-bos-cle-2026-03-01',
+  ]);
+
+  assert.equal(result.status, 1, result.output || result.stderr);
+  const payload = parseJsonEnvelopeLoose(result, 'sports resolve plan unsafe');
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'SPORTS_RESOLVE_PLAN_UNSAFE');
+  assert.equal(payload.error.details.safeToResolve, false);
+  assert.equal(payload.error.details.status, 'unsafe');
+  assert.equal(payload.error.details.recommendedAnswer, 'yes');
+  assert.equal(payload.error.details.blockingCodes.includes('SETTLE_DELAY_PENDING'), true);
+  assert.equal(payload.error.details.timing.recommendedRecheckAt, '2026-03-01T10:10:00.000Z');
+  assert.equal(payload.error.details.execution.ready, false);
+  assert.equal(Array.isArray(payload.error.details.hints), true);
+  assert.equal(payload.error.details.hints.some((hint) => /Retry after 2026-03-01T10:10:00.000Z/.test(hint)), true);
+  assert.equal(payload.error.details.hints.some((hint) => /--event-id nba-bos-cle-2026-03-01/.test(hint)), true);
 });
 
 test('sports odds snapshot/consensus use bulk competition endpoint with disk cache across invocations', async (t) => {

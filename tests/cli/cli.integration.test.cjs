@@ -8331,6 +8331,70 @@ test('mirror status can load state via strategy hash path', async () => {
   removeDir(tempDir);
 });
 
+test('mirror status can infer the paired source selector from persisted state when given only --market-address', async () => {
+  const tempDir = createTempDir('pandora-mirror-status-selector-hint-');
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const statePath = path.join(stateDir, '0123456789abcdef.json');
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer({
+    ...buildMirrorPolymarketOverrides(),
+    balances: {
+      'poly-yes-1': '12.5',
+      'poly-no-1': '3.25',
+    },
+  });
+
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: '0123456789abcdef',
+        pandoraMarketAddress: ADDRESSES.mirrorMarket,
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: 'poly-game-1',
+        tradesToday: 3,
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'status',
+      '--market-address',
+      ADDRESSES.mirrorMarket,
+      '--with-live',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+    ], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.status');
+    assert.equal(payload.data.stateFile, statePath);
+    assert.equal(payload.data.selector.pandoraMarketAddress, ADDRESSES.mirrorMarket);
+    assert.equal(payload.data.selector.polymarketMarketId, 'poly-cond-1');
+    assert.equal(payload.data.selector.polymarketSlug, 'poly-game-1');
+    assert.equal(payload.data.state.tradesToday, 3);
+    assert.equal(payload.data.live.sourceMarket.marketId, 'poly-cond-1');
+  } finally {
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
 test('mirror status surfaces unreadable pending-action locks as blocked runtime state', () => {
   const tempDir = createTempDir('pandora-mirror-status-lock-invalid-');
   const stateFile = path.join(tempDir, 'mirror-state.json');
@@ -10541,8 +10605,21 @@ test('mirror close dry-run returns deterministic close plan scaffold', () => {
   assert.equal(payload.ok, true);
   assert.equal(payload.command, 'mirror.close');
   assert.equal(payload.data.mode, 'dry-run');
+  assert.equal(payload.data.status, 'planned');
   assert.equal(Array.isArray(payload.data.steps), true);
-  assert.equal(payload.data.steps.length >= 3, true);
+  assert.deepEqual(
+    payload.data.steps.map((step) => step.step),
+    ['stop-daemons', 'withdraw-lp', 'claim-winnings', 'settle-polymarket'],
+  );
+  assert.deepEqual(
+    payload.data.steps.map((step) => step.status),
+    ['planned', 'planned', 'planned', 'planned'],
+  );
+  assert.equal(payload.data.polymarketSettlement.status, 'discovery-unavailable');
+  assert.match(
+    payload.data.polymarketSettlement.resumeCommand,
+    /pandora polymarket positions --wallet <wallet-address> --market-id poly-cond-1/,
+  );
 });
 
 test('webhook test sends generic and discord payloads', async () => {

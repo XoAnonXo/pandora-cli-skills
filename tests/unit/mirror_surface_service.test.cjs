@@ -1,9 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   buildMirrorPnlPayload,
   buildMirrorAuditPayload,
+  resolveMirrorSurfaceState,
 } = require('../../cli/lib/mirror_surface_service.cjs');
 
 test('buildMirrorPnlPayload preserves scenario outputs derived from live market inputs', () => {
@@ -217,6 +221,65 @@ test('buildMirrorAuditPayload falls back to top-level execution failure counts w
   assert.equal(payload.summary.errorCount, 1);
   assert.equal(payload.ledger.entries[0].classification, 'sync-action');
   assert.equal(payload.ledger.entries[0].status, 'failed');
+});
+
+test('resolveMirrorSurfaceState can infer a persisted state file from one selector hint', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-surface-'));
+  const previousHome = process.env.HOME;
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const olderStatePath = path.join(stateDir, 'aaaaaaaaaaaaaaaa.json');
+  const newerStatePath = path.join(stateDir, 'bbbbbbbbbbbbbbbb.json');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    olderStatePath,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'aaaaaaaaaaaaaaaa',
+        pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+        polymarketMarketId: 'poly-older',
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    newerStatePath,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'bbbbbbbbbbbbbbbb',
+        pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+        polymarketMarketId: 'poly-newer',
+        polymarketSlug: 'newer-slug',
+      },
+      null,
+      2,
+    ),
+  );
+  const olderTime = new Date('2026-03-09T00:00:00.000Z');
+  const newerTime = new Date('2026-03-10T00:00:00.000Z');
+  fs.utimesSync(olderStatePath, olderTime, olderTime);
+  fs.utimesSync(newerStatePath, newerTime, newerTime);
+
+  try {
+    process.env.HOME = tempDir;
+    const loaded = resolveMirrorSurfaceState({
+      pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+    });
+
+    assert.equal(loaded.filePath, newerStatePath);
+    assert.equal(loaded.state.strategyHash, 'bbbbbbbbbbbbbbbb');
+    assert.equal(loaded.state.polymarketMarketId, 'poly-newer');
+    assert.equal(loaded.state.polymarketSlug, 'newer-slug');
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('buildMirrorAuditPayload preserves modeled execution metadata on state fallback entries', () => {

@@ -248,8 +248,15 @@ module.exports = async function handleMirrorHealth({ actionArgs, context, deps }
     ? resolveMirrorSurfaceState({
         stateFile: explicitStateFile,
         strategyHash: options.strategyHash || (explicitDaemonStatus && explicitDaemonStatus.strategyHash) || null,
+        pandoraMarketAddress: options.pandoraMarketAddress || null,
+        polymarketMarketId: options.polymarketMarketId || null,
+        polymarketSlug: options.polymarketSlug || null,
       })
-    : resolveMirrorSurfaceState({});
+    : resolveMirrorSurfaceState({
+        pandoraMarketAddress: options.pandoraMarketAddress || null,
+        polymarketMarketId: options.polymarketMarketId || null,
+        polymarketSlug: options.polymarketSlug || null,
+      });
 
   const selector = buildSelector(options, loaded, explicitDaemonStatus);
   const daemonStatus = explicitDaemonStatus || resolveMirrorSurfaceDaemonStatus(selector, loaded.state);

@@ -1,5 +1,8 @@
 const MIRROR_CLOSE_SCHEMA_VERSION = '1.0.0';
 const SHARED_OPERATION_PROTOCOL = 'shared-operation/v1';
+const SUCCESS_STEP_STATUSES = new Set(['planned', 'completed', 'not-needed']);
+
+let cachedRunPolymarketPositions = null;
 
 function normalizeError(err, fallbackCode) {
   return {
@@ -46,6 +49,22 @@ function inferMirrorCloseStatus(payload, options = {}) {
     return successCount > 0 ? 'completed' : 'no-op';
   }
   return successCount > 0 ? 'partial' : 'failed';
+}
+
+function isSuccessfulStepStatus(status) {
+  return SUCCESS_STEP_STATUSES.has(status);
+}
+
+function uniqueStrings(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const normalized = value === undefined || value === null ? '' : String(value).trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
 }
 
 function buildMirrorCloseOperationContext(options = {}, payload = {}) {
@@ -135,12 +154,18 @@ async function maybeDecorateOperationPayload(deps, payload, options) {
   }
 }
 
-function buildStepResult(step, ok, data, error) {
+function buildStepResult(step, status, data, error, extras = {}) {
   return {
     step,
-    ok,
-    data: ok ? data : null,
-    error: ok ? null : error,
+    status,
+    ok: isSuccessfulStepStatus(status),
+    data: data || null,
+    error: error || null,
+    resumeCommand: extras.resumeCommand || null,
+    resumable:
+      extras.resumable !== undefined
+        ? Boolean(extras.resumable)
+        : Boolean(extras.resumeCommand && !isSuccessfulStepStatus(status)),
   };
 }
 
@@ -150,6 +175,300 @@ function buildSkippedDependencyError(failedStep) {
     message: `Skipped because prior step "${failedStep}" failed.`,
     details: { failedStep },
   };
+}
+
+function buildMirrorSyncStopCommand(options = {}) {
+  if (options.all) {
+    return 'pandora mirror sync stop --all';
+  }
+  const parts = ['pandora mirror sync stop'];
+  if (options.pandoraMarketAddress) {
+    parts.push(`--market-address ${options.pandoraMarketAddress}`);
+  }
+  if (options.polymarketMarketId) {
+    parts.push(`--polymarket-market-id ${options.polymarketMarketId}`);
+  } else if (options.polymarketSlug) {
+    parts.push(`--polymarket-slug ${options.polymarketSlug}`);
+  }
+  return parts.join(' ');
+}
+
+function buildLpRemoveCommand(options = {}) {
+  const parts = ['pandora lp remove'];
+  if (options.all) {
+    parts.push('--all-markets');
+  } else if (options.pandoraMarketAddress) {
+    parts.push(`--market-address ${options.pandoraMarketAddress}`);
+  }
+  parts.push('--all');
+  parts.push('--execute');
+  if (options.wallet) {
+    parts.push(`--wallet ${options.wallet}`);
+  }
+  if (Number.isInteger(options.chainId)) {
+    parts.push(`--chain-id ${options.chainId}`);
+  }
+  if (options.rpcUrl) {
+    parts.push(`--rpc-url ${options.rpcUrl}`);
+  }
+  if (options.profileId) {
+    parts.push(`--profile-id ${options.profileId}`);
+  } else if (options.profileFile) {
+    parts.push(`--profile-file ${options.profileFile}`);
+  }
+  return parts.join(' ');
+}
+
+function buildClaimCommand(options = {}) {
+  const parts = ['pandora claim'];
+  if (options.all) {
+    parts.push('--all');
+  } else if (options.pandoraMarketAddress) {
+    parts.push(`--market-address ${options.pandoraMarketAddress}`);
+  }
+  parts.push('--execute');
+  if (options.wallet) {
+    parts.push(`--wallet ${options.wallet}`);
+  }
+  if (Number.isInteger(options.chainId)) {
+    parts.push(`--chain-id ${options.chainId}`);
+  }
+  if (options.rpcUrl) {
+    parts.push(`--rpc-url ${options.rpcUrl}`);
+  }
+  if (options.indexerUrl) {
+    parts.push(`--indexer-url ${options.indexerUrl}`);
+  }
+  if (options.profileId) {
+    parts.push(`--profile-id ${options.profileId}`);
+  } else if (options.profileFile) {
+    parts.push(`--profile-file ${options.profileFile}`);
+  }
+  return parts.join(' ');
+}
+
+function buildPolymarketPositionsCommand(options = {}, wallet) {
+  const parts = ['pandora polymarket positions'];
+  parts.push(`--wallet ${wallet || '<wallet-address>'}`);
+  if (options.polymarketMarketId) {
+    parts.push(`--market-id ${options.polymarketMarketId}`);
+  } else if (options.polymarketSlug) {
+    parts.push(`--slug ${options.polymarketSlug}`);
+  }
+  return parts.join(' ');
+}
+
+function resolveSettlementWallet(options = {}, deps = {}) {
+  if (options.wallet) return options.wallet;
+  if (typeof deps.deriveWalletAddressFromPrivateKey === 'function' && options.privateKey) {
+    try {
+      return deps.deriveWalletAddressFromPrivateKey(options.privateKey);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function getRunPolymarketPositions(deps = {}) {
+  if (typeof deps.runPolymarketPositions === 'function') {
+    return deps.runPolymarketPositions;
+  }
+  if (cachedRunPolymarketPositions) {
+    return cachedRunPolymarketPositions;
+  }
+  try {
+    const moduleValue = require('./polymarket_ops_service.cjs');
+    if (moduleValue && typeof moduleValue.runPolymarketPositions === 'function') {
+      cachedRunPolymarketPositions = moduleValue.runPolymarketPositions;
+      return cachedRunPolymarketPositions;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function toFiniteNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function buildPolymarketSettlementSummary(step = {}) {
+  const data = step && step.data && typeof step.data === 'object' ? step.data : {};
+  return {
+    stepStatus: step && step.status ? step.status : 'unknown',
+    status:
+      data.settlementStatus
+      || (step && step.status ? step.status : 'unknown'),
+    wallet: data.wallet || null,
+    marketId: data.marketId || null,
+    slug: data.slug || null,
+    hasExposure: data.hasExposure === true,
+    yesBalance: data.yesBalance !== undefined ? data.yesBalance : null,
+    noBalance: data.noBalance !== undefined ? data.noBalance : null,
+    openOrdersCount: data.openOrdersCount !== undefined ? data.openOrdersCount : null,
+    openOrdersNotionalUsd: data.openOrdersNotionalUsd !== undefined ? data.openOrdersNotionalUsd : null,
+    estimatedValueUsd: data.estimatedValueUsd !== undefined ? data.estimatedValueUsd : null,
+    sourceResolved: data.sourceResolved || null,
+    autoSettlementSupported: data.autoSettlementSupported === true,
+    resumeCommand: step && step.resumeCommand ? step.resumeCommand : null,
+    diagnostics: Array.isArray(data.diagnostics) ? data.diagnostics : [],
+  };
+}
+
+async function inspectPolymarketSettlement(options = {}, deps = {}) {
+  const settlementWallet = resolveSettlementWallet(options, deps);
+  const resumeCommand = buildPolymarketPositionsCommand(options, settlementWallet);
+  const baseData = {
+    wallet: settlementWallet,
+    marketId: options.polymarketMarketId || null,
+    slug: options.polymarketSlug || null,
+    autoSettlementSupported: false,
+    settlementStatus: 'unknown',
+    hasExposure: false,
+    diagnostics: [],
+  };
+
+  if (!settlementWallet) {
+    baseData.settlementStatus = 'discovery-unavailable';
+    baseData.diagnostics.push('Polymarket settlement discovery requires --wallet or signer credentials that resolve a wallet address.');
+    return buildStepResult(
+      'settle-polymarket',
+      options.execute ? 'discovery-unavailable' : 'planned',
+      baseData,
+      options.execute
+        ? {
+            code: 'POLYMARKET_SETTLEMENT_WALLET_REQUIRED',
+            message: 'Polymarket settlement discovery requires a wallet address.',
+            details: {
+              marketId: options.polymarketMarketId || null,
+              slug: options.polymarketSlug || null,
+            },
+          }
+        : null,
+      { resumeCommand },
+    );
+  }
+
+  const runPolymarketPositions = getRunPolymarketPositions(deps);
+  if (typeof runPolymarketPositions !== 'function') {
+    baseData.settlementStatus = 'discovery-unavailable';
+    baseData.diagnostics.push('Polymarket positions inspection is unavailable in this build.');
+    return buildStepResult(
+      'settle-polymarket',
+      options.execute ? 'discovery-unavailable' : 'planned',
+      baseData,
+      options.execute
+        ? {
+            code: 'POLYMARKET_SETTLEMENT_UNAVAILABLE',
+            message: 'Polymarket settlement inspection is unavailable in this build.',
+            details: null,
+          }
+        : null,
+      { resumeCommand },
+    );
+  }
+
+  try {
+    const settlementPayload = await runPolymarketPositions({
+      wallet: settlementWallet,
+      marketId: options.polymarketMarketId || null,
+      slug: options.polymarketSlug || null,
+      rpcUrl: options.rpcUrl || null,
+      privateKey: options.privateKey || null,
+      timeoutMs: options.timeoutMs || null,
+      source: 'auto',
+    });
+    const summary = settlementPayload && settlementPayload.summary && typeof settlementPayload.summary === 'object'
+      ? settlementPayload.summary
+      : {};
+    const yesBalance = toFiniteNumber(summary.yesBalance);
+    const noBalance = toFiniteNumber(summary.noBalance);
+    const openOrdersCount = Number.isInteger(summary.openOrdersCount) ? summary.openOrdersCount : 0;
+    const openOrdersNotionalUsd = toFiniteNumber(summary.openOrdersNotionalUsd);
+    const estimatedValueUsd = toFiniteNumber(summary.estimatedValueUsd);
+    const positions = Array.isArray(settlementPayload && settlementPayload.positions) ? settlementPayload.positions : [];
+    const hasExposure =
+      (yesBalance !== null && yesBalance > 0)
+      || (noBalance !== null && noBalance > 0)
+      || openOrdersCount > 0
+      || (estimatedValueUsd !== null && estimatedValueUsd > 0)
+      || positions.length > 0;
+    const data = {
+      wallet: settlementWallet,
+      marketId: (settlementPayload && settlementPayload.marketId) || options.polymarketMarketId || null,
+      slug: (settlementPayload && settlementPayload.slug) || options.polymarketSlug || null,
+      autoSettlementSupported: false,
+      settlementStatus: hasExposure ? 'manual-action-required' : 'not-needed',
+      hasExposure,
+      yesBalance,
+      noBalance,
+      openOrdersCount,
+      openOrdersNotionalUsd,
+      estimatedValueUsd,
+      sourceResolved: settlementPayload && settlementPayload.sourceResolved ? settlementPayload.sourceResolved : null,
+      diagnostics: Array.isArray(settlementPayload && settlementPayload.diagnostics) ? settlementPayload.diagnostics : [],
+    };
+
+    if (!options.execute) {
+      return buildStepResult('settle-polymarket', 'planned', data, null, { resumeCommand });
+    }
+
+    if (!hasExposure) {
+      return buildStepResult('settle-polymarket', 'not-needed', data, null, { resumeCommand: null });
+    }
+
+    return buildStepResult(
+      'settle-polymarket',
+      'manual-action-required',
+      data,
+      {
+        code: 'POLYMARKET_SETTLEMENT_MANUAL_REQUIRED',
+        message: 'Polymarket exposure remains and this closeout flow can only inspect, not redeem or unwind it automatically.',
+        details: {
+          yesBalance,
+          noBalance,
+          openOrdersCount,
+          estimatedValueUsd,
+        },
+      },
+      { resumeCommand },
+    );
+  } catch (err) {
+    const error = normalizeError(err, 'POLYMARKET_SETTLEMENT_DISCOVERY_FAILED');
+    const data = {
+      ...baseData,
+      settlementStatus: 'discovery-failed',
+      diagnostics: [error.message],
+    };
+    return buildStepResult(
+      'settle-polymarket',
+      options.execute ? 'discovery-failed' : 'planned',
+      data,
+      options.execute ? error : null,
+      { resumeCommand },
+    );
+  }
+}
+
+function finalizeMirrorClosePayload(payload, options = {}) {
+  payload.summary.successCount = payload.steps.filter((item) => item.ok).length;
+  payload.summary.failureCount = payload.steps.filter((item) => !item.ok).length;
+  payload.summary.statuses = payload.steps.reduce((acc, step) => {
+    const status = step && step.status ? step.status : 'unknown';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  payload.status = inferMirrorCloseStatus(payload, options);
+  payload.resumeCommands = uniqueStrings(
+    payload.steps
+      .filter((step) => step && step.resumeCommand && !isSuccessfulStepStatus(step.status))
+      .map((step) => step.resumeCommand),
+  );
+  const settlementStep = payload.steps.find((step) => step && step.step === 'settle-polymarket') || null;
+  payload.polymarketSettlement = buildPolymarketSettlementSummary(settlementStep);
+  return payload;
 }
 
 /**
@@ -184,18 +503,27 @@ async function runMirrorClose(options = {}, deps = {}) {
       successCount: 0,
       failureCount: 0,
     },
+    status: 'planned',
+    resumeCommands: [],
+    polymarketSettlement: null,
     diagnostics: [],
   };
 
   if (!options.execute) {
     payload.steps = [
-      buildStepResult('stop-daemons', true, { planned: true }, null),
-      buildStepResult('withdraw-lp', true, { planned: true }, null),
-      buildStepResult('claim-winnings', true, { planned: true }, null),
+      buildStepResult('stop-daemons', 'planned', { planned: true }, null, {
+        resumeCommand: buildMirrorSyncStopCommand(options),
+      }),
+      buildStepResult('withdraw-lp', 'planned', { planned: true }, null, {
+        resumeCommand: buildLpRemoveCommand(options),
+      }),
+      buildStepResult('claim-winnings', 'planned', { planned: true }, null, {
+        resumeCommand: buildClaimCommand(options),
+      }),
     ];
-    payload.summary.successCount = payload.steps.length;
-    payload.summary.failureCount = 0;
+    payload.steps.push(await inspectPolymarketSettlement(options, deps));
     payload.diagnostics.push('Dry-run close plan generated.');
+    finalizeMirrorClosePayload(payload, options);
     return maybeDecorateOperationPayload(deps, payload, {
       ...options,
       deriveWalletAddressFromPrivateKey: deps && typeof deps.deriveWalletAddressFromPrivateKey === 'function'
@@ -213,16 +541,34 @@ async function runMirrorClose(options = {}, deps = {}) {
         ? { all: true }
         : { marketAddress: options.pandoraMarketAddress },
     );
-    payload.steps.push(buildStepResult('stop-daemons', true, stopResult, null));
+    payload.steps.push(buildStepResult('stop-daemons', 'completed', stopResult, null, {
+      resumeCommand: null,
+    }));
   } catch (err) {
-    payload.steps.push(buildStepResult('stop-daemons', false, null, normalizeError(err, 'MIRROR_CLOSE_STOP_FAILED')));
+    payload.steps.push(buildStepResult(
+      'stop-daemons',
+      'failed',
+      null,
+      normalizeError(err, 'MIRROR_CLOSE_STOP_FAILED'),
+      {
+        resumeCommand: buildMirrorSyncStopCommand(options),
+      },
+    ));
     canProceed = false;
     failedDependency = 'stop-daemons';
   }
 
   let lpResult;
   if (!canProceed) {
-    payload.steps.push(buildStepResult('withdraw-lp', false, null, buildSkippedDependencyError(failedDependency)));
+    payload.steps.push(buildStepResult(
+      'withdraw-lp',
+      'skipped',
+      null,
+      buildSkippedDependencyError(failedDependency),
+      {
+        resumeCommand: buildLpRemoveCommand(options),
+      },
+    ));
   } else {
     try {
       lpResult = await deps.runLp({
@@ -242,9 +588,17 @@ async function runMirrorClose(options = {}, deps = {}) {
         indexerUrl: options.indexerUrl || null,
         timeoutMs: options.timeoutMs || null,
       });
-      payload.steps.push(buildStepResult('withdraw-lp', true, lpResult, null));
+      payload.steps.push(buildStepResult('withdraw-lp', 'completed', lpResult, null));
     } catch (err) {
-      payload.steps.push(buildStepResult('withdraw-lp', false, null, normalizeError(err, 'MIRROR_CLOSE_WITHDRAW_FAILED')));
+      payload.steps.push(buildStepResult(
+        'withdraw-lp',
+        'failed',
+        null,
+        normalizeError(err, 'MIRROR_CLOSE_WITHDRAW_FAILED'),
+        {
+          resumeCommand: buildLpRemoveCommand(options),
+        },
+      ));
       canProceed = false;
       failedDependency = 'withdraw-lp';
     }
@@ -252,7 +606,15 @@ async function runMirrorClose(options = {}, deps = {}) {
 
   let claimResult;
   if (!canProceed) {
-    payload.steps.push(buildStepResult('claim-winnings', false, null, buildSkippedDependencyError(failedDependency)));
+    payload.steps.push(buildStepResult(
+      'claim-winnings',
+      'skipped',
+      null,
+      buildSkippedDependencyError(failedDependency),
+      {
+        resumeCommand: buildClaimCommand(options),
+      },
+    ));
   } else {
     try {
       claimResult = await deps.runClaim({
@@ -269,18 +631,22 @@ async function runMirrorClose(options = {}, deps = {}) {
         indexerUrl: options.indexerUrl || null,
         timeoutMs: options.timeoutMs || null,
       });
-      payload.steps.push(buildStepResult('claim-winnings', true, claimResult, null));
+      payload.steps.push(buildStepResult('claim-winnings', 'completed', claimResult, null));
     } catch (err) {
-      payload.steps.push(buildStepResult('claim-winnings', false, null, normalizeError(err, 'MIRROR_CLOSE_CLAIM_FAILED')));
+      payload.steps.push(buildStepResult(
+        'claim-winnings',
+        'failed',
+        null,
+        normalizeError(err, 'MIRROR_CLOSE_CLAIM_FAILED'),
+        {
+          resumeCommand: buildClaimCommand(options),
+        },
+      ));
     }
   }
 
-  payload.summary.successCount = payload.steps.filter((item) => item.ok).length;
-  payload.summary.failureCount = payload.steps.filter((item) => !item.ok).length;
-
-  payload.diagnostics.push(
-    'Polymarket hedge settlement remains manual in this command version; use polymarket trade/close flows as needed.',
-  );
+  payload.steps.push(await inspectPolymarketSettlement(options, deps));
+  finalizeMirrorClosePayload(payload, options);
 
   return maybeDecorateOperationPayload(deps, payload, {
     ...options,

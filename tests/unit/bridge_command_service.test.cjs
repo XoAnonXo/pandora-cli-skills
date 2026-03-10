@@ -13,12 +13,11 @@ class TestCliError extends Error {
   }
 }
 
-test('bridge plan returns explicit Ethereum -> Polygon assumptions and manual next steps', async () => {
-  const observed = [];
-  const runBridgeCommand = createRunBridgeCommand({
+function createBridgeCommandDeps(overrides = {}) {
+  return {
     CliError: TestCliError,
     includesHelpFlag: (args) => Array.isArray(args) && args.includes('--help'),
-    emitSuccess: (...args) => observed.push(args),
+    emitSuccess: (...args) => overrides.observed.push(args),
     commandHelpPayload: (usage, notes) => ({ usage, notes }),
     parseIndexerSharedFlags: (args) => ({
       rest: args,
@@ -56,7 +55,13 @@ test('bridge plan returns explicit Ethereum -> Polygon assumptions and manual ne
             diagnostics: [],
           }
     ),
-  });
+    ...overrides,
+  };
+}
+
+test('bridge plan returns explicit Ethereum -> Polygon assumptions and manual next steps', async () => {
+  const observed = [];
+  const runBridgeCommand = createRunBridgeCommand(createBridgeCommandDeps({ observed }));
 
   await runBridgeCommand(
     ['plan', '--target', 'polymarket', '--amount-usdc', '10', '--wallet', '0x1111111111111111111111111111111111111111'],
@@ -73,6 +78,162 @@ test('bridge plan returns explicit Ethereum -> Polygon assumptions and manual ne
   assert.equal(payload.bridge.requiredAmountUsdc, 8);
   assert.equal(payload.bridge.sourceShortfallUsdc, 0);
   assert.equal(payload.suggestions.some((item) => item.command === 'pandora polymarket deposit --amount-usdc 10'), true);
+});
+
+test('bridge execute dry-run returns LayerZero preflight, quote data, and an execution plan', async () => {
+  const observed = [];
+  let quoteRequest = null;
+  const runBridgeCommand = createRunBridgeCommand(createBridgeCommandDeps({
+    observed,
+    quoteLayerZeroBridge: async (request) => {
+      quoteRequest = request;
+      return {
+        quoteId: 'lz-quote-1',
+        estimatedBridgeAmountUsdc: request.requiredBridgeAmountUsdc,
+        estimatedReceiveAmountUsdc: 7.82,
+        minReceiveAmountUsdc: 7.7,
+        estimatedFeeNative: 0.00123,
+        estimatedFeeUsd: 2.11,
+        estimatedCompletionSeconds: 180,
+      };
+    },
+  }));
+
+  await runBridgeCommand(
+    ['execute', '--target', 'polymarket', '--amount-usdc', '10', '--wallet', '0x1111111111111111111111111111111111111111', '--dry-run'],
+    { outputMode: 'json' },
+  );
+
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0][1], 'bridge.execute');
+  const payload = observed[0][2];
+  assert.equal(payload.mode, 'dry-run');
+  assert.equal(payload.status, 'planned');
+  assert.equal(payload.provider, 'layerzero');
+  assert.equal(payload.preflight.status, 'ready');
+  assert.equal(payload.preflight.quoteAvailable, true);
+  assert.equal(payload.executionPlan.executeFlagRequired, '--execute');
+  assert.equal(payload.providerQuote.quoteId, 'lz-quote-1');
+  assert.equal(payload.providerQuote.estimatedReceiveAmountUsdc, 7.82);
+  assert.equal(payload.suggestions.some((item) => item.id === 'bridge-submit-layerzero'), true);
+  assert.ok(quoteRequest);
+  assert.equal(quoteRequest.provider, 'layerzero');
+  assert.equal(quoteRequest.source.chainId, 1);
+  assert.equal(quoteRequest.destination.chainId, 137);
+  assert.equal(quoteRequest.requiredBridgeAmountUsdc, 8);
+});
+
+test('bridge execute submits a mocked LayerZero request after preflight passes', async () => {
+  const observed = [];
+  const guardCalls = [];
+  let executeRequest = null;
+  const runBridgeCommand = createRunBridgeCommand(createBridgeCommandDeps({
+    observed,
+    assertLiveWriteAllowed: async (scope, details) => {
+      guardCalls.push({ scope, details });
+    },
+    quoteLayerZeroBridge: async (request) => ({
+      quoteId: 'lz-quote-2',
+      estimatedBridgeAmountUsdc: request.requiredBridgeAmountUsdc,
+      estimatedReceiveAmountUsdc: 7.8,
+      estimatedFeeNative: 0.00111,
+      estimatedFeeUsd: 1.98,
+    }),
+    executeLayerZeroBridge: async (request) => {
+      executeRequest = request;
+      return {
+        status: 'submitted',
+        txHash: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        messageId: 'lz-msg-1',
+        chainId: 1,
+        estimatedBridgeAmountUsdc: request.requiredBridgeAmountUsdc,
+        estimatedReceiveAmountUsdc: 7.8,
+        estimatedFeeNative: 0.00111,
+        estimatedFeeUsd: 1.98,
+      };
+    },
+  }));
+
+  await runBridgeCommand(
+    ['execute', '--target', 'polymarket', '--amount-usdc', '10', '--wallet', '0x1111111111111111111111111111111111111111', '--execute'],
+    { outputMode: 'json' },
+  );
+
+  assert.equal(observed.length, 1);
+  const payload = observed[0][2];
+  assert.equal(payload.mode, 'execute');
+  assert.equal(payload.status, 'submitted');
+  assert.equal(payload.preflight.status, 'ready');
+  assert.equal(payload.execution.provider, 'layerzero');
+  assert.equal(payload.execution.txHash, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  assert.equal(payload.execution.messageId, 'lz-msg-1');
+  assert.equal(guardCalls.length, 1);
+  assert.equal(guardCalls[0].scope, 'bridge.execute');
+  assert.equal(guardCalls[0].details.notionalUsdc, 8);
+  assert.ok(executeRequest);
+  assert.equal(executeRequest.provider, 'layerzero');
+  assert.equal(executeRequest.timeoutMs, 5000);
+});
+
+test('bridge execute rejects unsupported providers', async () => {
+  const observed = [];
+  const runBridgeCommand = createRunBridgeCommand(createBridgeCommandDeps({ observed }));
+
+  await assert.rejects(
+    runBridgeCommand(
+      ['execute', '--target', 'polymarket', '--amount-usdc', '10', '--wallet', '0x1111111111111111111111111111111111111111', '--dry-run', '--provider', 'wormhole'],
+      { outputMode: 'json' },
+    ),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /--provider must be layerzero/i);
+      return true;
+    },
+  );
+});
+
+test('bridge execute blocks live submission when the source wallet is short', async () => {
+  const observed = [];
+  let executeCalls = 0;
+  const runBridgeCommand = createRunBridgeCommand(createBridgeCommandDeps({
+    observed,
+    readPandoraWalletBalances: async ({ chainId }) => (
+      chainId === 1
+        ? {
+            enabled: true,
+            walletAddress: '0x1111111111111111111111111111111111111111',
+            nativeBalance: 0.12,
+            usdcBalance: 3,
+            diagnostics: [],
+          }
+        : {
+            enabled: true,
+            walletAddress: '0x1111111111111111111111111111111111111111',
+            nativeBalance: 3,
+            usdcBalance: 2,
+            diagnostics: [],
+          }
+    ),
+    executeLayerZeroBridge: async () => {
+      executeCalls += 1;
+      return { txHash: '0xbb' };
+    },
+  }));
+
+  await assert.rejects(
+    runBridgeCommand(
+      ['execute', '--target', 'polymarket', '--amount-usdc', '10', '--wallet', '0x1111111111111111111111111111111111111111', '--execute'],
+      { outputMode: 'json' },
+    ),
+    (error) => {
+      assert.equal(error.code, 'BRIDGE_PREFLIGHT_FAILED');
+      assert.equal(error.details.preflight.status, 'blocked');
+      assert.match(error.details.preflight.blockers.join('\n'), /Source wallet is short/i);
+      return true;
+    },
+  );
+
+  assert.equal(executeCalls, 0);
 });
 
 test('fund-check recommends bridge planning when Ethereum-side liquidity can cover the Polygon shortfall', async () => {

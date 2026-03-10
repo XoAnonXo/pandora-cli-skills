@@ -708,7 +708,11 @@ const mirrorCloseSelectorAndModeAnyOf = buildRequiredSetCombinations(
   [['dry-run'], ['execute']],
 );
 const mirrorStatusLookupAnyOf = [['state-file'], ['strategy-hash']];
-const mirrorResolvedLookupAnyOf = [...mirrorStatusLookupAnyOf, ...mirrorPandoraPolymarketSelectorAnyOf];
+const mirrorResolvedLookupAnyOf = [
+  ...mirrorStatusLookupAnyOf,
+  ...mirrorPandoraSelectorAnyOf,
+  ...mirrorPolymarketSelectorAnyOf,
+];
 const mirrorHealthLookupAnyOf = [['state-file'], ['strategy-hash'], ['pid-file'], ...mirrorPandoraSelectorAnyOf];
 const mirrorLogsLookupAnyOf = [['state-file'], ['strategy-hash'], ...mirrorPandoraSelectorAnyOf];
 const mirrorSyncStopSelectorAnyOf = [['pid-file'], ['strategy-hash'], ...mirrorPandoraSelectorAnyOf, ['all']];
@@ -736,7 +740,7 @@ const mirrorCloseSelectorAndModeOneOf = buildExclusivePresenceBranches(
   [['dry-run'], ['execute']],
 );
 const mirrorStatusLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupAnyOf);
-const mirrorResolvedLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupAnyOf, mirrorPandoraPolymarketSelectorAnyOf);
+const mirrorResolvedLookupOneOf = [];
 const mirrorLogsLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupAnyOf, mirrorPandoraSelectorAnyOf);
 const mirrorSyncStopSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStopSelectorAnyOf);
 const mirrorSyncStatusSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStatusSelectorAnyOf);
@@ -1480,15 +1484,15 @@ const commandContracts = [
   }),
   commandContract({
     name: 'watch',
-    summary: 'Poll portfolio and/or market snapshots with optional alert thresholds.',
+    summary: 'Poll portfolio and/or market snapshots with alert thresholds plus watch-scoped exposure and hedge-gap risk limits.',
     usage:
-      'pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]',
+      'pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]',
     emits: ['watch', 'watch.help'],
     dataSchema: '#/definitions/WatchPayload',
     mcpExposed: true,
     mcp: {
       command: ['watch'],
-      description: 'Run watch snapshots (blocked in MCP v1 because it is long-running).',
+      description: 'Run watch snapshots with optional quote alerts and watch-scoped exposure or hedge-gap guardrails (blocked in MCP v1 because it is long-running).',
       inputSchema: buildInputSchema({
         flagProperties: {
           wallet: commonFlags.wallet,
@@ -1505,6 +1509,13 @@ const commandContracts = [
           'alert-yes-above': numberSchema('Alert threshold for high YES probability.', { minimum: 0, maximum: 100 }),
           'alert-net-liquidity-below': numberSchema('Alert threshold for low liquidity.', { minimum: 0 }),
           'alert-net-liquidity-above': numberSchema('Alert threshold for high liquidity.', { minimum: 0 }),
+          'alert-exposure-above': numberSchema('Alert threshold for observed total exposure in USDC.', { minimum: 0 }),
+          'alert-hedge-gap-above': numberSchema('Alert threshold for observed hedge gap in USDC.', { minimum: 0 }),
+          'max-trade-size-usdc': numberSchema('Maximum projected trade size in USDC for watch risk policy.', { minimum: 0 }),
+          'max-daily-volume-usdc': numberSchema('Maximum projected daily volume in USDC for watch risk policy.', { minimum: 0 }),
+          'max-total-exposure-usdc': numberSchema('Maximum observed total exposure in USDC for watch risk policy.', { minimum: 0 }),
+          'max-per-market-exposure-usdc': numberSchema('Maximum observed single-market exposure in USDC for watch risk policy.', { minimum: 0 }),
+          'max-hedge-gap-usdc': numberSchema('Maximum observed hedge gap in USDC for watch risk policy.', { minimum: 0 }),
           'fail-on-alert': booleanSchema('Exit non-zero when alerts fire.'),
           'track-brier': booleanSchema('Persist forecast records for Brier scoring.'),
           'brier-source': stringSchema('Forecast source label.'),
@@ -2332,15 +2343,15 @@ const commandContracts = [
     }),
   commandContract({
     name: 'sports.resolve.plan',
-    summary: 'Build manual-final resolution recommendation.',
+    summary: 'Build an opt-in sports resolution safety verdict with blockers, timing, and optional execute-ready resolve args.',
     usage:
-      'pandora [--output table|json] sports resolve plan --event-id <id>|--checks-json <json>|--checks-file <path> [--poll-address <address>] [--settle-delay-ms <ms>] [--consecutive-checks-required <n>] [--now <iso>|--now-ms <ms>] [--reason <text>]',
+      'pandora [--output table|json] sports resolve plan --event-id <id>|--checks-json <json>|--checks-file <path> [--poll-address <address>] [--settle-delay-ms <ms>] [--consecutive-checks-required <n>] [--now <iso>|--now-ms <ms>] [--reason <text>] [--rpc-url <url>]',
     emits: ['sports.resolve.plan', 'sports.help'],
     dataSchema: '#/definitions/SportsResolvePlanPayload',
     mcpExposed: true,
     mcp: {
       command: ['sports', 'resolve', 'plan'],
-      description: 'Build manual-final resolution recommendation.',
+      description: 'Build an opt-in sports resolution safety verdict from official-first checks. Safe payloads can include execute-ready resolve args; unsafe payloads return structured blockers and retry timing.',
       inputSchema: buildInputSchema({
         flagProperties: {
           'event-id': commonFlags.eventId,
@@ -2352,6 +2363,7 @@ const commandContracts = [
           now: stringSchema('Current time override as ISO timestamp.'),
           'now-ms': integerSchema('Current time override in milliseconds.', { minimum: 0 }),
           reason: stringSchema('Operator note for resolve plan.'),
+          'rpc-url': commonFlags.rpcUrl,
         },
       }),
       preferred: true,
@@ -3133,7 +3145,7 @@ const commandContracts = [
     },
     mcp: {
       command: ['mirror', 'go'],
-      description: 'Plan/deploy/verify/go orchestration. Rebalance-route flags affect only the Ethereum Pandora leg. Auto-sync still executes separate Pandora rebalance and Polymarket hedge legs, cross-venue settlement is not atomic, and lifecycle automation can optionally chain explicit resolve-watch plus closeout while keeping Polymarket settlement manual.',
+      description: 'Plan/deploy/verify/go orchestration. Rebalance-route flags affect only the Ethereum Pandora leg. Auto-sync still executes separate Pandora rebalance and Polymarket hedge legs, cross-venue settlement is not atomic, and lifecycle automation can optionally chain explicit resolve-watch plus closeout while returning structured Polymarket settlement status and resume guidance.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3152,7 +3164,7 @@ const commandContracts = [
           'auto-sync': booleanSchema('Start sync automatically after deploy.'),
           'sync-once': booleanSchema('Run one sync tick after deploy.'),
           'auto-resolve': booleanSchema('After deploy/verify and any finite sync step, watch until resolution is executable and submit resolve automatically. Requires live mode plus explicit resolve inputs.'),
-          'auto-close': booleanSchema('After auto-resolve completes, run mirror close automatically. Polymarket settlement still remains manual.'),
+          'auto-close': booleanSchema('After auto-resolve completes, run mirror close automatically and include structured Polymarket settlement status in the final report.'),
           'resolve-answer': enumSchema(['yes', 'no'], 'Explicit resolution answer used by lifecycle automation.'),
           'resolve-reason': stringSchema('Operator reason recorded in the lifecycle resolve payload.'),
           'resolve-watch-interval-ms': integerSchema('Polling interval used by mirror go lifecycle resolve watch.', { minimum: 1 }),
@@ -3620,14 +3632,14 @@ const commandContracts = [
     name: 'mirror.status',
     summary: 'Read the single-mirror operator status/dashboard surface with selector-first lookup, graceful fallback behavior, runtime health, and optional live diagnostics.',
     usage:
-      'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
+      'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address>|--polymarket-market-id <id>|--polymarket-slug <slug> [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
     emits: ['mirror.status', 'mirror.status.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     helpDataSchema: MIRROR_STATUS_HELP_SCHEMA_REF,
     mcpExposed: true,
       mcp: {
       command: ['mirror', 'status'],
-      description: 'Read single-mirror status/dashboard payload. Use `mirror dashboard` for multi-market operator summaries and `mirror drift` or `mirror hedge-check` for narrower live actionability views.',
+      description: 'Read single-mirror status/dashboard payload. Selector hints can resolve persisted local mirror state when a matching file exists. Use `mirror dashboard` for multi-market operator summaries and `mirror drift` or `mirror hedge-check` for narrower live actionability views.',
       inputSchema: buildInputSchema({
         flagProperties: {
           'state-file': commonFlags.stateFile,
@@ -3841,7 +3853,7 @@ const commandContracts = [
     }),
   commandContract({
     name: 'mirror.close',
-    summary: 'Build or execute close plan for a mirror pair.',
+    summary: 'Build or execute close plan for a mirror pair, including structured Polymarket settlement discovery and resume guidance.',
     usage:
       'pandora [--output table|json] mirror close --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]',
     emits: ['mirror.close', 'mirror.close.help'],
@@ -3849,7 +3861,7 @@ const commandContracts = [
     mcpExposed: true,
     mcp: {
       command: ['mirror', 'close'],
-      description: 'Build/execute close plan for a mirror pair.',
+      description: 'Build or execute close plan for a mirror pair, including Pandora LP/claim steps plus structured Polymarket settlement discovery and resume guidance.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3924,9 +3936,9 @@ const commandContracts = [
   }),
   commandContract({
     name: 'bridge',
-    summary: 'Bridge planning help and routing entrypoint.',
+    summary: 'Bridge planning and LayerZero execution help and routing entrypoint.',
     usage:
-      'pandora [--output table|json] bridge plan --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]',
+      'pandora [--output table|json] bridge plan|execute --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]',
     emits: ['bridge.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
   }),
@@ -3963,6 +3975,56 @@ const commandContracts = [
     agentPlatform: {
       externalDependencies: ['wallet-secrets', 'rpc'],
       expectedLatencyMs: 1500,
+    },
+  }),
+  commandContract({
+    name: 'bridge.execute',
+    summary: 'Dry-run or execute a LayerZero bridge submission for Pandora or Polymarket collateral funding.',
+    usage:
+      'pandora [--output table|json] bridge execute --target pandora|polymarket --amount-usdc <n> --dry-run|--execute [--provider layerzero] [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]',
+    emits: ['bridge.execute', 'bridge.execute.help', 'bridge.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    mcp: {
+      command: ['bridge', 'execute'],
+      description: 'Dry-run or execute a LayerZero bridge submission after planner-style preflight. --dry-run returns route assumptions, quote/preflight output, and follow-up steps; --execute submits only the source-chain transaction.',
+      inputSchema: buildInputSchema({
+        includeIntent: true,
+        flagProperties: {
+          target: enumSchema(['pandora', 'polymarket'], 'Funding destination to bridge for.'),
+          'amount-usdc': numberSchema('Amount of collateral that must land on the destination side.', { minimum: 0 }),
+          provider: enumSchema(['layerzero'], 'Bridge provider. Only layerzero is currently supported.'),
+          'dry-run': booleanSchema('Return LayerZero preflight without broadcasting a transaction.'),
+          execute: booleanSchema('Submit the LayerZero source-chain transaction after preflight passes.'),
+          wallet: commonFlags.wallet,
+          'to-wallet': stringSchema('Destination wallet override.'),
+          'rpc-url': commonFlags.rpcUrl,
+          'polymarket-rpc-url': stringSchema('Polygon RPC URL override used for destination-side balance reads.'),
+          'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
+          funder: stringSchema('Polymarket proxy wallet override.'),
+          usdc: stringSchema('USDC token address override.'),
+          'timeout-ms': commonFlags.timeoutMs,
+        },
+        requiredFlags: ['target', 'amount-usdc'],
+        oneOf: [
+          { required: ['dry-run'] },
+          { required: ['execute'] },
+        ],
+      }),
+      preferred: true,
+      mutating: true,
+      safeFlags: ['--dry-run'],
+      executeFlags: ['--execute'],
+    },
+    agentPlatform: {
+      externalDependencies: ['wallet-secrets', 'rpc'],
+      expectedLatencyMs: 2000,
+      canRunConcurrent: false,
+      idempotency: 'conditional',
+      riskLevel: 'medium',
+      policyScopes: ['bridge:write', 'network:rpc'],
     },
   }),
   commandContract({

@@ -294,11 +294,11 @@ function shellQuote(value) {
 }
 
 /**
- * Build recommended `pandora resolve --execute` command when safe.
+ * Build machine-usable argv for `pandora resolve`.
  * @param {{pollAddress: string, answer: 'yes'|'no'|'invalid', reason: string, extraFlags?: string[]}} params
- * @returns {string}
+ * @returns {string[]}
  */
-function buildResolveExecuteCommand(params) {
+function buildResolveExecuteArgv(params) {
   const pollAddress = String(params.pollAddress || '').trim();
   const answer = normalizeOutcome(params.answer);
   const reason = String(params.reason || '').trim();
@@ -309,26 +309,169 @@ function buildResolveExecuteCommand(params) {
     : [];
 
   if (!pollAddress) {
-    throw new Error('buildResolveExecuteCommand requires pollAddress.');
+    throw new Error('buildResolveExecuteArgv requires pollAddress.');
   }
   if (!answer) {
-    throw new Error('buildResolveExecuteCommand requires answer yes|no|invalid.');
+    throw new Error('buildResolveExecuteArgv requires answer yes|no|invalid.');
   }
   if (!reason) {
-    throw new Error('buildResolveExecuteCommand requires a non-empty reason.');
+    throw new Error('buildResolveExecuteArgv requires a non-empty reason.');
   }
 
   return [
-    'pandora resolve',
+    'resolve',
     '--poll-address',
     pollAddress,
     '--answer',
     answer,
     '--reason',
-    shellQuote(reason),
+    reason,
     '--execute',
     ...extraFlags,
+  ];
+}
+
+/**
+ * Build recommended `pandora resolve --execute` command when safe.
+ * @param {{pollAddress: string, answer: 'yes'|'no'|'invalid', reason: string, extraFlags?: string[]}} params
+ * @returns {string}
+ */
+function buildResolveExecuteCommand(params) {
+  const argv = buildResolveExecuteArgv(params);
+  return [
+    'pandora',
+    ...argv.map((token, index) => {
+      if (index === 6) {
+        return shellQuote(token);
+      }
+      return token;
+    }),
   ].join(' ');
+}
+
+function highestTier(tiers = []) {
+  let best = null;
+  let bestRank = -1;
+  for (const tier of Array.isArray(tiers) ? tiers : []) {
+    const rank = SOURCE_TIER_RANK[String(tier || '').trim().toLowerCase()] || 0;
+    if (rank > bestRank) {
+      best = tier;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
+function buildSupportingResolutionEvidence(evaluatedChecks = [], recommendedAnswer, consecutiveChecksRequired) {
+  const normalizedAnswer = normalizeOutcome(recommendedAnswer);
+  if (!normalizedAnswer) {
+    return {
+      supportingChecks: [],
+      sourceTier: null,
+      evidence: [],
+    };
+  }
+
+  const tailSize =
+    Number.isInteger(consecutiveChecksRequired) && consecutiveChecksRequired > 0
+      ? Number(consecutiveChecksRequired)
+      : 2;
+  const tail = evaluatedChecks.slice(-tailSize);
+  const supportingChecks = tail.filter((check) => normalizeOutcome(check && check.outcome) === normalizedAnswer);
+  if (supportingChecks.length !== tail.length) {
+    return {
+      supportingChecks: [],
+      sourceTier: null,
+      evidence: [],
+    };
+  }
+
+  const evidence = supportingChecks.flatMap((check) => (Array.isArray(check.evidence) ? check.evidence : []));
+  return {
+    supportingChecks,
+    sourceTier: highestTier(supportingChecks.map((check) => check && check.tier)),
+    evidence,
+  };
+}
+
+function buildResolveTimingSummary(input = {}) {
+  const nowMs = toEpochMs(input.now);
+  const currentMs = nowMs === null ? Date.now() : nowMs;
+  const stableWindowStartMs = toEpochMs(input.stableWindowStartAt);
+  const settleDelayMs = Number.isFinite(input.settleDelayMs) && input.settleDelayMs >= 0 ? Number(input.settleDelayMs) : 0;
+  const stableWindowElapsedMs = stableWindowStartMs === null ? 0 : Math.max(0, currentMs - stableWindowStartMs);
+  const remainingSettleDelayMs = stableWindowStartMs === null ? settleDelayMs : Math.max(0, settleDelayMs - stableWindowElapsedMs);
+  const recommendedRecheckAt = remainingSettleDelayMs > 0 ? toIso(currentMs + remainingSettleDelayMs) : null;
+
+  return {
+    now: toIso(currentMs),
+    stableWindowStartAt: stableWindowStartMs === null ? null : toIso(stableWindowStartMs),
+    stableWindowElapsedMs,
+    settleDelayMs,
+    remainingSettleDelayMs,
+    settleDelaySatisfied: Boolean(input.settleDelaySatisfied),
+    recommendedRecheckAt,
+  };
+}
+
+function buildResolveExecutionPlan(input = {}) {
+  const pollAddress = String(input.pollAddress || '').trim() || null;
+  const answer = normalizeOutcome(input.answer);
+  const reason = String(input.reason || '').trim() || null;
+  const extraFlags = Array.isArray(input.extraFlags)
+    ? input.extraFlags.map((token) => String(token || '').trim()).filter(Boolean)
+    : [];
+  const blockedBy = Array.isArray(input.blockedBy) ? Array.from(new Set(input.blockedBy.filter(Boolean))) : [];
+  const missing = [];
+
+  if (!pollAddress) missing.push('pollAddress');
+  if (!answer) missing.push('answer');
+  if (!reason) missing.push('reason');
+
+  if (!input.ready || missing.length) {
+    return {
+      ready: false,
+      commandName: 'resolve',
+      flags: {
+        pollAddress,
+        answer,
+        reason,
+        execute: true,
+        extraFlags,
+      },
+      argv: null,
+      command: null,
+      blockedBy,
+      missing,
+    };
+  }
+
+  const argv = buildResolveExecuteArgv({
+    pollAddress,
+    answer,
+    reason,
+    extraFlags,
+  });
+  return {
+    ready: true,
+    commandName: 'resolve',
+    flags: {
+      pollAddress,
+      answer,
+      reason,
+      execute: true,
+      extraFlags,
+    },
+    argv,
+    command: buildResolveExecuteCommand({
+      pollAddress,
+      answer,
+      reason,
+      extraFlags,
+    }),
+    blockedBy: [],
+    missing: [],
+  };
 }
 
 /**
@@ -358,6 +501,9 @@ function buildSportsResolvePlan(input = {}) {
     Number.isInteger(input.consecutiveChecksRequired) && input.consecutiveChecksRequired > 0
       ? Number(input.consecutiveChecksRequired)
       : 2;
+  const now = input.now;
+  const pollAddress = String(input.pollAddress || '').trim();
+  const reason = String(input.reason || 'Sports market final result confirmed by consecutive checks.').trim();
 
   const diagnostics = [];
   for (const check of evaluatedChecks) {
@@ -376,41 +522,83 @@ function buildSportsResolvePlan(input = {}) {
   }
   diagnostics.push(...safety.diagnostics);
 
-  if (!String(input.pollAddress || '').trim()) {
+  if (!pollAddress) {
     diagnostics.push({
       code: 'MISSING_POLL_ADDRESS',
-      severity: 'error',
-      message: 'pollAddress is required to build resolve execution command.',
+      severity: 'warning',
+      message: 'pollAddress is required to emit execution-ready resolve args.',
     });
   }
 
-  const reason = String(input.reason || 'Sports market final result confirmed by consecutive checks.').trim();
-  let recommendedCommand = null;
-  if (safety.safe && String(input.pollAddress || '').trim()) {
-    recommendedCommand = buildResolveExecuteCommand({
-      pollAddress: String(input.pollAddress || '').trim(),
-      answer: safety.recommendedAnswer,
-      reason,
-      extraFlags: input.extraFlags,
-    });
-  }
+  const blockingDiagnostics = diagnostics.filter((entry) => String(entry && entry.severity || '').toLowerCase() === 'error');
+  const blockingCodes = Array.from(new Set(blockingDiagnostics.map((entry) => entry && entry.code).filter(Boolean)));
+  const timing = buildResolveTimingSummary({
+    now,
+    stableWindowStartAt: safety.stableWindowStartAt,
+    settleDelayMs,
+    settleDelaySatisfied: safety.settleDelaySatisfied,
+  });
+  const supporting = buildSupportingResolutionEvidence(
+    evaluatedChecks,
+    safety.recommendedAnswer,
+    consecutiveChecksRequired,
+  );
+  const execution = buildResolveExecutionPlan({
+    ready: safety.safe,
+    pollAddress,
+    answer: safety.recommendedAnswer,
+    reason,
+    extraFlags: input.extraFlags,
+    blockedBy: blockingCodes,
+  });
+  const status = safety.safe
+    ? (execution.ready ? 'safe' : 'safe-needs-inputs')
+    : 'unsafe';
 
   return {
     schemaVersion: SPORTS_RESOLVE_PLAN_SCHEMA_VERSION,
-    generatedAt: toIso(input.now),
+    generatedAt: toIso(now),
     policy: {
       hierarchy: SOURCE_TIER_PRIORITY,
       consecutiveChecksRequired,
       settleDelayMs,
     },
+    status,
     safeToResolve: Boolean(safety.safe),
     recommendedAnswer: safety.recommendedAnswer,
-    recommendedCommand,
-    unsafeDiagnostics: safety.safe ? [] : diagnostics,
+    recommendedCommand: execution.ready ? execution.command : null,
+    summary: {
+      status,
+      checksAnalyzed: evaluatedChecks.length,
+      blockingCodes,
+      blockerCount: blockingCodes.length,
+      executionReady: execution.ready,
+      latestCheckAt: evaluatedChecks.length ? evaluatedChecks[evaluatedChecks.length - 1].checkedAt : null,
+      sourceTier: supporting.sourceTier,
+    },
+    resolution: {
+      pollAddress: pollAddress || null,
+      answer: safety.recommendedAnswer,
+      reason,
+      sourceTier: supporting.sourceTier,
+      supportingChecks: supporting.supportingChecks.map((check) => ({
+        checkId: check.checkId,
+        checkedAt: check.checkedAt,
+        outcome: check.outcome,
+        tier: check.tier,
+        evidenceCount: Array.isArray(check.evidence) ? check.evidence.length : 0,
+      })),
+      evidence: supporting.evidence,
+    },
+    execution,
+    blockers: blockingDiagnostics,
+    blockingCodes,
+    unsafeDiagnostics: safety.safe ? [] : blockingDiagnostics,
     diagnostics,
     checksAnalyzed: evaluatedChecks.length,
     stableWindowStartAt: safety.stableWindowStartAt,
     settleDelaySatisfied: safety.settleDelaySatisfied,
+    timing,
     checks: evaluatedChecks,
   };
 }
@@ -423,6 +611,7 @@ module.exports = {
   classifySourceTier,
   evaluateResolveCheck,
   evaluateResolveSafety,
+  buildResolveExecuteArgv,
   buildResolveExecuteCommand,
   buildSportsResolvePlan,
 };

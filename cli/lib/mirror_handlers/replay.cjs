@@ -67,6 +67,9 @@ function resolveReplayState(options = {}) {
   let loaded = resolveMirrorSurfaceState({
     stateFile: options.stateFile || null,
     strategyHash,
+    pandoraMarketAddress: options.pandoraMarketAddress || null,
+    polymarketMarketId: options.polymarketMarketId || null,
+    polymarketSlug: options.polymarketSlug || null,
   });
   let selector = {
     pandoraMarketAddress: options.pandoraMarketAddress || loaded.state.pandoraMarketAddress || null,
@@ -79,6 +82,9 @@ function resolveReplayState(options = {}) {
     loaded = resolveMirrorSurfaceState({
       stateFile: daemon.metadata.stateFile,
       strategyHash: daemon.strategyHash || strategyHash,
+      pandoraMarketAddress: selector.pandoraMarketAddress || null,
+      polymarketMarketId: selector.polymarketMarketId || null,
+      polymarketSlug: selector.polymarketSlug || null,
     });
     selector = {
       pandoraMarketAddress: selector.pandoraMarketAddress || loaded.state.pandoraMarketAddress || null,

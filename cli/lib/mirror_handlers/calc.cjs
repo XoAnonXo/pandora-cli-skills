@@ -107,6 +107,9 @@ module.exports = async function handleMirrorCalc({ actionArgs, shared, context, 
   const loaded = resolveMirrorSurfaceState({
     stateFile: options.stateFile || null,
     strategyHash: strategyHashValue,
+    pandoraMarketAddress: options.pandoraMarketAddress || null,
+    polymarketMarketId: options.polymarketMarketId || null,
+    polymarketSlug: options.polymarketSlug || null,
   });
   const selector = {
     pandoraMarketAddress: options.pandoraMarketAddress || loaded.state.pandoraMarketAddress || null,

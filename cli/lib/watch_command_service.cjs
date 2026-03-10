@@ -1,3 +1,8 @@
+const {
+  resolveWatchRiskPolicy,
+  evaluateWatchRiskAlerts,
+} = require('./watch_risk_policy_service.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunWatchCommand requires deps.${name}()`);
@@ -81,6 +86,8 @@ function createRunWatchCommand(deps) {
     const snapshots = [];
     const alerts = [];
     const webhookReports = [];
+    const riskPolicy = resolveWatchRiskPolicy(options);
+    const riskState = {};
     const brierTracking = {
       enabled: Boolean(options.trackBrier),
       source: options.brierSource || options.forecastSource || 'watch',
@@ -99,14 +106,16 @@ function createRunWatchCommand(deps) {
         iteration,
         timestamp: new Date().toISOString(),
       };
+      let portfolio = null;
+      let quote = null;
 
       if (options.wallet) {
-        const portfolio = await collectPortfolioSnapshot(indexerUrl, options, shared.timeoutMs);
+        portfolio = await collectPortfolioSnapshot(indexerUrl, options, shared.timeoutMs);
         snapshot.portfolioSummary = portfolio.summary;
       }
 
       if (options.marketAddress) {
-        const quote = await buildQuotePayload(indexerUrl, {
+        quote = await buildQuotePayload(indexerUrl, {
           marketAddress: options.marketAddress,
           side: options.side,
           amountUsdc: options.amountUsdc,
@@ -177,7 +186,22 @@ function createRunWatchCommand(deps) {
         }
       }
 
-      snapshot.alerts = evaluateWatchAlerts(snapshot, options);
+      const baseAlerts = evaluateWatchAlerts(snapshot, options);
+      const riskEvaluation = evaluateWatchRiskAlerts({
+        snapshot,
+        policy: riskPolicy,
+        options,
+        portfolio,
+        quote,
+        state: riskState,
+      });
+      snapshot.risk = {
+        metrics: riskEvaluation.metrics,
+        limits: riskPolicy.limits,
+        configured: riskPolicy.configured,
+        alertCount: riskEvaluation.alerts.length,
+      };
+      snapshot.alerts = [...baseAlerts, ...riskEvaluation.alerts];
       snapshot.alertCount = snapshot.alerts.length;
       if (snapshot.alertCount) {
         alerts.push(...snapshot.alerts);
@@ -240,6 +264,7 @@ function createRunWatchCommand(deps) {
       alerts,
       webhookReports,
       brierTracking,
+      riskPolicy,
     };
 
     if (options.failOnAlert && alerts.length) {

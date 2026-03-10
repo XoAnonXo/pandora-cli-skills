@@ -349,6 +349,9 @@ module.exports = async function handleMirrorLogs({ actionArgs, context, deps }) 
   let loaded = resolveMirrorSurfaceState({
     stateFile: options.stateFile || null,
     strategyHash: options.strategyHash || null,
+    pandoraMarketAddress: options.pandoraMarketAddress || null,
+    polymarketMarketId: options.polymarketMarketId || null,
+    polymarketSlug: options.polymarketSlug || null,
   });
 
   let selector = {
@@ -366,6 +369,9 @@ module.exports = async function handleMirrorLogs({ actionArgs, context, deps }) 
     loaded = resolveMirrorSurfaceState({
       stateFile: daemonMeta.stateFile,
       strategyHash: options.strategyHash || loaded.state.strategyHash || null,
+      pandoraMarketAddress: selector.pandoraMarketAddress || null,
+      polymarketMarketId: selector.polymarketMarketId || null,
+      polymarketSlug: selector.polymarketSlug || null,
     });
     selector = {
       pandoraMarketAddress: options.pandoraMarketAddress || loaded.state.pandoraMarketAddress || daemonMeta.pandoraMarketAddress || null,

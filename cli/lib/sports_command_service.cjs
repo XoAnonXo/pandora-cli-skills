@@ -623,6 +623,25 @@ function renderSportsTable(payload) {
     return;
   }
 
+  if (Object.prototype.hasOwnProperty.call(payload, 'safeToResolve')) {
+    console.log(`Resolve plan: ${payload.status || (payload.safeToResolve ? 'safe' : 'unsafe')}`);
+    console.log(`answer: ${payload.recommendedAnswer || 'n/a'}`);
+    console.log(`checksAnalyzed: ${payload.checksAnalyzed || 0}`);
+    console.log(`stableWindowStartAt: ${payload.stableWindowStartAt || 'n/a'}`);
+    if (payload.execution && payload.execution.ready && payload.execution.command) {
+      console.log(`next: ${payload.execution.command}`);
+    } else if (payload.execution && Array.isArray(payload.execution.missing) && payload.execution.missing.length) {
+      console.log(`missing: ${payload.execution.missing.join(', ')}`);
+    }
+    if (payload.timing && payload.timing.recommendedRecheckAt) {
+      console.log(`recommendedRecheckAt: ${payload.timing.recommendedRecheckAt}`);
+    }
+    if (Array.isArray(payload.blockingCodes) && payload.blockingCodes.length) {
+      console.log(`blockers: ${payload.blockingCodes.join(', ')}`);
+    }
+    return;
+  }
+
   if (payload.source && payload.source.consensus) {
     const c = payload.source.consensus;
     console.log(`Consensus: yes=${c.consensusYesPct ?? 'n/a'} no=${c.consensusNoPct ?? 'n/a'} confidence=${c.confidence}`);
@@ -697,6 +716,46 @@ function renderSportsTable(payload) {
   }
 
   console.log('Done.');
+}
+
+function buildSportsResolveUnsafeHints(plan, options = {}) {
+  const hints = [];
+  const blockingCodes = Array.isArray(plan && plan.blockingCodes) ? plan.blockingCodes : [];
+  const policy = plan && plan.policy && typeof plan.policy === 'object' ? plan.policy : {};
+  const timing = plan && plan.timing && typeof plan.timing === 'object' ? plan.timing : {};
+
+  if (blockingCodes.includes('INSUFFICIENT_CHECKS')) {
+    hints.push(
+      `Collect at least ${Number.isInteger(policy.consecutiveChecksRequired) ? policy.consecutiveChecksRequired : 2} consecutive final checks before resolving.`,
+    );
+  }
+  if (blockingCodes.includes('NO_FINAL_RESULT')) {
+    hints.push('Wait for an official final result, or provide manual snapshots via --checks-json/--checks-file.');
+  }
+  if (blockingCodes.includes('NO_CONSECUTIVE_FINAL_MATCH')) {
+    hints.push(
+      `Wait for ${Number.isInteger(policy.consecutiveChecksRequired) ? policy.consecutiveChecksRequired : 2} consecutive checks with the same final outcome.`,
+    );
+  }
+  if (blockingCodes.includes('TIER_CONFLICT')) {
+    hints.push('Official sources disagree. Do not resolve until the top-tier feeds converge.');
+  }
+  if (blockingCodes.includes('SETTLE_DELAY_PENDING') && timing.recommendedRecheckAt) {
+    hints.push(`Retry after ${timing.recommendedRecheckAt} once the settle delay has elapsed.`);
+  }
+  if (options.eventId) {
+    hints.push(`Retry with: pandora sports resolve plan --event-id ${options.eventId}`);
+  }
+
+  return Array.from(new Set(hints.filter(Boolean)));
+}
+
+function buildSportsResolvePlanExtraFlags(options = {}) {
+  const extraFlags = [];
+  if (options.rpcUrl) {
+    extraFlags.push('--rpc-url', String(options.rpcUrl));
+  }
+  return extraFlags;
 }
 
 function renderSportsHelpTable(helpPayload) {
@@ -1137,22 +1196,26 @@ function createRunSportsCommand(deps) {
         settleDelayMs: options.settleDelayMs,
         consecutiveChecksRequired: options.consecutiveChecksRequired,
         now: options.now || options.nowMs || new Date().toISOString(),
+        extraFlags: buildSportsResolvePlanExtraFlags(options),
       });
 
       if (!plan.safeToResolve) {
         throw new CliError('SPORTS_RESOLVE_PLAN_UNSAFE', 'sports resolve plan is not safe yet.', {
           eventId: options.eventId,
+          safeToResolve: false,
+          status: plan.status,
+          recommendedAnswer: plan.recommendedAnswer,
+          blockingCodes: plan.blockingCodes,
+          blockers: plan.blockers,
+          summary: plan.summary,
+          timing: plan.timing,
+          execution: plan.execution,
+          hints: buildSportsResolveUnsafeHints(plan, options),
           plan,
         });
       }
 
-      emitSuccess(context.outputMode, parsed.command, {
-        ...plan,
-        timing: {
-          statusConfidence: 'high',
-          warnings: [],
-        },
-      }, renderSportsTable);
+      emitSuccess(context.outputMode, parsed.command, plan, renderSportsTable);
       return;
     }
 

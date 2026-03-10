@@ -172,13 +172,13 @@ function createParseMirrorSurfaceFlags(deps, config = {}) {
     }
 
     const hasPersistedSelector = Boolean(options.stateFile || options.strategyHash);
-    const hasLiveSelector = Boolean(
-      options.pandoraMarketAddress && (options.polymarketMarketId || options.polymarketSlug),
+    const hasSelectorHint = Boolean(
+      options.pandoraMarketAddress || options.polymarketMarketId || options.polymarketSlug,
     );
-    if (!hasPersistedSelector && !hasLiveSelector) {
+    if (!hasPersistedSelector && !hasSelectorHint) {
       throw new CliError(
         'MISSING_REQUIRED_FLAG',
-        `${commandLabel} requires --state-file <path>, --strategy-hash <hash>, or a live selector pair (--pandora-market-address/--market-address plus --polymarket-market-id|--polymarket-slug).`,
+        `${commandLabel} requires --state-file <path>, --strategy-hash <hash>, or at least one selector hint (--pandora-market-address/--market-address and/or --polymarket-market-id|--polymarket-slug).`,
       );
     }
 

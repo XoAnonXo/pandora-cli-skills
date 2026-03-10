@@ -25,7 +25,7 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
 
   if (includesHelpFlag(actionArgs)) {
     const usage =
-      'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]';
+      'pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address>|--polymarket-market-id <id>|--polymarket-slug <slug> [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]';
     const polymarketEnv = [
       'POLYMARKET_PRIVATE_KEY',
       'POLYMARKET_FUNDER',
@@ -42,7 +42,7 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
           withLive:
             'When credentials are available, --with-live enriches diagnostics with cross-venue status, hedge-gap actionability, Polymarket balances/open orders, and scenario-style P&L estimates.',
           runtime:
-            'mirror status can run selector-first without a state file; persisted state and daemon metadata are attached when they can be resolved.',
+            'mirror status can run selector-first without a state file; a single selector hint can resolve persisted state and daemon metadata when local mirror files match it.',
           funder:
             'POLYMARKET_FUNDER should be the Polymarket proxy wallet (Gnosis Safe), not the EOA signer address.',
           collateral:
@@ -60,7 +60,7 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
       console.log(
         '--with-live adds cross-venue status, hedge-gap actionability, and Polymarket balance/open-order diagnostics when credentials are available and degrades gracefully when unavailable.',
       );
-      console.log('mirror status can run selector-first; persisted runtime/daemon metadata is attached when a state file or matching daemon can be resolved.');
+      console.log('mirror status can run selector-first; a single selector hint can resolve persisted runtime/daemon metadata when local mirror files match it.');
     }
     return;
   }
@@ -80,6 +80,9 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
   const loaded = resolveMirrorSurfaceState({
     stateFile: options.stateFile || null,
     strategyHash: strategyHashValue,
+    pandoraMarketAddress: options.pandoraMarketAddress || null,
+    polymarketMarketId: options.polymarketMarketId || null,
+    polymarketSlug: options.polymarketSlug || null,
   });
   const selector = {
     pandoraMarketAddress: options.pandoraMarketAddress || loaded.state.pandoraMarketAddress || null,

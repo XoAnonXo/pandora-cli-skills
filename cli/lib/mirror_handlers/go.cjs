@@ -72,6 +72,7 @@ function extractCloseStepStatus(closePayload, stepName) {
     ? closePayload.steps.find((item) => item && item.step === stepName)
     : null;
   if (!step) return 'unknown';
+  if (step.status) return step.status;
   return step.ok ? 'completed' : 'failed';
 }
 
@@ -82,6 +83,10 @@ function buildLifecycleFinalReport({
   resolveResult,
   closeResult,
 }) {
+  const polymarketSettlement =
+    closeResult && closeResult.payload && closeResult.payload.polymarketSettlement
+      ? closeResult.payload.polymarketSettlement
+      : null;
   return {
     pandoraMarketAddress,
     pollAddress: pollAddress || null,
@@ -92,7 +97,15 @@ function buildLifecycleFinalReport({
     daemonStopStatus: closeResult && closeResult.payload ? extractCloseStepStatus(closeResult.payload, 'stop-daemons') : 'not-run',
     lpWithdrawalStatus: closeResult && closeResult.payload ? extractCloseStepStatus(closeResult.payload, 'withdraw-lp') : 'not-run',
     claimStatus: closeResult && closeResult.payload ? extractCloseStepStatus(closeResult.payload, 'claim-winnings') : 'not-run',
-    polymarketSettlement: 'manual',
+    polymarketSettlement:
+      polymarketSettlement && polymarketSettlement.status
+        ? polymarketSettlement.status
+        : closeResult && closeResult.payload
+          ? extractCloseStepStatus(closeResult.payload, 'settle-polymarket')
+          : 'not-run',
+    polymarketSettlementWallet: polymarketSettlement ? polymarketSettlement.wallet || null : null,
+    polymarketSettlementValueUsd: polymarketSettlement ? polymarketSettlement.estimatedValueUsd ?? null : null,
+    polymarketSettlementResumeCommand: polymarketSettlement ? polymarketSettlement.resumeCommand || null : null,
   };
 }
 
@@ -245,7 +258,18 @@ async function runLifecycleClose(options, deps) {
       },
     );
     const summary = step.payload && step.payload.summary ? step.payload.summary : {};
-    step.status = Number(summary.failureCount || 0) > 0 ? 'partial' : 'completed';
+    step.status =
+      step.payload && typeof step.payload.status === 'string'
+        ? step.payload.status
+        : Number(summary.failureCount || 0) > 0
+          ? 'partial'
+          : 'completed';
+    if (Array.isArray(step.payload && step.payload.resumeCommands) && step.payload.resumeCommands.length) {
+      step.resumeCommands = step.payload.resumeCommands.slice();
+      if (step.status !== 'completed') {
+        step.resumeCommand = step.payload.resumeCommands[0];
+      }
+    }
   } catch (error) {
     step.status = 'failed';
     step.error = normalizeLifecycleError(error, 'MIRROR_GO_AUTO_CLOSE_FAILED');
@@ -786,8 +810,14 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     if (resolveResult.status !== 'completed' && resolveResult.resumeCommand) {
       suggestedLifecycleCommands.push(resolveResult.resumeCommand);
     }
-    if (options.autoClose && closeResult.status !== 'completed' && closeResult.resumeCommand) {
-      suggestedLifecycleCommands.push(closeResult.resumeCommand);
+    if (options.autoClose && closeResult.status !== 'completed') {
+      const closeResumeCommands =
+        Array.isArray(closeResult.resumeCommands) && closeResult.resumeCommands.length
+          ? closeResult.resumeCommands
+          : closeResult.resumeCommand
+            ? [closeResult.resumeCommand]
+            : [];
+      suggestedLifecycleCommands.push(...closeResumeCommands);
     }
 
     lifecycle = {

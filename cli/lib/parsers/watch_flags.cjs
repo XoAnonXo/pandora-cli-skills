@@ -40,6 +40,13 @@ function createParseWatchFlags(deps) {
       alertYesAbove: null,
       alertNetLiquidityBelow: null,
       alertNetLiquidityAbove: null,
+      alertExposureAbove: null,
+      alertHedgeGapAbove: null,
+      maxTradeSizeUsdc: null,
+      maxDailyVolumeUsdc: null,
+      maxTotalExposureUsdc: null,
+      maxPerMarketExposureUsdc: null,
+      maxHedgeGapUsdc: null,
       failOnAlert: false,
       trackBrier: false,
       brierSource: null,
@@ -166,6 +173,50 @@ function createParseWatchFlags(deps) {
         continue;
       }
 
+      if (token === '--alert-exposure-above') {
+        options.alertExposureAbove = parseNumber(requireFlagValue(args, i, '--alert-exposure-above'), '--alert-exposure-above');
+        options.maxTotalExposureUsdc = options.alertExposureAbove;
+        i += 1;
+        continue;
+      }
+
+      if (token === '--alert-hedge-gap-above') {
+        options.alertHedgeGapAbove = parseNumber(requireFlagValue(args, i, '--alert-hedge-gap-above'), '--alert-hedge-gap-above');
+        options.maxHedgeGapUsdc = options.alertHedgeGapAbove;
+        i += 1;
+        continue;
+      }
+
+      if (token === '--max-trade-size-usdc' || token === '--max-trade-usdc') {
+        options.maxTradeSizeUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+
+      if (token === '--max-daily-volume-usdc') {
+        options.maxDailyVolumeUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+
+      if (token === '--max-total-exposure-usdc' || token === '--max-open-exposure-usdc') {
+        options.maxTotalExposureUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+
+      if (token === '--max-per-market-exposure-usdc') {
+        options.maxPerMarketExposureUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+
+      if (token === '--max-hedge-gap-usdc') {
+        options.maxHedgeGapUsdc = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
+
       if (token === '--fail-on-alert') {
         options.failOnAlert = true;
         continue;
@@ -235,6 +286,19 @@ function createParseWatchFlags(deps) {
     }
     if ((options.alertNetLiquidityBelow !== null || options.alertNetLiquidityAbove !== null) && !options.wallet) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Net-liquidity alerts require --wallet.');
+    }
+    const usesExposureMetrics =
+      options.alertExposureAbove !== null
+      || options.maxTotalExposureUsdc !== null
+      || options.maxPerMarketExposureUsdc !== null;
+    if (usesExposureMetrics && !options.wallet) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'Exposure thresholds require --wallet.');
+    }
+    const usesHedgeGapMetrics =
+      options.alertHedgeGapAbove !== null
+      || options.maxHedgeGapUsdc !== null;
+    if (usesHedgeGapMetrics && !options.wallet) {
+      throw new CliError('MISSING_REQUIRED_FLAG', 'Hedge-gap thresholds require --wallet.');
     }
     if (
       options.alertYesBelow !== null &&

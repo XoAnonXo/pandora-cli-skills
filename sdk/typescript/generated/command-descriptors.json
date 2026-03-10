@@ -963,10 +963,170 @@
     "riskLevel": "medium",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Bridge planning help and routing entrypoint.",
+    "summary": "Bridge planning and LayerZero execution help and routing entrypoint.",
     "supportsRemote": false,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] bridge plan --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]"
+    "usage": "pandora [--output table|json] bridge plan|execute --target pandora|polymarket --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]"
+  },
+  "bridge.execute": {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canRunConcurrent": false,
+    "canonicalCommandTokens": [
+      "bridge",
+      "execute"
+    ],
+    "canonicalTool": "bridge.execute",
+    "canonicalUsage": "pandora [--output table|json] bridge execute --target pandora|polymarket --amount-usdc <n> --dry-run|--execute [--provider layerzero] [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]",
+    "controlInputNames": [],
+    "dataSchema": "#/definitions/GenericCommandData",
+    "emits": [
+      "bridge.execute",
+      "bridge.execute.help",
+      "bridge.help"
+    ],
+    "executeFlags": [
+      "--execute"
+    ],
+    "executeIntentRequired": false,
+    "executeIntentRequiredForLiveMode": true,
+    "expectedLatencyMs": 2000,
+    "externalDependencies": [
+      "wallet-secrets",
+      "chain-rpc",
+      "rpc"
+    ],
+    "helpDataSchema": "#/definitions/CommandHelpPayload",
+    "idempotency": "conditional",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "amount-usdc": {
+          "description": "Amount of collateral that must land on the destination side.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "dry-run": {
+          "description": "Return LayerZero preflight without broadcasting a transaction.",
+          "type": "boolean"
+        },
+        "execute": {
+          "description": "Submit the LayerZero source-chain transaction after preflight passes.",
+          "type": "boolean"
+        },
+        "funder": {
+          "description": "Polymarket proxy wallet override.",
+          "type": "string"
+        },
+        "intent": {
+          "additionalProperties": false,
+          "properties": {
+            "execute": {
+              "description": "Set true to permit live/mutating execution when supported by the tool.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "polymarket-rpc-url": {
+          "description": "Polygon RPC URL override used for destination-side balance reads.",
+          "type": "string"
+        },
+        "private-key": {
+          "description": "Hex private key.",
+          "type": "string"
+        },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Bridge provider. Only layerzero is currently supported.",
+          "enum": [
+            "layerzero"
+          ]
+        },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
+        "target": {
+          "description": "Funding destination to bridge for.",
+          "enum": [
+            "pandora",
+            "polymarket"
+          ]
+        },
+        "timeout-ms": {
+          "description": "Request timeout in milliseconds.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "to-wallet": {
+          "description": "Destination wallet override.",
+          "type": "string"
+        },
+        "usdc": {
+          "description": "USDC token address override.",
+          "type": "string"
+        },
+        "wallet": {
+          "description": "Wallet address.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "amount-usdc"
+      ],
+      "type": "object",
+      "xPandora": {
+        "exclusiveOneOf": [
+          {
+            "required": [
+              "dry-run"
+            ]
+          },
+          {
+            "required": [
+              "execute"
+            ]
+          }
+        ]
+      }
+    },
+    "jobCapable": false,
+    "mcpExposed": true,
+    "mcpLongRunningBlocked": false,
+    "mcpMutating": true,
+    "outputModes": [
+      "table",
+      "json"
+    ],
+    "policyScopes": [
+      "bridge:write",
+      "secrets:use",
+      "network:rpc"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": true,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "medium",
+    "safeEquivalent": null,
+    "safeFlags": [
+      "--dry-run"
+    ],
+    "summary": "Dry-run or execute a LayerZero bridge submission for Pandora or Polymarket collateral funding.",
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "usage": "pandora [--output table|json] bridge execute --target pandora|polymarket --amount-usdc <n> --dry-run|--execute [--provider layerzero] [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--timeout-ms <ms>]"
   },
   "bridge.plan": {
     "agentWorkflow": null,
@@ -4411,480 +4571,6 @@
       },
       "type": "object",
       "xPandora": {
-        "exclusiveOneOf": [
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-slug"
-            ]
-          }
-        ],
         "requiredAnyOf": [
           {
             "required": [
@@ -4898,25 +4584,21 @@
           },
           {
             "required": [
-              "pandora-market-address",
+              "pandora-market-address"
+            ]
+          },
+          {
+            "required": [
+              "market-address"
+            ]
+          },
+          {
+            "required": [
               "polymarket-market-id"
             ]
           },
           {
             "required": [
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
               "polymarket-slug"
             ]
           }
@@ -5216,480 +4898,6 @@
       ],
       "type": "object",
       "xPandora": {
-        "exclusiveOneOf": [
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-slug"
-            ]
-          }
-        ],
         "requiredAnyOf": [
           {
             "required": [
@@ -5703,25 +4911,21 @@
           },
           {
             "required": [
-              "pandora-market-address",
+              "pandora-market-address"
+            ]
+          },
+          {
+            "required": [
+              "market-address"
+            ]
+          },
+          {
+            "required": [
               "polymarket-market-id"
             ]
           },
           {
             "required": [
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
               "polymarket-slug"
             ]
           }
@@ -6676,7 +5880,7 @@
     "safeFlags": [
       "--dry-run"
     ],
-    "summary": "Build or execute close plan for a mirror pair.",
+    "summary": "Build or execute close plan for a mirror pair, including structured Polymarket settlement discovery and resume guidance.",
     "supportsRemote": true,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] mirror close --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug>|--all --dry-run|--execute [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--indexer-url <url>] [--timeout-ms <ms>]"
@@ -7455,480 +6659,6 @@
       },
       "type": "object",
       "xPandora": {
-        "exclusiveOneOf": [
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-slug"
-            ]
-          }
-        ],
         "requiredAnyOf": [
           {
             "required": [
@@ -7942,25 +6672,21 @@
           },
           {
             "required": [
-              "pandora-market-address",
+              "pandora-market-address"
+            ]
+          },
+          {
+            "required": [
+              "market-address"
+            ]
+          },
+          {
+            "required": [
               "polymarket-market-id"
             ]
           },
           {
             "required": [
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
               "polymarket-slug"
             ]
           }
@@ -8081,7 +6807,7 @@
           "type": "string"
         },
         "auto-close": {
-          "description": "After auto-resolve completes, run mirror close automatically. Polymarket settlement still remains manual.",
+          "description": "After auto-resolve completes, run mirror close automatically and include structured Polymarket settlement status in the final report.",
           "type": "boolean"
         },
         "auto-resolve": {
@@ -9413,480 +8139,6 @@
       },
       "type": "object",
       "xPandora": {
-        "exclusiveOneOf": [
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-slug"
-            ]
-          }
-        ],
         "requiredAnyOf": [
           {
             "required": [
@@ -9900,25 +8152,21 @@
           },
           {
             "required": [
-              "pandora-market-address",
+              "pandora-market-address"
+            ]
+          },
+          {
+            "required": [
+              "market-address"
+            ]
+          },
+          {
+            "required": [
               "polymarket-market-id"
             ]
           },
           {
             "required": [
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
               "polymarket-slug"
             ]
           }
@@ -10680,480 +8928,6 @@
       },
       "type": "object",
       "xPandora": {
-        "exclusiveOneOf": [
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-slug"
-            ]
-          }
-        ],
         "requiredAnyOf": [
           {
             "required": [
@@ -11167,25 +8941,21 @@
           },
           {
             "required": [
-              "pandora-market-address",
+              "pandora-market-address"
+            ]
+          },
+          {
+            "required": [
+              "market-address"
+            ]
+          },
+          {
+            "required": [
               "polymarket-market-id"
             ]
           },
           {
             "required": [
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
               "polymarket-slug"
             ]
           }
@@ -11282,480 +9052,6 @@
       },
       "type": "object",
       "xPandora": {
-        "exclusiveOneOf": [
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-slug"
-            ]
-          }
-        ],
         "requiredAnyOf": [
           {
             "required": [
@@ -11769,25 +9065,21 @@
           },
           {
             "required": [
-              "pandora-market-address",
+              "pandora-market-address"
+            ]
+          },
+          {
+            "required": [
+              "market-address"
+            ]
+          },
+          {
+            "required": [
               "polymarket-market-id"
             ]
           },
           {
             "required": [
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
               "polymarket-slug"
             ]
           }
@@ -11940,7 +9232,7 @@
       "status"
     ],
     "canonicalTool": "mirror.status",
-    "canonicalUsage": "pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
+    "canonicalUsage": "pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address>|--polymarket-market-id <id>|--polymarket-slug <slug> [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/MirrorStatusPayload",
     "emits": [
@@ -12035,480 +9327,6 @@
       },
       "type": "object",
       "xPandora": {
-        "exclusiveOneOf": [
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "strategy-hash"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "state-file",
-              "market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-slug"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "state-file"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address",
-                    "polymarket-slug"
-                  ]
-                },
-                {
-                  "required": [
-                    "pandora-market-address"
-                  ]
-                },
-                {
-                  "required": [
-                    "market-address",
-                    "polymarket-market-id"
-                  ]
-                },
-                {
-                  "required": [
-                    "polymarket-market-id"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "strategy-hash",
-              "market-address",
-              "polymarket-slug"
-            ]
-          }
-        ],
         "requiredAnyOf": [
           {
             "required": [
@@ -12522,25 +9340,21 @@
           },
           {
             "required": [
-              "pandora-market-address",
+              "pandora-market-address"
+            ]
+          },
+          {
+            "required": [
+              "market-address"
+            ]
+          },
+          {
+            "required": [
               "polymarket-market-id"
             ]
           },
           {
             "required": [
-              "pandora-market-address",
-              "polymarket-slug"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
-              "polymarket-market-id"
-            ]
-          },
-          {
-            "required": [
-              "market-address",
               "polymarket-slug"
             ]
           }
@@ -12572,7 +9386,7 @@
     "summary": "Read the single-mirror operator status/dashboard surface with selector-first lookup, graceful fallback behavior, runtime health, and optional live diagnostics.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
+    "usage": "pandora [--output table|json] mirror status --state-file <path>|--strategy-hash <hash>|--pandora-market-address <address>|--market-address <address>|--polymarket-market-id <id>|--polymarket-slug <slug> [--with-live] [--trust-deploy] [--manifest-file <path>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]"
   },
   "mirror.sync": {
     "agentWorkflow": null,
@@ -24538,7 +21352,7 @@
       "plan"
     ],
     "canonicalTool": "sports.resolve.plan",
-    "canonicalUsage": "pandora [--output table|json] sports resolve plan --event-id <id>|--checks-json <json>|--checks-file <path> [--poll-address <address>] [--settle-delay-ms <ms>] [--consecutive-checks-required <n>] [--now <iso>|--now-ms <ms>] [--reason <text>]",
+    "canonicalUsage": "pandora [--output table|json] sports resolve plan --event-id <id>|--checks-json <json>|--checks-file <path> [--poll-address <address>] [--settle-delay-ms <ms>] [--consecutive-checks-required <n>] [--now <iso>|--now-ms <ms>] [--reason <text>] [--rpc-url <url>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/SportsResolvePlanPayload",
     "emits": [
@@ -24550,6 +21364,7 @@
     "executeIntentRequiredForLiveMode": false,
     "expectedLatencyMs": 5000,
     "externalDependencies": [
+      "chain-rpc",
       "sports-data-provider"
     ],
     "helpDataSchema": "#/definitions/CommandHelpPayload",
@@ -24591,6 +21406,10 @@
           "description": "Operator note for resolve plan.",
           "type": "string"
         },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
         "settle-delay-ms": {
           "description": "Minimum settle delay in milliseconds.",
           "minimum": 0,
@@ -24609,6 +21428,7 @@
     ],
     "policyScopes": [
       "sports:read",
+      "network:rpc",
       "network:sports"
     ],
     "preferred": true,
@@ -24620,10 +21440,10 @@
     "riskLevel": "low",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Build manual-final resolution recommendation.",
+    "summary": "Build an opt-in sports resolution safety verdict with blockers, timing, and optional execute-ready resolve args.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] sports resolve plan --event-id <id>|--checks-json <json>|--checks-file <path> [--poll-address <address>] [--settle-delay-ms <ms>] [--consecutive-checks-required <n>] [--now <iso>|--now-ms <ms>] [--reason <text>]"
+    "usage": "pandora [--output table|json] sports resolve plan --event-id <id>|--checks-json <json>|--checks-file <path> [--poll-address <address>] [--settle-delay-ms <ms>] [--consecutive-checks-required <n>] [--now <iso>|--now-ms <ms>] [--reason <text>] [--rpc-url <url>]"
   },
   "sports.schedule": {
     "agentWorkflow": null,
@@ -25722,7 +22542,7 @@
       "watch"
     ],
     "canonicalTool": "watch",
-    "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
+    "canonicalUsage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/WatchPayload",
     "emits": [
@@ -25742,6 +22562,16 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "alert-exposure-above": {
+          "description": "Alert threshold for observed total exposure in USDC.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "alert-hedge-gap-above": {
+          "description": "Alert threshold for observed hedge gap in USDC.",
+          "minimum": 0,
+          "type": "number"
+        },
         "alert-net-liquidity-above": {
           "description": "Alert threshold for high liquidity.",
           "minimum": 0,
@@ -25812,6 +22642,31 @@
           "description": "Market address.",
           "type": "string"
         },
+        "max-daily-volume-usdc": {
+          "description": "Maximum projected daily volume in USDC for watch risk policy.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "max-hedge-gap-usdc": {
+          "description": "Maximum observed hedge gap in USDC for watch risk policy.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "max-per-market-exposure-usdc": {
+          "description": "Maximum observed single-market exposure in USDC for watch risk policy.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "max-total-exposure-usdc": {
+          "description": "Maximum observed total exposure in USDC for watch risk policy.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "max-trade-size-usdc": {
+          "description": "Maximum projected trade size in USDC for watch risk policy.",
+          "minimum": 0,
+          "type": "number"
+        },
         "no-events": {
           "description": "Skip event aggregation.",
           "type": "boolean"
@@ -25862,10 +22717,10 @@
     "riskLevel": "medium",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Poll portfolio and/or market snapshots with optional alert thresholds.",
+    "summary": "Poll portfolio and/or market snapshots with alert thresholds plus watch-scoped exposure and hedge-gap risk limits.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]"
+    "usage": "pandora [--output table|json] watch [--wallet <address>] [--market-address <address>] [--side yes|no] [--amount-usdc <amount>] [--iterations <n>] [--interval-ms <ms>] [--chain-id <id>] [--include-events|--no-events] [--yes-pct <0-100>] [--alert-yes-below <0-100>] [--alert-yes-above <0-100>] [--alert-net-liquidity-below <amount>] [--alert-net-liquidity-above <amount>] [--alert-exposure-above <amount>] [--alert-hedge-gap-above <amount>] [--max-trade-size-usdc <amount>] [--max-daily-volume-usdc <amount>] [--max-total-exposure-usdc <amount>] [--max-per-market-exposure-usdc <amount>] [--max-hedge-gap-usdc <amount>] [--fail-on-alert] [--track-brier] [--brier-source <name>] [--brier-file <path>] [--group-by source|market|competition]"
   },
   "webhook": {
     "agentWorkflow": null,

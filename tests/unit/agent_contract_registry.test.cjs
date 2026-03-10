@@ -287,6 +287,10 @@ test('mirror and sports create schemas expose category names and required select
     'mirror.close should encode exclusive selector/mode branches',
   );
 
+  const sportsResolvePlan = descriptors['sports.resolve.plan'];
+  assert.ok(sportsResolvePlan);
+  assert.equal(sportsResolvePlan.inputSchema.properties['rpc-url'].type, 'string');
+
   const sportsCreatePlan = descriptors['sports.create.plan'];
   assert.ok(sportsCreatePlan);
   assert.equal(sportsCreatePlan.inputSchema.properties.category.type, 'string');
