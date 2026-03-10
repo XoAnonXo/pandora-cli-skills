@@ -1,11 +1,27 @@
 const { round } = require('./shared/utils.cjs');
 const YEAR_TOKEN_PATTERN = /^\d{4}$/;
+const WEAK_CONTENT_TOKENS = new Set([
+  'beat',
+  'beats',
+  'game',
+  'games',
+  'market',
+  'markets',
+  'match',
+  'team',
+  'vs',
+  'win',
+  'winner',
+  'winners',
+  'yes',
+  'no',
+]);
 
 function normalizeQuestion(question) {
   return String(question || '')
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\b(the|a|an|will|be|on|at|in|to|for|by|of|is|are|was|were)\b/g, ' ')
+    .replace(/\b(the|will|be|on|at|in|to|for|by|of|is|are|was|were)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -23,7 +39,10 @@ function buildContentTokenSet(tokensInput) {
     ? tokensInput
     : tokenizeNormalized(normalizeQuestion(tokensInput));
   return new Set(
-    tokens.filter((token) => typeof token === 'string' && token.length > 1 && !YEAR_TOKEN_PATTERN.test(token)),
+    tokens.filter((token) =>
+      typeof token === 'string'
+      && (token.length > 1 || /^[a-z]$/.test(token))
+      && !YEAR_TOKEN_PATTERN.test(token)),
   );
 }
 
@@ -114,6 +133,7 @@ function questionSimilarityBreakdown(leftQuestion, rightQuestion) {
   const contentRight = buildContentTokenSet(rightTokens);
   const sharedTokens = setIntersection(leftTokenSet, rightTokenSet);
   const contentSharedTokens = setIntersection(contentLeft, contentRight);
+  const distinctiveSharedTokens = contentSharedTokens.filter((token) => !WEAK_CONTENT_TOKENS.has(token));
   const tokenScore = jaccard(leftTokenSet, rightTokenSet);
   const contentTokenScore = jaccard(contentLeft, contentRight);
   const contentCoverage = overlapCoverage(contentSharedTokens.length, contentLeft.size, contentRight.size);
@@ -124,7 +144,10 @@ function questionSimilarityBreakdown(leftQuestion, rightQuestion) {
     + contentCoverage * 0.4
     + jw * 0.2;
 
-  if (contentSharedTokens.length >= 2) {
+  if (
+    contentSharedTokens.length >= 2
+    && (contentCoverage >= 0.85 || distinctiveSharedTokens.length >= 2)
+  ) {
     score = Math.max(
       score,
       0.55
@@ -143,6 +166,8 @@ function questionSimilarityBreakdown(leftQuestion, rightQuestion) {
     sharedTokenCount: sharedTokens.length,
     contentSharedTokens,
     contentSharedTokenCount: contentSharedTokens.length,
+    distinctiveSharedTokens,
+    distinctiveSharedTokenCount: distinctiveSharedTokens.length,
     tokenScore: round(tokenScore, 6),
     contentTokenScore: round(contentTokenScore, 6),
     contentCoverage: round(contentCoverage, 6),
