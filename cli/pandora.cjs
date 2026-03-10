@@ -5757,9 +5757,12 @@ async function runQuoteCommand(args, context) {
   emitSuccess(context.outputMode, 'quote', payload, renderQuoteTable);
 }
 
-async function createReadOnlyPublicClient(chainId, rpcUrl) {
+async function createReadOnlyPublicClient(chainId, rpcUrl, options = {}) {
   const selectedChainId = Number.isInteger(Number(chainId)) ? Number(chainId) : 1;
-  const selectedRpcUrl = String(rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[selectedChainId] || '').trim();
+  const allowDefaultRpc = options && options.allowDefaultRpc !== false;
+  const selectedRpcUrl = String(
+    rpcUrl || process.env.RPC_URL || (allowDefaultRpc ? DEFAULT_RPC_BY_CHAIN_ID[selectedChainId] : '') || '',
+  ).trim();
   if (!isSecureHttpUrlOrLocal(selectedRpcUrl)) return null;
   const { createPublicClient, http } = await loadViemRuntime();
   return createPublicClient({
@@ -6001,7 +6004,10 @@ async function runMarketsCommand(args, context) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing market id. Use --id <id> or --stdin.');
     }
 
-    const publicClient = await createReadOnlyPublicClient(1, process.env.RPC_URL || null);
+    const explicitRpcUrl = String(process.env.RPC_URL || '').trim();
+    const publicClient = explicitRpcUrl
+      ? await createReadOnlyPublicClient(1, explicitRpcUrl, { allowDefaultRpc: false })
+      : null;
     const marketMap = await fetchMarketSnapshotMap(indexerUrl, ids, shared.timeoutMs);
     const responses = await Promise.all(
       ids.map(async (id) => {

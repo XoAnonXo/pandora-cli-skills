@@ -102,6 +102,16 @@ function buildDisabledPortfolioSection(reason, extra = {}) {
   };
 }
 
+function hasExplicitPortfolioContext(options = {}) {
+  return Boolean(
+    options.wallet
+    || options.privateKey
+    || options.profileId
+    || options.profileFile
+    || options.funder,
+  );
+}
+
 async function readPandoraWalletBalances(options = {}) {
   const walletAddress = normalizeAddress(options.walletAddress);
   const chainId = Number.isInteger(Number(options.chainId)) && Number(options.chainId) > 0
@@ -552,6 +562,23 @@ async function collectDashboardPortfolio(options = {}, deps = {}, dashboardSumma
     liquidCapital: buildDisabledPortfolioSection('Liquid capital overview unavailable.'),
     diagnostics: [],
   };
+
+  if (!hasExplicitPortfolioContext(options)) {
+    const claimable = buildDisabledPortfolioSection(
+      'Claimable overview skipped because no explicit wallet or signer context was provided.',
+    );
+    const liquidCapital = buildDisabledPortfolioSection(
+      'Liquid capital overview skipped because no explicit wallet or signer context was provided.',
+    );
+    portfolio.claimable = claimable;
+    portfolio.liquidCapital = liquidCapital;
+    portfolio.diagnostics = uniqueStrings([
+      ...(Array.isArray(claimable.diagnostics) ? claimable.diagnostics : []),
+      ...(Array.isArray(liquidCapital.diagnostics) ? liquidCapital.diagnostics : []),
+    ]);
+    portfolio.enabled = portfolio.active.marketCount > 0;
+    return portfolio;
+  }
 
   const resolvedPrivateKey = options.privateKey || (
     !options.privateKey && isValidPrivateKey(process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY)
