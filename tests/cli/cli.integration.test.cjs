@@ -5844,6 +5844,91 @@ test('arb scan emits ndjson opportunities when net spread threshold is exceeded'
   }
 });
 
+test('arb scan tolerates indexers that do not expose yesPct on markets', async () => {
+  let rejectedMissingFieldQuery = false;
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: 'arb-compat-1',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-compat-1',
+        creator: ADDRESSES.wallet1,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000002',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.40',
+        reserveYes: '400',
+        reserveNo: '600',
+        createdAt: '1700000002',
+      },
+      {
+        id: 'arb-compat-2',
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: 'poll-arb-compat-2',
+        creator: ADDRESSES.wallet2,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000003',
+        totalVolume: '1000',
+        currentTvl: '2000',
+        yesChance: '0.60',
+        reserveYes: '600',
+        reserveNo: '400',
+        createdAt: '1700000003',
+      },
+    ],
+    handleRequest: ({ query }) => {
+      if (query.includes('markets(id:') && query.includes('yesPct')) {
+        rejectedMissingFieldQuery = true;
+        return {
+          body: {
+            errors: [{ message: 'Cannot query field "yesPct" on type "markets".' }],
+          },
+        };
+      }
+      return null;
+    },
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'arb',
+      'scan',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--markets',
+      'arb-compat-1,arb-compat-2',
+      '--output',
+      'json',
+      '--iterations',
+      '1',
+      '--min-net-spread-pct',
+      '10',
+      '--fee-pct-per-leg',
+      '0.5',
+      '--amount-usdc',
+      '100',
+    ]);
+
+    assert.equal(result.status, 0, result.output);
+    assert.equal(rejectedMissingFieldQuery, false);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'arb.scan');
+    assert.equal(payload.data.opportunities.length, 1);
+    assert.equal(payload.data.opportunities[0].buyYesMarket, 'arb-compat-1');
+    assert.equal(payload.data.opportunities[0].buyNoMarket, 'arb-compat-2');
+    assert.equal(payload.data.opportunities[0].netSpreadPct, 19);
+  } finally {
+    await indexer.close();
+  }
+});
+
 test('arb scan supports bounded JSON envelope output for agent integrations', async () => {
   const indexer = await startIndexerMockServer({
     markets: [
@@ -7712,6 +7797,7 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   const payload = parseJsonOutput(result);
   assert.equal(payload.ok, true);
   assert.equal(payload.command, 'mirror.sync.help');
+  assert.equal(Array.isArray(payload.data.notes), true);
   assert.equal(Array.isArray(payload.data.liveHedgeEnv), true);
   assert.equal(payload.data.liveHedgeEnv.includes('POLYMARKET_PRIVATE_KEY'), true);
   assert.equal(payload.data.liveHedgeEnv.includes('POLYMARKET_API_KEY'), true);
@@ -7733,6 +7819,7 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   assert.match(payload.data.statusTelemetry.errors, /runtime\.errorCount/i);
   assert.match(payload.data.statusTelemetry.nextAction, /runtime\.nextAction/i);
   assert.match(payload.data.staleCacheFallback, /cached snapshots/i);
+  assert.equal(payload.data.notes.some((note) => /\.pandora\/mirror\/STOP/.test(String(note))), true);
 });
 
 test('mirror go --help json includes flashbots routing flag contract', () => {
@@ -7741,6 +7828,7 @@ test('mirror go --help json includes flashbots routing flag contract', () => {
   const payload = parseJsonOutput(result);
   assert.equal(payload.ok, true);
   assert.equal(payload.command, 'mirror.go.help');
+  assert.equal(Array.isArray(payload.data.notes), true);
   assert.match(payload.data.usage, /--rebalance-route public\|auto\|flashbots-private\|flashbots-bundle/);
   assert.match(payload.data.usage, /--rebalance-route-fallback fail\|public/);
   assert.match(payload.data.usage, /--flashbots-relay-url <url>/);
@@ -7750,6 +7838,19 @@ test('mirror go --help json includes flashbots routing flag contract', () => {
   assert.match(payload.data.usage, /--auto-close/);
   assert.match(payload.data.usage, /--resolve-answer yes\|no/);
   assert.match(payload.data.usage, /--resolve-reason <text>/);
+  assert.equal(payload.data.notes.some((note) => /validation tickets are bound to the exact final deploy payload/i.test(String(note))), true);
+});
+
+test('mirror deploy --help json surfaces validation-ticket caveats and percentage distribution flags', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'deploy', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.deploy.help');
+  assert.equal(Array.isArray(payload.data.notes), true);
+  assert.match(payload.data.usage, /--distribution-yes-pct <pct>/);
+  assert.match(payload.data.usage, /--distribution-no-pct <pct>/);
+  assert.equal(payload.data.notes.some((note) => /exact final deploy payload/i.test(String(note))), true);
 });
 
 test('mirror trace --help json includes historical reserve tracing usage and archive notes', () => {
@@ -7811,6 +7912,45 @@ test('command descriptors expose flashbots routing flags for mirror go and sync 
   }
 });
 
+test('command descriptors surface validation, distribution, and stop-file caveats for agent workflows', () => {
+  const descriptors = buildCommandDescriptors();
+
+  assert.equal(
+    descriptors['markets.create.run'].agentWorkflow.notes.some((note) => /exact final payload/i.test(String(note))),
+    true,
+  );
+  assert.equal(
+    descriptors['markets.create.run'].agentWorkflow.notes.some((note) => /balanced 50\/50 pool/i.test(String(note))),
+    true,
+  );
+
+  assert.match(descriptors['mirror.deploy'].usage, /--distribution-yes-pct <pct>/);
+  assert.match(descriptors['mirror.deploy'].usage, /--distribution-no-pct <pct>/);
+  assert.ok(descriptors['mirror.deploy'].inputSchema.properties['distribution-yes-pct']);
+  assert.ok(descriptors['mirror.deploy'].inputSchema.properties['distribution-no-pct']);
+  assert.equal(
+    descriptors['mirror.deploy'].agentWorkflow.notes.some((note) => /exact final deploy payload/i.test(String(note))),
+    true,
+  );
+  assert.equal(
+    descriptors['mirror.go'].agentWorkflow.notes.some((note) => /exact final deploy payload/i.test(String(note))),
+    true,
+  );
+
+  for (const commandName of ['mirror.sync.once', 'mirror.sync.run', 'mirror.sync.start']) {
+    assert.equal(
+      descriptors[commandName].agentWorkflow.notes.some((note) => /\.pandora\/mirror\/STOP/.test(String(note))),
+      true,
+      `${commandName} should surface the default mirror stop file caveat`,
+    );
+  }
+
+  assert.equal(
+    descriptors['mirror.panic'].agentWorkflow.notes.some((note) => /\.pandora\/mirror\/STOP/.test(String(note))),
+    true,
+  );
+});
+
 test('mirror --help json includes batch-1 sync semantics notes', () => {
   const result = runCli(['--output', 'json', 'mirror', '--help']);
   assert.equal(result.status, 0);
@@ -7828,6 +7968,8 @@ test('mirror --help json includes batch-1 sync semantics notes', () => {
   assert.equal(payload.data.notes.some((note) => /--polymarket-rpc-url/.test(note)), true);
   assert.equal(payload.data.notes.some((note) => /verifyDiagnostics/.test(note)), true);
   assert.equal(payload.data.notes.some((note) => /logFile/.test(note)), true);
+  assert.equal(payload.data.notes.some((note) => /\.pandora\/mirror\/STOP/.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /validation tickets are bound to the exact final deploy payload/i.test(String(note))), true);
 });
 
 test('mirror trace returns structured historical reserve snapshots for explicit block lists', async () => {
@@ -8931,6 +9073,7 @@ test('mirror panic --help returns usage payload', () => {
     payload.data.notes.some((line) => /mirror-focused emergency shell/i.test(String(line))),
     true,
   );
+  assert.equal(payload.data.notes.some((line) => /\.pandora\/mirror\/STOP/.test(String(line))), true);
 });
 
 test('mirror drift --help returns usage payload', () => {
@@ -11352,6 +11495,17 @@ test('markets --help includes canonical create surface', () => {
   assert.match(result.output, /markets create plan\|run/i);
 });
 
+test('markets create --help json surfaces validation-ticket and balanced-distribution caveats', () => {
+  const result = runCli(['--output', 'json', 'markets', 'create', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'markets.create.help');
+  assert.equal(Array.isArray(payload.data.notes), true);
+  assert.equal(payload.data.notes.some((note) => /exact final payload/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /balanced 50\/50 pool/i.test(String(note))), true);
+});
+
 test('markets create plan emits canonical pari-mutuel plan payload', () => {
   const result = runCli([
     '--output',
@@ -11388,6 +11542,8 @@ test('markets create plan emits canonical pari-mutuel plan payload', () => {
   assert.equal(payload.data.marketTemplate.curveFlattener, 7);
   assert.equal(payload.data.marketTemplate.curveOffset, 30000);
   assert.equal(payload.data.requiredValidation.promptTool, 'agent.market.validate');
+  assert.equal(payload.data.notes.some((note) => /balanced 50\/50 pool/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /exact final payload/i.test(String(note))), true);
 });
 
 test('markets create run --dry-run emits canonical deployment payload', () => {

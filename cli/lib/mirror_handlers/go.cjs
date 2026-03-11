@@ -321,12 +321,22 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     renderMirrorGoTable,
     deriveWalletAddressFromPrivateKey,
   } = deps;
+  const helpNotes = [
+    'mirror go inherits the exact deploy payload from its dry-run/paper stage and returns the validation ticket needed for execute flows.',
+    'Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass.',
+    'Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic or private.',
+  ];
 
   if (includesHelpFlag(shared.rest)) {
     if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'mirror.go.help', commandHelpPayload(mirrorGoUsage));
+      emitSuccess(context.outputMode, 'mirror.go.help', commandHelpPayload(mirrorGoUsage, helpNotes));
     } else {
       console.log(`Usage: ${mirrorGoUsage}`);
+      console.log('');
+      console.log('Notes:');
+      for (const note of helpNotes) {
+        console.log(`- ${note}`);
+      }
     }
     return;
   }

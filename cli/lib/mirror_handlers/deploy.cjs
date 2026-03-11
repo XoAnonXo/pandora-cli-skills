@@ -17,20 +17,28 @@ module.exports = async function handleMirrorDeploy({ shared, context, deps }) {
     renderMirrorDeployTable,
     assertLiveWriteAllowed,
   } = deps;
+  const usage =
+    'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--min-close-lead-seconds <n>]';
+  const notes = [
+    'mirror deploy dry-run returns the exact Pandora deployment payload and required validation ticket.',
+    'Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass.',
+    'mirror deploy never auto-copies Polymarket URLs into sources; pass independent public resolution URLs with --sources.',
+  ];
 
   if (includesHelpFlag(shared.rest)) {
     if (context.outputMode === 'json') {
       emitSuccess(
         context.outputMode,
         'mirror.deploy.help',
-        commandHelpPayload(
-          'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--min-close-lead-seconds <n>]',
-        ),
+        commandHelpPayload(usage, notes),
       );
     } else {
-      console.log(
-        'Usage: pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--min-close-lead-seconds <n>]',
-      );
+      console.log(`Usage: ${usage}`);
+      console.log('');
+      console.log('Notes:');
+      for (const note of notes) {
+        console.log(`- ${note}`);
+      }
     }
     return;
   }

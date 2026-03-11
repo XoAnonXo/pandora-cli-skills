@@ -252,6 +252,10 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     cliPath,
   } = deps;
   const requestedAction = shared.rest[0];
+  const helpNotes = [
+    'The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.',
+    'Use `pandora mirror panic --clear ...` after incident review to remove the default stop file, or remove the file manually only if you know the emergency lock is stale.',
+  ];
   const commandName =
     requestedAction === 'status' || requestedAction === 'stop'
       ? `mirror.sync.${requestedAction}`
@@ -369,6 +373,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
             'Daemon children write compact JSONL records to their log file; inspect them with pandora mirror logs --follow.',
           staleCacheFallback:
             'When Polymarket is unreachable, mirror commands reuse cached snapshots from ~/.pandora/polymarket. Live mode blocks cached sources.',
+          notes: helpNotes,
         },
       );
     } else {
@@ -389,6 +394,9 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       console.log(
         'Polymarket outage fallback: cached snapshots under ~/.pandora/polymarket are reused; live mode blocks cached sources.',
       );
+      for (const note of helpNotes) {
+        console.log(note);
+      }
     }
     return;
   }

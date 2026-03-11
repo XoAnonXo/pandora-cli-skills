@@ -1009,6 +1009,8 @@ const commandContracts = [
       notes: [
         'Use markets.create.plan to normalize a launch payload into a JSON-safe agent contract.',
         'Legacy launch remains script-native; use markets.create.run for the canonical agent/MCP creation surface.',
+        'Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.',
+        'If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets.',
       ],
     },
     mcp: {
@@ -1033,6 +1035,8 @@ const commandContracts = [
       notes: [
         'Use agent.market.autocomplete when the question, rules, or target timestamp still need refinement before creation.',
         'markets.create.plan is the canonical JSON-safe planning surface; legacy launch remains script-native.',
+        'The emitted validation ticket is bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh validation pass.',
+        'If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets.',
       ],
     },
     mcp: {
@@ -1083,6 +1087,8 @@ const commandContracts = [
       notes: [
         'Run agent.market.validate on the exact final market payload before execute mode.',
         'Legacy launch remains script-native; markets.create.run is the canonical agent/MCP market creation surface.',
+        'Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.',
+        'If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets.',
       ],
     },
     mcp: {
@@ -2970,7 +2976,7 @@ const commandContracts = [
     name: 'mirror.deploy',
     summary: 'Deploy a mirror market from selector or plan in dry-run or execute mode.',
     usage:
-      'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]',
+      'pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]',
     emits: ['mirror.deploy', 'mirror.deploy.help'],
     dataSchema: '#/definitions/MirrorDeployPayload',
     mcpExposed: true,
@@ -2981,12 +2987,13 @@ const commandContracts = [
       notes: [
         'Mirror deploy dry-run returns the exact Pandora deployment payload and required validation ticket.',
         'Mirror deploy never auto-copies Polymarket URLs into sources; pass independent public resolution URLs with --sources.',
-        'Run agent.market.validate on that final payload before rerunning mirror.deploy with execute mode, then pass --validation-ticket locally or agentPreflight in MCP.',
+        'Run agent.market.validate on that exact final payload before rerunning mirror.deploy with execute mode, then pass --validation-ticket locally or agentPreflight in MCP.',
+        'Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass.',
       ],
     },
     mcp: {
       command: ['mirror', 'deploy'],
-      description: 'Dry-run or execute mirror deployment.',
+      description: 'Dry-run or execute mirror deployment. Execute mode expects a validation ticket for the exact final deploy payload.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3010,6 +3017,8 @@ const commandContracts = [
           usdc: stringSchema('USDC token address.'),
           'distribution-yes': numberSchema('Initial YES distribution parts.', { minimum: 0 }),
           'distribution-no': numberSchema('Initial NO distribution parts.', { minimum: 0 }),
+          'distribution-yes-pct': numberSchema('Initial YES distribution percent.', { minimum: 0, maximum: 100 }),
+          'distribution-no-pct': numberSchema('Initial NO distribution percent.', { minimum: 0, maximum: 100 }),
           sources: flexibleArraySchema(stringSchema(), 'Source URL list.'),
           'validation-ticket': stringSchema('Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).'),
           'target-timestamp': buildTargetTimestampSchema('Explicit target timestamp override.'),
@@ -3289,6 +3298,7 @@ const commandContracts = [
         'Mirror go inherits the exact market payload from its deploy stage; use the returned validation ticket from paper/dry-run output.',
         'When mirror go will execute a fresh deploy, provide independent public --sources and a matching validation ticket.',
         'Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live.',
+        'Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass.',
         'Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic.',
       ],
     },
@@ -3392,6 +3402,15 @@ const commandContracts = [
     emits: ['mirror.sync.once', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     mcpExposed: true,
+    agentWorkflow: {
+      requiredTools: [],
+      recommendedTools: ['mirror.panic'],
+      executeRequiresValidation: false,
+      notes: [
+        'The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.',
+        'Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale.',
+      ],
+    },
     mcp: {
       command: ['mirror', 'sync', 'once'],
       description: 'Execute one mirror sync tick. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
@@ -3466,6 +3485,15 @@ const commandContracts = [
     emits: ['mirror.sync.run', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     mcpExposed: true,
+    agentWorkflow: {
+      requiredTools: [],
+      recommendedTools: ['mirror.panic'],
+      executeRequiresValidation: false,
+      notes: [
+        'The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.',
+        'Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale.',
+      ],
+    },
     mcp: {
       command: ['mirror', 'sync', 'run'],
       description: 'Continuous mirror sync loop. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance. Long-running execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.',
@@ -3536,7 +3564,7 @@ const commandContracts = [
       executeFlags: ['--execute-live', '--execute'],
     },
   }),
-  commandContract({
+    commandContract({
       name: 'mirror.sync.start',
     summary: 'Start detached mirror sync daemon for separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
     usage:
@@ -3544,6 +3572,15 @@ const commandContracts = [
     emits: ['mirror.sync.start', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     mcpExposed: true,
+      agentWorkflow: {
+        requiredTools: [],
+        recommendedTools: ['mirror.panic'],
+        executeRequiresValidation: false,
+        notes: [
+          'The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.',
+          'Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale.',
+        ],
+      },
       mcp: {
       command: ['mirror', 'sync', 'start'],
       description: 'Start detached mirror sync daemon. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance. Detached execution remains blocked in MCP v1, and live mutation requires intent.execute with execute or execute-live.',
@@ -3709,15 +3746,24 @@ const commandContracts = [
     }),
     commandContract({
       name: 'mirror.panic',
-      summary: 'Engage or clear the global risk panic lock while writing mirror stop files and attempting daemon stop for the selected mirror scope.',
+      summary: 'Engage or clear the global risk panic lock while writing the default ~/.pandora/mirror/STOP stop file and attempting daemon stop for the selected mirror scope.',
       usage:
         'pandora [--output table|json] mirror panic --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all [--risk-file <path>] [--reason <text>] [--actor <id>] [--clear]',
       emits: ['mirror.panic', 'mirror.panic.help'],
       dataSchema: GENERIC_DATA_SCHEMA_REF,
       mcpExposed: true,
+      agentWorkflow: {
+        requiredTools: [],
+        recommendedTools: ['mirror.health'],
+        executeRequiresValidation: false,
+        notes: [
+          'Engage mode writes the default ~/.pandora/mirror/STOP stop file, which intentionally blocks local mirror daemons until cleared.',
+          'Use clear mode after incident review to remove the default stop file and release local mirror automation.',
+        ],
+      },
       mcp: {
         command: ['mirror', 'panic'],
-        description: 'Engage or clear global risk panic while applying mirror stop-file and daemon-stop emergency flow for the selected scope.',
+        description: 'Engage or clear global risk panic while applying the default ~/.pandora/mirror/STOP stop-file and daemon-stop emergency flow for the selected scope.',
         inputSchema: buildInputSchema({
           includeIntent: true,
           flagProperties: {

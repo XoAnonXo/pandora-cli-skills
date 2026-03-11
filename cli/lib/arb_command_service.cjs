@@ -14,7 +14,6 @@ const ARB_MARKET_FIELDS = [
   'pollAddress',
   'marketCloseTimestamp',
   'yesChance',
-  'yesPct',
   'reserveYes',
   'reserveNo',
   'totalVolume',

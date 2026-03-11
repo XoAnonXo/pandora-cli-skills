@@ -262,6 +262,7 @@ module.exports = async function handleMirrorPanic({ actionArgs, context, deps })
     const notes = [
       'mirror panic is the mirror-focused emergency shell around the global risk panic state.',
       'Engage mode writes mirror stop files and attempts daemon stop for the selected mirror scope while also enabling the global risk panic lock.',
+      'The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror daemons until clear mode removes it or you delete the stale file manually.',
       'Clear mode removes the default mirror stop file and clears the global risk panic lock; restart daemons manually after incident review.',
     ];
     if (context.outputMode === 'json') {

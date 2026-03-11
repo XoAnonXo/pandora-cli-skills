@@ -36,15 +36,21 @@ function buildRuntimeDefaults(options = {}) {
 function buildCreateHelp(commandHelpPayload) {
   const usage =
     'pandora [--output table|json] markets create plan|run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds> [--market-type amm|parimutuel]';
+  const notes = [
+    'markets create is the canonical JSON/MCP-safe standalone Pandora market creation surface.',
+    'Use `markets create plan` to normalize the market template and required validation ticket before execution.',
+    'Use `markets create run` for dry-run or execute. Execute mode requires prior `agent market validate` attestation.',
+    'Validation tickets are bound to the exact final payload: question, rules, sources, target timestamp, liquidity, market type, fee/curve params, and distribution. Any change requires a fresh ticket.',
+    'If you omit distribution flags, markets create seeds a balanced 50/50 pool. Set `--distribution-yes-pct` and `--distribution-no-pct` explicitly for directional markets.',
+    'Legacy `launch` remains script-native; `markets create` is the canonical agent-facing replacement.',
+  ];
   return {
     command: 'markets.create.help',
-    payload: commandHelpPayload(usage, [
-      'markets create is the canonical JSON/MCP-safe standalone Pandora market creation surface.',
-      'Use `markets create plan` to normalize the market template and required validation ticket before execution.',
-      'Use `markets create run` for dry-run or execute. Execute mode requires prior `agent market validate` attestation.',
-      'Legacy `launch` remains script-native; `markets create` is the canonical agent-facing replacement.',
-    ]),
-    table: `Usage: ${usage}`,
+    payload: commandHelpPayload(usage, notes),
+    table: {
+      usage,
+      notes,
+    },
   };
 }
 
@@ -77,6 +83,8 @@ function buildCreatePlanPayload(normalizedArgs, options, resolvedRuntime, requir
       normalizedArgs.marketType === 'parimutuel'
         ? 'Pari-mutuel creation uses curveFlattener/curveOffset instead of AMM feeTier/maxImbalance.'
         : 'AMM creation uses feeTier/maxImbalance instead of pari-mutuel curve parameters.',
+      'Validation tickets are bound to the exact final payload. Changing question, rules, sources, targetTimestamp, liquidity, fee/curve params, or distribution requires a fresh validation pass.',
+      'If you omit distribution flags, markets create seeds a balanced 50/50 pool. Set explicit distribution percentages for directional markets.',
       'Legacy launch remains available for script-native flows, but markets create is the canonical JSON/MCP-safe path.',
     ],
   };
@@ -145,7 +153,15 @@ function createRunMarketsCreateCommand(deps) {
         emitSuccess(context.outputMode, help.command, help.payload);
       } else {
         // eslint-disable-next-line no-console
-        console.log(help.table);
+        console.log(`Usage: ${help.table.usage}`);
+        // eslint-disable-next-line no-console
+        console.log('');
+        // eslint-disable-next-line no-console
+        console.log('Notes:');
+        for (const note of help.table.notes) {
+          // eslint-disable-next-line no-console
+          console.log(`- ${note}`);
+        }
       }
       return;
     }

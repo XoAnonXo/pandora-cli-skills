@@ -4062,7 +4062,9 @@
       "executeRequiresValidation": true,
       "notes": [
         "Use markets.create.plan to normalize a launch payload into a JSON-safe agent contract.",
-        "Legacy launch remains script-native; use markets.create.run for the canonical agent/MCP creation surface."
+        "Legacy launch remains script-native; use markets.create.run for the canonical agent/MCP creation surface.",
+        "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
+        "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets."
       ],
       "recommendedTools": [
         "agent.market.autocomplete"
@@ -4130,7 +4132,9 @@
       "executeRequiresValidation": false,
       "notes": [
         "Use agent.market.autocomplete when the question, rules, or target timestamp still need refinement before creation.",
-        "markets.create.plan is the canonical JSON-safe planning surface; legacy launch remains script-native."
+        "markets.create.plan is the canonical JSON-safe planning surface; legacy launch remains script-native.",
+        "The emitted validation ticket is bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh validation pass.",
+        "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets."
       ],
       "recommendedTools": [
         "agent.market.autocomplete"
@@ -4350,7 +4354,9 @@
       "executeRequiresValidation": true,
       "notes": [
         "Run agent.market.validate on the exact final market payload before execute mode.",
-        "Legacy launch remains script-native; markets.create.run is the canonical agent/MCP market creation surface."
+        "Legacy launch remains script-native; markets.create.run is the canonical agent/MCP market creation surface.",
+        "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
+        "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets."
       ],
       "recommendedTools": [
         "agent.market.autocomplete"
@@ -6630,7 +6636,8 @@
       "notes": [
         "Mirror deploy dry-run returns the exact Pandora deployment payload and required validation ticket.",
         "Mirror deploy never auto-copies Polymarket URLs into sources; pass independent public resolution URLs with --sources.",
-        "Run agent.market.validate on that final payload before rerunning mirror.deploy with execute mode, then pass --validation-ticket locally or agentPreflight in MCP."
+        "Run agent.market.validate on that exact final payload before rerunning mirror.deploy with execute mode, then pass --validation-ticket locally or agentPreflight in MCP.",
+        "Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass."
       ],
       "recommendedTools": [
         "agent.market.autocomplete"
@@ -6646,7 +6653,7 @@
       "deploy"
     ],
     "canonicalTool": "mirror.deploy",
-    "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
+    "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
     "controlInputNames": [
       "agentPreflight"
     ],
@@ -6742,8 +6749,20 @@
           "minimum": 0,
           "type": "number"
         },
+        "distribution-no-pct": {
+          "description": "Initial NO distribution percent.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
         "distribution-yes": {
           "description": "Initial YES distribution parts.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "distribution-yes-pct": {
+          "description": "Initial YES distribution percent.",
+          "maximum": 100,
           "minimum": 0,
           "type": "number"
         },
@@ -7182,7 +7201,7 @@
     "summary": "Deploy a mirror market from selector or plan in dry-run or execute mode.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]"
+    "usage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]"
   },
   "mirror.drift": {
     "agentWorkflow": null,
@@ -7354,6 +7373,7 @@
         "Mirror go inherits the exact market payload from its deploy stage; use the returned validation ticket from paper/dry-run output.",
         "When mirror go will execute a fresh deploy, provide independent public --sources and a matching validation ticket.",
         "Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live.",
+        "Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass.",
         "Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic."
       ],
       "recommendedTools": [
@@ -9160,7 +9180,17 @@
     "usage": "pandora [--output table|json] mirror lp-explain --liquidity-usdc <n> [--source-yes-pct <0-100>] [--distribution-yes <parts>] [--distribution-no <parts>]"
   },
   "mirror.panic": {
-    "agentWorkflow": null,
+    "agentWorkflow": {
+      "executeRequiresValidation": false,
+      "notes": [
+        "Engage mode writes the default ~/.pandora/mirror/STOP stop file, which intentionally blocks local mirror daemons until cleared.",
+        "Use clear mode after incident review to remove the default stop file and release local mirror automation."
+      ],
+      "recommendedTools": [
+        "mirror.health"
+      ],
+      "requiredTools": []
+    },
     "aliasOf": null,
     "canRunConcurrent": false,
     "canonicalCommandTokens": [
@@ -9290,7 +9320,7 @@
     "riskLevel": "critical",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Engage or clear the global risk panic lock while writing mirror stop files and attempting daemon stop for the selected mirror scope.",
+    "summary": "Engage or clear the global risk panic lock while writing the default ~/.pandora/mirror/STOP stop file and attempting daemon stop for the selected mirror scope.",
     "supportsRemote": true,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] mirror panic --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all [--risk-file <path>] [--reason <text>] [--actor <id>] [--clear]"
@@ -10065,7 +10095,17 @@
     "usage": "pandora [--output table|json] mirror sync once|run|start|stop|status ..."
   },
   "mirror.sync.once": {
-    "agentWorkflow": null,
+    "agentWorkflow": {
+      "executeRequiresValidation": false,
+      "notes": [
+        "The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.",
+        "Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale."
+      ],
+      "recommendedTools": [
+        "mirror.panic"
+      ],
+      "requiredTools": []
+    },
     "aliasOf": null,
     "canRunConcurrent": false,
     "canonicalCommandTokens": [
@@ -11678,7 +11718,17 @@
     "usage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
   },
   "mirror.sync.run": {
-    "agentWorkflow": null,
+    "agentWorkflow": {
+      "executeRequiresValidation": false,
+      "notes": [
+        "The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.",
+        "Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale."
+      ],
+      "recommendedTools": [
+        "mirror.panic"
+      ],
+      "requiredTools": []
+    },
     "aliasOf": null,
     "canRunConcurrent": false,
     "canonicalCommandTokens": [
@@ -13304,7 +13354,17 @@
     "usage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
   },
   "mirror.sync.start": {
-    "agentWorkflow": null,
+    "agentWorkflow": {
+      "executeRequiresValidation": false,
+      "notes": [
+        "The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.",
+        "Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale."
+      ],
+      "recommendedTools": [
+        "mirror.panic"
+      ],
+      "requiredTools": []
+    },
     "aliasOf": null,
     "canRunConcurrent": false,
     "canonicalCommandTokens": [
