@@ -12,6 +12,26 @@ const MIRROR_SYNC_GATE_CODES = Object.freeze([
 ]);
 const DIAGNOSTIC_VERIFY_GATE_CODES = new Set(['CLOSE_TIME_DELTA']);
 
+function resolveHedgeReferencePrice(depthEntry) {
+  if (!depthEntry || typeof depthEntry !== 'object') return null;
+  const referencePrice = toNumber(depthEntry.referencePrice);
+  if (referencePrice !== null && referencePrice > 0) return referencePrice;
+  const midPrice = toNumber(depthEntry.midPrice);
+  if (midPrice !== null && midPrice > 0) return midPrice;
+  const worstPrice = toNumber(depthEntry.worstPrice);
+  if (worstPrice !== null && worstPrice > 0) return worstPrice;
+  return null;
+}
+
+function resolveDepthSharesCapacity(depthUsd, depthShares, referencePrice) {
+  const explicitDepthShares = toNumber(depthShares);
+  if (explicitDepthShares !== null) return explicitDepthShares;
+  const availableDepthUsd = toNumber(depthUsd);
+  const sharePrice = toNumber(referencePrice);
+  if (availableDepthUsd === null || sharePrice === null || sharePrice <= 0) return 0;
+  return round(availableDepthUsd / sharePrice, 6) || 0;
+}
+
 /**
  * Read an expiry field from verify payload in seconds.
  * @param {object} verifyPayload
@@ -193,16 +213,41 @@ function evaluateStrictGates(context) {
     },
   );
 
-  const depthRequired = toNumber(context.plannedHedgeUsdc) || 0;
-  const explicitHedgeDepth = toNumber(context.hedgeDepthWithinSlippageUsd);
-  const depthAvailable = explicitHedgeDepth === null ? toNumber(context.depthWithinSlippageUsd) || 0 : explicitHedgeDepth;
+  const depthRequiredUsd =
+    toNumber(context.plannedHedgeOrderUsd) !== null
+      ? toNumber(context.plannedHedgeOrderUsd)
+      : toNumber(context.plannedHedgeUsdc) || 0;
+  const depthRequiredShares =
+    toNumber(context.plannedHedgeShares) !== null
+      ? toNumber(context.plannedHedgeShares)
+      : toNumber(context.plannedHedgeUsdc) || 0;
+  const explicitHedgeDepthUsd = toNumber(context.hedgeDepthWithinSlippageUsd);
+  const explicitHedgeDepthShares = toNumber(context.hedgeDepthWithinSlippageShares);
+  const depthAvailableUsd =
+    explicitHedgeDepthUsd === null ? toNumber(context.depthWithinSlippageUsd) || 0 : explicitHedgeDepthUsd;
+  const hedgeReferencePrice = toNumber(context.hedgeReferencePrice);
+  const inferredDepthShares =
+    explicitHedgeDepthUsd !== null
+    && explicitHedgeDepthShares === null
+    && hedgeReferencePrice !== null
+    && hedgeReferencePrice > 0
+      ? round(explicitHedgeDepthUsd / hedgeReferencePrice, 6) || 0
+      : null;
+  const depthAvailableShares =
+    explicitHedgeDepthShares === null
+      ? inferredDepthShares !== null
+        ? inferredDepthShares
+        : toNumber(context.depthWithinSlippageShares) || 0
+      : explicitHedgeDepthShares;
   add(
     'DEPTH_COVERAGE',
-    depthRequired <= 0 ? true : depthAvailable >= depthRequired,
-    'Source depth must cover hedge notional at configured slippage.',
+    depthRequiredShares <= 0 ? true : depthAvailableUsd >= depthRequiredUsd && depthAvailableShares >= depthRequiredShares,
+    'Source depth must cover both hedge spend and hedge share size at configured slippage.',
     {
-      depthRequired,
-      depthAvailable,
+      depthRequiredUsd,
+      depthRequiredShares,
+      depthAvailableUsd,
+      depthAvailableShares,
       slippageBps: context.depthSlippageBps,
     },
   );
@@ -309,6 +354,23 @@ function resolveMinimumTimeToCloseSec(options) {
  */
 function buildTickGateContext(params) {
   const { verifyPayload, options, state, plan, snapshotMetrics, depth, minimumTimeToCloseSec } = params;
+  const hedgeDepthEntry =
+    plan.plannedHedgeShares > 0
+      ? plan.gapUsdc >= 0
+        ? depth.yesDepth || null
+        : depth.noDepth || null
+      : null;
+  const hedgeReferencePrice = resolveHedgeReferencePrice(hedgeDepthEntry);
+  const hedgeDepthWithinSlippageUsd = hedgeDepthEntry ? hedgeDepthEntry.depthUsd : null;
+  const hedgeDepthWithinSlippageShares = resolveDepthSharesCapacity(
+    hedgeDepthWithinSlippageUsd,
+    hedgeDepthEntry ? hedgeDepthEntry.depthShares : null,
+    hedgeReferencePrice,
+  );
+  const plannedHedgeOrderUsd =
+    plan.plannedHedgeOrderUsd !== null && plan.plannedHedgeOrderUsd !== undefined
+      ? plan.plannedHedgeOrderUsd
+      : round((toNumber(plan.plannedHedgeShares) || 0) * (hedgeReferencePrice || 1), 6) || 0;
   return {
     verifyPayload,
     executeLive: options.executeLive,
@@ -317,7 +379,10 @@ function buildTickGateContext(params) {
     nowMs: Date.now(),
     state,
     plannedHedgeUsdc: plan.plannedHedgeUsdc,
-    plannedSpendUsdc: plan.plannedSpendUsdc,
+    plannedHedgeShares: plan.plannedHedgeShares,
+    plannedHedgeOrderUsd,
+    hedgeReferencePrice,
+    plannedSpendUsdc: round((toNumber(plan.plannedRebalanceUsdc) || 0) + plannedHedgeOrderUsd, 6) || 0,
     plannedHedgeSignedUsdc: plan.plannedHedgeSignedUsdc,
     tradingTimeToExpirySec: snapshotMetrics.pandoraTimeToExpirySec,
     pandoraTimeToExpirySec: snapshotMetrics.pandoraTimeToExpirySec,
@@ -325,12 +390,9 @@ function buildTickGateContext(params) {
     minTimeToExpirySec: snapshotMetrics.minTimeToExpirySec,
     minimumTimeToCloseSec,
     depthWithinSlippageUsd: depth.depthWithinSlippageUsd,
-    hedgeDepthWithinSlippageUsd:
-      plan.plannedHedgeUsdc > 0
-        ? plan.gapUsdc >= 0
-          ? depth.yesDepth && depth.yesDepth.depthUsd
-          : depth.noDepth && depth.noDepth.depthUsd
-        : null,
+    hedgeDepthWithinSlippageUsd,
+    hedgeDepthWithinSlippageShares,
+    depthWithinSlippageShares: hedgeDepthWithinSlippageShares,
     depthSlippageBps: options.depthSlippageBps,
     maxOpenExposureUsdc: options.maxOpenExposureUsdc,
     maxTradesPerDay: options.maxTradesPerDay,

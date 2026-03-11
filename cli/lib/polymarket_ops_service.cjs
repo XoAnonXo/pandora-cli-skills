@@ -338,6 +338,192 @@ function coerceErrorMessage(err) {
   return String(err);
 }
 
+function toFiniteNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function roundDecimal(value, decimals = 6) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const factor = 10 ** decimals;
+  return Math.round(numeric * factor) / factor;
+}
+
+function buildPolymarketBalanceScope(context = {}) {
+  const ownerAddress =
+    context.ownerAddress || context.requestedWallet || context.funderAddress || context.signerAddress || '<address>';
+  const requestedWallet = context.requestedWallet || null;
+  const signerAddress = context.signerAddress || null;
+  const funderAddress = context.funderAddress || null;
+  const readTargets = requestedWallet
+    ? [{ role: 'wallet', address: requestedWallet }]
+    : [
+        signerAddress ? { role: 'signer', address: signerAddress } : null,
+        funderAddress ? { role: 'funder', address: funderAddress } : null,
+        ownerAddress ? { role: 'owner', address: ownerAddress } : null,
+      ].filter(Boolean);
+  return {
+    surface: 'polygon-usdc-wallet-collateral-only',
+    asset: 'USDC.e',
+    chainId: POLYGON_CHAIN_ID,
+    ownerAddress,
+    requestedWallet,
+    signerAddress,
+    funderAddress,
+    uiBalanceParityExpected: false,
+    description: 'Reads raw Polygon ERC20 USDC.e wallet balances for the resolved signer/funder/requested wallet addresses. This does not query authenticated Polymarket CLOB buying power.',
+    excludes: [
+      'authenticated Polymarket CLOB buying power',
+      'YES/NO CTF inventory',
+      'open orders',
+    ],
+    zeroBalanceInterpretation: 'A zero value here only means the queried wallet currently holds no raw Polygon USDC.e collateral on Polygon.',
+    readTargets,
+    suggestedChecks: {
+      positions: `pandora polymarket positions --wallet ${ownerAddress} --source auto`,
+      check: 'pandora polymarket check',
+    },
+  };
+}
+
+function buildPolymarketBalanceGuidance(context = {}) {
+  const scope = buildPolymarketBalanceScope(context);
+  const diagnostics = [
+    'Funding-only surface: this command reads raw Polygon USDC.e ERC20 wallet balances, not authenticated Polymarket CLOB buying power, YES/NO CTF inventory, or open orders.',
+  ];
+  const ownerAddress = context.ownerAddress || null;
+  const requestedWallet = context.requestedWallet || null;
+  const signerAddress = context.signerAddress || null;
+  const funderAddress = context.funderAddress || null;
+  const ownerSnapshot =
+    (requestedWallet && context.balances && context.balances.wallet)
+    || (context.balances && context.balances.owner)
+    || (context.balances && context.balances.funder)
+    || (context.balances && context.balances.signer)
+    || null;
+  const ownerRaw = toBigIntOrNull(ownerSnapshot && ownerSnapshot.raw);
+
+  if (requestedWallet) {
+    diagnostics.push(`Requested wallet ${requestedWallet} overrides signer/funder address selection for this collateral read.`);
+  } else if (ownerAddress) {
+    diagnostics.push(`Resolved owner wallet for collateral checks: ${ownerAddress}.`);
+  }
+  if (ownerAddress && signerAddress && ownerAddress !== signerAddress) {
+    diagnostics.push(`Signer ${signerAddress} differs from the wallet being read (${ownerAddress}); any Polymarket UI buying-power view tied to proxy/funder accounting can diverge from this raw wallet collateral read.`);
+  }
+  if (ownerAddress && funderAddress && ownerAddress !== funderAddress) {
+    diagnostics.push(`Configured funder ${funderAddress} differs from the wallet being read (${ownerAddress}); proxy/funder funding can make the Polymarket UI look funded even when this raw wallet collateral read is zero.`);
+  }
+
+  if (ownerRaw !== null && ownerRaw <= 0n) {
+    diagnostics.push(`A zero Polygon USDC.e wallet balance here does not prove the Polymarket UI buying-power view is zero; ${scope.surface} excludes proxy/CLOB accounting state.`);
+  }
+
+  diagnostics.push(
+    `Use ${scope.suggestedChecks.positions} for YES/NO balances, open orders, and merge-readiness diagnostics.`,
+  );
+  return diagnostics;
+}
+
+function buildPolymarketMergeReadiness(summary = {}, context = {}) {
+  const yesBalance = toFiniteNumberOrNull(summary.yesBalance);
+  const noBalance = toFiniteNumberOrNull(summary.noBalance);
+  const ownerAddress = context.ownerAddress || null;
+  const signerAddress = context.signerAddress || null;
+  const funderAddress = context.funderAddress || null;
+  const diagnostics = [];
+  const blockingReasons = [];
+  const warnings = [];
+  const missingBalances = [];
+  let mergeablePairs = null;
+  let residualYesBalance = null;
+  let residualNoBalance = null;
+
+  if (yesBalance === null) missingBalances.push('yes');
+  if (noBalance === null) missingBalances.push('no');
+
+  if (yesBalance !== null && noBalance !== null) {
+    mergeablePairs = roundDecimal(Math.min(Math.max(yesBalance, 0), Math.max(noBalance, 0)));
+    residualYesBalance = roundDecimal(Math.max(yesBalance - (mergeablePairs || 0), 0));
+    residualNoBalance = roundDecimal(Math.max(noBalance - (mergeablePairs || 0), 0));
+    if ((mergeablePairs || 0) > 0) {
+      diagnostics.push(
+        `Overlapping YES/NO inventory detected: up to ${mergeablePairs} complete pairs are merge-eligible for ${ownerAddress || 'the resolved owner wallet'}.`,
+      );
+    } else if (yesBalance > 0 || noBalance > 0) {
+      diagnostics.push('No complete YES+NO overlap is currently available to merge.');
+      blockingReasons.push('NO_OVERLAPPING_PAIRS');
+    }
+  } else {
+    diagnostics.push('Merge readiness is partial because both YES and NO balances were not available.');
+    if (yesBalance === null) {
+      blockingReasons.push('YES_BALANCE_UNAVAILABLE');
+    }
+    if (noBalance === null) {
+      blockingReasons.push('NO_BALANCE_UNAVAILABLE');
+    }
+  }
+
+  if (ownerAddress && signerAddress && ownerAddress !== signerAddress) {
+    diagnostics.push(
+      `Signer ${signerAddress} differs from position owner ${ownerAddress}; merge execution must be submitted by the wallet that actually holds the positions.`,
+    );
+    blockingReasons.push('SIGNER_DIFFERS_FROM_OWNER');
+  }
+  if (ownerAddress && funderAddress && ownerAddress !== funderAddress) {
+    diagnostics.push(
+      `Configured funder ${funderAddress} differs from position owner ${ownerAddress}; proxy/funder-only signing can fail merge attempts.`,
+    );
+    blockingReasons.push('FUNDER_DIFFERS_FROM_OWNER');
+  }
+  warnings.push('Operator approval status is not verified by polymarket positions; use polymarket check/approve before attempting a merge.');
+  if (ownerAddress) {
+    warnings.push(`Merge execution must originate from ${ownerAddress} when positions are held there.`);
+  }
+
+  const uniqueBlockingReasons = dedupeList(blockingReasons);
+  const uniqueWarnings = dedupeList(warnings);
+  const inventoryReady = mergeablePairs !== null && mergeablePairs > 0;
+  const executionWalletReady =
+    !ownerAddress || ((!signerAddress || ownerAddress === signerAddress) && (!funderAddress || ownerAddress === funderAddress));
+  const status = inventoryReady
+    ? uniqueBlockingReasons.length === 0
+      ? 'ready'
+      : 'action-required'
+    : missingBalances.length > 0
+      ? 'partial'
+      : 'not-ready';
+
+  return {
+    status,
+    eligible: mergeablePairs === null ? null : mergeablePairs > 0,
+    inventoryReady,
+    executionWalletReady,
+    mergeablePairs,
+    residualYesBalance,
+    residualNoBalance,
+    ownerAddress,
+    signerAddress,
+    funderAddress,
+    missingBalances,
+    blockingReasons: uniqueBlockingReasons,
+    warnings: uniqueWarnings,
+    operatorApprovalStatus: 'unknown',
+    executionWallet: ownerAddress,
+    prerequisites: [
+      'Submit merge transactions from the wallet that actually holds the YES/NO positions.',
+      'Ensure the Conditional Tokens operator approval is granted before merge execution.',
+    ],
+    suggestedChecks: [
+      'pandora polymarket check',
+      ownerAddress ? `pandora polymarket positions --wallet ${ownerAddress} --source auto` : 'pandora polymarket positions --source auto',
+    ],
+    diagnostics,
+  };
+}
+
 function normalizeRpcUrlCandidates(value) {
   if (value === null || value === undefined || value === '') return [];
   const normalized = [];
@@ -1378,6 +1564,13 @@ async function runPolymarketBalance(options = {}, deps = {}) {
   if (!ownerAddress) {
     diagnostics.push('No wallet address was resolved for Polymarket balance checks.');
   }
+  diagnostics.push(...buildPolymarketBalanceGuidance({
+    requestedWallet,
+    ownerAddress,
+    signerAddress,
+    funderAddress: runtime.funderAddress || null,
+    balances,
+  }));
 
   return {
     schemaVersion: POLYMARKET_OPS_SCHEMA_VERSION,
@@ -1397,8 +1590,14 @@ async function runPolymarketBalance(options = {}, deps = {}) {
     },
     rpcSelection: buildRpcSelectionPayload(runtime, { rpcSelection }),
     requestedWallet: requestedWallet || null,
+    balanceScope: buildPolymarketBalanceScope({
+      requestedWallet,
+      ownerAddress,
+      signerAddress,
+      funderAddress: runtime.funderAddress || null,
+    }),
     balances,
-    diagnostics,
+    diagnostics: dedupeList(diagnostics),
   };
 }
 
@@ -1589,11 +1788,6 @@ async function runPolymarketPositions(options = {}, deps = {}) {
     apiPassphrase: runtime.apiPassphrase,
   });
 
-  const combinedDiagnostics = dedupeList(
-    diagnostics
-      .concat(Array.isArray(inventory && inventory.diagnostics) ? inventory.diagnostics : [])
-      .concat(Array.isArray(position && position.diagnostics) ? position.diagnostics : []),
-  );
   const conditionId = position && position.conditionId ? position.conditionId : marketId || (market && market.marketId) || null;
   const marketPayload = {
     marketId: conditionId,
@@ -1624,6 +1818,22 @@ async function runPolymarketPositions(options = {}, deps = {}) {
         positionDeltaApprox: position && position.positionDeltaApprox !== undefined ? position.positionDeltaApprox : null,
         prices: position && position.prices ? cloneJsonCompatible(position.prices) : null,
       };
+  const mergeReadiness = buildPolymarketMergeReadiness(summary, {
+    ownerAddress,
+    signerAddress: signerAddress || null,
+    funderAddress: runtime.funderAddress || null,
+  });
+  const normalizedSummary = {
+    ...cloneJsonCompatible(summary),
+    mergeablePairs: mergeReadiness.mergeablePairs,
+    mergeReadiness: cloneJsonCompatible(mergeReadiness),
+  };
+  const combinedDiagnostics = dedupeList(
+    diagnostics
+      .concat(Array.isArray(inventory && inventory.diagnostics) ? inventory.diagnostics : [])
+      .concat(Array.isArray(position && position.diagnostics) ? position.diagnostics : [])
+      .concat(Array.isArray(mergeReadiness.diagnostics) ? mergeReadiness.diagnostics : []),
+  );
 
   return {
     schemaVersion: POLYMARKET_OPS_SCHEMA_VERSION,
@@ -1674,7 +1884,8 @@ async function runPolymarketPositions(options = {}, deps = {}) {
       noTokenId: marketPayload.noTokenId,
     },
     market: marketPayload,
-    summary: cloneJsonCompatible(summary),
+    summary: normalizedSummary,
+    mergeReadiness: cloneJsonCompatible(mergeReadiness),
     positions: inventory && Array.isArray(inventory.positions) ? cloneJsonCompatible(inventory.positions) : [],
     openOrders: inventory && Array.isArray(inventory.openOrders) ? cloneJsonCompatible(inventory.openOrders) : [],
     position: {
@@ -1874,6 +2085,8 @@ async function runPolymarketWithdraw(options = {}, deps = {}) {
 module.exports = {
   POLYMARKET_OPS_SCHEMA_VERSION,
   POLYMARKET_POLYGON_DEFAULTS,
+  buildPolymarketBalanceScope,
+  buildPolymarketMergeReadiness,
   computeApprovalDiff,
   runPolymarketCheck,
   runPolymarketApprove,

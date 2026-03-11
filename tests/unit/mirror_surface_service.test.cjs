@@ -75,6 +75,7 @@ test('buildMirrorPnlPayload preserves scenario outputs derived from live market 
   assert.equal(payload.summary.netPnlApproxUsdc, 1.5);
   assert.equal(payload.summary.pnlApprox, 8.75);
   assert.equal(payload.summary.netDeltaApprox, -2.25);
+  assert.equal(payload.summary.currentHedgeShares, 5);
   assert.equal(payload.summary.currentHedgeUsdc, 5);
   assert.equal(payload.summary.cumulativeLpFeesApproxUsdc, 3);
   assert.equal(payload.summary.cumulativeHedgeCostApproxUsdc, 1.5);

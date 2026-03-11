@@ -40,13 +40,13 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
         polymarketEnv,
         notes: {
           withLive:
-            'When credentials are available, --with-live enriches diagnostics with cross-venue status, hedge-gap actionability, Polymarket balances/open orders, and scenario-style P&L estimates.',
+            'When credentials are available, --with-live enriches diagnostics with cross-venue status, hedge-gap actionability, Polymarket balances/open orders plus balance-scope and merge-readiness diagnostics, and scenario-style P&L estimates.',
           runtime:
             'mirror status can run selector-first without a state file; a single selector hint can resolve persisted state and daemon metadata when local mirror files match it.',
           funder:
             'POLYMARKET_FUNDER should be the Polymarket proxy wallet (Gnosis Safe), not the EOA signer address.',
           collateral:
-            'Polymarket CLOB collateral is Polygon USDC.e; balances/allowances must exist on the proxy wallet for live hedging accounts.',
+            'Polymarket CLOB collateral is Polygon USDC.e, but raw wallet collateral can diverge from authenticated Polymarket CLOB buying power. If balances look wrong, treat that as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.',
           gracefulFallback:
             '--with-live degrades gracefully when position endpoints or credentials are unavailable (diagnostics are returned instead of hard failures).',
         },
@@ -58,7 +58,10 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
       );
       console.log('POLYMARKET_FUNDER must be the Polymarket proxy wallet (Gnosis Safe), not the EOA signer address.');
       console.log(
-        '--with-live adds cross-venue status, hedge-gap actionability, and Polymarket balance/open-order diagnostics when credentials are available and degrades gracefully when unavailable.',
+        '--with-live adds cross-venue status, hedge-gap actionability, and Polymarket balance/open-order plus balance-scope and merge-readiness diagnostics when credentials are available and degrades gracefully when unavailable.',
+      );
+      console.log(
+        'Polymarket CLOB collateral is Polygon USDC.e, but raw wallet collateral can diverge from authenticated CLOB buying power; if balances look wrong, treat it as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.',
       );
       console.log('mirror status can run selector-first; a single selector hint can resolve persisted runtime/daemon metadata when local mirror files match it.');
     }

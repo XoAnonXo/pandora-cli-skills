@@ -1,7 +1,10 @@
 const path = require('path');
 const { createAsyncOperationBridge } = require('../shared/operation_bridge.cjs');
 const { loadState: loadMirrorState } = require('../mirror_state_store.cjs');
-const { buildMirrorRuntimeTelemetry } = require('../mirror_sync/state.cjs');
+const {
+  buildMirrorRuntimeTelemetry,
+  unlockPendingActionLock,
+} = require('../mirror_sync/state.cjs');
 const { buildMirrorRebalanceTradeOptions } = require('../mirror_sync/rebalance_trade.cjs');
 const { DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC } = require('../trade_market_type_service.cjs');
 const POLYMARKET_CHAIN_ID = 137;
@@ -101,6 +104,130 @@ function normalizeRpcUrlCandidates(value) {
     .map((entry) => String(entry || '').trim())
     .filter(Boolean);
   return Array.from(new Set(candidates));
+}
+
+function buildRpcSelectionSummary(selection, label) {
+  if (!selection || typeof selection !== 'object') return [];
+  const attempts = Array.isArray(selection.attempts) ? selection.attempts : [];
+  if (!attempts.length) return [];
+  const failedCount = attempts.filter((entry) => entry && entry.ok === false).length;
+  const selectedRpcUrl = selection.selectedRpcUrl ? String(selection.selectedRpcUrl) : null;
+  const prefix = String(label || 'RPC').trim() || 'RPC';
+  if (failedCount > 0 && selectedRpcUrl) {
+    return [`${prefix} fallback used ${selectedRpcUrl} after ${failedCount} failed endpoint(s).`];
+  }
+  if (failedCount > 0 && !selectedRpcUrl) {
+    return [`${prefix} exhausted ${attempts.length} configured endpoint(s) without a healthy candidate.`];
+  }
+  return [];
+}
+
+function normalizeStrategyHash(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return /^[a-f0-9]{16}$/.test(normalized) ? normalized : null;
+}
+
+function parseMirrorSyncUnlockFlags(args, deps) {
+  const {
+    CliError,
+    requireFlagValue,
+    parsePositiveInteger,
+  } = deps;
+  const options = {
+    stateFile: null,
+    strategyHash: null,
+    force: false,
+    staleAfterMs: null,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (token === '--state-file') {
+      options.stateFile = requireFlagValue(args, index, '--state-file');
+      index += 1;
+      continue;
+    }
+    if (token === '--strategy-hash') {
+      const strategyHash = normalizeStrategyHash(requireFlagValue(args, index, '--strategy-hash'));
+      if (!strategyHash) {
+        throw new CliError('INVALID_FLAG_VALUE', '--strategy-hash must be a 16-character hex value.');
+      }
+      options.strategyHash = strategyHash;
+      index += 1;
+      continue;
+    }
+    if (token === '--force') {
+      options.force = true;
+      continue;
+    }
+    if (token === '--stale-after-ms') {
+      options.staleAfterMs = parsePositiveInteger(requireFlagValue(args, index, '--stale-after-ms'), '--stale-after-ms');
+      index += 1;
+      continue;
+    }
+    throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror sync unlock: ${token}`);
+  }
+
+  if (!options.stateFile && !options.strategyHash) {
+    throw new CliError(
+      'MISSING_REQUIRED_FLAG',
+      'mirror sync unlock requires --state-file <path> or --strategy-hash <hash>.',
+    );
+  }
+  if (options.stateFile && options.strategyHash) {
+    throw new CliError(
+      'INVALID_ARGS',
+      'mirror sync unlock accepts exactly one selector: --state-file <path> or --strategy-hash <hash>.',
+    );
+  }
+
+  return options;
+}
+
+function resolveMirrorSyncUnlockStateFile(options) {
+  if (options.stateFile) {
+    return path.resolve(String(options.stateFile));
+  }
+  return path.join(
+    process.env.HOME || process.env.USERPROFILE || '.',
+    '.pandora',
+    'mirror',
+    `${options.strategyHash}.json`,
+  );
+}
+
+function renderMirrorSyncUnlockTable(data) {
+  const assessment = data && data.assessment && typeof data.assessment === 'object' ? data.assessment : {};
+  const lock = data && data.lock && typeof data.lock === 'object' ? data.lock : {};
+  const runtime = data && data.runtime && typeof data.runtime === 'object' ? data.runtime : {};
+  const health = runtime.health && typeof runtime.health === 'object' ? runtime.health : {};
+  const rows = [
+    ['stateFile', data && data.stateFile ? data.stateFile : ''],
+    ['strategyHash', data && data.strategyHash ? data.strategyHash : ''],
+    ['cleared', data && data.cleared ? 'yes' : 'no'],
+    ['reason', data && data.reason ? data.reason : ''],
+    ['force', data && data.force ? 'yes' : 'no'],
+    ['lockStatus', lock && lock.status ? lock.status : ''],
+    ['assessmentCode', assessment && assessment.code ? assessment.code : ''],
+    ['assessmentMessage', assessment && assessment.message ? assessment.message : ''],
+    ['runtimeStatus', health && health.status ? health.status : ''],
+    ['runtimeCode', health && health.code ? health.code : ''],
+    ['runtimeMessage', health && health.message ? health.message : ''],
+    ['nextAction', runtime && runtime.nextAction && runtime.nextAction.code ? runtime.nextAction.code : ''],
+    ['review', assessment && assessment.reviewCommand ? assessment.reviewCommand : ''],
+    ['command', assessment && assessment.recommendedCommand ? assessment.recommendedCommand : ''],
+  ];
+  console.log('Mirror Sync Unlock');
+  for (const [label, value] of rows) {
+    console.log(`${label}: ${value === null || value === undefined ? '' : value}`);
+  }
+  const guidance = assessment && Array.isArray(assessment.guidance) ? assessment.guidance : [];
+  if (guidance.length) {
+    console.log('guidance:');
+    for (const entry of guidance) {
+      console.log(`- ${entry}`);
+    }
+  }
 }
 
 function parseJsonRpcChainId(value) {
@@ -211,7 +338,7 @@ async function selectHealthyPolymarketRpc(options = {}) {
 }
 
 /**
- * Handle `mirror sync` command execution (`run|once|start|stop|status`).
+ * Handle `mirror sync` command execution (`run|once|start|stop|status|unlock`).
  * Orchestrates sync runtime, daemon lifecycle, and structured output emission.
  * @param {{shared: object, context: object, deps: object, mirrorSyncUsage: string}} params
  * @returns {Promise<void>}
@@ -225,8 +352,11 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     CliError,
     includesHelpFlag,
     emitSuccess,
+    commandHelpPayload,
     maybeLoadTradeEnv,
     resolveIndexerUrl,
+    requireFlagValue,
+    parsePositiveInteger,
     parseMirrorSyncDaemonSelectorFlags,
     stopMirrorDaemon,
     mirrorDaemonStatus,
@@ -255,9 +385,12 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
   const helpNotes = [
     'The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.',
     'Use `pandora mirror panic --clear ...` after incident review to remove the default stop file, or remove the file manually only if you know the emergency lock is stale.',
+    'Use `pandora mirror sync unlock --state-file <path>|--strategy-hash <hash>` to clear stale or invalid pending-action locks; add --force only after operator reconciliation.',
+    'Use `--adopt-existing-positions` after a state wipe when the daemon should seed managed Polymarket inventory from live YES/NO holdings before enabling sell-side recycling.',
+    'Default hedge scope is `total`, which includes held Pandora outcome tokens in addition to pool reserves. Use `--hedge-scope pool` only when you intentionally want pool-only hedging.',
   ];
   const commandName =
-    requestedAction === 'status' || requestedAction === 'stop'
+    requestedAction === 'status' || requestedAction === 'stop' || requestedAction === 'unlock'
       ? `mirror.sync.${requestedAction}`
       : requestedAction === 'start'
         ? 'mirror.sync.start'
@@ -328,6 +461,29 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     };
   }
 
+  if (requestedAction === 'unlock' && includesHelpFlag(shared.rest.slice(1))) {
+    const usage =
+      'pandora [--output table|json] mirror sync unlock --state-file <path>|--strategy-hash <hash> [--force] [--stale-after-ms <ms>]';
+    const notes = [
+      'Unlock clears persisted pending-action lock files only; it does not settle venue state or mutate live positions.',
+      'Invalid and zombie locks can be cleared without --force. Reconciliation-required or still-pending locks require operator review and --force.',
+      'Use mirror status or mirror health first when you need the current blocking reason before forcing an unlock.',
+    ];
+    if (context.outputMode === 'json') {
+      emitSuccess(
+        context.outputMode,
+        'mirror.sync.unlock.help',
+        commandHelpPayload ? commandHelpPayload(usage, notes) : { usage, notes },
+      );
+    } else {
+      console.log(`Usage: ${usage}`);
+      for (const note of notes) {
+        console.log(note);
+      }
+    }
+    return;
+  }
+
   if (includesHelpFlag(shared.rest)) {
     if (context.outputMode === 'json') {
       emitSuccess(
@@ -343,6 +499,8 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
               'pandora [--output table|json] mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all',
             status:
               'pandora [--output table|json] mirror sync status --pid-file <path>|--strategy-hash <hash>',
+            unlock:
+              'pandora [--output table|json] mirror sync unlock --state-file <path>|--strategy-hash <hash> [--force] [--stale-after-ms <ms>]',
           },
           liveHedgeEnv: [
             'POLYMARKET_PRIVATE_KEY',
@@ -357,9 +515,9 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
             POLYMARKET_FUNDER:
               'Set this to your Polymarket proxy wallet (Gnosis Safe) address, not your EOA wallet address.',
             collateral:
-              'Polymarket CLOB settles against Polygon USDC.e collateral. Ensure USDC.e balance/allowances are configured on the proxy wallet.',
+              'Polymarket CLOB settles against Polygon USDC.e collateral, but raw wallet collateral can diverge from authenticated CLOB buying power. If balances look wrong, treat that as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.',
             inventoryRecycle:
-              'Sync can recycle tracked hedge inventory by selling the opposite token when runtime depth proves the sell path is safe; otherwise it falls back to buy-side hedging.',
+              'Sync can recycle tracked hedge inventory by selling the opposite token when runtime depth proves the sell path is safe; otherwise it falls back to buy-side hedging. Use --adopt-existing-positions to seed managed inventory from existing Polymarket holdings after a state wipe.',
             rpcFallback:
               '--polymarket-rpc-url and POLYMARKET_RPC_URL accept comma-separated Polygon RPC fallbacks tried in order during live preflight.',
           },
@@ -382,12 +540,14 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       );
       console.log('Daemon stop: pandora mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all');
       console.log('Daemon status: pandora mirror sync status --pid-file <path>|--strategy-hash <hash>');
+      console.log('Pending-action unlock: pandora mirror sync unlock --state-file <path>|--strategy-hash <hash> [--force] [--stale-after-ms <ms>]');
       console.log(
         'Live hedge env: POLYMARKET_PRIVATE_KEY, POLYMARKET_FUNDER, POLYMARKET_RPC_URL, POLYMARKET_API_KEY, POLYMARKET_API_SECRET, POLYMARKET_API_PASSPHRASE, POLYMARKET_HOST.',
       );
       console.log('POLYMARKET_FUNDER must be your Polymarket proxy wallet (Gnosis Safe), not your EOA wallet address.');
-      console.log('Polymarket CLOB collateral is Polygon USDC.e; ensure proxy wallet USDC.e balance and approvals are configured.');
-      console.log('Hedge inventory can be recycled with sell-side orders only when runtime depth proves the sell path is safe; otherwise sync keeps buy-side hedging.');
+      console.log('Polymarket CLOB collateral is Polygon USDC.e, but raw wallet collateral can diverge from authenticated CLOB buying power; if balances look wrong, treat it as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.');
+      console.log('Hedge inventory can be recycled with sell-side orders only when runtime depth proves the sell path is safe; otherwise sync keeps buy-side hedging. Use --adopt-existing-positions after a state wipe to seed managed inventory from live Polymarket YES/NO balances.');
+      console.log('Default hedge scope is total exposure across pool reserves and held Pandora outcome tokens. Use --hedge-scope pool only when you intentionally want pool-only hedging.');
       console.log('Polymarket RPC preflight accepts comma-separated --polymarket-rpc-url / POLYMARKET_RPC_URL fallbacks and tries them in order.');
       console.log('Daemon status payloads expose runtime.health, runtime.lastTrade, runtime.errorCount, and runtime.nextAction for operator health checks.');
       console.log('Daemon children write compact JSONL records to their log file; use pandora mirror logs --follow to stream parsed entries.');
@@ -402,6 +562,66 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
   }
 
   const syncAction = shared.rest[0];
+  if (syncAction === 'unlock') {
+    const options = parseMirrorSyncUnlockFlags(shared.rest.slice(1), {
+      CliError,
+      requireFlagValue,
+      parsePositiveInteger,
+    });
+    const stateFile = resolveMirrorSyncUnlockStateFile(options);
+    const loaded = loadMirrorState(stateFile, options.strategyHash || null);
+    const strategyHash = loaded.state.strategyHash || options.strategyHash || null;
+    await operation.ensure({
+      phase: 'mirror.sync.unlock.requested',
+      strategyHash,
+      stateFile,
+    });
+    const result = unlockPendingActionLock(stateFile, {
+      force: options.force,
+      staleAfterMs: options.staleAfterMs || undefined,
+      strategyHash,
+    });
+    const payload = {
+      schemaVersion: '1.0.0',
+      generatedAt: new Date().toISOString(),
+      stateFile,
+      strategyHash,
+      force: Boolean(options.force),
+      cleared: Boolean(result.cleared),
+      reason: result.reason || null,
+      assessment: {
+        code: result.code,
+        message: result.message,
+        allowedWithoutForce: Boolean(result.allowedWithoutForce),
+        forceRequired: Boolean(result.forceRequired),
+        canClear: Boolean(result.canClear),
+        blocking: Boolean(result.blocking),
+        reviewCommand: result.reviewCommand || null,
+        recommendedCommand: result.recommendedCommand || null,
+        guidance: Array.isArray(result.guidance) ? result.guidance : [],
+      },
+      lock: result.clearedLock || result.lock || null,
+      runtime: buildMirrorRuntimeTelemetry({
+        state: loaded.state,
+        stateFile,
+      }),
+    };
+    await operation.update(payload.cleared ? 'cleared' : 'blocked', {
+      phase: 'mirror.sync.unlock.complete',
+      strategyHash,
+      stateFile,
+      cleared: payload.cleared,
+      reason: payload.reason,
+    });
+    emitSuccess(
+      context.outputMode,
+      'mirror.sync.unlock',
+      finalizePayload(payload),
+      renderMirrorSyncUnlockTable,
+    );
+    return;
+  }
+
   if (syncAction === 'stop') {
     const selector = parseMirrorSyncDaemonSelectorFlags(shared.rest.slice(1), 'stop');
     await operation.ensure({
@@ -600,6 +820,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
 
   const streamTicks = options.stream || (options.mode === 'run' && context.outputMode === 'table');
   let polymarketPreflight = null;
+  let selectedPolymarketRpcUrl = options.polymarketRpcUrl || options.rpcUrl || null;
 
   if (options.executeLive) {
     try {
@@ -616,7 +837,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
           rpcSelection,
         );
       }
-      const selectedPolymarketRpcUrl = rpcSelection.selectedRpcUrl || options.polymarketRpcUrl || options.rpcUrl || null;
+      selectedPolymarketRpcUrl = rpcSelection.selectedRpcUrl || options.polymarketRpcUrl || options.rpcUrl || null;
       polymarketPreflight = await runLivePolymarketPreflightForMirror({
         rpcUrl: selectedPolymarketRpcUrl || options.rpcUrl,
         polymarketRpcUrl: selectedPolymarketRpcUrl,
@@ -651,6 +872,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
         trustDeploy,
         indexerUrl,
         timeoutMs: shared.timeoutMs,
+        polymarketRpcUrl: selectedPolymarketRpcUrl,
       },
       {
         rebalanceFn: async (executionOptions) => {
@@ -701,7 +923,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
           }
           return report;
         },
-        onTick: streamTicks ? (tickContext) => renderMirrorSyncTickLine(tickContext, context.outputMode) : null,
+        onTick: streamTicks ? (tickContext) => renderMirrorSyncTickLine({ ...tickContext, verbose: Boolean(options.verbose) }, context.outputMode) : null,
       },
     );
   } catch (err) {
@@ -731,6 +953,13 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
   }
   if (polymarketPreflight) {
     payload.polymarketPreflight = polymarketPreflight;
+    const rpcSelectionDiagnostics = buildRpcSelectionSummary(polymarketPreflight.rpcSelection, 'Polymarket RPC');
+    if (rpcSelectionDiagnostics.length) {
+      const existingDiagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics : [];
+      payload.diagnostics = existingDiagnostics.concat(
+        rpcSelectionDiagnostics.filter((entry) => !existingDiagnostics.includes(entry)),
+      );
+    }
   }
   if (deprecatedForceGateWarning) {
     const existingDiagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics : [];

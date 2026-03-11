@@ -167,7 +167,34 @@ function writeJsonFileAtomic(filePath, payload) {
   }
 }
 
-function readPendingActionLock(stateFile) {
+function buildPendingActionUnlockCommand(stateFile, options = {}) {
+  const args = ['pandora', 'mirror', 'sync', 'unlock'];
+  if (stateFile) {
+    args.push('--state-file', stateFile);
+  } else if (options.strategyHash) {
+    args.push('--strategy-hash', options.strategyHash);
+  }
+  if (options.force) {
+    args.push('--force');
+  }
+  if (Number.isInteger(options.staleAfterMs) && options.staleAfterMs > 0) {
+    args.push('--stale-after-ms', String(options.staleAfterMs));
+  }
+  return args.join(' ');
+}
+
+function buildPendingActionReviewCommand(stateFile, options = {}) {
+  const args = ['pandora', 'mirror', 'status'];
+  if (stateFile) {
+    args.push('--state-file', stateFile);
+  } else if (options.strategyHash) {
+    args.push('--strategy-hash', options.strategyHash);
+  }
+  args.push('--with-live');
+  return args.join(' ');
+}
+
+function readPendingActionLock(stateFile, options = {}) {
   if (!stateFile) return null;
   const lockFile = buildPendingActionFilePath(stateFile);
   if (!fs.existsSync(lockFile)) return null;
@@ -176,7 +203,7 @@ function readPendingActionLock(stateFile) {
     return describePendingActionLock({
       ...parsed,
       lockFile,
-    });
+    }, options);
   } catch (err) {
     return describePendingActionLock({
       schemaVersion: MIRROR_RUNTIME_SCHEMA_VERSION,
@@ -186,7 +213,7 @@ function readPendingActionLock(stateFile) {
       lockFile,
       parseError: err && err.message ? err.message : String(err),
       requiresManualReview: true,
-    });
+    }, options);
   }
 }
 
@@ -298,6 +325,142 @@ function clearPendingActionLock(stateFile) {
   }
 }
 
+function assessPendingActionUnlock(stateFile, options = {}) {
+  const lock = options.lock && typeof options.lock === 'object'
+    ? describePendingActionLock(options.lock, options)
+    : readPendingActionLock(stateFile, options);
+  const strategyHash = options.strategyHash || (lock && lock.strategyHash) || null;
+  const reviewCommand = buildPendingActionReviewCommand(stateFile, {
+    strategyHash,
+  });
+  if (!lock) {
+    return {
+      found: false,
+      stateFile: stateFile || null,
+      strategyHash,
+      code: 'PENDING_ACTION_LOCK_MISSING',
+      message: 'No pending-action lock exists for this mirror state file.',
+      allowedWithoutForce: false,
+      forceRequired: false,
+      canClear: false,
+      blocking: false,
+      reviewCommand,
+      recommendedCommand: buildPendingActionUnlockCommand(stateFile, {
+        strategyHash,
+        staleAfterMs: options.staleAfterMs,
+      }),
+      guidance: [
+        `Review runtime status with ${reviewCommand} if execution is still blocked after the lock file is gone.`,
+      ],
+      lock: null,
+    };
+  }
+
+  let code = 'PENDING_ACTION_UNLOCK_FORCE_REQUIRED';
+  let message = 'Pending-action lock requires operator review before it can be cleared.';
+  let allowedWithoutForce = false;
+  let forceRequired = false;
+  let guidance = [
+    `Review runtime status with ${reviewCommand} before clearing or overriding the lock.`,
+    'Unlock only removes the persisted pending-action lock file; it does not settle venue state or mutate open positions.',
+  ];
+
+  if (lock.status === 'invalid') {
+    code = 'PENDING_ACTION_UNLOCK_ALLOWED';
+    message = 'Pending-action lock is unreadable. Review current runtime state if needed, then clear it with mirror sync unlock.';
+    allowedWithoutForce = true;
+    guidance = guidance.concat([
+      'This lock is unreadable, so it can be cleared without --force.',
+    ]);
+  } else if (lock.status === 'zombie') {
+    code = 'PENDING_ACTION_UNLOCK_ALLOWED';
+    message = 'Pending-action lock appears orphaned or stale. Review current runtime state if needed, then clear it with mirror sync unlock.';
+    allowedWithoutForce = true;
+    guidance = guidance.concat([
+      'This lock already looks stale or orphaned, so it can be cleared without --force.',
+    ]);
+  } else if (lock.status === 'reconciliation-required' || lock.requiresManualReview) {
+    code = 'PENDING_ACTION_UNLOCK_FORCE_REQUIRED';
+    message = 'Pending-action lock is in manual-review mode. Reconcile venue state first, then rerun mirror sync unlock --force only if you intend to override it.';
+    forceRequired = true;
+    guidance = guidance.concat([
+      'Confirm whether the last live action settled, reverted, or needs manual venue cleanup before forcing unlock.',
+      `If you intentionally override the lock after reconciliation, rerun ${buildPendingActionUnlockCommand(stateFile, {
+        strategyHash,
+        force: true,
+        staleAfterMs: options.staleAfterMs,
+      })}.`,
+    ]);
+  } else if (lock.status === 'pending') {
+    code = 'PENDING_ACTION_UNLOCK_ACTIVE';
+    message = lock.ownerAlive === true
+      ? 'Pending-action lock still belongs to a live process. Do not clear it unless the live action is confirmed stuck or already settled.'
+      : 'Pending-action lock is still marked pending. Reconcile venue state first, then use --force only if you intentionally override it.';
+    forceRequired = true;
+    guidance = guidance.concat([
+      'Inspect daemon/runtime status first to determine whether the live process is still active.',
+      `If the action is confirmed stuck or settled and you intentionally override it, rerun ${buildPendingActionUnlockCommand(stateFile, {
+        strategyHash,
+        force: true,
+        staleAfterMs: options.staleAfterMs,
+      })}.`,
+    ]);
+  }
+
+  const force = Boolean(options.force);
+  return {
+    found: true,
+    stateFile: stateFile || null,
+    strategyHash,
+    code,
+    message,
+    allowedWithoutForce,
+    forceRequired,
+    canClear: force ? true : allowedWithoutForce,
+    blocking: !(force ? true : allowedWithoutForce),
+    reviewCommand,
+    recommendedCommand: buildPendingActionUnlockCommand(stateFile, {
+      strategyHash,
+      force: forceRequired,
+      staleAfterMs: options.staleAfterMs,
+    }),
+    guidance,
+    lock,
+  };
+}
+
+function unlockPendingActionLock(stateFile, options = {}) {
+  const assessment = assessPendingActionUnlock(stateFile, options);
+  if (!assessment.found) {
+    return {
+      ...assessment,
+      cleared: false,
+      reason: 'missing',
+    };
+  }
+
+  if (!assessment.canClear) {
+    return {
+      ...assessment,
+      cleared: false,
+      reason: assessment.forceRequired ? 'force-required' : 'blocked',
+    };
+  }
+
+  const clearResult = clearPendingActionLock(
+    stateFile,
+    Object.prototype.hasOwnProperty.call(options, 'expectedLockNonce')
+      ? { expectedLockNonce: options.expectedLockNonce }
+      : {},
+  );
+  return {
+    ...assessment,
+    cleared: clearResult.cleared,
+    reason: clearResult.reason,
+    clearedLock: clearResult.lock || assessment.lock,
+  };
+}
+
 function deriveLastRuntimeError(state, pendingAction) {
   if (pendingAction && pendingAction.lastError) {
     return {
@@ -350,6 +513,12 @@ function buildMirrorRuntimeTelemetry(params) {
   } = params || {};
   const safeState = state && typeof state === 'object' ? state : {};
   const pendingAction = readPendingActionLock(stateFile);
+  const pendingActionRecovery = pendingAction
+    ? assessPendingActionUnlock(stateFile, {
+        lock: pendingAction,
+        strategyHash: safeState.strategyHash || null,
+      })
+    : null;
   const lastAction = safeState.lastExecution && typeof safeState.lastExecution === 'object'
     ? {
         ...safeState.lastExecution,
@@ -426,16 +595,24 @@ function buildMirrorRuntimeTelemetry(params) {
     status = 'blocked';
     if (pendingAction.status === 'invalid') {
       code = 'PENDING_ACTION_LOCK_INVALID';
-      message = 'Pending-action lock is unreadable and requires manual cleanup.';
+      message = pendingActionRecovery && pendingActionRecovery.message
+        ? pendingActionRecovery.message
+        : 'Pending-action lock is unreadable. Use mirror sync unlock to clear it.';
     } else if (pendingAction.status === 'zombie') {
       code = 'PENDING_ACTION_LOCK_ZOMBIE';
-      message = 'Pending-action lock appears orphaned or stale. Manual review is required before another live execution.';
+      message = pendingActionRecovery && pendingActionRecovery.message
+        ? pendingActionRecovery.message
+        : 'Pending-action lock appears orphaned or stale. Use mirror sync unlock to clear it.';
     } else if (pendingAction.requiresManualReview) {
       code = 'PENDING_ACTION_LOCK_REVIEW';
-      message = 'Pending live action lock requires manual reconciliation before another execution.';
+      message = pendingActionRecovery && pendingActionRecovery.message
+        ? pendingActionRecovery.message
+        : 'Pending live action lock requires manual reconciliation before another execution.';
     } else {
       code = 'PENDING_ACTION_LOCK';
-      message = 'Pending live action lock is present. Runtime is fail-closed until reconciled.';
+      message = pendingActionRecovery && pendingActionRecovery.message
+        ? pendingActionRecovery.message
+        : 'Pending live action lock is present. Runtime is fail-closed until reconciled.';
     }
   } else if (daemonLookupError) {
     status = 'degraded';
@@ -496,11 +673,29 @@ function buildMirrorRuntimeTelemetry(params) {
     blocking: false,
   };
   if (pendingAction || statePending || manualReviewRequired) {
-    nextAction = {
-      code: 'RECONCILE_PENDING_ACTION',
-      message: 'Reconcile the pending live action before another daemon execution.',
-      blocking: true,
-    };
+    if (pendingActionRecovery && pendingActionRecovery.allowedWithoutForce) {
+      nextAction = {
+        code: 'UNLOCK_PENDING_ACTION',
+        message: pendingActionRecovery.message,
+        blocking: true,
+        command: pendingActionRecovery.recommendedCommand,
+        reviewCommand: pendingActionRecovery.reviewCommand,
+      };
+    } else if (pendingActionRecovery && pendingActionRecovery.forceRequired) {
+      nextAction = {
+        code: 'RECONCILE_PENDING_ACTION',
+        message: pendingActionRecovery.message,
+        blocking: true,
+        command: pendingActionRecovery.recommendedCommand,
+        reviewCommand: pendingActionRecovery.reviewCommand,
+      };
+    } else {
+      nextAction = {
+        code: 'RECONCILE_PENDING_ACTION',
+        message: 'Reconcile the pending live action before another daemon execution.',
+        blocking: true,
+      };
+    }
   } else if (daemonLookupError) {
     nextAction = {
       code: 'INSPECT_DAEMON_STATUS',
@@ -561,6 +756,7 @@ function buildMirrorRuntimeTelemetry(params) {
     lastTrade,
     lastError,
     pendingAction,
+    pendingActionRecovery,
     alerts: runtimeAlerts.slice(-10),
   };
 }
@@ -602,11 +798,14 @@ module.exports = {
   ensureStateIdentity,
   pushRuntimeAlert,
   buildPendingActionFilePath,
+  buildPendingActionUnlockCommand,
   describePendingActionLock,
   readPendingActionLock,
   tryAcquirePendingActionLock,
   updatePendingActionLock,
   clearPendingActionLock,
+  assessPendingActionUnlock,
+  unlockPendingActionLock,
   buildMirrorRuntimeTelemetry,
   persistTickSnapshot,
 };

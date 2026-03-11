@@ -564,7 +564,7 @@ print(json.dumps({
 
     const mirrorSyncHelp = runPandora(installedCli, ['mirror', 'sync', '--help'], { cwd: appDir, env: smokeEnv });
     ensureExitCode(mirrorSyncHelp, 0, 'pandora mirror sync --help');
-    ensureOutputContains(mirrorSyncHelp, /sync once\|run\|start.*stop.*status/s, 'pandora mirror sync --help');
+    ensureOutputContains(mirrorSyncHelp, /sync once\|run.*Daemon stop:.*Daemon status:/s, 'pandora mirror sync --help');
 
     const policyHelp = runPandora(installedCli, ['policy', '--help'], { cwd: appDir, env: smokeEnv });
     ensureExitCode(policyHelp, 0, 'pandora policy --help');

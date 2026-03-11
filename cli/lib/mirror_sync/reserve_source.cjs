@@ -93,6 +93,39 @@ function normalizeRpcUrlCandidates(value) {
   return Array.from(new Set(candidates));
 }
 
+function normalizeOptionalString(value) {
+  const text = String(value || '').trim();
+  return text || null;
+}
+
+function normalizeStringList(value) {
+  const items = Array.isArray(value) ? value : [];
+  return items
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+}
+
+function normalizeRpcAttemptList(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry, index) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const rpcUrl = normalizeOptionalString(entry.rpcUrl);
+      if (!rpcUrl) return null;
+      const order = Number(entry.order);
+      return {
+        rpcUrl,
+        ok: entry.ok === true,
+        order: Number.isInteger(order) && order > 0 ? order : index + 1,
+        chainId: entry.chainId !== undefined && entry.chainId !== null ? Number(entry.chainId) : null,
+        code: normalizeOptionalString(entry.code),
+        message: normalizeOptionalString(entry.message),
+        details: entry.details && typeof entry.details === 'object' ? entry.details : null,
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeOptionalAddress(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -430,6 +463,10 @@ function derivePandoraYesPctFromReserves(reserveYesUsdc, reserveNoUsdc) {
 
 function buildReserveContextFromVerifyPayload(verifyPayload, overrides = {}) {
   const pandora = verifyPayload && verifyPayload.pandora ? verifyPayload.pandora : {};
+  const existingReserveContext =
+    verifyPayload && verifyPayload.reserveContext && typeof verifyPayload.reserveContext === 'object'
+      ? verifyPayload.reserveContext
+      : {};
   const reserveYesUsdc = toNumber(pandora.reserveYes);
   const reserveNoUsdc = toNumber(pandora.reserveNo);
   const derivedYesPct = derivePandoraYesPctFromReserves(reserveYesUsdc, reserveNoUsdc);
@@ -448,6 +485,27 @@ function buildReserveContextFromVerifyPayload(verifyPayload, overrides = {}) {
     fallbackUsed: Boolean(overrides.fallbackUsed),
     yesToken: overrides.yesToken || null,
     noToken: overrides.noToken || null,
+    walletYesUsdc:
+      overrides.walletYesUsdc !== undefined && overrides.walletYesUsdc !== null
+        ? toNumber(overrides.walletYesUsdc)
+        : toNumber(existingReserveContext.walletYesUsdc),
+    walletNoUsdc:
+      overrides.walletNoUsdc !== undefined && overrides.walletNoUsdc !== null
+        ? toNumber(overrides.walletNoUsdc)
+        : toNumber(existingReserveContext.walletNoUsdc),
+    inventoryAddress: overrides.inventoryAddress || existingReserveContext.inventoryAddress || null,
+    configuredRpcUrl:
+      overrides.configuredRpcUrl !== undefined
+        ? normalizeOptionalString(overrides.configuredRpcUrl)
+        : normalizeOptionalString(existingReserveContext.configuredRpcUrl),
+    candidateUrls:
+      Object.prototype.hasOwnProperty.call(overrides, 'candidateUrls')
+        ? normalizeStringList(overrides.candidateUrls)
+        : normalizeStringList(existingReserveContext.candidateUrls),
+    attempts:
+      Object.prototype.hasOwnProperty.call(overrides, 'attempts')
+        ? normalizeRpcAttemptList(overrides.attempts)
+        : normalizeRpcAttemptList(existingReserveContext.attempts),
   };
 }
 
@@ -485,6 +543,12 @@ function applyReserveContextToVerifyPayload(verifyPayload, reserveContext) {
       fallbackUsed: Boolean(reserveContext.fallbackUsed),
       yesToken: reserveContext.yesToken || null,
       noToken: reserveContext.noToken || null,
+      walletYesUsdc: reserveContext.walletYesUsdc !== undefined ? reserveContext.walletYesUsdc : null,
+      walletNoUsdc: reserveContext.walletNoUsdc !== undefined ? reserveContext.walletNoUsdc : null,
+      inventoryAddress: reserveContext.inventoryAddress || null,
+      configuredRpcUrl: normalizeOptionalString(reserveContext.configuredRpcUrl),
+      candidateUrls: normalizeStringList(reserveContext.candidateUrls),
+      attempts: normalizeRpcAttemptList(reserveContext.attempts),
     },
   };
 }
@@ -507,6 +571,12 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
   const errors = [];
   const readRequest = buildBlockReadOptions(options);
   const clientCache = new Map();
+  const includePoolReserves = options.includePoolReserves !== false;
+  const inventoryAddress = normalizeOptionalAddress(options.inventoryAddress);
+  const configuredRpcUrl =
+    Array.isArray(options.rpcUrl)
+      ? options.rpcUrl.map((entry) => String(entry || '').trim()).filter(Boolean).join(',')
+      : normalizeOptionalString(options.rpcUrl);
 
   for (let index = 0; index < rpcCandidates.length; index += 1) {
     const rpcUrl = rpcCandidates[index];
@@ -523,45 +593,90 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
         throw error;
       }
 
-      const [yesDecimals, noDecimals, yesRaw, noRaw, feeTier] = await Promise.all([
+      const [yesDecimals, noDecimals, yesRaw, noRaw, feeTier, walletYesRaw, walletNoRaw] = await Promise.all([
         readOptionalDecimals(publicClient, refs.yesToken, readRequest),
         readOptionalDecimals(publicClient, refs.noToken, readRequest),
-        publicClient.readContract({
-          address: refs.yesToken,
-          abi: ERC20_BALANCE_OF_ABI,
-          functionName: 'balanceOf',
-          args: [options.marketAddress],
-          ...buildReadContractOptions(readRequest),
-        }),
-        publicClient.readContract({
-          address: refs.noToken,
-          abi: ERC20_BALANCE_OF_ABI,
-          functionName: 'balanceOf',
-          args: [options.marketAddress],
-          ...buildReadContractOptions(readRequest),
-        }),
-        readOptionalTradingFee(publicClient, options.marketAddress, readRequest),
+        includePoolReserves
+          ? publicClient.readContract({
+            address: refs.yesToken,
+            abi: ERC20_BALANCE_OF_ABI,
+            functionName: 'balanceOf',
+            args: [options.marketAddress],
+            ...buildReadContractOptions(readRequest),
+          })
+          : Promise.resolve(null),
+        includePoolReserves
+          ? publicClient.readContract({
+            address: refs.noToken,
+            abi: ERC20_BALANCE_OF_ABI,
+            functionName: 'balanceOf',
+            args: [options.marketAddress],
+            ...buildReadContractOptions(readRequest),
+          })
+          : Promise.resolve(null),
+        includePoolReserves
+          ? readOptionalTradingFee(publicClient, options.marketAddress, readRequest)
+          : Promise.resolve(null),
+        inventoryAddress
+          ? publicClient.readContract({
+            address: refs.yesToken,
+            abi: ERC20_BALANCE_OF_ABI,
+            functionName: 'balanceOf',
+            args: [inventoryAddress],
+            ...buildReadContractOptions(readRequest),
+          })
+          : Promise.resolve(null),
+        inventoryAddress
+          ? publicClient.readContract({
+            address: refs.noToken,
+            abi: ERC20_BALANCE_OF_ABI,
+            functionName: 'balanceOf',
+            args: [inventoryAddress],
+            ...buildReadContractOptions(readRequest),
+          })
+          : Promise.resolve(null),
       ]);
 
-      if (yesDecimals === null || noDecimals === null || feeTier === null) {
+      if (yesDecimals === null || noDecimals === null || (includePoolReserves && feeTier === null)) {
         const error = new Error('Unable to read Pandora reserve metadata on-chain.');
         error.code = 'MIRROR_ONCHAIN_RESERVE_METADATA_UNAVAILABLE';
         error.details = {
           rpcUrl,
           yesDecimalsRead: yesDecimals !== null,
           noDecimalsRead: noDecimals !== null,
-          tradingFeeRead: feeTier !== null,
+          tradingFeeRead: includePoolReserves ? feeTier !== null : null,
         };
         throw error;
       }
 
-      const reserveYesUsdc = round(Number(runtime.formatUnits(yesRaw, yesDecimals)), 6);
-      const reserveNoUsdc = round(Number(runtime.formatUnits(noRaw, noDecimals)), 6);
+      const reserveYesUsdc =
+        yesRaw === null || yesRaw === undefined
+          ? null
+          : round(Number(runtime.formatUnits(yesRaw, yesDecimals)), 6);
+      const reserveNoUsdc =
+        noRaw === null || noRaw === undefined
+          ? null
+          : round(Number(runtime.formatUnits(noRaw, noDecimals)), 6);
+      const walletYesUsdc =
+        walletYesRaw === null || walletYesRaw === undefined
+          ? null
+          : round(Number(runtime.formatUnits(walletYesRaw, yesDecimals)), 6);
+      const walletNoUsdc =
+        walletNoRaw === null || walletNoRaw === undefined
+          ? null
+          : round(Number(runtime.formatUnits(walletNoRaw, noDecimals)), 6);
       const fallbackUsed = index > 0;
       const blockMetadata =
         options.includeBlockMetadata === true || readRequest.historical
           ? await readOptionalBlockMetadata(publicClient, readRequest)
           : null;
+      const attempts = errors.concat([
+        {
+          rpcUrl,
+          ok: true,
+          order: index + 1,
+        },
+      ]);
 
       return {
         source: fallbackUsed ? 'onchain:outcome-token-balances:fallback' : 'onchain:outcome-token-balances',
@@ -579,6 +694,9 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
         fallbackUsed,
         yesToken: refs.yesToken,
         noToken: refs.noToken,
+        walletYesUsdc,
+        walletNoUsdc,
+        inventoryAddress,
         rpcUrl,
         blockNumber:
           blockMetadata && blockMetadata.blockNumber !== null && blockMetadata.blockNumber !== undefined
@@ -587,6 +705,9 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
         blockHash: blockMetadata ? blockMetadata.blockHash : null,
         blockTimestamp: blockMetadata ? blockMetadata.blockTimestamp : null,
         blockTag: readRequest.blockNumber === null ? readRequest.blockTag : null,
+        configuredRpcUrl,
+        candidateUrls: rpcCandidates,
+        attempts,
       };
     } catch (err) {
       const wrapped = wrapHistoricalStateError(err, rpcUrl, readRequest);
@@ -595,6 +716,8 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
         code: wrapped && wrapped.code ? String(wrapped.code) : null,
         message: wrapped && wrapped.message ? wrapped.message : String(wrapped),
         details: wrapped && wrapped.details ? wrapped.details : null,
+        ok: false,
+        order: index + 1,
       });
     }
   }
@@ -610,6 +733,8 @@ async function readPandoraOnchainReserveContext(options = {}, deps = {}) {
   );
   error.code = allArchiveUnavailable ? 'MIRROR_ONCHAIN_ARCHIVE_STATE_UNAVAILABLE' : 'MIRROR_ONCHAIN_RESERVES_UNAVAILABLE';
   error.details = {
+    configuredRpcUrl,
+    candidateUrls: rpcCandidates,
     attempts: errors,
     blockNumber: readRequest.blockNumber,
     blockTag: readRequest.blockTag,

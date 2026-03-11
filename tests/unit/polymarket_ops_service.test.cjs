@@ -51,14 +51,46 @@ test('runPolymarketBalance returns requested wallet balances without signer/fund
   assert.deepEqual(Object.keys(payload.balances), ['wallet']);
   assert.equal(payload.balances.wallet.address, wallet);
   assert.equal(payload.balances.wallet.formatted, '123.45');
+  assert.equal(payload.balanceScope.surface, 'polygon-usdc-wallet-collateral-only');
+  assert.equal(payload.balanceScope.uiBalanceParityExpected, false);
+  assert.deepEqual(payload.balanceScope.readTargets, [{ role: 'wallet', address: wallet }]);
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'yesBalance'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'noBalance'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'openOrdersCount'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'estimatedValueUsd'), false);
-  assert.deepEqual(payload.diagnostics, []);
+  assert.equal(payload.diagnostics.some((entry) => /Funding-only surface/i.test(entry)), true);
+  assert.equal(payload.diagnostics.some((entry) => entry.includes(`Requested wallet ${wallet}`)), true);
+  assert.equal(payload.diagnostics.some((entry) => entry.includes('merge-readiness diagnostics')), true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].functionName, 'balanceOf');
   assert.deepEqual(calls[0].args, [wallet]);
+});
+
+test('runPolymarketBalance explains zero wallet collateral as a scope mismatch risk when proxy accounting may differ', async () => {
+  const signerAddress = '0x1212121212121212121212121212121212121212';
+  const funderAddress = '0x3434343434343434343434343434343434343434';
+  const payload = await runPolymarketBalance(
+    {
+      rpcUrl: 'https://polygon.example',
+      env: {
+        POLYMARKET_PRIVATE_KEY: `0x${'3'.repeat(64)}`,
+        POLYMARKET_FUNDER: funderAddress,
+      },
+    },
+    {
+      viemRuntime: createViemRuntime(signerAddress),
+      publicClient: {
+        readContract: async () => 0n,
+      },
+    },
+  );
+
+  assert.equal(payload.runtime.ownerAddress, funderAddress.toLowerCase());
+  assert.equal(payload.balanceScope.ownerAddress, funderAddress.toLowerCase());
+  assert.equal(payload.balanceScope.signerAddress, signerAddress.toLowerCase());
+  assert.equal(payload.balanceScope.funderAddress, funderAddress.toLowerCase());
+  assert.equal(payload.diagnostics.some((entry) => /zero Polygon USDC\.e wallet balance/i.test(entry)), true);
+  assert.equal(payload.diagnostics.some((entry) => /scope mismatch/i.test(entry) || /proxy\/CLOB accounting state/i.test(entry)), true);
 });
 
 test('runPolymarketDeposit dry-run previews signer-to-proxy funding with projected balances', async () => {
@@ -197,6 +229,12 @@ test('runPolymarketPositions returns on-chain CTF balances with inventory proven
     ['on-chain', 'on-chain'],
   );
   assert.equal(payload.openOrders.length, 0);
+  assert.equal(payload.mergeReadiness.status, 'ready');
+  assert.equal(payload.mergeReadiness.inventoryReady, true);
+  assert.equal(payload.mergeReadiness.executionWalletReady, true);
+  assert.equal(payload.mergeReadiness.mergeablePairs, 0.75);
+  assert.deepEqual(payload.mergeReadiness.blockingReasons, []);
+  assert.equal(payload.mergeReadiness.operatorApprovalStatus, 'unknown');
 });
 
 test('runPolymarketPositions maps outcome-only API rows onto market token ids so on-chain zero balances win', async () => {
@@ -252,4 +290,88 @@ test('runPolymarketPositions maps outcome-only API rows onto market token ids so
   } finally {
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
+});
+
+test('runPolymarketPositions exposes merge blockers when inventory overlaps but signer/funder do not own the positions', async () => {
+  const wallet = '0x9898989898989898989898989898989898989898';
+  const signerAddress = '0x4545454545454545454545454545454545454545';
+  const funderAddress = '0x5656565656565656565656565656565656565656';
+  const conditionId = `0x${'c'.repeat(64)}`;
+  const payload = await runPolymarketPositions(
+    {
+      wallet,
+      source: 'on-chain',
+      market: {
+        marketId: conditionId,
+        slug: 'man-city-vs-arsenal',
+        question: 'Will Man City win?',
+        yesTokenId: '201',
+        noTokenId: '202',
+        yesPct: 58,
+        noPct: 42,
+      },
+      rpcUrl: 'https://polygon.example',
+      env: {
+        POLYMARKET_PRIVATE_KEY: `0x${'4'.repeat(64)}`,
+        POLYMARKET_FUNDER: funderAddress,
+      },
+    },
+    {
+      viemRuntime: createViemRuntime(signerAddress),
+      publicClient: {
+        readContract: async ({ args }) => {
+          const tokenId = String(args[1]);
+          if (tokenId === '201') return 4_000_000n;
+          if (tokenId === '202') return 1_500_000n;
+          return 0n;
+        },
+      },
+    },
+  );
+
+  assert.equal(payload.ownerAddress, wallet);
+  assert.equal(payload.mergeReadiness.status, 'action-required');
+  assert.equal(payload.mergeReadiness.inventoryReady, true);
+  assert.equal(payload.mergeReadiness.executionWalletReady, false);
+  assert.equal(payload.mergeReadiness.executionWallet, wallet);
+  assert.equal(payload.mergeReadiness.mergeablePairs, 1.5);
+  assert.equal(payload.mergeReadiness.residualYesBalance, 2.5);
+  assert.equal(payload.mergeReadiness.residualNoBalance, 0);
+  assert.deepEqual(payload.mergeReadiness.missingBalances, []);
+  assert.equal(payload.mergeReadiness.blockingReasons.includes('SIGNER_DIFFERS_FROM_OWNER'), true);
+  assert.equal(payload.mergeReadiness.blockingReasons.includes('FUNDER_DIFFERS_FROM_OWNER'), true);
+  assert.equal(payload.mergeReadiness.warnings.some((entry) => /Operator approval status is not verified/i.test(entry)), true);
+  assert.equal(payload.diagnostics.some((entry) => /merge execution must be submitted by the wallet that actually holds the positions/i.test(entry)), true);
+});
+
+test('runPolymarketPositions marks merge readiness partial when only one outcome side is scoped', async () => {
+  const wallet = '0xabababababababababababababababababababab';
+  const tokenId = '301';
+  const payload = await runPolymarketPositions(
+    {
+      wallet,
+      source: 'on-chain',
+      tokenId,
+      rpcUrl: 'https://polygon.example',
+    },
+    {
+      publicClient: {
+        readContract: async ({ args }) => {
+          const requestedTokenId = String(args[1]);
+          if (requestedTokenId === tokenId) return 9_000_000n;
+          return 0n;
+        },
+      },
+    },
+  );
+
+  assert.equal(payload.market.yesTokenId, tokenId);
+  assert.equal(payload.market.noTokenId, null);
+  assert.equal(payload.mergeReadiness.status, 'partial');
+  assert.equal(payload.mergeReadiness.inventoryReady, false);
+  assert.equal(payload.mergeReadiness.mergeablePairs, null);
+  assert.deepEqual(payload.mergeReadiness.missingBalances, ['yes', 'no']);
+  assert.equal(payload.mergeReadiness.blockingReasons.includes('YES_BALANCE_UNAVAILABLE'), true);
+  assert.equal(payload.mergeReadiness.blockingReasons.includes('NO_BALANCE_UNAVAILABLE'), true);
+  assert.equal(payload.diagnostics.some((entry) => /Merge readiness is partial/i.test(entry)), true);
 });

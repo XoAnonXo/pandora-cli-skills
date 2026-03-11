@@ -35,7 +35,9 @@ if (testFiles.length === 0) {
   process.exit(1);
 }
 
-const result = spawnSync(process.execPath, ['--test', ...testFiles], {
+// The unit suite shares process-wide globals and temp fixtures in several legacy files.
+// Run serially so CI and local verification stay deterministic.
+const result = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...testFiles], {
   cwd: rootDir,
   stdio: 'inherit',
 });

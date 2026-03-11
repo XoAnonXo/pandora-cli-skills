@@ -77,6 +77,8 @@ test('executeHedgeLeg submits sell-side hedge when runtime sell depth proves saf
     depth: {
       sellYesDepth: {
         depthUsd: 10,
+        depthShares: 10,
+        referencePrice: 0.48,
         midPrice: 0.48,
         worstPrice: 0.47,
       },
@@ -88,13 +90,13 @@ test('executeHedgeLeg submits sell-side hedge when runtime sell depth proves saf
     state,
   });
 
-  assert.equal(actualHedgeUsdc, 3);
+  assert.equal(actualHedgeUsdc, 1.44);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].host, 'https://clob.polymarket.com');
   assert.equal(calls[0].mockUrl, 'https://mock.invalid');
   assert.equal(calls[0].tokenId, 'yes-token-id');
   assert.equal(calls[0].side, 'sell');
-  assert.equal(calls[0].amountUsd, 3);
+  assert.equal(calls[0].amountUsd, 1.44);
   assert.equal(calls[0].privateKey, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   assert.equal(calls[0].funder, '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   assert.equal(calls[0].apiKey, null);
@@ -104,11 +106,95 @@ test('executeHedgeLeg submits sell-side hedge when runtime sell depth proves saf
   assert.equal(action.hedge.tokenSide, 'yes');
   assert.equal(action.hedge.side, 'sell');
   assert.equal(action.hedge.executionMode, 'sell-inventory');
+  assert.equal(action.hedge.amountShares, 3);
+  assert.equal(action.hedge.referencePrice, 0.48);
   assert.equal(action.hedge.stateDeltaUsdc, -3);
   assert.equal(action.hedge.inventoryUsdcAvailable, 5);
   assert.equal(state.currentHedgeUsdc, 2);
-  assert.equal(state.cumulativeHedgeNotionalUsdc, 3);
-  assert.equal(state.cumulativeHedgeCostApproxUsdc, 0.0625);
+  assert.equal(state.cumulativeHedgeNotionalUsdc, 1.44);
+  assert.equal(state.cumulativeHedgeCostApproxUsdc, 0.03);
+});
+
+test('buildHedgeExecutionPlan derives order usd from share size and reference price', () => {
+  const plan = buildHedgeExecutionPlan({
+    options: { executeLive: true },
+    plan: { hedgeTriggered: true, plannedHedgeUsdc: 42.99, plannedHedgeShares: 42.99, gapUsdc: -42.99 },
+    state: { currentHedgeUsdc: 0 },
+    verifyPayload: VERIFY_PAYLOAD,
+    depth: {
+      noDepth: {
+        depthUsd: 100,
+        depthShares: 200,
+        referencePrice: 0.52,
+        midPrice: 0.52,
+        worstPrice: 0.53,
+      },
+    },
+  });
+
+  assert.equal(plan.side, 'buy');
+  assert.equal(plan.tokenSide, 'no');
+  assert.equal(plan.amountShares, 42.99);
+  assert.equal(plan.amountUsdc, 22.3548);
+  assert.equal(plan.stateDeltaUsdc, -42.99);
+});
+
+test('buildHedgeExecutionPlan uses adopted side-specific inventory for sell eligibility', () => {
+  const plan = buildHedgeExecutionPlan({
+    options: { executeLive: false },
+    plan: { hedgeTriggered: true, plannedHedgeUsdc: 4, plannedHedgeShares: 4, gapUsdc: -4 },
+    state: {
+      currentHedgeUsdc: 0,
+      accounting: {
+        managedPolymarketYesUsdc: 6,
+        managedPolymarketNoUsdc: 1,
+      },
+    },
+    verifyPayload: VERIFY_PAYLOAD,
+    depth: {},
+  });
+
+  assert.equal(plan.side, 'sell');
+  assert.equal(plan.tokenSide, 'yes');
+  assert.equal(plan.inventorySharesAvailable, 6);
+  assert.equal(plan.recycleEligible, true);
+});
+
+test('executeHedgeLeg keeps share-named inventory aliases in sync with legacy fields', async () => {
+  const action = {};
+  const state = {
+    currentHedgeShares: 5,
+    currentHedgeUsdc: 5,
+    cumulativeHedgeNotionalUsdc: 0,
+    cumulativeHedgeCostApproxUsdc: 0,
+    accounting: {
+      managedPolymarketYesShares: 5,
+      managedPolymarketNoShares: 0,
+      managedPolymarketYesUsdc: 5,
+      managedPolymarketNoUsdc: 0,
+    },
+  };
+
+  await executeHedgeLeg({
+    options: {
+      executeLive: false,
+      polymarketHost: 'https://clob.polymarket.com',
+      polymarketMockUrl: 'https://mock.invalid',
+      privateKey: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      funder: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    },
+    action,
+    plan: { hedgeTriggered: true, plannedHedgeUsdc: 2, plannedHedgeShares: 2, gapUsdc: -2 },
+    verifyPayload: VERIFY_PAYLOAD,
+    depth: {},
+    hedgeFn: async () => ({ ok: true, status: 'accepted' }),
+    state,
+  });
+
+  assert.equal(state.currentHedgeShares, 3);
+  assert.equal(state.currentHedgeUsdc, 3);
+  assert.equal(state.accounting.managedPolymarketYesShares, 3);
+  assert.equal(state.accounting.managedPolymarketYesUsdc, 3);
 });
 
 test('buildIdempotencyKey distinguishes hedge execution mode and order side', () => {

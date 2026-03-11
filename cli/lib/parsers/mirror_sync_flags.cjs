@@ -110,6 +110,7 @@ function createParseMirrorSyncFlags(deps) {
       polymarketSlug: null,
       executeLive: false,
       hedgeEnabled: true,
+      hedgeScope: 'total',
       hedgeRatio: 1,
       rebalanceSizingMode: 'atomic',
       priceSource: 'on-chain',
@@ -157,6 +158,8 @@ function createParseMirrorSyncFlags(deps) {
       discordWebhookUrl: null,
       failOnWebhookError: false,
       daemon: false,
+      verbose: false,
+      adoptExistingPositions: false,
       forceGate: false,
       forceGateDeprecatedUsed: false,
       skipGateChecks: [],
@@ -221,6 +224,15 @@ function createParseMirrorSyncFlags(deps) {
         if (options.hedgeRatio > 2) {
           throw new CliError('INVALID_FLAG_VALUE', '--hedge-ratio must be <= 2.');
         }
+        i += 1;
+        continue;
+      }
+      if (token === '--hedge-scope') {
+        const value = String(requireFlagValue(rest, i, '--hedge-scope')).trim().toLowerCase();
+        if (value !== 'pool' && value !== 'total') {
+          throw new CliError('INVALID_FLAG_VALUE', '--hedge-scope must be pool|total.');
+        }
+        options.hedgeScope = value;
         i += 1;
         continue;
       }
@@ -347,8 +359,16 @@ function createParseMirrorSyncFlags(deps) {
         options.stream = false;
         continue;
       }
+      if (token === '--verbose') {
+        options.verbose = true;
+        continue;
+      }
       if (token === '--daemon') {
         options.daemon = true;
+        continue;
+      }
+      if (token === '--adopt-existing-positions') {
+        options.adoptExistingPositions = true;
         continue;
       }
       if (token === '--state-file') {

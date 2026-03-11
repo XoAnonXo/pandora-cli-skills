@@ -233,7 +233,7 @@ pandora mirror audit --market-address <pandora_market> --polymarket-market-id <p
   - `stale` means daemon metadata still reports alive but the heartbeat aged past threshold; inspect pid/log state before trusting it
 - `mirror status --with-live` is the live diagnostic surface for an existing mirror, whether it was resolved from persisted state or direct selectors.
   - `live.verifyDiagnostics` carries verify-time feed/match warnings
-  - `live.polymarketPosition.diagnostics` carries balance/open-order visibility warnings instead of hard-failing when that view is partial
+  - `live.polymarketPosition.mergeReadiness` and `live.polymarketPosition.diagnostics` carry merge-advisory, balance, and open-order visibility warnings instead of hard-failing when that view is partial
   - `--drift-trigger-bps`, `--hedge-trigger-usdc`, `--indexer-url`, `--timeout-ms`, and Polymarket host/mock overrides all apply to this live diagnostic projection path
   - the live payload also includes `sourceMarket`, `pandoraMarket`, `netPnlApproxUsdc`, `pnlApprox`, and `netDeltaApprox`
 - `mirror drift` is the dedicated live drift/readiness surface.

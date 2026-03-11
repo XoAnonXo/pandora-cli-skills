@@ -1,4 +1,5 @@
 const {
+  buildAgentMarketHypePayload,
   buildAgentMarketAutocompletePayload,
   buildAgentMarketValidationPayload,
 } = require('./agent_market_prompt_service.cjs');
@@ -45,6 +46,74 @@ function parseAgentMarketAutocompleteFlags(args) {
 
   if (!String(options.question || '').trim()) {
     const error = new Error('agent market autocomplete requires --question <text>.');
+    error.code = 'MISSING_REQUIRED_FLAG';
+    throw error;
+  }
+
+  return options;
+}
+
+function parseAgentMarketHypeFlags(args) {
+  const options = {
+    area: '',
+    region: '',
+    query: '',
+    marketType: 'auto',
+    candidateCount: 3,
+  };
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+    if (token === '--area') {
+      options.area = readFlagValue(args, i, '--area');
+      i += 1;
+      continue;
+    }
+    if (token === '--region') {
+      options.region = readFlagValue(args, i, '--region');
+      i += 1;
+      continue;
+    }
+    if (token === '--query') {
+      options.query = readFlagValue(args, i, '--query');
+      i += 1;
+      continue;
+    }
+    if (token === '--market-type') {
+      options.marketType = readFlagValue(args, i, '--market-type');
+      i += 1;
+      continue;
+    }
+    if (token === '--candidate-count') {
+      const raw = readFlagValue(args, i, '--candidate-count');
+      const numeric = Number(raw);
+      if (!Number.isInteger(numeric) || numeric <= 0) {
+        const error = new Error('--candidate-count must be a positive integer.');
+        error.code = 'INVALID_FLAG_VALUE';
+        throw error;
+      }
+      if (numeric > 5) {
+        const error = new Error('--candidate-count must be between 1 and 5.');
+        error.code = 'INVALID_FLAG_VALUE';
+        throw error;
+      }
+      options.candidateCount = numeric;
+      i += 1;
+      continue;
+    }
+    const error = new Error(`Unknown flag for agent market hype: ${token}`);
+    error.code = 'UNKNOWN_FLAG';
+    throw error;
+  }
+
+  if (!String(options.area || '').trim()) {
+    const error = new Error('agent market hype requires --area <text>.');
+    error.code = 'MISSING_REQUIRED_FLAG';
+    throw error;
+  }
+
+  if (['regional-news', 'regional', 'local-news'].includes(String(options.area || '').trim().toLowerCase()) && !String(options.region || '').trim()) {
+    const error = new Error('agent market hype requires --region <text> when --area regional-news.');
     error.code = 'MISSING_REQUIRED_FLAG';
     throw error;
   }
@@ -167,6 +236,7 @@ function createRunAgentCommand(deps) {
     const rest = Array.isArray(args) ? args : [];
     if (!rest.length || includesHelpFlag(rest)) {
       const usage = [
+        'pandora [--output table|json] agent market hype --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--market-type auto|amm|parimutuel|both] [--candidate-count <n>]',
         'pandora [--output table|json] agent market autocomplete --question <text> [--market-type amm|parimutuel]',
         'pandora [--output table|json] agent market validate --question <text> --rules <text> --target-timestamp <unix-seconds> [--sources <url...>]',
       ];
@@ -180,6 +250,8 @@ function createRunAgentCommand(deps) {
           prompt: usage.join('\n'),
           workflow: {
             notes: [
+              'Use agent market hype when the agent must research current trending topics before drafting a market.',
+              'When --area regional-news is selected, always pass --region <text> so the research stays local.',
               'Use agent market autocomplete when the agent must draft market rules or timing.',
               'Use agent market validate before any agent-exposed market execute path.',
             ],
@@ -203,13 +275,19 @@ function createRunAgentCommand(deps) {
       return;
     }
 
+    if (action === 'hype') {
+      const payload = buildAgentMarketHypePayload(parseAgentMarketHypeFlags(actionArgs));
+      emitSuccess(context.outputMode, 'agent.market.hype', payload, renderAgentPromptTable);
+      return;
+    }
+
     if (action === 'validate') {
       const payload = buildAgentMarketValidationPayload(parseAgentMarketValidateFlags(actionArgs));
       emitSuccess(context.outputMode, 'agent.market.validate', payload, renderAgentPromptTable);
       return;
     }
 
-    throw new CliError('INVALID_ARGS', 'agent market requires subcommand: autocomplete|validate');
+    throw new CliError('INVALID_ARGS', 'agent market requires subcommand: hype|autocomplete|validate');
   }
 
   return {

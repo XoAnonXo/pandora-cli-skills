@@ -2,8 +2,11 @@ const crypto = require('crypto');
 const { isMcpMode } = require('./shared/mcp_path_guard.cjs');
 
 const AGENT_MARKET_PROMPT_SCHEMA_VERSION = '1.0.0';
+const HYPE_PROMPT_VERSION = 'pandora.market.hype.v1';
 const AUTOCOMPLETE_PROMPT_VERSION = 'pandora.market.autocomplete.v1';
 const VALIDATION_PROMPT_VERSION = 'pandora.market.validate.v1';
+const HYPE_AREAS = Object.freeze(['sports', 'esports', 'politics', 'regional-news', 'breaking-news']);
+const MAX_HYPE_CANDIDATE_COUNT = 5;
 
 function createPromptError(code, message, details = undefined) {
   const error = new Error(message);
@@ -36,6 +39,22 @@ function normalizeMarketType(value) {
   return normalized === 'parimutuel' ? 'parimutuel' : 'amm';
 }
 
+function normalizeHypeArea(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['sports', 'sport'].includes(normalized)) return 'sports';
+  if (['esports', 'e-sports', 'egaming', 'e-gaming', 'gaming'].includes(normalized)) return 'esports';
+  if (['politics', 'political'].includes(normalized)) return 'politics';
+  if (['regional-news', 'regional', 'local-news'].includes(normalized)) return 'regional-news';
+  if (['breaking-news', 'breaking', 'news'].includes(normalized)) return 'breaking-news';
+  return '';
+}
+
+function normalizeHypeMarketType(value) {
+  const normalized = String(value || 'auto').trim().toLowerCase();
+  if (['amm', 'auto', 'both', 'parimutuel'].includes(normalized)) return normalized;
+  return 'auto';
+}
+
 function normalizeQuestion(value) {
   return String(value || '').trim();
 }
@@ -58,6 +77,26 @@ function normalizeSources(sources) {
 function normalizeTargetTimestamp(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function normalizeHypeCandidateCount(value, fallback = 3) {
+  return Math.min(normalizePositiveInteger(value, fallback), MAX_HYPE_CANDIDATE_COUNT);
+}
+
+function normalizeHypeRegion(area, value) {
+  const region = String(value || '').trim();
+  if (area === 'regional-news' && !region) {
+    throw createPromptError(
+      'MISSING_REQUIRED_FLAG',
+      'agent market hype requires --region <text> when --area regional-news.',
+    );
+  }
+  return region || null;
 }
 
 function normalizeValidationInput(input = {}) {
@@ -159,6 +198,114 @@ IMPORTANT:
 - Return raw JSON only. No markdown. No explanation outside the JSON object.
 - Use only public sources that anyone can access without login.
 - Design the market so another model can resolve it deterministically.`;
+}
+
+function buildAgentMarketHypePrompt(options = {}) {
+  const area = normalizeHypeArea(options.area);
+  const marketType = normalizeHypeMarketType(options.marketType);
+  const candidateCount = normalizeHypeCandidateCount(options.candidateCount, 3);
+  const region = normalizeHypeRegion(area, options.region);
+  const query = String(options.query || '').trim();
+
+  if (!area) {
+    throw createPromptError(
+      'MISSING_REQUIRED_FLAG',
+      `agent market hype requires --area <${HYPE_AREAS.join('|')}>.`,
+    );
+  }
+
+  const date = formatDateContext(options.now);
+  const marketTypeHint = marketType === 'both'
+    ? 'Draft both AMM and pari-mutuel-friendly ideas when helpful.'
+    : marketType === 'auto'
+      ? 'Decide whether AMM or pari-mutuel is the better fit for each candidate.'
+      : `Bias the candidates toward ${marketType}.`;
+  const regionalGuidance = area === 'regional-news'
+    ? `
+REGIONAL-NEWS RULES:
+- Treat REGION FOCUS as a hard constraint, not a soft preference.
+- Prefer local or regional official sources, regulators, election authorities, courts, venues, or government announcements tied to the named region.
+- Prefer local outlets over national recaps when they disagree or when locality matters.
+- Disambiguate city, state, and country names before drafting the question.
+- Use the relevant local timezone when choosing the target timestamp.
+- Reject candidates unless the decisive event happens in that region or is announced by a region-specific authority.`
+    : '';
+
+  return `You are a prediction-market trend editor for Pandora.
+
+CURRENT TIME: ${date.formatted}
+CURRENT ISO: ${date.iso}
+
+AREA: ${area}
+REGION FOCUS: ${region || 'global'}
+EXTRA QUERY HINT: ${query || 'none'}
+TARGET CANDIDATE COUNT: ${candidateCount}
+MARKET-TYPE HINT: ${marketTypeHint}
+${regionalGuidance}
+
+TASK:
+1. Search the public web for the latest trending topics in this area.
+   - Focus on stories that are fresh, widely discussed, and suitable for a prediction market.
+   - Prefer official, primary, or broadly trusted reporting where possible.
+   - Ignore private, paywalled, login-only, or unverifiable sources.
+
+2. Identify the strongest candidate markets that could attract real trading interest.
+   - The outcome must be binary and publicly checkable.
+   - The event should resolve soon enough to be interesting, but not so soon that the market cannot launch safely.
+   - Avoid vague social chatter, pure opinion polls, and topics that are already stale.
+
+3. For each candidate, draft a deployable market.
+   - Write a concrete question.
+   - Write concise rules in this exact format:
+     YES: ...
+     NO: ...
+     EDGE: ...
+   - Choose a safe target timestamp in ISO-8601.
+   - Estimate YES odds between 15 and 85.
+   - Score freshness, attention, resolvability, AMM fit, and pari-mutuel fit from 0 to 100.
+
+4. Be conservative about resolvability.
+   - If a story is hyped but cannot be resolved cleanly from public evidence, do not include it.
+   - Do not use subjective terms like major, viral, historic, or comeback unless objectively defined.
+   - Prefer markets where another model can later resolve YES or NO without split interpretation.
+
+5. Return strict JSON only with this shape:
+{
+  "searchQueries": ["query 1", "query 2"],
+  "summary": "short summary of what is hot right now",
+  "candidates": [
+    {
+      "headline": "short headline",
+      "topic": "short topic label",
+      "whyNow": "why this is trending now",
+      "category": "Politics|Sports|Finance|Crypto|Culture|Technology|Science|Entertainment|Health|Environment|Other",
+      "question": "final market question",
+      "rules": "YES: ...\\nNO: ...\\nEDGE: ...",
+      "sources": [
+        {
+          "title": "source title",
+          "url": "https://example.com/story",
+          "publisher": "publisher name",
+          "publishedAt": "ISO 8601 datetime or empty string"
+        }
+      ],
+      "suggestedResolutionDate": "ISO 8601 datetime",
+      "estimatedYesOdds": 50,
+      "freshnessScore": 70,
+      "attentionScore": 70,
+      "resolvabilityScore": 70,
+      "ammFitScore": 70,
+      "parimutuelFitScore": 70,
+      "marketTypeReasoning": "why one market type fits better"
+    }
+  ]
+}
+
+IMPORTANT:
+- Return JSON only. No markdown.
+- Provide at least 2 source URLs per candidate.
+- Keep candidate count at or below ${candidateCount}.
+- Every question must be immediately usable as a Pandora market draft.`;
 }
 
 function buildAgentMarketValidationPrompt(options = {}) {
@@ -354,6 +501,47 @@ function buildAgentMarketAutocompletePayload(options = {}) {
   };
 }
 
+function buildAgentMarketHypePayload(options = {}) {
+  const area = normalizeHypeArea(options.area);
+  const marketType = normalizeHypeMarketType(options.marketType);
+  const date = formatDateContext(options.now);
+  const candidateCount = normalizeHypeCandidateCount(options.candidateCount, 3);
+  const region = normalizeHypeRegion(area, options.region);
+
+  return {
+    schemaVersion: AGENT_MARKET_PROMPT_SCHEMA_VERSION,
+    generatedAt: date.iso,
+    promptKind: 'agent.market.hype',
+    promptVersion: HYPE_PROMPT_VERSION,
+    ticket: null,
+    input: {
+      area,
+      region,
+      query: String(options.query || '').trim() || null,
+      marketType,
+      candidateCount,
+      currentTimeIso: date.iso,
+    },
+    prompt: buildAgentMarketHypePrompt({
+      area,
+      region,
+      query: options.query,
+      marketType,
+      candidateCount,
+      now: date.now,
+    }),
+    workflow: {
+      mandatoryForAgentDrafting: true,
+      nextTool: 'agent.market.validate',
+      notes: [
+        'Use this prompt when the agent must research the latest trending topics before drafting a market.',
+        'After selecting the best candidate, run agent.market.validate on the exact final question, rules, sources, and target timestamp.',
+        'If the candidate will be executed through MCP, pass the resulting PASS attestation back as agentPreflight.',
+      ],
+    },
+  };
+}
+
 function buildAgentMarketValidationPayload(options = {}) {
   const normalized = normalizeValidationInput(options);
   const date = formatDateContext(options.now);
@@ -474,12 +662,16 @@ function assertAgentMarketValidation(input = {}, options = {}) {
 
 module.exports = {
   AGENT_MARKET_PROMPT_SCHEMA_VERSION,
+  HYPE_PROMPT_VERSION,
   AUTOCOMPLETE_PROMPT_VERSION,
   VALIDATION_PROMPT_VERSION,
+  HYPE_AREAS,
   normalizeValidationInput,
   buildMarketValidationTicket,
+  buildAgentMarketHypePrompt,
   buildAgentMarketAutocompletePrompt,
   buildAgentMarketValidationPrompt,
+  buildAgentMarketHypePayload,
   buildAgentMarketAutocompletePayload,
   buildAgentMarketValidationPayload,
   buildRequiredAgentMarketValidation,

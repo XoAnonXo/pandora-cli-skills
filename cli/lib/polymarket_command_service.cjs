@@ -555,11 +555,20 @@ function createRunPolymarketCommand(deps) {
       if (includesHelpFlag(actionArgs)) {
         const usage =
           'pandora [--output table|json] polymarket balance [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
+        const notes = [
+          'Funding-only surface: reads raw Polygon USDC.e wallet collateral only; it does not query authenticated Polymarket CLOB buying power, YES/NO inventory, or open orders.',
+          'If this command shows 0 while the Polymarket UI shows buying power, treat that as a scope mismatch first: proxy/CLOB accounting can differ from raw wallet collateral.',
+          'Use polymarket positions --wallet <address> --source auto when you need CTF balances, open orders, or merge-readiness diagnostics.',
+        ];
         if (context.outputMode === 'json') {
-          emitSuccess(context.outputMode, 'polymarket.balance.help', commandHelpPayload(usage));
+          emitSuccess(context.outputMode, 'polymarket.balance.help', commandHelpPayload(usage, notes));
         } else {
           // eslint-disable-next-line no-console
           console.log(`Usage: ${usage}`);
+          for (const note of notes) {
+            // eslint-disable-next-line no-console
+            console.log(`Note: ${note}`);
+          }
         }
         return;
       }
@@ -593,6 +602,7 @@ function createRunPolymarketCommand(deps) {
           '--source auto prefers Polymarket API/CLOB enrichment and falls back to raw on-chain CTF balances when available.',
           '--source api prefers public Polymarket enrichment for metadata, open orders, and marked value fields.',
           '--source on-chain forces Polygon RPC / CTF balance reads and may leave prices or open-order fields as diagnostics/null.',
+          'Merge-readiness diagnostics are advisory: they highlight overlapping YES/NO pairs, owner-vs-signer mismatches, and known blockers, but they do not execute merges or prove operator approvals.',
         ];
         if (context.outputMode === 'json') {
           emitSuccess(context.outputMode, 'polymarket.positions.help', commandHelpPayload(usage, notes));

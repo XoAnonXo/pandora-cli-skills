@@ -472,7 +472,7 @@ Mirror runtime notes:
   - `stale` means daemon metadata still reports alive while the heartbeat exceeded threshold
 - `mirror status --with-live` is the live diagnostic surface for a mirror resolved from persisted state or direct selectors.
   - `live.verifyDiagnostics` carries verify-time feed and matching warnings
-  - `live.polymarketPosition.diagnostics` carries balance/open-order visibility warnings instead of hard-failing when that view is partial
+  - `live.polymarketPosition.mergeReadiness` and `live.polymarketPosition.diagnostics` carry merge-advisory, balance, and open-order visibility warnings instead of hard-failing when that view is partial
   - `--drift-trigger-bps`, `--hedge-trigger-usdc`, `--indexer-url`, `--timeout-ms`, and Polymarket host/mock overrides shape that live diagnostic projection path
   - `live.sourceMarket`, `live.pandoraMarket`, `live.netPnlApproxUsdc`, `live.pnlApprox`, and `live.netDeltaApprox` provide the operator snapshot around those diagnostics
   - `live.netPnlApproxUsdc` is cumulative LP fees approx minus cumulative hedge cost approx; `live.pnlApprox` adds marked Polymarket inventory; `live.pnlScenarios` projects current token payouts under each outcome

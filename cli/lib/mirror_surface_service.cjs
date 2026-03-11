@@ -253,10 +253,16 @@ function buildMirrorHedgeCheckPayload(params = {}) {
     selector: normalizeSelector(params.selector),
     summary: {
       targetHedgeUsdc: toNumberOrNull(live.targetHedgeUsdc),
+      targetHedgeShares: toNumberOrNull(live.targetHedgeShares !== undefined ? live.targetHedgeShares : live.targetHedgeUsdc),
       currentHedgeUsdc: toNumberOrNull(live.currentHedgeUsdc),
+      currentHedgeShares: toNumberOrNull(live.currentHedgeShares !== undefined ? live.currentHedgeShares : live.currentHedgeUsdc),
       hedgeGapUsdc: toNumberOrNull(live.hedgeGapUsdc),
+      hedgeGapShares: toNumberOrNull(live.hedgeGapShares !== undefined ? live.hedgeGapShares : live.hedgeGapUsdc),
       hedgeGapAbsUsdc: toNumberOrNull(live.hedgeGapAbsUsdc),
+      hedgeGapAbsShares: toNumberOrNull(live.hedgeGapAbsShares !== undefined ? live.hedgeGapAbsShares : live.hedgeGapAbsUsdc),
       triggerUsdc: toNumberOrNull(live.hedgeTriggerUsdc),
+      triggerShares: toNumberOrNull(live.hedgeTriggerShares !== undefined ? live.hedgeTriggerShares : live.hedgeTriggerUsdc),
+      unit: live.hedgeUnit || 'shares',
       triggered: Boolean(live.hedgeTriggered),
       hedgeSide: live.hedgeStatus && live.hedgeStatus.hedgeSide ? live.hedgeStatus.hedgeSide : null,
       rebalanceSide: live.hedgeStatus && live.hedgeStatus.rebalanceSide ? live.hedgeStatus.rebalanceSide : null,
@@ -265,11 +271,17 @@ function buildMirrorHedgeCheckPayload(params = {}) {
     },
     hedge: {
       targetHedgeUsdc: toNumberOrNull(live.targetHedgeUsdc),
+      targetHedgeShares: toNumberOrNull(live.targetHedgeShares !== undefined ? live.targetHedgeShares : live.targetHedgeUsdc),
       currentHedgeUsdc: toNumberOrNull(live.currentHedgeUsdc),
+      currentHedgeShares: toNumberOrNull(live.currentHedgeShares !== undefined ? live.currentHedgeShares : live.currentHedgeUsdc),
       hedgeGapUsdc: toNumberOrNull(live.hedgeGapUsdc),
+      hedgeGapShares: toNumberOrNull(live.hedgeGapShares !== undefined ? live.hedgeGapShares : live.hedgeGapUsdc),
       hedgeGapAbsUsdc: toNumberOrNull(live.hedgeGapAbsUsdc),
+      hedgeGapAbsShares: toNumberOrNull(live.hedgeGapAbsShares !== undefined ? live.hedgeGapAbsShares : live.hedgeGapAbsUsdc),
       coverageRatio: toNumberOrNull(live.hedgeCoverageRatio),
       triggerUsdc: toNumberOrNull(live.hedgeTriggerUsdc),
+      triggerShares: toNumberOrNull(live.hedgeTriggerShares !== undefined ? live.hedgeTriggerShares : live.hedgeTriggerUsdc),
+      unit: live.hedgeUnit || 'shares',
       triggered: Boolean(live.hedgeTriggered),
       hedgeSide: live.hedgeStatus && live.hedgeStatus.hedgeSide ? live.hedgeStatus.hedgeSide : null,
       rebalanceSide: live.hedgeStatus && live.hedgeStatus.rebalanceSide ? live.hedgeStatus.rebalanceSide : null,
@@ -440,9 +452,14 @@ function buildMirrorDashboardItem(params = {}) {
     hedge: live
       ? {
           targetHedgeUsdc: toNumberOrNull(live.targetHedgeUsdc),
+          targetHedgeShares: toNumberOrNull(live.targetHedgeShares !== undefined ? live.targetHedgeShares : live.targetHedgeUsdc),
           currentHedgeUsdc: toNumberOrNull(live.currentHedgeUsdc),
+          currentHedgeShares: toNumberOrNull(live.currentHedgeShares !== undefined ? live.currentHedgeShares : live.currentHedgeUsdc),
           hedgeGapUsdc: toNumberOrNull(live.hedgeGapUsdc),
+          hedgeGapShares: toNumberOrNull(live.hedgeGapShares !== undefined ? live.hedgeGapShares : live.hedgeGapUsdc),
           triggerUsdc: toNumberOrNull(live.hedgeTriggerUsdc),
+          triggerShares: toNumberOrNull(live.hedgeTriggerShares !== undefined ? live.hedgeTriggerShares : live.hedgeTriggerUsdc),
+          unit: live.hedgeUnit || 'shares',
           triggered: Boolean(live.hedgeTriggered),
           hedgeSide: live.hedgeStatus && live.hedgeStatus.hedgeSide ? live.hedgeStatus.hedgeSide : null,
         }
@@ -540,6 +557,16 @@ function buildMirrorPnlPayload(params = {}) {
       netDeltaApprox: toNumberOrNull(live.netDeltaApprox),
       driftBps: toNumberOrNull(live.driftBps),
       hedgeGapUsdc: toNumberOrNull(live.hedgeGapUsdc),
+      hedgeGapShares: toNumberOrNull(live.hedgeGapShares !== undefined ? live.hedgeGapShares : live.hedgeGapUsdc),
+      currentHedgeShares: toNumberOrNull(
+        live.currentHedgeShares !== undefined
+          ? live.currentHedgeShares
+          : state.currentHedgeShares !== undefined
+            ? state.currentHedgeShares
+            : live.currentHedgeUsdc !== undefined
+              ? live.currentHedgeUsdc
+              : state.currentHedgeUsdc,
+      ),
       currentHedgeUsdc: toNumberOrNull(live.currentHedgeUsdc !== undefined ? live.currentHedgeUsdc : state.currentHedgeUsdc),
       cumulativeLpFeesApproxUsdc: toNumberOrNull(
         live.cumulativeLpFeesApproxUsdc !== undefined ? live.cumulativeLpFeesApproxUsdc : state.cumulativeLpFeesApproxUsdc,
@@ -1036,6 +1063,15 @@ function buildReconciledMirrorLedger(params = {}) {
     netPnlApproxUsdc: toNumberOrNull(live.netPnlApproxUsdc),
     pnlApprox: toNumberOrNull(live.pnlApprox),
     netDeltaApprox: toNumberOrNull(live.netDeltaApprox),
+    currentHedgeShares: toNumberOrNull(
+      live.currentHedgeShares !== undefined
+        ? live.currentHedgeShares
+        : state.currentHedgeShares !== undefined
+          ? state.currentHedgeShares
+          : live.currentHedgeUsdc !== undefined
+            ? live.currentHedgeUsdc
+            : state.currentHedgeUsdc,
+    ),
     currentHedgeUsdc: toNumberOrNull(
       live.currentHedgeUsdc !== undefined ? live.currentHedgeUsdc : state.currentHedgeUsdc,
     ),

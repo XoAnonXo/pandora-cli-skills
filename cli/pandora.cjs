@@ -330,6 +330,16 @@ function runPolymarketPositions(...args) {
   return getPolymarketOpsService().runPolymarketPositions(...args);
 }
 
+/** Proxy to Polymarket merge-readiness derivation. */
+function buildPolymarketMergeReadiness(...args) {
+  return getPolymarketOpsService().buildPolymarketMergeReadiness(...args);
+}
+
+/** Proxy to Polymarket balance-scope derivation. */
+function buildPolymarketBalanceScope(...args) {
+  return getPolymarketOpsService().buildPolymarketBalanceScope(...args);
+}
+
 /** Proxy to Polymarket deposit flow. */
 function runPolymarketDeposit(...args) {
   return getPolymarketOpsService().runPolymarketDeposit(...args);
@@ -1178,6 +1188,7 @@ Usage:
   pandora [--output table|json] markets mine [options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
   pandora [--output table|json] markets create plan|run [create options]
+  pandora [--output table|json] markets hype plan|run [hype options]
   pandora [--output table|json] polls list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--status <int>] [--category <int>] [--question-contains <text>] [--where-json <json>]
   pandora [--output table|json] polls get --id <id>
   pandora [--output table|json] events list [--type all|liquidity|oracle-fee|claim] [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-direction asc|desc] [--chain-id <id>] [--wallet <address>] [--market-address <address>] [--poll-address <address>] [--tx-hash <hash>]
@@ -1208,6 +1219,7 @@ Usage:
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
   pandora [--output table|json] analyze --market-address <address> [--provider <name>] [--model <id>] [--max-cost-usd <n>] [--temperature <n>] [--timeout-ms <ms>]
+  pandora [--output table|json] agent market hype --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--market-type auto|amm|parimutuel|both] [--candidate-count <n>]
   pandora [--output table|json] agent market autocomplete --question <text> [--market-type amm|parimutuel]
   pandora [--output table|json] agent market validate --question <text> --rules <text> --target-timestamp <unix-seconds> [--sources <url...>]
   pandora [--output table|json] suggest --wallet <address> --risk low|medium|high --budget <amount> [--count <n>] [--include-venues pandora,polymarket]
@@ -1277,6 +1289,9 @@ Examples:
   pandora webhook test --webhook-url https://example.com/hook --webhook-template '{\"text\":\"{{message}}\"}'
   pandora leaderboard --metric profit --limit 20
   pandora analyze --market-address 0xabc... --provider mock
+  pandora --output json markets hype plan --area breaking-news --query "AI launches" --ai-provider openai --candidate-count 3
+  pandora --output json markets hype run --plan-file ./hype-plan.json --candidate-id cand-1 --market-type selected --dry-run
+  pandora --output json agent market hype --area politics --region "United States" --candidate-count 3
   pandora --output json agent market autocomplete --question "Will BTC close above $100k by Friday?" --market-type amm
   pandora --output json agent market validate --question "Will BTC close above $100k by Friday?" --rules "YES: ... NO: ... EDGE: ..." --target-timestamp 1798675200 --sources https://example.com/a https://example.com/b
   pandora suggest --wallet 0x1234... --risk medium --budget 50 --count 3
@@ -1310,7 +1325,8 @@ Notes:
   - arb scan is the canonical arbitrage command; arbitrage remains a bounded backward-compatible one-shot wrapper.
   - arb scan supports streaming NDJSON and bounded JSON (--output json --iterations 1) for agent workflows.
   - explain is the canonical AI-facing remediation surface; use --code for tool calls or --stdin to consume Pandora JSON failure envelopes.
-  - agent market autocomplete/validate expose prompt templates plus validation tickets for agent-controlled market creation workflows.
+  - markets hype plan/run turns live public-web research into frozen market plans that can be validated and deployed safely.
+  - agent market hype/autocomplete/validate expose prompt templates plus validation tickets for agent-controlled market creation workflows.
 `);
 }
 
@@ -1392,6 +1408,7 @@ Usage:
   pandora [--output table|json] markets mine [options]
   pandora [--output table|json] markets get [--id <id> ...] [--stdin]
   pandora [--output table|json] markets create plan|run [options]
+  pandora [--output table|json] markets hype plan|run [options]
 `);
 }
 
@@ -1537,6 +1554,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] markets list|get|scan ...',
       'pandora [--output table|json] markets mine ...',
       'pandora [--output table|json] markets create plan|run ...',
+      'pandora [--output table|json] markets hype plan|run ...',
       'pandora [--output table|json] polls list|get ...',
       'pandora [--output table|json] events list|get ...',
       'pandora [--output table|json] positions list ...',
@@ -1565,7 +1583,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] webhook test ...',
       'pandora [--output table|json] leaderboard ...',
       'pandora [--output table|json] analyze ...',
-      'pandora [--output table|json] agent market autocomplete|validate ...',
+      'pandora [--output table|json] agent market hype|autocomplete|validate ...',
       'pandora [--output table|json] suggest ...',
       'pandora [--output table|json] resolve ...',
       'pandora [--output table|json] claim ...',
@@ -1596,7 +1614,7 @@ function helpJsonPayload() {
         '`scan` is the canonical enriched market discovery flow; `markets scan` remains a backward-compatible alias and `markets list` is the raw indexer browse view.',
         '`arb scan` is the canonical arbitrage flow; `arbitrage` remains a backward-compatible bounded one-shot wrapper.',
         '`explain` is the canonical AI-facing remediation surface; use `--code` for direct tool calls or `--stdin` to consume Pandora JSON failure envelopes.',
-        '`agent market autocomplete` and `agent market validate` expose reusable AI prompt templates and validation tickets for agent-controlled market creation workflows.',
+        '`agent market hype`, `agent market autocomplete`, and `agent market validate` expose reusable AI prompt templates and validation tickets for agent-controlled market creation workflows.',
         'Most commands support table and json output. `bootstrap`/`capabilities`/`schema` are json-only, `mcp` is stdio server mode, and `launch`/`clone-bet` forward script-native output.',
       ],
     };
@@ -5873,7 +5891,7 @@ async function runMarketsCommand(args, context) {
 
   if (!action || action === '--help' || action === '-h') {
     if (context.outputMode === 'json') {
-      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get|scan|mine|create ...'));
+      emitSuccess(context.outputMode, 'markets.help', commandHelpPayload('pandora [--output table|json] markets list|get|scan|mine|create|hype ...'));
     } else {
       printMarketsHelpTable();
     }
@@ -5929,6 +5947,15 @@ async function runMarketsCommand(args, context) {
 
   if (action === 'create') {
     await runMarketsCreateCommandFromService(actionArgs, context);
+    return;
+  }
+
+  if (action === 'hype') {
+    await runMarketsHypeCommandFromService(actionArgs, {
+      ...context,
+      indexerUrl,
+      timeoutMs: shared.timeoutMs,
+    });
     return;
   }
 
@@ -7148,6 +7175,13 @@ const parseMarketsCreateFlagsFromModule = createLazyFactoryRunner(
     ...sharedParserDeps,
   }),
 );
+const parseMarketsHypeFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/markets_hype_flags.cjs',
+  'createParseMarketsHypeFlags',
+  () => ({
+    ...sharedParserDeps,
+  }),
+);
 const parseMarketsMineFlagsFromModule = createLazyFactoryRunner(
   './lib/parsers/markets_mine_flags.cjs',
   'createParseMarketsMineFlags',
@@ -7621,6 +7655,20 @@ const runMarketsCreateCommandFromService = createLazyFactoryRunner(
     assertLiveWriteAllowed,
   }),
 );
+const runMarketsHypeCommandFromService = createLazyFactoryRunner(
+  './lib/markets_hype_command_service.cjs',
+  'createRunMarketsHypeCommand',
+  () => ({
+    CliError,
+    includesHelpFlag,
+    emitSuccess,
+    commandHelpPayload,
+    parseMarketsHypeFlags: parseMarketsHypeFlagsFromModule,
+    deployPandoraMarket,
+    renderSingleEntityTable,
+    assertLiveWriteAllowed,
+  }),
+);
 const runRiskCommandFromService = createLazyFactoryRunner('./lib/risk_command_service.cjs', 'createRunRiskCommand', () => ({
   CliError,
   includesHelpFlag,
@@ -8033,7 +8081,9 @@ function buildMirrorStatusDiagnostics(params = {}) {
     driftBps,
     driftTriggerBps,
     hedgeGapUsdc,
+    hedgeGapShares,
     hedgeTriggerUsdc,
+    hedgeTriggerShares,
     hedgeTriggered,
     rebalanceSide,
     hedgeSide,
@@ -8041,7 +8091,9 @@ function buildMirrorStatusDiagnostics(params = {}) {
     expiryWarn,
     matchConfidence,
     currentHedgeUsdc,
+    currentHedgeShares,
     targetHedgeUsdc,
+    targetHedgeShares,
   } = params;
 
   if (gateOk === false) {
@@ -8074,13 +8126,17 @@ function buildMirrorStatusDiagnostics(params = {}) {
     diagnostics.push({
       code: 'HEDGE_GAP_TRIGGERED',
       severity: Math.abs(hedgeGapUsdc) >= hedgeTriggerUsdc * 2 ? 'error' : 'warn',
-      message: `Tracked hedge gap ${Math.abs(hedgeGapUsdc)} USDC exceeds trigger ${hedgeTriggerUsdc} USDC.`,
+      message: `Tracked hedge gap ${Math.abs(hedgeGapShares !== undefined ? hedgeGapShares : hedgeGapUsdc)} shares exceeds trigger ${hedgeTriggerShares !== undefined ? hedgeTriggerShares : hedgeTriggerUsdc} shares.`,
       action: hedgeSide ? `hedge-${hedgeSide}` : 'hedge',
       details: {
         hedgeGapUsdc,
+        hedgeGapShares: hedgeGapShares !== undefined ? hedgeGapShares : hedgeGapUsdc,
         currentHedgeUsdc,
+        currentHedgeShares: currentHedgeShares !== undefined ? currentHedgeShares : currentHedgeUsdc,
         targetHedgeUsdc,
+        targetHedgeShares: targetHedgeShares !== undefined ? targetHedgeShares : targetHedgeUsdc,
         hedgeTriggerUsdc,
+        hedgeTriggerShares: hedgeTriggerShares !== undefined ? hedgeTriggerShares : hedgeTriggerUsdc,
         hedgeSide: hedgeSide || null,
       },
     });
@@ -8230,9 +8286,18 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
       ? Math.round((reserveYesUsdc - reserveNoUsdc) * 1e6) / 1e6
       : null;
   const targetHedgeUsdc = deltaLpUsdc === null ? null : Math.round((-deltaLpUsdc) * 1e6) / 1e6;
-  const currentHedgeUsdc = Number.isFinite(Number(state.currentHedgeUsdc)) ? Number(state.currentHedgeUsdc) : 0;
+  const currentHedgeShares =
+    Number.isFinite(Number(state.currentHedgeShares))
+      ? Number(state.currentHedgeShares)
+      : Number.isFinite(Number(state.currentHedgeUsdc))
+        ? Number(state.currentHedgeUsdc)
+        : 0;
+  const currentHedgeUsdc = currentHedgeShares;
+  const targetHedgeShares = targetHedgeUsdc;
   const hedgeGapUsdc = targetHedgeUsdc === null ? null : Math.round((targetHedgeUsdc - currentHedgeUsdc) * 1e6) / 1e6;
+  const hedgeGapShares = hedgeGapUsdc;
   const hedgeGapAbsUsdc = hedgeGapUsdc === null ? null : round(Math.abs(hedgeGapUsdc), 6);
+  const hedgeGapAbsShares = hedgeGapAbsUsdc;
   const rebalanceSide =
     Number.isFinite(sourceYesPct) && Number.isFinite(pandoraYesPct)
       ? sourceYesPct > pandoraYesPct
@@ -8285,6 +8350,40 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
       diagnostics: [`Position summary unavailable: ${err && err.message ? err.message : String(err)}`],
     };
   }
+  const mergeReadiness = buildPolymarketMergeReadiness(positionSummary, {
+    ownerAddress:
+      positionSummary && typeof positionSummary.walletAddress === 'string' && positionSummary.walletAddress.trim()
+        ? positionSummary.walletAddress
+        : null,
+    signerAddress: null,
+    funderAddress:
+      typeof process.env.POLYMARKET_FUNDER === 'string' && process.env.POLYMARKET_FUNDER.trim()
+        ? process.env.POLYMARKET_FUNDER
+        : null,
+  });
+  const balanceScope = buildPolymarketBalanceScope({
+    requestedWallet:
+      positionSummary && typeof positionSummary.walletAddress === 'string' && positionSummary.walletAddress.trim()
+        ? positionSummary.walletAddress
+        : null,
+    ownerAddress:
+      positionSummary && typeof positionSummary.walletAddress === 'string' && positionSummary.walletAddress.trim()
+        ? positionSummary.walletAddress
+        : null,
+    signerAddress: null,
+    funderAddress:
+      typeof process.env.POLYMARKET_FUNDER === 'string' && process.env.POLYMARKET_FUNDER.trim()
+        ? process.env.POLYMARKET_FUNDER
+        : null,
+  });
+  const polymarketDiagnostics = Array.from(
+    new Set(
+      []
+        .concat(Array.isArray(positionSummary.diagnostics) ? positionSummary.diagnostics : [])
+        .concat(Array.isArray(mergeReadiness && mergeReadiness.diagnostics) ? mergeReadiness.diagnostics : [])
+        .filter(Boolean),
+    ),
+  );
 
   const hedgePositionDeltaApprox = Number.isFinite(Number(positionSummary.positionDeltaApprox))
     ? Number(positionSummary.positionDeltaApprox)
@@ -8331,7 +8430,9 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
     driftBps,
     driftTriggerBps: options.driftTriggerBps,
     hedgeGapUsdc,
+    hedgeGapShares,
     hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+    hedgeTriggerShares: options.hedgeTriggerUsdc,
     hedgeTriggered,
     rebalanceSide,
     hedgeSide,
@@ -8341,7 +8442,9 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
       ? Number(verifyPayload.matchConfidence)
       : null,
     currentHedgeUsdc,
+    currentHedgeShares,
     targetHedgeUsdc,
+    targetHedgeShares,
   });
   const pnlScenarios = buildMirrorStatusPnlScenarios({
     reserveYesUsdc,
@@ -8366,10 +8469,18 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
     reserveTotalUsdc,
     deltaLpUsdc,
     targetHedgeUsdc,
+    targetHedgeShares,
+    hedgeUnit: 'shares',
+    inventoryUnit: 'shares',
+    legacyHedgeUnitAlias: 'currentHedgeUsdc/targetHedgeUsdc are compatibility aliases for share-denominated hedge inventory.',
     currentHedgeUsdc,
+    currentHedgeShares,
     hedgeGapUsdc,
+    hedgeGapShares,
     hedgeGapAbsUsdc,
+    hedgeGapAbsShares,
     hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+    hedgeTriggerShares: options.hedgeTriggerUsdc,
     hedgeTriggered,
     hedgeCoverageRatio,
     lifecycleActive: lifecycleCheck ? Boolean(lifecycleCheck.ok) : null,
@@ -8405,7 +8516,9 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
               no: Number.isFinite(Number(positionSummary.prices.no)) ? Number(positionSummary.prices.no) : null,
             }
           : { yes: null, no: null },
-      diagnostics: Array.isArray(positionSummary.diagnostics) ? positionSummary.diagnostics : [],
+      balanceScope,
+      mergeReadiness,
+      diagnostics: polymarketDiagnostics,
     },
     crossVenue: {
       status: crossVenueStatus,
@@ -8439,12 +8552,18 @@ async function toMirrorStatusLivePayload(verifyPayload, state, options) {
       rebalanceSide,
       hedgeSide,
       targetHedgeUsdc,
+      targetHedgeShares,
       currentHedgeUsdc,
+      currentHedgeShares,
       hedgeGapUsdc,
+      hedgeGapShares,
       hedgeGapAbsUsdc,
+      hedgeGapAbsShares,
       hedgeCoverageRatio,
       triggerUsdc: options.hedgeTriggerUsdc,
+      triggerShares: options.hedgeTriggerUsdc,
       triggered: hedgeTriggered,
+      unit: 'shares',
     },
     actionability,
     actionableDiagnostics: actionability.diagnostics,
@@ -8487,6 +8606,7 @@ function renderMirrorSyncTickLine(tickContext, outputMode) {
   const metrics = snapshot.metrics || {};
   const strictGate = snapshot.strictGate || {};
   const action = snapshot.action || null;
+  const error = snapshot.error && typeof snapshot.error === 'object' ? snapshot.error : null;
   const actionStatus = action && action.status ? action.status : 'idle';
   const gateCode =
     action && Array.isArray(action.failedChecks) && action.failedChecks.length
@@ -8494,6 +8614,7 @@ function renderMirrorSyncTickLine(tickContext, outputMode) {
         ? `forced:${action.failedChecks[0]}`
         : action.failedChecks[0]
       : '';
+  const verbose = Boolean(tickContext.verbose);
 
   if (outputMode === 'json') {
     console.log(
@@ -8504,9 +8625,15 @@ function renderMirrorSyncTickLine(tickContext, outputMode) {
         driftBps: metrics.driftBps,
         plannedRebalanceUsdc: metrics.plannedRebalanceUsdc,
         plannedHedgeUsdc: metrics.plannedHedgeUsdc,
+        plannedHedgeShares: metrics.plannedHedgeShares,
+        plannedHedgeOrderUsd: metrics.plannedHedgeOrderUsd,
+        reserveSource: metrics.reserveSource || null,
+        hedgeScope: metrics.hedgeScope || null,
         gateOk: strictGate.ok,
         gateCode,
         actionStatus,
+        errorCode: error && error.code ? error.code : null,
+        errorMessage: error && error.message ? error.message : null,
       }),
     );
     return;
@@ -8518,6 +8645,24 @@ function renderMirrorSyncTickLine(tickContext, outputMode) {
   const hedge = metrics.plannedHedgeUsdc === undefined ? '0' : String(metrics.plannedHedgeUsdc);
   const gateText = strictGate.ok ? 'ok' : gateCode || 'blocked';
   console.log(`[${ts}] tick=${tickContext.iteration} drift=${drift}bps rebalance=$${rebalance} hedge=$${hedge} action=${actionStatus} gate=${gateText}`);
+  if (verbose || error) {
+    const reserveYes = metrics.reserveYesUsdc === null || metrics.reserveYesUsdc === undefined ? 'n/a' : metrics.reserveYesUsdc;
+    const reserveNo = metrics.reserveNoUsdc === null || metrics.reserveNoUsdc === undefined ? 'n/a' : metrics.reserveNoUsdc;
+    const pandoraYes = metrics.pandoraYesPct === null || metrics.pandoraYesPct === undefined ? 'n/a' : metrics.pandoraYesPct;
+    const sourceYes = metrics.sourceYesPct === null || metrics.sourceYesPct === undefined ? 'n/a' : metrics.sourceYesPct;
+    const hedgeShares = metrics.plannedHedgeShares === null || metrics.plannedHedgeShares === undefined ? '0' : metrics.plannedHedgeShares;
+    const hedgeOrderUsd = metrics.plannedHedgeOrderUsd === null || metrics.plannedHedgeOrderUsd === undefined ? '0' : metrics.plannedHedgeOrderUsd;
+    const recycleReason =
+      snapshot.actionPlan && snapshot.actionPlan.hedgeRecycleReason
+        ? snapshot.actionPlan.hedgeRecycleReason
+        : null;
+    console.log(
+      `  reserve=${metrics.reserveSource || 'n/a'} yes=${reserveYes} no=${reserveNo} pandoraYes=${pandoraYes}% sourceYes=${sourceYes}% hedgeShares=${hedgeShares} hedgeOrderUsd=${hedgeOrderUsd} scope=${metrics.hedgeScope || 'n/a'}${recycleReason ? ` recycle=${recycleReason}` : ''}`,
+    );
+  }
+  if (error) {
+    console.log(`  error=${error.code || 'MIRROR_SYNC_TICK_FAILED'} ${error.message || 'Mirror sync tick failed.'}`);
+  }
 }
 
 function coerceMirrorServiceError(err, fallbackCode = 'MIRROR_ERROR') {

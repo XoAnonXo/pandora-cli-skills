@@ -51,6 +51,7 @@ function buildSyncStrategy(options) {
     priceSource: normalizePriceSource(options.priceSource),
     driftTriggerBps: options.driftTriggerBps,
     hedgeEnabled: options.hedgeEnabled,
+    hedgeScope: normalizeHedgeScope(options.hedgeScope),
     hedgeRatio: options.hedgeRatio,
     hedgeTriggerUsdc: options.hedgeTriggerUsdc,
     maxRebalanceUsdc: options.maxRebalanceUsdc,
@@ -76,6 +77,11 @@ function normalizePriceSource(value) {
   return normalized === 'indexer' ? 'indexer' : 'on-chain';
 }
 
+function normalizeHedgeScope(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'pool' ? 'pool' : 'total';
+}
+
 function derivePandoraYesPctFromReserves(reserveYesUsdc, reserveNoUsdc) {
   const reserveYes = toNumber(reserveYesUsdc);
   const reserveNo = toNumber(reserveNoUsdc);
@@ -83,6 +89,51 @@ function derivePandoraYesPctFromReserves(reserveYesUsdc, reserveNoUsdc) {
   const total = reserveYes + reserveNo;
   if (!Number.isFinite(total) || total <= 0) return null;
   return round((reserveNo / total) * 100, 6);
+}
+
+function normalizeSignedZero(value) {
+  return Object.is(value, -0) ? 0 : value;
+}
+
+function resolveHedgeReferencePrice(depthEntry) {
+  if (!depthEntry || typeof depthEntry !== 'object') return null;
+  const referencePrice = toNumber(depthEntry.referencePrice);
+  if (referencePrice !== null && referencePrice > 0) return referencePrice;
+  const midPrice = toNumber(depthEntry.midPrice);
+  if (midPrice !== null && midPrice > 0) return midPrice;
+  const worstPrice = toNumber(depthEntry.worstPrice);
+  if (worstPrice !== null && worstPrice > 0) return worstPrice;
+  return null;
+}
+
+function resolveDepthSharesCapacity(depthEntry) {
+  if (!depthEntry || typeof depthEntry !== 'object') return null;
+  const explicitDepthShares = toNumber(depthEntry.depthShares);
+  if (explicitDepthShares !== null) return explicitDepthShares;
+  const depthUsd = toNumber(depthEntry.depthUsd);
+  const referencePrice = resolveHedgeReferencePrice(depthEntry);
+  if (depthUsd === null || referencePrice === null || referencePrice <= 0) return null;
+  return round(depthUsd / referencePrice, 6) || 0;
+}
+
+function resolvePlanHedgeDepth(depth, plan) {
+  if (!depth || typeof depth !== 'object' || !(plan && plan.plannedHedgeShares > 0)) return null;
+  return plan.gapUsdc >= 0 ? depth.yesDepth || null : depth.noDepth || null;
+}
+
+function resolvePlanHedgePricing(depth, plan) {
+  const hedgeDepth = resolvePlanHedgeDepth(depth, plan);
+  const referencePrice = resolveHedgeReferencePrice(hedgeDepth);
+  const plannedHedgeShares = round(Math.max(0, toNumber(plan && plan.plannedHedgeShares) || 0), 6) || 0;
+  const plannedHedgeOrderUsd =
+    plannedHedgeShares > 0
+      ? round(plannedHedgeShares * (referencePrice || 1), 6) || 0
+      : 0;
+  return {
+    hedgeDepth,
+    referencePrice,
+    plannedHedgeOrderUsd,
+  };
 }
 
 function resolveRuntimeReserveContext(options) {
@@ -93,20 +144,27 @@ function resolveRuntimeReserveContext(options) {
   const derivedYesPct = derivePandoraYesPctFromReserves(reserveYesUsdc, reserveNoUsdc);
   const explicitYesPct = toNumber(raw.pandoraYesPct);
   const feeTier = toNumber(raw.feeTier);
+  const walletYesUsdc = toNumber(raw.walletYesUsdc);
+  const walletNoUsdc = toNumber(raw.walletNoUsdc);
   return {
     source: raw.source ? String(raw.source) : null,
     reserveYesUsdc,
     reserveNoUsdc,
     pandoraYesPct: explicitYesPct === null ? derivedYesPct : explicitYesPct,
     feeTier,
+    walletYesUsdc,
+    walletNoUsdc,
+    inventoryAddress: raw.inventoryAddress ? String(raw.inventoryAddress) : null,
     readAt: raw.readAt ? String(raw.readAt) : null,
     readError: raw.readError ? String(raw.readError) : null,
   };
 }
 
-function buildResolvedSnapshotMetrics(snapshotMetrics, options) {
+function buildResolvedSnapshotMetrics(snapshotMetrics, options, state = null) {
   const metrics = snapshotMetrics && typeof snapshotMetrics === 'object' ? snapshotMetrics : {};
   const reserveContext = resolveRuntimeReserveContext(options);
+  const accounting = state && state.accounting && typeof state.accounting === 'object' ? state.accounting : {};
+  const hedgeScope = normalizeHedgeScope(options && options.hedgeScope);
 
   const reserveYesUsdc = reserveContext && reserveContext.reserveYesUsdc !== null
     ? reserveContext.reserveYesUsdc
@@ -122,7 +180,63 @@ function buildResolvedSnapshotMetrics(snapshotMetrics, options) {
     reserveYesUsdc !== null && reserveNoUsdc !== null
       ? round(reserveYesUsdc - reserveNoUsdc, 6)
       : toNumber(metrics.deltaLpUsdc);
-  const targetHedgeUsdc = deltaLpUsdc === null ? toNumber(metrics.targetHedgeUsdc) : round(-deltaLpUsdc, 6);
+  const walletYesUsdc =
+    reserveContext && reserveContext.walletYesUsdc !== null
+      ? reserveContext.walletYesUsdc
+      : toNumber(metrics.walletYesUsdc) !== null
+        ? toNumber(metrics.walletYesUsdc)
+        : toNumber(accounting.pandoraWalletYesUsdc);
+  const walletNoUsdc =
+    reserveContext && reserveContext.walletNoUsdc !== null
+      ? reserveContext.walletNoUsdc
+      : toNumber(metrics.walletNoUsdc) !== null
+        ? toNumber(metrics.walletNoUsdc)
+        : toNumber(accounting.pandoraWalletNoUsdc);
+  const walletOffsetTokenSide =
+    deltaLpUsdc === null || deltaLpUsdc === 0
+      ? null
+      : deltaLpUsdc > 0
+        ? 'no'
+        : 'yes';
+  const rawWalletOffsetUsdc =
+    walletOffsetTokenSide === 'no'
+      ? walletNoUsdc
+      : walletOffsetTokenSide === 'yes'
+        ? walletYesUsdc
+        : 0;
+  const walletOffsetUsdc =
+    deltaLpUsdc === null
+      ? toNumber(metrics.walletOffsetUsdc)
+      : normalizeSignedZero(
+        round(
+          Math.min(Math.abs(deltaLpUsdc), Math.max(0, rawWalletOffsetUsdc || 0)),
+          6,
+        ),
+      );
+  const effectiveDeltaLpUsdc =
+    deltaLpUsdc === null
+      ? toNumber(metrics.effectiveDeltaLpUsdc)
+      : deltaLpUsdc > 0
+        ? normalizeSignedZero(round(Math.max(0, deltaLpUsdc - walletOffsetUsdc), 6))
+        : deltaLpUsdc < 0
+          ? normalizeSignedZero(round(Math.min(0, deltaLpUsdc + walletOffsetUsdc), 6))
+          : 0;
+  const walletNetDeltaUsdc =
+    walletYesUsdc === null && walletNoUsdc === null
+      ? toNumber(metrics.walletNetDeltaUsdc)
+      : normalizeSignedZero(round((walletYesUsdc || 0) - (walletNoUsdc || 0), 6));
+  const totalDeltaUsdc =
+    reserveYesUsdc === null && reserveNoUsdc === null && walletNetDeltaUsdc === null
+      ? toNumber(metrics.totalDeltaUsdc)
+      : normalizeSignedZero(round((reserveYesUsdc || 0) + (walletYesUsdc || 0) - (reserveNoUsdc || 0) - (walletNoUsdc || 0), 6));
+  const selectedDeltaUsdc =
+    hedgeScope === 'total'
+      ? totalDeltaUsdc
+      : effectiveDeltaLpUsdc;
+  const targetHedgeUsdc =
+    selectedDeltaUsdc === null
+      ? toNumber(metrics.targetHedgeUsdc)
+      : normalizeSignedZero(round(-selectedDeltaUsdc, 6));
 
   const sourceYesPct = toNumber(metrics.sourceYesPct);
   const runtimePandoraYesPct = reserveContext ? reserveContext.pandoraYesPct : null;
@@ -151,7 +265,20 @@ function buildResolvedSnapshotMetrics(snapshotMetrics, options) {
     reserveNoUsdc,
     reserveTotalUsdc,
     deltaLpUsdc,
+    effectiveDeltaLpUsdc,
+    walletNetDeltaUsdc,
+    totalDeltaUsdc,
+    hedgeScope,
+    selectedDeltaUsdc,
     targetHedgeUsdc,
+    walletYesUsdc,
+    walletNoUsdc,
+    walletOffsetUsdc,
+    walletOffsetTokenSide,
+    inventoryAddress:
+      (reserveContext && reserveContext.inventoryAddress)
+      || (typeof metrics.inventoryAddress === 'string' ? metrics.inventoryAddress : null)
+      || (typeof accounting.pandoraInventoryAddress === 'string' ? accounting.pandoraInventoryAddress : null),
     reserveSource:
       (reserveContext && reserveContext.source)
       || metrics.reserveSource
@@ -178,17 +305,19 @@ function buildResolvedSnapshotMetrics(snapshotMetrics, options) {
  */
 function buildTickPlan(params) {
   const { snapshotMetrics, state, options } = params;
-  const resolvedMetrics = buildResolvedSnapshotMetrics(snapshotMetrics, options);
+  const resolvedMetrics = buildResolvedSnapshotMetrics(snapshotMetrics, options, state);
   const gapUsdc =
     resolvedMetrics.targetHedgeUsdc === null
       ? null
-      : round(resolvedMetrics.targetHedgeUsdc - (toNumber(state.currentHedgeUsdc) || 0), 6);
+      : normalizeSignedZero(round(resolvedMetrics.targetHedgeUsdc - (toNumber(state.currentHedgeUsdc) || 0), 6));
   const rawHedgeTriggered = gapUsdc !== null && Math.abs(gapUsdc) >= options.hedgeTriggerUsdc;
   const hedgeTriggered = Boolean(options.hedgeEnabled) && rawHedgeTriggered;
 
   const scaledHedgeUsdc = rawHedgeTriggered ? Math.abs(gapUsdc) * options.hedgeRatio : 0;
   const plannedHedgeUsdc = hedgeTriggered ? Math.min(scaledHedgeUsdc, options.maxHedgeUsdc) : 0;
-  const plannedHedgeSignedUsdc = hedgeTriggered ? (gapUsdc >= 0 ? plannedHedgeUsdc : -plannedHedgeUsdc) : 0;
+  const plannedHedgeSignedUsdc = hedgeTriggered
+    ? normalizeSignedZero(gapUsdc >= 0 ? plannedHedgeUsdc : -plannedHedgeUsdc)
+    : 0;
 
   const rebalanceSizingMode = normalizeRebalanceSizingMode(options && options.rebalanceSizingMode);
   const maxRebalanceUsdc = toNumber(options && options.maxRebalanceUsdc);
@@ -244,6 +373,10 @@ function buildTickPlan(params) {
     hedgeTriggered,
     plannedHedgeUsdc,
     plannedHedgeSignedUsdc,
+    plannedHedgeShares: plannedHedgeUsdc,
+    plannedHedgeSignedShares: plannedHedgeSignedUsdc,
+    plannedHedgeOrderUsd: null,
+    plannedHedgeReferencePrice: null,
     rebalanceSizingMode,
     rebalanceSizingBasis,
     rebalanceCandidateUsdc: round(rebalanceCandidateUsdc, 6),
@@ -278,8 +411,18 @@ async function fetchDepthSnapshot(params) {
  * @returns {object}
  */
 function buildTickSnapshot(params) {
-  const { iteration, tickAt, verifyPayload, options, snapshotMetrics, plan, depth, gate } = params;
-  const resolvedMetrics = buildResolvedSnapshotMetrics(snapshotMetrics, options);
+  const { iteration, tickAt, verifyPayload, options, snapshotMetrics, plan, depth, gate, state } = params;
+  const resolvedMetrics = buildResolvedSnapshotMetrics(snapshotMetrics, options, state);
+  const hedgePricing = resolvePlanHedgePricing(depth, plan);
+  const yesDepthShares = resolveDepthSharesCapacity(depth.yesDepth);
+  const noDepthShares = resolveDepthSharesCapacity(depth.noDepth);
+  const hedgeDepthShares =
+    plan.plannedHedgeShares > 0
+      ? plan.gapUsdc >= 0
+        ? yesDepthShares
+        : noDepthShares
+      : null;
+  const plannedSpendUsdc = round((hedgePricing.plannedHedgeOrderUsd || 0) + (toNumber(plan.plannedRebalanceUsdc) || 0), 6) || 0;
   return {
     iteration,
     timestamp: tickAt.toISOString(),
@@ -294,15 +437,19 @@ function buildTickSnapshot(params) {
       hedgeTriggered: plan.hedgeTriggered,
       hedgeEnabled: Boolean(options.hedgeEnabled),
       hedgeRatio: options.hedgeRatio,
+      hedgeScope: resolvedMetrics.hedgeScope,
       hedgeSuppressed: plan.rawHedgeTriggered && !options.hedgeEnabled,
       plannedHedgeUsdc: plan.plannedHedgeUsdc,
+      plannedHedgeShares: plan.plannedHedgeShares,
+      plannedHedgeOrderUsd: hedgePricing.plannedHedgeOrderUsd,
+      plannedHedgeReferencePrice: hedgePricing.referencePrice,
       rebalanceSizingMode: plan.rebalanceSizingMode,
       rebalanceSizingBasis: plan.rebalanceSizingBasis,
       rebalanceCandidateUsdc: round(plan.rebalanceCandidateUsdc, 6),
       rebalanceTargetUsdc: plan.rebalanceTargetUsdc === null ? null : round(plan.rebalanceTargetUsdc, 6),
       rebalanceCapped: plan.rebalanceCapped,
       plannedRebalanceUsdc: plan.plannedRebalanceUsdc,
-      plannedSpendUsdc: plan.plannedSpendUsdc,
+      plannedSpendUsdc,
       depthWithinSlippageUsd: depth.depthWithinSlippageUsd,
       hedgeDepthWithinSlippageUsd:
         plan.plannedHedgeUsdc > 0
@@ -310,8 +457,12 @@ function buildTickSnapshot(params) {
             ? toNumber(depth.yesDepth && depth.yesDepth.depthUsd) || 0
             : toNumber(depth.noDepth && depth.noDepth.depthUsd) || 0
           : null,
+      hedgeDepthWithinSlippageShares:
+        hedgeDepthShares,
       yesDepthWithinSlippageUsd: toNumber(depth.yesDepth && depth.yesDepth.depthUsd),
       noDepthWithinSlippageUsd: toNumber(depth.noDepth && depth.noDepth.depthUsd),
+      yesDepthWithinSlippageShares: yesDepthShares,
+      noDepthWithinSlippageShares: noDepthShares,
       minDepthWithinSlippageUsd: toNumber(depth.minDepthWithinSlippageUsd),
       bestDepthWithinSlippageUsd: toNumber(depth.bestDepthWithinSlippageUsd),
     },
@@ -323,6 +474,10 @@ function buildTickSnapshot(params) {
       reserveSource: plan.reserveSource,
       hedgeTokenSide: plan.hedgeTokenSide,
       hedgeUsdc: plan.plannedHedgeUsdc,
+      hedgeShares: plan.plannedHedgeShares,
+      hedgeOrderUsd: hedgePricing.plannedHedgeOrderUsd,
+      hedgeReferencePrice: hedgePricing.referencePrice,
+      plannedSpendUsdc,
     },
     strictGate: gate,
     action: null,

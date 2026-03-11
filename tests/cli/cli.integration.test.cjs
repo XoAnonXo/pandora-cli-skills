@@ -113,6 +113,46 @@ function buildRules() {
   return 'Resolves Yes if condition is true. Resolves No if false. If canceled/postponed/abandoned/unresolved, resolve No.';
 }
 
+function buildMockHypeResponse(overrides = {}) {
+  return JSON.stringify({
+    summary: 'Knicks-Celtics injury news is dominating the sports cycle.',
+    searchQueries: ['knicks celtics march 2030 injury report', 'nba march 2030 breaking news'],
+    candidates: [
+      {
+        headline: 'Knicks vs Celtics picks up late injury-driven buzz',
+        topic: 'nba',
+        whyNow: 'Roster uncertainty and playoff implications are driving attention.',
+        category: 'Sports',
+        question: 'Will the New York Knicks beat the Boston Celtics on March 20, 2030?',
+        rules: 'YES: The New York Knicks win the game.\nNO: The New York Knicks do not win the game.\nEDGE: If the game is postponed and not completed by March 21, 2030, resolve N/A.',
+        sources: [
+          {
+            title: 'ESPN preview',
+            url: 'https://example.com/espn-knicks-celtics',
+            publisher: 'ESPN',
+            publishedAt: '2030-03-19T12:00:00Z',
+          },
+          {
+            title: 'NBA injury report',
+            url: 'https://example.com/nba-knicks-celtics',
+            publisher: 'NBA',
+            publishedAt: '2030-03-19T13:00:00Z',
+          },
+        ],
+        suggestedResolutionDate: '2030-03-20T23:00:00Z',
+        estimatedYesOdds: 57,
+        freshnessScore: 86,
+        attentionScore: 90,
+        resolvabilityScore: 95,
+        ammFitScore: 84,
+        parimutuelFitScore: 68,
+        marketTypeReasoning: 'Odds should move as lineup news changes through the trading window.',
+        ...overrides,
+      },
+    ],
+  });
+}
+
 const FIXED_FUTURE_TIMESTAMP = '1893456000'; // 2030-01-01T00:00:00Z
 const FIXED_MIRROR_CLOSE_ISO = '2030-03-09T16:00:00Z';
 const FIXED_MIRROR_CLOSE_TS = String(Math.floor(Date.parse(FIXED_MIRROR_CLOSE_ISO) / 1000));
@@ -7806,6 +7846,10 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   assert.match(payload.data.usage, /--polymarket-rpc-url <url>/);
   assert.match(payload.data.usage, /--min-time-to-close-sec <n>/);
   assert.match(payload.data.usage, /--strict-close-time-delta/);
+  assert.match(payload.data.usage, /--verbose/);
+  assert.doesNotMatch(payload.data.usage, /--daemon/);
+  assert.match(payload.data.usage, /--hedge-scope pool\|total/);
+  assert.match(payload.data.usage, /--adopt-existing-positions/);
   assert.match(payload.data.usage, /--rebalance-mode atomic\|incremental/);
   assert.match(payload.data.usage, /--price-source on-chain\|indexer/);
   assert.match(payload.data.usage, /--rebalance-route public\|auto\|flashbots-private\|flashbots-bundle/);
@@ -7814,12 +7858,29 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   assert.match(payload.data.usage, /--flashbots-auth-key <key>/);
   assert.match(payload.data.usage, /--flashbots-target-block-offset <n>/);
   assert.match(payload.data.liveHedgeNotes.rpcFallback, /comma-separated/i);
+  assert.match(payload.data.liveHedgeNotes.collateral, /scope mismatch/i);
+  assert.match(payload.data.liveHedgeNotes.collateral, /buying power/i);
   assert.match(payload.data.statusTelemetry.health, /runtime\.health/i);
   assert.match(payload.data.statusTelemetry.lastTrade, /runtime\.lastTrade/i);
   assert.match(payload.data.statusTelemetry.errors, /runtime\.errorCount/i);
   assert.match(payload.data.statusTelemetry.nextAction, /runtime\.nextAction/i);
   assert.match(payload.data.staleCacheFallback, /cached snapshots/i);
   assert.equal(payload.data.notes.some((note) => /\.pandora\/mirror\/STOP/.test(String(note))), true);
+  assert.match(payload.data.daemonLifecycle.unlock, /mirror sync unlock/);
+  assert.equal(payload.data.notes.some((note) => /mirror sync unlock/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /adopt-existing-positions/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /Default hedge scope is `total`/i.test(String(note))), true);
+});
+
+test('mirror sync unlock --help returns recovery-specific guidance', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'sync', 'unlock', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'mirror.sync.unlock.help');
+  assert.match(payload.data.usage, /--state-file <path>\|--strategy-hash <hash>/);
+  assert.match(payload.data.usage, /--force/);
+  assert.equal(payload.data.notes.some((note) => /zombie/i.test(String(note))), true);
 });
 
 test('mirror go --help json includes flashbots routing flag contract', () => {
@@ -7909,7 +7970,35 @@ test('command descriptors expose flashbots routing flags for mirror go and sync 
       /--flashbots-target-block-offset <n>/,
       `${commandName} usage should advertise flashbotsTargetBlockOffset`,
     );
+    assert.match(
+      descriptors[commandName].usage,
+      /--hedge-scope pool\|total/,
+      `${commandName} usage should advertise hedgeScope`,
+    );
+    assert.match(
+      descriptors[commandName].usage,
+      /--adopt-existing-positions/,
+      `${commandName} usage should advertise adoptExistingPositions`,
+    );
+    assert.match(
+      descriptors[commandName].usage,
+      /--verbose/,
+      `${commandName} usage should advertise verbose`,
+    );
+    assert.ok(descriptors[commandName].inputSchema.properties.verbose, `${commandName} schema should expose verbose`);
+    assert.ok(
+      descriptors[commandName].inputSchema.properties['hedge-scope'],
+      `${commandName} schema should expose hedgeScope`,
+    );
+    assert.ok(
+      descriptors[commandName].inputSchema.properties['adopt-existing-positions'],
+      `${commandName} schema should expose adoptExistingPositions`,
+    );
   }
+
+  assert.ok(descriptors['mirror.sync.unlock']);
+  assert.match(descriptors['mirror.sync.unlock'].usage, /--state-file <path>\|--strategy-hash <hash>/);
+  assert.match(descriptors['mirror.sync.unlock'].usage, /--force/);
 });
 
 test('command descriptors surface validation, distribution, and stop-file caveats for agent workflows', () => {
@@ -8276,6 +8365,14 @@ test('polymarket balance --help stays funding-only and omits CTF inventory selec
   assert.match(payload.data.usage, /polymarket balance/);
   assert.doesNotMatch(payload.data.usage, /--source auto\|api\|on-chain/);
   assert.doesNotMatch(payload.data.usage, /--condition-id <id>\|--market-id <id>\|--slug <slug>\|--token-id <id>/);
+  assert.equal(
+    payload.data.notes.some((entry) => /does not query authenticated Polymarket CLOB buying power/i.test(entry)),
+    true,
+  );
+  assert.equal(
+    payload.data.notes.some((entry) => /merge-readiness/i.test(entry)),
+    true,
+  );
 });
 
 test('polymarket --help advertises positions alongside the funding-only balance surface', () => {
@@ -8821,10 +8918,12 @@ test('mirror status surfaces unreadable pending-action locks as blocked runtime 
     assert.equal(payload.command, 'mirror.status');
     assert.equal(payload.data.runtime.health.status, 'blocked');
     assert.equal(payload.data.runtime.health.code, 'PENDING_ACTION_LOCK_INVALID');
-    assert.equal(payload.data.runtime.summary.nextAction.code, 'RECONCILE_PENDING_ACTION');
+    assert.equal(payload.data.runtime.summary.nextAction.code, 'UNLOCK_PENDING_ACTION');
     assert.equal(payload.data.runtime.summary.nextAction.blocking, true);
+    assert.match(payload.data.runtime.summary.nextAction.command, /mirror sync unlock --state-file/);
     assert.equal(payload.data.runtime.pendingAction.status, 'invalid');
     assert.equal(payload.data.runtime.pendingAction.requiresManualReview, true);
+    assert.equal(payload.data.runtime.pendingActionRecovery.allowedWithoutForce, true);
   } finally {
     removeDir(tempDir);
   }
@@ -8883,6 +8982,120 @@ test('mirror status surfaces pending-action transaction nonce for manual reconci
   }
 });
 
+test('mirror sync unlock clears zombie pending-action locks by state-file', () => {
+  const tempDir = createTempDir('pandora-mirror-sync-unlock-zombie-');
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const pendingLockFile = `${path.resolve(stateFile)}.pending-action.json`;
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash: 'feedfacecafebeef',
+        tradesToday: 1,
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    pendingLockFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        status: 'pending',
+        pid: 99999999,
+        lockNonce: 'zombie-lock',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const result = runCli(['--output', 'json', 'mirror', 'sync', 'unlock', '--state-file', stateFile], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.command, 'mirror.sync.unlock');
+    assert.equal(payload.data.cleared, true);
+    assert.equal(payload.data.lock.status, 'zombie');
+    assert.equal(payload.data.assessment.code, 'PENDING_ACTION_UNLOCK_ALLOWED');
+    assert.equal(fs.existsSync(pendingLockFile), false);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('mirror sync unlock requires force for reconciliation-required locks', () => {
+  const tempDir = createTempDir('pandora-mirror-sync-unlock-force-');
+  const strategyHash = 'feedfacecafebeef';
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const stateFile = path.join(stateDir, `${strategyHash}.json`);
+  const pendingLockFile = `${path.resolve(stateFile)}.pending-action.json`;
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash,
+        tradesToday: 1,
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    pendingLockFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        status: 'reconciliation-required',
+        pid: process.pid,
+        lockNonce: 'nonce-bucket-1',
+        transactionNonce: 42,
+        requiresManualReview: true,
+        createdAt: '2026-03-09T10:00:00.000Z',
+        updatedAt: '2026-03-09T10:01:00.000Z',
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const blocked = runCli(['--output', 'json', 'mirror', 'sync', 'unlock', '--strategy-hash', strategyHash], {
+      env: { HOME: tempDir },
+    });
+    assert.equal(blocked.status, 0);
+    const blockedPayload = parseJsonOutput(blocked);
+    assert.equal(blockedPayload.ok, true);
+    assert.equal(blockedPayload.data.cleared, false);
+    assert.equal(blockedPayload.data.reason, 'force-required');
+    assert.equal(blockedPayload.data.assessment.forceRequired, true);
+    assert.match(blockedPayload.data.assessment.recommendedCommand, /--force/);
+    assert.equal(fs.existsSync(pendingLockFile), true);
+
+    const forced = runCli(
+      ['--output', 'json', 'mirror', 'sync', 'unlock', '--strategy-hash', strategyHash, '--force'],
+      { env: { HOME: tempDir } },
+    );
+    assert.equal(forced.status, 0);
+    const forcedPayload = parseJsonOutput(forced);
+    assert.equal(forcedPayload.ok, true);
+    assert.equal(forcedPayload.data.cleared, true);
+    assert.equal(fs.existsSync(pendingLockFile), false);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
 test('mirror status --help returns usage payload', () => {
   const result = runCli(['--output', 'json', 'mirror', 'status', '--help']);
 
@@ -8894,6 +9107,10 @@ test('mirror status --help returns usage payload', () => {
   assert.equal(Array.isArray(payload.data.polymarketEnv), true);
   assert.equal(payload.data.polymarketEnv.includes('POLYMARKET_FUNDER'), true);
   assert.match(payload.data.notes.withLive, /Polymarket balances\/open orders/i);
+  assert.match(payload.data.notes.withLive, /balance-scope/i);
+  assert.match(payload.data.notes.withLive, /merge-readiness/i);
+  assert.match(payload.data.notes.collateral, /scope mismatch/i);
+  assert.match(payload.data.notes.collateral, /buying power/i);
   assert.match(payload.data.notes.gracefulFallback, /diagnostics are returned instead of hard failures/i);
 });
 
@@ -9718,9 +9935,16 @@ test('mirror status --with-live includes polymarket position visibility diagnost
     assert.equal(typeof payload.data.live.pnlApprox, 'number');
     assert.equal(payload.data.live.polymarketPosition.yesBalance, 12.5);
     assert.equal(payload.data.live.polymarketPosition.noBalance, 3.25);
+    assert.equal(payload.data.live.polymarketPosition.balanceScope.surface, 'polygon-usdc-wallet-collateral-only');
+    assert.equal(payload.data.live.polymarketPosition.balanceScope.asset, 'USDC.e');
+    assert.equal(payload.data.live.polymarketPosition.balanceScope.chainId, 137);
+    assert.equal(payload.data.live.polymarketPosition.balanceScope.uiBalanceParityExpected, false);
     assert.equal(payload.data.live.polymarketPosition.openOrdersCount, 2);
     assert.equal(payload.data.live.polymarketPosition.openOrdersNotionalUsd, 4.96);
     assert.equal(payload.data.live.polymarketPosition.estimatedValueUsd, 10.095);
+    assert.equal(payload.data.live.polymarketPosition.mergeReadiness.status, 'ready');
+    assert.equal(payload.data.live.polymarketPosition.mergeReadiness.eligible, true);
+    assert.equal(payload.data.live.polymarketPosition.mergeReadiness.mergeablePairs, 3.25);
     assert.equal(payload.data.live.crossVenue.status, 'attention');
     assert.equal(payload.data.live.crossVenue.gateOk, true);
     assert.equal(payload.data.live.crossVenue.sourceType, 'polymarket:mock');
@@ -9737,6 +9961,10 @@ test('mirror status --with-live includes polymarket position visibility diagnost
     assert.equal(payload.data.live.pnlScenarios.resolutionScenarios.yes.hedgeInventoryPayoutUsd, 12.5);
     assert.equal(payload.data.live.pnlScenarios.resolutionScenarios.no.hedgeInventoryPayoutUsd, 3.25);
     assert.equal(Array.isArray(payload.data.live.polymarketPosition.diagnostics), true);
+    assert.equal(
+      payload.data.live.polymarketPosition.diagnostics.some((entry) => /merge-eligible/i.test(String(entry))),
+      true,
+    );
     assert.equal(Array.isArray(payload.data.live.verifyDiagnostics), true);
     assert.equal(payload.data.live.sourceMarket.marketId, 'poly-cond-1');
     assert.equal(payload.data.live.pandoraMarket.marketAddress, ADDRESSES.mirrorMarket);
@@ -10184,7 +10412,7 @@ test('mirror hedge-check returns the dedicated hedge surface and readable table 
 
     assert.equal(tableResult.status, 0);
     assert.match(String(tableResult.stdout || tableResult.output || ''), /Mirror Hedge Check/);
-    assert.match(String(tableResult.stdout || tableResult.output || ''), /hedgeGapUsdc: -5/);
+    assert.match(String(tableResult.stdout || tableResult.output || ''), /hedgeGapShares: -5/);
     assert.match(String(tableResult.stdout || tableResult.output || ''), /hedgeSide: no/);
   } finally {
     await indexer.close();
@@ -11495,6 +11723,12 @@ test('markets --help includes canonical create surface', () => {
   assert.match(result.output, /markets create plan\|run/i);
 });
 
+test('markets --help includes hype planning surface', () => {
+  const result = runCli(['markets', '--help']);
+  assert.equal(result.status, 0);
+  assert.match(result.output, /markets hype plan\|run/i);
+});
+
 test('markets create --help json surfaces validation-ticket and balanced-distribution caveats', () => {
   const result = runCli(['--output', 'json', 'markets', 'create', '--help']);
   assert.equal(result.status, 0);
@@ -11504,6 +11738,527 @@ test('markets create --help json surfaces validation-ticket and balanced-distrib
   assert.equal(Array.isArray(payload.data.notes), true);
   assert.equal(payload.data.notes.some((note) => /exact final payload/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /balanced 50\/50 pool/i.test(String(note))), true);
+});
+
+test('agent market hype emits reusable trend-research prompt payload', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'agent',
+    'market',
+    'hype',
+    '--area',
+    'sports',
+    '--region',
+    'United States',
+    '--query',
+    'NBA injuries',
+    '--candidate-count',
+    '2',
+  ]);
+
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.command, 'agent.market.hype');
+  assert.equal(payload.data.promptKind, 'agent.market.hype');
+  assert.equal(payload.data.input.area, 'sports');
+  assert.equal(payload.data.input.region, 'United States');
+  assert.equal(payload.data.input.query, 'NBA injuries');
+  assert.equal(payload.data.input.candidateCount, 2);
+  assert.equal(payload.data.workflow.nextTool, 'agent.market.validate');
+  assert.match(payload.data.prompt, /Search the public web/i);
+});
+
+test('agent market hype rejects regional-news without a region', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'agent',
+    'market',
+    'hype',
+    '--area',
+    'regional-news',
+  ]);
+
+  assert.equal(result.status, 1);
+  assert.match(result.output, /requires --region <text> when --area regional-news/i);
+});
+
+test('markets hype --help json surfaces frozen-plan workflow guidance', () => {
+  const result = runCli(['--output', 'json', 'markets', 'hype', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.command, 'markets.hype.help');
+  assert.equal(Array.isArray(payload.data.notes), true);
+  assert.equal(payload.data.notes.some((note) => /frozen/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /agent market hype/i.test(String(note))), true);
+});
+
+test('markets hype plan emits reusable frozen hype payload in mock mode', async () => {
+  const indexer = await startIndexerMockServer();
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'plan',
+      '--area',
+      'sports',
+      '--candidate-count',
+      '1',
+      '--ai-provider',
+      'mock',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+        PANDORA_HYPE_MOCK_RESPONSE: buildMockHypeResponse(),
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'markets.hype.plan');
+    assert.equal(payload.data.mode, 'plan');
+    assert.equal(payload.data.provider.name, 'mock');
+    assert.equal(payload.data.researchSnapshot.promptKind, 'agent.market.hype');
+    assert.equal(payload.data.candidates.length, 1);
+    assert.equal(payload.data.selectedCandidate.recommendedMarketType, 'amm');
+    assert.equal(payload.data.selectedCandidate.marketDrafts.amm.distributionYes, 570000000);
+    assert.equal(payload.data.selectedCandidate.marketDrafts.amm.distributionNo, 430000000);
+    assert.equal(payload.data.selectedCandidate.validation.attestation.validationDecision, 'PASS');
+    assert.equal(payload.data.selectedCandidate.readyToDeploy, true);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('markets hype plan rejects regional-news without a region', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'markets',
+    'hype',
+    'plan',
+    '--area',
+    'regional-news',
+    '--ai-provider',
+    'mock',
+  ], {
+    unsetEnvKeys: DOCTOR_ENV_KEYS,
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.output, /requires --region <text> when --area regional-news/i);
+});
+
+test('markets hype plan rejects unsupported ai-provider none', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'markets',
+    'hype',
+    'plan',
+    '--area',
+    'sports',
+    '--ai-provider',
+    'none',
+  ], {
+    unsetEnvKeys: DOCTOR_ENV_KEYS,
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.output, /--ai-provider supports auto\|mock\|openai\|anthropic/i);
+});
+
+test('markets hype run --dry-run reuses a frozen plan file without re-running research', async () => {
+  const indexer = await startIndexerMockServer();
+  const tempDir = createTempDir('pandora-hype-plan-');
+  const planFile = path.join(tempDir, 'hype-plan.json');
+
+  try {
+    const planResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'plan',
+      '--area',
+      'sports',
+      '--candidate-count',
+      '1',
+      '--ai-provider',
+      'mock',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+        PANDORA_HYPE_MOCK_RESPONSE: buildMockHypeResponse(),
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(planResult.status, 0);
+    fs.writeFileSync(planFile, planResult.stdout, 'utf8');
+    const planPayload = parseJsonOutput(planResult);
+
+    const dryRunResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'run',
+      '--plan-file',
+      planFile,
+      '--candidate-id',
+      planPayload.data.selectedCandidateId,
+      '--market-type',
+      'selected',
+      '--dry-run',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(dryRunResult.status, 0);
+    const payload = parseJsonOutput(dryRunResult);
+    assert.equal(payload.command, 'markets.hype.run');
+    assert.equal(payload.data.mode, 'dry-run');
+    assert.equal(payload.data.selectedMarketType, 'amm');
+    assert.equal(payload.data.deployment.mode, 'dry-run');
+    assert.equal(payload.data.deployment.deploymentArgs.distributionYes, 570000000);
+    assert.equal(payload.data.deployment.deploymentArgs.distributionNo, 430000000);
+    assert.equal(payload.data.deployment.requiredValidation.ticket, payload.data.requiredValidation.ticket);
+    assert.equal(payload.data.validationResult.decision, 'PASS');
+  } finally {
+    await indexer.close();
+    removeDir(tempDir);
+  }
+});
+
+test('markets hype plan normalizes model category aliases like Esports back to Pandora categories', async () => {
+  const indexer = await startIndexerMockServer();
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'plan',
+      '--area',
+      'e-gaming',
+      '--candidate-count',
+      '1',
+      '--ai-provider',
+      'mock',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+        PANDORA_HYPE_MOCK_RESPONSE: buildMockHypeResponse({
+          category: 'Esports',
+          question: 'Will Team Spirit win the Counter-Strike Major final on April 1, 2030?',
+          rules: 'YES: Team Spirit wins the official grand final.\nNO: Team Spirit does not win the official grand final.\nEDGE: If the final is not completed by April 2, 2030, resolve N/A.',
+        }),
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'markets.hype.plan');
+    assert.equal(payload.data.area, 'esports');
+    assert.equal(payload.data.selectedCandidate.categoryName, 'Sports');
+    assert.equal(payload.data.selectedCandidate.categoryId, 1);
+  } finally {
+    await indexer.close();
+  }
+});
+
+test('markets hype run --execute rejects tampered plan files before any live execution step', async () => {
+  const indexer = await startIndexerMockServer();
+  const tempDir = createTempDir('pandora-hype-execute-');
+  const planFile = path.join(tempDir, 'hype-plan.json');
+
+  try {
+    const planResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'plan',
+      '--area',
+      'sports',
+      '--candidate-count',
+      '1',
+      '--ai-provider',
+      'mock',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+        PANDORA_HYPE_MOCK_RESPONSE: buildMockHypeResponse(),
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(planResult.status, 0);
+    const planPayload = parseJsonOutput(planResult);
+    const selectedCandidate = planPayload.data.candidates.find(
+      (candidate) => String(candidate.candidateId) === String(planPayload.data.selectedCandidateId),
+    );
+    assert.ok(selectedCandidate);
+    selectedCandidate.marketDrafts.amm.question = 'Tampered execute question?';
+    if (planPayload.data.selectedCandidate && String(planPayload.data.selectedCandidate.candidateId) === String(planPayload.data.selectedCandidateId)) {
+      planPayload.data.selectedCandidate.marketDrafts.amm.question = 'Tampered execute question?';
+    }
+    fs.writeFileSync(planFile, JSON.stringify(planPayload, null, 2), 'utf8');
+
+    const executeResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'run',
+      '--plan-file',
+      planFile,
+      '--candidate-id',
+      planPayload.data.selectedCandidateId,
+      '--market-type',
+      'amm',
+      '--execute',
+      '--private-key',
+      `0x${'1'.repeat(64)}`,
+      '--rpc-url',
+      'https://ethereum.publicnode.com',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(executeResult.status, 1);
+    assert.match(executeResult.output, /validation attestation|Regenerate the plan|validation/i);
+  } finally {
+    await indexer.close();
+    removeDir(tempDir);
+  }
+});
+
+test('markets hype run --execute rejects plan files that lost validation metadata', async () => {
+  const indexer = await startIndexerMockServer();
+  const tempDir = createTempDir('pandora-hype-missing-validation-');
+  const planFile = path.join(tempDir, 'hype-plan.json');
+
+  try {
+    const planResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'plan',
+      '--area',
+      'sports',
+      '--candidate-count',
+      '1',
+      '--ai-provider',
+      'mock',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+        PANDORA_HYPE_MOCK_RESPONSE: buildMockHypeResponse(),
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(planResult.status, 0);
+    const planPayload = parseJsonOutput(planResult);
+    const selectedCandidate = planPayload.data.candidates.find(
+      (candidate) => String(candidate.candidateId) === String(planPayload.data.selectedCandidateId),
+    );
+    assert.ok(selectedCandidate);
+    delete selectedCandidate.validation;
+    if (planPayload.data.selectedCandidate && String(planPayload.data.selectedCandidate.candidateId) === String(planPayload.data.selectedCandidateId)) {
+      delete planPayload.data.selectedCandidate.validation;
+    }
+    fs.writeFileSync(planFile, JSON.stringify(planPayload, null, 2), 'utf8');
+
+    const executeResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'run',
+      '--plan-file',
+      planFile,
+      '--candidate-id',
+      planPayload.data.selectedCandidateId,
+      '--market-type',
+      'amm',
+      '--execute',
+      '--private-key',
+      `0x${'1'.repeat(64)}`,
+      '--rpc-url',
+      'https://ethereum.publicnode.com',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(executeResult.status, 1);
+    assert.match(executeResult.output, /validation attestation|requires a PASS validation attestation/i);
+  } finally {
+    await indexer.close();
+    removeDir(tempDir);
+  }
+});
+
+test('markets hype run --execute rejects candidates that are not ready to deploy', async () => {
+  const indexer = await startIndexerMockServer();
+  const tempDir = createTempDir('pandora-hype-not-ready-');
+  const planFile = path.join(tempDir, 'hype-plan.json');
+
+  try {
+    const planResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'plan',
+      '--area',
+      'sports',
+      '--candidate-count',
+      '1',
+      '--ai-provider',
+      'mock',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+        PANDORA_HYPE_MOCK_RESPONSE: buildMockHypeResponse(),
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(planResult.status, 0);
+    const planPayload = parseJsonOutput(planResult);
+    const selectedCandidate = planPayload.data.candidates.find(
+      (candidate) => String(candidate.candidateId) === String(planPayload.data.selectedCandidateId),
+    );
+    assert.ok(selectedCandidate);
+    selectedCandidate.readyToDeploy = false;
+    if (planPayload.data.selectedCandidate && String(planPayload.data.selectedCandidate.candidateId) === String(planPayload.data.selectedCandidateId)) {
+      planPayload.data.selectedCandidate.readyToDeploy = false;
+    }
+    fs.writeFileSync(planFile, JSON.stringify(planPayload, null, 2), 'utf8');
+
+    const executeResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'run',
+      '--plan-file',
+      planFile,
+      '--candidate-id',
+      planPayload.data.selectedCandidateId,
+      '--market-type',
+      'amm',
+      '--execute',
+      '--private-key',
+      `0x${'1'.repeat(64)}`,
+      '--rpc-url',
+      'https://ethereum.publicnode.com',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(executeResult.status, 1);
+    assert.match(executeResult.output, /not marked readyToDeploy/i);
+  } finally {
+    await indexer.close();
+    removeDir(tempDir);
+  }
+});
+
+test('markets hype run --execute rejects deploy-only draft tampering outside validation fields', async () => {
+  const indexer = await startIndexerMockServer();
+  const tempDir = createTempDir('pandora-hype-integrity-');
+  const planFile = path.join(tempDir, 'hype-plan.json');
+
+  try {
+    const planResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'plan',
+      '--area',
+      'sports',
+      '--candidate-count',
+      '1',
+      '--ai-provider',
+      'mock',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+        PANDORA_HYPE_MOCK_RESPONSE: buildMockHypeResponse(),
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(planResult.status, 0);
+    const planPayload = parseJsonOutput(planResult);
+    const selectedCandidate = planPayload.data.candidates.find(
+      (candidate) => String(candidate.candidateId) === String(planPayload.data.selectedCandidateId),
+    );
+    assert.ok(selectedCandidate);
+    selectedCandidate.marketDrafts.amm.distributionYes = 650000000;
+    selectedCandidate.marketDrafts.amm.distributionNo = 350000000;
+    if (planPayload.data.selectedCandidate && String(planPayload.data.selectedCandidate.candidateId) === String(planPayload.data.selectedCandidateId)) {
+      planPayload.data.selectedCandidate.marketDrafts.amm.distributionYes = 650000000;
+      planPayload.data.selectedCandidate.marketDrafts.amm.distributionNo = 350000000;
+    }
+    fs.writeFileSync(planFile, JSON.stringify(planPayload, null, 2), 'utf8');
+
+    const executeResult = await runCliAsync([
+      '--output',
+      'json',
+      'markets',
+      'hype',
+      'run',
+      '--plan-file',
+      planFile,
+      '--candidate-id',
+      planPayload.data.selectedCandidateId,
+      '--market-type',
+      'amm',
+      '--execute',
+      '--private-key',
+      `0x${'1'.repeat(64)}`,
+      '--rpc-url',
+      'https://ethereum.publicnode.com',
+    ], {
+      env: {
+        PANDORA_INDEXER_URL: indexer.url,
+      },
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(executeResult.status, 1);
+    assert.match(executeResult.output, /frozen draft|integrity|Regenerate the plan/i);
+  } finally {
+    await indexer.close();
+    removeDir(tempDir);
+  }
 });
 
 test('markets create plan emits canonical pari-mutuel plan payload', () => {
@@ -11855,6 +12610,10 @@ test('polymarket positions help advertises source selection and data api control
   assert.equal(payload.command, 'polymarket.positions.help');
   assert.match(payload.data.usage, /--source auto\|api\|on-chain/);
   assert.match(payload.data.usage, /--polymarket-data-api-url <url>/);
+  assert.equal(
+    payload.data.notes.some((entry) => /merge-readiness/i.test(entry)),
+    true,
+  );
 });
 
 test('polymarket positions returns normalized inventory from a mock payload', async () => {
@@ -11934,10 +12693,21 @@ test('polymarket positions returns normalized inventory from a mock payload', as
     assert.equal(payload.data.summary.yesBalance, 1.5);
     assert.equal(payload.data.summary.noBalance, 0.25);
     assert.equal(payload.data.summary.openOrdersCount, 1);
+    assert.equal(payload.data.summary.mergeablePairs, 0.25);
+    assert.equal(payload.data.mergeReadiness.eligible, true);
+    assert.equal(payload.data.mergeReadiness.mergeablePairs, 0.25);
+    assert.equal(
+      payload.data.mergeReadiness.prerequisites.some((entry) => /wallet that actually holds/i.test(entry)),
+      true,
+    );
     assert.equal(payload.data.positions.length, 2);
     assert.equal(payload.data.positions[0].fieldSources.balance, 'api');
     assert.equal(payload.data.openOrders[0].tokenId, '101');
     assert.equal(payload.data.diagnostics.includes('Loaded Polymarket position inventory from mock payload.'), true);
+    assert.equal(
+      payload.data.diagnostics.some((entry) => /Overlapping YES\/NO inventory detected/i.test(entry)),
+      true,
+    );
   } finally {
     await server.close();
   }

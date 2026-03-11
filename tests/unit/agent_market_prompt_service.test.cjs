@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   buildMarketValidationTicket,
+  buildAgentMarketHypePayload,
   buildAgentMarketAutocompletePayload,
   buildAgentMarketValidationPayload,
   buildRequiredAgentMarketValidation,
@@ -50,6 +51,61 @@ test('autocomplete payload marks validation as the next mandatory tool', () => {
   assert.equal(payload.workflow.nextTool, 'agent.market.validate');
   assert.equal(payload.workflow.mandatoryForAgentDrafting, true);
   assert.equal(payload.prompt.includes('Return only valid JSON'), true);
+});
+
+test('hype payload exposes trend-research prompt and validation workflow', () => {
+  const payload = buildAgentMarketHypePayload({
+    area: 'breaking-news',
+    region: 'United States',
+    query: 'AI launches',
+    candidateCount: 3,
+    marketType: 'auto',
+    now: '2026-03-11T12:00:00.000Z',
+  });
+
+  assert.equal(payload.promptKind, 'agent.market.hype');
+  assert.equal(payload.input.area, 'breaking-news');
+  assert.equal(payload.input.candidateCount, 3);
+  assert.equal(payload.workflow.nextTool, 'agent.market.validate');
+  assert.equal(payload.prompt.includes('Search the public web for the latest trending topics'), true);
+});
+
+test('hype payload clamps candidate count to documented maximum', () => {
+  const payload = buildAgentMarketHypePayload({
+    area: 'sports',
+    candidateCount: 99,
+    now: '2026-03-11T12:00:00.000Z',
+  });
+
+  assert.equal(payload.input.candidateCount, 5);
+  assert.match(payload.prompt, /Keep candidate count at or below 5\./);
+});
+
+test('regional-news hype payload requires an explicit region', () => {
+  assert.throws(
+    () =>
+      buildAgentMarketHypePayload({
+        area: 'regional-news',
+        candidateCount: 2,
+        now: '2026-03-11T12:00:00.000Z',
+      }),
+    (error) => error && error.code === 'MISSING_REQUIRED_FLAG',
+  );
+});
+
+test('regional-news hype payload includes locality-specific sourcing guidance', () => {
+  const payload = buildAgentMarketHypePayload({
+    area: 'regional-news',
+    region: 'Dubai',
+    query: 'transport authority',
+    candidateCount: 2,
+    now: '2026-03-11T12:00:00.000Z',
+  });
+
+  assert.equal(payload.input.region, 'Dubai');
+  assert.match(payload.prompt, /REGIONAL-NEWS RULES:/);
+  assert.match(payload.prompt, /Treat REGION FOCUS as a hard constraint/i);
+  assert.match(payload.prompt, /Prefer local or regional official sources/i);
 });
 
 test('validation payload includes required attestation and exact ticket', () => {

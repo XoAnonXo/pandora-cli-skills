@@ -273,6 +273,298 @@
     "agentWorkflow": null,
     "aliasOf": null,
     "canRunConcurrent": true,
+    "canonicalTool": "agent.market.hype",
+    "command": [
+      "agent",
+      "market",
+      "hype"
+    ],
+    "controlInputNames": [],
+    "description": "Emit AI prompt text for researching current trending topics and drafting hype market candidates.",
+    "executeFlags": [],
+    "expectedLatencyMs": 750,
+    "externalDependencies": [],
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "description": "Trending topic area.",
+          "enum": [
+            "sports",
+            "esports",
+            "politics",
+            "regional-news",
+            "breaking-news"
+          ]
+        },
+        "candidate-count": {
+          "description": "Maximum number of candidate markets to draft.",
+          "maximum": 5,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "market-type": {
+          "description": "Planning preference for market type.",
+          "enum": [
+            "auto",
+            "amm",
+            "parimutuel",
+            "both"
+          ]
+        },
+        "query": {
+          "description": "Optional extra search hint or topic constraint.",
+          "type": "string"
+        },
+        "region": {
+          "description": "Regional focus. Required when --area regional-news.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "area"
+      ],
+      "type": "object",
+      "xPandora": {
+        "agentPreflightRequired": false,
+        "agentPreflightRequiredForExecuteMode": false,
+        "agentWorkflow": null,
+        "aliasOf": null,
+        "canRunConcurrent": true,
+        "canonicalCommandTokens": [
+          "agent",
+          "market",
+          "hype"
+        ],
+        "canonicalName": "agent.market.hype",
+        "canonicalTool": "agent.market.hype",
+        "canonicalUsage": "pandora [--output table|json] agent market hype --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--market-type auto|amm|parimutuel|both] [--candidate-count <n>]",
+        "command": [
+          "agent",
+          "market",
+          "hype"
+        ],
+        "compatibilityAlias": false,
+        "controlInputNames": [],
+        "dataSchema": "#/definitions/AgentMarketPromptPayload",
+        "emits": [
+          "agent.market.hype",
+          "agent.help"
+        ],
+        "executeFlags": [],
+        "executeIntentRequired": false,
+        "executeIntentRequiredForLiveMode": false,
+        "expectedLatencyMs": 750,
+        "externalDependencies": [],
+        "helpDataSchema": "#/definitions/CommandHelpPayload",
+        "idempotency": "idempotent",
+        "isCanonical": true,
+        "jobCapable": false,
+        "longRunningBlocked": false,
+        "mcpExposed": true,
+        "mcpLongRunningBlocked": false,
+        "mcpMutating": false,
+        "metadataProvenance": {
+          "descriptorDerived": [
+            "summary",
+            "usage",
+            "emits",
+            "outputModes",
+            "dataSchema",
+            "helpDataSchema",
+            "canonicalTool",
+            "canonicalCommandTokens",
+            "canonicalUsage",
+            "aliasOf",
+            "preferred",
+            "compatibilityAlias",
+            "riskLevel",
+            "idempotency",
+            "expectedLatencyMs",
+            "requiresSecrets",
+            "recommendedPreflightTool",
+            "safeEquivalent",
+            "externalDependencies",
+            "canRunConcurrent",
+            "returnsOperationId",
+            "returnsRuntimeHandle",
+            "jobCapable",
+            "supportsRemote",
+            "remoteEligible",
+            "supportsWebhook",
+            "policyScopes",
+            "agentWorkflow"
+          ],
+          "runtimeEnforced": [
+            "mutating",
+            "mcpMutating",
+            "longRunningBlocked",
+            "mcpLongRunningBlocked",
+            "placeholderBlocked",
+            "controlInputNames",
+            "safeFlags",
+            "executeFlags"
+          ]
+        },
+        "mutating": false,
+        "name": "agent.market.hype",
+        "outputModes": [
+          "table",
+          "json"
+        ],
+        "placeholderBlocked": false,
+        "policyScopes": [
+          "agent:read"
+        ],
+        "preferred": true,
+        "recommendedPreflightTool": null,
+        "registryName": "agent.market.hype",
+        "remoteEligible": true,
+        "requiresSecrets": false,
+        "returnsOperationId": false,
+        "returnsRuntimeHandle": false,
+        "riskLevel": "low",
+        "safeEquivalent": null,
+        "safeFlags": [],
+        "summary": "Emit AI prompt text for researching current trending topics and drafting hype market candidates.",
+        "supportsRemote": true,
+        "supportsWebhook": false,
+        "topLevelInputConstraints": null,
+        "usage": "pandora [--output table|json] agent market hype --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--market-type auto|amm|parimutuel|both] [--candidate-count <n>]"
+      }
+    },
+    "jobCapable": false,
+    "longRunningBlocked": false,
+    "mutating": false,
+    "name": "agent.market.hype",
+    "placeholderBlocked": false,
+    "policyScopes": [
+      "agent:read"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "xPandora": {
+      "agentPreflightRequired": false,
+      "agentPreflightRequiredForExecuteMode": false,
+      "agentWorkflow": null,
+      "aliasOf": null,
+      "canRunConcurrent": true,
+      "canonicalCommandTokens": [
+        "agent",
+        "market",
+        "hype"
+      ],
+      "canonicalName": "agent.market.hype",
+      "canonicalTool": "agent.market.hype",
+      "canonicalUsage": "pandora [--output table|json] agent market hype --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--market-type auto|amm|parimutuel|both] [--candidate-count <n>]",
+      "command": [
+        "agent",
+        "market",
+        "hype"
+      ],
+      "compatibilityAlias": false,
+      "controlInputNames": [],
+      "dataSchema": "#/definitions/AgentMarketPromptPayload",
+      "emits": [
+        "agent.market.hype",
+        "agent.help"
+      ],
+      "executeFlags": [],
+      "executeIntentRequired": false,
+      "executeIntentRequiredForLiveMode": false,
+      "expectedLatencyMs": 750,
+      "externalDependencies": [],
+      "helpDataSchema": "#/definitions/CommandHelpPayload",
+      "idempotency": "idempotent",
+      "isCanonical": true,
+      "jobCapable": false,
+      "longRunningBlocked": false,
+      "mcpExposed": true,
+      "mcpLongRunningBlocked": false,
+      "mcpMutating": false,
+      "metadataProvenance": {
+        "descriptorDerived": [
+          "summary",
+          "usage",
+          "emits",
+          "outputModes",
+          "dataSchema",
+          "helpDataSchema",
+          "canonicalTool",
+          "canonicalCommandTokens",
+          "canonicalUsage",
+          "aliasOf",
+          "preferred",
+          "compatibilityAlias",
+          "riskLevel",
+          "idempotency",
+          "expectedLatencyMs",
+          "requiresSecrets",
+          "recommendedPreflightTool",
+          "safeEquivalent",
+          "externalDependencies",
+          "canRunConcurrent",
+          "returnsOperationId",
+          "returnsRuntimeHandle",
+          "jobCapable",
+          "supportsRemote",
+          "remoteEligible",
+          "supportsWebhook",
+          "policyScopes",
+          "agentWorkflow"
+        ],
+        "runtimeEnforced": [
+          "mutating",
+          "mcpMutating",
+          "longRunningBlocked",
+          "mcpLongRunningBlocked",
+          "placeholderBlocked",
+          "controlInputNames",
+          "safeFlags",
+          "executeFlags"
+        ]
+      },
+      "mutating": false,
+      "name": "agent.market.hype",
+      "outputModes": [
+        "table",
+        "json"
+      ],
+      "placeholderBlocked": false,
+      "policyScopes": [
+        "agent:read"
+      ],
+      "preferred": true,
+      "recommendedPreflightTool": null,
+      "registryName": "agent.market.hype",
+      "remoteEligible": true,
+      "requiresSecrets": false,
+      "returnsOperationId": false,
+      "returnsRuntimeHandle": false,
+      "riskLevel": "low",
+      "safeEquivalent": null,
+      "safeFlags": [],
+      "summary": "Emit AI prompt text for researching current trending topics and drafting hype market candidates.",
+      "supportsRemote": true,
+      "supportsWebhook": false,
+      "topLevelInputConstraints": null,
+      "usage": "pandora [--output table|json] agent market hype --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--market-type auto|amm|parimutuel|both] [--candidate-count <n>]"
+    }
+  },
+  {
+    "agentWorkflow": null,
+    "aliasOf": null,
+    "canRunConcurrent": true,
     "canonicalTool": "agent.market.validate",
     "command": [
       "agent",
@@ -11615,6 +11907,1243 @@
     }
   },
   {
+    "agentWorkflow": {
+      "executeRequiresValidation": true,
+      "notes": [
+        "Use markets.hype.plan to turn fresh public-web research into a frozen, reusable market plan.",
+        "The selected candidate is validated before planning completes; pass the emitted PASS attestation back as agentPreflight for execute-mode MCP runs.",
+        "markets.hype.run should consume a saved plan file so the research snapshot, sources, and validation result do not drift between planning and deployment."
+      ],
+      "recommendedTools": [
+        "agent.market.hype",
+        "scan"
+      ],
+      "requiredTools": [
+        "agent.market.validate"
+      ]
+    },
+    "aliasOf": null,
+    "canRunConcurrent": true,
+    "canonicalTool": "markets.hype",
+    "command": [
+      "markets",
+      "hype"
+    ],
+    "controlInputNames": [],
+    "description": "Research current trends, draft hype market candidates, and optionally run a frozen plan file.",
+    "executeFlags": [],
+    "expectedLatencyMs": 5000,
+    "externalDependencies": [
+      "indexer-api"
+    ],
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object",
+      "xPandora": {
+        "agentPreflightRequired": false,
+        "agentPreflightRequiredForExecuteMode": true,
+        "agentWorkflow": {
+          "executeRequiresValidation": true,
+          "notes": [
+            "Use markets.hype.plan to turn fresh public-web research into a frozen, reusable market plan.",
+            "The selected candidate is validated before planning completes; pass the emitted PASS attestation back as agentPreflight for execute-mode MCP runs.",
+            "markets.hype.run should consume a saved plan file so the research snapshot, sources, and validation result do not drift between planning and deployment."
+          ],
+          "recommendedTools": [
+            "agent.market.hype",
+            "scan"
+          ],
+          "requiredTools": [
+            "agent.market.validate"
+          ]
+        },
+        "aliasOf": null,
+        "canRunConcurrent": true,
+        "canonicalCommandTokens": [
+          "markets",
+          "hype"
+        ],
+        "canonicalName": "markets.hype",
+        "canonicalTool": "markets.hype",
+        "canonicalUsage": "pandora [--output table|json] markets hype plan|run --area <sports|esports|politics|regional-news|breaking-news> ...",
+        "command": [
+          "markets",
+          "hype"
+        ],
+        "compatibilityAlias": false,
+        "controlInputNames": [],
+        "dataSchema": "#/definitions/GenericCommandData",
+        "emits": [
+          "markets.hype.help",
+          "markets.help"
+        ],
+        "executeFlags": [],
+        "executeIntentRequired": false,
+        "executeIntentRequiredForLiveMode": false,
+        "expectedLatencyMs": 5000,
+        "externalDependencies": [
+          "indexer-api"
+        ],
+        "helpDataSchema": "#/definitions/CommandHelpPayload",
+        "idempotency": "idempotent",
+        "isCanonical": true,
+        "jobCapable": false,
+        "longRunningBlocked": false,
+        "mcpExposed": true,
+        "mcpLongRunningBlocked": false,
+        "mcpMutating": false,
+        "metadataProvenance": {
+          "descriptorDerived": [
+            "summary",
+            "usage",
+            "emits",
+            "outputModes",
+            "dataSchema",
+            "helpDataSchema",
+            "canonicalTool",
+            "canonicalCommandTokens",
+            "canonicalUsage",
+            "aliasOf",
+            "preferred",
+            "compatibilityAlias",
+            "riskLevel",
+            "idempotency",
+            "expectedLatencyMs",
+            "requiresSecrets",
+            "recommendedPreflightTool",
+            "safeEquivalent",
+            "externalDependencies",
+            "canRunConcurrent",
+            "returnsOperationId",
+            "returnsRuntimeHandle",
+            "jobCapable",
+            "supportsRemote",
+            "remoteEligible",
+            "supportsWebhook",
+            "policyScopes",
+            "agentWorkflow"
+          ],
+          "runtimeEnforced": [
+            "mutating",
+            "mcpMutating",
+            "longRunningBlocked",
+            "mcpLongRunningBlocked",
+            "placeholderBlocked",
+            "controlInputNames",
+            "safeFlags",
+            "executeFlags",
+            "agentPreflightRequiredForExecuteMode"
+          ]
+        },
+        "mutating": false,
+        "name": "markets.hype",
+        "outputModes": [
+          "table",
+          "json"
+        ],
+        "placeholderBlocked": false,
+        "policyScopes": [
+          "markets:read",
+          "network:indexer"
+        ],
+        "preferred": true,
+        "recommendedPreflightTool": "agent.market.validate",
+        "registryName": "markets.hype",
+        "remoteEligible": true,
+        "requiresSecrets": false,
+        "returnsOperationId": false,
+        "returnsRuntimeHandle": false,
+        "riskLevel": "low",
+        "safeEquivalent": null,
+        "safeFlags": [],
+        "summary": "Research current public-web trends, draft hype market candidates, and optionally run a frozen hype plan.",
+        "supportsRemote": true,
+        "supportsWebhook": false,
+        "topLevelInputConstraints": null,
+        "usage": "pandora [--output table|json] markets hype plan|run --area <sports|esports|politics|regional-news|breaking-news> ..."
+      }
+    },
+    "jobCapable": false,
+    "longRunningBlocked": false,
+    "mutating": false,
+    "name": "markets.hype",
+    "placeholderBlocked": false,
+    "policyScopes": [
+      "markets:read",
+      "network:indexer"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": "agent.market.validate",
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "xPandora": {
+      "agentPreflightRequired": false,
+      "agentPreflightRequiredForExecuteMode": true,
+      "agentWorkflow": {
+        "executeRequiresValidation": true,
+        "notes": [
+          "Use markets.hype.plan to turn fresh public-web research into a frozen, reusable market plan.",
+          "The selected candidate is validated before planning completes; pass the emitted PASS attestation back as agentPreflight for execute-mode MCP runs.",
+          "markets.hype.run should consume a saved plan file so the research snapshot, sources, and validation result do not drift between planning and deployment."
+        ],
+        "recommendedTools": [
+          "agent.market.hype",
+          "scan"
+        ],
+        "requiredTools": [
+          "agent.market.validate"
+        ]
+      },
+      "aliasOf": null,
+      "canRunConcurrent": true,
+      "canonicalCommandTokens": [
+        "markets",
+        "hype"
+      ],
+      "canonicalName": "markets.hype",
+      "canonicalTool": "markets.hype",
+      "canonicalUsage": "pandora [--output table|json] markets hype plan|run --area <sports|esports|politics|regional-news|breaking-news> ...",
+      "command": [
+        "markets",
+        "hype"
+      ],
+      "compatibilityAlias": false,
+      "controlInputNames": [],
+      "dataSchema": "#/definitions/GenericCommandData",
+      "emits": [
+        "markets.hype.help",
+        "markets.help"
+      ],
+      "executeFlags": [],
+      "executeIntentRequired": false,
+      "executeIntentRequiredForLiveMode": false,
+      "expectedLatencyMs": 5000,
+      "externalDependencies": [
+        "indexer-api"
+      ],
+      "helpDataSchema": "#/definitions/CommandHelpPayload",
+      "idempotency": "idempotent",
+      "isCanonical": true,
+      "jobCapable": false,
+      "longRunningBlocked": false,
+      "mcpExposed": true,
+      "mcpLongRunningBlocked": false,
+      "mcpMutating": false,
+      "metadataProvenance": {
+        "descriptorDerived": [
+          "summary",
+          "usage",
+          "emits",
+          "outputModes",
+          "dataSchema",
+          "helpDataSchema",
+          "canonicalTool",
+          "canonicalCommandTokens",
+          "canonicalUsage",
+          "aliasOf",
+          "preferred",
+          "compatibilityAlias",
+          "riskLevel",
+          "idempotency",
+          "expectedLatencyMs",
+          "requiresSecrets",
+          "recommendedPreflightTool",
+          "safeEquivalent",
+          "externalDependencies",
+          "canRunConcurrent",
+          "returnsOperationId",
+          "returnsRuntimeHandle",
+          "jobCapable",
+          "supportsRemote",
+          "remoteEligible",
+          "supportsWebhook",
+          "policyScopes",
+          "agentWorkflow"
+        ],
+        "runtimeEnforced": [
+          "mutating",
+          "mcpMutating",
+          "longRunningBlocked",
+          "mcpLongRunningBlocked",
+          "placeholderBlocked",
+          "controlInputNames",
+          "safeFlags",
+          "executeFlags",
+          "agentPreflightRequiredForExecuteMode"
+        ]
+      },
+      "mutating": false,
+      "name": "markets.hype",
+      "outputModes": [
+        "table",
+        "json"
+      ],
+      "placeholderBlocked": false,
+      "policyScopes": [
+        "markets:read",
+        "network:indexer"
+      ],
+      "preferred": true,
+      "recommendedPreflightTool": "agent.market.validate",
+      "registryName": "markets.hype",
+      "remoteEligible": true,
+      "requiresSecrets": false,
+      "returnsOperationId": false,
+      "returnsRuntimeHandle": false,
+      "riskLevel": "low",
+      "safeEquivalent": null,
+      "safeFlags": [],
+      "summary": "Research current public-web trends, draft hype market candidates, and optionally run a frozen hype plan.",
+      "supportsRemote": true,
+      "supportsWebhook": false,
+      "topLevelInputConstraints": null,
+      "usage": "pandora [--output table|json] markets hype plan|run --area <sports|esports|politics|regional-news|breaking-news> ..."
+    }
+  },
+  {
+    "agentWorkflow": {
+      "executeRequiresValidation": false,
+      "notes": [
+        "markets.hype.plan performs bounded provider-backed trend research and freezes the resulting candidate set into a reusable plan payload.",
+        "Use the emitted candidate validation results and attestation for execute-mode MCP runs instead of re-running live research during deployment.",
+        "Review duplicateRiskScore and duplicateMatches before choosing a candidate to deploy."
+      ],
+      "recommendedTools": [
+        "agent.market.hype",
+        "scan"
+      ],
+      "requiredTools": []
+    },
+    "aliasOf": null,
+    "canRunConcurrent": true,
+    "canonicalTool": "markets.hype.plan",
+    "command": [
+      "markets",
+      "hype",
+      "plan"
+    ],
+    "controlInputNames": [],
+    "description": "Research current trending topics, draft hype market candidates, and validate them into a frozen planning payload.",
+    "executeFlags": [],
+    "expectedLatencyMs": 5000,
+    "externalDependencies": [
+      "indexer-api",
+      "chain-rpc"
+    ],
+    "idempotency": "idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ai-model": {
+          "description": "Model override for the selected provider.",
+          "type": "string"
+        },
+        "ai-provider": {
+          "description": "Research provider selection.",
+          "enum": [
+            "auto",
+            "openai",
+            "anthropic",
+            "mock"
+          ]
+        },
+        "arbiter": {
+          "description": "Arbiter address.",
+          "type": "string"
+        },
+        "area": {
+          "description": "Trending topic area.",
+          "enum": [
+            "sports",
+            "esports",
+            "politics",
+            "regional-news",
+            "breaking-news"
+          ]
+        },
+        "candidate-count": {
+          "description": "Maximum number of candidate markets to draft.",
+          "maximum": 5,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "chain-id": {
+          "description": "Chain id.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "factory": {
+          "description": "Factory contract address.",
+          "type": "string"
+        },
+        "liquidity-usdc": {
+          "description": "Suggested initial liquidity for generated drafts.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "market-type": {
+          "description": "Planning preference for market type.",
+          "enum": [
+            "auto",
+            "amm",
+            "parimutuel",
+            "both"
+          ]
+        },
+        "min-close-lead-seconds": {
+          "description": "Minimum required lead time before close.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "oracle": {
+          "description": "Oracle contract address.",
+          "type": "string"
+        },
+        "query": {
+          "description": "Optional extra search hint or topic constraint.",
+          "type": "string"
+        },
+        "region": {
+          "description": "Regional focus. Required when --area regional-news.",
+          "type": "string"
+        },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
+        "search-depth": {
+          "description": "Bounded search depth hint for the provider.",
+          "enum": [
+            "fast",
+            "standard",
+            "deep"
+          ]
+        },
+        "usdc": {
+          "description": "Collateral token address.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "area"
+      ],
+      "type": "object",
+      "xPandora": {
+        "agentPreflightRequired": false,
+        "agentPreflightRequiredForExecuteMode": false,
+        "agentWorkflow": {
+          "executeRequiresValidation": false,
+          "notes": [
+            "markets.hype.plan performs bounded provider-backed trend research and freezes the resulting candidate set into a reusable plan payload.",
+            "Use the emitted candidate validation results and attestation for execute-mode MCP runs instead of re-running live research during deployment.",
+            "Review duplicateRiskScore and duplicateMatches before choosing a candidate to deploy."
+          ],
+          "recommendedTools": [
+            "agent.market.hype",
+            "scan"
+          ],
+          "requiredTools": []
+        },
+        "aliasOf": null,
+        "canRunConcurrent": true,
+        "canonicalCommandTokens": [
+          "markets",
+          "hype",
+          "plan"
+        ],
+        "canonicalName": "markets.hype.plan",
+        "canonicalTool": "markets.hype.plan",
+        "canonicalUsage": "pandora [--output table|json] markets hype plan --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--candidate-count <n>] [--market-type auto|amm|parimutuel|both] [--liquidity-usdc <n>] [--ai-provider auto|openai|anthropic|mock] [--ai-model <id>] [--search-depth fast|standard|deep] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]",
+        "command": [
+          "markets",
+          "hype",
+          "plan"
+        ],
+        "compatibilityAlias": false,
+        "controlInputNames": [],
+        "dataSchema": "#/definitions/GenericCommandData",
+        "emits": [
+          "markets.hype.plan",
+          "markets.hype.help",
+          "markets.help"
+        ],
+        "executeFlags": [],
+        "executeIntentRequired": false,
+        "executeIntentRequiredForLiveMode": false,
+        "expectedLatencyMs": 5000,
+        "externalDependencies": [
+          "indexer-api",
+          "chain-rpc"
+        ],
+        "helpDataSchema": "#/definitions/CommandHelpPayload",
+        "idempotency": "idempotent",
+        "isCanonical": true,
+        "jobCapable": false,
+        "longRunningBlocked": false,
+        "mcpExposed": true,
+        "mcpLongRunningBlocked": false,
+        "mcpMutating": false,
+        "metadataProvenance": {
+          "descriptorDerived": [
+            "summary",
+            "usage",
+            "emits",
+            "outputModes",
+            "dataSchema",
+            "helpDataSchema",
+            "canonicalTool",
+            "canonicalCommandTokens",
+            "canonicalUsage",
+            "aliasOf",
+            "preferred",
+            "compatibilityAlias",
+            "riskLevel",
+            "idempotency",
+            "expectedLatencyMs",
+            "requiresSecrets",
+            "recommendedPreflightTool",
+            "safeEquivalent",
+            "externalDependencies",
+            "canRunConcurrent",
+            "returnsOperationId",
+            "returnsRuntimeHandle",
+            "jobCapable",
+            "supportsRemote",
+            "remoteEligible",
+            "supportsWebhook",
+            "policyScopes",
+            "agentWorkflow"
+          ],
+          "runtimeEnforced": [
+            "mutating",
+            "mcpMutating",
+            "longRunningBlocked",
+            "mcpLongRunningBlocked",
+            "placeholderBlocked",
+            "controlInputNames",
+            "safeFlags",
+            "executeFlags"
+          ]
+        },
+        "mutating": false,
+        "name": "markets.hype.plan",
+        "outputModes": [
+          "table",
+          "json"
+        ],
+        "placeholderBlocked": false,
+        "policyScopes": [
+          "markets:read",
+          "network:rpc",
+          "network:indexer"
+        ],
+        "preferred": true,
+        "recommendedPreflightTool": null,
+        "registryName": "markets.hype.plan",
+        "remoteEligible": true,
+        "requiresSecrets": false,
+        "returnsOperationId": false,
+        "returnsRuntimeHandle": false,
+        "riskLevel": "low",
+        "safeEquivalent": null,
+        "safeFlags": [],
+        "summary": "Research current trending topics, score hype candidates, recommend AMM vs pari-mutuel, and validate the drafted market payloads.",
+        "supportsRemote": true,
+        "supportsWebhook": false,
+        "topLevelInputConstraints": null,
+        "usage": "pandora [--output table|json] markets hype plan --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--candidate-count <n>] [--market-type auto|amm|parimutuel|both] [--liquidity-usdc <n>] [--ai-provider auto|openai|anthropic|mock] [--ai-model <id>] [--search-depth fast|standard|deep] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]"
+      }
+    },
+    "jobCapable": false,
+    "longRunningBlocked": false,
+    "mutating": false,
+    "name": "markets.hype.plan",
+    "placeholderBlocked": false,
+    "policyScopes": [
+      "markets:read",
+      "network:rpc",
+      "network:indexer"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": null,
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "low",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "xPandora": {
+      "agentPreflightRequired": false,
+      "agentPreflightRequiredForExecuteMode": false,
+      "agentWorkflow": {
+        "executeRequiresValidation": false,
+        "notes": [
+          "markets.hype.plan performs bounded provider-backed trend research and freezes the resulting candidate set into a reusable plan payload.",
+          "Use the emitted candidate validation results and attestation for execute-mode MCP runs instead of re-running live research during deployment.",
+          "Review duplicateRiskScore and duplicateMatches before choosing a candidate to deploy."
+        ],
+        "recommendedTools": [
+          "agent.market.hype",
+          "scan"
+        ],
+        "requiredTools": []
+      },
+      "aliasOf": null,
+      "canRunConcurrent": true,
+      "canonicalCommandTokens": [
+        "markets",
+        "hype",
+        "plan"
+      ],
+      "canonicalName": "markets.hype.plan",
+      "canonicalTool": "markets.hype.plan",
+      "canonicalUsage": "pandora [--output table|json] markets hype plan --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--candidate-count <n>] [--market-type auto|amm|parimutuel|both] [--liquidity-usdc <n>] [--ai-provider auto|openai|anthropic|mock] [--ai-model <id>] [--search-depth fast|standard|deep] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]",
+      "command": [
+        "markets",
+        "hype",
+        "plan"
+      ],
+      "compatibilityAlias": false,
+      "controlInputNames": [],
+      "dataSchema": "#/definitions/GenericCommandData",
+      "emits": [
+        "markets.hype.plan",
+        "markets.hype.help",
+        "markets.help"
+      ],
+      "executeFlags": [],
+      "executeIntentRequired": false,
+      "executeIntentRequiredForLiveMode": false,
+      "expectedLatencyMs": 5000,
+      "externalDependencies": [
+        "indexer-api",
+        "chain-rpc"
+      ],
+      "helpDataSchema": "#/definitions/CommandHelpPayload",
+      "idempotency": "idempotent",
+      "isCanonical": true,
+      "jobCapable": false,
+      "longRunningBlocked": false,
+      "mcpExposed": true,
+      "mcpLongRunningBlocked": false,
+      "mcpMutating": false,
+      "metadataProvenance": {
+        "descriptorDerived": [
+          "summary",
+          "usage",
+          "emits",
+          "outputModes",
+          "dataSchema",
+          "helpDataSchema",
+          "canonicalTool",
+          "canonicalCommandTokens",
+          "canonicalUsage",
+          "aliasOf",
+          "preferred",
+          "compatibilityAlias",
+          "riskLevel",
+          "idempotency",
+          "expectedLatencyMs",
+          "requiresSecrets",
+          "recommendedPreflightTool",
+          "safeEquivalent",
+          "externalDependencies",
+          "canRunConcurrent",
+          "returnsOperationId",
+          "returnsRuntimeHandle",
+          "jobCapable",
+          "supportsRemote",
+          "remoteEligible",
+          "supportsWebhook",
+          "policyScopes",
+          "agentWorkflow"
+        ],
+        "runtimeEnforced": [
+          "mutating",
+          "mcpMutating",
+          "longRunningBlocked",
+          "mcpLongRunningBlocked",
+          "placeholderBlocked",
+          "controlInputNames",
+          "safeFlags",
+          "executeFlags"
+        ]
+      },
+      "mutating": false,
+      "name": "markets.hype.plan",
+      "outputModes": [
+        "table",
+        "json"
+      ],
+      "placeholderBlocked": false,
+      "policyScopes": [
+        "markets:read",
+        "network:rpc",
+        "network:indexer"
+      ],
+      "preferred": true,
+      "recommendedPreflightTool": null,
+      "registryName": "markets.hype.plan",
+      "remoteEligible": true,
+      "requiresSecrets": false,
+      "returnsOperationId": false,
+      "returnsRuntimeHandle": false,
+      "riskLevel": "low",
+      "safeEquivalent": null,
+      "safeFlags": [],
+      "summary": "Research current trending topics, score hype candidates, recommend AMM vs pari-mutuel, and validate the drafted market payloads.",
+      "supportsRemote": true,
+      "supportsWebhook": false,
+      "topLevelInputConstraints": null,
+      "usage": "pandora [--output table|json] markets hype plan --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--candidate-count <n>] [--market-type auto|amm|parimutuel|both] [--liquidity-usdc <n>] [--ai-provider auto|openai|anthropic|mock] [--ai-model <id>] [--search-depth fast|standard|deep] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]"
+    }
+  },
+  {
+    "agentWorkflow": {
+      "executeRequiresValidation": true,
+      "notes": [
+        "markets.hype.run is intentionally plan-file based so the exact research snapshot and validation attestation remain frozen between plan and execute.",
+        "Execute-mode MCP calls should copy the selected candidate PASS attestation from markets.hype.plan back as agentPreflight.",
+        "Avoid editing question, rules, sources, or targetTimestamp after planning; regenerate the hype plan instead."
+      ],
+      "recommendedTools": [
+        "agent.market.validate"
+      ],
+      "requiredTools": [
+        "markets.hype.plan"
+      ]
+    },
+    "aliasOf": null,
+    "canRunConcurrent": false,
+    "canonicalTool": "markets.hype.run",
+    "command": [
+      "markets",
+      "hype",
+      "run"
+    ],
+    "controlInputNames": [
+      "agentPreflight"
+    ],
+    "description": "Dry-run or execute a frozen hype plan candidate without re-running live trend research.",
+    "executeFlags": [
+      "--execute"
+    ],
+    "expectedLatencyMs": 60000,
+    "externalDependencies": [
+      "filesystem",
+      "wallet-secrets",
+      "indexer-api",
+      "chain-rpc"
+    ],
+    "idempotency": "conditional",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "agentPreflight": {
+          "additionalProperties": false,
+          "description": "PASS attestation from the selected hype-plan candidate validation.",
+          "properties": {
+            "autocompleteTicket": {
+              "description": "Optional ticket from agent.market.autocomplete when the agent drafted the market.",
+              "type": "string"
+            },
+            "validationDecision": {
+              "description": "Validation verdict from the agent AI run.",
+              "enum": [
+                "PASS",
+                "FAIL"
+              ]
+            },
+            "validationSummary": {
+              "description": "Short summary of the validation result.",
+              "type": "string"
+            },
+            "validationTicket": {
+              "description": "Ticket returned by agent.market.validate for the exact market payload.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "validationTicket",
+            "validationDecision",
+            "validationSummary"
+          ],
+          "type": "object"
+        },
+        "arbiter": {
+          "description": "Arbiter address.",
+          "type": "string"
+        },
+        "candidate-id": {
+          "description": "Explicit candidate id from the plan payload.",
+          "type": "string"
+        },
+        "chain-id": {
+          "description": "Chain id.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "dry-run": {
+          "description": "Run dry-run mode.",
+          "type": "boolean"
+        },
+        "execute": {
+          "description": "Execute live deployment.",
+          "type": "boolean"
+        },
+        "factory": {
+          "description": "Factory contract address.",
+          "type": "string"
+        },
+        "intent": {
+          "additionalProperties": false,
+          "properties": {
+            "execute": {
+              "description": "Set true to permit live/mutating execution when supported by the tool.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "market-type": {
+          "description": "Draft to deploy from the selected candidate.",
+          "enum": [
+            "selected",
+            "amm",
+            "parimutuel"
+          ]
+        },
+        "oracle": {
+          "description": "Oracle contract address.",
+          "type": "string"
+        },
+        "plan-file": {
+          "description": "Saved hype plan file path.",
+          "type": "string"
+        },
+        "private-key": {
+          "description": "Hex private key.",
+          "type": "string"
+        },
+        "profile-file": {
+          "description": "Path to a signer profile file.",
+          "type": "string"
+        },
+        "profile-id": {
+          "description": "Named signer profile id.",
+          "type": "string"
+        },
+        "rpc-url": {
+          "description": "RPC URL.",
+          "type": "string"
+        },
+        "usdc": {
+          "description": "Collateral token address.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan-file"
+      ],
+      "type": "object",
+      "xPandora": {
+        "agentPreflightRequired": false,
+        "agentPreflightRequiredForExecuteMode": true,
+        "agentWorkflow": {
+          "executeRequiresValidation": true,
+          "notes": [
+            "markets.hype.run is intentionally plan-file based so the exact research snapshot and validation attestation remain frozen between plan and execute.",
+            "Execute-mode MCP calls should copy the selected candidate PASS attestation from markets.hype.plan back as agentPreflight.",
+            "Avoid editing question, rules, sources, or targetTimestamp after planning; regenerate the hype plan instead."
+          ],
+          "recommendedTools": [
+            "agent.market.validate"
+          ],
+          "requiredTools": [
+            "markets.hype.plan"
+          ]
+        },
+        "aliasOf": null,
+        "canRunConcurrent": false,
+        "canonicalCommandTokens": [
+          "markets",
+          "hype",
+          "run"
+        ],
+        "canonicalName": "markets.hype.run",
+        "canonicalTool": "markets.hype.run",
+        "canonicalUsage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]",
+        "command": [
+          "markets",
+          "hype",
+          "run"
+        ],
+        "compatibilityAlias": false,
+        "controlInputNames": [
+          "agentPreflight"
+        ],
+        "dataSchema": "#/definitions/GenericCommandData",
+        "emits": [
+          "markets.hype.run",
+          "markets.hype.help",
+          "markets.help"
+        ],
+        "executeFlags": [
+          "--execute"
+        ],
+        "executeIntentRequired": false,
+        "executeIntentRequiredForLiveMode": true,
+        "expectedLatencyMs": 60000,
+        "externalDependencies": [
+          "filesystem",
+          "wallet-secrets",
+          "indexer-api",
+          "chain-rpc"
+        ],
+        "helpDataSchema": "#/definitions/CommandHelpPayload",
+        "idempotency": "conditional",
+        "isCanonical": true,
+        "jobCapable": true,
+        "longRunningBlocked": false,
+        "mcpExposed": true,
+        "mcpLongRunningBlocked": false,
+        "mcpMutating": true,
+        "metadataProvenance": {
+          "descriptorDerived": [
+            "summary",
+            "usage",
+            "emits",
+            "outputModes",
+            "dataSchema",
+            "helpDataSchema",
+            "canonicalTool",
+            "canonicalCommandTokens",
+            "canonicalUsage",
+            "aliasOf",
+            "preferred",
+            "compatibilityAlias",
+            "riskLevel",
+            "idempotency",
+            "expectedLatencyMs",
+            "requiresSecrets",
+            "recommendedPreflightTool",
+            "safeEquivalent",
+            "externalDependencies",
+            "canRunConcurrent",
+            "returnsOperationId",
+            "returnsRuntimeHandle",
+            "jobCapable",
+            "supportsRemote",
+            "remoteEligible",
+            "supportsWebhook",
+            "policyScopes",
+            "agentWorkflow"
+          ],
+          "runtimeEnforced": [
+            "mutating",
+            "mcpMutating",
+            "longRunningBlocked",
+            "mcpLongRunningBlocked",
+            "placeholderBlocked",
+            "controlInputNames",
+            "safeFlags",
+            "executeFlags",
+            "executeIntentRequiredForLiveMode",
+            "agentPreflightRequiredForExecuteMode"
+          ]
+        },
+        "mutating": true,
+        "name": "markets.hype.run",
+        "outputModes": [
+          "table",
+          "json"
+        ],
+        "placeholderBlocked": false,
+        "policyScopes": [
+          "markets:run",
+          "secrets:use",
+          "network:rpc",
+          "network:indexer",
+          "jobs:run"
+        ],
+        "preferred": true,
+        "recommendedPreflightTool": "markets.hype.plan",
+        "registryName": "markets.hype.run",
+        "remoteEligible": true,
+        "requiresSecrets": true,
+        "returnsOperationId": false,
+        "returnsRuntimeHandle": false,
+        "riskLevel": "high",
+        "safeEquivalent": null,
+        "safeFlags": [
+          "--dry-run"
+        ],
+        "summary": "Dry-run or execute a frozen hype plan candidate without re-running live trend research.",
+        "supportsRemote": true,
+        "supportsWebhook": false,
+        "topLevelInputConstraints": {
+          "exclusiveOneOf": [
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "execute"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "execute"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "dry-run"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "dry-run"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "dry-run"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "execute"
+              ]
+            }
+          ]
+        },
+        "usage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]"
+      }
+    },
+    "jobCapable": true,
+    "longRunningBlocked": false,
+    "mutating": true,
+    "name": "markets.hype.run",
+    "placeholderBlocked": false,
+    "policyScopes": [
+      "markets:run",
+      "secrets:use",
+      "network:rpc",
+      "network:indexer",
+      "jobs:run"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": "markets.hype.plan",
+    "remoteEligible": true,
+    "requiresSecrets": true,
+    "returnsOperationId": false,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "high",
+    "safeEquivalent": null,
+    "safeFlags": [
+      "--dry-run"
+    ],
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "xPandora": {
+      "agentPreflightRequired": false,
+      "agentPreflightRequiredForExecuteMode": true,
+      "agentWorkflow": {
+        "executeRequiresValidation": true,
+        "notes": [
+          "markets.hype.run is intentionally plan-file based so the exact research snapshot and validation attestation remain frozen between plan and execute.",
+          "Execute-mode MCP calls should copy the selected candidate PASS attestation from markets.hype.plan back as agentPreflight.",
+          "Avoid editing question, rules, sources, or targetTimestamp after planning; regenerate the hype plan instead."
+        ],
+        "recommendedTools": [
+          "agent.market.validate"
+        ],
+        "requiredTools": [
+          "markets.hype.plan"
+        ]
+      },
+      "aliasOf": null,
+      "canRunConcurrent": false,
+      "canonicalCommandTokens": [
+        "markets",
+        "hype",
+        "run"
+      ],
+      "canonicalName": "markets.hype.run",
+      "canonicalTool": "markets.hype.run",
+      "canonicalUsage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]",
+      "command": [
+        "markets",
+        "hype",
+        "run"
+      ],
+      "compatibilityAlias": false,
+      "controlInputNames": [
+        "agentPreflight"
+      ],
+      "dataSchema": "#/definitions/GenericCommandData",
+      "emits": [
+        "markets.hype.run",
+        "markets.hype.help",
+        "markets.help"
+      ],
+      "executeFlags": [
+        "--execute"
+      ],
+      "executeIntentRequired": false,
+      "executeIntentRequiredForLiveMode": true,
+      "expectedLatencyMs": 60000,
+      "externalDependencies": [
+        "filesystem",
+        "wallet-secrets",
+        "indexer-api",
+        "chain-rpc"
+      ],
+      "helpDataSchema": "#/definitions/CommandHelpPayload",
+      "idempotency": "conditional",
+      "isCanonical": true,
+      "jobCapable": true,
+      "longRunningBlocked": false,
+      "mcpExposed": true,
+      "mcpLongRunningBlocked": false,
+      "mcpMutating": true,
+      "metadataProvenance": {
+        "descriptorDerived": [
+          "summary",
+          "usage",
+          "emits",
+          "outputModes",
+          "dataSchema",
+          "helpDataSchema",
+          "canonicalTool",
+          "canonicalCommandTokens",
+          "canonicalUsage",
+          "aliasOf",
+          "preferred",
+          "compatibilityAlias",
+          "riskLevel",
+          "idempotency",
+          "expectedLatencyMs",
+          "requiresSecrets",
+          "recommendedPreflightTool",
+          "safeEquivalent",
+          "externalDependencies",
+          "canRunConcurrent",
+          "returnsOperationId",
+          "returnsRuntimeHandle",
+          "jobCapable",
+          "supportsRemote",
+          "remoteEligible",
+          "supportsWebhook",
+          "policyScopes",
+          "agentWorkflow"
+        ],
+        "runtimeEnforced": [
+          "mutating",
+          "mcpMutating",
+          "longRunningBlocked",
+          "mcpLongRunningBlocked",
+          "placeholderBlocked",
+          "controlInputNames",
+          "safeFlags",
+          "executeFlags",
+          "executeIntentRequiredForLiveMode",
+          "agentPreflightRequiredForExecuteMode"
+        ]
+      },
+      "mutating": true,
+      "name": "markets.hype.run",
+      "outputModes": [
+        "table",
+        "json"
+      ],
+      "placeholderBlocked": false,
+      "policyScopes": [
+        "markets:run",
+        "secrets:use",
+        "network:rpc",
+        "network:indexer",
+        "jobs:run"
+      ],
+      "preferred": true,
+      "recommendedPreflightTool": "markets.hype.plan",
+      "registryName": "markets.hype.run",
+      "remoteEligible": true,
+      "requiresSecrets": true,
+      "returnsOperationId": false,
+      "returnsRuntimeHandle": false,
+      "riskLevel": "high",
+      "safeEquivalent": null,
+      "safeFlags": [
+        "--dry-run"
+      ],
+      "summary": "Dry-run or execute a frozen hype plan candidate without re-running live trend research.",
+      "supportsRemote": true,
+      "supportsWebhook": false,
+      "topLevelInputConstraints": {
+        "exclusiveOneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "execute"
+                  ]
+                },
+                {
+                  "required": [
+                    "execute"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "dry-run"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "dry-run"
+                  ]
+                },
+                {
+                  "required": [
+                    "dry-run"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "execute"
+            ]
+          }
+        ]
+      },
+      "usage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]"
+    }
+  },
+  {
     "agentWorkflow": null,
     "aliasOf": null,
     "canRunConcurrent": true,
@@ -17292,6 +18821,10 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "adopt-existing-positions": {
+          "description": "Seed managed Polymarket inventory from existing live YES/NO balances before sell-side recycling.",
+          "type": "boolean"
+        },
         "agentPreflight": {
           "additionalProperties": false,
           "description": "Agent validation attestation for execute or execute-live mode.",
@@ -17454,6 +18987,13 @@
           "description": "Desired hedge ratio.",
           "minimum": 0,
           "type": "number"
+        },
+        "hedge-scope": {
+          "description": "Hedge basis. total includes held Pandora outcome tokens in addition to pool reserves; pool hedges only the AMM reserves.",
+          "enum": [
+            "pool",
+            "total"
+          ]
         },
         "hedge-trigger-usdc": {
           "description": "Hedge trigger size in USDC.",
@@ -17688,6 +19228,10 @@
         "validation-ticket": {
           "description": "Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).",
           "type": "string"
+        },
+        "verbose": {
+          "description": "Emit expanded per-tick console diagnostics.",
+          "type": "boolean"
         },
         "with-rules": {
           "description": "Include rule payloads and copy diagnostics.",
@@ -23443,6 +24987,10 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "adopt-existing-positions": {
+          "description": "Seed managed Polymarket inventory from existing live YES/NO balances before sell-side recycling.",
+          "type": "boolean"
+        },
         "chain-id": {
           "description": "Chain id.",
           "minimum": 1,
@@ -23501,6 +25049,13 @@
           "description": "Desired hedge ratio.",
           "minimum": 0,
           "type": "number"
+        },
+        "hedge-scope": {
+          "description": "Hedge basis. total includes held Pandora outcome tokens in addition to pool reserves; pool hedges only the AMM reserves.",
+          "enum": [
+            "pool",
+            "total"
+          ]
         },
         "hedge-trigger-usdc": {
           "description": "Hedge trigger size in USDC.",
@@ -23566,6 +25121,10 @@
         },
         "no-hedge": {
           "description": "Disable source hedge leg.",
+          "type": "boolean"
+        },
+        "no-stream": {
+          "description": "Disable streaming tick lines.",
           "type": "boolean"
         },
         "pandora-market-address": {
@@ -23674,6 +25233,10 @@
           "description": "State file path.",
           "type": "string"
         },
+        "stream": {
+          "description": "Emit streaming tick lines.",
+          "type": "boolean"
+        },
         "strict-close-time-delta": {
           "description": "Promote close-time delta mismatches from diagnostic to blocking.",
           "type": "boolean"
@@ -23693,6 +25256,10 @@
         "usdc": {
           "description": "USDC token address override.",
           "type": "string"
+        },
+        "verbose": {
+          "description": "Emit expanded per-tick console diagnostics.",
+          "type": "boolean"
         },
         "webhook-url": {
           "description": "Webhook target URL.",
@@ -23723,7 +25290,7 @@
         ],
         "canonicalName": "mirror.sync.once",
         "canonicalTool": "mirror.sync.once",
-        "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+        "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
         "command": [
           "mirror",
           "sync",
@@ -25118,7 +26685,7 @@
             }
           ]
         },
-        "usage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+        "usage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
       }
     },
     "jobCapable": false,
@@ -25170,7 +26737,7 @@
       ],
       "canonicalName": "mirror.sync.once",
       "canonicalTool": "mirror.sync.once",
-      "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+      "canonicalUsage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
       "command": [
         "mirror",
         "sync",
@@ -26565,7 +28132,7 @@
           }
         ]
       },
-      "usage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+      "usage": "pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
     }
   },
   {
@@ -26607,6 +28174,10 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "adopt-existing-positions": {
+          "description": "Seed managed Polymarket inventory from existing live YES/NO balances before sell-side recycling.",
+          "type": "boolean"
+        },
         "chain-id": {
           "description": "Chain id.",
           "minimum": 1,
@@ -26669,6 +28240,13 @@
           "description": "Desired hedge ratio.",
           "minimum": 0,
           "type": "number"
+        },
+        "hedge-scope": {
+          "description": "Hedge basis. total includes held Pandora outcome tokens in addition to pool reserves; pool hedges only the AMM reserves.",
+          "enum": [
+            "pool",
+            "total"
+          ]
         },
         "hedge-trigger-usdc": {
           "description": "Hedge trigger size in USDC.",
@@ -26870,6 +28448,10 @@
           "description": "USDC token address override.",
           "type": "string"
         },
+        "verbose": {
+          "description": "Emit expanded per-tick console diagnostics.",
+          "type": "boolean"
+        },
         "webhook-url": {
           "description": "Webhook target URL.",
           "type": "string"
@@ -26899,7 +28481,7 @@
         ],
         "canonicalName": "mirror.sync.run",
         "canonicalTool": "mirror.sync.run",
-        "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+        "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
         "command": [
           "mirror",
           "sync",
@@ -28295,7 +29877,7 @@
             }
           ]
         },
-        "usage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+        "usage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
       }
     },
     "jobCapable": true,
@@ -28348,7 +29930,7 @@
       ],
       "canonicalName": "mirror.sync.run",
       "canonicalTool": "mirror.sync.run",
-      "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+      "canonicalUsage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
       "command": [
         "mirror",
         "sync",
@@ -29744,7 +31326,7 @@
           }
         ]
       },
-      "usage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+      "usage": "pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
     }
   },
   {
@@ -29786,6 +31368,10 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "adopt-existing-positions": {
+          "description": "Seed managed Polymarket inventory from existing live YES/NO balances before sell-side recycling.",
+          "type": "boolean"
+        },
         "chain-id": {
           "description": "Chain id.",
           "minimum": 1,
@@ -29844,6 +31430,13 @@
           "description": "Desired hedge ratio.",
           "minimum": 0,
           "type": "number"
+        },
+        "hedge-scope": {
+          "description": "Hedge basis. total includes held Pandora outcome tokens in addition to pool reserves; pool hedges only the AMM reserves.",
+          "enum": [
+            "pool",
+            "total"
+          ]
         },
         "hedge-trigger-usdc": {
           "description": "Hedge trigger size in USDC.",
@@ -30037,6 +31630,10 @@
           "description": "USDC token address override.",
           "type": "string"
         },
+        "verbose": {
+          "description": "Emit expanded per-tick console diagnostics.",
+          "type": "boolean"
+        },
         "webhook-url": {
           "description": "Webhook target URL.",
           "type": "string"
@@ -30066,7 +31663,7 @@
         ],
         "canonicalName": "mirror.sync.start",
         "canonicalTool": "mirror.sync.start",
-        "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+        "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
         "command": [
           "mirror",
           "sync",
@@ -31462,7 +33059,7 @@
             }
           ]
         },
-        "usage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+        "usage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
       }
     },
     "jobCapable": true,
@@ -31515,7 +33112,7 @@
       ],
       "canonicalName": "mirror.sync.start",
       "canonicalTool": "mirror.sync.start",
-      "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
+      "canonicalUsage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]",
       "command": [
         "mirror",
         "sync",
@@ -32911,7 +34508,7 @@
           }
         ]
       },
-      "usage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
+      "usage": "pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]"
     }
   },
   {
@@ -34128,6 +35725,441 @@
         ]
       },
       "usage": "pandora [--output table|json] mirror sync stop --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all"
+    }
+  },
+  {
+    "agentWorkflow": {
+      "executeRequiresValidation": false,
+      "notes": [
+        "Unlock clears only the persisted pending-action lock file. It does not settle venue state or change live positions.",
+        "Invalid and zombie locks can be cleared without --force. Reconciliation-required or still-pending locks require operator review and --force."
+      ],
+      "recommendedTools": [
+        "mirror.health"
+      ],
+      "requiredTools": [
+        "mirror.status"
+      ]
+    },
+    "aliasOf": null,
+    "canRunConcurrent": false,
+    "canonicalTool": "mirror.sync.unlock",
+    "command": [
+      "mirror",
+      "sync",
+      "unlock"
+    ],
+    "controlInputNames": [],
+    "description": "Clear a persisted mirror pending-action lock after operator review. Invalid and zombie locks clear without force; reconciliation-required or still-pending locks require force.",
+    "executeFlags": [],
+    "expectedLatencyMs": 1000,
+    "externalDependencies": [
+      "filesystem"
+    ],
+    "idempotency": "non-idempotent",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "force": {
+          "description": "Override a reconciliation-required or still-pending lock after operator review.",
+          "type": "boolean"
+        },
+        "intent": {
+          "additionalProperties": false,
+          "properties": {
+            "execute": {
+              "description": "Set true to permit live/mutating execution when supported by the tool.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "stale-after-ms": {
+          "description": "Override the stale threshold used to classify pending-action locks.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state-file": {
+          "description": "State file path.",
+          "type": "string"
+        },
+        "strategy-hash": {
+          "description": "Mirror strategy hash.",
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "xPandora": {
+        "agentPreflightRequired": false,
+        "agentPreflightRequiredForExecuteMode": false,
+        "agentWorkflow": {
+          "executeRequiresValidation": false,
+          "notes": [
+            "Unlock clears only the persisted pending-action lock file. It does not settle venue state or change live positions.",
+            "Invalid and zombie locks can be cleared without --force. Reconciliation-required or still-pending locks require operator review and --force."
+          ],
+          "recommendedTools": [
+            "mirror.health"
+          ],
+          "requiredTools": [
+            "mirror.status"
+          ]
+        },
+        "aliasOf": null,
+        "canRunConcurrent": false,
+        "canonicalCommandTokens": [
+          "mirror",
+          "sync",
+          "unlock"
+        ],
+        "canonicalName": "mirror.sync.unlock",
+        "canonicalTool": "mirror.sync.unlock",
+        "canonicalUsage": "pandora [--output table|json] mirror sync unlock --state-file <path>|--strategy-hash <hash> [--force] [--stale-after-ms <ms>]",
+        "command": [
+          "mirror",
+          "sync",
+          "unlock"
+        ],
+        "compatibilityAlias": false,
+        "controlInputNames": [],
+        "dataSchema": "#/definitions/MirrorStatusPayload",
+        "emits": [
+          "mirror.sync.unlock",
+          "mirror.sync.unlock.help",
+          "mirror.sync.help"
+        ],
+        "executeFlags": [],
+        "executeIntentRequired": true,
+        "executeIntentRequiredForLiveMode": false,
+        "expectedLatencyMs": 1000,
+        "externalDependencies": [
+          "filesystem"
+        ],
+        "helpDataSchema": "#/definitions/CommandHelpPayload",
+        "idempotency": "non-idempotent",
+        "isCanonical": true,
+        "jobCapable": false,
+        "longRunningBlocked": false,
+        "mcpExposed": true,
+        "mcpLongRunningBlocked": false,
+        "mcpMutating": true,
+        "metadataProvenance": {
+          "descriptorDerived": [
+            "summary",
+            "usage",
+            "emits",
+            "outputModes",
+            "dataSchema",
+            "helpDataSchema",
+            "canonicalTool",
+            "canonicalCommandTokens",
+            "canonicalUsage",
+            "aliasOf",
+            "preferred",
+            "compatibilityAlias",
+            "riskLevel",
+            "idempotency",
+            "expectedLatencyMs",
+            "requiresSecrets",
+            "recommendedPreflightTool",
+            "safeEquivalent",
+            "externalDependencies",
+            "canRunConcurrent",
+            "returnsOperationId",
+            "returnsRuntimeHandle",
+            "jobCapable",
+            "supportsRemote",
+            "remoteEligible",
+            "supportsWebhook",
+            "policyScopes",
+            "agentWorkflow"
+          ],
+          "runtimeEnforced": [
+            "mutating",
+            "mcpMutating",
+            "longRunningBlocked",
+            "mcpLongRunningBlocked",
+            "placeholderBlocked",
+            "controlInputNames",
+            "safeFlags",
+            "executeFlags",
+            "executeIntentRequired"
+          ]
+        },
+        "mutating": true,
+        "name": "mirror.sync.unlock",
+        "outputModes": [
+          "table",
+          "json"
+        ],
+        "placeholderBlocked": false,
+        "policyScopes": [
+          "mirror:write"
+        ],
+        "preferred": true,
+        "recommendedPreflightTool": "mirror.status",
+        "registryName": "mirror.sync.unlock",
+        "remoteEligible": true,
+        "requiresSecrets": false,
+        "returnsOperationId": true,
+        "returnsRuntimeHandle": false,
+        "riskLevel": "medium",
+        "safeEquivalent": null,
+        "safeFlags": [],
+        "summary": "Clear persisted pending-action locks for one mirror strategy after operator review.",
+        "supportsRemote": true,
+        "supportsWebhook": false,
+        "topLevelInputConstraints": {
+          "exclusiveOneOf": [
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "strategy-hash"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "strategy-hash"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "state-file"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "state-file"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "state-file"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "strategy-hash"
+              ]
+            }
+          ],
+          "requiredAnyOf": [
+            {
+              "required": [
+                "state-file"
+              ]
+            },
+            {
+              "required": [
+                "strategy-hash"
+              ]
+            }
+          ]
+        },
+        "usage": "pandora [--output table|json] mirror sync unlock --state-file <path>|--strategy-hash <hash> [--force] [--stale-after-ms <ms>]"
+      }
+    },
+    "jobCapable": false,
+    "longRunningBlocked": false,
+    "mutating": true,
+    "name": "mirror.sync.unlock",
+    "placeholderBlocked": false,
+    "policyScopes": [
+      "mirror:write"
+    ],
+    "preferred": true,
+    "recommendedPreflightTool": "mirror.status",
+    "remoteEligible": true,
+    "requiresSecrets": false,
+    "returnsOperationId": true,
+    "returnsRuntimeHandle": false,
+    "riskLevel": "medium",
+    "safeEquivalent": null,
+    "safeFlags": [],
+    "supportsRemote": true,
+    "supportsWebhook": false,
+    "xPandora": {
+      "agentPreflightRequired": false,
+      "agentPreflightRequiredForExecuteMode": false,
+      "agentWorkflow": {
+        "executeRequiresValidation": false,
+        "notes": [
+          "Unlock clears only the persisted pending-action lock file. It does not settle venue state or change live positions.",
+          "Invalid and zombie locks can be cleared without --force. Reconciliation-required or still-pending locks require operator review and --force."
+        ],
+        "recommendedTools": [
+          "mirror.health"
+        ],
+        "requiredTools": [
+          "mirror.status"
+        ]
+      },
+      "aliasOf": null,
+      "canRunConcurrent": false,
+      "canonicalCommandTokens": [
+        "mirror",
+        "sync",
+        "unlock"
+      ],
+      "canonicalName": "mirror.sync.unlock",
+      "canonicalTool": "mirror.sync.unlock",
+      "canonicalUsage": "pandora [--output table|json] mirror sync unlock --state-file <path>|--strategy-hash <hash> [--force] [--stale-after-ms <ms>]",
+      "command": [
+        "mirror",
+        "sync",
+        "unlock"
+      ],
+      "compatibilityAlias": false,
+      "controlInputNames": [],
+      "dataSchema": "#/definitions/MirrorStatusPayload",
+      "emits": [
+        "mirror.sync.unlock",
+        "mirror.sync.unlock.help",
+        "mirror.sync.help"
+      ],
+      "executeFlags": [],
+      "executeIntentRequired": true,
+      "executeIntentRequiredForLiveMode": false,
+      "expectedLatencyMs": 1000,
+      "externalDependencies": [
+        "filesystem"
+      ],
+      "helpDataSchema": "#/definitions/CommandHelpPayload",
+      "idempotency": "non-idempotent",
+      "isCanonical": true,
+      "jobCapable": false,
+      "longRunningBlocked": false,
+      "mcpExposed": true,
+      "mcpLongRunningBlocked": false,
+      "mcpMutating": true,
+      "metadataProvenance": {
+        "descriptorDerived": [
+          "summary",
+          "usage",
+          "emits",
+          "outputModes",
+          "dataSchema",
+          "helpDataSchema",
+          "canonicalTool",
+          "canonicalCommandTokens",
+          "canonicalUsage",
+          "aliasOf",
+          "preferred",
+          "compatibilityAlias",
+          "riskLevel",
+          "idempotency",
+          "expectedLatencyMs",
+          "requiresSecrets",
+          "recommendedPreflightTool",
+          "safeEquivalent",
+          "externalDependencies",
+          "canRunConcurrent",
+          "returnsOperationId",
+          "returnsRuntimeHandle",
+          "jobCapable",
+          "supportsRemote",
+          "remoteEligible",
+          "supportsWebhook",
+          "policyScopes",
+          "agentWorkflow"
+        ],
+        "runtimeEnforced": [
+          "mutating",
+          "mcpMutating",
+          "longRunningBlocked",
+          "mcpLongRunningBlocked",
+          "placeholderBlocked",
+          "controlInputNames",
+          "safeFlags",
+          "executeFlags",
+          "executeIntentRequired"
+        ]
+      },
+      "mutating": true,
+      "name": "mirror.sync.unlock",
+      "outputModes": [
+        "table",
+        "json"
+      ],
+      "placeholderBlocked": false,
+      "policyScopes": [
+        "mirror:write"
+      ],
+      "preferred": true,
+      "recommendedPreflightTool": "mirror.status",
+      "registryName": "mirror.sync.unlock",
+      "remoteEligible": true,
+      "requiresSecrets": false,
+      "returnsOperationId": true,
+      "returnsRuntimeHandle": false,
+      "riskLevel": "medium",
+      "safeEquivalent": null,
+      "safeFlags": [],
+      "summary": "Clear persisted pending-action locks for one mirror strategy after operator review.",
+      "supportsRemote": true,
+      "supportsWebhook": false,
+      "topLevelInputConstraints": {
+        "exclusiveOneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "strategy-hash"
+                  ]
+                },
+                {
+                  "required": [
+                    "strategy-hash"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "state-file"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "state-file"
+                  ]
+                },
+                {
+                  "required": [
+                    "state-file"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "strategy-hash"
+            ]
+          }
+        ],
+        "requiredAnyOf": [
+          {
+            "required": [
+              "state-file"
+            ]
+          },
+          {
+            "required": [
+              "strategy-hash"
+            ]
+          }
+        ]
+      },
+      "usage": "pandora [--output table|json] mirror sync unlock --state-file <path>|--strategy-hash <hash> [--force] [--stale-after-ms <ms>]"
     }
   },
   {

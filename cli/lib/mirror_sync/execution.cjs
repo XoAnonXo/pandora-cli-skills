@@ -25,46 +25,533 @@ function resolvePolymarketRpcHint(options, env = process.env) {
   return options.polymarketRpcUrl || env.POLYMARKET_RPC_URL || options.rpcUrl || null;
 }
 
+function toRoundedNonNegative(value) {
+  return round(Math.max(0, toNumber(value) || 0), 6) || 0;
+}
+
+function resolveHedgeReferencePrice(depthEntry) {
+  if (!depthEntry || typeof depthEntry !== 'object') return null;
+  const referencePrice = toNumber(depthEntry.referencePrice);
+  if (referencePrice !== null && referencePrice > 0) return referencePrice;
+  const midPrice = toNumber(depthEntry.midPrice);
+  if (midPrice !== null && midPrice > 0) return midPrice;
+  const worstPrice = toNumber(depthEntry.worstPrice);
+  if (worstPrice !== null && worstPrice > 0) return worstPrice;
+  return null;
+}
+
+function readManagedPolymarketInventory(state) {
+  const accounting = state && state.accounting && typeof state.accounting === 'object' ? state.accounting : {};
+  const currentHedgeShares =
+    round(toNumber(state && (state.currentHedgeShares !== undefined ? state.currentHedgeShares : state.currentHedgeUsdc)) || 0, 6) || 0;
+  const explicitYes = toNumber(
+    accounting.managedPolymarketYesShares !== undefined
+      ? accounting.managedPolymarketYesShares
+      : accounting.managedPolymarketYesUsdc,
+  );
+  const explicitNo = toNumber(
+    accounting.managedPolymarketNoShares !== undefined
+      ? accounting.managedPolymarketNoShares
+      : accounting.managedPolymarketNoUsdc,
+  );
+  if (explicitYes !== null || explicitNo !== null) {
+    return {
+      yes: toRoundedNonNegative(explicitYes),
+      no: toRoundedNonNegative(explicitNo),
+    };
+  }
+  return {
+    yes: currentHedgeShares > 0 ? currentHedgeShares : 0,
+    no: currentHedgeShares < 0 ? Math.abs(currentHedgeShares) : 0,
+  };
+}
+
+function persistManagedPolymarketInventory(state, inventory) {
+  if (!state || typeof state !== 'object') return;
+  const nextInventory = inventory && typeof inventory === 'object' ? inventory : {};
+  const nextYes = toRoundedNonNegative(nextInventory.yes);
+  const nextNo = toRoundedNonNegative(nextInventory.no);
+  state.accounting = {
+    ...(state.accounting && typeof state.accounting === 'object' ? state.accounting : {}),
+    managedPolymarketYesShares: nextYes,
+    managedPolymarketNoShares: nextNo,
+    managedPolymarketYesUsdc: nextYes,
+    managedPolymarketNoUsdc: nextNo,
+  };
+  state.currentHedgeShares = round(nextYes - nextNo, 6) || 0;
+  state.currentHedgeUsdc = state.currentHedgeShares;
+}
+
+function normalizeTxHash(value) {
+  const normalized = String(value || '').trim();
+  return /^0x[a-fA-F0-9]{64}$/.test(normalized) ? normalized.toLowerCase() : null;
+}
+
+function matchesPendingActionState(lastExecution, pendingAction) {
+  if (!(lastExecution && typeof lastExecution === 'object' && pendingAction && typeof pendingAction === 'object')) {
+    return false;
+  }
+  if (lastExecution.lockNonce && pendingAction.lockNonce && lastExecution.lockNonce === pendingAction.lockNonce) {
+    return true;
+  }
+  if (
+    lastExecution.idempotencyKey
+    && pendingAction.idempotencyKey
+    && lastExecution.idempotencyKey === pendingAction.idempotencyKey
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function readRecoveredActionSummary(pendingAction) {
+  const summary =
+    pendingAction && pendingAction.lastKnownResult && typeof pendingAction.lastKnownResult === 'object'
+      ? pendingAction.lastKnownResult
+      : null;
+  return summary;
+}
+
+function collectPendingActionTxHashes(pendingAction) {
+  const actionSummary = readRecoveredActionSummary(pendingAction);
+  const hashes = [
+    pendingAction && pendingAction.approveTxHash,
+    pendingAction && pendingAction.tradeTxHash,
+    pendingAction && pendingAction.txHash,
+    actionSummary && actionSummary.rebalance && actionSummary.rebalance.result
+      ? actionSummary.rebalance.result.approveTxHash
+      : null,
+    actionSummary && actionSummary.rebalance && actionSummary.rebalance.result
+      ? actionSummary.rebalance.result.tradeTxHash
+      : null,
+    actionSummary && actionSummary.rebalance && actionSummary.rebalance.result
+      ? actionSummary.rebalance.result.txHash
+      : null,
+  ]
+    .map(normalizeTxHash)
+    .filter(Boolean);
+  return Array.from(new Set(hashes));
+}
+
+function isSuccessfulReceipt(receipt) {
+  const status = receipt && receipt.status;
+  return status === 'success' || status === 1 || status === '0x1' || status === true;
+}
+
+function isRevertedReceipt(receipt) {
+  const status = receipt && receipt.status;
+  return status === 'reverted' || status === 0 || status === '0x0' || status === false;
+}
+
+async function safeGetTransactionReceipt(publicClient, hash) {
+  if (!publicClient || typeof publicClient.getTransactionReceipt !== 'function' || !hash) {
+    return {
+      hash,
+      found: false,
+      receipt: null,
+      error: null,
+    };
+  }
+  try {
+    const receipt = await publicClient.getTransactionReceipt({ hash });
+    return {
+      hash,
+      found: Boolean(receipt),
+      receipt: receipt || null,
+      error: null,
+    };
+  } catch (err) {
+    const message = err && (err.shortMessage || err.message) ? String(err.shortMessage || err.message) : String(err);
+    const notFound =
+      err && (
+        err.name === 'TransactionReceiptNotFoundError'
+        || err.code === 'TRANSACTION_RECEIPT_NOT_FOUND'
+        || /receipt/i.test(message) && /not found|could not be found|does not exist/i.test(message)
+      );
+    if (notFound) {
+      return {
+        hash,
+        found: false,
+        receipt: null,
+        error: null,
+      };
+    }
+    return {
+      hash,
+      found: false,
+      receipt: null,
+      error: {
+        code: err && err.code ? String(err.code) : 'PENDING_ACTION_RECEIPT_LOOKUP_FAILED',
+        message,
+      },
+    };
+  }
+}
+
+function canAutoRecoverConfirmedLock(pendingAction) {
+  const summary = readRecoveredActionSummary(pendingAction);
+  if (!(summary && summary.status === 'executed')) return false;
+  if (summary.error || (pendingAction && pendingAction.lastError)) return false;
+  return true;
+}
+
+function cloneRecoveryState(state) {
+  if (!(state && typeof state === 'object')) return {};
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(state);
+    } catch {
+      // Fall back to JSON cloning for plain persisted runtime state.
+    }
+  }
+  return JSON.parse(JSON.stringify(state));
+}
+
+function commitRecoveredState(targetState, recoveredState) {
+  if (!(targetState && typeof targetState === 'object' && recoveredState && typeof recoveredState === 'object')) {
+    return false;
+  }
+  for (const key of Object.keys(targetState)) {
+    if (!Object.prototype.hasOwnProperty.call(recoveredState, key)) {
+      delete targetState[key];
+    }
+  }
+  Object.assign(targetState, recoveredState);
+  return true;
+}
+
+function applyRecoveredExecutedActionState(state, pendingAction, tickAt) {
+  if (!(state && typeof state === 'object' && pendingAction && typeof pendingAction === 'object')) return false;
+  const actionSummary = readRecoveredActionSummary(pendingAction);
+  if (!(actionSummary && actionSummary.status === 'executed')) return false;
+
+  if (!Array.isArray(state.idempotencyKeys)) {
+    state.idempotencyKeys = [];
+  }
+
+  const idempotencyKey = pendingAction.idempotencyKey || actionSummary.idempotencyKey || null;
+  const alreadyRecorded = Boolean(idempotencyKey && state.idempotencyKeys.includes(idempotencyKey));
+  if (idempotencyKey && !alreadyRecorded) {
+    state.idempotencyKeys.push(idempotencyKey);
+    pruneIdempotencyKeys(state);
+  }
+
+  const rebalanceSucceeded = !(actionSummary.rebalance && actionSummary.rebalance.result && actionSummary.rebalance.result.ok === false);
+  const hedgeSucceeded = !(actionSummary.hedge && actionSummary.hedge.result && actionSummary.hedge.result.ok === false);
+  const recoveredRebalanceUsdc =
+    rebalanceSucceeded && actionSummary.rebalance ? round(Math.max(0, toNumber(actionSummary.rebalance.amountUsdc) || 0), 6) || 0 : 0;
+  const recoveredHedgeUsdc =
+    hedgeSucceeded && actionSummary.hedge ? round(Math.max(0, toNumber(actionSummary.hedge.amountUsdc) || 0), 6) || 0 : 0;
+
+  if (!alreadyRecorded) {
+    state.dailySpendUsdc =
+      round((toNumber(state.dailySpendUsdc) || 0) + recoveredRebalanceUsdc + recoveredHedgeUsdc, 6) || 0;
+    state.tradesToday =
+      (Number.isInteger(Number(state.tradesToday)) ? Number(state.tradesToday) : 0)
+      + (recoveredRebalanceUsdc > 0 ? 1 : 0)
+      + (recoveredHedgeUsdc > 0 ? 1 : 0);
+
+    if (recoveredRebalanceUsdc > 0) {
+      state.cumulativeLpFeesApproxUsdc =
+        round((toNumber(state.cumulativeLpFeesApproxUsdc) || 0) + recoveredRebalanceUsdc * 0.003, 6) || 0;
+    }
+
+    if (recoveredHedgeUsdc > 0 && actionSummary.hedge) {
+      const managedInventory = readManagedPolymarketInventory(state);
+      const recoveredShares = round(Math.max(0, toNumber(actionSummary.hedge.amountShares) || 0), 6) || 0;
+      if (recoveredShares > 0) {
+        if (actionSummary.hedge.side === 'sell') {
+          if (actionSummary.hedge.tokenSide === 'yes') {
+            managedInventory.yes = round(Math.max(0, managedInventory.yes - recoveredShares), 6) || 0;
+          } else {
+            managedInventory.no = round(Math.max(0, managedInventory.no - recoveredShares), 6) || 0;
+          }
+        } else if (actionSummary.hedge.tokenSide === 'yes') {
+          managedInventory.yes = round(managedInventory.yes + recoveredShares, 6) || 0;
+        } else if (actionSummary.hedge.tokenSide === 'no') {
+          managedInventory.no = round(managedInventory.no + recoveredShares, 6) || 0;
+        }
+        persistManagedPolymarketInventory(state, managedInventory);
+      }
+
+      state.cumulativeHedgeNotionalUsdc =
+        round((toNumber(state.cumulativeHedgeNotionalUsdc) || 0) + recoveredHedgeUsdc, 6) || 0;
+    }
+  }
+
+  const priorLastExecution =
+    state.lastExecution && typeof state.lastExecution === 'object'
+      ? state.lastExecution
+      : {};
+  state.lastExecution = {
+    ...priorLastExecution,
+    ...actionSummary,
+    mode: priorLastExecution.mode || 'live',
+    status: 'executed',
+    idempotencyKey: idempotencyKey || priorLastExecution.idempotencyKey || null,
+    startedAt:
+      actionSummary.startedAt
+      || priorLastExecution.startedAt
+      || pendingAction.startedAt
+      || pendingAction.createdAt
+      || tickAt.toISOString(),
+    completedAt:
+      actionSummary.completedAt
+      || pendingAction.completedAt
+      || priorLastExecution.completedAt
+      || tickAt.toISOString(),
+    lockNonce: pendingAction.lockNonce || actionSummary.lockNonce || priorLastExecution.lockNonce || null,
+    transactionNonce:
+      actionSummary.transactionNonce !== undefined && actionSummary.transactionNonce !== null
+        ? actionSummary.transactionNonce
+        : pendingAction.transactionNonce !== undefined && pendingAction.transactionNonce !== null
+          ? pendingAction.transactionNonce
+          : priorLastExecution.transactionNonce !== undefined
+            ? priorLastExecution.transactionNonce
+            : null,
+    lockFile: null,
+    lockRetained: false,
+    requiresManualReview: false,
+    recoveredFromPendingAction: true,
+    recoveredAt: tickAt.toISOString(),
+    recoveryReason: 'tx-confirmed',
+  };
+
+  return true;
+}
+
+async function maybeAutoRecoverPendingActionLock(params) {
+  const {
+    loadedFilePath,
+    state,
+    pendingAction,
+    pendingActionRecoveryClient,
+    tickAt,
+  } = params;
+
+  if (!(pendingAction && typeof pendingAction === 'object')) {
+    return {
+      recovered: false,
+      lock: null,
+      receiptChecks: [],
+    };
+  }
+
+  const txHashes = collectPendingActionTxHashes(pendingAction);
+  if (!pendingActionRecoveryClient || txHashes.length === 0) {
+    return {
+      recovered: false,
+      lock: pendingAction,
+      receiptChecks: [],
+    };
+  }
+
+  const receiptChecks = [];
+  for (const hash of txHashes) {
+    const receiptCheck = await safeGetTransactionReceipt(pendingActionRecoveryClient, hash);
+    receiptChecks.push(receiptCheck);
+    if (receiptCheck.error) {
+      pushRuntimeAlert(state, {
+        level: 'warn',
+        scope: 'execution',
+        code: 'PENDING_ACTION_LOCK_RECOVERY_CHECK_FAILED',
+        message: `Failed to inspect pending-action transaction confirmation for ${hash}.`,
+        details: {
+          hash,
+          lockNonce: pendingAction.lockNonce || null,
+          lockFile: pendingAction.lockFile || null,
+          error: receiptCheck.error,
+        },
+        timestamp: tickAt,
+      });
+      return {
+        recovered: false,
+        lock: pendingAction,
+        receiptChecks,
+      };
+    }
+  }
+
+  const confirmedReceipts = receiptChecks.filter((entry) => entry.found && entry.receipt);
+  if (confirmedReceipts.some((entry) => isRevertedReceipt(entry.receipt))) {
+    const revertedHashes = confirmedReceipts
+      .filter((entry) => isRevertedReceipt(entry.receipt))
+      .map((entry) => entry.hash);
+    const updateResult = updatePendingActionLock(
+      loadedFilePath,
+      {
+        status: 'reconciliation-required',
+        requiresManualReview: true,
+        updatedAt: tickAt,
+        lastError: {
+          code: 'PENDING_ACTION_TX_REVERTED',
+          message: 'Recorded Pandora transaction reverted on-chain; manual reconciliation is required.',
+          details: {
+            revertedHashes,
+          },
+          at: tickAt.toISOString(),
+        },
+        settlementCheck: {
+          checkedAt: tickAt.toISOString(),
+          txHashes,
+          revertedHashes,
+        },
+      },
+      { expectedLockNonce: pendingAction.lockNonce || undefined },
+    );
+    const updatedLock = updateResult && updateResult.updated ? updateResult.lock : pendingAction;
+    if (matchesPendingActionState(state.lastExecution, pendingAction)) {
+      state.lastExecution = {
+        ...(state.lastExecution && typeof state.lastExecution === 'object' ? state.lastExecution : {}),
+        completedAt: tickAt.toISOString(),
+        status: 'failed',
+        requiresManualReview: true,
+        error: {
+          code: 'PENDING_ACTION_TX_REVERTED',
+          message: 'Recorded Pandora transaction reverted on-chain; manual reconciliation is required.',
+          details: {
+            revertedHashes,
+          },
+          at: tickAt.toISOString(),
+        },
+      };
+    }
+    pushRuntimeAlert(state, {
+      level: 'error',
+      scope: 'execution',
+      code: 'PENDING_ACTION_TX_REVERTED',
+      message: 'Pending-action lock retained because a recorded Pandora transaction reverted on-chain.',
+      details: {
+        revertedHashes,
+        lockNonce: updatedLock && updatedLock.lockNonce ? updatedLock.lockNonce : pendingAction.lockNonce || null,
+        lockFile: updatedLock && updatedLock.lockFile ? updatedLock.lockFile : pendingAction.lockFile || null,
+      },
+      timestamp: tickAt,
+    });
+    return {
+      recovered: false,
+      lock: updatedLock,
+      receiptChecks,
+    };
+  }
+
+  const allConfirmedSuccessful =
+    receiptChecks.length > 0
+    && receiptChecks.every((entry) => entry.found && entry.receipt && isSuccessfulReceipt(entry.receipt));
+  if (!allConfirmedSuccessful || !canAutoRecoverConfirmedLock(pendingAction)) {
+    return {
+      recovered: false,
+      lock: pendingAction,
+      receiptChecks,
+    };
+  }
+
+  const recoveredState = cloneRecoveryState(state);
+  if (!applyRecoveredExecutedActionState(recoveredState, pendingAction, tickAt)) {
+    return {
+      recovered: false,
+      lock: pendingAction,
+      receiptChecks,
+    };
+  }
+  const clearResult = clearPendingActionLock(loadedFilePath, {
+    expectedLockNonce: pendingAction.lockNonce || undefined,
+  });
+  if (!clearResult.cleared) {
+    return {
+      recovered: false,
+      lock: clearResult.lock || pendingAction,
+      receiptChecks,
+    };
+  }
+
+  commitRecoveredState(state, recoveredState);
+  pushRuntimeAlert(state, {
+    level: 'info',
+    scope: 'execution',
+    code: 'PENDING_ACTION_LOCK_AUTO_RECOVERED',
+    message: 'Auto-cleared pending-action lock after confirming recorded Pandora transaction receipts.',
+    details: {
+      txHashes,
+      lockNonce: pendingAction.lockNonce || null,
+      lockFile: pendingAction.lockFile || null,
+    },
+    timestamp: tickAt,
+  });
+  return {
+    recovered: true,
+    lock: null,
+    receiptChecks,
+  };
+}
+
 function buildHedgeExecutionPlan(params) {
   const { options, plan, state, verifyPayload, depth } = params;
-  const amountUsdc = round(Math.max(0, toNumber(plan && plan.plannedHedgeUsdc) || 0), 6) || 0;
-  if (amountUsdc <= 0) {
+  const amountShares = round(
+    Math.max(
+      0,
+      toNumber(plan && plan.plannedHedgeShares) !== null
+        ? toNumber(plan && plan.plannedHedgeShares)
+        : toNumber(plan && plan.plannedHedgeUsdc) || 0,
+    ),
+    6,
+  ) || 0;
+  if (amountShares <= 0) {
     return {
       enabled: false,
       tokenId: null,
       tokenSide: null,
       side: null,
       amountUsdc: 0,
+      amountShares: 0,
       stateDeltaUsdc: 0,
       hedgeDepth: null,
       inventoryUsdcAvailable: 0,
+      inventorySharesAvailable: 0,
       executionMode: 'none',
       recycleEligible: false,
       liveSellAllowed: false,
       recycleReason: 'no-hedge-required',
+      referencePrice: null,
     };
   }
 
   const sourceMarket = verifyPayload && verifyPayload.sourceMarket ? verifyPayload.sourceMarket : {};
-  const currentHedgeUsdc = round(toNumber(state && state.currentHedgeUsdc) || 0, 6) || 0;
   const wantsMoreYesExposure = (toNumber(plan && plan.gapUsdc) || 0) >= 0;
   const defaultTokenSide = wantsMoreYesExposure ? 'yes' : 'no';
-  const defaultStateDeltaUsdc = wantsMoreYesExposure ? amountUsdc : -amountUsdc;
+  const defaultStateDeltaUsdc = wantsMoreYesExposure ? amountShares : -amountShares;
   const sellTokenSide = wantsMoreYesExposure ? 'no' : 'yes';
-  const inventoryUsdcAvailable = round(
-    Math.max(0, wantsMoreYesExposure ? -currentHedgeUsdc : currentHedgeUsdc),
+  const managedInventory = readManagedPolymarketInventory(state);
+  const inventorySharesAvailable = round(
+    Math.max(0, sellTokenSide === 'yes' ? managedInventory.yes : managedInventory.no),
     6,
   ) || 0;
-  const recycleEligible = inventoryUsdcAvailable >= amountUsdc && amountUsdc > 0;
   const liveSellDepth = getSellDepthEntry(depth, sellTokenSide);
   const liveSellDepthUsd = toNumber(liveSellDepth && liveSellDepth.depthUsd);
-  const liveSellAllowed = liveSellDepthUsd !== null && liveSellDepthUsd >= amountUsdc;
+  const liveSellDepthShares = toNumber(liveSellDepth && liveSellDepth.depthShares);
 
   let side = 'buy';
   let tokenSide = defaultTokenSide;
   let stateDeltaUsdc = defaultStateDeltaUsdc;
   let executionMode = 'buy';
   let hedgeDepth = tokenSide === 'yes' ? depth && depth.yesDepth : depth && depth.noDepth;
+  let referencePrice = resolveHedgeReferencePrice(hedgeDepth);
+  let amountUsdc = round(
+    Math.max(
+      0,
+      toNumber(plan && plan.plannedHedgeOrderUsd) !== null
+        ? toNumber(plan && plan.plannedHedgeOrderUsd)
+        : (referencePrice || 1) * amountShares,
+    ),
+    6,
+  ) || 0;
+  const recycleEligible = inventorySharesAvailable >= amountShares && amountShares > 0;
+  const liveSellAllowed =
+    recycleEligible
+    && liveSellDepthUsd !== null
+    && liveSellDepthUsd >= amountUsdc
+    && liveSellDepthShares !== null
+    && liveSellDepthShares >= amountShares;
   let recycleReason = recycleEligible ? 'sell-depth-unavailable' : 'insufficient-managed-inventory';
 
   if (recycleEligible && options.executeLive && liveSellAllowed) {
@@ -73,6 +560,8 @@ function buildHedgeExecutionPlan(params) {
     stateDeltaUsdc = defaultStateDeltaUsdc;
     executionMode = 'sell-inventory';
     hedgeDepth = liveSellDepth;
+    referencePrice = resolveHedgeReferencePrice(hedgeDepth);
+    amountUsdc = round((referencePrice || 1) * amountShares, 6) || 0;
     recycleReason = 'inventory-recycled';
   } else if (recycleEligible && !options.executeLive) {
     side = 'sell';
@@ -80,6 +569,8 @@ function buildHedgeExecutionPlan(params) {
     stateDeltaUsdc = defaultStateDeltaUsdc;
     executionMode = 'sell-inventory';
     hedgeDepth = liveSellDepth;
+    referencePrice = resolveHedgeReferencePrice(hedgeDepth);
+    amountUsdc = round((referencePrice || 1) * amountShares, 6) || 0;
     recycleReason = 'inventory-recycled-paper';
   }
 
@@ -90,13 +581,16 @@ function buildHedgeExecutionPlan(params) {
     tokenSide,
     side,
     amountUsdc,
+    amountShares,
     stateDeltaUsdc,
     hedgeDepth,
-    inventoryUsdcAvailable,
+    inventoryUsdcAvailable: inventorySharesAvailable,
+    inventorySharesAvailable,
     executionMode,
     recycleEligible,
     liveSellAllowed,
     recycleReason,
+    referencePrice,
   };
 }
 
@@ -133,7 +627,10 @@ function buildModeledActionSummary(plan, snapshot, snapshotMetrics) {
     rebalanceSide: actionPlan.rebalanceSide || (plan && plan.rebalanceSide) || null,
     plannedRebalanceUsdc: toNumber(plan && plan.plannedRebalanceUsdc),
     plannedHedgeUsdc: toNumber(plan && plan.plannedHedgeUsdc),
-    plannedSpendUsdc: toNumber(plan && plan.plannedSpendUsdc),
+    plannedSpendUsdc:
+      actionPlan.plannedSpendUsdc !== undefined && actionPlan.plannedSpendUsdc !== null
+        ? toNumber(actionPlan.plannedSpendUsdc)
+        : toNumber(plan && plan.plannedSpendUsdc),
     rebalanceSizingMode: actionPlan.rebalanceSizingMode || (plan && plan.rebalanceSizingMode) || null,
     rebalanceTargetUsdc:
       actionPlan.rebalanceTargetUsdc !== undefined && actionPlan.rebalanceTargetUsdc !== null
@@ -544,8 +1041,11 @@ async function executeHedgeLeg(params) {
       tokenSide: executionPlan.tokenSide,
       side: hedgeSide,
       amountUsdc: executionPlan.amountUsdc,
+      amountShares: executionPlan.amountShares,
+      referencePrice: executionPlan.referencePrice,
       stateDeltaUsdc: executionPlan.stateDeltaUsdc,
       inventoryUsdcAvailable: executionPlan.inventoryUsdcAvailable,
+      inventorySharesAvailable: executionPlan.inventorySharesAvailable,
       recycleEligible: executionPlan.recycleEligible,
       liveSellAllowed: executionPlan.liveSellAllowed,
       recycleReason: executionPlan.recycleReason,
@@ -558,8 +1058,11 @@ async function executeHedgeLeg(params) {
       tokenSide: executionPlan.tokenSide,
       side: hedgeSide,
       amountUsdc: executionPlan.amountUsdc,
+      amountShares: executionPlan.amountShares,
+      referencePrice: executionPlan.referencePrice,
       stateDeltaUsdc: executionPlan.stateDeltaUsdc,
       inventoryUsdcAvailable: executionPlan.inventoryUsdcAvailable,
+      inventorySharesAvailable: executionPlan.inventorySharesAvailable,
       recycleEligible: executionPlan.recycleEligible,
       liveSellAllowed: executionPlan.liveSellAllowed,
       recycleReason: executionPlan.recycleReason,
@@ -570,8 +1073,19 @@ async function executeHedgeLeg(params) {
 
   const hedgeResultOk = !options.executeLive || (action.hedge && action.hedge.result && action.hedge.result.ok !== false);
   if (hedgeResultOk) {
-    state.currentHedgeUsdc =
-      round((toNumber(state.currentHedgeUsdc) || 0) + executionPlan.stateDeltaUsdc, 6) || 0;
+    const managedInventory = readManagedPolymarketInventory(state);
+    if (executionPlan.side === 'sell') {
+      if (executionPlan.tokenSide === 'yes') {
+        managedInventory.yes = round(Math.max(0, managedInventory.yes - executionPlan.amountShares), 6) || 0;
+      } else {
+        managedInventory.no = round(Math.max(0, managedInventory.no - executionPlan.amountShares), 6) || 0;
+      }
+    } else if (executionPlan.tokenSide === 'yes') {
+      managedInventory.yes = round(managedInventory.yes + executionPlan.amountShares, 6) || 0;
+    } else {
+      managedInventory.no = round(managedInventory.no + executionPlan.amountShares, 6) || 0;
+    }
+    persistManagedPolymarketInventory(state, managedInventory);
     state.cumulativeHedgeNotionalUsdc =
       round((toNumber(state.cumulativeHedgeNotionalUsdc) || 0) + executionPlan.amountUsdc, 6) || 0;
     const slippageRatio =
@@ -654,6 +1168,7 @@ async function processTriggeredAction(params) {
     snapshotMetrics,
     verifyPayload,
     depth,
+    pendingActionRecoveryClient = null,
   } = params;
 
   if (snapshot && snapshot.actionPlan && plan.hedgeTriggered && plan.plannedHedgeUsdc > 0) {
@@ -671,15 +1186,55 @@ async function processTriggeredAction(params) {
       hedgeExecutionMode: hedgeExecutionPlan.executionMode,
       hedgeStateDeltaUsdc: hedgeExecutionPlan.stateDeltaUsdc,
       hedgeInventoryUsdcAvailable: hedgeExecutionPlan.inventoryUsdcAvailable,
+      hedgeInventorySharesAvailable: hedgeExecutionPlan.inventorySharesAvailable,
       hedgeRecycleEligible: hedgeExecutionPlan.recycleEligible,
       hedgeLiveSellAllowed: hedgeExecutionPlan.liveSellAllowed,
       hedgeRecycleReason: hedgeExecutionPlan.recycleReason,
+      hedgeOrderReferencePrice: hedgeExecutionPlan.referencePrice,
+      hedgeOrderUsd: hedgeExecutionPlan.amountUsdc,
+      hedgeOrderShares: hedgeExecutionPlan.amountShares,
     };
   }
 
   const idempotencyKey = buildIdempotencyKey(options, snapshot, tickAt.getTime());
   if (options.executeLive) {
     let existingLock = readPendingActionLock(loadedFilePath);
+    if (existingLock && (existingLock.status === 'invalid' || existingLock.status === 'zombie')) {
+      const clearResult = clearPendingActionLock(loadedFilePath, {
+        expectedLockNonce: existingLock.lockNonce || undefined,
+      });
+      if (clearResult && clearResult.cleared) {
+        pushRuntimeAlert(state, {
+          level: 'info',
+          scope: 'execution',
+          code: 'PENDING_ACTION_LOCK_AUTO_CLEARED',
+          message: `Auto-cleared ${existingLock.status} pending-action lock before live execution.`,
+          details: {
+            idempotencyKey,
+            lockFile: existingLock.lockFile || null,
+            lockStatus: existingLock.status,
+          },
+          timestamp: tickAt,
+        });
+        existingLock = null;
+      } else {
+        existingLock = readPendingActionLock(loadedFilePath);
+      }
+    }
+    if (existingLock && !(existingLock.status === 'invalid' || existingLock.status === 'zombie')) {
+      const recoveryResult = await maybeAutoRecoverPendingActionLock({
+        loadedFilePath,
+        state,
+        pendingAction: existingLock,
+        pendingActionRecoveryClient,
+        tickAt,
+      });
+      if (recoveryResult.recovered) {
+        existingLock = null;
+      } else if (recoveryResult.lock) {
+        existingLock = recoveryResult.lock;
+      }
+    }
     if (existingLock) {
       existingLock = promotePendingActionLockForReview(loadedFilePath, existingLock, tickAt);
       const existingLockBlock = describePendingActionBlock(existingLock);
@@ -900,6 +1455,21 @@ async function processTriggeredAction(params) {
       }
     }
 
+    if (livePendingLock) {
+      const resultSummaryUpdate = updatePendingActionLock(
+        loadedFilePath,
+        {
+          completedAt: action.completedAt,
+          lastKnownResult: buildPendingActionStateSummary(action),
+          updatedAt: action.completedAt,
+        },
+        { expectedLockNonce },
+      );
+      if (resultSummaryUpdate.updated) {
+        livePendingLock = resultSummaryUpdate.lock;
+      }
+    }
+
     if (action.status !== 'executed') {
       lockRetained = true;
       action.requiresManualReview = true;
@@ -1023,6 +1593,7 @@ module.exports = {
   buildIdempotencyKey,
   buildExecutableAction,
   normalizeExecutionFailure,
+  maybeAutoRecoverPendingActionLock,
   executeRebalanceLeg,
   executeHedgeLeg,
   finalizeExecutedActionState,

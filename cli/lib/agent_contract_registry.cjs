@@ -302,6 +302,7 @@ const AGENT_PLATFORM_LOCAL_DAEMON_CONTROL_COMMANDS = new Set([
   'sports.sync.status',
   'mirror.sync.stop',
   'mirror.sync.status',
+  'mirror.sync.unlock',
   'mirror.health',
   'mirror.panic',
 ]);
@@ -717,6 +718,7 @@ const mirrorHealthLookupAnyOf = [['state-file'], ['strategy-hash'], ['pid-file']
 const mirrorLogsLookupAnyOf = [['state-file'], ['strategy-hash'], ...mirrorPandoraSelectorAnyOf];
 const mirrorSyncStopSelectorAnyOf = [['pid-file'], ['strategy-hash'], ...mirrorPandoraSelectorAnyOf, ['all']];
 const mirrorSyncStatusSelectorAnyOf = [['pid-file'], ['strategy-hash']];
+const mirrorSyncUnlockSelectorAnyOf = [['state-file'], ['strategy-hash']];
 const polymarketPositionsSelectorChoices = [[], ['condition-id'], ['slug'], ['token-id']];
 const mirrorVerifySelectorOneOf = buildExclusivePresenceBranches(
   mirrorPandoraSelectorAnyOf,
@@ -744,6 +746,7 @@ const mirrorResolvedLookupOneOf = [];
 const mirrorLogsLookupOneOf = buildExclusivePresenceBranches(mirrorStatusLookupAnyOf, mirrorPandoraSelectorAnyOf);
 const mirrorSyncStopSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStopSelectorAnyOf);
 const mirrorSyncStatusSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncStatusSelectorAnyOf);
+const mirrorSyncUnlockSelectorOneOf = buildExclusivePresenceBranches(mirrorSyncUnlockSelectorAnyOf);
 const polymarketPositionsSelectorOneOf = buildExclusivePresenceBranches(polymarketPositionsSelectorChoices);
 const polymarketTradeSelectorChoices = [['token-id'], ['condition-id', 'token'], ['slug', 'token']];
 const polymarketTradeModeChoices = [['dry-run'], ['execute']];
@@ -905,10 +908,34 @@ const commandContracts = [
   commandContract({
     name: 'agent',
     summary: 'Agent prompt workflow namespace for market drafting and validation.',
-    usage: 'pandora [--output table|json] agent market autocomplete|validate ...',
+    usage: 'pandora [--output table|json] agent market hype|autocomplete|validate ...',
     emits: ['agent.help'],
     dataSchema: COMMAND_HELP_SCHEMA_REF,
     helpDataSchema: null,
+  }),
+  commandContract({
+    name: 'agent.market.hype',
+    summary: 'Emit AI prompt text for researching current trending topics and drafting hype market candidates.',
+    usage:
+      'pandora [--output table|json] agent market hype --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--market-type auto|amm|parimutuel|both] [--candidate-count <n>]',
+    emits: ['agent.market.hype', 'agent.help'],
+    dataSchema: '#/definitions/AgentMarketPromptPayload',
+    mcpExposed: true,
+    mcp: {
+      command: ['agent', 'market', 'hype'],
+      description: 'Emit AI prompt text for researching current trending topics and drafting hype market candidates.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          area: enumSchema(['sports', 'esports', 'politics', 'regional-news', 'breaking-news'], 'Trending topic area.'),
+          region: stringSchema('Regional focus. Required when --area regional-news.'),
+          query: stringSchema('Optional extra search hint or topic constraint.'),
+          'market-type': enumSchema(['auto', 'amm', 'parimutuel', 'both'], 'Planning preference for market type.'),
+          'candidate-count': integerSchema('Maximum number of candidate markets to draft.', { minimum: 1, maximum: 5 }),
+        },
+        requiredFlags: ['area'],
+      }),
+      preferred: true,
+    },
   }),
   commandContract({
     name: 'agent.market.autocomplete',
@@ -990,7 +1017,7 @@ const commandContracts = [
   commandContract({
     name: 'markets',
     summary: 'Market command family help and routing entrypoint.',
-    usage: 'pandora [--output table|json] markets list|get|mine|create plan|create run|scan ...',
+    usage: 'pandora [--output table|json] markets list|get|mine|create plan|create run|hype plan|hype run|scan ...',
     emits: ['markets.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
   }),
@@ -1128,6 +1155,126 @@ const commandContracts = [
           agentPreflight: buildAgentPreflightSchema('Agent validation attestation for execute mode.'),
         },
         requiredFlags: ['question', 'rules', 'sources', 'target-timestamp', 'liquidity-usdc'],
+        oneOf: buildExclusivePresenceBranches([['dry-run'], ['execute']]),
+      }),
+      preferred: true,
+      mutating: true,
+      safeFlags: ['--dry-run'],
+      executeFlags: ['--execute'],
+      controlInputNames: ['agentPreflight'],
+    },
+  }),
+  commandContract({
+    name: 'markets.hype',
+    summary: 'Research current public-web trends, draft hype market candidates, and optionally run a frozen hype plan.',
+    usage:
+      'pandora [--output table|json] markets hype plan|run --area <sports|esports|politics|regional-news|breaking-news> ...',
+    emits: ['markets.hype.help', 'markets.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    agentWorkflow: {
+      requiredTools: ['agent.market.validate'],
+      recommendedTools: ['agent.market.hype', 'scan'],
+      executeRequiresValidation: true,
+      notes: [
+        'Use markets.hype.plan to turn fresh public-web research into a frozen, reusable market plan.',
+        'The selected candidate is validated before planning completes; pass the emitted PASS attestation back as agentPreflight for execute-mode MCP runs.',
+        'markets.hype.run should consume a saved plan file so the research snapshot, sources, and validation result do not drift between planning and deployment.',
+      ],
+    },
+    mcp: {
+      command: ['markets', 'hype'],
+      description: 'Research current trends, draft hype market candidates, and optionally run a frozen plan file.',
+      inputSchema: buildInputSchema(),
+      preferred: true,
+    },
+  }),
+  commandContract({
+    name: 'markets.hype.plan',
+    summary: 'Research current trending topics, score hype candidates, recommend AMM vs pari-mutuel, and validate the drafted market payloads.',
+    usage:
+      'pandora [--output table|json] markets hype plan --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--candidate-count <n>] [--market-type auto|amm|parimutuel|both] [--liquidity-usdc <n>] [--ai-provider auto|openai|anthropic|mock] [--ai-model <id>] [--search-depth fast|standard|deep] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]',
+    emits: ['markets.hype.plan', 'markets.hype.help', 'markets.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    agentWorkflow: {
+      requiredTools: [],
+      recommendedTools: ['agent.market.hype', 'scan'],
+      executeRequiresValidation: false,
+      notes: [
+        'markets.hype.plan performs bounded provider-backed trend research and freezes the resulting candidate set into a reusable plan payload.',
+        'Use the emitted candidate validation results and attestation for execute-mode MCP runs instead of re-running live research during deployment.',
+        'Review duplicateRiskScore and duplicateMatches before choosing a candidate to deploy.',
+      ],
+    },
+    mcp: {
+      command: ['markets', 'hype', 'plan'],
+      description: 'Research current trending topics, draft hype market candidates, and validate them into a frozen planning payload.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          area: enumSchema(['sports', 'esports', 'politics', 'regional-news', 'breaking-news'], 'Trending topic area.'),
+          region: stringSchema('Regional focus. Required when --area regional-news.'),
+          query: stringSchema('Optional extra search hint or topic constraint.'),
+          'candidate-count': integerSchema('Maximum number of candidate markets to draft.', { minimum: 1, maximum: 5 }),
+          'market-type': enumSchema(['auto', 'amm', 'parimutuel', 'both'], 'Planning preference for market type.'),
+          'liquidity-usdc': numberSchema('Suggested initial liquidity for generated drafts.', { minimum: 0 }),
+          'ai-provider': enumSchema(['auto', 'openai', 'anthropic', 'mock'], 'Research provider selection.'),
+          'ai-model': stringSchema('Model override for the selected provider.'),
+          'search-depth': enumSchema(['fast', 'standard', 'deep'], 'Bounded search depth hint for the provider.'),
+          'chain-id': commonFlags.chainId,
+          'rpc-url': commonFlags.rpcUrl,
+          oracle: stringSchema('Oracle contract address.'),
+          factory: stringSchema('Factory contract address.'),
+          usdc: stringSchema('Collateral token address.'),
+          arbiter: stringSchema('Arbiter address.'),
+          'min-close-lead-seconds': integerSchema('Minimum required lead time before close.', { minimum: 1 }),
+        },
+        requiredFlags: ['area'],
+      }),
+      preferred: true,
+    },
+  }),
+  commandContract({
+    name: 'markets.hype.run',
+    summary: 'Dry-run or execute a frozen hype plan candidate without re-running live trend research.',
+    usage:
+      'pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]',
+    emits: ['markets.hype.run', 'markets.hype.help', 'markets.help'],
+    dataSchema: GENERIC_DATA_SCHEMA_REF,
+    mcpExposed: true,
+    agentWorkflow: {
+      requiredTools: ['markets.hype.plan'],
+      recommendedTools: ['agent.market.validate'],
+      executeRequiresValidation: true,
+      notes: [
+        'markets.hype.run is intentionally plan-file based so the exact research snapshot and validation attestation remain frozen between plan and execute.',
+        'Execute-mode MCP calls should copy the selected candidate PASS attestation from markets.hype.plan back as agentPreflight.',
+        'Avoid editing question, rules, sources, or targetTimestamp after planning; regenerate the hype plan instead.',
+      ],
+    },
+    mcp: {
+      command: ['markets', 'hype', 'run'],
+      description: 'Dry-run or execute a frozen hype plan candidate without re-running live trend research.',
+      inputSchema: buildInputSchema({
+        includeIntent: true,
+        flagProperties: {
+          'plan-file': stringSchema('Saved hype plan file path.'),
+          'candidate-id': stringSchema('Explicit candidate id from the plan payload.'),
+          'market-type': enumSchema(['selected', 'amm', 'parimutuel'], 'Draft to deploy from the selected candidate.'),
+          'dry-run': booleanSchema('Run dry-run mode.'),
+          execute: booleanSchema('Execute live deployment.'),
+          'chain-id': commonFlags.chainId,
+          'rpc-url': commonFlags.rpcUrl,
+          'private-key': commonFlags.privateKey,
+          'profile-id': commonFlags.profileId,
+          'profile-file': commonFlags.profileFile,
+          oracle: stringSchema('Oracle contract address.'),
+          factory: stringSchema('Factory contract address.'),
+          usdc: stringSchema('Collateral token address.'),
+          arbiter: stringSchema('Arbiter address.'),
+          agentPreflight: buildAgentPreflightSchema('PASS attestation from the selected hype-plan candidate validation.'),
+        },
+        requiredFlags: ['plan-file'],
         oneOf: buildExclusivePresenceBranches([['dry-run'], ['execute']]),
       }),
       preferred: true,
@@ -3332,6 +3479,9 @@ const commandContracts = [
           'drift-trigger-bps': integerSchema('Drift trigger in basis points.', { minimum: 1 }),
           'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC.', { minimum: 0 }),
           'hedge-ratio': numberSchema('Desired hedge ratio.', { minimum: 0 }),
+          'hedge-scope': enumSchema(['pool', 'total'], 'Hedge basis. total includes held Pandora outcome tokens in addition to pool reserves; pool hedges only the AMM reserves.'),
+          verbose: booleanSchema('Emit expanded per-tick console diagnostics.'),
+          'adopt-existing-positions': booleanSchema('Seed managed Polymarket inventory from existing live YES/NO balances before sell-side recycling.'),
           'no-hedge': booleanSchema('Disable source hedge leg.'),
           'rebalance-mode': enumSchema(['atomic', 'incremental'], 'Rebalance sizing mode. atomic targets the source price in one Pandora leg when reserves are available; incremental sizes by observed drift.'),
           'price-source': enumSchema(['on-chain', 'indexer'], 'Reserve source for Pandora pricing. on-chain refreshes outcome-token balances before sizing; indexer uses verify payload reserves.'),
@@ -3390,7 +3540,7 @@ const commandContracts = [
   commandContract({
     name: 'mirror.sync',
     summary: 'Mirror sync runtime command family for separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
-    usage: 'pandora [--output table|json] mirror sync once|run|start|stop|status ...',
+    usage: 'pandora [--output table|json] mirror sync once|run|start|stop|status|unlock ...',
     emits: ['mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
   }),
@@ -3398,7 +3548,7 @@ const commandContracts = [
     name: 'mirror.sync.once',
     summary: 'Execute one mirror sync tick with separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
     usage:
-      'pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
+      'pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.once', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     mcpExposed: true,
@@ -3430,6 +3580,9 @@ const commandContracts = [
           'drift-trigger-bps': integerSchema('Drift trigger in basis points.', { minimum: 1 }),
           'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC.', { minimum: 0 }),
           'hedge-ratio': numberSchema('Desired hedge ratio.', { minimum: 0 }),
+          'hedge-scope': enumSchema(['pool', 'total'], 'Hedge basis. total includes held Pandora outcome tokens in addition to pool reserves; pool hedges only the AMM reserves.'),
+          verbose: booleanSchema('Emit expanded per-tick console diagnostics.'),
+          'adopt-existing-positions': booleanSchema('Seed managed Polymarket inventory from existing live YES/NO balances before sell-side recycling.'),
           'no-hedge': booleanSchema('Disable source hedge leg.'),
           'rebalance-mode': enumSchema(['atomic', 'incremental'], 'Rebalance sizing mode. atomic targets the source price in one Pandora leg when reserves are available; incremental sizes by observed drift.'),
           'price-source': enumSchema(['on-chain', 'indexer'], 'Reserve source for Pandora pricing. on-chain refreshes outcome-token balances before sizing; indexer uses verify payload reserves.'),
@@ -3447,6 +3600,8 @@ const commandContracts = [
           'min-time-to-close-sec': integerSchema('Minimum time-to-close in seconds.', { minimum: 1 }),
           'strict-close-time-delta': booleanSchema('Promote close-time delta mismatches from diagnostic to blocking.'),
           iterations: integerSchema('Maximum tick iterations before exit.', { minimum: 1 }),
+          stream: booleanSchema('Emit streaming tick lines.'),
+          'no-stream': booleanSchema('Disable streaming tick lines.'),
           'kill-switch-file': stringSchema('Kill-switch file path.'),
           'chain-id': commonFlags.chainId,
           'rpc-url': commonFlags.rpcUrl,
@@ -3481,7 +3636,7 @@ const commandContracts = [
     name: 'mirror.sync.run',
     summary: 'Run continuous mirror sync loop with separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
     usage:
-      'pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
+      'pandora [--output table|json] mirror sync run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--daemon] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.run', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     mcpExposed: true,
@@ -3513,6 +3668,9 @@ const commandContracts = [
           'drift-trigger-bps': integerSchema('Drift trigger in basis points.', { minimum: 1 }),
           'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC.', { minimum: 0 }),
           'hedge-ratio': numberSchema('Desired hedge ratio.', { minimum: 0 }),
+          'hedge-scope': enumSchema(['pool', 'total'], 'Hedge basis. total includes held Pandora outcome tokens in addition to pool reserves; pool hedges only the AMM reserves.'),
+          verbose: booleanSchema('Emit expanded per-tick console diagnostics.'),
+          'adopt-existing-positions': booleanSchema('Seed managed Polymarket inventory from existing live YES/NO balances before sell-side recycling.'),
           'no-hedge': booleanSchema('Disable source hedge leg.'),
           'rebalance-mode': enumSchema(['atomic', 'incremental'], 'Rebalance sizing mode. atomic targets the source price in one Pandora leg when reserves are available; incremental sizes by observed drift.'),
           'price-source': enumSchema(['on-chain', 'indexer'], 'Reserve source for Pandora pricing. on-chain refreshes outcome-token balances before sizing; indexer uses verify payload reserves.'),
@@ -3568,7 +3726,7 @@ const commandContracts = [
       name: 'mirror.sync.start',
     summary: 'Start detached mirror sync daemon for separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
     usage:
-      'pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
+      'pandora [--output table|json] mirror sync start --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.start', 'mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
     mcpExposed: true,
@@ -3600,6 +3758,9 @@ const commandContracts = [
           'drift-trigger-bps': integerSchema('Drift trigger in basis points.', { minimum: 1 }),
           'hedge-trigger-usdc': numberSchema('Hedge trigger size in USDC.', { minimum: 0 }),
           'hedge-ratio': numberSchema('Desired hedge ratio.', { minimum: 0 }),
+          'hedge-scope': enumSchema(['pool', 'total'], 'Hedge basis. total includes held Pandora outcome tokens in addition to pool reserves; pool hedges only the AMM reserves.'),
+          verbose: booleanSchema('Emit expanded per-tick console diagnostics.'),
+          'adopt-existing-positions': booleanSchema('Seed managed Polymarket inventory from existing live YES/NO balances before sell-side recycling.'),
           'no-hedge': booleanSchema('Disable source hedge leg.'),
           'rebalance-mode': enumSchema(['atomic', 'incremental'], 'Rebalance sizing mode. atomic targets the source price in one Pandora leg when reserves are available; incremental sizes by observed drift.'),
           'price-source': enumSchema(['on-chain', 'indexer'], 'Reserve source for Pandora pricing. on-chain refreshes outcome-token balances before sizing; indexer uses verify payload reserves.'),
@@ -3707,6 +3868,47 @@ const commandContracts = [
       agentPlatform: {
         externalDependencies: ['filesystem'],
         expectedLatencyMs: 1000,
+        returnsOperationId: true,
+        returnsRuntimeHandle: false,
+      },
+    }),
+  commandContract({
+      name: 'mirror.sync.unlock',
+    summary: 'Clear persisted pending-action locks for one mirror strategy after operator review.',
+    usage: 'pandora [--output table|json] mirror sync unlock --state-file <path>|--strategy-hash <hash> [--force] [--stale-after-ms <ms>]',
+    emits: ['mirror.sync.unlock', 'mirror.sync.unlock.help', 'mirror.sync.help'],
+    dataSchema: '#/definitions/MirrorStatusPayload',
+    mcpExposed: true,
+      agentWorkflow: {
+        requiredTools: ['mirror.status'],
+        recommendedTools: ['mirror.health'],
+        executeRequiresValidation: false,
+        notes: [
+          'Unlock clears only the persisted pending-action lock file. It does not settle venue state or change live positions.',
+          'Invalid and zombie locks can be cleared without --force. Reconciliation-required or still-pending locks require operator review and --force.',
+        ],
+      },
+      mcp: {
+      command: ['mirror', 'sync', 'unlock'],
+      description: 'Clear a persisted mirror pending-action lock after operator review. Invalid and zombie locks clear without force; reconciliation-required or still-pending locks require force.',
+      inputSchema: buildInputSchema({
+        includeIntent: true,
+        flagProperties: {
+          'state-file': commonFlags.stateFile,
+          'strategy-hash': stringSchema('Mirror strategy hash.'),
+          force: booleanSchema('Override a reconciliation-required or still-pending lock after operator review.'),
+          'stale-after-ms': integerSchema('Override the stale threshold used to classify pending-action locks.', { minimum: 1 }),
+        },
+        anyOf: mirrorSyncUnlockSelectorAnyOf,
+        oneOf: mirrorSyncUnlockSelectorOneOf,
+        }),
+        preferred: true,
+        mutating: true,
+      },
+      agentPlatform: {
+        externalDependencies: ['filesystem'],
+        expectedLatencyMs: 1000,
+        riskLevel: 'medium',
         returnsOperationId: true,
         returnsRuntimeHandle: false,
       },

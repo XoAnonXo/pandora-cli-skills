@@ -5,6 +5,80 @@ const crypto = require('crypto');
 
 const MIRROR_STATE_SCHEMA_VERSION = '1.0.0';
 
+function toFiniteNumberOrNull(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizeOptionalString(value) {
+  const text = String(value || '').trim();
+  return text || null;
+}
+
+function ensureManagedInventorySeedShape(raw) {
+  const data = raw && typeof raw === 'object' ? raw : {};
+  return {
+    adoptedAt: normalizeOptionalString(data.adoptedAt),
+    status: normalizeOptionalString(data.status),
+    source: normalizeOptionalString(data.source),
+    inventoryAddress: normalizeOptionalString(data.inventoryAddress),
+    walletAddress: normalizeOptionalString(data.walletAddress),
+    marketId: normalizeOptionalString(data.marketId),
+    slug: normalizeOptionalString(data.slug),
+    yesTokenId: normalizeOptionalString(data.yesTokenId),
+    noTokenId: normalizeOptionalString(data.noTokenId),
+    totalYesShares: toFiniteNumberOrNull(data.totalYesShares),
+    totalNoShares: toFiniteNumberOrNull(data.totalNoShares),
+    reservedYesShares: toFiniteNumberOrNull(data.reservedYesShares),
+    reservedNoShares: toFiniteNumberOrNull(data.reservedNoShares),
+    yesShares: toFiniteNumberOrNull(data.yesShares),
+    noShares: toFiniteNumberOrNull(data.noShares),
+    yesUsdc: toFiniteNumberOrNull(data.yesUsdc),
+    noUsdc: toFiniteNumberOrNull(data.noUsdc),
+    netUsdc: toFiniteNumberOrNull(data.netUsdc),
+    estimatedValueUsdc: toFiniteNumberOrNull(data.estimatedValueUsdc),
+    openOrdersCount: toFiniteNumberOrNull(data.openOrdersCount),
+    diagnostics: Array.isArray(data.diagnostics) ? data.diagnostics.map((entry) => String(entry)) : [],
+  };
+}
+
+function ensureAccountingShape(raw) {
+  const data = raw && typeof raw === 'object' ? raw : null;
+  if (!data) return null;
+  const managedPolymarketYesShares =
+    data.managedPolymarketYesShares !== undefined
+      ? toFiniteNumberOrNull(data.managedPolymarketYesShares)
+      : data.managedPolymarketYesUsdc !== undefined
+        ? toFiniteNumberOrNull(data.managedPolymarketYesUsdc)
+        : undefined;
+  const managedPolymarketNoShares =
+    data.managedPolymarketNoShares !== undefined
+      ? toFiniteNumberOrNull(data.managedPolymarketNoShares)
+      : data.managedPolymarketNoUsdc !== undefined
+        ? toFiniteNumberOrNull(data.managedPolymarketNoUsdc)
+        : undefined;
+  return {
+    ...data,
+    pandoraInventoryAddress: normalizeOptionalString(data.pandoraInventoryAddress),
+    pandoraWalletYesUsdc:
+      data.pandoraWalletYesUsdc === undefined ? undefined : toFiniteNumberOrNull(data.pandoraWalletYesUsdc),
+    pandoraWalletNoUsdc:
+      data.pandoraWalletNoUsdc === undefined ? undefined : toFiniteNumberOrNull(data.pandoraWalletNoUsdc),
+    pandoraWalletReadAt: normalizeOptionalString(data.pandoraWalletReadAt),
+    pandoraWalletSource: normalizeOptionalString(data.pandoraWalletSource),
+    pandoraOutcomeYesToken: normalizeOptionalString(data.pandoraOutcomeYesToken),
+    pandoraOutcomeNoToken: normalizeOptionalString(data.pandoraOutcomeNoToken),
+    polymarketInventoryAddress: normalizeOptionalString(data.polymarketInventoryAddress),
+    managedPolymarketYesShares,
+    managedPolymarketNoShares,
+    managedPolymarketYesUsdc:
+      managedPolymarketYesShares,
+    managedPolymarketNoUsdc:
+      managedPolymarketNoShares,
+    managedInventorySeed: ensureManagedInventorySeedShape(data.managedInventorySeed),
+  };
+}
+
 function resolveHomeDir() {
   return process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
 }
@@ -34,6 +108,12 @@ function defaultKillSwitchFile() {
 function ensureStateShape(raw, hash) {
   const data = raw && typeof raw === 'object' ? raw : {};
   const resolvedHash = String(hash || data.strategyHash || '').trim() || null;
+  const currentHedgeShares =
+    Number.isFinite(Number(data.currentHedgeShares))
+      ? Number(data.currentHedgeShares)
+      : Number.isFinite(Number(data.currentHedgeUsdc))
+        ? Number(data.currentHedgeUsdc)
+        : 0;
   return {
     schemaVersion: MIRROR_STATE_SCHEMA_VERSION,
     strategyHash: resolvedHash,
@@ -45,7 +125,8 @@ function ensureStateShape(raw, hash) {
     lastResetDay: data.lastResetDay || new Date().toISOString().slice(0, 10),
     tradesToday: Number.isFinite(Number(data.tradesToday)) ? Number(data.tradesToday) : 0,
     dailySpendUsdc: Number.isFinite(Number(data.dailySpendUsdc)) ? Number(data.dailySpendUsdc) : 0,
-    currentHedgeUsdc: Number.isFinite(Number(data.currentHedgeUsdc)) ? Number(data.currentHedgeUsdc) : 0,
+    currentHedgeShares,
+    currentHedgeUsdc: currentHedgeShares,
     cumulativeLpFeesApproxUsdc: Number.isFinite(Number(data.cumulativeLpFeesApproxUsdc))
       ? Number(data.cumulativeLpFeesApproxUsdc)
       : 0,
@@ -55,9 +136,7 @@ function ensureStateShape(raw, hash) {
     cumulativeHedgeCostApproxUsdc: Number.isFinite(Number(data.cumulativeHedgeCostApproxUsdc))
       ? Number(data.cumulativeHedgeCostApproxUsdc)
       : 0,
-    accounting: data.accounting && typeof data.accounting === 'object'
-      ? data.accounting
-      : null,
+    accounting: ensureAccountingShape(data.accounting),
     lastExecution: data.lastExecution || null,
     idempotencyKeys: Array.isArray(data.idempotencyKeys) ? data.idempotencyKeys : [],
     alerts: Array.isArray(data.alerts) ? data.alerts : [],
