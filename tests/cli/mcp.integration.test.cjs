@@ -34,13 +34,21 @@ const {
   assertBootstrapPolicyProfileRecommendations,
   assertCanonicalToolFirstCommandSet,
 } = require('../helpers/policy_profile_assertions.cjs');
+const {
+  buildAllRemoteScopes,
+  createMcpSweepFixtures,
+  formatSweepSummary,
+  getCompactModeFlag,
+  runMcpToolSweep,
+} = require('../helpers/mcp_tool_sweep.cjs');
 
 async function withMcpClient(fn, options = {}) {
   const env = options.env && typeof options.env === 'object' ? options.env : process.env;
+  const extraArgs = Array.isArray(options.extraArgs) ? options.extraArgs : [];
   const client = new Client({ name: 'pandora-mcp-test', version: '1.0.0' });
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [CLI_PATH, 'mcp'],
+    args: [CLI_PATH, 'mcp', ...extraArgs],
     cwd: REPO_ROOT,
     stderr: 'pipe',
     env,
@@ -64,6 +72,9 @@ async function withMcpHttpGateway(fn, options = {}) {
       '--host', '127.0.0.1',
       '--port', '0',
     ];
+    if (Array.isArray(options.extraArgs) && options.extraArgs.length) {
+      args.push(...options.extraArgs);
+    }
     if (Array.isArray(options.authTokenRecords) && options.authTokenRecords.length) {
       const authTokensFile = path.join(tempDir, 'auth-tokens.json');
       fs.writeFileSync(authTokensFile, JSON.stringify({ schemaVersion: '1.0.0', tokens: options.authTokenRecords }, null, 2));
@@ -896,7 +907,7 @@ test('mcp http derives a usable advertised endpoint from the request host when b
   });
   const gateway = await service.start();
   try {
-    assert.match(gateway.config.baseUrl, /^http:\/\/127\.0\.0\.1:/);
+    assert.match(gateway.config.baseUrl, /^http:\/\/localhost:/);
     assert.equal(gateway.config.advertisedBaseUrl, null);
     const response = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`, {
       headers: {
@@ -2371,4 +2382,192 @@ test('mcp panic lock blocks live write tools until cleared', async () => {
   } finally {
     removeDir(tempHome);
   }
+});
+
+test('mcp stdio exhaustive sweep invokes every exposed tool with structured results', { concurrency: false }, async (t) => {
+  const fixtures = await createMcpSweepFixtures();
+  t.after(() => {
+    fixtures.cleanup();
+  });
+
+  await withMcpClient(async (client) => {
+    const summary = await runMcpToolSweep({
+      client,
+      fixtures,
+      transportLabel: 'stdio',
+    });
+
+    t.diagnostic(formatSweepSummary(summary));
+    assert.equal(summary.results.length, summary.toolCount);
+    assert.equal(summary.toolCount > 0, true);
+    assert.deepEqual(summary.transportErrors, []);
+    assert.deepEqual(summary.unstructured, []);
+    assert.deepEqual(summary.schemaIssueResults, []);
+  }, {
+    env: fixtures.env,
+  });
+});
+
+test('mcp http exhaustive sweep invokes every remote-exposed tool with structured results', { concurrency: false }, async (t) => {
+  const fixtures = await createMcpSweepFixtures();
+  t.after(() => {
+    fixtures.cleanup();
+  });
+
+  await withRemoteMcpClient(async (client) => {
+    const summary = await runMcpToolSweep({
+      client,
+      fixtures,
+      transportLabel: 'http',
+    });
+
+    t.diagnostic(formatSweepSummary(summary));
+    assert.equal(summary.results.length, summary.toolCount);
+    assert.equal(summary.toolCount > 0, true);
+    assert.deepEqual(summary.transportErrors, []);
+    assert.deepEqual(summary.unstructured, []);
+    assert.deepEqual(summary.schemaIssueResults, []);
+  }, {
+    authScopes: buildAllRemoteScopes(),
+    env: fixtures.env,
+  });
+});
+
+test('mcp compact/code mode, when advertised, exposes a materially reduced discovery surface', { concurrency: false }, async (t) => {
+  const compactFlag = getCompactModeFlag();
+  if (!compactFlag) {
+    t.diagnostic('compact/code mode flag not advertised by `pandora mcp --help`; skipping');
+    return;
+  }
+
+  const fixtures = await createMcpSweepFixtures();
+  t.after(() => {
+    fixtures.cleanup();
+  });
+
+  await withMcpClient(async (client) => {
+    const listed = await client.listTools();
+    const tools = Array.isArray(listed && listed.tools) ? listed.tools : [];
+    const toolNames = tools.map((tool) => String(tool.name || ''));
+    const sortedToolNames = toolNames.slice().sort();
+
+    const hiddenCall = await client.callTool({
+      name: 'trade',
+      arguments: {
+        'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        side: 'yes',
+        'amount-usdc': 10,
+        'dry-run': true,
+      },
+    });
+    const hiddenEnvelope = extractStructuredEnvelope(hiddenCall);
+
+    const searchCall = await client.callTool({
+      name: 'search',
+      arguments: {
+        query: 'trade',
+        limit: 3,
+      },
+    });
+    const searchEnvelope = extractStructuredEnvelope(searchCall);
+
+    const executeCall = await client.callTool({
+      name: 'execute',
+      arguments: {
+        calls: [
+          { name: 'help', arguments: {} },
+          { name: 'capabilities', arguments: {} },
+        ],
+      },
+    });
+    const executeEnvelope = extractStructuredEnvelope(executeCall);
+
+    t.diagnostic(JSON.stringify({ compactFlag, toolNames }, null, 2));
+    assert.deepEqual(sortedToolNames, ['execute', 'search']);
+    assert.equal(hiddenEnvelope.ok, false);
+    assert.equal(hiddenEnvelope.error.code, 'UNKNOWN_TOOL');
+    assert.equal(searchEnvelope.ok, true);
+    assert.equal(searchEnvelope.command, 'mcp.search');
+    assert.equal(searchEnvelope.data.mode, 'compact');
+    assert.ok(searchEnvelope.data.matches.some((match) => match.name === 'trade'));
+    assert.equal(executeEnvelope.ok, true);
+    assert.equal(executeEnvelope.command, 'mcp.execute');
+    assert.equal(executeEnvelope.data.mode, 'compact');
+    assert.equal(executeEnvelope.data.executedCalls, 2);
+    assert.equal(executeEnvelope.data.failed, 0);
+  }, {
+    env: fixtures.env,
+    extraArgs: [compactFlag],
+  });
+});
+
+test('mcp http compact/code mode preserves compact exposure through streamable HTTP', { concurrency: false }, async (t) => {
+  const compactFlag = getCompactModeFlag();
+  if (!compactFlag) {
+    t.diagnostic('compact/code mode flag not advertised by `pandora mcp --help`; skipping');
+    return;
+  }
+
+  const fixtures = await createMcpSweepFixtures();
+  t.after(() => {
+    fixtures.cleanup();
+  });
+
+  await withRemoteMcpClient(async (client, gateway) => {
+    const listed = await client.listTools();
+    const tools = Array.isArray(listed && listed.tools) ? listed.tools : [];
+    const toolNames = tools.map((tool) => String(tool.name || '')).sort();
+
+    const hiddenCall = await client.callTool({
+      name: 'trade',
+      arguments: {
+        'market-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        side: 'yes',
+        'amount-usdc': 10,
+        'dry-run': true,
+      },
+    });
+    const hiddenEnvelope = extractStructuredEnvelope(hiddenCall);
+
+    const searchCall = await client.callTool({
+      name: 'search',
+      arguments: {
+        query: 'mirror plan',
+        limit: 3,
+      },
+    });
+    const searchEnvelope = extractStructuredEnvelope(searchCall);
+
+    const executeCall = await client.callTool({
+      name: 'execute',
+      arguments: {
+        calls: [{ name: 'help', arguments: {} }],
+      },
+    });
+    const executeEnvelope = extractStructuredEnvelope(executeCall);
+
+    const toolsRes = await fetch(`${gateway.config.baseUrl}${gateway.config.toolsPath}`, {
+      headers: {
+        authorization: `Bearer ${gateway.auth.token}`,
+      },
+    });
+    assert.equal(toolsRes.status, 200);
+    const toolsEnvelope = await toolsRes.json();
+
+    assert.deepEqual(toolNames, ['execute', 'search']);
+    assert.equal(hiddenEnvelope.ok, false);
+    assert.equal(hiddenEnvelope.error.code, 'UNKNOWN_TOOL');
+    assert.equal(searchEnvelope.ok, true);
+    assert.equal(searchEnvelope.data.mode, 'compact');
+    assert.ok(searchEnvelope.data.matches.some((match) => match.name === 'mirror.plan'));
+    assert.equal(executeEnvelope.ok, true);
+    assert.equal(executeEnvelope.data.executedCalls, 1);
+    assert.equal(executeEnvelope.data.failed, 0);
+    assert.equal(toolsEnvelope.data.toolExposureMode, 'compact');
+    assert.equal(gateway.config.toolExposureMode, 'compact');
+  }, {
+    authScopes: buildAllRemoteScopes(),
+    env: fixtures.env,
+    extraArgs: [compactFlag],
+  });
 });

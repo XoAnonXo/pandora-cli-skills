@@ -1799,6 +1799,10 @@ function buildSchemaPayload(options = {}) {
           operationsReceiptVerifyPathTemplate: { type: 'string' },
           operationsDetachedReceiptVerifyPath: { type: 'string' },
           operationsWebhookPathTemplate: { type: 'string' },
+          toolExposureMode: {
+            type: 'string',
+            enum: ['full', 'compact'],
+          },
           advertisedBaseUrl: { type: ['string', 'null'] },
           authRequired: { type: 'boolean' },
           grantedScopes: { type: 'array', items: { type: 'string' } },

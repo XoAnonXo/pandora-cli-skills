@@ -277,6 +277,7 @@ function parseMcpHttpFlags(args = []) {
     authTokenFile: null,
     authTokensFile: null,
     authScopes: null,
+    toolExposureMode: 'full',
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -364,6 +365,10 @@ function parseMcpHttpFlags(args = []) {
         options.authScopes = parseCsvList(next);
         index += 1;
         break;
+      case '--compact-tools':
+      case '--code-mode':
+        options.toolExposureMode = 'compact';
+        break;
       default:
         throw createGatewayError('UNKNOWN_FLAG', `Unknown mcp http flag: ${token}`);
     }
@@ -412,6 +417,7 @@ function parseMcpHttpFlags(args = []) {
     schemaPath: options.schemaPath,
     toolsPath: options.toolsPath,
     operationsPath: options.operationsPath,
+    toolExposureMode: options.toolExposureMode,
     publicBaseUrl: options.publicBaseUrl,
     authTokenRecords,
     authSourceMode: options.authTokensFile
@@ -1202,6 +1208,7 @@ function createMcpHttpGatewayService(options = {}) {
     cliPath: options.cliPath,
     remoteTransportActive: true,
     asyncExecution: true,
+    compactMode: parsed.toolExposureMode === 'compact',
   });
   const operationService = options.operationService || createOperationService();
   const startedAt = Date.now();
@@ -1241,6 +1248,7 @@ function createMcpHttpGatewayService(options = {}) {
       toolsPath: parsed.toolsPath,
       authPath,
       operationsPath: parsed.operationsPath,
+      toolExposureMode: parsed.toolExposureMode,
       operationsReceiptPathTemplate: `${parsed.operationsPath}/{operationId}/receipt`,
       operationsReceiptVerifyPathTemplate: `${parsed.operationsPath}/{operationId}/receipt/verify`,
       operationsDetachedReceiptVerifyPath: `${parsed.operationsPath}/receipts/verify`,
@@ -1491,6 +1499,7 @@ function createMcpHttpGatewayService(options = {}) {
       name: 'schema',
       arguments: includeCompatibility ? { 'include-compatibility': true } : {},
     }, {
+      allowHiddenToolAccess: true,
       assertToolAllowed: (toolName, descriptor) => assertToolScopes(toolName, descriptor, authInfo),
       filterToolDescriptor: includeDenied
         ? undefined
@@ -1576,6 +1585,7 @@ function createMcpHttpGatewayService(options = {}) {
       data: {
         schemaVersion: '1.0.0',
         generatedAt: new Date().toISOString(),
+        toolExposureMode: parsed.toolExposureMode,
         includeAliases,
         includeDenied,
         principalId: authInfo.principalId,
@@ -1806,6 +1816,7 @@ function createMcpHttpGatewayService(options = {}) {
         generatedAt: new Date().toISOString(),
         service: 'pandora-mcp-http',
         version: packageVersion,
+        toolExposureMode: parsed.toolExposureMode,
         principalId: authInfo.principalId,
         uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
         requests: {
@@ -1840,6 +1851,7 @@ function createMcpHttpGatewayService(options = {}) {
         generatedAt: new Date().toISOString(),
         service: 'pandora-mcp-http',
         version: packageVersion,
+        toolExposureMode: parsed.toolExposureMode,
         uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
         ready: readiness.ready,
         checks: readiness.checks,
@@ -1958,6 +1970,7 @@ function createMcpHttpGatewayService(options = {}) {
             generatedAt: new Date().toISOString(),
             service: 'pandora-mcp-http',
             version: packageVersion,
+            toolExposureMode: parsed.toolExposureMode,
             uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
             ready: readiness.ready,
             requestCounters: {
@@ -2147,14 +2160,19 @@ function createMcpHttpGatewayService(options = {}) {
     });
     await new Promise((resolve, reject) => {
       server.once('error', reject);
-      server.listen(parsed.port, parsed.host, () => {
+      const onListening = () => {
         server.off('error', reject);
         resolve();
-      });
+      };
+      if (isWildcardHost(parsed.host)) {
+        server.listen(parsed.port, onListening);
+        return;
+      }
+      server.listen(parsed.port, parsed.host, onListening);
     });
     const address = server.address();
     const actualPort = address && typeof address === 'object' ? address.port : parsed.port;
-    const controlHost = isWildcardHost(parsed.host) ? '127.0.0.1' : parsed.host;
+    const controlHost = isWildcardHost(parsed.host) ? 'localhost' : parsed.host;
     const baseUrl = `http://${controlHost}:${actualPort}`;
     controlBaseUrl = baseUrl;
     if (!advertisedBaseUrl) {
@@ -2221,6 +2239,7 @@ function createRunMcpHttpGateway(options = {}) {
         ...(gateway.config.advertisedBaseUrl && gateway.config.advertisedBaseUrl !== gateway.config.baseUrl
           ? [`Advertised MCP endpoint: ${gateway.config.advertisedBaseUrl}${gateway.config.mcpPath}`]
           : []),
+        `Tool exposure mode: ${gateway.config.toolExposureMode}`,
         `Bootstrap: ${gateway.config.baseUrl}${gateway.config.bootstrapPath}`,
         `Capabilities: ${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`,
         `Schema: ${gateway.config.baseUrl}${gateway.config.schemaPath}`,
