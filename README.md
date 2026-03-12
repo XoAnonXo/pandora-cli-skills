@@ -1,6 +1,10 @@
 # Pandora CLI & Skills
 
-Pandora is a production CLI and agent surface for prediction-market workflows: read-only discovery, mirror planning, sports consensus, on-chain execution, MCP serving, and shipped SDK contracts.
+Pandora is a prediction-market runtime for agents, operators, and integrators. It gives you three ways to work with the same capability surface:
+
+- `MCP` for agents that need Pandora tools
+- `CLI` for humans, scripts, and CI
+- `SDK` for applications that embed Pandora in code
 
 ```text
 +----------------------------------------------------------------------------------+
@@ -20,9 +24,34 @@ Pandora is a production CLI and agent surface for prediction-market workflows: r
 +----------------------------------------------------------+
 ```
 
+## External Users
+
+If you are evaluating Pandora for external use, start here instead of reading the full repo top to bottom.
+
+### Which path should you use?
+
+| If you want to... | Use | Why |
+| --- | --- | --- |
+| Let an agent call Pandora tools | `MCP` | Fastest path for Claude, Codex, and other MCP-capable agents |
+| Run Pandora yourself in terminal, automation, or CI | `CLI` | Best for deterministic commands and operator workflows |
+| Build a product or custom integration on top of Pandora | `SDK` | Best for application code that needs library access |
+
+### Recommended install paths
+
+- Agent users: start with `npm install && npx pandora mcp`
+- CLI users: start with `npm install && npx pandora help`
+- Builders: start with [`sdk/typescript/README.md`](./sdk/typescript/README.md) or [`sdk/python/README.md`](./sdk/python/README.md)
+
+### Practical recommendation
+
+- If the goal is "my agent should be able to use Pandora", choose `MCP`.
+- If the goal is "I want to run commands or automate workflows", choose the `CLI`.
+- If the goal is "I am writing software on top of Pandora", choose the `SDK`.
+- Most external users should start with `MCP` or `CLI`, not the `SDK`.
+
 ## Start Here
 
-If you are reading this page on GitHub, use these jump points first:
+If you want the main documentation map, use these jump points:
 
 - Anthropic skill install: [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
 - Humans: [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
@@ -222,6 +251,7 @@ npx pandora --output json profile explain --id market_observer_ro
 Notes:
 
 - The shipped SDK surfaces are alpha.
+- The SDK is for developers embedding Pandora in their own code. It is not the default path for ordinary agent usage or shell automation.
 - The repository also vendors matching generated manifests under `sdk/typescript/generated` and `sdk/python/pandora_agent/generated`.
 - Use the SDK-local manifests first when embedding Pandora in a client.
 

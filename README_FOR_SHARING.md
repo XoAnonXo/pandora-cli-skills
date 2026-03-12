@@ -1,6 +1,6 @@
 # Pandora CLI & Skills — Shareable Package
 
-Sanitized, shareable copy of the Pandora CLI docs, SDK surfaces, generated contracts, and package metadata.
+Sanitized, shareable copy of the Pandora CLI docs, SDK surfaces, generated contracts, and package metadata for external users, agent builders, and integration teams.
 
 ```text
 +----------------------------------------------------------------------------------+
@@ -19,6 +19,31 @@ Sanitized, shareable copy of the Pandora CLI docs, SDK surfaces, generated contr
 | bundle  -> see what is included vs intentionally omitted       |
 +----------------------------------------------------------------+
 ```
+
+## External Users
+
+If you are receiving this package from the Pandora team, start here.
+
+### Which path should you use?
+
+| If you want to... | Use | Why |
+| --- | --- | --- |
+| Let an agent call Pandora tools | `MCP` | Fastest path for MCP-capable agents |
+| Run Pandora yourself in terminal, automation, or CI | `CLI` | Best for operator workflows and repeatable command execution |
+| Build a product or custom integration on top of Pandora | `SDK` | Best for application code that needs library access |
+
+### Recommended install paths
+
+- Agent users: start with `npm install && npx pandora mcp`
+- CLI users: start with `npm install && npx pandora help`
+- Builders: start with [`sdk/typescript/README.md`](./sdk/typescript/README.md) or [`sdk/python/README.md`](./sdk/python/README.md)
+
+### Practical recommendation
+
+- If the goal is "my agent should be able to use Pandora", choose `MCP`.
+- If the goal is "I want to run commands or automate workflows", choose the `CLI`.
+- If the goal is "I am writing software on top of Pandora", choose the `SDK`.
+- Most external users should start with `MCP` or `CLI`, not the `SDK`.
 
 ## Start Here
 
@@ -233,6 +258,7 @@ bootstrap
 Status notes:
 
 - The shipped SDK surfaces are alpha.
+- The SDK is for developers embedding Pandora in their own code. It is not the default path for standard agent usage or shell automation.
 - The shared package vendors matching manifests and generated contract data.
 - External install/publication details should be confirmed against the tagged release and trust docs.
 
