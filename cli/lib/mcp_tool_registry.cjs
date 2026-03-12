@@ -644,12 +644,16 @@ function coerceNumberString(value, integerOnly) {
 
 function coerceSchemaValue(schema, value) {
   if (!schema || value === undefined) return value;
+  const pandora = isPlainObject(schema.xPandora) ? schema.xPandora : null;
   if (Array.isArray(schema.type)) {
     for (const candidateType of schema.type) {
       const candidate = coerceSchemaValue({ ...schema, type: candidateType }, value);
       if (candidate !== value) return candidate;
     }
     return value;
+  }
+  if (schema.type === 'string' && typeof value === 'number' && pandora && pandora.acceptsUnixSeconds === true) {
+    return Number.isFinite(value) ? String(value) : value;
   }
   if (schema.type === 'boolean') {
     return coerceBooleanString(value);

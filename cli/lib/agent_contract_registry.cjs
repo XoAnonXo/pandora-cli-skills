@@ -255,19 +255,14 @@ function buildPollCategorySchema(description = 'Category id or canonical categor
 }
 
 function buildTargetTimestampSchema(description = 'Resolution timestamp in unix seconds or ISO-8601 datetime.') {
-  return {
-    anyOf: [
-      stringSchema(null, {
-        examples: ['1777777777', '2026-12-31T00:00:00Z'],
-      }),
-      integerSchema(null, { minimum: 1 }),
-    ],
-    ...(description ? { description } : {}),
+  return stringSchema(description, {
+    examples: ['1777777777', '2026-12-31T00:00:00Z'],
     xPandora: {
       acceptsUnixSeconds: true,
       acceptsIsoDatetime: true,
+      acceptsIntegerStrings: true,
     },
-  };
+  });
 }
 
 function commandContract(options) {

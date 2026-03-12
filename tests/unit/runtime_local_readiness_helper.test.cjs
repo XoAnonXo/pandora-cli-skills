@@ -155,6 +155,9 @@ test('runtime-local readiness helper auto-loads ~/.pandora-cli.env and certifies
   const readinessCheck = payload.checks.find((item) => item.id === 'runtime-ready-mutable-profiles');
   assert.ok(readinessCheck);
   assert.equal(readinessCheck.status, 'pass');
-  assert.deepEqual(readinessCheck.actual.readyMutableBuiltinIds.sort(), ['dev_keystore_operator', 'prod_trader_a']);
+  assert.deepEqual(
+    readinessCheck.actual.readyMutableBuiltinIds.sort(),
+    ['dev_keystore_operator', 'market_deployer_a', 'prod_trader_a'],
+  );
   assert.equal(rpcProbe.requests.length >= 2, true);
 });

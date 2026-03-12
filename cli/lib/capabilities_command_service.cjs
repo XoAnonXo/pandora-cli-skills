@@ -401,7 +401,12 @@ function scriptIncludes(scriptValue, token) {
 function workflowRunsCommand(documentText, command) {
   const text = normalizeString(documentText);
   const target = normalizeString(command);
-  return Boolean(text && target && text.includes(`run: ${target}`));
+  if (!text || !target) return false;
+  return text.includes(`run: ${target}`)
+    || (
+      text.includes(`test_command: ${target}`)
+      && text.includes('run: ${{ matrix.test_command }}')
+    );
 }
 
 function textMatches(documentText, pattern) {

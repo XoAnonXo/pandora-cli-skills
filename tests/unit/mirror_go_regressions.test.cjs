@@ -528,7 +528,7 @@ test('deployMirror rejects explicit empty --sources instead of silently falling 
       }),
     (error) => {
       assert.equal(error.code, 'MIRROR_SOURCES_REQUIRED');
-      assert.match(error.message, /explicit independent resolution sources/i);
+      assert.match(error.message, /explicit independent public resolution sources/i);
       return true;
     },
   );

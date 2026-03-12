@@ -596,21 +596,14 @@
           "type": "array"
         },
         "target-timestamp": {
-          "anyOf": [
-            {
-              "examples": [
-                "1777777777",
-                "2026-12-31T00:00:00Z"
-              ],
-              "type": "string"
-            },
-            {
-              "minimum": 1,
-              "type": "integer"
-            }
-          ],
           "description": "Resolution timestamp in unix seconds or ISO-8601 datetime.",
+          "examples": [
+            "1777777777",
+            "2026-12-31T00:00:00Z"
+          ],
+          "type": "string",
           "xPandora": {
+            "acceptsIntegerStrings": true,
             "acceptsIsoDatetime": true,
             "acceptsUnixSeconds": true
           }
@@ -10710,21 +10703,14 @@
           "type": "array"
         },
         "target-timestamp": {
-          "anyOf": [
-            {
-              "examples": [
-                "1777777777",
-                "2026-12-31T00:00:00Z"
-              ],
-              "type": "string"
-            },
-            {
-              "minimum": 1,
-              "type": "integer"
-            }
-          ],
           "description": "Resolution timestamp in unix seconds or ISO-8601 datetime.",
+          "examples": [
+            "1777777777",
+            "2026-12-31T00:00:00Z"
+          ],
+          "type": "string",
           "xPandora": {
+            "acceptsIntegerStrings": true,
             "acceptsIsoDatetime": true,
             "acceptsUnixSeconds": true
           }
@@ -11258,21 +11244,14 @@
           "type": "array"
         },
         "target-timestamp": {
-          "anyOf": [
-            {
-              "examples": [
-                "1777777777",
-                "2026-12-31T00:00:00Z"
-              ],
-              "type": "string"
-            },
-            {
-              "minimum": 1,
-              "type": "integer"
-            }
-          ],
           "description": "Resolution timestamp in unix seconds or ISO-8601 datetime.",
+          "examples": [
+            "1777777777",
+            "2026-12-31T00:00:00Z"
+          ],
+          "type": "string",
           "xPandora": {
+            "acceptsIntegerStrings": true,
             "acceptsIsoDatetime": true,
             "acceptsUnixSeconds": true
           }
@@ -17595,21 +17574,14 @@
           "type": "array"
         },
         "target-timestamp": {
-          "anyOf": [
-            {
-              "examples": [
-                "1777777777",
-                "2026-12-31T00:00:00Z"
-              ],
-              "type": "string"
-            },
-            {
-              "minimum": 1,
-              "type": "integer"
-            }
-          ],
           "description": "Explicit target timestamp override.",
+          "examples": [
+            "1777777777",
+            "2026-12-31T00:00:00Z"
+          ],
+          "type": "string",
           "xPandora": {
+            "acceptsIntegerStrings": true,
             "acceptsIsoDatetime": true,
             "acceptsUnixSeconds": true
           }
@@ -19318,21 +19290,14 @@
           "type": "boolean"
         },
         "target-timestamp": {
-          "anyOf": [
-            {
-              "examples": [
-                "1777777777",
-                "2026-12-31T00:00:00Z"
-              ],
-              "type": "string"
-            },
-            {
-              "minimum": 1,
-              "type": "integer"
-            }
-          ],
           "description": "Explicit target timestamp override.",
+          "examples": [
+            "1777777777",
+            "2026-12-31T00:00:00Z"
+          ],
+          "type": "string",
           "xPandora": {
+            "acceptsIntegerStrings": true,
             "acceptsIsoDatetime": true,
             "acceptsUnixSeconds": true
           }
