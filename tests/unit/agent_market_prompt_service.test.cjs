@@ -53,6 +53,19 @@ test('autocomplete payload marks validation as the next mandatory tool', () => {
   assert.equal(payload.prompt.includes('Return only valid JSON'), true);
 });
 
+test('parimutuel autocomplete payload explains skewed pool distributions for newcomers', () => {
+  const payload = buildAgentMarketAutocompletePayload({
+    question: 'Will BTC close above $120k by end of 2026?',
+    marketType: 'parimutuel',
+    now: '2026-03-12T12:00:00.000Z',
+  });
+
+  assert.match(payload.prompt, /PARIMUTUEL GUIDANCE:/);
+  assert.match(payload.prompt, /explicit distribution percentages, those percentages define the starting YES\/NO pool skew/i);
+  assert.match(payload.prompt, /99\.9\/0\.1/i);
+  assert.match(payload.prompt, /funds remain locked until the market resolves/i);
+});
+
 test('hype payload exposes trend-research prompt and validation workflow', () => {
   const payload = buildAgentMarketHypePayload({
     area: 'breaking-news',
@@ -68,6 +81,7 @@ test('hype payload exposes trend-research prompt and validation workflow', () =>
   assert.equal(payload.input.candidateCount, 3);
   assert.equal(payload.workflow.nextTool, 'agent.market.validate');
   assert.equal(payload.prompt.includes('Search the public web for the latest trending topics'), true);
+  assert.equal(payload.workflow.notes.some((note) => /prefer provider-backed markets\.hype\.plan/i.test(String(note))), true);
 });
 
 test('hype payload clamps candidate count to documented maximum', () => {
@@ -90,6 +104,21 @@ test('regional-news hype payload requires an explicit region', () => {
         now: '2026-03-11T12:00:00.000Z',
       }),
     (error) => error && error.code === 'MISSING_REQUIRED_FLAG',
+  );
+});
+
+test('hype payload missing-area error includes a concrete retry example', () => {
+  assert.throws(
+    () =>
+      buildAgentMarketHypePayload({
+        query: 'suggest ideas',
+        now: '2026-03-11T12:00:00.000Z',
+      }),
+    (error) =>
+      error
+      && error.code === 'MISSING_REQUIRED_FLAG'
+      && /--area <sports\|esports\|politics\|regional-news\|breaking-news>/i.test(error.message)
+      && /agent market hype --area politics --query "suggest ideas"/i.test(error.message),
   );
 });
 

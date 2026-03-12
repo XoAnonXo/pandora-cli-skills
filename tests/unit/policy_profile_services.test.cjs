@@ -244,6 +244,26 @@ test('policy command service explains denials and recommends the least-blocked p
     riskCap.denials.some((item) => item.code === 'POLICY_RISK_CAP_NOTIONAL_EXCEEDED'),
     true,
   );
+
+  emitted.length = 0;
+
+  await runPolicyCommand([
+    'recommend',
+    '--command', 'trade.execute',
+    '--mode', 'execute',
+    '--chain-id', '1',
+    '--category', 'Crypto',
+  ], { outputMode: 'json' });
+
+  assert.equal(emitted[0].command, 'policy.recommend');
+  assert.equal(emitted[0].data.recommendedPolicyId, null);
+  assert.equal(emitted[0].data.recommended, null);
+  assert.equal(emitted[0].data.recommendedNextTool, 'quote');
+  assert.equal(emitted[0].data.recommendedSafeEquivalent, 'quote');
+  const tradeRiskCap = emitted[0].data.candidates.find((item) => item.id === 'execute-with-risk-cap');
+  assert.ok(tradeRiskCap, 'trade risk-cap candidate should be present');
+  assert.equal(tradeRiskCap.usable, false);
+  assert.equal(emitted[0].data.candidates[0].usable, false);
 });
 
 test('profile registry lists built-in profiles and validateProfileFile parses custom profiles', () => {

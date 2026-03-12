@@ -255,13 +255,19 @@ function buildPollCategorySchema(description = 'Category id or canonical categor
 }
 
 function buildTargetTimestampSchema(description = 'Resolution timestamp in unix seconds or ISO-8601 datetime.') {
-  return stringSchema(description, {
-    examples: ['1777777777', '2026-12-31T00:00:00Z'],
+  return {
+    anyOf: [
+      stringSchema(null, {
+        examples: ['1777777777', '2026-12-31T00:00:00Z'],
+      }),
+      integerSchema(null, { minimum: 1 }),
+    ],
+    ...(description ? { description } : {}),
     xPandora: {
       acceptsUnixSeconds: true,
       acceptsIsoDatetime: true,
     },
-  });
+  };
 }
 
 function commandContract(options) {
@@ -989,7 +995,7 @@ const commandContracts = [
         flagProperties: {
           question: stringSchema('Exact market question to validate.'),
           rules: stringSchema('Exact market rules to validate.'),
-          'target-timestamp': integerSchema('Resolution timestamp in unix seconds.', { minimum: 1 }),
+          'target-timestamp': buildTargetTimestampSchema('Resolution timestamp in unix seconds or ISO-8601 datetime.'),
           sources: flexibleArraySchema(stringSchema(), 'Source URL list.'),
         },
         requiredFlags: ['question', 'rules', 'target-timestamp'],
@@ -1200,6 +1206,7 @@ const commandContracts = [
       executeRequiresValidation: true,
       notes: [
         'Use markets.hype.plan to turn fresh public-web research into a frozen, reusable market plan.',
+        'For real MCP suggestion flows, prefer provider-backed markets.hype.plan before falling back to agent.market.hype.',
         'The selected candidate is validated before planning completes; pass the emitted PASS attestation back as agentPreflight for execute-mode MCP runs.',
         'markets.hype.run should consume a saved plan file so the research snapshot, sources, and validation result do not drift between planning and deployment.',
       ],
@@ -1225,6 +1232,8 @@ const commandContracts = [
       executeRequiresValidation: false,
       notes: [
         'markets.hype.plan performs bounded provider-backed trend research and freezes the resulting candidate set into a reusable plan payload.',
+        'Prefer --ai-provider auto|openai|anthropic for real MCP suggestion workflows. Use --ai-provider mock only for deterministic tests, demos, and evals.',
+        'Use agent.market.hype as fallback/orchestration mode when the host agent must perform the research itself.',
         'Use the emitted candidate validation results and attestation for execute-mode MCP runs instead of re-running live research during deployment.',
         'Review duplicateRiskScore and duplicateMatches before choosing a candidate to deploy.',
       ],

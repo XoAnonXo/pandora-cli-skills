@@ -744,6 +744,43 @@ test('deployPandoraAmmMarket rejects overlong rules before any transaction simul
   assert.equal(simulateCalled, false);
 });
 
+test('deployPandoraAmmMarket dry-run returns structured funding blockers before poll simulation', async () => {
+  let simulateCalled = false;
+  const { publicClient, walletClient } = createDeployClients({
+    publicClient: {
+      getBalance: async () => 0n,
+      readContract: async ({ functionName }) => {
+        if (functionName === 'operatorGasFee') return 1_000n;
+        if (functionName === 'protocolFee') return 500n;
+        if (functionName === 'MAX_RULES_LENGTH') return 256n;
+        if (functionName === 'balanceOf') return 0n;
+        if (functionName === 'allowance') return 0n;
+        throw new Error(`Unexpected readContract: ${functionName}`);
+      },
+      simulateContract: async () => {
+        simulateCalled = true;
+        throw new Error('simulate should not run when funding blockers are already known');
+      },
+    },
+  });
+
+  const payload = await deployPandoraAmmMarket(
+    baseDeployOptions({
+      execute: false,
+      publicClient,
+      walletClient,
+    }),
+  );
+
+  assert.equal(payload.preflight.ready, false);
+  assert.equal(payload.preflight.simulationSkipped, true);
+  assert.equal(payload.preflight.requiresApproval, true);
+  assert.equal(Array.isArray(payload.preflight.blockers), true);
+  assert.equal(payload.preflight.blockers.some((blocker) => blocker.code === 'INSUFFICIENT_NATIVE_BALANCE'), true);
+  assert.equal(payload.preflight.blockers.some((blocker) => blocker.code === 'INSUFFICIENT_USDC_BALANCE'), true);
+  assert.equal(simulateCalled, false);
+});
+
 test('deployPandoraAmmMarket computes dynamic gas reserve from live fee data', async () => {
   const low = createDeployClients();
   const lowPayload = await deployPandoraAmmMarket(
@@ -775,6 +812,8 @@ test('deployPandoraAmmMarket dry-run payload includes pari-mutuel deployment arg
   const payload = await deployPandoraAmmMarket(
     baseDeployOptions({
       execute: false,
+      privateKey: null,
+      account: null,
       marketType: 'parimutuel',
       curveFlattener: 9,
       curveOffset: 12_345,
@@ -789,6 +828,36 @@ test('deployPandoraAmmMarket dry-run payload includes pari-mutuel deployment arg
   assert.equal(payload.deploymentArgs.maxImbalance, null);
   assert.equal(payload.tx, null);
   assert.equal(payload.preflight, null);
+});
+
+test('deployPandoraAmmMarket dry-run preflight honors PANDORA_PRIVATE_KEY env inputs', async () => {
+  const { publicClient } = createDeployClients();
+  const payload = await deployPandoraAmmMarket(
+    baseDeployOptions({
+      execute: false,
+      privateKey: null,
+      account: null,
+      publicClient,
+      env: {
+        PANDORA_PRIVATE_KEY: TEST_PRIVATE_KEY,
+        RPC_URL: 'https://ethereum.publicnode.com',
+        CHAIN_ID: '1',
+      },
+      viem: {
+        createPublicClient: () => publicClient,
+        createWalletClient: () => ({ writeContract: async () => '0x0' }),
+        privateKeyToAccount: () => TEST_ACCOUNT,
+        encodeFunctionData: () => '0x',
+        http: () => ({}),
+        parseEther: (value) => BigInt(Math.trunc(Number(value) * 1e18)),
+        parseUnits: (value, decimals) => BigInt(Math.trunc(Number(value) * (10 ** decimals))),
+      },
+    }),
+  );
+
+  assert.equal(payload.mode, 'dry-run');
+  assert.equal(payload.preflight.account, TEST_ACCOUNT.address);
+  assert.equal(payload.preflight.ready, true);
 });
 
 test('deployPandoraAmmMarket executes createPariMutuel when marketType is parimutuel', async () => {

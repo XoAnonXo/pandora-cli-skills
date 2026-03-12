@@ -23,9 +23,10 @@ Use this file when exposing Pandora to agents with scoped permissions and named 
   - runtime status: `ready`, `degraded`, `placeholder`, or `unknown`
 - implemented signer backends today: `read-only`, `local-env`, `local-keystore`, `external-signer`
 - in the default runtime view, `market_observer_ro` is the only built-in profile reporting `ready`, and it is read-only
-- `pandora --output json capabilities --runtime-local-readiness` actively probes local signer/network prerequisites and can promote `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` to `ready` when their runtime requirements are satisfied
+- `pandora --output json capabilities --runtime-local-readiness` actively probes local signer/network prerequisites and can promote `market_deployer_a`, `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` to `ready` when their runtime requirements are satisfied
 - in the current runtime, no built-in mutable profile is ready
 - the current built-in mutable profile states are:
+  - `market_deployer_a`: implemented `local-env` backend for deployment flows, backend rollup `degraded`, per-profile `resolutionStatus` `missing-secrets`
   - `prod_trader_a`: implemented `local-env` backend, backend rollup `degraded`, per-profile `resolutionStatus` `missing-secrets`
   - `dev_keystore_operator`: implemented `local-keystore` backend, backend rollup `degraded`, per-profile `resolutionStatus` `missing-keystore`
   - `desk_signer_service`: implemented `external-signer` backend, backend rollup `degraded`, per-profile `resolutionStatus` `missing-context`
@@ -76,6 +77,10 @@ pandora --output json profile get --id market_observer_ro
 pandora --output json profile explain --id prod_trader_a --command trade --mode execute --chain-id 1 --category Crypto --policy-id execute-with-validation
 ```
 
+Readiness rule:
+- for live-readiness or go/no-go questions, route through `profile list` then `profile explain`
+- use `profile get` only as a raw detail supplement, not as the main readiness answer
+
 ### Validate a candidate custom profile
 ```bash
 pandora --output json profile validate --file /path/to/profile.json
@@ -102,7 +107,7 @@ Interpretation:
 - Use `pandora --output json capabilities --runtime-local-readiness` to ask the CLI to probe local signer/network prerequisites directly; in that mode, the built-in mutable samples can transition to `ready` when those prerequisites are satisfied
 - `placeholderBuiltinIds`: built-in profiles whose signer backend is still metadata-only
 - `pendingBuiltinIds`: compatibility shorthand for every built-in profile that is not currently `ready`
-- in the current runtime, `degradedBuiltinIds` contains every built-in mutable sample: `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service`
+- in the current runtime, `degradedBuiltinIds` contains every built-in mutable sample: `market_deployer_a`, `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service`
 
 Primary sources:
 ```bash
@@ -135,6 +140,11 @@ When you need the exact reason a profile is or is not usable:
   - `explanation.blockers`
 - use `capabilities.data.policyProfiles.signerProfiles.backendStatuses` for the compact backend-level rollup
 
+If the user asks "is this profile ready for live use?" or "what should I inspect first?":
+- say `profile list` first
+- then say `profile explain` for the exact command/mode context
+- do not stop at `profile get`
+
 ## Remote gateway example
 
 ```bash
@@ -154,6 +164,10 @@ If you need live tools:
 - add `operations:write` only when the runtime needs `operations.cancel` or `operations.close`
 - over MCP, `operations.cancel` and `operations.close` also require `intent.execute=true` because they are mutating calls
 - add `secrets:use` only when the runtime actually has signer material
+
+When comparing local stdio to hosted HTTP for an agent:
+- explicitly name the hosted read-only bootstrap scopes: `capabilities:read,contracts:read,help:read,schema:read,operations:read`
+- if the hosted agent also needs planning reads, say to widen from there to exact additional read scopes such as `quote:read`, `portfolio:read`, or `scan:read`
 
 ## Built-in bootstrap pattern
 - read-only research path:

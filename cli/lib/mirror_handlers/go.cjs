@@ -324,6 +324,8 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
   const helpNotes = [
     'mirror go inherits the exact deploy payload from its dry-run/paper stage and returns the validation ticket needed for execute flows.',
     'Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass.',
+    'If mirror go will deploy a fresh Pandora market, provide two independent public --sources from different hosts even in paper mode. Polymarket URLs are never copied into sources automatically.',
+    'Zero-prereq onboarding uses separate mutable personas: market_deployer_a for Pandora deployment and prod_trader_a for live mirror automation.',
     'Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic or private.',
   ];
 

@@ -15,6 +15,8 @@ Use this skill when the request is specifically about Pandora. Treat it as a wor
 
 - start read-only first
 - prefer `bootstrap`, `capabilities`, and `schema` before broader exploration
+- when the task is bootstrap/discovery, explicitly name `schema` in the first-move guidance instead of implying it through `bootstrap`
+- when the skill names a canonical first tool, prefer that exact tool over adjacent raw-detail tools
 - inspect `policy list` and `profile list` before any mutable path
 - only add secrets or signer material on the runtime that will actually execute
 
@@ -26,6 +28,7 @@ First move:
 - `pandora --output json bootstrap`
 - `pandora --output json capabilities`
 - `pandora --output json schema`
+- when summarizing the safe first calls, name all three explicitly in that order
 
 Reference:
 - [`references/skills/agent-quickstart.md`](./references/skills/agent-quickstart.md)
@@ -34,9 +37,11 @@ Reference:
 ### Quote or trade a Pandora market
 
 First move:
-- discover the market
+- if the market selector or size is missing, ask only for the missing market selector and amount first
+- use `scan` or `markets list|get` only when the user needs help identifying the market
 - quote before every mutation
 - only discuss `trade` after the quote is acceptable
+- do not broaden a quote request into full bootstrap/capability exploration unless the user explicitly asked for setup help
 
 Reference:
 - [`references/skills/trading-workflows.md`](./references/skills/trading-workflows.md)
@@ -47,6 +52,10 @@ Reference:
 First move:
 - browse candidates
 - build a plan
+- explicitly say the live path stays validation-gated
+- explicitly name payload validation before any deploy or go step
+- explicitly say the live path needs at least two independent public resolution URLs from different hosts
+- explicitly say Polymarket, Gamma, and CLOB URLs are discovery inputs only, not valid resolution sources
 - keep the suggested timing unless there is a justified override
 - validate the exact final payload before execution
 
@@ -59,6 +68,7 @@ Reference:
 First move:
 - inspect `profile list`
 - use `profile explain` for the exact tool/mode/category context
+- do not substitute `profile get` when the question is go/no-go or live-readiness
 
 Reference:
 - [`references/skills/policy-profiles.md`](./references/skills/policy-profiles.md)
@@ -67,6 +77,8 @@ Reference:
 
 First move:
 - inspect the portfolio and history first
+- explicitly mention `portfolio`, `history`, and `claim` or `mirror close` before asking for a wallet or signer follow-up
+- state inspect/dry-run/review before any mutation
 - keep closeout sequencing deterministic
 
 Reference:
@@ -78,6 +90,7 @@ First move:
 - prefer local `pandora mcp` when the agent runs on the same machine
 - use `pandora mcp http` only when intentionally hosting a remote gateway
 - start hosted gateways with read-only scopes first
+- when comparing transports, name read-only scopes explicitly instead of only saying "read-only"
 
 Reference:
 - [`references/skills/agent-quickstart.md`](./references/skills/agent-quickstart.md)
@@ -87,6 +100,13 @@ Reference:
 
 - Do not ask for a private key as the first step.
 - Quote before mutation.
+- If the user is choosing a market type, explain the tradeoff before suggesting deployment:
+  - `amm` means active repricing and tradable positions. Users can buy and sell before close.
+  - `parimutuel` means a shared YES/NO pool. Funds stay locked until resolution and there is no live sell path.
+  - `99.9/0.1` usually implies a strongly skewed parimutuel opening pool, not a neutral AMM launch.
+  - if the user wants active repricing, choose `amm`; if they want a one-sided pooled prior, choose `parimutuel`
+  - keep the user on `markets create plan` or `markets hype plan` before any live execute path
+- For a generic buy request, start with `scan` or `markets list|get` if the selector is missing, then `quote`; do not lead with `polymarket preflight`.
 - `mirror deploy|go` requires at least two independent public resolution URLs from different hosts.
 - Polymarket, Gamma, and CLOB URLs are discovery inputs only. They are not valid resolution sources.
 - Do not reuse validation material if `question`, `rules`, `sources`, or `targetTimestamp` changed.

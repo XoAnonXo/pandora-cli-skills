@@ -179,6 +179,43 @@ test('sports schedule help is subcommand-specific in json and table modes', () =
   assert.match(String(tableResult.stdout || ''), /lists normalized events/i);
 });
 
+test('sports discovery commands surface provider setup remediation when no providers are configured', () => {
+  const tempHome = createTempDir('pandora-sports-home-missing-provider-');
+  const env = {
+    HOME: tempHome,
+  };
+  const commands = [
+    ['sports', 'schedule', '--limit', '3'],
+    ['sports', 'events', 'list', '--limit', '3'],
+    ['sports', 'scores', '--limit', '3'],
+  ];
+
+  try {
+    for (const command of commands) {
+      const result = runCli(['--output', 'json', ...command], {
+        env,
+        unsetEnvKeys: Object.keys(process.env).filter((key) => key.startsWith('SPORTSBOOK_')),
+      });
+      assert.equal(result.status, 1, result.output);
+      const payload = parseJsonEnvelopeLoose(result, command.join(' '));
+      assert.equal(payload.ok, false);
+      assert.equal(payload.error.code, 'SPORTS_PROVIDER_NOT_CONFIGURED');
+      assert.equal(payload.error.recovery.command, 'pandora sports books list --provider auto');
+      assert.match(payload.error.message, /provider/i);
+      assert.equal(Array.isArray(payload.error.details.requiredEnv), true);
+      assert.equal(payload.error.details.requiredEnv.includes('SPORTSBOOK_PRIMARY_BASE_URL'), true);
+      assert.equal(payload.error.details.requiredEnv.includes('SPORTSBOOK_BACKUP_BASE_URL'), true);
+      assert.equal(Array.isArray(payload.error.details.hints), true);
+      assert.equal(
+        payload.error.details.hints.some((hint) => /sports books list --provider auto/i.test(String(hint))),
+        true,
+      );
+    }
+  } finally {
+    removeDir(tempHome);
+  }
+});
+
 test('sports scores help is subcommand-specific in json and table modes', () => {
   const jsonResult = runCli(['--output', 'json', 'sports', 'scores', '--help']);
   const jsonPayload = parseJsonEnvelopeStrict(jsonResult, 'sports scores --help');

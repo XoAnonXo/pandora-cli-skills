@@ -621,6 +621,77 @@ function buildNormalizedSchemaArgs(definition, args) {
   return normalized;
 }
 
+function coerceBooleanString(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return value;
+}
+
+function coerceNumberString(value, integerOnly) {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim();
+  if (!normalized) return value;
+  if (integerOnly) {
+    if (!/^-?\d+$/.test(normalized)) return value;
+    const parsed = Number.parseInt(normalized, 10);
+    return Number.isSafeInteger(parsed) ? parsed : value;
+  }
+  if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(normalized)) return value;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : value;
+}
+
+function coerceSchemaValue(schema, value) {
+  if (!schema || value === undefined) return value;
+  if (Array.isArray(schema.type)) {
+    for (const candidateType of schema.type) {
+      const candidate = coerceSchemaValue({ ...schema, type: candidateType }, value);
+      if (candidate !== value) return candidate;
+    }
+    return value;
+  }
+  if (schema.type === 'boolean') {
+    return coerceBooleanString(value);
+  }
+  if (schema.type === 'integer') {
+    return coerceNumberString(value, true);
+  }
+  if (schema.type === 'number') {
+    return coerceNumberString(value, false);
+  }
+  if (schema.type === 'array' && Array.isArray(value)) {
+    return value.map((entry) => coerceSchemaValue(schema.items || null, entry));
+  }
+  if (schema.type === 'object' && isPlainObject(value) && isPlainObject(schema.properties)) {
+    const coerced = { ...value };
+    for (const [key, propertySchema] of Object.entries(schema.properties)) {
+      if (!Object.prototype.hasOwnProperty.call(coerced, key) || coerced[key] === undefined) continue;
+      coerced[key] = coerceSchemaValue(propertySchema, coerced[key]);
+    }
+    return coerced;
+  }
+  return value;
+}
+
+function coerceInvocationArgsForSchema(definition, args) {
+  const schema = definition && definition.inputSchema && typeof definition.inputSchema === 'object'
+    ? definition.inputSchema
+    : null;
+  if (!schema || !args || typeof args !== 'object' || Array.isArray(args)) {
+    return args;
+  }
+  const normalizedSchemaArgs = buildNormalizedSchemaArgs(definition, args);
+  const coercedSchemaArgs = coerceSchemaValue(schema, normalizedSchemaArgs);
+  const coerced = { ...args };
+  if (coercedSchemaArgs && typeof coercedSchemaArgs === 'object') {
+    for (const [key, value] of Object.entries(coercedSchemaArgs)) {
+      coerced[key] = value;
+    }
+  }
+  return coerced;
+}
+
 function validateInvocationArgs(definition, args) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) {
     throw createInvocationError('MCP_INVALID_ARGUMENTS', 'Tool arguments must be a JSON object.');
@@ -1059,7 +1130,10 @@ function createMcpToolRegistry(options = {}) {
       throw blocked;
     }
 
-    const normalizedArgs = normalizeInvocationArgs(definition, args);
+    const normalizedArgs = coerceInvocationArgsForSchema(
+      definition,
+      normalizeInvocationArgs(definition, args),
+    );
     validateInvocationArgs(definition, normalizedArgs);
 
     const positionals = Array.isArray(normalizedArgs.positionals)

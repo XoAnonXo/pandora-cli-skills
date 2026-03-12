@@ -128,6 +128,7 @@ test('cli schema and capabilities keep policy/profile metadata in parity', (t) =
   assert.ok(capabilitiesEnvelope.data.policyProfiles.signerProfiles.sampleSecretBearingCommands.length > 0);
   assert.ok(capabilitiesEnvelope.data.policyProfiles.policyPacks.builtinIds.includes('execute-with-validation'));
   assert.ok(capabilitiesEnvelope.data.policyProfiles.signerProfiles.builtinIds.includes('prod_trader_a'));
+  assert.ok(capabilitiesEnvelope.data.policyProfiles.signerProfiles.builtinIds.includes('market_deployer_a'));
   assert.deepEqual(
     sortStrings(capabilitiesEnvelope.data.policyProfiles.signerProfiles.signerBackends),
     ['external-signer', 'local-env', 'local-keystore', 'read-only'],
@@ -139,6 +140,7 @@ test('cli schema and capabilities keep policy/profile metadata in parity', (t) =
   assert.deepEqual(sortStrings(capabilitiesEnvelope.data.policyProfiles.signerProfiles.placeholderBackends), []);
   assert.equal(capabilitiesEnvelope.data.policyProfiles.signerProfiles.readyBuiltinIds.includes('market_observer_ro'), true);
   assert.equal(capabilitiesEnvelope.data.policyProfiles.signerProfiles.pendingBuiltinIds.includes('prod_trader_a'), true);
+  assert.equal(capabilitiesEnvelope.data.policyProfiles.signerProfiles.pendingBuiltinIds.includes('market_deployer_a'), true);
   assert.equal(capabilitiesEnvelope.data.policyProfiles.signerProfiles.pendingBuiltinIds.includes('dev_keystore_operator'), true);
   assert.equal(capabilitiesEnvelope.data.policyProfiles.signerProfiles.pendingBuiltinIds.includes('desk_signer_service'), true);
   assert.equal(
@@ -338,13 +340,19 @@ test('policy recommend ranks canonical-tool-first recommendations and exposes ex
   assert.equal(envelope.data.compatibleCount, 0);
   assert.equal(envelope.data.recommendedReadOnlyPolicyId, 'research-only');
   assert.equal(typeof envelope.data.recommendedMutablePolicyId, 'string');
-  assert.equal(typeof envelope.data.recommendedPolicyId, 'string');
+  assert.equal(envelope.data.recommendedPolicyId, null);
   assert.ok(envelope.data.items.every((item) => item.canonicalTool === 'trade'));
   assert.ok(
     envelope.data.diagnostics.some((item) => item.code === 'USE_CANONICAL_TOOL' && item.command === 'trade'),
   );
   assert.ok(envelope.data.safestMatch);
   assert.equal(envelope.data.bestMatchForRequestedContext, null);
+  assert.equal(envelope.data.recommended, null);
+  assert.equal(envelope.data.recommendedNextTool, 'quote');
+  assert.equal(envelope.data.recommendedSafeEquivalent, 'quote');
+  const riskCap = envelope.data.candidates.find((item) => item.id === 'execute-with-risk-cap');
+  assert.ok(riskCap, 'execute-with-risk-cap should still be evaluated');
+  assert.equal(riskCap.usable, false);
 });
 
 test('policy explain returns structured denials and remediation over the CLI', (t) => {
@@ -445,7 +453,7 @@ test('built-in mutable profiles stay non-ready by default across capabilities, p
   const capabilities = parseJsonOutput(runCli(['--output', 'json', 'capabilities'], { env }));
   const profileList = parseJsonOutput(runCli(['--output', 'json', 'profile', 'list'], { env }));
   const itemsById = new Map(profileList.data.items.map((item) => [item.id, item]));
-  const expectedMutableBuiltinIds = ['desk_signer_service', 'dev_keystore_operator', 'prod_trader_a'];
+  const expectedMutableBuiltinIds = ['desk_signer_service', 'dev_keystore_operator', 'market_deployer_a', 'prod_trader_a'];
 
   assert.deepEqual(
     sortStrings(capabilities.data.policyProfiles.signerProfiles.readyBuiltinIds),

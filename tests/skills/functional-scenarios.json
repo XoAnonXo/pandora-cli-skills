@@ -104,6 +104,93 @@
       "mustNotDo": [
         "Skip inspection and jump to claim-all blindly."
       ]
+    },
+    {
+      "id": "market-type-choice",
+      "complexity": "medium",
+      "userPrompt": "I want to launch a 99.9/0.1 Pandora market, but I do not know whether that should be AMM or parimutuel. Explain the safe first step.",
+      "expectedOutcome": [
+        "Explains AMM versus parimutuel in plain language.",
+        "Explains what an extreme 99.9/0.1 skew means operationally.",
+        "Explains that 99.9/0.1 usually points to a parimutuel opening pool while AMM is the active-repricing path.",
+        "Keeps the user in planning and validation mode before any live deploy step."
+      ],
+      "mustDo": [
+        "Mention both amm and parimutuel explicitly.",
+        "Explain skew or distribution rather than only repeating the raw numbers.",
+        "Differentiate locked-pool behavior from active repricing.",
+        "Keep planning or validation ahead of execution."
+      ],
+      "mustNotDo": [
+        "Jump straight to live deployment without explaining the market type choice."
+      ]
+    },
+    {
+      "id": "market-suggestions",
+      "complexity": "medium",
+      "userPrompt": "I am already using an agent through MCP. Suggest Pandora markets I could launch this week and tell me the safest suggestion path.",
+      "expectedOutcome": [
+        "Treats markets.hype.plan as the default suggestion path.",
+        "Frames provider-backed planning as the real-user path.",
+        "Frames mock as test-only and agent.market.hype as fallback/orchestration mode."
+      ],
+      "mustDo": [
+        "Mention markets hype plan.",
+        "Recommend provider-backed planning for real suggestions.",
+        "Mark mock as test-only."
+      ],
+      "mustNotDo": [
+        "Treat mock output as the default production suggestion path."
+      ]
+    },
+    {
+      "id": "watch-risk-monitoring",
+      "complexity": "medium",
+      "userPrompt": "I want an agent to watch Pandora risk and market conditions before I trade anything. What should it use first?",
+      "expectedOutcome": [
+        "Routes to watch and risk surfaces before any trade path.",
+        "Keeps the workflow read-only and monitoring-first."
+      ],
+      "mustDo": [
+        "Mention watch and risk show or explain.",
+        "Keep monitoring separate from execution."
+      ],
+      "mustNotDo": [
+        "Route directly to trade execution."
+      ]
+    },
+    {
+      "id": "sports-provider-onboarding",
+      "complexity": "medium",
+      "userPrompt": "I want my agent to create Pandora sports markets, but I have not configured any sportsbook providers yet. What should it do first?",
+      "expectedOutcome": [
+        "Routes to sportsbook readiness before discovery or creation.",
+        "Uses sports books list as the explicit preflight surface.",
+        "Explains that provider setup is a prerequisite for schedule and event discovery."
+      ],
+      "mustDo": [
+        "Mention sports books list.",
+        "Mention provider configuration or readiness."
+      ],
+      "mustNotDo": [
+        "Assume sports schedule or scores will work before provider setup."
+      ]
+    },
+    {
+      "id": "builder-surface-choice",
+      "complexity": "medium",
+      "userPrompt": "I am building my own agent product on top of Pandora. When should I use MCP, the CLI, or the SDK?",
+      "expectedOutcome": [
+        "Maps MCP to agent tool use, CLI to scripts and operators, and SDK to software embedding.",
+        "Keeps local versus hosted execution ownership explicit."
+      ],
+      "mustDo": [
+        "Mention MCP, CLI, and SDK explicitly.",
+        "Explain what each surface is for."
+      ],
+      "mustNotDo": [
+        "Blur agent use, script use, and embedded integration into one default recommendation."
+      ]
     }
   ],
   "baselineComparisonTemplate": {

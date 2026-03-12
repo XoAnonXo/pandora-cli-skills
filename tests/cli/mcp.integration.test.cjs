@@ -651,11 +651,11 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
       assert.ok(!mirrorDeploy.inputSchema.xPandora.metadataProvenance.runtimeEnforced.includes('agentPreflightRequired'));
       assert.ok(!mirrorDeploy.inputSchema.xPandora.metadataProvenance.runtimeEnforced.includes('agentWorkflow'));
 
-      const agentValidate = byName.get('agent.market.validate');
+    const agentValidate = byName.get('agent.market.validate');
     assert.ok(agentValidate);
     assert.equal(agentValidate.inputSchema.xPandora.canonicalTool, 'agent.market.validate');
     assert.equal(agentValidate.inputSchema.properties.question.type, 'string');
-    assert.equal(agentValidate.inputSchema.properties['target-timestamp'].type, 'integer');
+    assert.equal(Array.isArray(agentValidate.inputSchema.properties['target-timestamp'].anyOf), true);
 
       const arbitrage = byName.get('arbitrage');
       assert.equal(arbitrage, undefined);
@@ -1781,6 +1781,24 @@ test('mcp agent.market.validate returns structured prompt payload', async () => 
   });
 });
 
+test('mcp agent.market.validate accepts ISO timestamps and normalizes them', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'agent.market.validate',
+      arguments: {
+        question: 'Will Arsenal beat Chelsea?',
+        rules: 'YES if Arsenal wins. NO otherwise.',
+        'target-timestamp': '2030-01-01T00:00:00Z',
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.command, 'agent.market.validate');
+    assert.equal(envelope.data.input.targetTimestamp, 1893456000);
+  });
+});
+
 test('mcp agent.market.hype returns structured prompt payload', async () => {
   await withMcpClient(async (client) => {
     const call = await client.callTool({
@@ -1919,6 +1937,29 @@ test('mcp markets.create.plan returns canonical normalized plan payload', async 
     assert.equal(envelope.data.mode, 'plan');
     assert.equal(envelope.data.marketTemplate.marketType, 'parimutuel');
     assert.equal(envelope.data.requiredValidation.promptTool, 'agent.market.validate');
+  });
+});
+
+test('mcp markets.create.plan coerces CLI-like numeric strings into the typed input contract', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'markets.create.plan',
+      arguments: {
+        question: 'Will BTC close above $120k by end of 2026?',
+        rules: 'YES: BTC/USD closes above $120k. NO: BTC/USD closes at or below $120k. EDGE: Unresolved/cancelled markets resolve NO.',
+        sources: ['https://example.com/a', 'https://example.com/b'],
+        'target-timestamp': '2030-01-01T00:00:00Z',
+        'liquidity-usdc': '100',
+        'curve-flattener': '7',
+        'curve-offset': '30000',
+        'market-type': 'parimutuel',
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.command, 'markets.create.plan');
+    assert.equal(envelope.data.marketTemplate.marketType, 'parimutuel');
   });
 });
 

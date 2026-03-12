@@ -457,6 +457,12 @@ async function buildHypePlan(options = {}) {
       model: research.model,
       searchDepth: options.searchDepth,
     },
+    guidance: {
+      primaryMcpSuggestionPath: 'markets.hype.plan',
+      recommendedAiProviders: ['auto', 'openai', 'anthropic'],
+      mockProviderTestOnly: research.provider === 'mock',
+      fallbackTool: 'agent.market.hype',
+    },
     runtimeDefaults: runtime,
     researchSnapshot: {
       summary: research.summary,
@@ -470,7 +476,9 @@ async function buildHypePlan(options = {}) {
     selectedCandidate,
     diagnostics,
     notes: [
-      'markets.hype.plan freezes live research into a reusable plan payload so validation and deployment do not drift.',
+      'markets.hype.plan is the primary MCP path for real market suggestions because it freezes provider-backed research into a reusable plan payload.',
+      'Prefer --ai-provider auto|openai|anthropic for live suggestion quality. Use --ai-provider mock only for deterministic tests, demos, and evals.',
+      'Use agent.market.hype only when the host agent must do the research itself and you are intentionally using prompt-orchestration mode.',
       'Run markets.hype.run against this saved plan file, or pass the selected candidate into markets.create.run manually.',
       'Duplicate-risk scoring is advisory; review near-matches before execute mode if similarity is high.',
     ],
@@ -625,7 +633,9 @@ function buildHypeHelp(commandHelpPayload) {
   ];
   const notes = [
     'markets hype researches fresh public-web topics, drafts high-interest markets, scores AMM vs pari-mutuel fit, and runs the final market through the validation prompt.',
-    'Use agent market hype for prompt-only workflows when the agent itself will do the web research.',
+    'For MCP users who want real market suggestions, prefer markets hype plan with --ai-provider auto|openai|anthropic.',
+    'Use --ai-provider mock only for deterministic tests, demos, and evals. It is not the default recommendation for real market ideation.',
+    'Use agent market hype for prompt-only fallback workflows when the host agent itself will do the web research.',
     'When --area regional-news is selected, pass --region <text> so the research stays tied to the correct locality.',
     'markets hype plan requires a configured provider in auto|mock|openai|anthropic mode; if none is configured, use agent market hype instead.',
     'Save the JSON plan output before running markets hype run so the exact research snapshot and validation result remain frozen.',

@@ -209,7 +209,7 @@ function assertIndependentMirrorSources(sources) {
   if (!normalized.length) {
     throw createServiceError(
       'MIRROR_SOURCES_REQUIRED',
-      'Mirror deploy requires explicit independent resolution sources via --sources. Polymarket URLs are never used automatically.',
+      'Mirror deploy requires explicit independent public resolution sources via --sources, even in paper mode. Pass two http(s) URLs from different hosts; Polymarket URLs are never used automatically.',
       {
         requiredMinimum: 2,
         normalizedCount: 0,
@@ -240,7 +240,7 @@ function assertIndependentMirrorSources(sources) {
   if (normalized.length < 2) {
     throw createServiceError(
       'MIRROR_SOURCES_REQUIRED',
-      'Mirror deploy requires at least two independent resolution sources in --sources.',
+      'Mirror deploy requires at least two independent public resolution sources in --sources, even in paper mode.',
       {
         requiredMinimum: 2,
         normalizedCount: normalized.length,
@@ -251,7 +251,7 @@ function assertIndependentMirrorSources(sources) {
   if (distinctSources.size < 2 || distinctHosts.size < 2) {
     throw createServiceError(
       'MIRROR_SOURCES_REQUIRED',
-      'Mirror deploy requires at least two independent resolution sources from different hosts in --sources.',
+      'Mirror deploy requires at least two independent public resolution sources from different hosts in --sources, even in paper mode.',
       {
         requiredMinimum: 2,
         normalizedCount: normalized.length,

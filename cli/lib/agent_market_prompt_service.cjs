@@ -76,7 +76,11 @@ function normalizeSources(sources) {
 
 function normalizeTargetTimestamp(value) {
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.trunc(numeric > 1e12 ? numeric / 1000 : numeric);
+  }
+  const parsed = Date.parse(String(value || ''));
+  return Number.isNaN(parsed) ? 0 : Math.floor(parsed / 1000);
 }
 
 function normalizePositiveInteger(value, fallback) {
@@ -138,6 +142,16 @@ function buildAgentMarketAutocompletePrompt(options = {}) {
     marketType === 'amm'
       ? 'AMM (tradable, users can sell anytime)'
       : 'Parimutuel (pool-based, funds remain locked until resolution)';
+  const parimutuelGuidance = marketType === 'parimutuel'
+    ? `
+
+PARIMUTUEL GUIDANCE:
+- Parimutuel markets are pool-based. Users seed the YES and NO sides of a shared pool instead of setting a continuous AMM price curve.
+- Funds remain locked until the market resolves, so skew choices matter up front and cannot be traded out of later.
+- If you later plan this market with explicit distribution percentages, those percentages define the starting YES/NO pool skew.
+- An extreme setup like 99.9/0.1 means you are intentionally seeding an almost one-sided directional pool. Use that only when you want the initial market shape to communicate a very strong prior view.
+- If you do not want that directional skew, prefer a more balanced opening distribution.`
+    : '';
 
   return `You are an expert prediction market analyst helping users create clear, dispute-free markets.
 
@@ -148,6 +162,7 @@ USER QUESTION:
 "${question}"
 
 MARKET TYPE: ${marketTypeLabel}
+${parimutuelGuidance}
 
 TASK:
 1. Search the web for the most up-to-date context for this market question.
@@ -210,7 +225,7 @@ function buildAgentMarketHypePrompt(options = {}) {
   if (!area) {
     throw createPromptError(
       'MISSING_REQUIRED_FLAG',
-      `agent market hype requires --area <${HYPE_AREAS.join('|')}>.`,
+      `agent market hype requires --area <${HYPE_AREAS.join('|')}>. Example: pandora --output json agent market hype --area politics --query "suggest ideas".`,
     );
   }
 
@@ -495,6 +510,7 @@ function buildAgentMarketAutocompletePayload(options = {}) {
       nextTool: 'agent.market.validate',
       notes: [
         'Use this prompt when the agent must draft or refine market rules, sources, and timing.',
+        'For parimutuel drafts, explain that distribution percentages define the opening YES/NO pool skew and that funds remain locked until resolution.',
         'After applying the draft, always run agent.market.validate on the finalized market payload before execute mode.',
       ],
     },
@@ -534,7 +550,8 @@ function buildAgentMarketHypePayload(options = {}) {
       mandatoryForAgentDrafting: true,
       nextTool: 'agent.market.validate',
       notes: [
-        'Use this prompt when the agent must research the latest trending topics before drafting a market.',
+        'Use this prompt when the host agent must research the latest trending topics itself before drafting a market.',
+        'For MCP users who want real market suggestions, prefer provider-backed markets.hype.plan first; treat this as fallback/orchestration mode.',
         'After selecting the best candidate, run agent.market.validate on the exact final question, rules, sources, and target timestamp.',
         'If the candidate will be executed through MCP, pass the resulting PASS attestation back as agentPreflight.',
       ],

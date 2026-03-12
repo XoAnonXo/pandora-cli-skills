@@ -610,7 +610,7 @@ function createErrorRecoveryService(options = {}) {
       case 'SPORTS_GET_EVENT_ODDS_FAILED':
       case 'SPORTS_GET_EVENT_STATUS_FAILED':
         return {
-          action: 'Retry sportsbook query with explicit provider settings',
+          action: 'Check sportsbook provider readiness first, then retry the sports command',
           command: `${cliName} sports books list --provider auto`,
           retryable: true,
         };

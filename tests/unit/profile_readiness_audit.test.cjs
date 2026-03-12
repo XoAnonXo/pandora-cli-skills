@@ -112,7 +112,7 @@ test('docs, capabilities, and profile list agree that built-in mutable samples a
   const readmeText = read('README.md');
 
   const expectedReadyBuiltinIds = ['market_observer_ro'];
-  const expectedMutableBuiltinIds = ['desk_signer_service', 'dev_keystore_operator', 'prod_trader_a'];
+  const expectedMutableBuiltinIds = ['desk_signer_service', 'dev_keystore_operator', 'market_deployer_a', 'prod_trader_a'];
   const itemsById = new Map(profileList.data.items.map((item) => [item.id, item]));
 
   assert.deepEqual(
@@ -221,6 +221,7 @@ test('runtime-local readiness audit proves at least two built-in mutable profile
     const readyMutableBuiltins = readyBuiltins.filter((id) => id !== 'market_observer_ro');
 
     assert.ok(readyMutableBuiltins.length >= 2, `expected at least two built-in mutable profiles to be runtime-ready, got ${readyMutableBuiltins.join(', ')}`);
+    assert.ok(readyMutableBuiltins.includes('market_deployer_a'));
     assert.ok(readyMutableBuiltins.includes('prod_trader_a'));
     assert.ok(readyMutableBuiltins.includes('dev_keystore_operator'));
     assert.ok(readyMutableBuiltins.includes('desk_signer_service'));
@@ -264,4 +265,82 @@ test('profile explain and recommend surface canonical-tool-first ranking for col
   assert.equal(recommend.data.decision.bestPolicyId, 'execute-with-validation');
   assert.equal(recommend.data.decision.bestTool, 'quote');
   assert.equal(recommend.data.nextTools[0].tool, 'quote');
+});
+
+test('profile explain recommends the built-in deployer profile for market creation contexts', (t) => {
+  const { env } = createIsolatedPolicyProfileEnv(t);
+  const explain = parseJsonOutput(runCli([
+    '--output', 'json',
+    'profile', 'recommend',
+    '--command', 'markets.create.run',
+    '--mode', 'execute',
+    '--chain-id', '1',
+    '--category', 'Crypto',
+    '--policy-id', 'execute-with-validation',
+  ], { env }), 'profile recommend deploy');
+
+  assert.equal(explain.data.recommendedProfileId, 'market_deployer_a');
+  assert.equal(explain.data.items[0].id, 'market_deployer_a');
+  assert.equal(explain.data.items[0].canonicalTool, 'markets.create.run');
+  assert.equal(explain.data.onboardingGuidance.primaryProfileId, 'market_deployer_a');
+  assert.equal(explain.data.onboardingGuidance.companionProfileId, 'prod_trader_a');
+  assert.equal(explain.data.onboardingGuidance.notes.some((note) => /separate mutable personas/i.test(String(note))), true);
+});
+
+test('profile recommend for mirror go surfaces deploy companion and source prerequisites', (t) => {
+  const { env } = createIsolatedPolicyProfileEnv(t);
+  const recommend = parseJsonOutput(runCli([
+    '--output', 'json',
+    'profile', 'recommend',
+    '--command', 'mirror.go',
+    '--mode', 'execute',
+    '--chain-id', '1',
+    '--category', 'Sports',
+    '--policy-id', 'execute-with-validation',
+  ], { env }), 'profile recommend mirror');
+
+  assert.equal(recommend.data.recommendedProfileId, 'prod_trader_a');
+  assert.equal(recommend.data.onboardingGuidance.primaryProfileId, 'prod_trader_a');
+  assert.equal(recommend.data.onboardingGuidance.companionProfileId, 'market_deployer_a');
+  assert.equal(recommend.data.onboardingGuidance.sourceRequirement.minimumSources, 2);
+  assert.equal(recommend.data.onboardingGuidance.sourceRequirement.appliesInPaperMode, true);
+  assert.equal(recommend.data.onboardingGuidance.notes.some((note) => /two independent public --sources even in paper mode/i.test(String(note))), true);
+});
+
+test('read-only profiles remain usable for markets.create.plan planning contexts', (t) => {
+  const { env } = createIsolatedPolicyProfileEnv(t);
+  const explain = parseJsonOutput(runCli([
+    '--output', 'json',
+    'profile', 'explain',
+    '--id', 'market_observer_ro',
+    '--command', 'markets.create.plan',
+    '--mode', 'dry-run',
+    '--chain-id', '1',
+    '--category', 'Crypto',
+    '--policy-id', 'research-only',
+  ], { env }), 'profile explain plan');
+
+  assert.equal(explain.data.explanation.usable, true);
+  assert.equal(explain.data.explanation.compatibility.toolFamily, 'markets');
+  assert.deepEqual(explain.data.explanation.blockers, []);
+});
+
+test('market_deployer_a remains compatible with legacy launch execute contexts', (t) => {
+  const { env } = createIsolatedPolicyProfileEnv(t);
+  const explain = parseJsonOutput(runCli([
+    '--output', 'json',
+    'profile', 'explain',
+    '--id', 'market_deployer_a',
+    '--command', 'launch',
+    '--mode', 'execute',
+    '--chain-id', '1',
+    '--category', 'Crypto',
+    '--policy-id', 'execute-with-validation',
+  ], { env }), 'profile explain launch');
+
+  assert.equal(explain.data.explanation.compatibility.toolFamily, 'deploy');
+  assert.equal(
+    explain.data.explanation.blockers.some((item) => /tool family launch|tool family deploy/i.test(String(item))),
+    false,
+  );
 });

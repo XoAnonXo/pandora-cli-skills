@@ -20,6 +20,11 @@ pandora history --output json --wallet 0x... --limit 100
 pandora export --output json --wallet 0x... --format json
 ```
 
+When a user asks how to close out safely:
+- explicitly mention `portfolio`, `history`, and `claim` or `mirror close` before asking for a wallet address
+- explicitly say inspect or dry-run first, then mutate only after review
+- if the wallet address is missing, ask for it after naming the inspection-first sequence
+
 ## LP exit workflow
 
 ### Single market
@@ -109,6 +114,8 @@ If you are operating through a hosted remote gateway, confirm receipt-routing su
 4. dry-run `lp remove --all-markets`
 5. dry-run `mirror close` for mirrored positions
 6. execute only the flows that are actually claimable or withdrawable
+
+If the wallet identifier is missing, summarize this order first and then ask for the wallet address needed to run the read-only inspection steps.
 
 ## Resolve and claim runbook for mirrors
 

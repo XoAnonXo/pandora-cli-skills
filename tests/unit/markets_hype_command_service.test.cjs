@@ -209,4 +209,6 @@ test('markets hype help includes plan runtime override flags', async () => {
   assert.match(payload.usage[0], /--rpc-url <url>/);
   assert.match(payload.usage[0], /--oracle <address>/);
   assert.match(payload.usage[0], /--min-close-lead-seconds <n>/);
+  assert.equal(payload.notes.some((note) => /prefer markets hype plan with --ai-provider auto\|openai\|anthropic/i.test(String(note))), true);
+  assert.equal(payload.notes.some((note) => /mock only for deterministic tests, demos, and evals/i.test(String(note))), true);
 });

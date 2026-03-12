@@ -3,6 +3,7 @@ const {
   buildAgentMarketAutocompletePayload,
   buildAgentMarketValidationPayload,
 } = require('./agent_market_prompt_service.cjs');
+const { parseMirrorTargetTimestamp } = require('./parsers/mirror_parser_guard.cjs');
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -107,7 +108,9 @@ function parseAgentMarketHypeFlags(args) {
   }
 
   if (!String(options.area || '').trim()) {
-    const error = new Error('agent market hype requires --area <text>.');
+    const error = new Error(
+      'agent market hype requires --area <sports|esports|politics|regional-news|breaking-news>. Example: pandora --output json agent market hype --area politics --query "suggest ideas".',
+    );
     error.code = 'MISSING_REQUIRED_FLAG';
     throw error;
   }
@@ -143,13 +146,18 @@ function parseAgentMarketValidateFlags(args) {
     }
     if (token === '--target-timestamp') {
       const raw = readFlagValue(args, i, '--target-timestamp');
-      const numeric = Number(raw);
-      if (!Number.isFinite(numeric) || numeric <= 0) {
-        const error = new Error('--target-timestamp must be a unix timestamp in seconds.');
+      try {
+        options.targetTimestamp = parseMirrorTargetTimestamp(raw, '--target-timestamp', class CliError extends Error {
+          constructor(code, message) {
+            super(message);
+            this.code = code;
+          }
+        });
+      } catch {
+        const error = new Error('--target-timestamp must be a unix timestamp in seconds (or milliseconds) or an ISO date/time string.');
         error.code = 'INVALID_FLAG_VALUE';
         throw error;
       }
-      options.targetTimestamp = Math.trunc(numeric);
       i += 1;
       continue;
     }
@@ -190,7 +198,7 @@ function parseAgentMarketValidateFlags(args) {
     throw error;
   }
   if (!options.targetTimestamp) {
-    const error = new Error('agent market validate requires --target-timestamp <unix-seconds>.');
+    const error = new Error('agent market validate requires --target-timestamp <unix-seconds|iso>.');
     error.code = 'MISSING_REQUIRED_FLAG';
     throw error;
   }
@@ -250,7 +258,8 @@ function createRunAgentCommand(deps) {
           prompt: usage.join('\n'),
           workflow: {
             notes: [
-              'Use agent market hype when the agent must research current trending topics before drafting a market.',
+              'For real MCP suggestion flows, prefer markets hype plan with a provider-backed ai-provider before falling back to agent market hype.',
+              'Use agent market hype when the host agent itself must research current trending topics before drafting a market.',
               'When --area regional-news is selected, always pass --region <text> so the research stays local.',
               'Use agent market autocomplete when the agent must draft market rules or timing.',
               'Use agent market validate before any agent-exposed market execute path.',

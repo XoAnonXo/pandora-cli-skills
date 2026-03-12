@@ -203,6 +203,9 @@ function decisionRank(decision) {
 }
 
 function compareCandidates(left, right) {
+  if (Boolean(left.usable) !== Boolean(right.usable)) {
+    return left.usable ? -1 : 1;
+  }
   const decisionDiff = decisionRank(left.decision) - decisionRank(right.decision);
   if (decisionDiff !== 0) return decisionDiff;
   if (left.denialCount !== right.denialCount) return left.denialCount - right.denialCount;
@@ -241,7 +244,8 @@ function buildRecommendPayload(listing, policyEvaluator, options) {
     })
     .sort(compareCandidates);
 
-  const recommended = candidates[0] || null;
+  const recommended = candidates.find((item) => item && item.usable) || null;
+  const fallback = candidates[0] || null;
   return {
     request,
     policyDir: listing.dir,
@@ -249,6 +253,8 @@ function buildRecommendPayload(listing, policyEvaluator, options) {
     errors: Array.isArray(listing.errors) ? listing.errors : [],
     recommendedPolicyId: recommended ? recommended.id : null,
     recommended,
+    recommendedNextTool: recommended ? recommended.recommendedNextTool || null : (fallback ? fallback.recommendedNextTool || null : null),
+    recommendedSafeEquivalent: recommended ? recommended.safeEquivalent || null : (fallback ? fallback.safeEquivalent || null : null),
     candidates,
   };
 }
@@ -427,7 +433,7 @@ function createRunPolicyCommand(deps) {
         : false;
       payload.recommendedPolicyId = guidanceRecommendedIsUsable
         ? guidancePayload.recommendedPolicyId
-        : payload.recommendedPolicyId || guidancePayload.recommendedPolicyId || null;
+        : payload.recommendedPolicyId || null;
       payload.recommendedReadOnlyPolicyId = guidancePayload.recommendedReadOnlyPolicyId || null;
       payload.recommendedMutablePolicyId = guidancePayload.recommendedMutablePolicyId || null;
       payload.diagnostics = Array.isArray(guidancePayload.diagnostics) ? guidancePayload.diagnostics : [];
@@ -436,6 +442,8 @@ function createRunPolicyCommand(deps) {
       payload.items = Array.isArray(guidancePayload.items) ? guidancePayload.items : [];
       if (payload.recommendedPolicyId) {
         payload.recommended = payload.candidates.find((item) => item.id === payload.recommendedPolicyId) || payload.recommended;
+      } else {
+        payload.recommended = null;
       }
       emitSuccess(
         context.outputMode,

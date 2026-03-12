@@ -150,6 +150,13 @@ pandora mirror plan \
   --include-similarity
 ```
 
+When a user asks for mirror planning or preflight guidance:
+- explicitly say the live path remains validation-gated
+- explicitly name `agent market validate` as the pre-deploy gate after the final question, rules, sources, and target timestamp are known
+- explicitly say the live path needs at least two independent public resolution URLs from different hosts
+- explicitly say Polymarket, Gamma, and CLOB URLs are discovery inputs only, not valid resolution sources
+- do not stop at `mirror browse` alone unless the user asked only for candidate discovery
+
 ### 3. Prepare final operator inputs
 - choose at least two independent public resolution URLs from different hosts
 - keep the plan’s suggested `targetTimestamp`, or set `--target-timestamp <unix|iso>` explicitly when you have a justified override
@@ -183,6 +190,7 @@ pandora mirror go \
 ### 5. Validate the exact final payload
 - run `agent market validate` on the exact final values
 - rerun CLI execute with `--validation-ticket <ticket>`
+- mention this validation gate explicitly when summarizing any dry-run or preflight answer
 
 ### 6. Verify
 ```bash

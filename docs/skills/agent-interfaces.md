@@ -164,7 +164,7 @@ Run that only from a repository checkout. Installed packages already include the
   - `sports create run`
 - Mirror deploy/go/sync flows and sports live execution paths now also accept profile selectors in current builds.
 - Polymarket and some automation families still commonly resolve credentials from flags/env; use `capabilities` or `schema` to confirm current support on the exact command family you plan to call.
-- Built-in sample profiles cover the `read-only`, `local-env`, `local-keystore`, and `external-signer` backend classes. Inspect concrete ids such as `market_observer_ro`, `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` with `profile get --id <profile-id>` before assuming a backend is operational.
+- Built-in sample profiles cover the `read-only`, `local-env`, `local-keystore`, and `external-signer` backend classes. Inspect concrete ids such as `market_observer_ro`, `market_deployer_a`, `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` with `profile get --id <profile-id>` before assuming a backend is operational.
 - In current builds, only `market_observer_ro` is built-in runtime-ready by default in artifact-neutral mode. Use `pandora --output json capabilities --runtime-local-readiness` or `npm run check:final-readiness:runtime-local` on the target host when you need certified local mutable readiness.
 - Preferred operator pattern:
   - for agent access, mint narrow gateway tokens and grant only the tool scopes you intend to expose

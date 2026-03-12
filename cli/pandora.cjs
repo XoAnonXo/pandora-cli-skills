@@ -2162,6 +2162,11 @@ function renderSetupTable(data) {
 
   if (data.doctor.summary.ok) {
     console.log('Setup complete.');
+  } else if (Array.isArray(data.guidedNextSteps) && data.guidedNextSteps.length) {
+    console.log('Setup wrote a starter env and detected placeholder signer material. Next steps:');
+    for (const step of data.guidedNextSteps) {
+      console.log(`- ${step}`);
+    }
   } else {
     console.log('Setup incomplete. Resolve doctor failures and rerun `pandora setup`.');
   }
@@ -9234,6 +9239,23 @@ async function runSetup(args, outputMode) {
     envStep,
     doctor,
   };
+
+  const envValidationErrors = Array.isArray(doctor && doctor.env && doctor.env.validation && doctor.env.validation.errors)
+    ? doctor.env.validation.errors
+    : [];
+  const privateKeyOnlyPlaceholderFailure = !doctor.summary.ok
+    && envValidationErrors.length > 0
+    && envValidationErrors.every((message) => /private key|placeholder/i.test(String(message || '')));
+
+  if (privateKeyOnlyPlaceholderFailure) {
+    payload.guidedNextSteps = [
+      `Populate ${options.envFile} with a real deployer key in PANDORA_DEPLOYER_PRIVATE_KEY or PANDORA_PRIVATE_KEY.`,
+      'Inspect the built-in deployer profile with `pandora --output json profile get --id market_deployer_a`.',
+      'Verify deploy readiness with `pandora --output json profile explain --id market_deployer_a --command markets.create.run --mode execute --chain-id 1 --category Crypto --policy-id execute-with-validation`.',
+    ];
+    emitSuccess(outputMode, 'setup', payload, renderSetupTable);
+    return;
+  }
 
   if (!doctor.summary.ok) {
     if (outputMode === 'table') {

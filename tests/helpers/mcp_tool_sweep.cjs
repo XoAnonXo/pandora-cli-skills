@@ -717,6 +717,99 @@ async function runMcpToolSweep({ client, fixtures, transportLabel = 'stdio' }) {
   };
 }
 
+function parseCliSweepEnvelope(result) {
+  const outputs = [result && result.stdout, result && result.stderr, result && result.output];
+  for (const candidate of outputs) {
+    const text = String(candidate || '').trim();
+    if (!text) continue;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && typeof parsed.ok === 'boolean') {
+        return parsed;
+      }
+    } catch {
+      // ignore parse failures and continue to the next stream
+    }
+  }
+  return null;
+}
+
+async function runCliToolSweep({ fixtures, transportLabel = 'cli-json' }) {
+  const tools = createMcpToolRegistry().listTools();
+  const results = [];
+  const perToolTimeoutMs = 15_000;
+
+  for (const tool of tools) {
+    const name = String(tool.name || '');
+    const args = buildSweepArguments(tool, fixtures);
+    const schemaIssues = validateArgsAgainstSchema(tool, args);
+    const startedAt = Date.now();
+
+    let invocation = null;
+    try {
+      invocation = LOCAL_SWEEP_REGISTRY.prepareInvocation(name, args);
+    } catch (error) {
+      results.push({
+        name,
+        transport: transportLabel,
+        args,
+        durationMs: Date.now() - startedAt,
+        schemaIssues,
+        structured: false,
+        ok: false,
+        transportError: error && error.message ? error.message : String(error),
+      });
+      continue;
+    }
+
+    const cliResult = runCli(
+      ['--output', 'json', ...invocation.argv],
+      {
+        env: {
+          ...fixtures.env,
+          ...(invocation.env || {}),
+        },
+        timeoutMs: perToolTimeoutMs,
+      },
+    );
+    const envelope = parseCliSweepEnvelope(cliResult);
+    const transportError = cliResult.timedOut
+      ? `Timed out after ${perToolTimeoutMs}ms`
+      : (!envelope && cliResult.error && cliResult.error.message ? cliResult.error.message : null);
+
+    results.push({
+      name,
+      transport: transportLabel,
+      args,
+      durationMs: Date.now() - startedAt,
+      schemaIssues,
+      structured: Boolean(envelope && typeof envelope === 'object'),
+      ok: Boolean(envelope && envelope.ok === true),
+      errorCode: envelope && envelope.error && envelope.error.code ? envelope.error.code : null,
+      command: envelope && envelope.command ? envelope.command : null,
+      transportError,
+    });
+  }
+
+  const transportErrors = results.filter((result) => result.transportError);
+  const unstructured = results.filter((result) => !result.transportError && !result.structured);
+  const schemaIssueResults = results.filter((result) => Array.isArray(result.schemaIssues) && result.schemaIssues.length > 0);
+  const byErrorCode = {};
+  for (const result of results) {
+    const key = result.ok ? 'OK' : (result.errorCode || result.transportError || 'UNSTRUCTURED');
+    byErrorCode[key] = (byErrorCode[key] || 0) + 1;
+  }
+
+  return {
+    toolCount: tools.length,
+    results,
+    transportErrors,
+    unstructured,
+    schemaIssueResults,
+    byErrorCode,
+  };
+}
+
 function formatSweepSummary(summary) {
   return JSON.stringify({
     toolCount: summary.toolCount,
@@ -738,5 +831,6 @@ module.exports = {
   createMcpSweepFixtures,
   formatSweepSummary,
   getCompactModeFlag,
+  runCliToolSweep,
   runMcpToolSweep,
 };

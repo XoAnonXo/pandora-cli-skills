@@ -831,8 +831,55 @@ function createRunSportsCommand(deps) {
   const buildSportsResolvePlan = requireDep(deps, 'buildSportsResolvePlan');
   const deployPandoraAmmMarket = requireDep(deps, 'deployPandoraAmmMarket');
   const assertLiveWriteAllowed = typeof deps.assertLiveWriteAllowed === 'function' ? deps.assertLiveWriteAllowed : null;
+  const SPORTS_PROVIDER_PREFLIGHT_COMMAND = 'pandora sports books list --provider auto';
+
+  function isMissingSportsProviderError(err) {
+    const code = err && err.code ? String(err.code) : '';
+    if (code === 'SPORTS_PROVIDER_NOT_CONFIGURED') return true;
+    const nestedErrors =
+      err
+      && err.details
+      && Array.isArray(err.details.errors)
+        ? err.details.errors
+        : [];
+    return nestedErrors.length > 0 && nestedErrors.every((item) => item && item.code === 'SPORTS_PROVIDER_NOT_CONFIGURED');
+  }
+
+  function addUniqueHint(hints, value) {
+    const text = String(value || '').trim();
+    if (!text || hints.includes(text)) return;
+    hints.push(text);
+  }
+
+  function buildSportsProviderSetupDetails(err, commandId) {
+    const baseDetails =
+      err && err.details && typeof err.details === 'object' && !Array.isArray(err.details)
+        ? { ...err.details }
+        : {};
+    const hints = Array.isArray(baseDetails.hints) ? [...baseDetails.hints] : [];
+    addUniqueHint(hints, `Run ${SPORTS_PROVIDER_PREFLIGHT_COMMAND} to inspect sportsbook provider readiness first.`);
+    addUniqueHint(
+      hints,
+      'Configure SPORTSBOOK_PRIMARY_BASE_URL or SPORTSBOOK_BACKUP_BASE_URL before retrying schedule, events, or scores discovery.',
+    );
+    return {
+      ...baseDetails,
+      commandId: commandId || null,
+      preflightCommand: SPORTS_PROVIDER_PREFLIGHT_COMMAND,
+      requiredEnv: Array.isArray(baseDetails.requiredEnv) && baseDetails.requiredEnv.length
+        ? baseDetails.requiredEnv
+        : ['SPORTSBOOK_PRIMARY_BASE_URL', 'SPORTSBOOK_BACKUP_BASE_URL'],
+      hints,
+    };
+  }
 
   function toCliError(err, fallbackCode, fallbackMessage) {
+    if (err instanceof CliError) {
+      return err;
+    }
+    if (isMissingSportsProviderError(err)) {
+      return new CliError('SPORTS_PROVIDER_NOT_CONFIGURED', err.message || fallbackMessage, buildSportsProviderSetupDetails(err, fallbackCode));
+    }
     if (err && err.code) {
       return new CliError(err.code, err.message || fallbackMessage, err.details);
     }
@@ -844,62 +891,63 @@ function createRunSportsCommand(deps) {
   }
 
   return async function runSportsCommand(args, context) {
-    if (!args.length || includesHelpFlag(args)) {
-      const help = resolveSportsHelpPayload(args, commandHelpPayload);
-      emitSuccess(context.outputMode, help.command, help.payload, renderSportsHelpTable);
-      return;
-    }
+    try {
+      if (!args.length || includesHelpFlag(args)) {
+        const help = resolveSportsHelpPayload(args, commandHelpPayload);
+        emitSuccess(context.outputMode, help.command, help.payload, renderSportsHelpTable);
+        return;
+      }
 
-    const parsed = parseSportsFlags(args);
-    const options = parsed.options || {};
-    const providerRegistry = createSportsProviderRegistry({ mode: options.provider });
+      const parsed = parseSportsFlags(args);
+      const options = parsed.options || {};
+      const providerRegistry = createSportsProviderRegistry({ mode: options.provider });
 
-    if (parsed.command === 'sports.books.list') {
-      const health = await providerRegistry.health();
-      emitSuccess(context.outputMode, parsed.command, {
-        provider: options.provider,
-        requestedBooks: options.bookPriority,
-        health,
-        books: options.bookPriority || null,
-      }, renderSportsTable);
-      return;
-    }
+      if (parsed.command === 'sports.books.list') {
+        const health = await providerRegistry.health();
+        emitSuccess(context.outputMode, parsed.command, {
+          provider: options.provider,
+          requestedBooks: options.bookPriority,
+          health,
+          books: options.bookPriority || null,
+        }, renderSportsTable);
+        return;
+      }
 
-    if (parsed.command === 'sports.schedule') {
-      const payload = await providerRegistry.listEvents({
-        providerMode: options.provider,
-        competitionId: options.competition,
-        from: options.kickoffAfter,
-        to: options.kickoffBefore,
-        status: null,
-        limit: options.limit,
-        timeoutMs: options.timeoutMs,
-      });
-      emitSuccess(context.outputMode, parsed.command, buildSportsSchedulePayload(payload, options), renderSportsTable);
-      return;
-    }
+      if (parsed.command === 'sports.schedule') {
+        const payload = await providerRegistry.listEvents({
+          providerMode: options.provider,
+          competitionId: options.competition,
+          from: options.kickoffAfter,
+          to: options.kickoffBefore,
+          status: null,
+          limit: options.limit,
+          timeoutMs: options.timeoutMs,
+        });
+        emitSuccess(context.outputMode, parsed.command, buildSportsSchedulePayload(payload, options), renderSportsTable);
+        return;
+      }
 
-    if (parsed.command === 'sports.scores') {
-      const payload = await resolveSportsScoreEntries(providerRegistry, options);
-      emitSuccess(context.outputMode, parsed.command, buildSportsScoresPayload(payload, options), renderSportsTable);
-      return;
-    }
+      if (parsed.command === 'sports.scores') {
+        const payload = await resolveSportsScoreEntries(providerRegistry, options);
+        emitSuccess(context.outputMode, parsed.command, buildSportsScoresPayload(payload, options), renderSportsTable);
+        return;
+      }
 
-    if (parsed.command === 'sports.events.list' || parsed.command === 'sports.events.live') {
-      const payload = await providerRegistry.listEvents({
-        providerMode: options.provider,
-        competitionId: options.competition,
-        from: options.kickoffAfter,
-        to: options.kickoffBefore,
-        status: options.liveOnly ? 'live' : null,
-        limit: options.limit,
-        timeoutMs: options.timeoutMs,
-      });
-      emitSuccess(context.outputMode, parsed.command, payload, renderSportsTable);
-      return;
-    }
+      if (parsed.command === 'sports.events.list' || parsed.command === 'sports.events.live') {
+        const payload = await providerRegistry.listEvents({
+          providerMode: options.provider,
+          competitionId: options.competition,
+          from: options.kickoffAfter,
+          to: options.kickoffBefore,
+          status: options.liveOnly ? 'live' : null,
+          limit: options.limit,
+          timeoutMs: options.timeoutMs,
+        });
+        emitSuccess(context.outputMode, parsed.command, payload, renderSportsTable);
+        return;
+      }
 
-    if (parsed.command === 'sports.odds.snapshot') {
+      if (parsed.command === 'sports.odds.snapshot') {
       const payload = await resolveEventOddsPayload(providerRegistry, options, options.eventId, null);
       const quotes = toConsensusQuotes(payload, options.selection, options.bookPriority || payload.preferredBooks);
       const consensus = computeSportsConsensus(quotes, {
@@ -917,8 +965,8 @@ function createRunSportsCommand(deps) {
           consensus,
         },
       }, renderSportsTable);
-      return;
-    }
+        return;
+      }
 
     if (parsed.command === 'sports.odds.bulk') {
       const payload = await resolveCompetitionOddsPayload(providerRegistry, options, null);
@@ -960,7 +1008,7 @@ function createRunSportsCommand(deps) {
       return;
     }
 
-    if (parsed.command === 'sports.create.plan' || parsed.command === 'sports.create.run') {
+      if (parsed.command === 'sports.create.plan' || parsed.command === 'sports.create.run') {
       let modelInput = null;
       try {
         modelInput = loadSportsModelInput(options);
@@ -1063,10 +1111,10 @@ function createRunSportsCommand(deps) {
         },
         deployment,
       }, renderSportsTable);
-      return;
-    }
+        return;
+      }
 
-    if (parsed.command.startsWith('sports.sync.')) {
+      if (parsed.command.startsWith('sports.sync.')) {
       const action = parsed.action;
       const stateFile = options.stateFile || defaultStateFile();
       const strategyHash = computeStrategyHash(options);
@@ -1200,10 +1248,10 @@ function createRunSportsCommand(deps) {
         },
         event: odds.event,
       }, renderSportsTable);
-      return;
-    }
+        return;
+      }
 
-    if (parsed.command === 'sports.resolve.plan') {
+      if (parsed.command === 'sports.resolve.plan') {
       let checks = [];
       if (Array.isArray(options.checksJson)) {
         checks = options.checksJson;
@@ -1255,10 +1303,13 @@ function createRunSportsCommand(deps) {
       }
 
       emitSuccess(context.outputMode, parsed.command, plan, renderSportsTable);
-      return;
-    }
+        return;
+      }
 
-    throw new CliError('INVALID_USAGE', `Unsupported sports command: ${parsed.command}`);
+      throw new CliError('INVALID_USAGE', `Unsupported sports command: ${parsed.command}`);
+    } catch (err) {
+      throw toCliError(err, 'SPORTS_COMMAND_FAILED', 'sports command failed.');
+    }
   };
 }
 

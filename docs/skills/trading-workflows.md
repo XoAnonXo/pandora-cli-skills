@@ -9,6 +9,16 @@ Use this file for the canonical read -> quote -> buy/sell -> claim trading loop.
 4. `sell` for sell-side execution
 5. `claim` for finalized winning-token redemption
 
+## Fast quote triage
+
+When a user asks to quote but omits the market selector or size:
+- ask only for the missing market selector and amount
+- if they need help identifying the market, use `scan` or `markets list|get` before asking another open-ended follow-up
+- do not broaden the answer into bootstrap/capabilities/schema unless the user explicitly asked for setup help
+- once the market and size are known, route straight to `quote`
+- for a generic "I want to buy into a Pandora market" request, the first move is still `scan` or `markets list|get`, then `quote`; do not jump straight to `polymarket preflight`
+- only mention `polymarket preflight` after the user is clearly on a Polymarket-specific execution path with a concrete market selector and trade inputs
+
 ## Discover candidate markets
 
 ```bash
@@ -51,6 +61,11 @@ pandora quote --output json \
 ## Pari-mutuel specifics
 
 Pari-mutuel markets are supported, but they behave differently from AMMs and need to be treated as a separate operator path.
+
+Quick chooser:
+- Use `amm` when users want active repricing and a live sell path before close.
+- Use `parimutuel` when users want a pooled YES/NO market whose opening distribution expresses the prior view up front.
+- A request like `99.9/0.1` usually means "seed an almost one-sided parimutuel pool," not "launch an AMM with normal two-way trading."
 
 Creation:
 - Use `pandora launch --market-type parimutuel` for the current generic scripted creation path.

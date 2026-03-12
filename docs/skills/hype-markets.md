@@ -56,6 +56,10 @@ pandora --output json markets hype run --plan-file ./hype-plan.json --candidate-
   - the event is short-window and socially hyped
   - pooled participation matters more than continuous price discovery
   - traders are likely to pile into a headline event close to resolution
+- Treat `99.9/0.1` as a parimutuel-style opening signal:
+  - it means you want an almost one-sided YES/NO pool at launch
+  - users cannot trade out of that skew later the way they can with an AMM
+  - if the user actually wants active repricing, use `amm` instead of encoding conviction as an extreme pool split
 
 ## Agent rules
 

@@ -100,9 +100,10 @@ Use the smallest scoped doc that matches the task:
   - `readyBuiltinIds`
   - `pendingBuiltinIds`
 - In the default runtime view, `market_observer_ro` is the only built-in profile reporting `ready`, and it is read-only.
-- Use `pandora --output json capabilities --runtime-local-readiness` when you want the CLI to actively probe local signer/network prerequisites; under valid runtime conditions, built-in mutable profiles such as `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` can move from `degraded` to `ready`.
+- Use `pandora --output json capabilities --runtime-local-readiness` when you want the CLI to actively probe local signer/network prerequisites; under valid runtime conditions, built-in mutable profiles such as `market_deployer_a`, `prod_trader_a`, `dev_keystore_operator`, and `desk_signer_service` can move from `degraded` to `ready`.
 - In the current runtime, no built-in mutable profile is ready:
   - `prod_trader_a` resolves as `missing-secrets`
+  - `market_deployer_a` resolves as `missing-secrets`
   - `dev_keystore_operator` resolves as `missing-keystore`
   - `desk_signer_service` resolves as `missing-context`
 - Treat `degraded` as the backend-level rollup only. The exact reason lives in the per-profile payload:

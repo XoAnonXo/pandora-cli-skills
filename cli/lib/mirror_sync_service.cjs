@@ -197,10 +197,16 @@ function pushRunDiagnostic(diagnostics, diagnostic) {
 }
 
 async function loadViemRuntime(deps = {}) {
-  if (deps.viemRuntime && typeof deps.viemRuntime === 'object') {
+  if (deps.viemRuntime && typeof deps.viemRuntime === 'object' && typeof deps.viemRuntime.privateKeyToAccount === 'function') {
     return deps.viemRuntime;
   }
-  return import('viem');
+  const viem = deps.viemRuntime && typeof deps.viemRuntime === 'object'
+    ? deps.viemRuntime
+    : await import('viem');
+  const accounts = deps.accountsRuntime && typeof deps.accountsRuntime === 'object'
+    ? deps.accountsRuntime
+    : await import('viem/accounts');
+  return { ...viem, ...accounts };
 }
 
 function buildReadChain(chainId, rpcUrl) {

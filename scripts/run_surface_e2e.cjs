@@ -12,6 +12,7 @@ function printHelp() {
 Usage:
   node scripts/run_surface_e2e.cjs [--surface <list|all>] [--out <path>] [--strict]
                                    [--skill-executor <shell command>] [--skill-timeout-ms <ms>]
+                                   [--scenario-ids <id1,id2,...>]
                                    [--include-compatibility]
 
 Surfaces:
@@ -36,6 +37,7 @@ function parseArgs(argv) {
     includeCompatibilityAliases: false,
     skillExecutor: null,
     skillTimeoutMs: null,
+    skillScenarioIds: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -67,6 +69,15 @@ function parseArgs(argv) {
     }
     if (token === '--strict') {
       options.strict = true;
+      continue;
+    }
+    if (token === '--scenario-ids') {
+      const ids = String(argv[index + 1] || '')
+        .split(',')
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean);
+      options.skillScenarioIds = ids.length ? ids : null;
+      index += 1;
       continue;
     }
     if (token === '--include-compatibility') {

@@ -43,6 +43,7 @@ pandora --output json profile list
 
 Use:
 - `bootstrap` for the canonical first-call summary: principal/scopes, canonical tools, recommended next calls, policy/profile readiness, and docs/trust routing
+  - when you summarize the bootstrap path back to a user or agent, explicitly name `bootstrap`, `capabilities`, and `schema`; do not assume `schema` is implied by the bootstrap payload
   - canonical tools are returned by default
   - use `--include-compatibility` only for legacy/debug inspection or migration diffing
   - machine-usable default policy/profile recommendations live here:
@@ -153,6 +154,16 @@ Use `capabilities.data.principalTemplates.templates[]` as the source of truth fo
 - do not start with `--private-key`
 - if you need a direct Pandora signing command, prefer `--profile-id` / `--profile-file` plus `profile explain` over assuming a mutable built-in profile is already ready
 - current builds also accept profile selectors on `mirror deploy`, `mirror go`, `mirror sync once|run|start`, and `sports create run`
+
+## Choose AMM versus parimutuel before you deploy
+
+Use this teaching block when the user says things like "I want a 99.9/0.1 market" or asks which market type fits.
+
+- Choose `amm` when the user wants active repricing and live tradability before close.
+- Choose `parimutuel` when the user wants a pooled YES/NO market where the opening distribution expresses the prior view up front and funds stay locked until resolution.
+- `99.9/0.1` means an almost one-sided opening pool. In Pandora that usually points to `parimutuel`, not a neutral AMM launch.
+- If the user wants active repricing instead of a locked pool, steer back to `amm` even when they started by quoting skew numbers.
+- Safe first step: keep them on `markets create plan` or provider-backed `markets hype plan`, then validate the exact payload before any dry-run or execute step.
 
 ## Recommended agent bootstrap patterns
 

@@ -473,7 +473,7 @@ async function planHypeMarkets(input = {}, options = {}) {
   if (provider === 'none') {
     throw new HypeMarketProviderError(
       'HYPE_AI_PROVIDER_NOT_CONFIGURED',
-      'No hype research provider configured. Set --ai-provider, OPENAI_API_KEY, or ANTHROPIC_API_KEY, or use agent market hype for prompt-only workflows.',
+      'No hype research provider configured. Set --ai-provider auto|openai|anthropic (or OPENAI_API_KEY / ANTHROPIC_API_KEY) for real suggestion workflows, or use agent market hype only for prompt-only fallback workflows.',
       { supportedProviders: ['mock', 'openai', 'anthropic'] },
     );
   }

@@ -49,6 +49,12 @@ const PROFILE_RECOMMENDATION_BACKEND_PRIORITY = Object.freeze({
 
 const COMMAND_DESCRIPTOR_SUFFIXES = new Set(['execute', 'plan', 'validate', 'status', 'cancel', 'close', 'run', 'start', 'stop', 'once']);
 const COMMAND_DESCRIPTORS = buildCommandDescriptors();
+const DEPLOY_TOOL_DESCRIPTOR_PREFIXES = Object.freeze([
+  'launch',
+  'markets.create',
+  'markets.hype',
+  'mirror.deploy',
+]);
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -343,9 +349,22 @@ async function probeReadyResolution(profile, baseResolution, options = {}) {
 }
 
 function normalizeToolFamily(command) {
-  const normalized = String(command || '').trim().toLowerCase();
+  const normalized = String(command || '').trim();
   if (!normalized) return null;
-  return normalized.split('.')[0] || null;
+  const descriptorKey = normalizeCommandForDescriptor(normalized, COMMAND_DESCRIPTORS);
+  const descriptor = descriptorKey ? COMMAND_DESCRIPTORS[descriptorKey] || null : null;
+  const canonicalCommand = normalizeOptionalString(
+    descriptor && (descriptor.canonicalTool || descriptor.aliasOf || descriptorKey),
+  ) || normalizeOptionalString(normalized);
+  if (
+    canonicalCommand
+    && descriptor
+    && (descriptor.mcpMutating === true || descriptor.requiresSecrets === true)
+    && DEPLOY_TOOL_DESCRIPTOR_PREFIXES.some((prefix) => canonicalCommand === prefix || canonicalCommand.startsWith(`${prefix}.`))
+  ) {
+    return 'deploy';
+  }
+  return canonicalCommand ? canonicalCommand.toLowerCase().split('.')[0] || null : null;
 }
 
 function normalizeCategoryValue(value) {

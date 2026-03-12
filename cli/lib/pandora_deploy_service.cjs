@@ -258,6 +258,58 @@ function utf8ByteLength(value) {
   return Buffer.byteLength(String(value || ''), 'utf8');
 }
 
+function shouldCollectDryRunPreflight(options = {}) {
+  const env = options.env && typeof options.env === 'object' ? options.env : process.env;
+  return Boolean(
+    options.preflight === true
+    || options.privateKey
+    || options.profile
+    || (typeof options.profileId === 'string' && options.profileId.trim())
+    || (typeof options.profileFile === 'string' && options.profileFile.trim())
+    || options.account
+    || options.walletClient
+    || env.DEPLOYER_PRIVATE_KEY
+    || env.PRIVATE_KEY
+    || env.PANDORA_DEPLOYER_PRIVATE_KEY
+    || env.PANDORA_PRIVATE_KEY,
+  );
+}
+
+function resolveDeploymentPrivateKey(options = {}) {
+  const env = options.env && typeof options.env === 'object' ? options.env : process.env;
+  return options.privateKey
+    || env.PANDORA_DEPLOYER_PRIVATE_KEY
+    || env.DEPLOYER_PRIVATE_KEY
+    || env.PANDORA_PRIVATE_KEY
+    || env.PRIVATE_KEY
+    || null;
+}
+
+function buildFundingBlockerSummary({
+  nativeBalance,
+  nativeRequired,
+  usdcBalance,
+  usdcRequired,
+  nativeSymbol,
+}) {
+  const blockers = [];
+  if (nativeBalance < nativeRequired) {
+    blockers.push({
+      code: 'INSUFFICIENT_NATIVE_BALANCE',
+      category: 'native-gas',
+      message: `Wallet native balance is insufficient for poll fee + gas reserve (${formatUnits(nativeRequired, 18)} ${nativeSymbol} required).`,
+    });
+  }
+  if (usdcBalance < usdcRequired) {
+    blockers.push({
+      code: 'INSUFFICIENT_USDC_BALANCE',
+      category: 'usdc-liquidity',
+      message: `Wallet USDC balance is insufficient for liquidity (${formatUnits(usdcRequired, 6)} required).`,
+    });
+  }
+  return blockers;
+}
+
 async function resolveMaxRulesLength(publicClient, oracle) {
   try {
     const result = await publicClient.readContract({
@@ -691,23 +743,25 @@ async function deployPandoraAmmMarket(options = {}) {
     diagnostics: [],
   };
 
-  if (!options.execute) {
+  if (!options.execute && !shouldCollectDryRunPreflight(options)) {
     return payload;
   }
 
-  payload.agentValidation = assertAgentMarketValidation(validationInput, {
-    env: options.env || process.env,
-    preflight: options.agentPreflight,
-  });
+  if (options.execute) {
+    payload.agentValidation = assertAgentMarketValidation(validationInput, {
+      env: options.env || process.env,
+      preflight: options.agentPreflight,
+    });
+  }
 
-  const privateKey = options.privateKey || process.env.PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY || null;
+  const privateKey = resolveDeploymentPrivateKey(options);
   const hasProfileSelector = Boolean(
     options.profile
     || (typeof options.profileId === 'string' && options.profileId.trim())
     || (typeof options.profileFile === 'string' && options.profileFile.trim())
   );
   if (!privateKey && !hasProfileSelector && !options.account && !options.walletClient) {
-    throw new Error('Missing signer credentials for deployment execution. Pass --private-key or --profile-id/--profile-file.');
+    throw new Error('Missing signer credentials for deployment execution. Set PANDORA_DEPLOYER_PRIVATE_KEY/PANDORA_PRIVATE_KEY or DEPLOYER_PRIVATE_KEY/PRIVATE_KEY, or pass --profile-id/--profile-file.');
   }
 
   const publicClient = options.publicClient || runtime.createPublicClient({ chain, transport: runtime.http(rpcUrl) });
@@ -792,21 +846,6 @@ async function deployPandoraAmmMarket(options = {}) {
 
   const needsApproval = currentAllowance < liquidityRaw;
   const distributionHint = [BigInt(args.distributionYes), BigInt(args.distributionNo)];
-
-  let pollSimulation;
-  try {
-    pollSimulation = await publicClient.simulateContract({
-      account,
-      address: oracle,
-      abi: ORACLE_ABI,
-      functionName: 'createPoll',
-      args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
-      value: pollFee,
-    });
-  } catch (err) {
-    throw await wrapDeployExecutionError(err, 'POLL_SIMULATION_FAILED', 'createPoll simulation failed.');
-  }
-
   const approveRequest = needsApproval
     ? {
         account,
@@ -817,7 +856,7 @@ async function deployPandoraAmmMarket(options = {}) {
       }
     : null;
   const marketConfigForReserve = buildFactoryCreateConfig({
-    pollAddress: pollSimulation.result || ZERO_ADDRESS,
+    pollAddress: ZERO_ADDRESS,
     usdc,
     liquidityRaw,
     distributionHint,
@@ -826,7 +865,14 @@ async function deployPandoraAmmMarket(options = {}) {
   const gasReservePlan = await buildGasReservePlan({
     options,
     publicClient,
-    pollRequest: pollSimulation.request,
+    pollRequest: {
+      account,
+      address: oracle,
+      abi: ORACLE_ABI,
+      functionName: 'createPoll',
+      args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
+      value: pollFee,
+    },
     approveRequest,
     marketRequest: {
       account,
@@ -865,6 +911,25 @@ async function deployPandoraAmmMarket(options = {}) {
     usdcAllowance: formatUnits(currentAllowance, 6),
     allowanceSufficient: currentAllowance >= liquidityRaw,
   };
+  payload.preflight.blockers = buildFundingBlockerSummary({
+    nativeBalance,
+    nativeRequired: pollFee + gasReserveWei,
+    usdcBalance,
+    usdcRequired: liquidityRaw,
+    nativeSymbol: chain.nativeCurrency.symbol,
+  });
+  payload.preflight.ready = payload.preflight.blockers.length === 0;
+  payload.preflight.requiresApproval = needsApproval;
+
+  if (!options.execute) {
+    if (!payload.preflight.ready) {
+      payload.preflight.simulationSkipped = true;
+      payload.diagnostics.push(
+        'Dry-run preflight found signer funding blockers before poll simulation. Top up native gas balance and USDC liquidity before execute mode.',
+      );
+      return payload;
+    }
+  }
 
   if (nativeBalance < pollFee + gasReserveWei) {
     throw createDeployError(
@@ -872,6 +937,28 @@ async function deployPandoraAmmMarket(options = {}) {
       `Wallet native balance is insufficient for poll fee + gas reserve (${payload.preflight.nativeRequired} ${chain.nativeCurrency.symbol}).`,
       payload.preflight,
     );
+  }
+
+  let pollSimulation;
+  try {
+    pollSimulation = await publicClient.simulateContract({
+      account,
+      address: oracle,
+      abi: ORACLE_ABI,
+      functionName: 'createPoll',
+      args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
+      value: pollFee,
+    });
+  } catch (err) {
+    throw await wrapDeployExecutionError(err, 'POLL_SIMULATION_FAILED', 'createPoll simulation failed.', {
+      preflight: payload.preflight,
+    });
+  }
+
+  if (!options.execute) {
+    payload.preflight.simulationSkipped = false;
+    payload.diagnostics.push('Dry-run preflight confirmed signer funding prerequisites for execute mode.');
+    return payload;
   }
   if (usdcBalance < liquidityRaw) {
     throw createDeployError(

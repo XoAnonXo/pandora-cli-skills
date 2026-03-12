@@ -380,15 +380,15 @@
   "registryDigest": {
     "canonicalHash": "9d638ee641f11a5ff7361b639583b7420341f9f222587e8f58cdf276a69bc8fb",
     "commandDigestHash": "b0122b3b2348544191cc7d015fbfe315a6a7b48b1fa6078bdfe7ce04ac5fddb4",
-    "descriptorHash": "5db51951712c8c6bfbff788633efe072205263efdf471f7d009e3b6383586f67",
-    "documentationHash": "c117ea898d79ba1841f1468900cb0cee2b4385b1781c08a9e3f620c4742a5dcb",
-    "fullDescriptorHash": "ed9ceec0c217dbedb62068328ccafa33e294f1d56c11dbde3b56dfe29bd185b9",
+    "descriptorHash": "05611055c55f59d69d28c3775eed202335e0d7448d37c48a7edbc8a12344fb87",
+    "documentationHash": "de7a61658c12f9b4ca0bc35dc929a70f7547e9085ee79821c6d1254cd73ed5c1",
+    "fullDescriptorHash": "da87a106d99271d8f39ff655a070294329554eaf4e249595120b3bf671903d4f",
     "namespaceHash": "35a0e69c2f30bc8067d11ed5e75cfb3865d63bf662e001c15b0a7778e6b67ce7",
-    "policyProfilesHash": "9380d1d8e7a1104fb30f7ee76d155d9708dd3376f74df4d0bd67ae854f24ca8d",
+    "policyProfilesHash": "03fdebf46de42775b95e2b4a88c96c41d4c834a3285aa3c546cbf9e89f3efda5",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "db78e40057e3f231880214dd1ac6945ad4153d37df86118a188ef32086a96885",
-    "trustDistributionHash": "8633dc5ea7c70829fc8993ecc085e30a35c12ba327087c111ee4ae1734bc322f"
+    "trustDistributionHash": "16fad8e2f90e28fb4d5db00ff107cc87f69e5a88f128ad9e3ac468678b3618fe"
   },
   "schemaVersion": "1.0.0"
 }

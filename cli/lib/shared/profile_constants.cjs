@@ -28,6 +28,12 @@ const PROFILE_ENV_PRIVATE_KEY_CANDIDATES = Object.freeze([
   'PRIVATE_KEY',
 ]);
 
+const PROFILE_ENV_DEPLOYER_PRIVATE_KEY_CANDIDATES = Object.freeze([
+  'PANDORA_DEPLOYER_PRIVATE_KEY',
+  'DEPLOYER_PRIVATE_KEY',
+  ...PROFILE_ENV_PRIVATE_KEY_CANDIDATES,
+]);
+
 const PROFILE_ENV_WALLET_CANDIDATES = Object.freeze([
   'WALLET',
   'PANDORA_WALLET',
@@ -57,6 +63,7 @@ const PROFILE_ENV_EXTERNAL_SIGNER_TOKEN_CANDIDATES = Object.freeze([
 ]);
 
 const PROFILE_DEFAULT_LOCAL_ENV_PROFILE_ID = 'prod_trader_a';
+const PROFILE_DEFAULT_DEPLOYER_PROFILE_ID = 'market_deployer_a';
 const PROFILE_DEFAULT_READ_ONLY_PROFILE_ID = 'market_observer_ro';
 const PROFILE_DEFAULT_KEYSTORE_PROFILE_ID = 'dev_keystore_operator';
 const PROFILE_DEFAULT_EXTERNAL_SIGNER_PROFILE_ID = 'desk_signer_service';
@@ -106,6 +113,7 @@ const PROFILE_READ_ONLY_TOOL_FAMILIES = Object.freeze([
 ]);
 
 const PROFILE_MUTATING_TOOL_FAMILIES = Object.freeze([
+  'deploy',
   'trade',
   'sell',
   'lp',
@@ -145,6 +153,38 @@ const PROFILE_BUILTIN_SAMPLE_PROFILES = deepFreeze([
     labels: {
       builtin: 'true',
       class: 'trader',
+      sample: 'true',
+    },
+    readOnly: false,
+  },
+  {
+    id: PROFILE_DEFAULT_DEPLOYER_PROFILE_ID,
+    version: PROFILE_SCHEMA_VERSION,
+    displayName: 'Market Deployer A (sample local env profile)',
+    description:
+      'Built-in sample deployer profile for market creation and mirror deployment using a deployer-compatible local environment signer.',
+    signerBackend: 'local-env',
+    chainAllowlist: [1],
+    categoryAllowlist: ['Politics', 'Sports', 'Finance', 'Crypto'],
+    toolFamilyAllowlist: ['deploy'],
+    defaultPolicy: 'execute-with-validation',
+    allowedPolicies: ['execute-with-validation'],
+    secretRef: {
+      kind: 'env',
+      privateKeyEnv: PROFILE_ENV_DEPLOYER_PRIVATE_KEY_CANDIDATES,
+      walletEnv: PROFILE_ENV_WALLET_CANDIDATES,
+      rpcUrlEnv: PROFILE_ENV_RPC_URL_CANDIDATES,
+      chainIdEnv: PROFILE_ENV_CHAIN_ID_CANDIDATES,
+    },
+    approvalMode: 'manual',
+    riskCeilings: {
+      maxDailyNotionalUsd: 5000,
+      maxOpenPositions: 12,
+      maxSingleTradeUsd: 2500,
+    },
+    labels: {
+      builtin: 'true',
+      class: 'deployer',
       sample: 'true',
     },
     readOnly: false,
@@ -243,6 +283,7 @@ module.exports = {
   PROFILE_SIGNER_BACKENDS,
   PROFILE_APPROVAL_MODES,
   PROFILE_ENV_PRIVATE_KEY_CANDIDATES,
+  PROFILE_ENV_DEPLOYER_PRIVATE_KEY_CANDIDATES,
   PROFILE_ENV_WALLET_CANDIDATES,
   PROFILE_ENV_RPC_URL_CANDIDATES,
   PROFILE_ENV_CHAIN_ID_CANDIDATES,
@@ -250,6 +291,7 @@ module.exports = {
   PROFILE_ENV_EXTERNAL_SIGNER_URL_CANDIDATES,
   PROFILE_ENV_EXTERNAL_SIGNER_TOKEN_CANDIDATES,
   PROFILE_DEFAULT_LOCAL_ENV_PROFILE_ID,
+  PROFILE_DEFAULT_DEPLOYER_PROFILE_ID,
   PROFILE_DEFAULT_READ_ONLY_PROFILE_ID,
   PROFILE_DEFAULT_KEYSTORE_PROFILE_ID,
   PROFILE_DEFAULT_EXTERNAL_SIGNER_PROFILE_ID,

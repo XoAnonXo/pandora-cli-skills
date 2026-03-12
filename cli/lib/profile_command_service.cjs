@@ -438,6 +438,51 @@ function profileSafetyRank(item) {
   return 2;
 }
 
+function buildProfileRecommendOnboardingGuidance(canonicalTool) {
+  const normalized = normalizeOptionalString(canonicalTool);
+  if (!normalized) return null;
+
+  if (normalized === 'markets.create.run' || normalized === 'launch') {
+    return {
+      journey: 'deploy-plus-mirror-operator',
+      primaryProfileId: 'market_deployer_a',
+      companionProfileId: 'prod_trader_a',
+      notes: [
+        'Use market_deployer_a for Pandora market deployment and deploy dry-run readiness.',
+        'Use prod_trader_a for live mirror automation and Polymarket hedge operations after the market exists.',
+        'These are separate mutable personas by design: deployment signer readiness and mirror hedge readiness are not the same contract.',
+      ],
+      nextCommands: [
+        'pandora --output json profile recommend --command mirror.go --mode execute --chain-id 1 --category Sports --policy-id execute-with-validation',
+      ],
+    };
+  }
+
+  if (normalized === 'mirror.go' || normalized === 'mirror.sync' || normalized === 'mirror.sync.once' || normalized === 'mirror.sync.run' || normalized === 'mirror.sync.start') {
+    return {
+      journey: 'deploy-plus-mirror-operator',
+      primaryProfileId: 'prod_trader_a',
+      companionProfileId: 'market_deployer_a',
+      sourceRequirement: {
+        minimumSources: 2,
+        independentHostsRequired: true,
+        appliesInPaperMode: true,
+      },
+      notes: [
+        'Use prod_trader_a for live mirror automation and Polymarket hedge operations.',
+        'Use market_deployer_a for the Pandora market deployment leg when mirror go will create a fresh market first.',
+        'If mirror go will deploy a fresh Pandora market, provide two independent public --sources even in paper mode. Polymarket URLs never satisfy this requirement.',
+      ],
+      nextCommands: [
+        'pandora --output json profile recommend --command markets.create.run --mode execute --chain-id 1 --category Crypto --policy-id execute-with-validation',
+        'pandora --output json mirror go --help',
+      ],
+    };
+  }
+
+  return null;
+}
+
 function buildProfileRecommendPayload(recommendation, listing, options = {}) {
   const requestedCommand = normalizeOptionalString(options.command);
   const canonicalTool = recommendation && recommendation.canonicalCommand
@@ -518,6 +563,7 @@ function buildProfileRecommendPayload(recommendation, listing, options = {}) {
     profiles: Array.isArray(recommendation && recommendation.profiles) ? recommendation.profiles : [],
     policies: Array.isArray(recommendation && recommendation.policies) ? recommendation.policies : [],
     nextTools: Array.isArray(recommendation && recommendation.nextTools) ? recommendation.nextTools : [],
+    onboardingGuidance: buildProfileRecommendOnboardingGuidance(canonicalTool),
     decision: recommendation && recommendation.decision ? recommendation.decision : {
       bestProfileId: null,
       bestPolicyId: null,

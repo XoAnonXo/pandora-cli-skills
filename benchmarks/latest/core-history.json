@@ -29,9 +29,9 @@
       "contractLockMatchesExpected": true,
       "parityFailedGroups": [],
       "descriptorHash": "5db51951712c8c6bfbff788633efe072205263efdf471f7d009e3b6383586f67",
-      "documentationContentHash": "130ffb16de41c5cf2d1ebe397a174c095616289a2a914d7ef13762b29adf391c",
-      "reportSha256": "b6fed49367c149fdce6bbafaca31272b217798984feb7cf2784d794d994e80d1",
-      "lockSha256": "c1ee3fb19a65422a5da178a5907a1226fe68c3647296064ff65e0e24b1f454e7",
+      "documentationContentHash": "9b6ba813749a1899439bf87d76ac9bddaa78733fcba2075b2e6ac180864953b9",
+      "reportSha256": "9dc7961d80a62c8d5387f34ad289cd761a41d4a3b7491837901f459c0edb532c",
+      "lockSha256": "3f2901e8ba6a1eb007df58f49e8989ab4e13730c21b0e07ee7a3f00678617246",
       "lockSchemaVersion": "1.0.0"
     },
     {

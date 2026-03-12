@@ -1600,7 +1600,7 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsSbom, false);
   assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsTrustCheck, false);
   assert.equal(payload.data.trustDistribution.verification.signals.testRunsBenchmarkCheck, true);
-  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, false);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsReleasePrep, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoTestRunsSmoke, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoReleasePrepRunsSmoke, true);
@@ -2089,7 +2089,7 @@ test('capabilities --help succeeds in table mode', () => {
   assert.equal(payload.data.trustDistribution.distribution.signals.shipsBenchmarkReport, true);
   assert.equal(payload.data.trustDistribution.releaseGates.commands.test, repoPackage.scripts.test);
   assert.equal(payload.data.trustDistribution.releaseGates.commands.releasePrep, repoPackage.scripts['release:prep']);
-  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, true);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, false);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsReleasePrep, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoTestRunsSmoke, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoReleasePrepRunsSmoke, true);
@@ -2595,6 +2595,32 @@ test('setup creates env and coordinates doctor checks', async () => {
     assert.equal(payload.data.doctor.summary.ok, true);
   } finally {
     await rpcServer.close();
+    removeDir(tempDir);
+  }
+});
+
+test('setup guides first-run users when the starter env still contains placeholder signer material', async () => {
+  const tempDir = createTempDir('pandora-setup-guided-');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'setup',
+      '--dotenv-path',
+      envPath,
+    ]);
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0);
+    assert.equal(fs.existsSync(envPath), true);
+
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(Array.isArray(payload.data.guidedNextSteps), true);
+    assert.equal(payload.data.guidedNextSteps.some((step) => /market_deployer_a/.test(step)), true);
+  } finally {
     removeDir(tempDir);
   }
 });
@@ -7148,7 +7174,7 @@ test('mirror deploy rejects missing explicit sources instead of auto-adding Poly
     const payload = parseJsonOutput(result);
     assert.equal(payload.ok, false);
     assert.equal(payload.error.code, 'MIRROR_SOURCES_REQUIRED');
-    assert.match(payload.error.message, /explicit independent resolution sources/i);
+    assert.match(payload.error.message, /explicit independent public resolution sources/i);
   } finally {
     await indexer.close();
     await polymarket.close();
@@ -7961,6 +7987,8 @@ test('mirror go --help json includes flashbots routing flag contract', () => {
   assert.match(payload.data.usage, /--resolve-answer yes\|no/);
   assert.match(payload.data.usage, /--resolve-reason <text>/);
   assert.equal(payload.data.notes.some((note) => /validation tickets are bound to the exact final deploy payload/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /two independent public --sources.*even in paper mode/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /market_deployer_a.*prod_trader_a|prod_trader_a.*market_deployer_a/i.test(String(note))), true);
 });
 
 test('mirror deploy --help json surfaces validation-ticket caveats and percentage distribution flags', () => {
@@ -11845,6 +11873,22 @@ test('agent market hype rejects regional-news without a region', () => {
   assert.match(result.output, /requires --region <text> when --area regional-news/i);
 });
 
+test('agent market hype missing-area error includes valid areas and a retry example', () => {
+  const result = runCli([
+    '--output',
+    'json',
+    'agent',
+    'market',
+    'hype',
+    '--query',
+    'suggest ideas',
+  ]);
+
+  assert.equal(result.status, 1);
+  assert.match(result.output, /--area <sports\|esports\|politics\|regional-news\|breaking-news>/i);
+  assert.match(result.output, /agent market hype --area politics --query \\"suggest ideas\\"/i);
+});
+
 test('markets hype --help json surfaces frozen-plan workflow guidance', () => {
   const result = runCli(['--output', 'json', 'markets', 'hype', '--help']);
   assert.equal(result.status, 0);
@@ -11854,6 +11898,8 @@ test('markets hype --help json surfaces frozen-plan workflow guidance', () => {
   assert.equal(Array.isArray(payload.data.notes), true);
   assert.equal(payload.data.notes.some((note) => /frozen/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /agent market hype/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /prefer markets hype plan with --ai-provider auto\|openai\|anthropic/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /mock only for deterministic tests, demos, and evals/i.test(String(note))), true);
 });
 
 test('markets hype plan emits reusable frozen hype payload in mock mode', async () => {
@@ -11885,6 +11931,7 @@ test('markets hype plan emits reusable frozen hype payload in mock mode', async 
     assert.equal(payload.command, 'markets.hype.plan');
     assert.equal(payload.data.mode, 'plan');
     assert.equal(payload.data.provider.name, 'mock');
+    assert.equal(payload.data.guidance.mockProviderTestOnly, true);
     assert.equal(payload.data.researchSnapshot.promptKind, 'agent.market.hype');
     assert.equal(payload.data.candidates.length, 1);
     assert.equal(payload.data.selectedCandidate.recommendedMarketType, 'amm');
@@ -11892,6 +11939,7 @@ test('markets hype plan emits reusable frozen hype payload in mock mode', async 
     assert.equal(payload.data.selectedCandidate.marketDrafts.amm.distributionNo, 430000000);
     assert.equal(payload.data.selectedCandidate.validation.attestation.validationDecision, 'PASS');
     assert.equal(payload.data.selectedCandidate.readyToDeploy, true);
+    assert.equal(payload.data.notes.some((note) => /Prefer --ai-provider auto\|openai\|anthropic/i.test(String(note))), true);
   } finally {
     await indexer.close();
   }

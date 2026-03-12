@@ -3379,6 +3379,105 @@ test('runMirrorSync paper mode uses on-chain reserves for atomic rebalance plann
   }
 });
 
+test('runMirrorSync paper mode resolves inventory address cleanly when injected viem runtime omits privateKeyToAccount', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-paper-private-key-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  const privateKey = `0x${'1'.repeat(64)}`;
+  const expectedInventoryAddress = '0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a';
+  let capturedInventoryAddress = null;
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: null,
+        executeLive: false,
+        trustDeploy: false,
+        hedgeEnabled: false,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 150,
+        hedgeTriggerUsdc: 10_000,
+        maxRebalanceUsdc: 40,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        privateKey,
+      },
+      {
+        viemRuntime: {
+          createPublicClient: () => ({
+            getTransactionReceipt: async () => null,
+          }),
+          http: () => ({}),
+        },
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            yesPct: 40,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            sourceFreshness: {
+              observedAt: new Date().toISOString(),
+            },
+          },
+          pandora: {
+            yesPct: 40,
+            reserveYes: 2,
+            reserveNo: 8,
+          },
+          expiry: {
+            minTimeToExpirySec: 7200,
+          },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        readPandoraReserveContext: async ({ inventoryAddress }) => {
+          capturedInventoryAddress = inventoryAddress;
+          return {
+            source: 'onchain:outcome-token-balances',
+            reserveYesUsdc: 2,
+            reserveNoUsdc: 8,
+            pandoraYesPct: 40,
+            feeTier: 3000,
+            readAt: '2026-03-01T10:00:00.000Z',
+            walletYesUsdc: 0,
+            walletNoUsdc: 0,
+            inventoryAddress,
+          };
+        },
+      },
+    );
+
+    assert.equal(payload.diagnostics.some((entry) => /privateKeyToAccount is not a function/i.test(String(entry.message || ''))), false);
+    assert.equal(String(capturedInventoryAddress).toLowerCase(), expectedInventoryAddress);
+    assert.equal(String(payload.state.accounting.pandoraInventoryAddress).toLowerCase(), expectedInventoryAddress);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('runMirrorSync live mode executes rebalance from on-chain reserve drift, not verify payload reserves', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-onchain-live-'));
   const stateFile = path.join(tempDir, 'mirror-state.json');

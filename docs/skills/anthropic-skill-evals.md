@@ -68,6 +68,11 @@ The current functional coverage is intentionally focused on Pandora's highest-va
 - profile go/no-go inspection
 - MCP transport selection
 - portfolio closeout
+- AMM versus parimutuel teaching for first-run users
+- provider-backed market suggestion routing versus mock fallback
+- watch/risk monitoring-first workflows
+- sports onboarding when providers are still missing
+- builder-facing MCP versus CLI versus SDK choice
 
 ### Automated Claude Code runtime sweep
 
@@ -82,14 +87,19 @@ What this does:
 - builds and validates the generated Anthropic skill bundle
 - loads `dist/pandora-skill/` into the local `claude` CLI with `--plugin-dir`
 - runs the trigger and functional scenario fixtures through a real Claude runtime
+- records actual Pandora MCP tool-use evidence and fails on permission-denied tool calls
 - writes the full report to `output/e2e/skill-runtime-report.json`
 
 Optional:
 
 - set `PANDORA_SKILL_EXECUTOR_MODEL=sonnet` to force a cheaper model for the runtime sweep
+- set `PANDORA_SKILL_EXECUTOR_EFFORT=low|medium|high|max` to control Claude Code reasoning effort during the sweep
 - override `PANDORA_CLAUDE_BIN` if the `claude` executable is not on the default `PATH`
 - pass `--skill-timeout-ms <ms>` or set `PANDORA_SKILL_EXECUTOR_TIMEOUT_MS` to cap each scenario runtime
+- timed-out `skill-runtime` scenarios are retried once by default before the runner records a failure; set `PANDORA_SKILL_EXECUTOR_TIMEOUT_RETRIES=0` if you want a single-attempt debug run
+- pass `--scenario-ids <id1,id2,...>` to run a focused subset of skill-runtime scenarios while debugging
 - pass `--skill-executor "<command>"` if you want to replace the bundled Claude adapter with another sub-agent executor
+- set `PANDORA_SKILL_EXECUTOR_SKIP_PERMISSIONS=0` if you need to disable the default permission bypass mode for the bundled Claude adapter
 
 ### 4. Run at least one baseline comparison
 
