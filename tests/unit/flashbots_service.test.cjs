@@ -299,6 +299,62 @@ test('sendFlashbotsBundle preserves relay context when the relay rejects submiss
   );
 });
 
+test('sendFlashbotsBundle fills missing viem helpers from the default runtime when overrides are partial', async () => {
+  const calls = [];
+  const result = await sendFlashbotsBundle({
+    publicClient: {
+      async getBlockNumber() {
+        return 600n;
+      },
+    },
+    walletClient: {
+      async signTransaction() {
+        return `0x${'7'.repeat(64)}`;
+      },
+    },
+    transactionRequests: [
+      { nonce: 1, to: '0x1111111111111111111111111111111111111111' },
+    ],
+    relayUrl: 'https://relay.flashbots.example',
+    authAccount: makeAuthAccount(),
+    viemRuntime: {},
+    fetchImpl: async (_url, request) => {
+      const body = JSON.parse(request.body);
+      calls.push(body.method);
+      if (body.method === FLASHBOTS_METHODS.callBundle) {
+        return {
+          ok: true,
+          async text() {
+            return JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              result: {
+                results: [{ gasUsed: '0x1' }],
+              },
+            });
+          },
+        };
+      }
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({
+            jsonrpc: '2.0',
+            id: 2,
+            result: {
+              bundleHash: `0x${'8'.repeat(64)}`,
+            },
+          });
+        },
+      };
+    },
+  });
+
+  assert.deepEqual(calls, [FLASHBOTS_METHODS.callBundle, FLASHBOTS_METHODS.sendBundle]);
+  assert.equal(result.bundleHash, `0x${'8'.repeat(64)}`);
+  assert.equal(result.transactionHashes.length, 1);
+});
+
 test('sendFlashbotsPrivateTransaction preserves relay context when the relay responds with HTTP failure', async () => {
   await assert.rejects(
     sendFlashbotsPrivateTransaction({

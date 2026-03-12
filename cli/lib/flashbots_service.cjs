@@ -7,6 +7,7 @@ const FLASHBOTS_SUPPORTED_CHAIN_ID = 1;
 const FLASHBOTS_JSONRPC_VERSION = '2.0';
 const FLASHBOTS_DEFAULT_REQUEST_ID = 1;
 const FLASHBOTS_TIMEOUT_MS = 15_000;
+let cachedViemRuntimePromise = null;
 
 const FLASHBOTS_METHODS = Object.freeze({
   sendPrivateTransaction: 'eth_sendPrivateTransaction',
@@ -208,16 +209,29 @@ function serializeFlashbotsJsonBody(body) {
 }
 
 async function loadViemRuntime() {
-  const viem = await import('viem');
-  const accounts = await import('viem/accounts');
-  return { ...viem, ...accounts };
+  if (!cachedViemRuntimePromise) {
+    cachedViemRuntimePromise = Promise.all([
+      import('viem'),
+      import('viem/accounts'),
+    ]).then(([viem, accounts]) => ({
+      ...((viem && viem.default && typeof viem.default === 'object') ? viem.default : {}),
+      ...(viem || {}),
+      ...((accounts && accounts.default && typeof accounts.default === 'object') ? accounts.default : {}),
+      ...(accounts || {}),
+    }));
+  }
+  return cachedViemRuntimePromise;
 }
 
 async function resolveViemRuntime(viemRuntime) {
+  const runtime = await loadViemRuntime();
   if (viemRuntime && typeof viemRuntime === 'object') {
-    return viemRuntime;
+    return {
+      ...runtime,
+      ...viemRuntime,
+    };
   }
-  return loadViemRuntime();
+  return runtime;
 }
 
 function resolveFetchImpl(fetchImpl) {

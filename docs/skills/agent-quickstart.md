@@ -235,7 +235,7 @@ Status:
 ### Python
 - standalone package identity: `pandora-agent`
  - external install path: public PyPI package `pandora-agent` using the current published version or signed GitHub release wheel or sdist attached to the tagged Pandora release
-- install command: `pip install pandora-agent==0.1.0a14`
+- install command: `pip install pandora-agent==0.1.0a15`
  - authoritative install and usage guide: `sdk/python/README.md`
  - repository checkout path: `sdk/python` for maintainers and in-tree consumers
 - module/import name: `pandora_agent`
