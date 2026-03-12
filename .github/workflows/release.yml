@@ -12,13 +12,36 @@ permissions:
 
 jobs:
   validate:
-    name: "${{ matrix.os }} / Node ${{ matrix.node }}"
+    name: "${{ matrix.label }} / Node ${{ matrix.node }}"
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        node: [20]
+        include:
+          - label: ubuntu release gate
+            os: ubuntu-latest
+            node: 20
+            setup_python: true
+            install_python_build_frontend: true
+            run_lint: true
+            run_typecheck: true
+            test_command: npm test
+          - label: macos release smoke
+            os: macos-latest
+            node: 20
+            setup_python: false
+            install_python_build_frontend: false
+            run_lint: false
+            run_typecheck: false
+            test_command: npm run test:smoke
+          - label: windows release smoke
+            os: windows-latest
+            node: 20
+            setup_python: false
+            install_python_build_frontend: false
+            run_lint: false
+            run_typecheck: false
+            test_command: npm run test:smoke
 
     steps:
       - name: Checkout
@@ -31,6 +54,7 @@ jobs:
           cache: npm
 
       - name: Setup Python
+        if: ${{ matrix.setup_python }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
@@ -39,16 +63,19 @@ jobs:
         run: npm ci
 
       - name: Install Python build frontend
+        if: ${{ matrix.install_python_build_frontend }}
         run: python -m pip install --disable-pip-version-check --quiet "setuptools>=68" wheel build
 
       - name: Lint
+        if: ${{ matrix.run_lint }}
         run: npm run lint
 
       - name: Typecheck
+        if: ${{ matrix.run_typecheck }}
         run: npm run typecheck
 
       - name: Test
-        run: npm test
+        run: ${{ matrix.test_command }}
 
   release:
     name: Package and Publish Artifacts
@@ -526,12 +553,23 @@ jobs:
           PACKAGE_VERSION="${{ steps.release_meta.outputs.package_version }}"
           EXPECTED_TARBALL="$(basename "${{ steps.pack.outputs.tarball }}")"
 
-          for attempt in {1..12}; do
-            PUBLISHED_VERSION="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --json 2>/dev/null | tr -d '\"')"
-            PUBLISHED_TARBALL="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.tarball --json 2>/dev/null | tr -d '\"')"
+          for attempt in {1..24}; do
+            PUBLISHED_VERSION=""
+            PUBLISHED_TARBALL=""
+
+            if PUBLISHED_VERSION_JSON="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --json 2>/dev/null)"; then
+              PUBLISHED_VERSION="$(printf '%s' "${PUBLISHED_VERSION_JSON}" | tr -d '\"')"
+            fi
+
+            if PUBLISHED_TARBALL_JSON="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.tarball --json 2>/dev/null)"; then
+              PUBLISHED_TARBALL="$(printf '%s' "${PUBLISHED_TARBALL_JSON}" | tr -d '\"')"
+            fi
+
             if [[ "${PUBLISHED_VERSION}" == "${PACKAGE_VERSION}" && "${PUBLISHED_TARBALL}" == *"/${EXPECTED_TARBALL}" ]]; then
               exit 0
             fi
+
+            echo "Waiting for npm propagation (${attempt}/24): version='${PUBLISHED_VERSION:-missing}' tarball='${PUBLISHED_TARBALL:-missing}'" >&2
             sleep 5
           done
 
