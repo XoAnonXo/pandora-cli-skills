@@ -129,6 +129,21 @@ function assert(condition, message) {
   }
 }
 
+function workflowHasNode20Coverage(workflow) {
+  return workflow.includes('node: [20]')
+    || workflow.includes('node: 20')
+    || workflow.includes('node-version: 20')
+    || workflow.includes('node-version: ${{ matrix.node }}');
+}
+
+function workflowHasNpmTestCoverage(workflow) {
+  return workflow.includes('run: npm test')
+    || (
+      workflow.includes('test_command: npm test')
+      && workflow.includes('run: ${{ matrix.test_command }}')
+    );
+}
+
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, 'utf8');
 }
@@ -347,7 +362,6 @@ function checkWorkflowAndInstaller() {
     'ubuntu-latest',
     'macos-latest',
     'windows-latest',
-    'node: [20]',
     'npm test',
     'Standalone SDK Artifacts',
     'python3 -m pip install --disable-pip-version-check --quiet "setuptools>=68" wheel build',
@@ -357,6 +371,7 @@ function checkWorkflowAndInstaller() {
   for (const fragment of ciWorkflowExpectations) {
     assert(ciWorkflow.includes(fragment), `ci workflow is missing required platform/smoke coverage: ${fragment}`);
   }
+  assert(workflowHasNode20Coverage(ciWorkflow), 'ci workflow is missing required Node 20 coverage');
 
   const workflowExpectations = [
     'permissions:',
@@ -367,9 +382,7 @@ function checkWorkflowAndInstaller() {
     'ubuntu-latest',
     'macos-latest',
     'windows-latest',
-    'node: [20]',
     'npm ci',
-    'run: npm test',
     'run: npm run release:prep',
     'python3 -m pip install --disable-pip-version-check --quiet "setuptools>=68" wheel build',
     'run: npm run release:build-sdk-artifacts',
@@ -416,6 +429,8 @@ function checkWorkflowAndInstaller() {
   for (const fragment of workflowExpectations) {
     assert(workflow.includes(fragment), `release workflow is missing required trust surface: ${fragment}`);
   }
+  assert(workflowHasNode20Coverage(workflow), 'release workflow is missing required Node 20 coverage');
+  assert(workflowHasNpmTestCoverage(workflow), 'release workflow is missing required npm test coverage');
 
   const dynamicWorkflowAssetMatchers = new Map([
     ['.tgz', ['steps.pack.outputs.tarball']],

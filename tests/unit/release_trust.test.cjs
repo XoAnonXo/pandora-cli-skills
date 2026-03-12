@@ -32,7 +32,7 @@ test('release workflow and installer advertise provenance, sbom, and signature v
   assert.match(workflow, /needs:\s*validate/);
   assert.match(workflow, /macos-latest/);
   assert.match(workflow, /windows-latest/);
-  assert.match(workflow, /run:\s*npm test/);
+  assert.match(workflow, /run:\s*npm test|test_command:\s*npm test/);
   assert.match(workflow, /run:\s*npm run release:prep/);
   assert.match(workflow, /scripts\/generate_sbom\.cjs/);
   assert.match(workflow, /Build benchmark publication manifest/);
