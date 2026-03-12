@@ -154,7 +154,7 @@ test('parseMarketsCreateFlags parses amm run payloads with signer/profile-safe f
     '--flashbots-relay-url',
     'https://relay.flashbots.example',
     '--flashbots-auth-key',
-    'auth-key-ref',
+    `0x${'a'.repeat(64)}`,
     '--flashbots-target-block-offset',
     '3',
     '--category',
@@ -178,7 +178,7 @@ test('parseMarketsCreateFlags parses amm run payloads with signer/profile-safe f
   assert.equal(parsed.options.txRoute, 'flashbots-bundle');
   assert.equal(parsed.options.txRouteFallback, 'public');
   assert.equal(parsed.options.flashbotsRelayUrl, 'https://relay.flashbots.example');
-  assert.equal(parsed.options.flashbotsAuthKey, 'auth-key-ref');
+  assert.equal(parsed.options.flashbotsAuthKey, `0x${'a'.repeat(64)}`);
   assert.equal(parsed.options.flashbotsTargetBlockOffset, 3);
   assert.equal(parsed.options.distributionYes, 500_000_000);
   assert.equal(parsed.options.distributionNo, 500_000_000);
@@ -307,6 +307,96 @@ test('parseMarketsCreateFlags rejects flashbots flags when tx-route stays public
       ]),
     (error) => error && error.code === 'INVALID_ARGS' && /require --tx-route auto, flashbots-private, or flashbots-bundle/i.test(error.message),
   );
+});
+
+test('parseMarketsCreateFlags rejects invalid flashbots auth keys and run-only route flags on plan', () => {
+  const parseMarketsCreateFlags = buildParser();
+
+  assert.throws(
+    () =>
+      parseMarketsCreateFlags([
+        'run',
+        '--question',
+        'Q',
+        '--rules',
+        'R',
+        '--sources',
+        'https://one.example',
+        'https://two.example',
+        '--target-timestamp',
+        '1893499200',
+        '--liquidity-usdc',
+        '50',
+        '--dry-run',
+        '--tx-route',
+        'flashbots-private',
+        '--flashbots-auth-key',
+        'bad-key',
+      ]),
+    (error) => error && error.code === 'INVALID_FLAG_VALUE' && /--flashbots-auth-key must be 0x \+ 64 hex chars/i.test(error.message),
+  );
+
+  assert.throws(
+    () =>
+      parseMarketsCreateFlags([
+        'plan',
+        '--question',
+        'Q',
+        '--rules',
+        'R',
+        '--sources',
+        'https://one.example',
+        'https://two.example',
+        '--target-timestamp',
+        '1893499200',
+        '--liquidity-usdc',
+        '50',
+        '--tx-route',
+        'public',
+      ]),
+    (error) => error && error.code === 'INVALID_ARGS' && /markets create plan is read-only; do not pass --tx-route/i.test(error.message),
+  );
+});
+
+test('parseMarketsCreateFlags does not retain deploy route flags across parser calls', () => {
+  const parseMarketsCreateFlags = buildParser();
+
+  const runParsed = parseMarketsCreateFlags([
+    'run',
+    '--question',
+    'Q',
+    '--rules',
+    'R',
+    '--sources',
+    'https://one.example',
+    'https://two.example',
+    '--target-timestamp',
+    '1893499200',
+    '--liquidity-usdc',
+    '50',
+    '--dry-run',
+    '--tx-route',
+    'public',
+  ]);
+
+  assert.equal(runParsed.command, 'markets.create.run');
+
+  const planParsed = parseMarketsCreateFlags([
+    'plan',
+    '--question',
+    'Q',
+    '--rules',
+    'R',
+    '--sources',
+    'https://one.example',
+    'https://two.example',
+    '--target-timestamp',
+    '1893499200',
+    '--liquidity-usdc',
+    '50',
+  ]);
+
+  assert.equal(planParsed.command, 'markets.create.plan');
 });
 
 test('parseMarketsCreateFlags rejects mixed signer selectors and weak create payloads', () => {

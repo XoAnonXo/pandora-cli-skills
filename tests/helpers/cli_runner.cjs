@@ -28,22 +28,36 @@ function withChildEnv(overrides = {}, unsetKeys = []) {
 }
 
 function runCli(args, options = {}) {
-  const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
-    cwd: options.cwd || REPO_ROOT,
-    encoding: 'utf8',
-    env: withChildEnv(options.env, options.unsetEnvKeys),
-    timeout: options.timeoutMs || 30_000,
-    killSignal: 'SIGKILL',
-  });
+  const captureDir = createTempDir('pandora-cli-capture-');
+  const stdoutPath = path.join(captureDir, 'stdout.txt');
+  const stderrPath = path.join(captureDir, 'stderr.txt');
+  const stdoutFd = fs.openSync(stdoutPath, 'w');
+  const stderrFd = fs.openSync(stderrPath, 'w');
 
-  return {
-    status: result.status,
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
-    output: `${result.stdout || ''}${result.stderr || ''}`,
-    error: result.error,
-    timedOut: Boolean(result.error && result.error.code === 'ETIMEDOUT'),
-  };
+  try {
+    const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
+      cwd: options.cwd || REPO_ROOT,
+      env: withChildEnv(options.env, options.unsetEnvKeys),
+      timeout: options.timeoutMs || 30_000,
+      killSignal: 'SIGKILL',
+      stdio: ['ignore', stdoutFd, stderrFd],
+    });
+    const stdout = fs.existsSync(stdoutPath) ? fs.readFileSync(stdoutPath, 'utf8') : '';
+    const stderr = fs.existsSync(stderrPath) ? fs.readFileSync(stderrPath, 'utf8') : '';
+
+    return {
+      status: result.status,
+      stdout,
+      stderr,
+      output: `${stdout}${stderr}`,
+      error: result.error,
+      timedOut: Boolean(result.error && result.error.code === 'ETIMEDOUT'),
+    };
+  } finally {
+    fs.closeSync(stdoutFd);
+    fs.closeSync(stderrFd);
+    removeDir(captureDir);
+  }
 }
 
 function runCliAsync(args, options = {}) {

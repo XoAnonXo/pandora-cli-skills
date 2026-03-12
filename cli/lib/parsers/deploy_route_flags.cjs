@@ -2,6 +2,7 @@ const { validateMirrorUrl } = require('./mirror_parser_guard.cjs');
 
 const DEPLOY_TX_ROUTE_VALUES = new Set(['public', 'auto', 'flashbots-private', 'flashbots-bundle']);
 const DEPLOY_TX_ROUTE_FALLBACK_VALUES = new Set(['fail', 'public']);
+const FLASHBOTS_AUTH_KEY_PATTERN = /^0x[a-fA-F0-9]{64}$/;
 
 function parseDeployTxRoute(value, flagName, CliError) {
   const normalized = String(value || '').trim().toLowerCase();
@@ -26,6 +27,14 @@ function parseDeployFlashbotsRelayUrl(value, flagName, CliError, isSecureHttpUrl
   return validateMirrorUrl(value, flagName, CliError, isSecureHttpUrlOrLocal);
 }
 
+function parseDeployFlashbotsAuthKey(value, flagName, CliError) {
+  const normalized = String(value || '').trim();
+  if (!FLASHBOTS_AUTH_KEY_PATTERN.test(normalized)) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be 0x + 64 hex chars.`);
+  }
+  return normalized;
+}
+
 function assertDeployFlashbotsFlagContract(options, routeFlagName, CliError) {
   const route = String(options.txRoute || 'public').trim().toLowerCase();
   if (route !== 'public') {
@@ -44,11 +53,21 @@ function assertDeployFlashbotsFlagContract(options, routeFlagName, CliError) {
   );
 }
 
+function assertNoDeployRoutePlanFlags(flagNames, planCommandName, CliError) {
+  const provided = Array.isArray(flagNames) ? Array.from(new Set(flagNames.filter(Boolean))) : [];
+  if (!provided.length) {
+    return;
+  }
+  throw new CliError('INVALID_ARGS', `${planCommandName} is read-only; do not pass ${provided.join(', ')}.`);
+}
+
 module.exports = {
   DEPLOY_TX_ROUTE_VALUES,
   DEPLOY_TX_ROUTE_FALLBACK_VALUES,
   parseDeployTxRoute,
   parseDeployTxRouteFallback,
   parseDeployFlashbotsRelayUrl,
+  parseDeployFlashbotsAuthKey,
   assertDeployFlashbotsFlagContract,
+  assertNoDeployRoutePlanFlags,
 };

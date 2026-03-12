@@ -3,7 +3,9 @@ const {
   parseDeployTxRoute,
   parseDeployTxRouteFallback,
   parseDeployFlashbotsRelayUrl,
+  parseDeployFlashbotsAuthKey,
   assertDeployFlashbotsFlagContract,
+  assertNoDeployRoutePlanFlags,
 } = require('./deploy_route_flags.cjs');
 const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
 
@@ -72,6 +74,7 @@ function createParseMarketsHypeFlags(deps) {
   const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
 
   return function parseMarketsHypeFlags(args) {
+    const deployRoutePlanFlags = [];
     const action = String(args[0] || '').trim().toLowerCase();
     const rest = args.slice(1);
     if (!PLAN_ACTIONS.has(action)) {
@@ -222,11 +225,13 @@ function createParseMarketsHypeFlags(deps) {
         continue;
       }
       if (token === '--tx-route') {
+        deployRoutePlanFlags.push('--tx-route');
         options.txRoute = parseDeployTxRoute(requireFlagValue(rest, i, '--tx-route'), '--tx-route', CliError);
         i += 1;
         continue;
       }
       if (token === '--tx-route-fallback') {
+        deployRoutePlanFlags.push('--tx-route-fallback');
         options.txRouteFallback = parseDeployTxRouteFallback(
           requireFlagValue(rest, i, '--tx-route-fallback'),
           '--tx-route-fallback',
@@ -236,6 +241,7 @@ function createParseMarketsHypeFlags(deps) {
         continue;
       }
       if (token === '--flashbots-relay-url') {
+        deployRoutePlanFlags.push('--flashbots-relay-url');
         options.flashbotsRelayUrl = parseDeployFlashbotsRelayUrl(
           requireFlagValue(rest, i, '--flashbots-relay-url'),
           '--flashbots-relay-url',
@@ -246,11 +252,17 @@ function createParseMarketsHypeFlags(deps) {
         continue;
       }
       if (token === '--flashbots-auth-key') {
-        options.flashbotsAuthKey = requireFlagValue(rest, i, '--flashbots-auth-key');
+        deployRoutePlanFlags.push('--flashbots-auth-key');
+        options.flashbotsAuthKey = parseDeployFlashbotsAuthKey(
+          requireFlagValue(rest, i, '--flashbots-auth-key'),
+          '--flashbots-auth-key',
+          CliError,
+        );
         i += 1;
         continue;
       }
       if (token === '--flashbots-target-block-offset') {
+        deployRoutePlanFlags.push('--flashbots-target-block-offset');
         options.flashbotsTargetBlockOffset = parsePositiveInteger(
           requireFlagValue(rest, i, '--flashbots-target-block-offset'),
           '--flashbots-target-block-offset',
@@ -301,6 +313,7 @@ function createParseMarketsHypeFlags(deps) {
       if (options.dryRun || options.execute) {
         throw new CliError('INVALID_ARGS', 'markets hype plan is read-only; do not pass --dry-run or --execute.');
       }
+      assertNoDeployRoutePlanFlags(deployRoutePlanFlags, 'markets hype plan', CliError);
     } else {
       if (!options.planFile) {
         throw new CliError('MISSING_REQUIRED_FLAG', 'markets hype run requires --plan-file <path>.');

@@ -5,7 +5,9 @@ const {
   parseDeployTxRoute,
   parseDeployTxRouteFallback,
   parseDeployFlashbotsRelayUrl,
+  parseDeployFlashbotsAuthKey,
   assertDeployFlashbotsFlagContract,
+  assertNoDeployRoutePlanFlags,
 } = require('./deploy_route_flags.cjs');
 const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
 
@@ -134,6 +136,7 @@ function createParseMarketsCreateFlags(deps) {
   const isSecureHttpUrlOrLocal = requireDep(deps, 'isSecureHttpUrlOrLocal');
 
   return function parseMarketsCreateFlags(args) {
+    const deployRoutePlanFlags = [];
     const action = String(args[0] || '').trim().toLowerCase();
     const rest = args.slice(1);
     if (!ACTIONS.has(action)) {
@@ -366,11 +369,13 @@ function createParseMarketsCreateFlags(deps) {
         continue;
       }
       if (token === '--tx-route') {
+        deployRoutePlanFlags.push('--tx-route');
         options.txRoute = parseDeployTxRoute(requireFlagValue(rest, i, '--tx-route'), '--tx-route', CliError);
         i += 1;
         continue;
       }
       if (token === '--tx-route-fallback') {
+        deployRoutePlanFlags.push('--tx-route-fallback');
         options.txRouteFallback = parseDeployTxRouteFallback(
           requireFlagValue(rest, i, '--tx-route-fallback'),
           '--tx-route-fallback',
@@ -380,6 +385,7 @@ function createParseMarketsCreateFlags(deps) {
         continue;
       }
       if (token === '--flashbots-relay-url') {
+        deployRoutePlanFlags.push('--flashbots-relay-url');
         options.flashbotsRelayUrl = parseDeployFlashbotsRelayUrl(
           requireFlagValue(rest, i, '--flashbots-relay-url'),
           '--flashbots-relay-url',
@@ -390,11 +396,17 @@ function createParseMarketsCreateFlags(deps) {
         continue;
       }
       if (token === '--flashbots-auth-key') {
-        options.flashbotsAuthKey = requireFlagValue(rest, i, '--flashbots-auth-key');
+        deployRoutePlanFlags.push('--flashbots-auth-key');
+        options.flashbotsAuthKey = parseDeployFlashbotsAuthKey(
+          requireFlagValue(rest, i, '--flashbots-auth-key'),
+          '--flashbots-auth-key',
+          CliError,
+        );
         i += 1;
         continue;
       }
       if (token === '--flashbots-target-block-offset') {
+        deployRoutePlanFlags.push('--flashbots-target-block-offset');
         options.flashbotsTargetBlockOffset = parsePositiveInteger(
           requireFlagValue(rest, i, '--flashbots-target-block-offset'),
           '--flashbots-target-block-offset',
@@ -451,6 +463,7 @@ function createParseMarketsCreateFlags(deps) {
       if (options.dryRun || options.execute) {
         throw new CliError('INVALID_ARGS', 'markets create plan is read-only; do not pass --dry-run or --execute.');
       }
+      assertNoDeployRoutePlanFlags(deployRoutePlanFlags, 'markets create plan', CliError);
     } else if (options.dryRun === options.execute) {
       throw new CliError('INVALID_ARGS', 'markets create run requires exactly one mode: --dry-run or --execute.');
     }
