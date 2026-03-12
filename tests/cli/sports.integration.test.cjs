@@ -127,7 +127,10 @@ test('sports books list auto-loads sportsbook config from default home env file'
   const result = await runCliAsync(
     ['--output', 'json', 'sports', 'books', 'list'],
     {
-      env: { HOME: tempHome },
+      env: {
+        HOME: tempHome,
+        USERPROFILE: path.join(tempHome, 'conflicting-userprofile'),
+      },
       unsetEnvKeys: [
         'SPORTSBOOK_PROVIDER_MODE',
         'SPORTSBOOK_PRIMARY_BASE_URL',

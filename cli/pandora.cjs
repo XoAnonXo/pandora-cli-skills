@@ -894,7 +894,11 @@ function getDoctorServiceInstance() {
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ENV_FILE_PRIMARY = path.join(ROOT, 'scripts', '.env');
-const DEFAULT_ENV_FILE_FALLBACK = path.join(os.homedir(), '.pandora-cli.env');
+function resolveCliHomeDir() {
+  return process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
+}
+
+const DEFAULT_ENV_FILE_FALLBACK = path.join(resolveCliHomeDir(), '.pandora-cli.env');
 const DEFAULT_ENV_FILE = fs.existsSync(DEFAULT_ENV_FILE_FALLBACK)
   ? DEFAULT_ENV_FILE_FALLBACK
   : fs.existsSync(DEFAULT_ENV_FILE_PRIMARY)
