@@ -1,0 +1,346 @@
+[
+  {
+    "order": 1,
+    "key": "total_markets",
+    "section": "Overview KPIs",
+    "title": "Total Markets",
+    "visualizationId": 10636547,
+    "queryId": null
+  },
+  {
+    "order": 2,
+    "key": "total_traders",
+    "section": "Overview KPIs",
+    "title": "Total Traders",
+    "visualizationId": 10636548,
+    "queryId": null
+  },
+  {
+    "order": 3,
+    "key": "total_volume",
+    "section": "Overview KPIs",
+    "title": "Total Volume",
+    "visualizationId": 10636550,
+    "queryId": null
+  },
+  {
+    "order": 4,
+    "key": "total_fees_generated",
+    "section": "Overview KPIs",
+    "title": "Total Fees Generated",
+    "visualizationId": 10636551,
+    "queryId": null
+  },
+  {
+    "order": 5,
+    "key": "total_redemptions",
+    "section": "Overview KPIs",
+    "title": "Total Redemptions",
+    "visualizationId": 10636552,
+    "queryId": null
+  },
+  {
+    "order": 6,
+    "key": "daily_markets_created",
+    "section": "Growth",
+    "title": "Daily Markets Created",
+    "visualizationId": 10636553,
+    "queryId": null
+  },
+  {
+    "order": 7,
+    "key": "cumulative_markets",
+    "section": "Growth",
+    "title": "Cumulative Markets",
+    "visualizationId": 10636555,
+    "queryId": null
+  },
+  {
+    "order": 8,
+    "key": "daily_active_traders",
+    "section": "Growth",
+    "title": "Daily Active Traders",
+    "visualizationId": 10636556,
+    "queryId": null
+  },
+  {
+    "order": 9,
+    "key": "cumulative_traders",
+    "section": "Growth",
+    "title": "Cumulative Traders",
+    "visualizationId": 10636557,
+    "queryId": null
+  },
+  {
+    "order": 10,
+    "key": "amm_vs_parimutuel_mix",
+    "section": "Market Creation",
+    "title": "AMM vs PariMutuel Mix",
+    "visualizationId": 10636558,
+    "queryId": null
+  },
+  {
+    "order": 11,
+    "key": "creators_leaderboard",
+    "section": "Market Creation",
+    "title": "Creators Leaderboard",
+    "visualizationId": 10636559,
+    "queryId": null
+  },
+  {
+    "order": 12,
+    "key": "poll_creation_fee_table",
+    "section": "Market Creation",
+    "title": "Poll Creation Fee Table",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 13,
+    "key": "daily_trading_volume",
+    "section": "Trading",
+    "title": "Daily Trading Volume",
+    "visualizationId": 10636560,
+    "queryId": null
+  },
+  {
+    "order": 14,
+    "key": "trade_count_and_unique_traders",
+    "section": "Trading",
+    "title": "Trade Count and Unique Traders",
+    "visualizationId": 10636561,
+    "queryId": null
+  },
+  {
+    "order": 15,
+    "key": "buy_vs_sell_split",
+    "section": "Trading",
+    "title": "Buy vs Sell Split",
+    "visualizationId": 10636568,
+    "queryId": null
+  },
+  {
+    "order": 16,
+    "key": "avg_median_trade_size",
+    "section": "Trading",
+    "title": "Average and Median Trade Size",
+    "visualizationId": 10636569,
+    "queryId": null
+  },
+  {
+    "order": 17,
+    "key": "top_markets_by_volume",
+    "section": "Trading",
+    "title": "Top Markets by Volume",
+    "visualizationId": 10636570,
+    "queryId": null
+  },
+  {
+    "order": 18,
+    "key": "added_removed_net_liquidity",
+    "section": "Liquidity",
+    "title": "Added vs Removed vs Net Liquidity",
+    "visualizationId": 10636590,
+    "queryId": null
+  },
+  {
+    "order": 19,
+    "key": "top_lp_wallets",
+    "section": "Liquidity",
+    "title": "Top LP Wallets",
+    "visualizationId": 10636591,
+    "queryId": null
+  },
+  {
+    "order": 20,
+    "key": "yes_probability_trend",
+    "section": "Pricing",
+    "title": "YES Probability Trend",
+    "visualizationId": 10636592,
+    "queryId": null
+  },
+  {
+    "order": 21,
+    "key": "volatility_proxy",
+    "section": "Pricing",
+    "title": "Volatility Proxy",
+    "visualizationId": 10636593,
+    "queryId": null
+  },
+  {
+    "order": 22,
+    "key": "outcome_distribution",
+    "section": "Resolution",
+    "title": "Outcome Distribution",
+    "visualizationId": 10636594,
+    "queryId": null
+  },
+  {
+    "order": 23,
+    "key": "time_to_resolution",
+    "section": "Resolution",
+    "title": "Time to Resolution",
+    "visualizationId": 10636595,
+    "queryId": null
+  },
+  {
+    "order": 24,
+    "key": "redemption_amounts_over_time",
+    "section": "Redemptions and PnL",
+    "title": "Redemption Amounts Over Time",
+    "visualizationId": 10636596,
+    "queryId": null
+  },
+  {
+    "order": 25,
+    "key": "low_liquidity_and_near_close_markets",
+    "section": "Health and Risk",
+    "title": "Low-Liquidity and Near-Close Markets",
+    "visualizationId": 10636597,
+    "queryId": null
+  },
+  {
+    "order": 26,
+    "key": "daily_fees_usd_including_creation_eth",
+    "section": "Fees Audit",
+    "title": "Daily Fees Generated (USD)",
+    "visualizationId": 10636801,
+    "queryId": 6767854
+  },
+  {
+    "order": 27,
+    "key": "cumulative_fees_usd_including_creation_eth",
+    "section": "Fees Audit",
+    "title": "Cumulative Fees Generated (USD)",
+    "visualizationId": 10636802,
+    "queryId": 6767854
+  },
+  {
+    "order": 28,
+    "key": "market_creation_fee_eth_gross_vs_net",
+    "section": "Fees Audit",
+    "title": "Poll Lifecycle Fee Model",
+    "visualizationId": 10636804,
+    "queryId": 6767854
+  },
+  {
+    "order": 29,
+    "key": "wallet_pnl_leaderboard",
+    "section": "Advanced Trader Analytics",
+    "title": "Wallet PnL Leaderboard (Proxy)",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 30,
+    "key": "trader_win_rate_table",
+    "section": "Advanced Trader Analytics",
+    "title": "Trader Win-Rate Table (Proxy)",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 31,
+    "key": "new_vs_returning_traders_daily",
+    "section": "Advanced Trader Analytics",
+    "title": "New vs Returning Traders (Daily)",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 32,
+    "key": "trader_retention_cohorts",
+    "section": "Advanced Trader Analytics",
+    "title": "Trader Retention Cohorts (D1/D7/D30)",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 33,
+    "key": "whale_activity_table",
+    "section": "Advanced Trader Analytics",
+    "title": "Whale Activity Table",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 34,
+    "key": "market_profitability_table",
+    "section": "Market Economics",
+    "title": "Market Profitability Table",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 35,
+    "key": "lp_roi_performance_table",
+    "section": "Market Economics",
+    "title": "LP ROI / Performance Table (Proxy)",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 36,
+    "key": "liquidity_utilization_by_market",
+    "section": "Market Economics",
+    "title": "Liquidity Utilization by Market",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 37,
+    "key": "creator_quality_table",
+    "section": "Market Economics",
+    "title": "Creator Quality Table (Proxy)",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 38,
+    "key": "resolution_sla_overdue_table",
+    "section": "Resolution Ops",
+    "title": "Resolution SLA / Overdue Table",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 39,
+    "key": "pre_close_rush_table",
+    "section": "Flow and Risk",
+    "title": "Pre-Close Rush Table (Last 24h)",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 40,
+    "key": "price_shock_risk_alerts",
+    "section": "Flow and Risk",
+    "title": "Price Shock / Risk Alerts",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 41,
+    "key": "yes_no_flow_imbalance",
+    "section": "Flow and Risk",
+    "title": "YES vs NO Flow Imbalance",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 42,
+    "key": "fee_concentration_table",
+    "section": "Flow and Risk",
+    "title": "Fee Concentration (Markets & Wallets)",
+    "visualizationId": null,
+    "queryId": null
+  },
+  {
+    "order": 43,
+    "key": "redemption_efficiency_table",
+    "section": "Resolution Ops",
+    "title": "Redemption Efficiency Table (Proxy)",
+    "visualizationId": null,
+    "queryId": null
+  }
+]

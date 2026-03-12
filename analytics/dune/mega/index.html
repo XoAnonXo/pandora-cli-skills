@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" class="min-h-screen">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pandora Analytics</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-bg"></div>
+      <div class="topbar-inner">
+        <div class="brand">
+          <a href="#" class="logo" aria-label="Pandora analytics">
+            <svg viewBox="0 0 32 32" width="26" height="26" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16 3C27 3 31 10 31 16C31 22 27 29 16 29C5 29 1 22 1 16C1 10 5 3 16 3ZM15 9C11.134 9 8 12.134 8 16C8 19.866 11.134 23 15 23H17C20.866 23 24 19.866 24 16C24 12.134 20.866 9 17 9H15Z" fill="currentColor" />
+            </svg>
+          </a>
+          <div class="brand-project">
+            <div class="project-dot">P</div>
+            <span>Pandora</span>
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <button id="reloadBtn" type="button" class="pill-btn">Refresh</button>
+          <button id="canvasBtn" type="button" class="pill-btn">Arrange Canvas</button>
+          <button id="resetLayoutBtn" type="button" class="pill-btn">Reset Layout</button>
+          <button id="collapseBtn" type="button" class="pill-btn">Collapse Aux Tables</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="app">
+      <section class="overview-head">
+        <div class="overview-title-wrap">
+          <h1>Protocol Analytics</h1>
+          <p class="overview-subtitle">Ethereum mainnet indexer data only. Dashboard logic follows the audited panel set.</p>
+        </div>
+
+        <div class="overview-meta">
+          <span class="meta-chip">Source: <strong id="sourceBadge">-</strong></span>
+          <span class="meta-chip">Chain: <strong id="chainBadge">-</strong></span>
+          <span class="meta-chip">Updated: <strong id="generatedAt">-</strong></span>
+        </div>
+      </section>
+
+      <section class="toolbar" aria-label="Dashboard controls">
+        <label class="field">
+          <span>Search panels</span>
+          <input id="searchInput" type="search" placeholder="type title or key" autocomplete="off" />
+        </label>
+      </section>
+
+      <section class="summary" aria-label="Overview summary">
+        <article class="metric-card">
+          <h2>Panels</h2>
+          <p id="panelCount">0</p>
+        </article>
+        <article class="metric-card">
+          <h2>Sections</h2>
+          <p id="sectionCount">0</p>
+        </article>
+        <article class="metric-card">
+          <h2>Trades</h2>
+          <p id="tradeCoverage">0</p>
+        </article>
+        <article class="metric-card">
+          <h2>Markets</h2>
+          <p id="marketCoverage">0</p>
+        </article>
+      </section>
+
+      <section class="assumptions-wrap" aria-label="Assumptions">
+        <h2>Assumptions</h2>
+        <ul id="assumptionsList"></ul>
+      </section>
+
+      <nav id="sectionFilters" class="section-filters" aria-label="Section filters"></nav>
+
+      <section id="canvasSection" class="canvas-section hidden" aria-label="Arrangable panel canvas">
+        <div class="canvas-head">
+          <h2>Arrange Canvas</h2>
+          <p>Drag blocks to reorder. Use size chips to make tables and charts larger.</p>
+        </div>
+        <div id="canvasGrid" class="canvas-grid"></div>
+      </section>
+
+      <section id="sections" class="sections" aria-live="polite"></section>
+
+      <section id="auxSection" class="aux-section">
+        <div class="aux-head">
+          <h2>Auxiliary Audit Tables</h2>
+          <p>Derived from `auxTables` in the indexer response.</p>
+        </div>
+        <div id="auxGrid" class="aux-grid"></div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
