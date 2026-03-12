@@ -17,6 +17,51 @@ const SCAN_NOTES = [
   'scan is indexer-backed (no direct chain reads), so freshness follows indexer sync state.',
 ];
 
+function toOptionalNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function pickPollStatus(item, enrichmentContext) {
+  const directStatus = toOptionalNumber(item && item.poll && item.poll.status);
+  if (directStatus !== null) return directStatus;
+  const pollAddress = String(item && item.pollAddress ? item.pollAddress : '').trim().toLowerCase();
+  if (!pollAddress || !enrichmentContext || !enrichmentContext.pollsByKey) return null;
+  const poll = enrichmentContext.pollsByKey.get(pollAddress) || null;
+  return toOptionalNumber(poll && poll.status);
+}
+
+function applyScanLifecycleFilter(items, options, enrichmentContext) {
+  const list = Array.isArray(items) ? items : [];
+  const lifecycle = options && typeof options.lifecycle === 'string' ? options.lifecycle : 'all';
+  if (lifecycle === 'all') {
+    return list;
+  }
+
+  const nowEpochSeconds = Math.floor(Date.now() / 1000);
+  const expiringSoonHours = toOptionalNumber(options && options.expiringSoonHours);
+  const expiringCutoffEpochSeconds =
+    nowEpochSeconds + (Number.isFinite(expiringSoonHours) && expiringSoonHours > 0 ? expiringSoonHours : 24) * 60 * 60;
+
+  return list.filter((item) => {
+    const closeEpoch = toOptionalNumber(item && item.marketCloseTimestamp);
+    const pollStatus = pickPollStatus(item, enrichmentContext);
+    if (lifecycle === 'resolved') {
+      if (pollStatus !== null) return pollStatus >= 2;
+      return closeEpoch !== null && closeEpoch <= nowEpochSeconds;
+    }
+    if (lifecycle === 'active') {
+      if (pollStatus !== null && pollStatus >= 2) return false;
+      return closeEpoch !== null && closeEpoch > nowEpochSeconds;
+    }
+    if (lifecycle === 'expiring-soon') {
+      if (pollStatus !== null && pollStatus >= 2) return false;
+      return closeEpoch !== null && closeEpoch > nowEpochSeconds && closeEpoch <= expiringCutoffEpochSeconds;
+    }
+    return true;
+  });
+}
+
 /**
  * Build the `scan` subcommand handler.
  * @param {object} deps
@@ -64,12 +109,13 @@ function createRunScanCommand(deps) {
     options.withOdds = true;
 
     let hedgeableDiagnostics = [];
-    let { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, options, shared.timeoutMs);
+    const fetchOptions = { ...options, lifecycle: 'all' };
+    let { items, pageInfo, unfilteredCount } = await fetchMarketsListPage(indexerUrl, fetchOptions, shared.timeoutMs);
     if (options.hedgeable && typeof filterHedgeableMarkets === 'function') {
       const filtered = await filterHedgeableMarkets({
         indexerUrl,
         timeoutMs: shared.timeoutMs,
-        options,
+        options: fetchOptions,
         items,
       });
       items = Array.isArray(filtered && filtered.items) ? filtered.items : items;
@@ -81,6 +127,7 @@ function createRunScanCommand(deps) {
       }
     }
     const enrichmentContext = await buildMarketsEnrichmentContext(indexerUrl, items, options, shared.timeoutMs);
+    items = applyScanLifecycleFilter(items, options, enrichmentContext);
     const payload = buildMarketsListPayload(indexerUrl, options, items, pageInfo, {
       includeEnrichedItems: true,
       scanMode: true,

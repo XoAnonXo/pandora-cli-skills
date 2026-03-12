@@ -2969,6 +2969,67 @@ test('scan returns deterministic json contract for market candidates', async () 
   }
 });
 
+test('scan --market-type parimutuel --resolved uses poll status for settled pari markets', async () => {
+  const marketAddress = '0xf1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1';
+  const pollAddress = '0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1';
+  const futureCloseTimestamp = String(Math.floor(Date.now() / 1000) + (48 * 60 * 60));
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress,
+        creator: ADDRESSES.wallet1,
+        marketType: 'parimutuel',
+        marketCloseTimestamp: futureCloseTimestamp,
+        totalVolume: '1000',
+        currentTvl: '500',
+        reserveYes: '490',
+        reserveNo: '10',
+        createdAt: '1700000000',
+      },
+    ],
+    polls: [
+      {
+        id: pollAddress,
+        chainId: 1,
+        chainName: 'ethereum',
+        creator: ADDRESSES.wallet1,
+        question: 'Was the settled pari market kept by scan?',
+        status: 2,
+        category: 3,
+        deadlineEpoch: 1700000000,
+        createdAt: 1700000000,
+        createdTxHash: '0xhashscanpari',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'scan',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--market-type',
+      'parimutuel',
+      '--resolved',
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'scan');
+    assert.equal(payload.data.count, 1);
+    assert.equal(payload.data.items[0].id, marketAddress);
+    assert.equal(payload.data.items[0].poll.status, 2);
+  } finally {
+    await indexer.close();
+  }
+});
+
 test('markets list --hedgeable matches against the current page without a second Pandora market crawl', async () => {
   const indexer = await startJsonHttpServer(({ bodyJson }) => {
     const query = String((bodyJson && bodyJson.query) || '');

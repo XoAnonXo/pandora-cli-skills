@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.1.102",
+  "version": "1.1.103",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
@@ -94,6 +94,8 @@
     "build:anthropic-skill": "node scripts/build_anthropic_skill_bundle.cjs",
     "check:anthropic-skill": "node scripts/check_anthropic_skill_bundle.cjs --build",
     "pack:anthropic-skill": "node scripts/build_anthropic_skill_bundle.cjs",
+    "e2e:surfaces": "node scripts/run_surface_e2e.cjs --surface all --out output/e2e/surface-e2e-report.json",
+    "e2e:surfaces:strict": "node scripts/run_surface_e2e.cjs --surface all --strict --out output/e2e/surface-e2e-report.json",
     "benchmark:run": "node scripts/run_agent_benchmarks.cjs",
     "benchmark:check": "node scripts/check_agent_benchmarks.cjs",
     "benchmark:history": "node scripts/update_benchmark_history.cjs",

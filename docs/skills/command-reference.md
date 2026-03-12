@@ -223,6 +223,8 @@ close  --pandora-market-address <address>|--market-address <address> --polymarke
   - save the JSON output from `markets hype plan` first, then run against that file so research, sources, and validation do not drift.
 - `markets create run` and `markets hype run` support post-poll private routing for the approval/createMarket leg.
   - use `--tx-route public|auto|flashbots-private|flashbots-bundle`; `auto` chooses `flashbots-private` when no approval is needed and `flashbots-bundle` when approval is required.
+  - set `FLASHBOTS_AUTH_KEY` in `~/.pandora-cli.env` or pass `--flashbots-auth-key <0x...>` if you want `auto` to submit to a private relay instead of degrading to `public`.
+  - generate a dedicated Flashbots signer with `node -e "const { randomBytes } = require('crypto'); console.log('FLASHBOTS_AUTH_KEY=0x' + randomBytes(32).toString('hex'))"` and add the emitted line to `~/.pandora-cli.env`.
 - `agent market hype` is the prompt-only version of the same workflow.
   - use it when the external agent, not Pandora, is responsible for the web research step.
 - `markets mine` is a standalone command for wallet or signer-owned exposure discovery.

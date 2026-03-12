@@ -621,6 +621,20 @@ async function runMcpToolSweep({ client, fixtures, transportLabel = 'stdio' }) {
   const listed = await client.listTools();
   const tools = Array.isArray(listed && listed.tools) ? listed.tools : [];
   const results = [];
+  const perToolTimeoutMs = 15_000;
+
+  async function callToolWithTimeout(name, args) {
+    return await Promise.race([
+      client.callTool({ name, arguments: args }),
+      new Promise((_, reject) => {
+        setTimeout(() => {
+          const error = new Error(`Timed out after ${perToolTimeoutMs}ms`);
+          error.code = 'MCP_TOOL_TIMEOUT';
+          reject(error);
+        }, perToolTimeoutMs);
+      }),
+    ]);
+  }
 
   for (const tool of tools) {
     const name = String(tool.name || '');
@@ -628,7 +642,7 @@ async function runMcpToolSweep({ client, fixtures, transportLabel = 'stdio' }) {
     const schemaIssues = validateArgsAgainstSchema(tool, args);
     const startedAt = Date.now();
     try {
-      const call = await client.callTool({ name, arguments: args });
+      const call = await callToolWithTimeout(name, args);
       const envelope = call && call.structuredContent;
       results.push({
         name,

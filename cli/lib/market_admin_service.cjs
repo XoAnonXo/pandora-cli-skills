@@ -1796,14 +1796,15 @@ async function runClaimSingle(options = {}) {
     diagnostics: [],
   };
 
-  if (!account) {
+  const simulationAccount = account || (options.wallet ? normalizeAddress(options.wallet, '--wallet') : null);
+  if (!simulationAccount) {
     payload.diagnostics.push('No signer credentials supplied; simulation-based claimability check skipped.');
     return payload;
   }
 
-  const redeemSimulation = await simulateRedeem(publicClient, account, marketAddress);
+  const redeemSimulation = await simulateRedeem(publicClient, simulationAccount, marketAddress);
   payload.preflight = {
-    account: account.address,
+    account: typeof simulationAccount === 'string' ? simulationAccount : simulationAccount.address,
     simulationOk: redeemSimulation.ok,
     estimatedClaimRaw: redeemSimulation.estimatedClaimRaw,
   };

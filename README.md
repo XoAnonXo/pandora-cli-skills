@@ -94,6 +94,13 @@ What each step is for:
 - `npm run build`: run the repo’s verification gates, including docs, trust, SDK parity, and benchmark checks
 - `npx pandora help`: browse the command surface manually
 
+Flashbots routing note for agents and operators:
+
+- `markets create run` and `markets hype run` can use `--tx-route public|auto|flashbots-private|flashbots-bundle` for the approval/create leg.
+- `auto` degrades to `public` when no `FLASHBOTS_AUTH_KEY` is available, so private relay submission is not attempted unless you provide one.
+- Put `FLASHBOTS_AUTH_KEY=0x...` in `~/.pandora-cli.env`, or pass `--flashbots-auth-key <0x...>` explicitly for the session.
+- Generate a dedicated signer with `node -e "const { randomBytes } = require('crypto'); console.log('FLASHBOTS_AUTH_KEY=0x' + randomBytes(32).toString('hex'))"` and append the emitted line to `~/.pandora-cli.env`.
+
 ### Human reading order
 
 1. [`docs/skills/command-reference.md`](./docs/skills/command-reference.md) for the command families and flags.

@@ -3401,7 +3401,9 @@ function renderMarketsMineTable(data) {
         lp && lp.lpTokenBalance !== null && lp.lpTokenBalance !== undefined ? lp.lpTokenBalance : '',
         claimable && claimable.estimatedClaimUsdc !== null && claimable.estimatedClaimUsdc !== undefined
           ? claimable.estimatedClaimUsdc
-          : '',
+          : claimable && claimable.marketClaimable
+            ? 'yes'
+            : '',
         short(item && item.question ? item.question : '', 44),
       ];
     }),
@@ -6465,11 +6467,15 @@ function isExplicitZeroBalance(value) {
   return Number.isFinite(numeric) && Math.abs(numeric) <= 1e-9;
 }
 
-function reconcilePortfolioBalance(...balances) {
-  if (balances.some((balance) => isExplicitZeroBalance(balance))) {
+function reconcilePortfolioBalance(onchainBalance, indexedBalance, tradeBalance) {
+  const preferredOnchainBalance = toOptionalNumber(onchainBalance);
+  if (Number.isFinite(preferredOnchainBalance) && preferredOnchainBalance > 0) {
+    return preferredOnchainBalance;
+  }
+  if ([onchainBalance, indexedBalance, tradeBalance].some((balance) => isExplicitZeroBalance(balance))) {
     return 0;
   }
-  return pickFiniteNumber(...balances);
+  return pickFiniteNumber(onchainBalance, indexedBalance, tradeBalance);
 }
 
 function isResolvedPollStatus(statusRaw) {
@@ -6829,6 +6835,7 @@ async function enrichPortfolioPositions(indexerUrl, positions, options, timeoutM
     return {
       ...position,
       question: poll && poll.question ? poll.question : null,
+      pollStatus: poll && poll.status !== undefined && poll.status !== null ? Number(poll.status) : null,
       marketType: market && market.marketType ? market.marketType : null,
       odds: {
         yesPct: odds && Number.isFinite(odds.yesPct) ? odds.yesPct : null,

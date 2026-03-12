@@ -222,6 +222,7 @@ Status:
 ### TypeScript
 - standalone package identity: `@thisispandora/agent-sdk`
  - external install path: public npm package `@thisispandora/agent-sdk` using the currently published tag or signed GitHub release tarball attached to the tagged Pandora release
+ - install command: `npm install @thisispandora/agent-sdk@alpha`
  - authoritative install and usage guide: `sdk/typescript/README.md`
  - repository checkout path: `sdk/typescript` for maintainers and in-tree consumers
 - vendored root-package copy: `pandora-cli-skills/sdk/typescript`
@@ -234,6 +235,7 @@ Status:
 ### Python
 - standalone package identity: `pandora-agent`
  - external install path: public PyPI package `pandora-agent` using the current published version or signed GitHub release wheel or sdist attached to the tagged Pandora release
+ - install command: `pip install pandora-agent==0.1.0a12`
  - authoritative install and usage guide: `sdk/python/README.md`
  - repository checkout path: `sdk/python` for maintainers and in-tree consumers
 - module/import name: `pandora_agent`

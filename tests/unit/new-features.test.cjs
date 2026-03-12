@@ -2282,6 +2282,90 @@ test('discoverOwnedMarkets groups token, LP, and claimable exposure into operato
   }
 });
 
+test('discoverOwnedMarkets keeps settled LP claim inventory visible even after LP shares are zeroed', async () => {
+  const marketClaim = '0xdddddddddddddddddddddddddddddddddddddddd';
+  const pollClaim = '0x4444444444444444444444444444444444444444';
+  const indexer = await startUnitIndexerMetadataServer({
+    markets: {
+      [marketClaim]: { id: marketClaim, chainId: 1, pollAddress: pollClaim, marketType: 'parimutuel', marketCloseTimestamp: '1893456000' },
+    },
+    polls: {
+      [pollClaim]: { id: pollClaim, question: 'Settled LP claim inventory survives share burn' },
+    },
+  });
+
+  try {
+    const payload = await discoverOwnedMarkets(
+      {
+        wallet: TEST_WALLET,
+        chainId: 1,
+        indexerUrl: indexer.url,
+        timeoutMs: 1000,
+      },
+      {
+        collectPortfolioSnapshot: async () => ({
+          positions: [],
+          lpPositions: [
+            {
+              marketAddress: marketClaim,
+              lpTokenBalanceRaw: '0',
+              lpTokenBalance: '0',
+              lpTokenDecimals: 6,
+              preview: null,
+              outcomeTokens: {
+                hasClaimableInventory: true,
+                claimableAmount: '9.25',
+                claimableAmountRaw: '9250000',
+                claimableUsdc: '9.25',
+              },
+              diagnostics: ['LP shares were burned at settlement.'],
+            },
+          ],
+          diagnostics: [],
+        }),
+        runClaim: async () => ({
+          count: 1,
+          successCount: 1,
+          failureCount: 0,
+          diagnostics: [],
+          items: [
+            {
+              marketAddress: marketClaim,
+              ok: true,
+              result: {
+                claimable: true,
+                pollAddress: pollClaim,
+                preflight: {
+                  estimatedClaimRaw: null,
+                },
+                resolution: {
+                  pollFinalized: true,
+                  pollAnswer: 'Yes',
+                  finalizationEpoch: 1700000000,
+                  currentEpoch: 1700000600,
+                },
+                diagnostics: ['Claimability inferred from settled LP outcome inventory.'],
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    assert.equal(payload.count, 1);
+    assert.deepEqual(payload.exposureCounts, {
+      token: 0,
+      lp: 0,
+      claimable: 1,
+    });
+    assert.deepEqual(payload.items[0].exposureTypes, ['claimable']);
+    assert.equal(payload.items[0].exposure.lp.settledClaimInventoryOnly, true);
+    assert.equal(payload.items[0].exposure.claimable.marketClaimable, true);
+  } finally {
+    await indexer.close();
+  }
+});
+
 test('mirror sync live execution normalizes rebalance trades before onchain execution', async () => {
   const captured = {
     callOrder: [],

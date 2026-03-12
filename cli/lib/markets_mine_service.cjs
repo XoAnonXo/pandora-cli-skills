@@ -255,7 +255,7 @@ function buildPositionExposure(position) {
 }
 
 function buildLpExposure(lpPosition) {
-  if (!lpPosition || !hasPositiveRaw(lpPosition.lpTokenBalanceRaw)) {
+  if (!lpPosition) {
     return null;
   }
   const outcomeTokens = lpPosition.outcomeTokens && typeof lpPosition.outcomeTokens === 'object'
@@ -266,6 +266,17 @@ function buildLpExposure(lpPosition) {
         claimableUsdc: lpPosition.outcomeTokens.claimableUsdc || null,
       }
     : null;
+  const hasLpBalance = hasPositiveRaw(lpPosition.lpTokenBalanceRaw);
+  const hasClaimableOutcomeInventory = Boolean(
+    outcomeTokens
+    && (
+      outcomeTokens.hasClaimableInventory === true
+      || hasPositiveRaw(outcomeTokens.claimableAmountRaw)
+    ),
+  );
+  if (!hasLpBalance && !hasClaimableOutcomeInventory) {
+    return null;
+  }
   return {
     lpTokenBalanceRaw: lpPosition.lpTokenBalanceRaw,
     lpTokenBalance: lpPosition.lpTokenBalance || null,
@@ -273,6 +284,7 @@ function buildLpExposure(lpPosition) {
     estimatedCollateralOutUsdc: normalizeMaybeNumber(lpPosition && lpPosition.preview && lpPosition.preview.collateralOutUsdc),
     preview: lpPosition.preview || null,
     outcomeTokens,
+    settledClaimInventoryOnly: !hasLpBalance && hasClaimableOutcomeInventory,
   };
 }
 
@@ -384,15 +396,19 @@ async function discoverOwnedMarkets(options = {}, deps = {}) {
     const claimItem = claimByMarket.get(marketAddress) || null;
     const tokenExposure = buildPositionExposure(position);
     const lpExposure = buildLpExposure(lpPosition);
-    const supportsClaimableExposure = Boolean(
-      tokenExposure
-      || (lpExposure && lpExposure.outcomeTokens && lpExposure.outcomeTokens.hasClaimableInventory === true)
-      || (lpExposure && lpExposure.outcomeTokens && hasPositiveRaw(lpExposure.outcomeTokens.claimableAmountRaw)),
+    const hasLpExposure = Boolean(lpExposure && hasPositiveRaw(lpExposure.lpTokenBalanceRaw));
+    const hasLpClaimableInventory = Boolean(
+      lpExposure
+      && lpExposure.outcomeTokens
+      && (
+        lpExposure.outcomeTokens.hasClaimableInventory === true
+        || hasPositiveRaw(lpExposure.outcomeTokens.claimableAmountRaw)
+      ),
     );
+    const supportsClaimableExposure = Boolean(tokenExposure || hasLpExposure || hasLpClaimableInventory);
     const claimExposure = buildClaimExposure(claimItem, supportsClaimableExposure);
 
     const hasTokenExposure = Boolean(tokenExposure);
-    const hasLpExposure = Boolean(lpExposure);
     const hasClaimableExposure = Boolean(claimExposure && claimExposure.hasClaimableExposure);
     if (!hasTokenExposure && !hasLpExposure && !hasClaimableExposure) {
       continue;

@@ -42,7 +42,7 @@
           "module": "pandora_agent",
           "name": "pandora-agent",
           "sourceProjectPath": "sdk/python/pyproject.toml",
-          "version": "0.1.0a11"
+          "version": "0.1.0a12"
         },
         "root": {
           "artifactSubpaths": {
@@ -79,7 +79,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.102"
+          "version": "1.1.103"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -106,7 +106,7 @@
           "format": "node",
           "name": "@thisispandora/agent-sdk",
           "sourceProjectPath": "sdk/typescript/package.json",
-          "version": "0.1.0-alpha.17"
+          "version": "0.1.0-alpha.18"
         }
       },
       "supported": true,
@@ -281,7 +281,7 @@
   "commandCount": 169,
   "commandDescriptorVersion": "1.4.3",
   "contractCommandDescriptorVersion": "1.4.3",
-  "contractPackageVersion": "1.1.102",
+  "contractPackageVersion": "1.1.103",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
@@ -311,9 +311,9 @@
     "format": "node",
     "name": "@thisispandora/agent-sdk",
     "sourceProjectPath": "sdk/typescript/package.json",
-    "version": "0.1.0-alpha.17"
+    "version": "0.1.0-alpha.18"
   },
-  "packageVersion": "0.1.0-alpha.17",
+  "packageVersion": "0.1.0-alpha.18",
   "publishedSurfaces": {
     "python": {
       "artifactSubpaths": {
@@ -326,7 +326,7 @@
       "module": "pandora_agent",
       "name": "pandora-agent",
       "sourceProjectPath": "sdk/python/pyproject.toml",
-      "version": "0.1.0a11"
+      "version": "0.1.0a12"
     },
     "root": {
       "artifactSubpaths": {
@@ -363,7 +363,7 @@
       "main": "cli/pandora.cjs",
       "name": "pandora-cli-skills",
       "sourceProjectPath": "package.json",
-      "version": "1.1.102"
+      "version": "1.1.103"
     },
     "typescript": {
       "artifactSubpaths": {
@@ -390,21 +390,21 @@
       "format": "node",
       "name": "@thisispandora/agent-sdk",
       "sourceProjectPath": "sdk/typescript/package.json",
-      "version": "0.1.0-alpha.17"
+      "version": "0.1.0-alpha.18"
     }
   },
   "registryDigest": {
     "canonicalHash": "9d638ee641f11a5ff7361b639583b7420341f9f222587e8f58cdf276a69bc8fb",
     "commandDigestHash": "b0122b3b2348544191cc7d015fbfe315a6a7b48b1fa6078bdfe7ce04ac5fddb4",
     "descriptorHash": "5db51951712c8c6bfbff788633efe072205263efdf471f7d009e3b6383586f67",
-    "documentationHash": "301d2fc5988980ea7b7b6f0acefecfbde4428d0dea758c108a6c7cbf0b12f2a3",
+    "documentationHash": "636adb502822108171bbe3041edc99bac1cc5175f940d1b6baff150e7a01c287",
     "fullDescriptorHash": "ed9ceec0c217dbedb62068328ccafa33e294f1d56c11dbde3b56dfe29bd185b9",
     "namespaceHash": "35a0e69c2f30bc8067d11ed5e75cfb3865d63bf662e001c15b0a7778e6b67ce7",
     "policyProfilesHash": "9380d1d8e7a1104fb30f7ee76d155d9708dd3376f74df4d0bd67ae854f24ca8d",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "db78e40057e3f231880214dd1ac6945ad4153d37df86118a188ef32086a96885",
-    "trustDistributionHash": "8f88ab1813598fc66630b07dd288c09ccdba942fe976abb20d4e90b760ca83fe"
+    "trustDistributionHash": "d8078177645fdba04348f944546826d2108a25eff6442d2bb8738e3f5dd6a97b"
   },
   "schemaVersion": "1.0.0"
 }
