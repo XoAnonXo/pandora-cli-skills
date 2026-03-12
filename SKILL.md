@@ -3,7 +3,7 @@ name: pandora-cli-skills
 description: Guides Pandora CLI workflows for safe bootstrap, market discovery, pricing, mirror planning, portfolio closeout, profile readiness, and MCP setup. Use when users ask to bootstrap Pandora, inspect capabilities or schema, quote or trade Pandora markets, plan or verify mirror markets, inspect portfolios, check signer-profile readiness, or start Pandora MCP/SDK integrations. Do not use for generic crypto news, unrelated coding tasks, or general spreadsheet or document work.
 compatibility: Requires Node.js 18+ and access to the Pandora CLI or this repository. Some workflows need network access or signer material; start read-only first.
 metadata:
-  version: 1.1.74
+  version: 1.1.98
   author: Pandora CLI Contributors
 ---
 

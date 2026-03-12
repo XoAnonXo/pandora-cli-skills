@@ -147,6 +147,16 @@ test('parseMarketsCreateFlags parses amm run payloads with signer/profile-safe f
     '0x3333333333333333333333333333333333333333',
     '--arbiter',
     '0x4444444444444444444444444444444444444444',
+    '--tx-route',
+    'flashbots-bundle',
+    '--tx-route-fallback',
+    'public',
+    '--flashbots-relay-url',
+    'https://relay.flashbots.example',
+    '--flashbots-auth-key',
+    'auth-key-ref',
+    '--flashbots-target-block-offset',
+    '3',
     '--category',
     'crypto',
     '--min-close-lead-seconds',
@@ -165,6 +175,11 @@ test('parseMarketsCreateFlags parses amm run payloads with signer/profile-safe f
   assert.equal(parsed.options.feeTier, 3000);
   assert.equal(parsed.options.maxImbalance, 100);
   assert.equal(parsed.options.category, 3);
+  assert.equal(parsed.options.txRoute, 'flashbots-bundle');
+  assert.equal(parsed.options.txRouteFallback, 'public');
+  assert.equal(parsed.options.flashbotsRelayUrl, 'https://relay.flashbots.example');
+  assert.equal(parsed.options.flashbotsAuthKey, 'auth-key-ref');
+  assert.equal(parsed.options.flashbotsTargetBlockOffset, 3);
   assert.equal(parsed.options.distributionYes, 500_000_000);
   assert.equal(parsed.options.distributionNo, 500_000_000);
 });
@@ -265,6 +280,32 @@ test('parseMarketsCreateFlags rejects market-type-specific flag combinations', (
         '3000',
       ]),
     (error) => error && error.code === 'INVALID_ARGS' && /does not accept --fee-tier or --max-imbalance/i.test(error.message),
+  );
+});
+
+test('parseMarketsCreateFlags rejects flashbots flags when tx-route stays public', () => {
+  const parseMarketsCreateFlags = buildParser();
+
+  assert.throws(
+    () =>
+      parseMarketsCreateFlags([
+        'run',
+        '--question',
+        'Q',
+        '--rules',
+        'R',
+        '--sources',
+        'https://one.example',
+        'https://two.example',
+        '--target-timestamp',
+        '1893499200',
+        '--liquidity-usdc',
+        '50',
+        '--dry-run',
+        '--flashbots-relay-url',
+        'https://relay.flashbots.example',
+      ]),
+    (error) => error && error.code === 'INVALID_ARGS' && /require --tx-route auto, flashbots-private, or flashbots-bundle/i.test(error.message),
   );
 });
 

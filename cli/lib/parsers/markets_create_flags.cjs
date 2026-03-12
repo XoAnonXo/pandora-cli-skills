@@ -1,6 +1,12 @@
 const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
 const { parsePollCategoryFlag } = require('../shared/poll_categories.cjs');
 const { parseMirrorTargetTimestamp } = require('./mirror_parser_guard.cjs');
+const {
+  parseDeployTxRoute,
+  parseDeployTxRouteFallback,
+  parseDeployFlashbotsRelayUrl,
+  assertDeployFlashbotsFlagContract,
+} = require('./deploy_route_flags.cjs');
 const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
 
 const MAX_UINT24 = 16_777_215;
@@ -163,6 +169,11 @@ function createParseMarketsCreateFlags(deps) {
       factory: null,
       usdc: null,
       arbiter: null,
+      txRoute: 'public',
+      txRouteFallback: 'fail',
+      flashbotsRelayUrl: null,
+      flashbotsAuthKey: null,
+      flashbotsTargetBlockOffset: null,
       category: null,
       minCloseLeadSeconds: null,
       validationTicket: null,
@@ -354,6 +365,43 @@ function createParseMarketsCreateFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--tx-route') {
+        options.txRoute = parseDeployTxRoute(requireFlagValue(rest, i, '--tx-route'), '--tx-route', CliError);
+        i += 1;
+        continue;
+      }
+      if (token === '--tx-route-fallback') {
+        options.txRouteFallback = parseDeployTxRouteFallback(
+          requireFlagValue(rest, i, '--tx-route-fallback'),
+          '--tx-route-fallback',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--flashbots-relay-url') {
+        options.flashbotsRelayUrl = parseDeployFlashbotsRelayUrl(
+          requireFlagValue(rest, i, '--flashbots-relay-url'),
+          '--flashbots-relay-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--flashbots-auth-key') {
+        options.flashbotsAuthKey = requireFlagValue(rest, i, '--flashbots-auth-key');
+        i += 1;
+        continue;
+      }
+      if (token === '--flashbots-target-block-offset') {
+        options.flashbotsTargetBlockOffset = parsePositiveInteger(
+          requireFlagValue(rest, i, '--flashbots-target-block-offset'),
+          '--flashbots-target-block-offset',
+        );
+        i += 1;
+        continue;
+      }
       if (token === '--category') {
         options.category = parsePollCategoryFlag(requireFlagValue(rest, i, '--category'), '--category', CliError, parseInteger);
         i += 1;
@@ -430,6 +478,7 @@ function createParseMarketsCreateFlags(deps) {
     }
 
     finalizeDistribution(options, CliError);
+    assertDeployFlashbotsFlagContract(options, '--tx-route', CliError);
     assertNoMixedSignerSelectors(options, CliError);
 
     return {

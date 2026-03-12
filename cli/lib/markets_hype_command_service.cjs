@@ -621,7 +621,7 @@ function assertFrozenDraftIntegrity(candidate, marketType, draft, CliError) {
 function buildHypeHelp(commandHelpPayload) {
   const usage = [
     'pandora [--output table|json] markets hype plan --area <sports|esports|politics|regional-news|breaking-news> [--region <text>] [--query <text>] [--candidate-count <n>] [--market-type auto|amm|parimutuel|both] [--liquidity-usdc <n>] [--ai-provider auto|openai|anthropic|mock] [--ai-model <id>] [--search-depth fast|standard|deep] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]',
-    'pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]',
+    'pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>]',
   ];
   const notes = [
     'markets hype researches fresh public-web topics, drafts high-interest markets, scores AMM vs pari-mutuel fit, and runs the final market through the validation prompt.',
@@ -629,6 +629,7 @@ function buildHypeHelp(commandHelpPayload) {
     'When --area regional-news is selected, pass --region <text> so the research stays tied to the correct locality.',
     'markets hype plan requires a configured provider in auto|mock|openai|anthropic mode; if none is configured, use agent market hype instead.',
     'Save the JSON plan output before running markets hype run so the exact research snapshot and validation result remain frozen.',
+    'markets hype run forwards --tx-route to the same post-poll execution transport used by markets create run. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.',
     'Execute-mode MCP calls should pass the PASS attestation from the selected candidate validation back as agentPreflight.',
   ];
   return {
@@ -753,6 +754,11 @@ function createRunMarketsHypeCommand(deps) {
       factory: options.factory || draft.factory,
       usdc: options.usdc || draft.usdc,
       arbiter: options.arbiter || draft.arbiter,
+      txRoute: options.txRoute || 'public',
+      txRouteFallback: options.txRouteFallback || 'fail',
+      flashbotsRelayUrl: options.flashbotsRelayUrl || null,
+      flashbotsAuthKey: options.flashbotsAuthKey || null,
+      flashbotsTargetBlockOffset: options.flashbotsTargetBlockOffset || null,
       agentPreflight: isMcpMode() ? undefined : (validation && validation.attestation ? validation.attestation : undefined),
       command: 'markets.hype.run',
       toolFamily: 'markets',

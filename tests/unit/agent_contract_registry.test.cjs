@@ -633,6 +633,16 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
   assert.deepEqual(toolDefinitions['markets.create.run'].agentWorkflow.requiredTools, ['agent.market.validate']);
   assert.deepEqual(toolDefinitions['markets.create.run'].inputSchema.required, ['question', 'rules', 'sources', 'target-timestamp', 'liquidity-usdc']);
   assert.deepEqual(toolDefinitions['markets.create.run'].inputSchema.properties['market-type'].enum, ['amm', 'parimutuel']);
+  assert.deepEqual(
+    toolDefinitions['markets.create.run'].inputSchema.properties['tx-route'].enum,
+    ['public', 'auto', 'flashbots-private', 'flashbots-bundle'],
+  );
+  assert.deepEqual(
+    toolDefinitions['markets.create.run'].inputSchema.properties['tx-route-fallback'].enum,
+    ['fail', 'public'],
+  );
+  assert.equal(toolDefinitions['markets.create.run'].inputSchema.properties['flashbots-relay-url'].type, 'string');
+  assert.equal(toolDefinitions['markets.create.run'].inputSchema.properties['flashbots-auth-key'].type, 'string');
   assert.equal(toolDefinitions['markets.create.run'].inputSchema.properties['rpc-url'].type, 'string');
   assert.equal(toolDefinitions['markets.create.run'].inputSchema.properties['validation-ticket'].type, 'string');
   assert.ok(
@@ -642,6 +652,15 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
       && branch.not
       && Array.isArray(branch.not.anyOf),
     ),
+  );
+  assert.ok(toolDefinitions['markets.hype.run']);
+  assert.deepEqual(
+    toolDefinitions['markets.hype.run'].inputSchema.properties['tx-route'].enum,
+    ['public', 'auto', 'flashbots-private', 'flashbots-bundle'],
+  );
+  assert.deepEqual(
+    toolDefinitions['markets.hype.run'].inputSchema.properties['tx-route-fallback'].enum,
+    ['fail', 'public'],
   );
   assert.match(descriptors['mirror.status'].summary, /dashboard/i);
   assert.ok(descriptors['mirror.drift']);

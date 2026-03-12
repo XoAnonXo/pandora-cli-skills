@@ -194,6 +194,7 @@ function createDeployClients(overrides = {}) {
     },
     getBalance: async () => 10_000_000_000_000_000_000n,
     getGasPrice: async () => 1_000_000_000n,
+    getTransactionCount: async () => 17,
     estimateContractGas: async (request) => {
       if (request.functionName === 'createPoll') return 120_000n;
       if (request.functionName === 'approve') return 40_000n;
@@ -239,6 +240,18 @@ function createDeployClients(overrides = {}) {
             args: [],
           },
           result: TEST_MARKET,
+        };
+      }
+      if (functionName === 'approve') {
+        return {
+          request: {
+            account: TEST_ACCOUNT,
+            address: TEST_USDC,
+            abi: [],
+            functionName: 'approve',
+            args: [],
+          },
+          result: true,
         };
       }
       throw new Error(`Unexpected simulateContract: ${functionName}`);
@@ -801,10 +814,117 @@ test('deployPandoraAmmMarket executes createPariMutuel when marketType is parimu
   assert.equal(payload.pandora.marketAddress, TEST_MARKET);
   assert.deepEqual(
     simulateCalls.map((entry) => entry.functionName),
-    ['createPoll', 'createPariMutuel'],
+    ['createPoll', 'approve', 'createPariMutuel'],
   );
   assert.deepEqual(
     writeCalls.map((entry) => entry.functionName),
     ['createPoll', 'approve', 'createPariMutuel'],
   );
+});
+
+test('deployPandoraAmmMarket bundles post-poll approval and market creation through Flashbots when txRoute auto needs approval', async () => {
+  const { publicClient, walletClient, writeCalls } = createDeployClients();
+  const defaultSimulateContract = publicClient.simulateContract;
+  let capturedBundle = null;
+
+  publicClient.simulateContract = async (request) => {
+    if (request.functionName === 'createMarket') {
+      throw new Error('allowance update is still pending');
+    }
+    return defaultSimulateContract(request);
+  };
+
+  const payload = await deployPandoraAmmMarket(
+    baseDeployOptions({
+      publicClient,
+      walletClient,
+      txRoute: 'auto',
+      flashbotsRelayUrl: 'https://relay.flashbots.example',
+      flashbotsAuthKey: `0x${'9'.repeat(64)}`,
+      flashbotsTargetBlockOffset: 3,
+      sendFlashbotsBundle: async (options) => {
+        capturedBundle = options;
+        return {
+          relayUrl: 'https://relay.flashbots.example/',
+          relayMethod: 'eth_sendBundle',
+          targetBlockNumber: 12_345_679,
+          relayResponseId: 9,
+          transactionHashes: [`0x${'b'.repeat(64)}`, `0x${'c'.repeat(64)}`],
+          bundleHash: `0x${'d'.repeat(64)}`,
+          simulation: { results: [{ gasUsed: '0x1' }] },
+        };
+      },
+    }),
+  );
+
+  assert.equal(payload.txRouteRequested, 'auto');
+  assert.equal(payload.txRouteResolved, 'flashbots-bundle');
+  assert.equal(payload.tx.pollTxHash, '0xaaa');
+  assert.equal(payload.tx.approveTxHash, `0x${'b'.repeat(64)}`);
+  assert.equal(payload.tx.marketTxHash, `0x${'c'.repeat(64)}`);
+  assert.equal(payload.flashbotsRelayMethod, 'eth_sendBundle');
+  assert.equal(payload.flashbotsTargetBlockNumber, 12_345_679);
+  assert.equal(payload.flashbotsRelayResponseId, 9);
+  assert.equal(payload.flashbotsBundleHash, `0x${'d'.repeat(64)}`);
+  assert.deepEqual(payload.flashbotsSimulation, { results: [{ gasUsed: '0x1' }] });
+  assert.equal(payload.pandora.pollAddress, TEST_POLL);
+  assert.equal(payload.pandora.marketAddress, null);
+  assert.match(payload.diagnostics.join('\n'), /manual market transaction encoding/i);
+  assert.deepEqual(writeCalls.map((entry) => entry.functionName), ['createPoll']);
+  assert.equal(Array.isArray(capturedBundle.transactionRequests), true);
+  assert.equal(capturedBundle.transactionRequests.length, 2);
+  assert.equal(capturedBundle.transactionRequests[0].nonce, 17);
+  assert.equal(capturedBundle.transactionRequests[1].nonce, 18);
+  assert.equal(capturedBundle.relayUrl, 'https://relay.flashbots.example/');
+  assert.equal(capturedBundle.authPrivateKey, `0x${'9'.repeat(64)}`);
+  assert.equal(capturedBundle.targetBlockOffset, 3);
+});
+
+test('deployPandoraAmmMarket routes the post-poll market creation leg through Flashbots private tx when no approval is needed', async () => {
+  const { publicClient, walletClient, writeCalls } = createDeployClients();
+  const defaultReadContract = publicClient.readContract;
+  let capturedPrivateSubmission = null;
+
+  publicClient.readContract = async (request) => {
+    if (request.functionName === 'allowance') {
+      return 1_000_000_000_000n;
+    }
+    return defaultReadContract(request);
+  };
+  publicClient.getTransactionCount = async () => 25;
+
+  const payload = await deployPandoraAmmMarket(
+    baseDeployOptions({
+      publicClient,
+      walletClient,
+      txRoute: 'auto',
+      flashbotsRelayUrl: 'https://relay.flashbots.example',
+      flashbotsAuthKey: `0x${'8'.repeat(64)}`,
+      sendFlashbotsPrivateTransaction: async (options) => {
+        capturedPrivateSubmission = options;
+        return {
+          relayUrl: 'https://relay.flashbots.example/',
+          relayMethod: 'eth_sendPrivateTransaction',
+          targetBlockNumber: 12_345_680,
+          relayResponseId: 11,
+          transactionHash: `0x${'e'.repeat(64)}`,
+        };
+      },
+    }),
+  );
+
+  assert.equal(payload.txRouteRequested, 'auto');
+  assert.equal(payload.txRouteResolved, 'flashbots-private');
+  assert.equal(payload.tx.pollTxHash, '0xaaa');
+  assert.equal(payload.tx.approveTxHash, null);
+  assert.equal(payload.tx.marketTxHash, `0x${'e'.repeat(64)}`);
+  assert.equal(payload.flashbotsRelayMethod, 'eth_sendPrivateTransaction');
+  assert.equal(payload.flashbotsTargetBlockNumber, 12_345_680);
+  assert.equal(payload.flashbotsRelayResponseId, 11);
+  assert.equal(payload.flashbotsBundleHash, null);
+  assert.equal(payload.pandora.marketAddress, TEST_MARKET);
+  assert.deepEqual(writeCalls.map((entry) => entry.functionName), ['createPoll']);
+  assert.equal(capturedPrivateSubmission.transactionRequest.nonce, 25);
+  assert.equal(capturedPrivateSubmission.relayUrl, 'https://relay.flashbots.example/');
+  assert.equal(capturedPrivateSubmission.authPrivateKey, `0x${'8'.repeat(64)}`);
 });

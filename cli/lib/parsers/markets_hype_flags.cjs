@@ -1,4 +1,10 @@
 const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
+const {
+  parseDeployTxRoute,
+  parseDeployTxRouteFallback,
+  parseDeployFlashbotsRelayUrl,
+  assertDeployFlashbotsFlagContract,
+} = require('./deploy_route_flags.cjs');
 const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
 
 const PLAN_ACTIONS = new Set(['plan', 'run']);
@@ -91,6 +97,11 @@ function createParseMarketsHypeFlags(deps) {
       factory: null,
       usdc: null,
       arbiter: null,
+      txRoute: 'public',
+      txRouteFallback: 'fail',
+      flashbotsRelayUrl: null,
+      flashbotsAuthKey: null,
+      flashbotsTargetBlockOffset: null,
       minCloseLeadSeconds: 1800,
       planFile: null,
       candidateId: null,
@@ -210,6 +221,43 @@ function createParseMarketsHypeFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--tx-route') {
+        options.txRoute = parseDeployTxRoute(requireFlagValue(rest, i, '--tx-route'), '--tx-route', CliError);
+        i += 1;
+        continue;
+      }
+      if (token === '--tx-route-fallback') {
+        options.txRouteFallback = parseDeployTxRouteFallback(
+          requireFlagValue(rest, i, '--tx-route-fallback'),
+          '--tx-route-fallback',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--flashbots-relay-url') {
+        options.flashbotsRelayUrl = parseDeployFlashbotsRelayUrl(
+          requireFlagValue(rest, i, '--flashbots-relay-url'),
+          '--flashbots-relay-url',
+          CliError,
+          isSecureHttpUrlOrLocal,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--flashbots-auth-key') {
+        options.flashbotsAuthKey = requireFlagValue(rest, i, '--flashbots-auth-key');
+        i += 1;
+        continue;
+      }
+      if (token === '--flashbots-target-block-offset') {
+        options.flashbotsTargetBlockOffset = parsePositiveInteger(
+          requireFlagValue(rest, i, '--flashbots-target-block-offset'),
+          '--flashbots-target-block-offset',
+        );
+        i += 1;
+        continue;
+      }
       if (token === '--min-close-lead-seconds') {
         options.minCloseLeadSeconds = parsePositiveInteger(
           requireFlagValue(rest, i, '--min-close-lead-seconds'),
@@ -266,6 +314,7 @@ function createParseMarketsHypeFlags(deps) {
       throw new CliError('INVALID_FLAG_VALUE', '--ai-provider supports auto|mock|openai|anthropic.');
     }
 
+    assertDeployFlashbotsFlagContract(options, '--tx-route', CliError);
     assertNoMixedSignerSelectors(options, CliError);
 
     return {

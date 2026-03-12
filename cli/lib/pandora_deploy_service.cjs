@@ -2,6 +2,7 @@ const {
   createPublicClient,
   createWalletClient,
   decodeEventLog,
+  encodeFunctionData,
   formatUnits,
   http,
   parseEther,
@@ -22,7 +23,17 @@ const {
   buildRequiredAgentMarketValidation,
   assertAgentMarketValidation,
 } = require('./agent_market_prompt_service.cjs');
+const {
+  DEFAULT_FLASHBOTS_RELAY_URL,
+  DEFAULT_FLASHBOTS_TARGET_BLOCK_OFFSET,
+  FLASHBOTS_SUPPORTED_CHAIN_ID,
+  normalizeFlashbotsRelayUrl,
+  normalizeTargetBlockOffset,
+  sendFlashbotsPrivateTransaction,
+  sendFlashbotsBundle,
+} = require('./flashbots_service.cjs');
 const { materializeExecutionSigner } = require('./signers/execution_signer_service.cjs');
+const { executeTradeWithRoute } = require('./trade_execution_route_service.cjs');
 
 const ERC20_ABI = [
   {
@@ -117,6 +128,8 @@ const DEFAULT_CREATE_MARKET_GAS_UNITS = 650_000n;
 const DEFAULT_CREATE_PARIMUTUEL_GAS_UNITS = 650_000n;
 const GAS_RESERVE_BUFFER_BPS = 2_500n;
 const DEFAULT_FALLBACK_GAS_PRICE_WEI = 2_000_000_000n;
+const DEPLOY_TX_ROUTE_VALUES = new Set(['public', 'auto', 'flashbots-private', 'flashbots-bundle']);
+const DEPLOY_TX_ROUTE_FALLBACK_VALUES = new Set(['fail', 'public']);
 
 const POLL_CREATED_EVENT = {
   type: 'event',
@@ -148,6 +161,81 @@ function createDeployError(code, message, details = undefined) {
     err.details = details;
   }
   return err;
+}
+
+function normalizeOptionalText(value) {
+  const normalized = String(value || '').trim();
+  return normalized || null;
+}
+
+function normalizeDeployTxRoute(value) {
+  const normalized = String(value || 'public').trim().toLowerCase() || 'public';
+  if (!DEPLOY_TX_ROUTE_VALUES.has(normalized)) {
+    throw createDeployError(
+      'INVALID_FLAG_VALUE',
+      '--tx-route must be public|auto|flashbots-private|flashbots-bundle.',
+      { value },
+    );
+  }
+  return normalized;
+}
+
+function normalizeDeployTxRouteFallback(value) {
+  const normalized = String(value || 'fail').trim().toLowerCase() || 'fail';
+  if (!DEPLOY_TX_ROUTE_FALLBACK_VALUES.has(normalized)) {
+    throw createDeployError('INVALID_FLAG_VALUE', '--tx-route-fallback must be fail|public.', { value });
+  }
+  return normalized;
+}
+
+function resolveDeployTxRouteConfig(options = {}) {
+  const requestedTxRoute = normalizeDeployTxRoute(options.txRoute || 'public');
+  const txRouteFallback = normalizeDeployTxRouteFallback(options.txRouteFallback || 'fail');
+  const flashbotsRequested = requestedTxRoute !== 'public';
+  return {
+    requestedTxRoute,
+    txRouteFallback,
+    flashbotsRelayUrl: flashbotsRequested
+      ? normalizeFlashbotsRelayUrl(options.flashbotsRelayUrl || process.env.FLASHBOTS_RELAY_URL || DEFAULT_FLASHBOTS_RELAY_URL)
+      : null,
+    flashbotsAuthKey: flashbotsRequested
+      ? normalizeOptionalText(options.flashbotsAuthKey || process.env.FLASHBOTS_AUTH_KEY || null)
+      : null,
+    flashbotsTargetBlockOffset: flashbotsRequested
+      ? normalizeTargetBlockOffset(
+          options.flashbotsTargetBlockOffset || process.env.FLASHBOTS_TARGET_BLOCK_OFFSET || DEFAULT_FLASHBOTS_TARGET_BLOCK_OFFSET,
+        )
+      : null,
+  };
+}
+
+function buildRawContractTransactionRequest({
+  runtime,
+  address,
+  abi,
+  functionName,
+  args,
+  account,
+  chainId,
+  nonce,
+  gas,
+  gasPrice,
+  value = 0n,
+}) {
+  return {
+    account,
+    to: address,
+    chainId,
+    nonce,
+    gas,
+    gasPrice,
+    value,
+    data: runtime.encodeFunctionData({
+      abi,
+      functionName,
+      args,
+    }),
+  };
 }
 
 function utf8ByteLength(value) {
@@ -276,6 +364,7 @@ function resolveDeployRuntime(options = {}) {
     createPublicClient: viemRuntime.createPublicClient || createPublicClient,
     createWalletClient: viemRuntime.createWalletClient || createWalletClient,
     privateKeyToAccount: viemRuntime.privateKeyToAccount || privateKeyToAccount,
+    encodeFunctionData: viemRuntime.encodeFunctionData || encodeFunctionData,
     http: viemRuntime.http || http,
     parseEther: viemRuntime.parseEther || parseEther,
     parseUnits: viemRuntime.parseUnits || parseUnits,
@@ -453,6 +542,7 @@ async function deployPandoraAmmMarket(options = {}) {
   const factory = String(options.factory || process.env.FACTORY || DEFAULT_FACTORY).toLowerCase();
   const usdc = String(options.usdc || process.env.USDC || DEFAULT_USDC).toLowerCase();
   const executionMode = options.execute ? 'execute' : 'dry-run';
+  const txRouteConfig = resolveDeployTxRouteConfig(options);
 
   const { chain, chainId, rpcUrl } = resolveChain(options.chainId, options.rpcUrl);
 
@@ -472,6 +562,17 @@ async function deployPandoraAmmMarket(options = {}) {
     preflight: null,
     requiredValidation,
     agentValidation: null,
+    txRouteRequested: txRouteConfig.requestedTxRoute,
+    txRouteResolved: txRouteConfig.requestedTxRoute === 'auto' ? null : txRouteConfig.requestedTxRoute,
+    txRouteFallback: txRouteConfig.txRouteFallback,
+    txRouteFallbackUsed: false,
+    txRouteFallbackReason: null,
+    flashbotsRelayUrl: txRouteConfig.flashbotsRelayUrl,
+    flashbotsRelayMethod: null,
+    flashbotsTargetBlockNumber: null,
+    flashbotsRelayResponseId: null,
+    flashbotsBundleHash: null,
+    flashbotsSimulation: null,
     pandora: {
       pollAddress: null,
       marketAddress: null,
@@ -702,18 +803,6 @@ async function deployPandoraAmmMarket(options = {}) {
     throw new Error('Unable to resolve poll address from createPoll transaction.');
   }
 
-  let approveTxHash = null;
-  if (needsApproval) {
-    try {
-      approveTxHash = await walletClient.writeContract(approveRequest);
-      await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-    } catch (err) {
-      throw await wrapDeployExecutionError(err, 'APPROVE_EXECUTION_FAILED', 'USDC approve failed.', {
-        approveTxHash: approveTxHash || null,
-      });
-    }
-  }
-
   const marketConfig = buildFactoryCreateConfig({
     pollAddress,
     usdc,
@@ -722,50 +811,340 @@ async function deployPandoraAmmMarket(options = {}) {
     args,
   });
 
-  let marketSimulation;
-  try {
-    marketSimulation = await publicClient.simulateContract({
-      account,
-      address: factory,
-      abi: FACTORY_ABI,
-      functionName: marketConfig.functionName,
-      args: marketConfig.callArgs,
-    });
-  } catch (err) {
-    throw await wrapDeployExecutionError(
-      err,
-      'MARKET_SIMULATION_FAILED',
-      `${marketConfig.functionName} simulation failed.`,
-      { marketFunctionName: marketConfig.functionName },
-    );
+  const resolvedTxRoute =
+    txRouteConfig.requestedTxRoute === 'auto'
+      ? (needsApproval ? 'flashbots-bundle' : 'flashbots-private')
+      : txRouteConfig.requestedTxRoute;
+  const flashbotsPrivateSender =
+    typeof options.sendFlashbotsPrivateTransaction === 'function'
+      ? options.sendFlashbotsPrivateTransaction
+      : sendFlashbotsPrivateTransaction;
+  const flashbotsBundleSender =
+    typeof options.sendFlashbotsBundle === 'function'
+      ? options.sendFlashbotsBundle
+      : sendFlashbotsBundle;
+
+  function buildTxRouteMetadata(overrides = {}) {
+    return {
+      txRouteRequested: txRouteConfig.requestedTxRoute,
+      txRouteResolved: overrides.txRouteResolved || resolvedTxRoute,
+      txRouteFallback: txRouteConfig.txRouteFallback,
+      txRouteFallbackUsed: Boolean(overrides.txRouteFallbackUsed),
+      txRouteFallbackReason: overrides.txRouteFallbackReason || null,
+      flashbotsRelayUrl:
+        overrides.flashbotsRelayUrl !== undefined
+          ? overrides.flashbotsRelayUrl
+          : txRouteConfig.requestedTxRoute === 'public'
+            ? null
+            : txRouteConfig.flashbotsRelayUrl,
+      flashbotsRelayMethod: overrides.flashbotsRelayMethod || null,
+      flashbotsTargetBlockNumber:
+        overrides.flashbotsTargetBlockNumber !== undefined ? overrides.flashbotsTargetBlockNumber : null,
+      flashbotsRelayResponseId:
+        overrides.flashbotsRelayResponseId !== undefined ? overrides.flashbotsRelayResponseId : null,
+      flashbotsBundleHash: overrides.flashbotsBundleHash || null,
+      flashbotsSimulation: overrides.flashbotsSimulation || null,
+    };
   }
 
-  let marketTxHash;
-  try {
-    marketTxHash = await walletClient.writeContract(marketSimulation.request);
-    await publicClient.waitForTransactionReceipt({ hash: marketTxHash });
-  } catch (err) {
-    throw await wrapDeployExecutionError(
-      err,
-      'MARKET_EXECUTION_FAILED',
-      `${marketConfig.functionName} transaction failed.`,
-      {
-        marketTxHash: marketTxHash || null,
-        marketFunctionName: marketConfig.functionName,
+  async function simulateApproveExecution(nonceOverride = null) {
+    if (!needsApproval) {
+      return {
+        request: null,
+        gasEstimate: null,
+        nonce: null,
+      };
+    }
+    let approveSimulation;
+    try {
+      approveSimulation = await publicClient.simulateContract(approveRequest);
+    } catch (err) {
+      throw await wrapDeployExecutionError(err, 'APPROVE_SIMULATION_FAILED', 'USDC approve simulation failed.');
+    }
+    const nonce =
+      nonceOverride !== null && nonceOverride !== undefined
+        ? Number(nonceOverride)
+        : await publicClient.getTransactionCount({
+            address: account.address,
+            blockTag: 'pending',
+          });
+    return {
+      request: {
+        ...approveSimulation.request,
+        nonce,
       },
-    );
+      gasEstimate:
+        approveSimulation && approveSimulation.request && approveSimulation.request.gas
+          ? approveSimulation.request.gas.toString()
+          : null,
+      nonce,
+    };
   }
 
+  async function simulateMarketExecution(nonceOverride = null, allowManualFallback = false) {
+    try {
+      const marketSimulation = await publicClient.simulateContract({
+        account,
+        address: factory,
+        abi: FACTORY_ABI,
+        functionName: marketConfig.functionName,
+        args: marketConfig.callArgs,
+      });
+      const nonce =
+        nonceOverride !== null && nonceOverride !== undefined
+          ? Number(nonceOverride)
+          : await publicClient.getTransactionCount({
+              address: account.address,
+              blockTag: 'pending',
+            });
+      return {
+        request: {
+          ...marketSimulation.request,
+          nonce,
+        },
+        gasEstimate:
+          marketSimulation && marketSimulation.request && marketSimulation.request.gas
+            ? marketSimulation.request.gas.toString()
+            : null,
+        nonce,
+        marketAddress: marketSimulation.result ? String(marketSimulation.result).toLowerCase() : null,
+        usedManualRequest: false,
+      };
+    } catch (err) {
+      if (!allowManualFallback) {
+        throw await wrapDeployExecutionError(
+          err,
+          'MARKET_SIMULATION_FAILED',
+          `${marketConfig.functionName} simulation failed.`,
+          { marketFunctionName: marketConfig.functionName },
+        );
+      }
+      const nonce =
+        nonceOverride !== null && nonceOverride !== undefined
+          ? Number(nonceOverride)
+          : await publicClient.getTransactionCount({
+              address: account.address,
+              blockTag: 'pending',
+            });
+      const gasUnits =
+        gasReservePlan && gasReservePlan.gasUnits && typeof gasReservePlan.gasUnits.market === 'bigint'
+          ? gasReservePlan.gasUnits.market
+          : marketConfig.fallbackGasUnits;
+      const gasPriceWei =
+        gasReservePlan && typeof gasReservePlan.feePerGasWei === 'bigint' && gasReservePlan.feePerGasWei > 0n
+          ? gasReservePlan.feePerGasWei
+          : await resolveFeePerGas(publicClient);
+      return {
+        request: buildRawContractTransactionRequest({
+          runtime,
+          address: factory,
+          abi: FACTORY_ABI,
+          functionName: marketConfig.functionName,
+          args: marketConfig.callArgs,
+          account,
+          chainId,
+          nonce,
+          gas: gasUnits,
+          gasPrice: gasPriceWei,
+        }),
+        gasEstimate: gasUnits.toString(),
+        nonce,
+        marketAddress: null,
+        usedManualRequest: true,
+      };
+    }
+  }
+
+  async function executePublicRoute(routeMetadata) {
+    const approveExecution = await simulateApproveExecution();
+    let approveTxHash = null;
+    if (approveExecution.request) {
+      try {
+        approveTxHash = await walletClient.writeContract(approveExecution.request);
+        await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+      } catch (err) {
+        throw await wrapDeployExecutionError(err, 'APPROVE_EXECUTION_FAILED', 'USDC approve failed.', {
+          approveTxHash: approveTxHash || null,
+        });
+      }
+    }
+
+    const marketExecution = await simulateMarketExecution();
+    let marketTxHash;
+    try {
+      marketTxHash = await walletClient.writeContract(marketExecution.request);
+      await publicClient.waitForTransactionReceipt({ hash: marketTxHash });
+    } catch (err) {
+      throw await wrapDeployExecutionError(
+        err,
+        'MARKET_EXECUTION_FAILED',
+        `${marketConfig.functionName} transaction failed.`,
+        {
+          marketTxHash: marketTxHash || null,
+          marketFunctionName: marketConfig.functionName,
+        },
+      );
+    }
+
+    return {
+      routeMetadata,
+      approveTxHash,
+      marketTxHash,
+      marketAddress: marketExecution.marketAddress,
+      diagnostics: marketExecution.usedManualRequest
+        ? ['Market route used manual transaction encoding because pre-route simulation was unavailable.']
+        : [],
+    };
+  }
+
+  async function executeFlashbotsPrivateRoute() {
+    const pendingNonce = await publicClient.getTransactionCount({
+      address: account.address,
+      blockTag: 'pending',
+    });
+    const marketExecution = await simulateMarketExecution(pendingNonce);
+    const privateSubmission = await flashbotsPrivateSender({
+      publicClient,
+      walletClient,
+      account,
+      transactionRequest: marketExecution.request,
+      relayUrl: txRouteConfig.flashbotsRelayUrl,
+      authPrivateKey: txRouteConfig.flashbotsAuthKey,
+      targetBlockOffset: txRouteConfig.flashbotsTargetBlockOffset,
+      viemRuntime: runtime,
+    });
+    try {
+      await publicClient.waitForTransactionReceipt({ hash: privateSubmission.transactionHash });
+    } catch (error) {
+      throw createDeployError(
+        'FLASHBOTS_PRIVATE_RECEIPT_FAILED',
+        'Flashbots private market creation transaction was submitted, but receipt polling failed.',
+        {
+          submissionState: 'submitted',
+          transactionHash: privateSubmission.transactionHash,
+          marketTxHash: privateSubmission.transactionHash,
+          flashbotsRelayUrl: privateSubmission.relayUrl,
+          flashbotsRelayMethod: privateSubmission.relayMethod,
+          flashbotsTargetBlockNumber: privateSubmission.targetBlockNumber,
+          flashbotsRelayResponseId: privateSubmission.relayResponseId,
+        },
+      );
+    }
+    return {
+      routeMetadata: buildTxRouteMetadata({
+        flashbotsRelayUrl: privateSubmission.relayUrl,
+        flashbotsRelayMethod: privateSubmission.relayMethod,
+        flashbotsTargetBlockNumber: privateSubmission.targetBlockNumber,
+        flashbotsRelayResponseId: privateSubmission.relayResponseId,
+      }),
+      approveTxHash: null,
+      marketTxHash: privateSubmission.transactionHash,
+      marketAddress: marketExecution.marketAddress,
+      diagnostics: [],
+    };
+  }
+
+  async function executeFlashbotsBundleRoute() {
+    const pendingNonce = await publicClient.getTransactionCount({
+      address: account.address,
+      blockTag: 'pending',
+    });
+    const approveExecution = await simulateApproveExecution(pendingNonce);
+    const marketExecution = await simulateMarketExecution(
+      approveExecution.request ? pendingNonce + 1 : pendingNonce,
+      Boolean(approveExecution.request),
+    );
+    const bundleRequests = approveExecution.request
+      ? [approveExecution.request, marketExecution.request]
+      : [marketExecution.request];
+    const bundleSubmission = await flashbotsBundleSender({
+      publicClient,
+      walletClient,
+      account,
+      transactionRequests: bundleRequests,
+      relayUrl: txRouteConfig.flashbotsRelayUrl,
+      authPrivateKey: txRouteConfig.flashbotsAuthKey,
+      targetBlockOffset: txRouteConfig.flashbotsTargetBlockOffset,
+      viemRuntime: runtime,
+    });
+    const approveTxHash = approveExecution.request ? bundleSubmission.transactionHashes[0] : null;
+    const marketTxHash = approveExecution.request
+      ? bundleSubmission.transactionHashes[1]
+      : bundleSubmission.transactionHashes[0];
+    try {
+      if (approveTxHash) {
+        await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+      }
+      await publicClient.waitForTransactionReceipt({ hash: marketTxHash });
+    } catch (error) {
+      throw createDeployError(
+        'FLASHBOTS_BUNDLE_RECEIPT_FAILED',
+        'Flashbots bundle for market creation was submitted, but receipt polling failed.',
+        {
+          submissionState: 'submitted',
+          transactionHashes: bundleSubmission.transactionHashes,
+          bundleHash: bundleSubmission.bundleHash,
+          approveTxHash,
+          marketTxHash,
+          flashbotsRelayUrl: bundleSubmission.relayUrl,
+          flashbotsRelayMethod: bundleSubmission.relayMethod,
+          flashbotsTargetBlockNumber: bundleSubmission.targetBlockNumber,
+          flashbotsRelayResponseId: bundleSubmission.relayResponseId,
+          flashbotsSimulation: bundleSubmission.simulation,
+        },
+      );
+    }
+    return {
+      routeMetadata: buildTxRouteMetadata({
+        flashbotsRelayUrl: bundleSubmission.relayUrl,
+        flashbotsRelayMethod: bundleSubmission.relayMethod,
+        flashbotsTargetBlockNumber: bundleSubmission.targetBlockNumber,
+        flashbotsRelayResponseId: bundleSubmission.relayResponseId,
+        flashbotsBundleHash: bundleSubmission.bundleHash,
+        flashbotsSimulation: bundleSubmission.simulation,
+      }),
+      approveTxHash,
+      marketTxHash,
+      marketAddress: marketExecution.marketAddress,
+      diagnostics: marketExecution.usedManualRequest
+        ? ['Flashbots bundle used manual market transaction encoding because createMarket pre-approval simulation was unavailable on current state.']
+        : [],
+    };
+  }
+
+  const routedExecution = await executeTradeWithRoute({
+    runtime: {
+      chainId,
+      mode: 'live',
+      executionRouteFallback: txRouteConfig.txRouteFallback,
+      flashbotsRelayUrl: txRouteConfig.flashbotsRelayUrl,
+      flashbotsAuthKey: txRouteConfig.flashbotsAuthKey,
+      flashbotsTargetBlockOffset: txRouteConfig.flashbotsTargetBlockOffset,
+    },
+    requestedExecutionRoute: txRouteConfig.requestedTxRoute,
+    needsApproval,
+    flashbotsSupportedChainId: FLASHBOTS_SUPPORTED_CHAIN_ID,
+    errorFactory: createDeployError,
+    buildRouteMetadata: buildTxRouteMetadata,
+    executePublicRoute,
+    executeFlashbotsPrivateRoute,
+    executeFlashbotsBundleRoute,
+  });
+
+  Object.assign(payload, routedExecution.routeMetadata || {});
   payload.tx = {
     pollTxHash,
-    approveTxHash,
-    marketTxHash,
+    approveTxHash: routedExecution.approveTxHash || null,
+    marketTxHash: routedExecution.marketTxHash || null,
   };
   payload.pandora = {
     pollAddress,
-    marketAddress: marketSimulation.result ? String(marketSimulation.result).toLowerCase() : null,
+    marketAddress: routedExecution.marketAddress || null,
   };
 
+  if (Array.isArray(routedExecution.diagnostics) && routedExecution.diagnostics.length) {
+    payload.diagnostics.push(...routedExecution.diagnostics);
+  }
   if (!payload.pandora.marketAddress) {
     payload.diagnostics.push('Unable to derive market address directly from simulation result.');
   }

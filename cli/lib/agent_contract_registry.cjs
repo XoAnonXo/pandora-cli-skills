@@ -677,6 +677,8 @@ const commonFlags = {
 
 const MIRROR_REBALANCE_ROUTE_VALUES = ['public', 'auto', 'flashbots-private', 'flashbots-bundle'];
 const MIRROR_REBALANCE_ROUTE_FALLBACK_VALUES = ['fail', 'public'];
+const DEPLOY_TX_ROUTE_VALUES = ['public', 'auto', 'flashbots-private', 'flashbots-bundle'];
+const DEPLOY_TX_ROUTE_FALLBACK_VALUES = ['fail', 'public'];
 
 function buildMirrorRebalanceRouteSchema() {
   return enumSchema(
@@ -689,6 +691,20 @@ function buildMirrorRebalanceRouteFallbackSchema() {
   return enumSchema(
     MIRROR_REBALANCE_ROUTE_FALLBACK_VALUES,
     'Fallback policy when the requested Pandora-leg private route is unsupported or rejected. fail stops the run; public degrades to ordinary public submission. This does not change Polygon hedge semantics.',
+  );
+}
+
+function buildDeployTxRouteSchema() {
+  return enumSchema(
+    DEPLOY_TX_ROUTE_VALUES,
+    'Post-poll Pandora execution route for the optional approval + final market creation leg. public preserves ordinary mempool submission; auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required; flashbots-private requests a single-tx private relay submission; flashbots-bundle requests Flashbots bundle semantics.',
+  );
+}
+
+function buildDeployTxRouteFallbackSchema() {
+  return enumSchema(
+    DEPLOY_TX_ROUTE_FALLBACK_VALUES,
+    'Fallback policy when the requested post-poll private route is unsupported or rejected. fail stops the run; public degrades the approval/createMarket leg to ordinary public submission.',
   );
 }
 
@@ -1103,7 +1119,7 @@ const commandContracts = [
     name: 'markets.create.run',
     summary: 'Dry-run or execute a canonical JSON-safe market creation payload. Legacy `launch` remains script-native.',
     usage:
-      'pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]',
+      'pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]',
     emits: ['markets.create.run', 'markets.create.help', 'markets.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
     mcpExposed: true,
@@ -1114,6 +1130,7 @@ const commandContracts = [
       notes: [
         'Run agent.market.validate on the exact final market payload before execute mode.',
         'Legacy launch remains script-native; markets.create.run is the canonical agent/MCP market creation surface.',
+        'The post-poll approval/createMarket leg supports --tx-route public|auto|flashbots-private|flashbots-bundle. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.',
         'Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.',
         'If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets.',
       ],
@@ -1150,6 +1167,11 @@ const commandContracts = [
           factory: stringSchema('Factory contract address.'),
           usdc: stringSchema('Collateral token address.'),
           arbiter: stringSchema('Arbiter address.'),
+          'tx-route': buildDeployTxRouteSchema(),
+          'tx-route-fallback': buildDeployTxRouteFallbackSchema(),
+          'flashbots-relay-url': stringSchema('Flashbots relay URL override.'),
+          'flashbots-auth-key': stringSchema('Flashbots auth private key.'),
+          'flashbots-target-block-offset': integerSchema('Target block offset for Flashbots submission.', { minimum: 1 }),
           'validation-ticket': stringSchema('Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).'),
           'min-close-lead-seconds': integerSchema('Minimum required lead time before close.', { minimum: 1 }),
           agentPreflight: buildAgentPreflightSchema('Agent validation attestation for execute mode.'),
@@ -1238,7 +1260,7 @@ const commandContracts = [
     name: 'markets.hype.run',
     summary: 'Dry-run or execute a frozen hype plan candidate without re-running live trend research.',
     usage:
-      'pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]',
+      'pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>]',
     emits: ['markets.hype.run', 'markets.hype.help', 'markets.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
     mcpExposed: true,
@@ -1249,6 +1271,7 @@ const commandContracts = [
       notes: [
         'markets.hype.run is intentionally plan-file based so the exact research snapshot and validation attestation remain frozen between plan and execute.',
         'Execute-mode MCP calls should copy the selected candidate PASS attestation from markets.hype.plan back as agentPreflight.',
+        'The post-poll approval/createMarket leg supports the same --tx-route contract as markets.create.run. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.',
         'Avoid editing question, rules, sources, or targetTimestamp after planning; regenerate the hype plan instead.',
       ],
     },
@@ -1272,6 +1295,11 @@ const commandContracts = [
           factory: stringSchema('Factory contract address.'),
           usdc: stringSchema('Collateral token address.'),
           arbiter: stringSchema('Arbiter address.'),
+          'tx-route': buildDeployTxRouteSchema(),
+          'tx-route-fallback': buildDeployTxRouteFallbackSchema(),
+          'flashbots-relay-url': stringSchema('Flashbots relay URL override.'),
+          'flashbots-auth-key': stringSchema('Flashbots auth private key.'),
+          'flashbots-target-block-offset': integerSchema('Target block offset for Flashbots submission.', { minimum: 1 }),
           agentPreflight: buildAgentPreflightSchema('PASS attestation from the selected hype-plan candidate validation.'),
         },
         requiredFlags: ['plan-file'],

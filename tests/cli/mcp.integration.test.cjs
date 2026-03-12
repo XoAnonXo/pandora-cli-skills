@@ -18,7 +18,7 @@ const { computeOperationHash } = require('../../cli/lib/shared/operation_hash.cj
 const generatedManifest = require('../../sdk/generated/manifest.json');
 const generatedContractRegistry = require('../../sdk/generated/contract-registry.json');
 
-const { CLI_PATH, REPO_ROOT, createTempDir, removeDir, runCli } = require('../helpers/cli_runner.cjs');
+const { CLI_PATH, REPO_ROOT, createTempDir, removeDir, runCli, startJsonHttpServer } = require('../helpers/cli_runner.cjs');
 const { assertSchemaValid } = require('../helpers/json_schema_assert.cjs');
 const {
   omitGeneratedAt,
@@ -148,6 +148,59 @@ function stableJsonHash(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
+function buildMockHypeResponse() {
+  return JSON.stringify({
+    summary: 'Knicks-Celtics injury news is dominating the sports cycle.',
+    searchQueries: ['knicks celtics march 2030 injury report', 'nba march 2030 breaking news'],
+    candidates: [
+      {
+        headline: 'Knicks vs Celtics picks up late injury-driven buzz',
+        topic: 'nba',
+        whyNow: 'Roster uncertainty and playoff implications are driving attention.',
+        category: 'Sports',
+        question: 'Will the New York Knicks beat the Boston Celtics on March 20, 2030?',
+        rules: 'YES: The New York Knicks win the game.\nNO: The New York Knicks do not win the game.\nEDGE: If the game is postponed and not completed by March 21, 2030, resolve N/A.',
+        sources: [
+          {
+            title: 'ESPN preview',
+            url: 'https://example.com/espn-knicks-celtics',
+            publisher: 'ESPN',
+            publishedAt: '2030-03-19T12:00:00Z',
+          },
+          {
+            title: 'NBA injury report',
+            url: 'https://example.com/nba-knicks-celtics',
+            publisher: 'NBA',
+            publishedAt: '2030-03-19T13:00:00Z',
+          },
+        ],
+        suggestedResolutionDate: '2030-03-20T23:00:00Z',
+        estimatedYesOdds: 57,
+        freshnessScore: 86,
+        attentionScore: 90,
+        resolvabilityScore: 95,
+        ammFitScore: 84,
+        parimutuelFitScore: 68,
+        marketTypeReasoning: 'Odds should move as lineup news changes through the trading window.',
+      },
+    ],
+  });
+}
+
+async function startEmptyIndexerMockServer() {
+  return startJsonHttpServer(() => ({
+    body: {
+      data: {
+        marketss: {
+          items: [],
+          pageInfo: null,
+        },
+        polls: [],
+      },
+    },
+  }));
+}
+
 test('mcp tools/list exposes command tools and excludes unsupported launch/clone-bet', async () => {
   await withMcpClient(async (client) => {
     const list = await client.listTools();
@@ -188,11 +241,15 @@ test('mcp tools/list exposes command tools and excludes unsupported launch/clone
 	    assert.ok(toolNames.includes('policy.lint'));
 	    assert.ok(toolNames.includes('profile.list'));
 	    assert.ok(toolNames.includes('profile.get'));
-	    assert.ok(toolNames.includes('profile.explain'));
-	    assert.ok(toolNames.includes('profile.recommend'));
-	    assert.ok(toolNames.includes('profile.validate'));
+    assert.ok(toolNames.includes('profile.explain'));
+    assert.ok(toolNames.includes('profile.recommend'));
+    assert.ok(toolNames.includes('profile.validate'));
 	    assert.ok(toolNames.includes('agent.market.autocomplete'));
+	    assert.ok(toolNames.includes('agent.market.hype'));
 	    assert.ok(toolNames.includes('agent.market.validate'));
+	    assert.ok(toolNames.includes('markets.hype'));
+	    assert.ok(toolNames.includes('markets.hype.plan'));
+	    assert.ok(toolNames.includes('markets.hype.run'));
 	    assert.ok(!toolNames.includes('launch'));
 	    assert.ok(!toolNames.includes('clone-bet'));
   });
@@ -1724,6 +1781,30 @@ test('mcp agent.market.validate returns structured prompt payload', async () => 
   });
 });
 
+test('mcp agent.market.hype returns structured prompt payload', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'agent.market.hype',
+      arguments: {
+        area: 'sports',
+        query: 'nba injury buzz',
+        'market-type': 'both',
+        'candidate-count': 2,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.command, 'agent.market.hype');
+    assert.equal(envelope.data.promptKind, 'agent.market.hype');
+    assert.equal(envelope.data.input.area, 'sports');
+    assert.equal(envelope.data.input.query, 'nba injury buzz');
+    assert.equal(envelope.data.input.marketType, 'both');
+    assert.equal(envelope.data.input.candidateCount, 2);
+    assert.equal(envelope.data.workflow.nextTool, 'agent.market.validate');
+  });
+});
+
 test('mcp mutating tools without mode flags require execute intent', async () => {
   await withMcpClient(async (client) => {
     const call = await client.callTool({
@@ -1839,6 +1920,92 @@ test('mcp markets.create.plan returns canonical normalized plan payload', async 
     assert.equal(envelope.data.marketTemplate.marketType, 'parimutuel');
     assert.equal(envelope.data.requiredValidation.promptTool, 'agent.market.validate');
   });
+});
+
+test('mcp markets.create.run preserves post-poll tx-route metadata on dry-run payloads', async () => {
+  await withMcpClient(async (client) => {
+    const call = await client.callTool({
+      name: 'markets.create.run',
+      arguments: {
+        question: 'Will BTC close above $120k by end of 2026?',
+        rules: 'YES: BTC/USD closes above $120k. NO: BTC/USD closes at or below $120k. EDGE: Unresolved/cancelled markets resolve NO.',
+        sources: ['https://example.com/a', 'https://example.com/b'],
+        'target-timestamp': '2030-01-01T00:00:00Z',
+        'liquidity-usdc': 100,
+        'market-type': 'amm',
+        'fee-tier': 3000,
+        'tx-route': 'flashbots-bundle',
+        'dry-run': true,
+      },
+    });
+    const envelope = extractStructuredEnvelope(call);
+
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.command, 'markets.create.run');
+    assert.equal(envelope.data.mode, 'dry-run');
+    assert.equal(envelope.data.marketTemplate.marketType, 'amm');
+    assert.equal(envelope.data.deployment.mode, 'dry-run');
+    assert.equal(envelope.data.deployment.txRouteRequested, 'flashbots-bundle');
+    assert.equal(envelope.data.deployment.txRouteResolved, 'flashbots-bundle');
+    assert.equal(envelope.data.requiredValidation.promptTool, 'agent.market.validate');
+  });
+});
+
+test('mcp markets.hype.plan and markets.hype.run support the frozen plan workflow', async () => {
+  const envRoot = createTempDir('pandora-mcp-hype-env-');
+  const workspaceDir = fs.mkdtempSync(path.join(REPO_ROOT, '.tmp-mcp-hype-'));
+  const planFile = path.join(workspaceDir, 'hype-plan.json');
+  const indexer = await startEmptyIndexerMockServer();
+  const env = createIsolatedPandoraEnv(envRoot, {
+    PANDORA_INDEXER_URL: indexer.url,
+    PANDORA_HYPE_MOCK_RESPONSE: buildMockHypeResponse(),
+  });
+
+  try {
+    await withMcpClient(async (client) => {
+      const planCall = await client.callTool({
+        name: 'markets.hype.plan',
+        arguments: {
+          area: 'sports',
+          'candidate-count': 1,
+          'ai-provider': 'mock',
+        },
+      });
+      const planEnvelope = extractStructuredEnvelope(planCall);
+
+      assert.equal(planEnvelope.ok, true);
+      assert.equal(planEnvelope.command, 'markets.hype.plan');
+      assert.equal(planEnvelope.data.provider.name, 'mock');
+      assert.equal(planEnvelope.data.selectedCandidate.validation.attestation.validationDecision, 'PASS');
+
+      fs.writeFileSync(planFile, JSON.stringify(planEnvelope), 'utf8');
+
+      const runCall = await client.callTool({
+        name: 'markets.hype.run',
+        arguments: {
+          'plan-file': planFile,
+          'candidate-id': planEnvelope.data.selectedCandidateId,
+          'market-type': 'selected',
+          'tx-route': 'flashbots-bundle',
+          'dry-run': true,
+        },
+      });
+      const runEnvelope = extractStructuredEnvelope(runCall);
+
+      assert.equal(runEnvelope.ok, true);
+      assert.equal(runEnvelope.command, 'markets.hype.run');
+      assert.equal(runEnvelope.data.mode, 'dry-run');
+      assert.equal(runEnvelope.data.selectedMarketType, 'amm');
+      assert.equal(runEnvelope.data.deployment.mode, 'dry-run');
+      assert.equal(runEnvelope.data.deployment.txRouteRequested, 'flashbots-bundle');
+      assert.equal(runEnvelope.data.deployment.txRouteResolved, 'flashbots-bundle');
+      assert.equal(runEnvelope.data.validationResult.decision, 'PASS');
+    }, { env });
+  } finally {
+    await indexer.close();
+    removeDir(envRoot);
+    removeDir(workspaceDir);
+  }
 });
 
 test('mcp normalizes explicit camelCase aliases before trade CLI dispatch', async () => {

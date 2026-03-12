@@ -11916,6 +11916,8 @@ test('markets hype run --dry-run reuses a frozen plan file without re-running re
       planPayload.data.selectedCandidateId,
       '--market-type',
       'selected',
+      '--tx-route',
+      'flashbots-bundle',
       '--dry-run',
     ], {
       env: {
@@ -11930,6 +11932,8 @@ test('markets hype run --dry-run reuses a frozen plan file without re-running re
     assert.equal(payload.data.mode, 'dry-run');
     assert.equal(payload.data.selectedMarketType, 'amm');
     assert.equal(payload.data.deployment.mode, 'dry-run');
+    assert.equal(payload.data.deployment.txRouteRequested, 'flashbots-bundle');
+    assert.equal(payload.data.deployment.txRouteResolved, 'flashbots-bundle');
     assert.equal(payload.data.deployment.deploymentArgs.distributionYes, 570000000);
     assert.equal(payload.data.deployment.deploymentArgs.distributionNo, 430000000);
     assert.equal(payload.data.deployment.requiredValidation.ticket, payload.data.requiredValidation.ticket);
@@ -12323,6 +12327,8 @@ test('markets create run --dry-run emits canonical deployment payload', () => {
     '100',
     '--fee-tier',
     '3000',
+    '--tx-route',
+    'flashbots-bundle',
     '--dry-run',
   ], {
     unsetEnvKeys: DOCTOR_ENV_KEYS,
@@ -12335,6 +12341,8 @@ test('markets create run --dry-run emits canonical deployment payload', () => {
   assert.equal(payload.data.marketTemplate.marketType, 'amm');
   assert.equal(payload.data.deployment.mode, 'dry-run');
   assert.equal(payload.data.deployment.deploymentArgs.marketType, 'amm');
+  assert.equal(payload.data.deployment.txRouteRequested, 'flashbots-bundle');
+  assert.equal(payload.data.deployment.txRouteResolved, 'flashbots-bundle');
   assert.equal(payload.data.deployment.requiredValidation.promptTool, 'agent.market.validate');
 });
 

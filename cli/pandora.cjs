@@ -7825,6 +7825,7 @@ async function runWatchCommand(args, context) {
 }
 
 async function runSportsCommand(args, context) {
+  loadEnvIfPresent(DEFAULT_ENV_FILE);
   return runSportsCommandFromService(args, context);
 }
 

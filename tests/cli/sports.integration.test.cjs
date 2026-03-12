@@ -60,6 +60,17 @@ function parseJsonEnvelopeLoose(result, label) {
   return payload;
 }
 
+function createIsolatedSportsEnv(t, overrides = {}) {
+  const tempHome = createTempDir('pandora-sports-home-');
+  t.after(() => {
+    removeDir(tempHome);
+  });
+  return {
+    HOME: tempHome,
+    ...overrides,
+  };
+}
+
 test('sports env mocked URLs do not break JSON help/version command flows', async (t) => {
   const mock = await startJsonHttpServer(() => ({ body: { ok: true } }));
   t.after(async () => {
@@ -88,6 +99,67 @@ test('sports env mocked URLs do not break JSON help/version command flows', asyn
   assert.match(versionPayload.data.version, /^\d+\.\d+\.\d+/);
 
   assert.equal(mock.requests.length, 0);
+});
+
+test('sports books list auto-loads sportsbook config from default home env file', async (t) => {
+  const tempHome = createTempDir('pandora-sports-env-home-');
+  const envFile = path.join(tempHome, '.pandora-cli.env');
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url === '/health') {
+      return { body: { ok: true, status: 'ok' } };
+    }
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  fs.writeFileSync(
+    envFile,
+    [
+      `SPORTSBOOK_PRIMARY_BASE_URL=${mock.url}`,
+      'SPORTSBOOK_PROVIDER_MODE=primary',
+    ].join('\n'),
+  );
+
+  t.after(async () => {
+    await mock.close();
+    removeDir(tempHome);
+  });
+
+  const result = await runCliAsync(
+    ['--output', 'json', 'sports', 'books', 'list'],
+    {
+      env: { HOME: tempHome },
+      unsetEnvKeys: [
+        'SPORTSBOOK_PROVIDER_MODE',
+        'SPORTSBOOK_PRIMARY_BASE_URL',
+        'SPORTSBOOK_PRIMARY_API_KEY',
+        'SPORTSBOOK_PRIMARY_API_KEY_MODE',
+        'SPORTSBOOK_PRIMARY_API_KEY_QUERY_PARAM',
+        'SPORTSBOOK_PRIMARY_COMPETITIONS_PATH',
+        'SPORTSBOOK_PRIMARY_EVENTS_PATH',
+        'SPORTSBOOK_PRIMARY_ODDS_PATH',
+        'SPORTSBOOK_PRIMARY_BULK_ODDS_PATH',
+        'SPORTSBOOK_BACKUP_BASE_URL',
+        'SPORTSBOOK_BACKUP_API_KEY',
+        'SPORTSBOOK_BACKUP_API_KEY_MODE',
+        'SPORTSBOOK_BACKUP_API_KEY_QUERY_PARAM',
+        'SPORTSBOOK_BACKUP_COMPETITIONS_PATH',
+        'SPORTSBOOK_BACKUP_EVENTS_PATH',
+        'SPORTSBOOK_BACKUP_ODDS_PATH',
+        'SPORTSBOOK_BACKUP_BULK_ODDS_PATH',
+      ],
+    },
+  );
+
+  assert.equal(result.status, 0, result.output);
+  const payload = parseJsonEnvelopeStrict(result, 'sports books list home env auto-load');
+  assert.equal(payload.command, 'sports.books.list');
+  assert.equal(payload.ok, true);
+  assert.equal(payload.data.health.activeProvider, 'primary');
+  assert.equal(payload.data.health.providers[0].provider, 'primary');
+  assert.equal(payload.data.health.providers[0].configured, true);
+  assert.equal(payload.data.health.providers[0].ok, true);
+  assert.equal(payload.data.health.providers[0].status, 'ok');
+  assert.equal(mock.requests.length > 0, true);
 });
 
 test('sports schedule help is subcommand-specific in json and table modes', () => {
@@ -398,10 +470,10 @@ test('sports schedule accepts --date shorthand and returns normalized schedule r
       '5',
     ],
     {
-      env: {
+      env: createIsolatedSportsEnv(t, {
         SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
         SPORTSBOOK_PROVIDER_MODE: 'primary',
-      },
+      }),
     },
   );
 
@@ -463,10 +535,10 @@ test('sports scores accepts --game alias and returns score/status rows', async (
       'nba-bos-cle-2026-03-08',
     ],
     {
-      env: {
+      env: createIsolatedSportsEnv(t, {
         SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
         SPORTSBOOK_PROVIDER_MODE: 'primary',
-      },
+      }),
     },
   );
 
@@ -524,10 +596,10 @@ test('sports scores falls back to schedule data when event-status refresh times 
     await mock.close();
   });
 
-  const env = {
+  const env = createIsolatedSportsEnv(t, {
     SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
     SPORTSBOOK_PROVIDER_MODE: 'primary',
-  };
+  });
 
   const result = await runCliAsync(
     [
@@ -780,12 +852,12 @@ test('sports odds snapshot/consensus use bulk competition endpoint with disk cac
     removeDir(tempDir);
   });
 
-  const env = {
+  const env = createIsolatedSportsEnv(t, {
     HOME: tempDir,
     SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
     SPORTSBOOK_PROVIDER_MODE: 'primary',
     SPORTSBOOK_PRIMARY_BULK_ODDS_PATH: '/odds',
-  };
+  });
 
   const bulk = await runCliAsync([
     '--output',
@@ -921,10 +993,10 @@ test('sports create plan accepts --model-file BYOM input and attributes model so
     removeDir(tempDir);
   });
 
-  const env = {
+  const env = createIsolatedSportsEnv(t, {
     SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
     SPORTSBOOK_PROVIDER_MODE: 'primary',
-  };
+  });
 
   const plan = await runCliAsync([
     '--output',
@@ -1030,10 +1102,10 @@ test('sports create run dry-run keeps pari-mutuel creation in planning-only mode
     await mock.close();
   });
 
-  const env = {
+  const env = createIsolatedSportsEnv(t, {
     SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
     SPORTSBOOK_PROVIDER_MODE: 'primary',
-  };
+  });
 
   const result = await runCliAsync([
     '--output',
@@ -1128,10 +1200,10 @@ test('sports create run execute rejects pari-mutuel markets with an explicit blo
     await mock.close();
   });
 
-  const env = {
+  const env = createIsolatedSportsEnv(t, {
     SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
     SPORTSBOOK_PROVIDER_MODE: 'primary',
-  };
+  });
 
   const result = await runCliAsync([
     '--output',

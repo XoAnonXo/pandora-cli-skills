@@ -1,10 +1,39 @@
 {
   "schemaVersion": "1.0.0",
   "suite": "core",
-  "generatedAt": "2026-03-11T21:00:01.761Z",
-  "latestVersion": "1.1.97",
-  "latestGeneratedAt": "2026-03-11T21:00:01.761Z",
+  "generatedAt": "2026-03-12T01:15:17.871Z",
+  "latestVersion": "1.1.98",
+  "latestGeneratedAt": "2026-03-12T01:15:17.871Z",
   "entries": [
+    {
+      "schemaVersion": "1.0.0",
+      "suite": "core",
+      "packageName": "pandora-cli-skills",
+      "version": "1.1.98",
+      "packageVersion": "1.1.98",
+      "generatedAt": "2026-03-12T01:15:17.871Z",
+      "summary": {
+        "weightedScore": 100,
+        "overallPass": true,
+        "scenarioCount": 19,
+        "passedCount": 19,
+        "failedCount": 0,
+        "failedParityGroupCount": 0
+      },
+      "weightedScore": 100,
+      "overallPass": true,
+      "scenarioCount": 19,
+      "passedCount": 19,
+      "failedCount": 0,
+      "failedParityGroupCount": 0,
+      "contractLockMatchesExpected": true,
+      "parityFailedGroups": [],
+      "descriptorHash": "5db51951712c8c6bfbff788633efe072205263efdf471f7d009e3b6383586f67",
+      "documentationContentHash": "92d286776ee45d6885a3d2717643c7d81fdb0c6dba01d5edf761a4651ac5345d",
+      "reportSha256": "2cafe56705ae616d2420f442de3af3a0744aaf3ba09205d3b612f0ecb8193c86",
+      "lockSha256": "ceb5e10833bfe89c49a23511f83dcf62baef96df0d02a42096074e8d62392fc7",
+      "lockSchemaVersion": "1.0.0"
+    },
     {
       "schemaVersion": "1.0.0",
       "suite": "core",
@@ -28,10 +57,10 @@
       "failedParityGroupCount": 0,
       "contractLockMatchesExpected": true,
       "parityFailedGroups": [],
-      "descriptorHash": "5deaaa3305cdea46087570196f4f666e9bf95c41432667c9441dbd88396b8178",
-      "documentationContentHash": "707e9d502a3ecdae8d82b71a517808668f0ff0b872a3e9829970e9ea8224c6f5",
-      "reportSha256": "e323f351ad534210f1cc0a9c68af03e91751a24251da7facae472e3f2e1129f3",
-      "lockSha256": "0013183bc4f3065ab11e94700eae38c823d7e569852d0710fac65d7c875707d9",
+      "descriptorHash": "5db51951712c8c6bfbff788633efe072205263efdf471f7d009e3b6383586f67",
+      "documentationContentHash": "4999c6f8a48a0b0eaf557e71e478dc4e2dab9f4ad6eff6bf16498c2d2f17c5ab",
+      "reportSha256": "97059b239694b660189708bf72169a2f2751e9f0980a912fc45f64fc71b2eb95",
+      "lockSha256": "d5eeaa54502cb69c6f52b9b983067dacb22996aa4a0c3a37ebacefc0b9f0daf7",
       "lockSchemaVersion": "1.0.0"
     },
     {

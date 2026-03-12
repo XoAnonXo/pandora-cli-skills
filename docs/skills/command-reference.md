@@ -221,6 +221,8 @@ close  --pandora-market-address <address>|--market-address <address> --polymarke
   - it performs bounded public-web research, drafts multiple candidates, scores AMM vs pari-mutuel fit, and freezes the result into a reusable plan payload.
 - `markets hype run` is intentionally plan-file based.
   - save the JSON output from `markets hype plan` first, then run against that file so research, sources, and validation do not drift.
+- `markets create run` and `markets hype run` support post-poll private routing for the approval/createMarket leg.
+  - use `--tx-route public|auto|flashbots-private|flashbots-bundle`; `auto` chooses `flashbots-private` when no approval is needed and `flashbots-bundle` when approval is required.
 - `agent market hype` is the prompt-only version of the same workflow.
   - use it when the external agent, not Pandora, is responsible for the web research step.
 - `markets mine` is a standalone command for wallet or signer-owned exposure discovery.
@@ -375,6 +377,7 @@ pandora [--output table|json] sports resolve plan ...
 | `sports create run` | Dry-run or execute creation path. Pari-mutuel stays planning-only; live execute currently supports AMM only. | `--event-id`, `--dry-run/--execute`, `--market-type`, `--liquidity-usdc`, `--chain-id`, `--rpc-url`, `--category`, `agentPreflight` (MCP execute). For exact fields, inspect `schema` or the specific command descriptor. |
 
 - Sports provider auth:
+  - Sports read surfaces auto-load sportsbook credentials from `~/.pandora-cli.env` when present, otherwise `scripts/.env`.
   - `SPORTSBOOK_PRIMARY_API_KEY_MODE` / `SPORTSBOOK_BACKUP_API_KEY_MODE` support `header` (default) or `query`.
   - Query mode injects the key into `apiKey` by default; override the parameter name with `SPORTSBOOK_PRIMARY_API_KEY_QUERY_PARAM` / `SPORTSBOOK_BACKUP_API_KEY_QUERY_PARAM`.
 

@@ -10998,6 +10998,7 @@
       "notes": [
         "Run agent.market.validate on the exact final market payload before execute mode.",
         "Legacy launch remains script-native; markets.create.run is the canonical agent/MCP market creation surface.",
+        "The post-poll approval/createMarket leg supports --tx-route public|auto|flashbots-private|flashbots-bundle. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.",
         "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
         "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets."
       ],
@@ -11152,6 +11153,19 @@
           "minimum": 500,
           "type": "integer"
         },
+        "flashbots-auth-key": {
+          "description": "Flashbots auth private key.",
+          "type": "string"
+        },
+        "flashbots-relay-url": {
+          "description": "Flashbots relay URL override.",
+          "type": "string"
+        },
+        "flashbots-target-block-offset": {
+          "description": "Target block offset for Flashbots submission.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "intent": {
           "additionalProperties": false,
           "properties": {
@@ -11232,6 +11246,22 @@
             "acceptsUnixSeconds": true
           }
         },
+        "tx-route": {
+          "description": "Post-poll Pandora execution route for the optional approval + final market creation leg. public preserves ordinary mempool submission; auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required; flashbots-private requests a single-tx private relay submission; flashbots-bundle requests Flashbots bundle semantics.",
+          "enum": [
+            "public",
+            "auto",
+            "flashbots-private",
+            "flashbots-bundle"
+          ]
+        },
+        "tx-route-fallback": {
+          "description": "Fallback policy when the requested post-poll private route is unsupported or rejected. fail stops the run; public degrades the approval/createMarket leg to ordinary public submission.",
+          "enum": [
+            "fail",
+            "public"
+          ]
+        },
         "usdc": {
           "description": "Collateral token address.",
           "type": "string"
@@ -11257,6 +11287,7 @@
           "notes": [
             "Run agent.market.validate on the exact final market payload before execute mode.",
             "Legacy launch remains script-native; markets.create.run is the canonical agent/MCP market creation surface.",
+            "The post-poll approval/createMarket leg supports --tx-route public|auto|flashbots-private|flashbots-bundle. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.",
             "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
             "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets."
           ],
@@ -11276,7 +11307,7 @@
         ],
         "canonicalName": "markets.create.run",
         "canonicalTool": "markets.create.run",
-        "canonicalUsage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]",
+        "canonicalUsage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]",
         "command": [
           "markets",
           "create",
@@ -11426,7 +11457,7 @@
             }
           ]
         },
-        "usage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]"
+        "usage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]"
       }
     },
     "jobCapable": true,
@@ -11462,6 +11493,7 @@
         "notes": [
           "Run agent.market.validate on the exact final market payload before execute mode.",
           "Legacy launch remains script-native; markets.create.run is the canonical agent/MCP market creation surface.",
+          "The post-poll approval/createMarket leg supports --tx-route public|auto|flashbots-private|flashbots-bundle. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.",
           "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
           "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets."
         ],
@@ -11481,7 +11513,7 @@
       ],
       "canonicalName": "markets.create.run",
       "canonicalTool": "markets.create.run",
-      "canonicalUsage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]",
+      "canonicalUsage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]",
       "command": [
         "markets",
         "create",
@@ -11631,7 +11663,7 @@
           }
         ]
       },
-      "usage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]"
+      "usage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]"
     }
   },
   {
@@ -12616,6 +12648,7 @@
       "notes": [
         "markets.hype.run is intentionally plan-file based so the exact research snapshot and validation attestation remain frozen between plan and execute.",
         "Execute-mode MCP calls should copy the selected candidate PASS attestation from markets.hype.plan back as agentPreflight.",
+        "The post-poll approval/createMarket leg supports the same --tx-route contract as markets.create.run. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.",
         "Avoid editing question, rules, sources, or targetTimestamp after planning; regenerate the hype plan instead."
       ],
       "recommendedTools": [
@@ -12707,6 +12740,19 @@
           "description": "Factory contract address.",
           "type": "string"
         },
+        "flashbots-auth-key": {
+          "description": "Flashbots auth private key.",
+          "type": "string"
+        },
+        "flashbots-relay-url": {
+          "description": "Flashbots relay URL override.",
+          "type": "string"
+        },
+        "flashbots-target-block-offset": {
+          "description": "Target block offset for Flashbots submission.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "intent": {
           "additionalProperties": false,
           "properties": {
@@ -12749,6 +12795,22 @@
           "description": "RPC URL.",
           "type": "string"
         },
+        "tx-route": {
+          "description": "Post-poll Pandora execution route for the optional approval + final market creation leg. public preserves ordinary mempool submission; auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required; flashbots-private requests a single-tx private relay submission; flashbots-bundle requests Flashbots bundle semantics.",
+          "enum": [
+            "public",
+            "auto",
+            "flashbots-private",
+            "flashbots-bundle"
+          ]
+        },
+        "tx-route-fallback": {
+          "description": "Fallback policy when the requested post-poll private route is unsupported or rejected. fail stops the run; public degrades the approval/createMarket leg to ordinary public submission.",
+          "enum": [
+            "fail",
+            "public"
+          ]
+        },
         "usdc": {
           "description": "Collateral token address.",
           "type": "string"
@@ -12766,6 +12828,7 @@
           "notes": [
             "markets.hype.run is intentionally plan-file based so the exact research snapshot and validation attestation remain frozen between plan and execute.",
             "Execute-mode MCP calls should copy the selected candidate PASS attestation from markets.hype.plan back as agentPreflight.",
+            "The post-poll approval/createMarket leg supports the same --tx-route contract as markets.create.run. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.",
             "Avoid editing question, rules, sources, or targetTimestamp after planning; regenerate the hype plan instead."
           ],
           "recommendedTools": [
@@ -12784,7 +12847,7 @@
         ],
         "canonicalName": "markets.hype.run",
         "canonicalTool": "markets.hype.run",
-        "canonicalUsage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]",
+        "canonicalUsage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>]",
         "command": [
           "markets",
           "hype",
@@ -12935,7 +12998,7 @@
             }
           ]
         },
-        "usage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]"
+        "usage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>]"
       }
     },
     "jobCapable": true,
@@ -12971,6 +13034,7 @@
         "notes": [
           "markets.hype.run is intentionally plan-file based so the exact research snapshot and validation attestation remain frozen between plan and execute.",
           "Execute-mode MCP calls should copy the selected candidate PASS attestation from markets.hype.plan back as agentPreflight.",
+          "The post-poll approval/createMarket leg supports the same --tx-route contract as markets.create.run. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.",
           "Avoid editing question, rules, sources, or targetTimestamp after planning; regenerate the hype plan instead."
         ],
         "recommendedTools": [
@@ -12989,7 +13053,7 @@
       ],
       "canonicalName": "markets.hype.run",
       "canonicalTool": "markets.hype.run",
-      "canonicalUsage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]",
+      "canonicalUsage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>]",
       "command": [
         "markets",
         "hype",
@@ -13140,7 +13204,7 @@
           }
         ]
       },
-      "usage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>]"
+      "usage": "pandora [--output table|json] markets hype run --plan-file <path> [--candidate-id <id>] [--market-type selected|amm|parimutuel] --dry-run|--execute [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>]"
     }
   },
   {
