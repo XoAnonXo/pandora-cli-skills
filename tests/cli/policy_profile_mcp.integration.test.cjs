@@ -465,7 +465,9 @@ test('stdio MCP policy/profile recommendation tools return canonical-tool-first 
     assert.equal(policyRecommend.ok, true);
     assert.equal(policyRecommend.data.requestedContext.canonicalTool, 'trade');
     assert.equal(policyRecommend.data.exact, true);
-    assert.equal(typeof policyRecommend.data.recommendedPolicyId, 'string');
+    assert.equal(policyRecommend.data.recommendedPolicyId, null);
+    assert.equal(policyRecommend.data.recommendedNextTool, 'quote');
+    assert.equal(policyRecommend.data.recommendedSafeEquivalent, 'quote');
     assert.ok(
       policyRecommend.data.diagnostics.some((item) => item.code === 'USE_CANONICAL_TOOL' && item.command === 'trade'),
     );
