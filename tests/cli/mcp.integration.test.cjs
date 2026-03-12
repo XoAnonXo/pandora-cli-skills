@@ -655,7 +655,10 @@ test('mcp tools/list exposes typed per-tool schemas and canonical metadata', asy
     assert.ok(agentValidate);
     assert.equal(agentValidate.inputSchema.xPandora.canonicalTool, 'agent.market.validate');
     assert.equal(agentValidate.inputSchema.properties.question.type, 'string');
-    assert.equal(Array.isArray(agentValidate.inputSchema.properties['target-timestamp'].anyOf), true);
+    assert.equal(agentValidate.inputSchema.properties['target-timestamp'].type, 'string');
+    assert.equal(agentValidate.inputSchema.properties['target-timestamp'].xPandora.acceptsUnixSeconds, true);
+    assert.equal(agentValidate.inputSchema.properties['target-timestamp'].xPandora.acceptsIsoDatetime, true);
+    assert.equal(agentValidate.inputSchema.properties['target-timestamp'].xPandora.acceptsIntegerStrings, true);
 
       const arbitrage = byName.get('arbitrage');
       assert.equal(arbitrage, undefined);

@@ -1600,7 +1600,7 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsSbom, false);
   assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsTrustCheck, false);
   assert.equal(payload.data.trustDistribution.verification.signals.testRunsBenchmarkCheck, true);
-  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, false);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsReleasePrep, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoTestRunsSmoke, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoReleasePrepRunsSmoke, true);
@@ -2089,7 +2089,7 @@ test('capabilities --help succeeds in table mode', () => {
   assert.equal(payload.data.trustDistribution.distribution.signals.shipsBenchmarkReport, true);
   assert.equal(payload.data.trustDistribution.releaseGates.commands.test, repoPackage.scripts.test);
   assert.equal(payload.data.trustDistribution.releaseGates.commands.releasePrep, repoPackage.scripts['release:prep']);
-  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, false);
+  assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsReleasePrep, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoTestRunsSmoke, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoReleasePrepRunsSmoke, true);
