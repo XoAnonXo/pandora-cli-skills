@@ -4,7 +4,7 @@ const path = require('node:path');
 const { createOperationService } = require('../../cli/lib/operation_service.cjs');
 const { computeOperationHash } = require('../../cli/lib/shared/operation_hash.cjs');
 const { createMcpToolRegistry } = require('../../cli/lib/mcp_tool_registry.cjs');
-const { createTempDir, removeDir, runCli } = require('./cli_runner.cjs');
+const { createTempDir, removeDir, runCli, startJsonHttpServer } = require('./cli_runner.cjs');
 const { createIsolatedPandoraEnv } = require('./contract_parity_assertions.cjs');
 
 const FIXED_ADDRESS = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -17,6 +17,38 @@ const FIXED_RPC_URL = 'https://ethereum.publicnode.com';
 const FIXED_HTTPS_URL = 'https://example.com/resource';
 const FIXED_WEBHOOK_URL = 'http://127.0.0.1:9/hook';
 const LOCAL_SWEEP_REGISTRY = createMcpToolRegistry();
+
+function buildSweepPolymarketMockPayload() {
+  return {
+    markets: [
+      {
+        question: 'Will deterministic tests pass?',
+        description: FIXED_RULES,
+        condition_id: 'poly-sweep-1',
+        question_id: 'poly-sweep-q-1',
+        market_slug: 'poly-sweep-1',
+        end_date_iso: FIXED_TARGET_TIMESTAMP,
+        active: true,
+        closed: false,
+        volume24hr: 100000,
+        tokens: [
+          { outcome: 'Yes', price: '0.74', token_id: 'poly-yes-1' },
+          { outcome: 'No', price: '0.26', token_id: 'poly-no-1' },
+        ],
+      },
+    ],
+    orderbooks: {
+      'poly-yes-1': {
+        bids: [{ price: '0.73', size: '500' }],
+        asks: [{ price: '0.74', size: '600' }],
+      },
+      'poly-no-1': {
+        bids: [{ price: '0.25', size: '500' }],
+        asks: [{ price: '0.26', size: '600' }],
+      },
+    },
+  };
+}
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -84,6 +116,9 @@ async function createMcpSweepFixtures() {
   const rootDir = createTempDir('pandora-mcp-sweep-');
   const operationDir = path.join(rootDir, 'operations');
   const lifecycleDir = path.join(rootDir, 'lifecycles');
+  const polymarketMockServer = await startJsonHttpServer(() => ({
+    body: buildSweepPolymarketMockPayload(),
+  }));
   fs.mkdirSync(operationDir, { recursive: true });
   fs.mkdirSync(lifecycleDir, { recursive: true });
 
@@ -169,7 +204,11 @@ async function createMcpSweepFixtures() {
       recipeRead: 'mirror.sync.paper-safe',
       recipeRun: 'mirror.close.all',
     },
-    cleanup() {
+    urls: {
+      polymarketMockUrl: polymarketMockServer.url,
+    },
+    async cleanup() {
+      await polymarketMockServer.close();
       removeDir(rootDir);
     },
   };
@@ -266,14 +305,31 @@ function toolOverrides(toolName, fixtures) {
       'dry-run': true,
     },
     'mirror.calc': { 'target-pct': 55 },
-    'mirror.deploy': { 'polymarket-market-id': 'poly-sweep-1', 'dry-run': true },
-    'mirror.go': { 'polymarket-market-id': 'poly-sweep-1', 'dry-run': true },
+    'mirror.deploy': {
+      'polymarket-market-id': 'poly-sweep-1',
+      'polymarket-gamma-mock-url': fixtures.urls.polymarketMockUrl,
+      'polymarket-mock-url': fixtures.urls.polymarketMockUrl,
+      'dry-run': true,
+    },
+    'mirror.go': {
+      'polymarket-market-id': 'poly-sweep-1',
+      'polymarket-gamma-mock-url': fixtures.urls.polymarketMockUrl,
+      'polymarket-mock-url': fixtures.urls.polymarketMockUrl,
+      'dry-run': true,
+    },
     'mirror.lp-explain': { 'liquidity-usdc': 100 },
-    'mirror.plan': { source: 'polymarket', 'polymarket-market-id': 'poly-sweep-1' },
+    'mirror.plan': {
+      source: 'polymarket',
+      'polymarket-market-id': 'poly-sweep-1',
+      'polymarket-gamma-mock-url': fixtures.urls.polymarketMockUrl,
+      'polymarket-mock-url': fixtures.urls.polymarketMockUrl,
+    },
     'mirror.simulate': { 'liquidity-usdc': 100 },
     'mirror.sync.once': {
       'market-address': FIXED_ADDRESS,
       'polymarket-market-id': 'poly-sweep-1',
+      'polymarket-gamma-mock-url': fixtures.urls.polymarketMockUrl,
+      'polymarket-mock-url': fixtures.urls.polymarketMockUrl,
       paper: true,
       'state-file': fixtures.files.stateFile,
       'kill-switch-file': fixtures.files.killSwitchFile,
@@ -281,6 +337,8 @@ function toolOverrides(toolName, fixtures) {
     'mirror.sync.run': {
       'market-address': FIXED_ADDRESS,
       'polymarket-market-id': 'poly-sweep-1',
+      'polymarket-gamma-mock-url': fixtures.urls.polymarketMockUrl,
+      'polymarket-mock-url': fixtures.urls.polymarketMockUrl,
       paper: true,
       'state-file': fixtures.files.stateFile,
       'kill-switch-file': fixtures.files.killSwitchFile,
@@ -288,6 +346,8 @@ function toolOverrides(toolName, fixtures) {
     'mirror.sync.start': {
       'market-address': FIXED_ADDRESS,
       'polymarket-market-id': 'poly-sweep-1',
+      'polymarket-gamma-mock-url': fixtures.urls.polymarketMockUrl,
+      'polymarket-mock-url': fixtures.urls.polymarketMockUrl,
       paper: true,
       'state-file': fixtures.files.stateFile,
       'kill-switch-file': fixtures.files.killSwitchFile,

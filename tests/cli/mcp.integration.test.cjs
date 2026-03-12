@@ -2553,8 +2553,8 @@ test('mcp panic lock blocks live write tools until cleared', async () => {
 
 test('mcp stdio exhaustive sweep invokes every exposed tool with structured results', { concurrency: false }, async (t) => {
   const fixtures = await createMcpSweepFixtures();
-  t.after(() => {
-    fixtures.cleanup();
+  t.after(async () => {
+    await fixtures.cleanup();
   });
 
   await withMcpClient(async (client) => {
@@ -2577,8 +2577,8 @@ test('mcp stdio exhaustive sweep invokes every exposed tool with structured resu
 
 test('mcp http exhaustive sweep invokes every remote-exposed tool with structured results', { concurrency: false }, async (t) => {
   const fixtures = await createMcpSweepFixtures();
-  t.after(() => {
-    fixtures.cleanup();
+  t.after(async () => {
+    await fixtures.cleanup();
   });
 
   await withRemoteMcpClient(async (client) => {
@@ -2608,8 +2608,8 @@ test('mcp compact/code mode, when advertised, exposes a materially reduced disco
   }
 
   const fixtures = await createMcpSweepFixtures();
-  t.after(() => {
-    fixtures.cleanup();
+  t.after(async () => {
+    await fixtures.cleanup();
   });
 
   await withMcpClient(async (client) => {
@@ -2676,8 +2676,8 @@ test('mcp http compact/code mode preserves compact exposure through streamable H
   }
 
   const fixtures = await createMcpSweepFixtures();
-  t.after(() => {
-    fixtures.cleanup();
+  t.after(async () => {
+    await fixtures.cleanup();
   });
 
   await withRemoteMcpClient(async (client, gateway) => {
