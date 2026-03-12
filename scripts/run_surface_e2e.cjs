@@ -11,7 +11,8 @@ function printHelp() {
 
 Usage:
   node scripts/run_surface_e2e.cjs [--surface <list|all>] [--out <path>] [--strict]
-                                   [--skill-executor <shell command>] [--include-compatibility]
+                                   [--skill-executor <shell command>] [--skill-timeout-ms <ms>]
+                                   [--include-compatibility]
 
 Surfaces:
   ${Array.from(SURFACE_SET).sort().join(', ')}
@@ -21,7 +22,8 @@ Defaults:
 
 Notes:
   - skill-bundle validates the generated Anthropic skill bundle plus the declared scenario fixtures.
-  - skill-runtime requires --skill-executor and is meant for a real external agent adapter.
+  - skill-runtime uses the bundled Claude adapter when available, or you can pass --skill-executor.
+  - --skill-timeout-ms overrides the per-scenario executor timeout (default: 120000ms).
   - strict mode treats any structured MCP tool error as a failing E2E result.
 `);
 }
@@ -33,6 +35,7 @@ function parseArgs(argv) {
     strict: false,
     includeCompatibilityAliases: false,
     skillExecutor: null,
+    skillTimeoutMs: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -49,6 +52,16 @@ function parseArgs(argv) {
     }
     if (token === '--skill-executor') {
       options.skillExecutor = String(argv[index + 1] || '').trim() || null;
+      index += 1;
+      continue;
+    }
+    if (token === '--skill-timeout-ms') {
+      const raw = String(argv[index + 1] || '').trim();
+      const parsed = Number.parseInt(raw, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error(`Invalid --skill-timeout-ms value: ${raw || '(empty)'}`);
+      }
+      options.skillTimeoutMs = parsed;
       index += 1;
       continue;
     }

@@ -24,14 +24,39 @@ test('surface parsing expands all and keeps explicit surfaces stable', () => {
   assert.deepEqual(parseSurfaceList('mcp-stdio,skill-runtime'), ['mcp-stdio', 'skill-runtime']);
 });
 
-test('skill scenario evaluation enforces must-do and must-not-do phrases', () => {
+test('skill scenario evaluation normalizes canonical tool ids for trigger routing', () => {
+  const trigger = evaluateSkillScenarioResponse(
+    'trigger-should',
+    {
+      id: 'profile-readiness',
+      mustMention: ['profile list', 'profile explain'],
+      mustAvoid: [],
+    },
+    'Use `mcp__pandora__profile_list` first, then `mcp__pandora__profile_explain` for the live trade context.',
+  );
+  assert.equal(trigger.ok, true);
+});
+
+test('skill scenario evaluation applies transport heuristics for local vs hosted MCP', () => {
+  const trigger = evaluateSkillScenarioResponse(
+    'trigger-should',
+    {
+      id: 'start-mcp',
+      mustMention: ['pandora mcp', 'pandora mcp http'],
+      mustAvoid: ['treat remote http as the default for live user funds'],
+    },
+    'Use local stdio MCP when the LLM runs beside your wallet. Use the hosted HTTP gateway for intentional remote access, starting with read-only scopes.',
+  );
+  assert.equal(trigger.ok, true);
+});
+
+test('skill scenario evaluation rejects missing and forbidden guidance', () => {
   const functional = evaluateSkillScenarioResponse(
     'functional',
     {
-      mustDo: ['bootstrap', 'schema'],
-      mustNotDo: ['private key'],
+      id: 'safe-bootstrap',
     },
-    'Start with bootstrap, then inspect schema before asking for anything sensitive.',
+    'Start with read-only bootstrap, capabilities, and schema discovery. Review policy and profile guidance before any live execution.',
   );
   assert.equal(functional.ok, true);
 

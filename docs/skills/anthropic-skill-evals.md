@@ -69,6 +69,28 @@ The current functional coverage is intentionally focused on Pandora's highest-va
 - MCP transport selection
 - portfolio closeout
 
+### Automated Claude Code runtime sweep
+
+For a real installed-skill runtime check, use the built-in Claude Code adapter:
+
+```bash
+npm run e2e:skill-runtime
+```
+
+What this does:
+
+- builds and validates the generated Anthropic skill bundle
+- loads `dist/pandora-skill/` into the local `claude` CLI with `--plugin-dir`
+- runs the trigger and functional scenario fixtures through a real Claude runtime
+- writes the full report to `output/e2e/skill-runtime-report.json`
+
+Optional:
+
+- set `PANDORA_SKILL_EXECUTOR_MODEL=sonnet` to force a cheaper model for the runtime sweep
+- override `PANDORA_CLAUDE_BIN` if the `claude` executable is not on the default `PATH`
+- pass `--skill-timeout-ms <ms>` or set `PANDORA_SKILL_EXECUTOR_TIMEOUT_MS` to cap each scenario runtime
+- pass `--skill-executor "<command>"` if you want to replace the bundled Claude adapter with another sub-agent executor
+
 ### 4. Run at least one baseline comparison
 
 For one or two representative tasks, compare “with skill” versus “without skill”.

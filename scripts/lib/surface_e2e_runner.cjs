@@ -21,6 +21,8 @@ const REPORT_SCHEMA_VERSION = '1.0.0';
 const REPORT_KIND = 'surface-e2e-report';
 const DEFAULT_SURFACES = Object.freeze(['mcp-stdio', 'mcp-http', 'skill-bundle']);
 const SURFACE_SET = new Set(['mcp-stdio', 'mcp-http', 'skill-bundle', 'skill-runtime']);
+const DEFAULT_CLAUDE_SKILL_EXECUTOR = path.join(REPO_ROOT, 'scripts', 'claude_skill_executor.cjs');
+const DEFAULT_SKILL_EXECUTOR_TIMEOUT_MS = 120000;
 
 function compareStableStrings(left, right) {
   const a = String(left ?? '');
@@ -38,8 +40,32 @@ function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function canonicalizeMatchText(value) {
+  return normalizeText(value)
+    .replace(/mcp__pandora__/g, '')
+    .replace(/\bpandora__/g, '')
+    .replace(/[_./:-]+/g, ' ')
+    .replace(/[`"'()[\]{}]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
 function includesNormalizedText(haystack, needle) {
-  return normalizeText(haystack).includes(normalizeText(needle));
+  return canonicalizeMatchText(haystack).includes(canonicalizeMatchText(needle));
+}
+
+function includesAnyText(haystack, needles) {
+  return (Array.isArray(needles) ? needles : []).some((needle) => includesNormalizedText(haystack, needle));
+}
+
+function includesAllText(haystack, needles) {
+  return (Array.isArray(needles) ? needles : []).every((needle) => includesNormalizedText(haystack, needle));
 }
 
 function parseSurfaceList(value) {
@@ -360,7 +386,7 @@ async function runSkillBundleSurface() {
     fixtureSummary,
     notes: [
       'This surface validates the generated Anthropic skill bundle plus the declared trigger and functional scenario inventory.',
-      'It does not execute a live external model. Use skill-runtime with an executor adapter for that.',
+      'It does not execute a live runtime. Use skill-runtime with the bundled Claude adapter or an external executor for that.',
     ],
   };
 }
@@ -387,6 +413,135 @@ function evaluatePhraseConstraints(responseText, mustContain = [], mustAvoid = [
   };
 }
 
+function evaluateTriggerScenarioResponse(scenario, responseText) {
+  const text = String(responseText || '');
+  if (scenario && scenario.id === 'profile-readiness') {
+    return {
+      ok:
+        includesAllText(text, ['profile list', 'profile explain'])
+        && !includesAnyText(text, ['assume any mutable profile is ready', 'assume readiness without inspection']),
+      missing: includesAllText(text, ['profile list', 'profile explain'])
+        ? []
+        : ['profile list/profile explain routing'],
+      forbidden: includesAnyText(text, ['assume any mutable profile is ready', 'assume readiness without inspection'])
+        ? ['assumed profile readiness']
+        : [],
+      evaluationMode: 'trigger-profile-heuristic',
+    };
+  }
+  if (scenario && scenario.id === 'start-mcp') {
+    const missing = [];
+    const forbidden = [];
+    if (!includesAnyText(text, ['local stdio', 'local mcp', 'pandora mcp'])) {
+      missing.push('local stdio / Pandora MCP guidance');
+    }
+    if (!includesAnyText(text, ['hosted http', 'http gateway', 'pandora mcp http'])) {
+      missing.push('hosted HTTP gateway guidance');
+    }
+    if (includesAnyText(text, ['treat remote http as the default for live user funds', 'hosted mutation by default'])) {
+      forbidden.push('hosted HTTP as default for live funds');
+    }
+    return {
+      ok: missing.length === 0 && forbidden.length === 0,
+      missing,
+      forbidden,
+      evaluationMode: 'trigger-transport-heuristic',
+    };
+  }
+  const evaluation = evaluatePhraseConstraints(responseText, scenario.mustMention || [], scenario.mustAvoid || []);
+  return { ...evaluation, evaluationMode: 'heuristic-phrase-check' };
+}
+
+function evaluateShouldNotTriggerScenarioResponse(responseText) {
+  const routedToPandora = includesAnyText(responseText, [
+    'pandora',
+    'bootstrap',
+    'capabilities',
+    'schema',
+    'quote',
+    'mirror',
+    'profile explain',
+    'pandora mcp',
+  ]);
+  return {
+    ok: routedToPandora === false,
+    missing: [],
+    forbidden: routedToPandora ? ['pandora-specific routing on a non-trigger scenario'] : [],
+    evaluationMode: 'non-trigger-discipline',
+  };
+}
+
+function evaluateFunctionalScenarioById(scenario, responseText) {
+  const text = canonicalizeMatchText(responseText);
+  const missing = [];
+  const forbidden = [];
+  const require = (condition, label) => {
+    if (!condition) missing.push(label);
+  };
+  const forbid = (condition, label) => {
+    if (condition) forbidden.push(label);
+  };
+
+  switch (scenario.id) {
+    case 'safe-bootstrap':
+      require(includesAllText(text, ['bootstrap', 'capabilities', 'schema']), 'bootstrap/capabilities/schema guidance');
+      require(includesAnyText(text, ['policy', 'profile']), 'policy/profile discovery before live execution');
+      require(includesAnyText(text, ['read only', 'safe', 'discovery']), 'read-only-first guidance');
+      forbid(includesAnyText(text, ['private key']), 'private-key-first guidance');
+      break;
+    case 'quote-workflow':
+      require(includesAnyText(text, ['quote']), 'quote-first guidance');
+      require(includesAnyText(text, ['trade', 'execute']), 'trade as later step');
+      require(includesAnyText(text, ['before', 'after', 'once', 'review', 'acceptable']), 'execution separated from pricing');
+      forbid(includesAnyText(text, ['trade execute without quoting', 'immediate trade execution']), 'immediate execution without pricing');
+      break;
+    case 'mirror-preflight':
+      require(includesAnyText(text, ['mirror']), 'mirror routing');
+      require(includesAnyText(text, ['plan', 'browse', 'simulate', 'dry run', 'paper']), 'dry-run or planning path');
+      require(includesAnyText(text, ['validation', 'validate']), 'validation gating');
+      require(
+        includesAnyText(text, ['two', '2', 'multiple', 'independent'])
+        && includesAnyText(text, ['public resolution source', 'sources', 'resolution']),
+        'multiple public resolution sources',
+      );
+      forbid(
+        includesAnyText(text, ['polymarket urls are valid resolution sources', 'use polymarket as resolution source']),
+        'Polymarket as a valid resolution source',
+      );
+      break;
+    case 'profile-go-no-go':
+      require(includesAllText(text, ['profile list', 'profile explain']), 'profile list and profile explain semantics');
+      require(includesAnyText(text, ['runtime', 'ready', 'readiness', 'usable']), 'runtime-readiness explanation');
+      forbid(includesAnyText(text, ['assume', 'already ready']) && !includesAnyText(text, ['do not assume', 'cannot assume']), 'assumed mutable readiness');
+      break;
+    case 'mcp-transport-choice':
+      require(includesAnyText(text, ['local stdio', 'local mcp', 'pandora mcp']), 'local runtime ownership');
+      require(includesAnyText(text, ['hosted http', 'http gateway', 'pandora mcp http']), 'hosted runtime ownership');
+      require(includesAnyText(text, ['read only', 'read-only', 'scopes']), 'read-only scopes guidance for hosted HTTP');
+      forbid(includesAnyText(text, ['hosted mutation by default', 'remote http as the default for live user funds']), 'hosted mutation by default');
+      break;
+    case 'portfolio-closeout':
+      require(includesAnyText(text, ['portfolio', 'history', 'claim', 'closeout']), 'portfolio/history/claim/closeout routing');
+      require(includesAnyText(text, ['quote', 'simulate', 'dry run', 'inspect', 'review']), 'inspection before mutation');
+      forbid(includesAnyText(text, ['claim all blindly', 'skip inspection']), 'blind closeout guidance');
+      break;
+    default:
+      return {
+        ok: true,
+        missing: [],
+        forbidden: [],
+        evaluationMode: 'unimplemented-functional-check',
+      };
+  }
+
+  return {
+    ok: missing.length === 0 && forbidden.length === 0,
+    missing,
+    forbidden,
+    evaluationMode: 'functional-heuristic',
+  };
+}
+
 function evaluateSkillScenarioResponse(kind, scenario, responseText) {
   const text = String(responseText || '');
   if (!text.trim()) {
@@ -399,35 +554,34 @@ function evaluateSkillScenarioResponse(kind, scenario, responseText) {
   }
 
   if (kind === 'trigger-should') {
-    const evaluation = evaluatePhraseConstraints(text, scenario.mustMention || [], scenario.mustAvoid || []);
-    return { ...evaluation, evaluationMode: 'heuristic-phrase-check' };
+    return evaluateTriggerScenarioResponse(scenario, text);
   }
   if (kind === 'trigger-paraphrase') {
     return {
-      ok: true,
+      ok: includesAnyText(text, ['pandora', 'bootstrap', 'quote', 'mirror', 'portfolio', 'mcp']),
       missing: [],
       forbidden: [],
-      evaluationMode: 'presence-only',
+      evaluationMode: 'paraphrase-trigger',
     };
   }
   if (kind === 'trigger-should-not') {
-    return {
-      ok: true,
-      missing: [],
-      forbidden: [],
-      evaluationMode: 'presence-only',
-    };
+    return evaluateShouldNotTriggerScenarioResponse(text);
   }
-  const evaluation = evaluatePhraseConstraints(text, scenario.mustDo || [], scenario.mustNotDo || []);
-  return { ...evaluation, evaluationMode: 'heuristic-phrase-check' };
+  return evaluateFunctionalScenarioById(scenario, text);
 }
 
 function executeSkillScenarioWithAdapter(executorCommand, payload, bundleRoot) {
+  const timeoutMs = parsePositiveInteger(
+    payload && payload.executorTimeoutMs,
+    DEFAULT_SKILL_EXECUTOR_TIMEOUT_MS,
+  );
   const result = spawnSync(executorCommand, {
     cwd: REPO_ROOT,
     shell: true,
     encoding: 'utf8',
     input: `${JSON.stringify(payload, null, 2)}\n`,
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
     env: {
       ...process.env,
       PANDORA_SKILL_BUNDLE_ROOT: bundleRoot,
@@ -446,11 +600,20 @@ function executeSkillScenarioWithAdapter(executorCommand, payload, bundleRoot) {
     }
   }
 
+  const executorError = result.error ? String(result.error.message || result.error) : null;
+  const timedOut = Boolean(result.error && result.error.code === 'ETIMEDOUT');
+
   return {
     status: result.status === null ? 1 : result.status,
     stdout,
-    stderr: String(result.stderr || '').trim(),
+    stderr: timedOut
+      ? `Executor timed out after ${timeoutMs}ms.${result.stderr ? ` ${String(result.stderr || '').trim()}` : ''}`.trim()
+      : String(result.stderr || '').trim(),
     parsed,
+    timeoutMs,
+    timedOut,
+    errorCode: result.error && result.error.code ? String(result.error.code) : null,
+    executorError,
   };
 }
 
@@ -459,7 +622,13 @@ async function runSkillRuntimeSurface(options = {}) {
   const bundleRoot = bundleSurface.bundleCheck.bundleRoot
     ? path.join(REPO_ROOT, bundleSurface.bundleCheck.bundleRoot)
     : null;
-  const executorCommand = String(options.skillExecutor || '').trim();
+  const configuredExecutor = String(options.skillExecutor || '').trim();
+  const executorCommand = configuredExecutor
+    || (fs.existsSync(DEFAULT_CLAUDE_SKILL_EXECUTOR) ? `${process.execPath} ${JSON.stringify(DEFAULT_CLAUDE_SKILL_EXECUTOR)}` : '');
+  const executorTimeoutMs = parsePositiveInteger(
+    options.skillTimeoutMs ?? process.env.PANDORA_SKILL_EXECUTOR_TIMEOUT_MS,
+    DEFAULT_SKILL_EXECUTOR_TIMEOUT_MS,
+  );
 
   if (!bundleSurface.ok) {
     return {
@@ -487,11 +656,12 @@ async function runSkillRuntimeSurface(options = {}) {
       failures: [
         {
           id: 'skill-executor-missing',
-          reason: 'No --skill-executor command was provided. This surface requires an external agent adapter.',
+          reason: 'No skill executor was available. Install the bundled Claude adapter dependencies or pass --skill-executor explicitly.',
         },
       ],
       notes: [
         'The executor command receives one scenario JSON object on stdin and should print JSON with either responseText or a richer evaluation payload.',
+        'If the bundled Claude adapter is present, it is used automatically. Otherwise pass --skill-executor explicitly.',
       ],
     };
   }
@@ -512,7 +682,11 @@ async function runSkillRuntimeSurface(options = {}) {
 
   const scenarioResults = [];
   for (const scenario of scenarioPayloads) {
-    const execution = executeSkillScenarioWithAdapter(executorCommand, scenario, bundleRoot);
+    const execution = executeSkillScenarioWithAdapter(
+      executorCommand,
+      { ...scenario, executorTimeoutMs },
+      bundleRoot,
+    );
     const responseText =
       execution.parsed && typeof execution.parsed.responseText === 'string'
         ? execution.parsed.responseText
@@ -533,6 +707,10 @@ async function runSkillRuntimeSurface(options = {}) {
       missing: evaluation.missing,
       forbidden: evaluation.forbidden,
       executorStatus: execution.status,
+      executorTimedOut: execution.timedOut === true,
+      executorTimeoutMs: execution.timeoutMs,
+      executorErrorCode: execution.errorCode,
+      executorError: execution.executorError,
       stderr: execution.stderr || null,
       responseText,
     });
@@ -543,6 +721,8 @@ async function runSkillRuntimeSurface(options = {}) {
     surface: 'skill-runtime',
     ok: failures.length === 0,
     configured: true,
+    executorCommand,
+    executorTimeoutMs,
     bundleSurface,
     scenarioCount: scenarioResults.length,
     failures,
