@@ -214,15 +214,15 @@ Status:
 - keep local-vs-remote backend choice explicit; the SDKs do not bypass MCP transport or gateway policy checks
 - standalone package identities are `@thisispandora/agent-sdk` and `pandora-agent`
 - release flow already builds and verifies standalone SDK artifacts for those package identities
-- public publication is live:
-  - `npm install @thisispandora/agent-sdk@alpha`
-  - `pip install pandora-agent==0.1.0a11`
+- public package publication is available for both SDKs
+- use the SDK READMEs and package manifests as the source of truth for the current install command and package version
 - signed GitHub release assets remain the parity and audit-friendly distribution path
 - the repository and the root Pandora package also vendor matching SDK copies under `sdk/typescript` and `sdk/python`
 
 ### TypeScript
 - standalone package identity: `@thisispandora/agent-sdk`
- - external install path: public npm package `@thisispandora/agent-sdk@alpha` or signed GitHub release tarball attached to the tagged Pandora release
+ - external install path: public npm package `@thisispandora/agent-sdk` using the currently published tag or signed GitHub release tarball attached to the tagged Pandora release
+ - authoritative install and usage guide: `sdk/typescript/README.md`
  - repository checkout path: `sdk/typescript` for maintainers and in-tree consumers
 - vendored root-package copy: `pandora-cli-skills/sdk/typescript`
 - generated manifest/loader: `sdk/typescript/generated`
@@ -233,7 +233,8 @@ Status:
 
 ### Python
 - standalone package identity: `pandora-agent`
- - external install path: public PyPI package `pandora-agent==0.1.0a11` or signed GitHub release wheel or sdist attached to the tagged Pandora release
+ - external install path: public PyPI package `pandora-agent` using the current published version or signed GitHub release wheel or sdist attached to the tagged Pandora release
+ - authoritative install and usage guide: `sdk/python/README.md`
  - repository checkout path: `sdk/python` for maintainers and in-tree consumers
 - module/import name: `pandora_agent`
 - vendored root-package copy: `sdk/python`
