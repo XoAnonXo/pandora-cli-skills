@@ -70,6 +70,37 @@ function parseArgs(argv) {
   return options;
 }
 
+function buildStdoutSummary(report, outPath) {
+  return {
+    ok: report.ok,
+    strict: report.strict,
+    generatedAt: report.generatedAt,
+    packageVersion: report.packageVersion,
+    surfacesRequested: report.surfacesRequested,
+    inventory: {
+      actionCount: report.inventory && report.inventory.actionCount,
+      mcpActionCount: report.inventory && report.inventory.mcpActionCount,
+      countsByClass: report.inventory && report.inventory.countsByClass,
+    },
+    surfaces: Object.fromEntries(
+      Object.entries(report.surfaces || {}).map(([name, surface]) => [
+        name,
+        {
+          ok: surface.ok === true,
+          toolCount: Number.isFinite(Number(surface.toolCount)) ? Number(surface.toolCount) : null,
+          expectedToolCount: Number.isFinite(Number(surface.expectedToolCount)) ? Number(surface.expectedToolCount) : null,
+          countsByStatus: surface.countsByStatus || null,
+          failureCount: Array.isArray(surface.failures)
+            ? surface.failures.length + (Array.isArray(surface.missing) ? surface.missing.length : 0)
+            : 0,
+        },
+      ]),
+    ),
+    failureSummary: Array.isArray(report.failureSummary) ? report.failureSummary.slice(0, 25) : [],
+    reportPath: outPath || null,
+  };
+}
+
 (async () => {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
@@ -85,6 +116,8 @@ function parseArgs(argv) {
     const outPath = path.resolve(process.cwd(), options.out);
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, output);
+    process.stdout.write(`${JSON.stringify(buildStdoutSummary(report, outPath), null, 2)}\n`);
+    process.exit(report.ok ? 0 : 1);
   }
 
   process.stdout.write(output);

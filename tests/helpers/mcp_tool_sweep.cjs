@@ -281,8 +281,31 @@ function toolOverrides(toolName, fixtures) {
       rules: FIXED_RULES,
       'target-timestamp': 1893456000,
     },
-    'bridge.plan': { target: 'pandora', 'amount-usdc': 5, 'timeout-ms': 250 },
-    'bridge.execute': { target: 'pandora', 'amount-usdc': 5, 'dry-run': true, 'timeout-ms': 250 },
+    'bridge.plan': {
+      target: 'pandora',
+      'amount-usdc': 5,
+      wallet: FIXED_ADDRESS,
+      'to-wallet': FIXED_ADDRESS,
+      funder: FIXED_ADDRESS,
+      'rpc-url': 'http://127.0.0.1:9',
+      'polymarket-rpc-url': 'http://127.0.0.1:9',
+      'timeout-ms': 250,
+    },
+    'bridge.execute': {
+      target: 'pandora',
+      'amount-usdc': 5,
+      'dry-run': true,
+      wallet: FIXED_ADDRESS,
+      'to-wallet': FIXED_ADDRESS,
+      funder: FIXED_ADDRESS,
+      'rpc-url': 'http://127.0.0.1:9',
+      'polymarket-rpc-url': 'http://127.0.0.1:9',
+      'timeout-ms': 250,
+    },
+    dashboard: {
+      'no-live': true,
+      'timeout-ms': 250,
+    },
     'events.get': { id: 'evt-sweep' },
     export: { wallet: FIXED_ADDRESS, format: 'json' },
     history: { wallet: FIXED_ADDRESS },
@@ -624,16 +647,21 @@ async function runMcpToolSweep({ client, fixtures, transportLabel = 'stdio' }) {
   const perToolTimeoutMs = 15_000;
 
   async function callToolWithTimeout(name, args) {
-    return await Promise.race([
-      client.callTool({ name, arguments: args }),
-      new Promise((_, reject) => {
-        setTimeout(() => {
-          const error = new Error(`Timed out after ${perToolTimeoutMs}ms`);
-          error.code = 'MCP_TOOL_TIMEOUT';
-          reject(error);
-        }, perToolTimeoutMs);
-      }),
-    ]);
+    let timeoutId = null;
+    try {
+      return await Promise.race([
+        client.callTool({ name, arguments: args }),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => {
+            const error = new Error(`Timed out after ${perToolTimeoutMs}ms`);
+            error.code = 'MCP_TOOL_TIMEOUT';
+            reject(error);
+          }, perToolTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
   }
 
   for (const tool of tools) {
