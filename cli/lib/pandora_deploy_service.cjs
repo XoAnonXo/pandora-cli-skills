@@ -128,6 +128,7 @@ const DEFAULT_CREATE_MARKET_GAS_UNITS = 650_000n;
 const DEFAULT_CREATE_PARIMUTUEL_GAS_UNITS = 650_000n;
 const GAS_RESERVE_BUFFER_BPS = 2_500n;
 const DEFAULT_FALLBACK_GAS_PRICE_WEI = 2_000_000_000n;
+const DEFAULT_FALLBACK_PRIORITY_FEE_WEI = 1_500_000_000n;
 const DEPLOY_TX_ROUTE_VALUES = new Set(['public', 'auto', 'flashbots-private', 'flashbots-bundle']);
 const DEPLOY_TX_ROUTE_FALLBACK_VALUES = new Set(['fail', 'public']);
 
@@ -220,15 +221,17 @@ function buildRawContractTransactionRequest({
   nonce,
   gas,
   gasPrice,
+  type,
+  maxFeePerGas,
+  maxPriorityFeePerGas,
   value = 0n,
 }) {
-  return {
+  const request = {
     account,
     to: address,
     chainId,
     nonce,
     gas,
-    gasPrice,
     value,
     data: runtime.encodeFunctionData({
       abi,
@@ -236,6 +239,19 @@ function buildRawContractTransactionRequest({
       args,
     }),
   };
+  if (type) {
+    request.type = type;
+  }
+  if (typeof maxFeePerGas === 'bigint' && maxFeePerGas > 0n) {
+    request.maxFeePerGas = maxFeePerGas;
+  }
+  if (typeof maxPriorityFeePerGas === 'bigint' && maxPriorityFeePerGas > 0n) {
+    request.maxPriorityFeePerGas = maxPriorityFeePerGas;
+  }
+  if (typeof gasPrice === 'bigint' && gasPrice > 0n) {
+    request.gasPrice = gasPrice;
+  }
+  return request;
 }
 
 function utf8ByteLength(value) {
@@ -285,6 +301,57 @@ async function resolveFeePerGas(publicClient) {
   return DEFAULT_FALLBACK_GAS_PRICE_WEI;
 }
 
+async function resolveSignableFeeFields(publicClient) {
+  if (publicClient && typeof publicClient.estimateFeesPerGas === 'function') {
+    try {
+      const estimated = await publicClient.estimateFeesPerGas();
+      if (
+        estimated
+        && typeof estimated.maxFeePerGas === 'bigint'
+        && estimated.maxFeePerGas > 0n
+      ) {
+        const maxPriorityFeePerGas =
+          typeof estimated.maxPriorityFeePerGas === 'bigint' && estimated.maxPriorityFeePerGas > 0n
+            ? estimated.maxPriorityFeePerGas
+            : DEFAULT_FALLBACK_PRIORITY_FEE_WEI;
+        return {
+          type: 'eip1559',
+          maxFeePerGas: estimated.maxFeePerGas,
+          maxPriorityFeePerGas,
+        };
+      }
+      if (estimated && typeof estimated.gasPrice === 'bigint' && estimated.gasPrice > 0n) {
+        return {
+          type: 'legacy',
+          gasPrice: estimated.gasPrice,
+        };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  if (publicClient && typeof publicClient.getBlock === 'function') {
+    try {
+      const block = await publicClient.getBlock();
+      if (block && typeof block.baseFeePerGas === 'bigint' && block.baseFeePerGas > 0n) {
+        return {
+          type: 'eip1559',
+          maxPriorityFeePerGas: DEFAULT_FALLBACK_PRIORITY_FEE_WEI,
+          maxFeePerGas: (block.baseFeePerGas * 2n) + DEFAULT_FALLBACK_PRIORITY_FEE_WEI,
+        };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  return {
+    type: 'legacy',
+    gasPrice: await resolveFeePerGas(publicClient),
+  };
+}
+
 async function estimateContractGasUnits(publicClient, request, fallbackUnits) {
   if (publicClient && typeof publicClient.estimateContractGas === 'function' && request) {
     try {
@@ -302,6 +369,50 @@ async function estimateContractGasUnits(publicClient, request, fallbackUnits) {
 function applyReserveBuffer(value) {
   const base = typeof value === 'bigint' && value > 0n ? value : 0n;
   return base + ((base * GAS_RESERVE_BUFFER_BPS) / 10_000n);
+}
+
+async function buildSignableContractTransactionRequest({
+  publicClient,
+  runtime,
+  address,
+  abi,
+  functionName,
+  args,
+  account,
+  chainId,
+  nonce,
+  fallbackGasUnits,
+  value = 0n,
+}) {
+  const gas = await estimateContractGasUnits(
+    publicClient,
+    {
+      account,
+      address,
+      abi,
+      functionName,
+      args,
+      value,
+    },
+    fallbackGasUnits,
+  );
+  const feeFields = await resolveSignableFeeFields(publicClient);
+  return buildRawContractTransactionRequest({
+    runtime,
+    address,
+    abi,
+    functionName,
+    args,
+    account,
+    chainId,
+    nonce,
+    gas,
+    gasPrice: feeFields.gasPrice,
+    type: feeFields.type,
+    maxFeePerGas: feeFields.maxFeePerGas,
+    maxPriorityFeePerGas: feeFields.maxPriorityFeePerGas,
+    value,
+  });
 }
 
 async function buildGasReservePlan({
@@ -851,6 +962,7 @@ async function deployPandoraAmmMarket(options = {}) {
     if (!needsApproval) {
       return {
         request: null,
+        signableRequest: null,
         gasEstimate: null,
         nonce: null,
       };
@@ -868,15 +980,28 @@ async function deployPandoraAmmMarket(options = {}) {
             address: account.address,
             blockTag: 'pending',
           });
+    const signableRequest = await buildSignableContractTransactionRequest({
+      publicClient,
+      runtime,
+      address: usdc,
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [factory, liquidityRaw],
+      account,
+      chainId,
+      nonce,
+      fallbackGasUnits:
+        gasReservePlan && gasReservePlan.gasUnits && typeof gasReservePlan.gasUnits.approve === 'bigint'
+          ? gasReservePlan.gasUnits.approve
+          : DEFAULT_APPROVE_GAS_UNITS,
+    });
     return {
       request: {
         ...approveSimulation.request,
         nonce,
       },
-      gasEstimate:
-        approveSimulation && approveSimulation.request && approveSimulation.request.gas
-          ? approveSimulation.request.gas.toString()
-          : null,
+      signableRequest,
+      gasEstimate: signableRequest.gas ? signableRequest.gas.toString() : null,
       nonce,
     };
   }
@@ -897,15 +1022,28 @@ async function deployPandoraAmmMarket(options = {}) {
               address: account.address,
               blockTag: 'pending',
             });
+      const signableRequest = await buildSignableContractTransactionRequest({
+        publicClient,
+        runtime,
+        address: factory,
+        abi: FACTORY_ABI,
+        functionName: marketConfig.functionName,
+        args: marketConfig.callArgs,
+        account,
+        chainId,
+        nonce,
+        fallbackGasUnits:
+          gasReservePlan && gasReservePlan.gasUnits && typeof gasReservePlan.gasUnits.market === 'bigint'
+            ? gasReservePlan.gasUnits.market
+            : marketConfig.fallbackGasUnits,
+      });
       return {
         request: {
           ...marketSimulation.request,
           nonce,
         },
-        gasEstimate:
-          marketSimulation && marketSimulation.request && marketSimulation.request.gas
-            ? marketSimulation.request.gas.toString()
-            : null,
+        signableRequest,
+        gasEstimate: signableRequest.gas ? signableRequest.gas.toString() : null,
         nonce,
         marketAddress: marketSimulation.result ? String(marketSimulation.result).toLowerCase() : null,
         usedManualRequest: false,
@@ -930,24 +1068,22 @@ async function deployPandoraAmmMarket(options = {}) {
         gasReservePlan && gasReservePlan.gasUnits && typeof gasReservePlan.gasUnits.market === 'bigint'
           ? gasReservePlan.gasUnits.market
           : marketConfig.fallbackGasUnits;
-      const gasPriceWei =
-        gasReservePlan && typeof gasReservePlan.feePerGasWei === 'bigint' && gasReservePlan.feePerGasWei > 0n
-          ? gasReservePlan.feePerGasWei
-          : await resolveFeePerGas(publicClient);
+      const signableRequest = await buildSignableContractTransactionRequest({
+        publicClient,
+        runtime,
+        address: factory,
+        abi: FACTORY_ABI,
+        functionName: marketConfig.functionName,
+        args: marketConfig.callArgs,
+        account,
+        chainId,
+        nonce,
+        fallbackGasUnits: gasUnits,
+      });
       return {
-        request: buildRawContractTransactionRequest({
-          runtime,
-          address: factory,
-          abi: FACTORY_ABI,
-          functionName: marketConfig.functionName,
-          args: marketConfig.callArgs,
-          account,
-          chainId,
-          nonce,
-          gas: gasUnits,
-          gasPrice: gasPriceWei,
-        }),
-        gasEstimate: gasUnits.toString(),
+        request: null,
+        signableRequest,
+        gasEstimate: signableRequest.gas ? signableRequest.gas.toString() : gasUnits.toString(),
         nonce,
         marketAddress: null,
         usedManualRequest: true,
@@ -1007,7 +1143,7 @@ async function deployPandoraAmmMarket(options = {}) {
       publicClient,
       walletClient,
       account,
-      transactionRequest: marketExecution.request,
+      transactionRequest: marketExecution.signableRequest,
       relayUrl: txRouteConfig.flashbotsRelayUrl,
       authPrivateKey: txRouteConfig.flashbotsAuthKey,
       targetBlockOffset: txRouteConfig.flashbotsTargetBlockOffset,
@@ -1054,9 +1190,9 @@ async function deployPandoraAmmMarket(options = {}) {
       approveExecution.request ? pendingNonce + 1 : pendingNonce,
       Boolean(approveExecution.request),
     );
-    const bundleRequests = approveExecution.request
-      ? [approveExecution.request, marketExecution.request]
-      : [marketExecution.request];
+    const bundleRequests = approveExecution.signableRequest
+      ? [approveExecution.signableRequest, marketExecution.signableRequest]
+      : [marketExecution.signableRequest];
     const bundleSubmission = await flashbotsBundleSender({
       publicClient,
       walletClient,

@@ -827,6 +827,11 @@ test('deployPandoraAmmMarket bundles post-poll approval and market creation thro
   const defaultSimulateContract = publicClient.simulateContract;
   let capturedBundle = null;
 
+  publicClient.estimateFeesPerGas = async () => ({
+    maxFeePerGas: 3_000_000_000n,
+    maxPriorityFeePerGas: 1_500_000_000n,
+  });
+
   publicClient.simulateContract = async (request) => {
     if (request.functionName === 'createMarket') {
       throw new Error('allowance update is still pending');
@@ -875,6 +880,20 @@ test('deployPandoraAmmMarket bundles post-poll approval and market creation thro
   assert.equal(capturedBundle.transactionRequests.length, 2);
   assert.equal(capturedBundle.transactionRequests[0].nonce, 17);
   assert.equal(capturedBundle.transactionRequests[1].nonce, 18);
+  assert.equal(capturedBundle.transactionRequests[0].type, 'eip1559');
+  assert.equal(capturedBundle.transactionRequests[0].gas, 40_000n);
+  assert.equal(capturedBundle.transactionRequests[0].maxFeePerGas, 3_000_000_000n);
+  assert.equal(capturedBundle.transactionRequests[0].maxPriorityFeePerGas, 1_500_000_000n);
+  assert.equal(capturedBundle.transactionRequests[0].to, TEST_USDC);
+  assert.match(capturedBundle.transactionRequests[0].data, /^0x[0-9a-f]+$/i);
+  assert.equal(capturedBundle.transactionRequests[0].functionName, undefined);
+  assert.equal(capturedBundle.transactionRequests[1].type, 'eip1559');
+  assert.equal(capturedBundle.transactionRequests[1].gas, 50_000n);
+  assert.equal(capturedBundle.transactionRequests[1].maxFeePerGas, 3_000_000_000n);
+  assert.equal(capturedBundle.transactionRequests[1].maxPriorityFeePerGas, 1_500_000_000n);
+  assert.equal(capturedBundle.transactionRequests[1].to, TEST_FACTORY);
+  assert.match(capturedBundle.transactionRequests[1].data, /^0x[0-9a-f]+$/i);
+  assert.equal(capturedBundle.transactionRequests[1].functionName, undefined);
   assert.equal(capturedBundle.relayUrl, 'https://relay.flashbots.example/');
   assert.equal(capturedBundle.authPrivateKey, `0x${'9'.repeat(64)}`);
   assert.equal(capturedBundle.targetBlockOffset, 3);
@@ -884,6 +903,11 @@ test('deployPandoraAmmMarket routes the post-poll market creation leg through Fl
   const { publicClient, walletClient, writeCalls } = createDeployClients();
   const defaultReadContract = publicClient.readContract;
   let capturedPrivateSubmission = null;
+
+  publicClient.estimateFeesPerGas = async () => ({
+    maxFeePerGas: 4_000_000_000n,
+    maxPriorityFeePerGas: 2_000_000_000n,
+  });
 
   publicClient.readContract = async (request) => {
     if (request.functionName === 'allowance') {
@@ -925,6 +949,13 @@ test('deployPandoraAmmMarket routes the post-poll market creation leg through Fl
   assert.equal(payload.pandora.marketAddress, TEST_MARKET);
   assert.deepEqual(writeCalls.map((entry) => entry.functionName), ['createPoll']);
   assert.equal(capturedPrivateSubmission.transactionRequest.nonce, 25);
+  assert.equal(capturedPrivateSubmission.transactionRequest.type, 'eip1559');
+  assert.equal(capturedPrivateSubmission.transactionRequest.gas, 50_000n);
+  assert.equal(capturedPrivateSubmission.transactionRequest.maxFeePerGas, 4_000_000_000n);
+  assert.equal(capturedPrivateSubmission.transactionRequest.maxPriorityFeePerGas, 2_000_000_000n);
+  assert.equal(capturedPrivateSubmission.transactionRequest.to, TEST_FACTORY);
+  assert.match(capturedPrivateSubmission.transactionRequest.data, /^0x[0-9a-f]+$/i);
+  assert.equal(capturedPrivateSubmission.transactionRequest.functionName, undefined);
   assert.equal(capturedPrivateSubmission.relayUrl, 'https://relay.flashbots.example/');
   assert.equal(capturedPrivateSubmission.authPrivateKey, `0x${'8'.repeat(64)}`);
 });
