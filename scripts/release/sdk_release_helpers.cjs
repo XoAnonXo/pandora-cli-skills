@@ -134,6 +134,15 @@ function runCommand(command, args, options = {}) {
   return result;
 }
 
+function buildMutableNpmEnv(overrides = {}) {
+  const env = {
+    ...process.env,
+    ...overrides,
+  };
+  delete env.npm_config_dry_run;
+  return env;
+}
+
 function listTarArchiveEntries(archivePath) {
   const result = runCommand('tar', ['-tzf', archivePath], {
     cwd: ROOT_DIR,
@@ -442,10 +451,9 @@ function buildTypescriptSdkArtifact(metadata, outDir) {
   fs.mkdirSync(outDir, { recursive: true });
   const result = runCommand(NPM_COMMAND, ['pack', '--json', '--pack-destination', outDir], {
     cwd: TYPESCRIPT_SDK_DIR,
-    env: {
-      ...process.env,
+    env: buildMutableNpmEnv({
       npm_config_loglevel: process.env.npm_config_loglevel || 'error',
-    },
+    }),
   });
   const parsed = JSON.parse(result.stdout);
   assert(Array.isArray(parsed) && parsed.length === 1, 'Expected TypeScript SDK npm pack to emit one artifact');
@@ -469,10 +477,9 @@ function smokeInstalledTypescriptTarball(metadata, tarballPath) {
     });
     runCommand(NPM_COMMAND, ['install', '--omit=dev', '--ignore-scripts', tarballPath], {
       cwd: tempDir,
-      env: {
-        ...process.env,
+      env: buildMutableNpmEnv({
         npm_config_loglevel: process.env.npm_config_loglevel || 'error',
-      },
+      }),
     });
     const script = `
 const sdk = require('@thisispandora/agent-sdk');
