@@ -54,6 +54,7 @@ If you are evaluating Pandora for external use, start here instead of reading th
 If you want the main documentation map, use these jump points:
 
 - Anthropic skill install: [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
+- Promo concept deck: [`docs/promo/README.md`](./docs/promo/README.md)
 - Humans: [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
 - Agents: [`docs/skills/agent-quickstart.md`](./docs/skills/agent-quickstart.md)
 - MCP / JSON contracts: [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
@@ -62,6 +63,12 @@ If you want the main documentation map, use these jump points:
 - Security posture: [`docs/trust/security-model.md`](./docs/trust/security-model.md)
 - Support guarantees: [`docs/trust/support-matrix.md`](./docs/trust/support-matrix.md)
 - Root doc router: [`SKILL.md`](./SKILL.md)
+
+Promo review note:
+
+- Run `npm run check:promo` for the structural/content gate.
+- Run `node scripts/check_promo_browser.cjs` for the routed-browser pass that refreshes `output/playwright/`.
+- In this Codex sandbox, `npm run check:promo:browser` can abort before Chrome stays up because npm-managed Chrome launches are unreliable here.
 
 ## For Humans
 

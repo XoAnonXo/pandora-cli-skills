@@ -130,6 +130,8 @@ First move:
   - [`README.md`](./README.md)
 - Sanitized shareable setup guide:
   - [`README_FOR_SHARING.md`](./README_FOR_SHARING.md)
+- Promotional website concept deck:
+  - [`docs/promo/README.md`](./docs/promo/README.md)
 - Anthropic skill install and evaluation docs:
   - [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
   - [`docs/skills/anthropic-skill-evals.md`](./docs/skills/anthropic-skill-evals.md)
