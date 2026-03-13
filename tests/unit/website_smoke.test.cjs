@@ -19,6 +19,7 @@ test("website surface includes expected core files", () => {
     "website/src/site-data.ts",
     "website/src/index.css",
     "website/public/pandora-logo.svg",
+    "website/public/pandora-og-card.png",
     "website/public/pandora-mark.svg",
     "website/check.cjs",
     "website/serve.cjs",
@@ -74,6 +75,15 @@ test("website build is safe for repo-scoped GitHub Pages", () => {
   const indexHtml = read("website/index.html");
   const app = read("website/src/App.tsx");
   assert.match(viteConfig, /base: "\.\/"/);
-  assert.match(indexHtml, /%BASE_URL%pandora-mark\.svg/);
+  assert.match(indexHtml, /%BASE_URL%pandora-logo\.svg/);
   assert.match(app, /import\.meta\.env\.BASE_URL/);
+});
+
+test("website metadata is specific to Pandora and exposes a branded preview", () => {
+  const indexHtml = read("website/index.html");
+  assert.match(indexHtml, /Pandora for agents, builders, and operators/);
+  assert.match(indexHtml, /MCP for agents/);
+  assert.match(indexHtml, /pandora-og-card\.png/);
+  assert.match(indexHtml, /twitter:card/);
+  assert.match(indexHtml, /rel="canonical"/);
 });
