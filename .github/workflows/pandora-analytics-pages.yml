@@ -1,4 +1,4 @@
-name: Deploy Pandora Analytics (Pages)
+name: Deploy GitHub Pages
 
 on:
   workflow_dispatch:
@@ -9,8 +9,11 @@ on:
       - main
       - master
     paths:
+      - 'website/**'
       - 'analytics/dune/mega/**'
       - 'analytics/dune/panel_registry.json'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/pandora-analytics-pages.yml'
 
 permissions:
@@ -19,7 +22,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pandora-analytics-pages
+  group: github-pages
   cancel-in-progress: true
 
 jobs:
@@ -34,12 +37,31 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
 
-      - name: Install dependencies
+      - name: Install root dependencies
         run: npm ci
 
+      - name: Install website dependencies
+        run: npm --prefix website ci
+
+      - name: Verify website
+        run: npm run test:website
+
+      - name: Build website
+        run: npm --prefix website run build
+
+      - name: Prepare Pages root
+        run: |
+          rm -rf ./dist/pages
+          mkdir -p ./dist/pages
+          cp -R website/dist/. ./dist/pages/
+          touch ./dist/pages/.nojekyll
+
       - name: Build static analytics site from indexer
-        run: node analytics/dune/mega/export-static.cjs --out ./dist/pandora-analytics
+        run: node analytics/dune/mega/export-static.cjs --out ./dist/pages/analytics
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
@@ -47,7 +69,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./dist/pandora-analytics
+          path: ./dist/pages
 
   deploy:
     needs: build
