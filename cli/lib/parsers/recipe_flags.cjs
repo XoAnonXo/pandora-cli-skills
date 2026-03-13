@@ -68,6 +68,9 @@ function createParseRecipeFlags(deps = {}) {
       policyId: null,
       profileId: null,
       timeoutMs: null,
+      source: 'all',
+      approvalStatus: 'all',
+      riskLevel: 'all',
       inputs: loadEnvInputs(),
     };
 
@@ -103,6 +106,33 @@ function createParseRecipeFlags(deps = {}) {
         index += 1;
         continue;
       }
+      if (token === '--source') {
+        const value = String(requireFlagValue(rest, index, '--source')).trim().toLowerCase();
+        if (!['first-party', 'user', 'all'].includes(value)) {
+          throw new CliError('INVALID_FLAG_VALUE', '--source must be first-party, user, or all.', { flag: '--source', value });
+        }
+        options.source = value;
+        index += 1;
+        continue;
+      }
+      if (token === '--approval-status') {
+        const value = String(requireFlagValue(rest, index, '--approval-status')).trim().toLowerCase();
+        if (!['approved', 'unreviewed', 'experimental', 'deprecated', 'all'].includes(value)) {
+          throw new CliError('INVALID_FLAG_VALUE', '--approval-status must be approved, unreviewed, experimental, deprecated, or all.', { flag: '--approval-status', value });
+        }
+        options.approvalStatus = value;
+        index += 1;
+        continue;
+      }
+      if (token === '--risk-level') {
+        const value = String(requireFlagValue(rest, index, '--risk-level')).trim().toLowerCase();
+        if (!['read-only', 'paper', 'dry-run', 'live', 'all'].includes(value)) {
+          throw new CliError('INVALID_FLAG_VALUE', '--risk-level must be read-only, paper, dry-run, live, or all.', { flag: '--risk-level', value });
+        }
+        options.riskLevel = value;
+        index += 1;
+        continue;
+      }
       if (token === '--set') {
         const parsed = parseSetToken(requireFlagValue(rest, index, '--set'));
         options.inputs[parsed.key] = parsed.value;
@@ -126,6 +156,13 @@ function createParseRecipeFlags(deps = {}) {
     }
     if (options.id && options.file) {
       throw new CliError('INVALID_FLAG_COMBINATION', '--id and --file are mutually exclusive for recipe commands.');
+    }
+    if (action !== 'list' && (
+      options.source !== 'all'
+      || options.approvalStatus !== 'all'
+      || options.riskLevel !== 'all'
+    )) {
+      throw new CliError('INVALID_FLAG_COMBINATION', '--source, --approval-status, and --risk-level are only supported for recipe list.');
     }
     return options;
   };

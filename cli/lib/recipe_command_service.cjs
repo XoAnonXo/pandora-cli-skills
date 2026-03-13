@@ -14,7 +14,9 @@ function renderRecipeTable(payload) {
   for (const item of items) {
     if (!item) continue;
     // eslint-disable-next-line no-console
-    console.log(`${item.id || '-'}  ${item.displayName || '-'}  ${item.tool || '-'}  ${item.defaultPolicy || '-'}  ${item.defaultProfile || '-'}`);
+    console.log(
+      `${item.id || '-'}  ${item.displayName || '-'}  ${item.source || '-'}  ${item.approvalStatus || '-'}  ${item.riskLevel || '-'}  ${item.tool || '-'}  ${item.defaultPolicy || '-'}  ${item.defaultProfile || '-'}`,
+    );
   }
 }
 
@@ -58,7 +60,7 @@ function createRunRecipeCommand(deps) {
     }
 
     if (action === 'list' && includesHelpFlag(actionArgs)) {
-      const usage = 'pandora [--output table|json] recipe list';
+      const usage = 'pandora [--output table|json] recipe list [--source first-party|user|all] [--approval-status approved|unreviewed|experimental|deprecated|all] [--risk-level read-only|paper|dry-run|live|all]';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'recipe.list.help', commandHelpPayload(usage));
       } else {
@@ -105,7 +107,11 @@ function createRunRecipeCommand(deps) {
     const options = parseRecipeFlags(args);
 
     if (options.action === 'list') {
-      const listing = registry.listRecipes();
+      const listing = registry.listRecipes({
+        source: options.source,
+        approvalStatus: options.approvalStatus,
+        riskLevel: options.riskLevel,
+      });
       emitSuccess(context.outputMode, 'recipe.list', listing, renderRecipeTable);
       return;
     }
@@ -117,7 +123,8 @@ function createRunRecipeCommand(deps) {
       emitSuccess(context.outputMode, 'recipe.get', {
         item: record.summary || record.item,
         recipe,
-        source: record.source || 'file',
+        source: record.source || recipe.source || 'user',
+        origin: record.origin || 'file',
         filePath: record.filePath || options.file || null,
       }, renderRecipeTable);
       return;
@@ -131,7 +138,8 @@ function createRunRecipeCommand(deps) {
       remoteActive: process.env.PANDORA_MCP_REMOTE_ACTIVE === '1',
     });
     const compiled = runtime.compileRecipe(recipe, options.inputs, {
-      source: record.source || (recipe.firstParty ? 'builtin' : 'file'),
+      source: record.source || recipe.source || 'user',
+      origin: record.origin || (record.filePath ? 'file' : 'builtin'),
       filePath: record.filePath || options.file || null,
     });
 

@@ -231,22 +231,31 @@ function buildRecipeSummary(recipeListing) {
       id: item.id,
       displayName: normalizeString(item.displayName),
       description: normalizeString(item.description),
+      summary: normalizeString(item.summary),
       tool: normalizeString(item.tool),
       defaultPolicy: normalizeString(item.defaultPolicy),
       defaultProfile: normalizeString(item.defaultProfile),
+      approvalStatus: normalizeString(item.approvalStatus),
+      riskLevel: normalizeString(item.riskLevel),
+      mutating: item.mutating === true,
       safeByDefault: item.safeByDefault === true,
       operationExpected: item.operationExpected === true,
       supportsRemote: item.supportsRemote === true,
       source: normalizeString(item.source),
+      origin: normalizeString(item.origin),
     };
   });
 
   return {
     count: Number.isFinite(listing.count) ? listing.count : items.length,
-    builtinCount: Number.isFinite(listing.builtinCount) ? listing.builtinCount : items.filter((item) => item.source === 'builtin').length,
-    userCount: Number.isFinite(listing.userCount) ? listing.userCount : 0,
+    builtinCount: Number.isFinite(listing.builtinCount) ? listing.builtinCount : items.filter((item) => item.origin === 'builtin').length,
+    userCount: Number.isFinite(listing.userCount) ? listing.userCount : items.filter((item) => item.source === 'user').length,
     safeByDefaultCount: items.filter((item) => item.safeByDefault).length,
     operationExpectedCount: items.filter((item) => item.operationExpected).length,
+    sourceCounts: listing.sourceCounts || null,
+    approvalStatusCounts: listing.approvalStatusCounts || null,
+    riskLevelCounts: listing.riskLevelCounts || null,
+    appliedFilters: listing.appliedFilters || null,
     items,
   };
 }

@@ -20,6 +20,12 @@ function normalizeKebab(value) {
   return normalized;
 }
 
+function normalizeEnum(value, allowed, fallback = null) {
+  const text = normalizeKebab(value);
+  if (!text) return fallback;
+  return allowed.includes(text) ? text : null;
+}
+
 function normalizeInputDefinition(input, index, createError) {
   if (!isPlainObject(input)) {
     throw createError('RECIPE_INPUT_INVALID', `Recipe input at index ${index} must be an object.`, { index });
@@ -68,6 +74,16 @@ function normalizeCommandTemplate(template, createError) {
     throw createError('RECIPE_COMMAND_TEMPLATE_INVALID', 'Recipe commandTemplate must contain a pandora subcommand.');
   }
   return normalized;
+}
+
+function inferRiskLevel(commandTemplate, execution) {
+  const tokens = Array.isArray(commandTemplate) ? commandTemplate : [];
+  const normalizedExecution = isPlainObject(execution) ? execution : {};
+  if (normalizedExecution.mutating === true) return 'live';
+  if (tokens.includes('--execute') || tokens.includes('--execute-live')) return 'live';
+  if (tokens.includes('--paper')) return 'paper';
+  if (tokens.includes('--dry-run') || tokens.includes('--fork')) return 'dry-run';
+  return 'read-only';
 }
 
 function normalizeRecipeManifest(manifest, options = {}) {
@@ -133,6 +149,21 @@ function normalizeRecipeManifest(manifest, options = {}) {
     .filter(Boolean)));
 
   const execution = isPlainObject(manifest.execution) ? manifest.execution : {};
+  const source = normalizeEnum(
+    manifest.source || (manifest.firstParty === true ? 'first-party' : 'user'),
+    ['first-party', 'user'],
+    manifest.firstParty === true ? 'first-party' : 'user',
+  );
+  const approvalStatus = normalizeEnum(
+    manifest.approvalStatus || (source === 'first-party' ? 'approved' : 'unreviewed'),
+    ['approved', 'unreviewed', 'experimental', 'deprecated'],
+    source === 'first-party' ? 'approved' : 'unreviewed',
+  );
+  const riskLevel = normalizeEnum(
+    manifest.riskLevel,
+    ['read-only', 'paper', 'dry-run', 'live'],
+    null,
+  ) || inferRiskLevel(commandTemplate, execution);
 
   return {
     schemaVersion,
@@ -147,11 +178,15 @@ function normalizeRecipeManifest(manifest, options = {}) {
     tags,
     defaultPolicy,
     defaultProfile,
+    summary: normalizeText(manifest.summary || description) || description,
+    source,
+    approvalStatus,
+    riskLevel,
     safeByDefault: execution.safeByDefault !== false,
     operationExpected: execution.operationExpected !== false,
     mutating: execution.mutating === true,
     supportsRemote: execution.supportsRemote !== false,
-    firstParty: manifest.firstParty === true,
+    firstParty: source === 'first-party',
     benchmark: normalizeText(manifest.benchmark || null),
     docs: normalizeText(manifest.docs || null),
   };

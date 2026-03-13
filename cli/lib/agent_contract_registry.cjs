@@ -5495,15 +5495,21 @@ const commandContracts = [
   }),
   commandContract({
     name: 'recipe.list',
-    summary: 'List first-party Pandora recipes.',
-    usage: 'pandora [--output table|json] recipe list',
+    summary: 'List Pandora recipes with trust and risk metadata.',
+    usage: 'pandora [--output table|json] recipe list [--source first-party|user|all] [--approval-status approved|unreviewed|experimental|deprecated|all] [--risk-level read-only|paper|dry-run|live|all]',
     emits: ['recipe.list', 'recipe.list.help', 'recipe.help'],
     dataSchema: '#/definitions/RecipeListPayload',
     mcpExposed: true,
     mcp: {
       command: ['recipe', 'list'],
-      description: 'List first-party Pandora recipes.',
-      inputSchema: buildInputSchema(),
+      description: 'List Pandora recipes with trust and risk metadata.',
+      inputSchema: buildInputSchema({
+        flagProperties: {
+          source: stringSchema('Filter recipe ownership/trust source: first-party, user, or all.'),
+          'approval-status': stringSchema('Filter by recipe approval status: approved, unreviewed, experimental, deprecated, or all.'),
+          'risk-level': stringSchema('Filter by recipe risk level: read-only, paper, dry-run, live, or all.'),
+        },
+      }),
       preferred: true,
     },
     agentPlatform: {

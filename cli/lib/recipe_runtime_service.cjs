@@ -163,7 +163,8 @@ function createRecipeRuntimeService(options = {}) {
       declaredCommand: recipe.tool,
       policyId: recipe.defaultPolicy || null,
       profileId: recipe.defaultProfile || null,
-      source: metadata.source || (recipe.firstParty ? 'builtin' : 'file'),
+      source: metadata.source || recipe.source || (recipe.firstParty ? 'first-party' : 'user'),
+      origin: metadata.origin || (recipe.firstParty ? 'builtin' : 'file'),
       filePath: metadata.filePath || null,
     };
   }
@@ -202,11 +203,19 @@ function createRecipeRuntimeService(options = {}) {
     };
   }
 
+  function effectiveApprovalStatus(compiled) {
+    if (compiled && compiled.origin === 'file' && compiled.source !== 'first-party') {
+      return 'unreviewed';
+    }
+    return compiled && compiled.recipe ? compiled.recipe.approvalStatus || null : null;
+  }
+
   async function validateRecipeExecution(compiled, overrides = {}) {
     const request = buildPolicyRequest(compiled, overrides);
     const denials = [];
     const warnings = [];
     const profileId = overrides.profileId || compiled.profileId || null;
+    const approvalStatus = effectiveApprovalStatus(compiled);
 
     if (!compiled.descriptor) {
       denials.push({
@@ -263,7 +272,7 @@ function createRecipeRuntimeService(options = {}) {
     }
 
     const externalRecipeUnsafe =
-      compiled.source === 'file'
+      compiled.origin === 'file'
       && (request.mutating || request.liveRequested || request.requiresSecrets);
     if (externalRecipeUnsafe) {
       denials.push({
@@ -271,6 +280,35 @@ function createRecipeRuntimeService(options = {}) {
         message: 'External recipe files may only run known read-only delegated commands. Use a built-in recipe or run the underlying command directly with policy/profile controls.',
         command: compiled.command,
         source: compiled.source,
+        origin: compiled.origin,
+      });
+    }
+
+    if (compiled.source !== 'first-party' && approvalStatus !== 'approved') {
+      warnings.push({
+        code: 'RECIPE_UNREVIEWED_SOURCE',
+        message: `Recipe ${compiled.recipe.id} is a ${compiled.source || 'user'} recipe and should be treated as unreviewed unless explicitly approved.`,
+        recipeId: compiled.recipe.id,
+        source: compiled.source || null,
+        approvalStatus,
+      });
+    }
+    if (approvalStatus && approvalStatus !== 'approved') {
+      warnings.push({
+        code: 'RECIPE_APPROVAL_STATUS_NOTICE',
+        message: `Recipe ${compiled.recipe.id} is marked ${approvalStatus}. Validate before run, and do not treat it as a default live recommendation.`,
+        recipeId: compiled.recipe.id,
+        approvalStatus,
+        riskLevel: compiled.recipe.riskLevel || null,
+      });
+    }
+    if (compiled.recipe.riskLevel === 'live' && approvalStatus !== 'approved') {
+      denials.push({
+        code: 'RECIPE_UNREVIEWED_LIVE_DENIED',
+        message: `Recipe ${compiled.recipe.id} is a non-approved live recipe. Validate first and require explicit user intent before live execution.`,
+        recipeId: compiled.recipe.id,
+        approvalStatus,
+        source: compiled.source || null,
       });
     }
 

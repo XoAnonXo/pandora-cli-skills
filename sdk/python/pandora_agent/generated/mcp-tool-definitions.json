@@ -48429,14 +48429,27 @@
       "list"
     ],
     "controlInputNames": [],
-    "description": "List first-party Pandora recipes.",
+    "description": "List Pandora recipes with trust and risk metadata.",
     "executeFlags": [],
     "expectedLatencyMs": 150,
     "externalDependencies": [],
     "idempotency": "idempotent",
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "approval-status": {
+          "description": "Filter by recipe approval status: approved, unreviewed, experimental, deprecated, or all.",
+          "type": "string"
+        },
+        "risk-level": {
+          "description": "Filter by recipe risk level: read-only, paper, dry-run, live, or all.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Filter recipe ownership/trust source: first-party, user, or all.",
+          "type": "string"
+        }
+      },
       "type": "object",
       "xPandora": {
         "agentPreflightRequired": false,
@@ -48450,7 +48463,7 @@
         ],
         "canonicalName": "recipe.list",
         "canonicalTool": "recipe.list",
-        "canonicalUsage": "pandora [--output table|json] recipe list",
+        "canonicalUsage": "pandora [--output table|json] recipe list [--source first-party|user|all] [--approval-status approved|unreviewed|experimental|deprecated|all] [--risk-level read-only|paper|dry-run|live|all]",
         "command": [
           "recipe",
           "list"
@@ -48539,11 +48552,11 @@
         "riskLevel": "low",
         "safeEquivalent": null,
         "safeFlags": [],
-        "summary": "List first-party Pandora recipes.",
+        "summary": "List Pandora recipes with trust and risk metadata.",
         "supportsRemote": true,
         "supportsWebhook": false,
         "topLevelInputConstraints": null,
-        "usage": "pandora [--output table|json] recipe list"
+        "usage": "pandora [--output table|json] recipe list [--source first-party|user|all] [--approval-status approved|unreviewed|experimental|deprecated|all] [--risk-level read-only|paper|dry-run|live|all]"
       }
     },
     "jobCapable": false,
@@ -48578,7 +48591,7 @@
       ],
       "canonicalName": "recipe.list",
       "canonicalTool": "recipe.list",
-      "canonicalUsage": "pandora [--output table|json] recipe list",
+      "canonicalUsage": "pandora [--output table|json] recipe list [--source first-party|user|all] [--approval-status approved|unreviewed|experimental|deprecated|all] [--risk-level read-only|paper|dry-run|live|all]",
       "command": [
         "recipe",
         "list"
@@ -48667,11 +48680,11 @@
       "riskLevel": "low",
       "safeEquivalent": null,
       "safeFlags": [],
-      "summary": "List first-party Pandora recipes.",
+      "summary": "List Pandora recipes with trust and risk metadata.",
       "supportsRemote": true,
       "supportsWebhook": false,
       "topLevelInputConstraints": null,
-      "usage": "pandora [--output table|json] recipe list"
+      "usage": "pandora [--output table|json] recipe list [--source first-party|user|all] [--approval-status approved|unreviewed|experimental|deprecated|all] [--risk-level read-only|paper|dry-run|live|all]"
     }
   },
   {
