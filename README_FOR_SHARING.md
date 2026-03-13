@@ -49,6 +49,7 @@ If you are receiving this package from the Pandora team, start here.
 
 - Anthropic skill install: [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
 - Main landing page: [`README.md`](./README.md)
+- Promo concept deck: [`docs/promo/README.md`](./docs/promo/README.md)
 - Agent bootstrap: [`docs/skills/agent-quickstart.md`](./docs/skills/agent-quickstart.md)
 - Command reference: [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
 - Agent contracts / MCP: [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
@@ -57,6 +58,12 @@ If you are receiving this package from the Pandora team, start here.
 - Security model: [`docs/trust/security-model.md`](./docs/trust/security-model.md)
 - Support matrix: [`docs/trust/support-matrix.md`](./docs/trust/support-matrix.md)
 
+Promo review note:
+
+- Run `npm run check:promo` for the structural/content gate.
+- Run `node scripts/check_promo_browser.cjs` for the routed-browser pass that refreshes `output/playwright/`.
+- In this Codex sandbox, `npm run check:promo:browser` can abort before Chrome stays up because npm-managed Chrome launches are unreliable here.
+
 ## What This Package Includes
 
 ```text
@@ -64,6 +71,7 @@ docs/
   skills/               human and agent documentation
   trust/                release, security, and support docs
   benchmarks/           benchmark methodology and scorecards
+  promo/                promotional website concepts and static assets
 sdk/
   typescript/           TypeScript SDK surface
   python/               Python SDK surface
@@ -81,6 +89,7 @@ Included files of interest:
 - `docs/skills/*.md`
 - `docs/trust/*.md`
 - `docs/benchmarks/**`
+- `docs/promo/**`
 - `benchmarks/latest/core-report.json`
 - `sdk/generated/*`
 - `sdk/typescript/**`
@@ -90,10 +99,13 @@ Included files of interest:
 - `scripts/.env.example`
 - `scripts/create_market_launcher.ts`
 - `scripts/create_polymarket_clone_and_bet.ts`
+- `scripts/check_promo_surface.cjs`
+- `scripts/check_promo_browser.cjs`
 - `scripts/release/install_release.sh`
 - `references/creation-script.md`
 - `references/contracts.md`
 - `references/checklist.md`
+- `references/promo-website-research.md`
 
 ## What Is Intentionally Omitted
 
