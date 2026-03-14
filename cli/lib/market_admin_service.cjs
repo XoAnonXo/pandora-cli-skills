@@ -120,13 +120,60 @@ const CALC_REMOVE_LIQUIDITY_ABI_CANDIDATES = [
   ],
 ];
 
-const RESOLVE_MARKET_ABI = [
+const RESOLVE_METHOD_CANDIDATES = [
   {
-    type: 'function',
-    name: 'resolveMarket',
-    stateMutability: 'nonpayable',
-    inputs: [{ name: 'outcome', type: 'bool' }],
-    outputs: [],
+    functionName: 'resolveMarket',
+    abiSignature: 'resolveMarket(bool)',
+    role: 'legacy',
+    supportsInvalid: false,
+    abi: [
+      {
+        type: 'function',
+        name: 'resolveMarket',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'outcome', type: 'bool' }],
+        outputs: [],
+      },
+    ],
+    buildArgs(answer) {
+      return [answer === 'yes'];
+    },
+  },
+  {
+    functionName: 'setAnswer',
+    abiSignature: 'setAnswer(uint8,string)',
+    role: 'operator',
+    supportsInvalid: true,
+    abi: [
+      {
+        type: 'function',
+        name: 'setAnswer',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'answer', type: 'uint8' }, { name: 'reason', type: 'string' }],
+        outputs: [],
+      },
+    ],
+    buildArgs(answer, reason) {
+      return [normalizeResolveAnswerCode(answer), String(reason || '')];
+    },
+  },
+  {
+    functionName: 'resolveArbitration',
+    abiSignature: 'resolveArbitration(uint8,string)',
+    role: 'arbiter',
+    supportsInvalid: true,
+    abi: [
+      {
+        type: 'function',
+        name: 'resolveArbitration',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'answer', type: 'uint8' }, { name: 'reason', type: 'string' }],
+        outputs: [],
+      },
+    ],
+    buildArgs(answer, reason) {
+      return [normalizeResolveAnswerCode(answer), String(reason || '')];
+    },
   },
 ];
 
@@ -184,6 +231,19 @@ const POLL_FINALIZED_READ_CANDIDATES = [
       },
     ],
   },
+  {
+    fn: 'getFinalizedStatus',
+    kind: 'bool-status',
+    abi: [
+      {
+        type: 'function',
+        name: 'getFinalizedStatus',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ type: 'bool' }, { type: 'uint256' }],
+      },
+    ],
+  },
   { fn: 'getFinalizedStatus', abi: [{ type: 'function', name: 'getFinalizedStatus', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] }] },
   { fn: 'isFinalized', abi: [{ type: 'function', name: 'isFinalized', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] }] },
   { fn: 'finalized', abi: [{ type: 'function', name: 'finalized', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] }] },
@@ -233,9 +293,17 @@ const POLL_EPOCH_LENGTH_READ_CANDIDATES = [
 ];
 
 const POLL_OPERATOR_READ_CANDIDATES = [
+  { fn: 'getArbiter', abi: [{ type: 'function', name: 'getArbiter', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] },
   { fn: 'arbiter', abi: [{ type: 'function', name: 'arbiter', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] },
   { fn: 'operator', abi: [{ type: 'function', name: 'operator', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] },
   { fn: 'owner', abi: [{ type: 'function', name: 'owner', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] },
+];
+
+const POLL_CALLER_OPERATOR_CHECK_CANDIDATES = [
+  {
+    fn: 'isOperator',
+    abi: [{ type: 'function', name: 'isOperator', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'bool' }] }],
+  },
 ];
 
 function createServiceError(code, message, details = undefined) {
@@ -302,13 +370,6 @@ function toFiniteNumber(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return null;
   return numeric;
-}
-
-function normalizeResolveOutcome(answer) {
-  const normalized = String(answer || '').trim().toLowerCase();
-  if (normalized === 'yes') return true;
-  if (normalized === 'no') return false;
-  return null;
 }
 
 function txExplorerUrl(chainId, txHash) {
@@ -470,14 +531,14 @@ async function decodeAndWrapError(err, fallbackCode, fallbackMessage) {
   });
 }
 
-async function tryReadContractAny(publicClient, address, candidates = []) {
+async function tryReadContractAny(publicClient, address, candidates = [], args = []) {
   for (const candidate of candidates) {
     try {
       const value = await publicClient.readContract({
         address,
         abi: candidate.abi,
         functionName: candidate.fn,
-        args: [],
+        args,
       });
       return { ok: true, fn: candidate.fn, value, candidate };
     } catch {
@@ -512,6 +573,25 @@ function normalizePollAnswer(value) {
   if (asBig === 0n) return 'no';
   if (asBig === 2n) return 'invalid';
   return String(asBig);
+}
+
+function normalizePollAnswerFromStatusWord(value) {
+  const normalized = normalizePollAnswer(value);
+  if (normalized === 'yes' || normalized === 'no' || normalized === 'invalid') {
+    return normalized;
+  }
+  const asBig = normalizeOptionalBigInt(value);
+  if (asBig === 3n) return 'yes';
+  if (asBig === 4n) return 'no';
+  if (asBig === 5n) return 'invalid';
+  return normalized;
+}
+
+function normalizeResolveAnswerCode(answer) {
+  if (answer === 'yes') return 1;
+  if (answer === 'no') return 0;
+  if (answer === 'invalid') return 2;
+  throw createServiceError('INVALID_FLAG_VALUE', '--answer must be yes|no|invalid.');
 }
 
 function deriveOutcomePositionSide(yesRaw, noRaw) {
@@ -610,7 +690,7 @@ function deriveCurrentEpochFromTimestamp(timestamp, epochLengthSeconds = 300n) {
   return ts / epochLength;
 }
 
-async function readPollResolutionState(publicClient, pollAddress) {
+async function readPollResolutionState(publicClient, pollAddress, options = {}) {
   const statusRead = await tryReadContractAny(publicClient, pollAddress, POLL_STATUS_READ_CANDIDATES);
   const finalizedRead = await tryReadContractAny(publicClient, pollAddress, POLL_FINALIZED_READ_CANDIDATES);
   const answerRead = await tryReadContractAny(publicClient, pollAddress, POLL_ANSWER_READ_CANDIDATES);
@@ -622,6 +702,10 @@ async function readPollResolutionState(publicClient, pollAddress) {
   const operatorRead = await tryReadContractAny(publicClient, pollAddress, POLL_OPERATOR_READ_CANDIDATES);
   const currentEpochRead = await tryReadContractAny(publicClient, pollAddress, POLL_CURRENT_EPOCH_READ_CANDIDATES);
   const epochLengthRead = await tryReadContractAny(publicClient, pollAddress, POLL_EPOCH_LENGTH_READ_CANDIDATES);
+  const callerAddress = normalizeOptionalAddress(options.callerAddress);
+  const callerOperatorRead = callerAddress
+    ? await tryReadContractAny(publicClient, pollAddress, POLL_CALLER_OPERATOR_CHECK_CANDIDATES, [callerAddress])
+    : { ok: false, fn: null, value: null, candidate: null };
 
   let currentEpoch = currentEpochRead.ok ? normalizeOptionalBigInt(currentEpochRead.value) : null;
   if (currentEpoch === null) {
@@ -652,6 +736,12 @@ async function readPollResolutionState(publicClient, pollAddress) {
         finalizedAnswer = normalizePollAnswer(tuple[1]);
         finalizedEpoch = normalizeOptionalBigInt(tuple[2]);
       }
+    } else if (kind === 'bool-status') {
+      const tuple = Array.isArray(finalizedRead.value) ? finalizedRead.value : null;
+      if (tuple && tuple.length >= 2) {
+        finalizedBool = Boolean(tuple[0]);
+        finalizedAnswer = normalizePollAnswerFromStatusWord(tuple[1]);
+      }
     } else {
       finalizedBool = Boolean(finalizedRead.value);
     }
@@ -678,15 +768,92 @@ async function readPollResolutionState(publicClient, pollAddress) {
     epochsUntilFinalization,
     claimable,
     operator: operatorRead.ok ? normalizeOptionalAddress(operatorRead.value) : null,
+    callerIsOperator: callerOperatorRead.ok ? Boolean(callerOperatorRead.value) : null,
+    callerAddress,
     readSources: {
       status: statusRead.fn,
       finalized: finalizedRead.fn,
+      finalizedKind: finalizedRead.candidate && finalizedRead.candidate.kind ? finalizedRead.candidate.kind : null,
       answer: answerRead.fn,
       finalizationEpoch: finalizationEpochRead.fn,
       currentEpoch: currentEpochRead.fn,
       epochLength: epochLengthRead.fn,
       operator: operatorRead.fn,
+      callerIsOperator: callerOperatorRead.fn,
     },
+  };
+}
+
+function listSupportedResolveMethods(answer) {
+  return RESOLVE_METHOD_CANDIDATES
+    .filter((candidate) => candidate.supportsInvalid || answer !== 'invalid')
+    .map((candidate) => ({
+      functionName: candidate.functionName,
+      abiSignature: candidate.abiSignature,
+      role: candidate.role,
+      supportsInvalid: candidate.supportsInvalid,
+    }));
+}
+
+function buildResolveMethodSelection(precheck, caller, answer) {
+  const supportedMethods = listSupportedResolveMethods(answer);
+  const finalizedKind = precheck && precheck.readSources ? precheck.readSources.finalizedKind : null;
+  const operatorSource = precheck && precheck.readSources ? precheck.readSources.operator : null;
+  const callerIsArbiter = Boolean(precheck && precheck.operator && caller && precheck.operator === caller);
+  const callerIsOperator = Boolean(precheck && precheck.callerIsOperator === true);
+  const modernPollFamily = operatorSource === 'getArbiter' || finalizedKind === 'bool-status' || callerIsOperator;
+
+  if (callerIsArbiter) {
+    return {
+      candidate: RESOLVE_METHOD_CANDIDATES.find((item) => item.functionName === 'resolveArbitration') || null,
+      selection: 'arbiter',
+      supportedMethods,
+      callerIsArbiter,
+      callerIsOperator,
+      modernPollFamily,
+    };
+  }
+
+  if (callerIsOperator) {
+    return {
+      candidate: RESOLVE_METHOD_CANDIDATES.find((item) => item.functionName === 'setAnswer') || null,
+      selection: 'operator',
+      supportedMethods,
+      callerIsArbiter,
+      callerIsOperator,
+      modernPollFamily,
+    };
+  }
+
+  if (modernPollFamily) {
+    return {
+      candidate: null,
+      selection: caller ? 'unsupported-caller-role' : 'role-required',
+      supportedMethods,
+      callerIsArbiter,
+      callerIsOperator,
+      modernPollFamily,
+    };
+  }
+
+  const legacyCandidate = RESOLVE_METHOD_CANDIDATES.find((item) => item.functionName === 'resolveMarket') || null;
+  if (!legacyCandidate || (answer === 'invalid' && !legacyCandidate.supportsInvalid)) {
+    return {
+      candidate: null,
+      selection: 'unsupported-answer',
+      supportedMethods,
+      callerIsArbiter,
+      callerIsOperator,
+      modernPollFamily,
+    };
+  }
+  return {
+    candidate: legacyCandidate,
+    selection: 'legacy-default',
+    supportedMethods,
+    callerIsArbiter,
+    callerIsOperator,
+    modernPollFamily,
   };
 }
 
@@ -931,24 +1098,13 @@ async function discoverMarketUserMarkets(indexerUrl, wallet, chainId, timeoutMs)
 }
 
 /**
- * Resolve a market outcome by calling `resolveMarket(bool)`.
+ * Resolve a market outcome using the poll ABI family supported by the target contract.
  * @param {object} [options]
  * @returns {Promise<object>}
  */
 async function runResolve(options = {}) {
   const schemaVersion = '1.0.0';
   const generatedAt = new Date().toISOString();
-  const outcome = normalizeResolveOutcome(options.answer);
-  if (outcome === null) {
-    throw createServiceError(
-      'INVALID_FLAG_VALUE',
-      '--answer invalid is not supported by resolveMarket(bool). Use yes|no.',
-    );
-  }
-
-  const deadlineSeconds = Number.isInteger(Number(options.deadlineSeconds))
-    ? Math.max(60, Math.trunc(Number(options.deadlineSeconds)))
-    : 1800;
   let runtimePreview;
   try {
     const forkRuntime = resolveForkRuntime(options, {
@@ -978,11 +1134,13 @@ async function runResolve(options = {}) {
     answer: options.answer,
     reason: options.reason,
     txPlan: {
-      functionName: 'resolveMarket',
-      args: [outcome],
-      abiSignature: 'resolveMarket(bool)',
+      functionName: null,
+      args: null,
+      abiSignature: null,
+      supportedMethods: listSupportedResolveMethods(options.answer),
+      selection: 'precheck-unavailable',
       notes: [
-        'Resolution is restricted by arbiter/operator checks on-chain.',
+        'Resolution method depends on the poll ABI family and caller role.',
         `Reason is recorded off-chain in CLI payload: ${options.reason}`,
       ],
     },
@@ -990,13 +1148,13 @@ async function runResolve(options = {}) {
     diagnostics: [],
   };
 
-  const runtime = await resolveRuntime(options, { requirePrivateKey: options.execute, requireUsdc: false });
+  const runtime = options.resolvedRuntime || await resolveRuntime(options, { requirePrivateKey: options.execute, requireUsdc: false });
   payload.runtime = {
     mode: runtime.mode,
     chainId: runtime.chainId,
     rpcUrl: runtime.rpcUrl,
   };
-  const { publicClient, walletClient, account } = await createClients(runtime, options.execute, {
+  const { publicClient, walletClient, account } = options.sharedClients || await createClients(runtime, options.execute, {
     command: 'resolve',
     toolFamily: 'resolve',
     category: options.category || null,
@@ -1006,13 +1164,23 @@ async function runResolve(options = {}) {
   if (!options.execute) {
     try {
       await ensureContractCode(publicClient, pollAddress, 'Poll contract');
-      const precheck = await readPollResolutionState(publicClient, pollAddress);
-      const callerIsOperator = Boolean(precheck.operator && caller && precheck.operator === caller);
+      const precheck = await readPollResolutionState(publicClient, pollAddress, { callerAddress: caller });
+      const selection = buildResolveMethodSelection(precheck, caller, options.answer);
+      if (selection.candidate) {
+        payload.txPlan.functionName = selection.candidate.functionName;
+        payload.txPlan.args = selection.candidate.buildArgs(options.answer, options.reason);
+        payload.txPlan.abiSignature = selection.candidate.abiSignature;
+      }
+      payload.txPlan.selection = selection.selection;
       payload.precheck = {
         ...precheck,
         caller,
-        callerIsOperator,
+        callerIsArbiter: selection.callerIsArbiter,
+        callerIsOperator: selection.callerIsOperator,
       };
+      if (!selection.candidate) {
+        payload.diagnostics.push('Resolve method could not be selected from precheck alone. A caller role may be required.');
+      }
     } catch (err) {
       payload.precheck = null;
       payload.diagnostics.push(
@@ -1024,18 +1192,55 @@ async function runResolve(options = {}) {
 
   await ensureContractCode(publicClient, pollAddress, 'Poll contract');
 
-  const precheck = await readPollResolutionState(publicClient, pollAddress);
-  const callerIsOperator = Boolean(precheck.operator && caller && precheck.operator === caller);
+  const precheck = await readPollResolutionState(publicClient, pollAddress, { callerAddress: caller });
+  const selection = buildResolveMethodSelection(precheck, caller, options.answer);
   payload.precheck = {
     ...precheck,
     caller,
-    callerIsOperator,
+    callerIsArbiter: selection.callerIsArbiter,
+    callerIsOperator: selection.callerIsOperator,
   };
 
-  if (precheck.operator && caller && !callerIsOperator) {
+  if (!selection.candidate) {
+    throw createServiceError(
+      'RESOLVE_UNSUPPORTED_CONTRACT',
+      'Resolve could not determine a supported contract method for this poll and caller.',
+      {
+        pollAddress,
+        caller,
+        supportedMethods: selection.supportedMethods,
+        readSources: precheck.readSources,
+      },
+    );
+  }
+
+  payload.txPlan.functionName = selection.candidate.functionName;
+  payload.txPlan.args = selection.candidate.buildArgs(options.answer, options.reason);
+  payload.txPlan.abiSignature = selection.candidate.abiSignature;
+  payload.txPlan.selection = selection.selection;
+
+  if (
+    selection.candidate.role === 'arbiter'
+    && precheck.operator
+    && caller
+    && !selection.callerIsArbiter
+  ) {
+    throw createServiceError(
+      'RESOLVE_CALLER_NOT_ARBITER',
+      `Cannot resolve: caller is not arbiter. Arbiter: ${precheck.operator}.`,
+      {
+        arbiter: precheck.operator,
+        caller,
+        finalizationEpoch: precheck.finalizationEpoch,
+        currentEpoch: precheck.currentEpoch,
+        epochsUntilFinalization: precheck.epochsUntilFinalization,
+      },
+    );
+  }
+  if (selection.candidate.role === 'operator' && !selection.callerIsOperator) {
     throw createServiceError(
       'RESOLVE_CALLER_NOT_OPERATOR',
-      `Cannot resolve: caller is not operator. Arbiter: ${precheck.operator}.`,
+      'Cannot resolve: caller is not an operator for this poll.',
       {
         arbiter: precheck.operator,
         caller,
@@ -1050,9 +1255,9 @@ async function runResolve(options = {}) {
     const simulation = await publicClient.simulateContract({
       account,
       address: pollAddress,
-      abi: RESOLVE_MARKET_ABI,
-      functionName: 'resolveMarket',
-      args: [outcome],
+      abi: selection.candidate.abi,
+      functionName: selection.candidate.functionName,
+      args: selection.candidate.buildArgs(options.answer, options.reason),
     });
     const txHash = await walletClient.writeContract(simulation.request);
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
@@ -1070,7 +1275,11 @@ async function runResolve(options = {}) {
     };
     return payload;
   } catch (err) {
-    throw await decodeAndWrapError(err, 'RESOLVE_EXECUTION_FAILED', 'Failed to execute resolveMarket.');
+    throw await decodeAndWrapError(
+      err,
+      'RESOLVE_EXECUTION_FAILED',
+      `Failed to execute ${selection.candidate.functionName}.`,
+    );
   }
 }
 
@@ -1878,7 +2087,7 @@ async function runClaim(options = {}) {
     diagnostics.push('No candidate markets discovered for claim-all.');
   }
   const prefetchedMarketsByAddress = await fetchIndexerMarketsMap(indexerUrl, markets, timeoutMs);
-  const sharedClients = await createClients(runtime, options.execute, {
+  const sharedClients = options.sharedClients || await createClients(runtime, options.execute, {
     command: 'claim',
     toolFamily: 'claim',
     category: options.category || null,

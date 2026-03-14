@@ -11643,7 +11643,9 @@ test('resolve and lp commands are enabled', () => {
   assert.equal(resolvePayload.ok, true);
   assert.equal(resolvePayload.command, 'resolve');
   assert.equal(resolvePayload.data.mode, 'dry-run');
-  assert.equal(resolvePayload.data.txPlan.functionName, 'resolveMarket');
+  assert.equal(Array.isArray(resolvePayload.data.txPlan.supportedMethods), true);
+  assert.equal(resolvePayload.data.txPlan.supportedMethods.some((item) => item.functionName === 'resolveMarket'), true);
+  assert.equal(resolvePayload.data.txPlan.selection, 'precheck-unavailable');
 
   const lpResult = runCli([
     '--output',
