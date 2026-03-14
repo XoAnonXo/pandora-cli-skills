@@ -385,7 +385,11 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
   const helpNotes = [
     'The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.',
     'Use `pandora mirror panic --clear ...` after incident review to remove the default stop file, or remove the file manually only if you know the emergency lock is stale.',
-    'Use `pandora mirror sync unlock --state-file <path>|--strategy-hash <hash>` to clear stale or invalid pending-action locks; add --force only after operator reconciliation.',
+    'Use `pandora mirror sync unlock --state-file <path>|--strategy-hash <hash>` to clear stale or invalid pending-action locks; when the lock matches the last blocked execution, unlock also clears the common persisted manual-review blocker so operators do not need JSON surgery.',
+    '`mirror sync` does not accept a `--source` flag. `--source auto|api|on-chain` belongs to `pandora polymarket positions`, not the daemon surfaces.',
+    '`--stream` in CLI JSON mode is restricted. Use table output for live terminal streaming, or set `PANDORA_DAEMON_LOG_JSONL=1` when you need daemon JSONL logs.',
+    'Live mirror sync requires both `--max-open-exposure-usdc` and `--max-trades-per-day` before any execution leg is allowed to start.',
+    'Hedging is enabled by default. Add `--no-hedge` only when you intentionally want Pandora-only mirror operation.',
     'Use `--adopt-existing-positions` after a state wipe when the daemon should seed managed Polymarket inventory from live YES/NO holdings before enabling sell-side recycling.',
     'Default hedge scope is `total`, which includes held Pandora outcome tokens in addition to pool reserves. Use `--hedge-scope pool` only when you intentionally want pool-only hedging.',
   ];
@@ -581,6 +585,9 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
       staleAfterMs: options.staleAfterMs || undefined,
       strategyHash,
     });
+    const runtimeState = result.stateRecovery && result.stateRecovery.updated
+      ? loadMirrorState(stateFile, strategyHash).state
+      : loaded.state;
     const payload = {
       schemaVersion: '1.0.0',
       generatedAt: new Date().toISOString(),
@@ -601,8 +608,9 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
         guidance: Array.isArray(result.guidance) ? result.guidance : [],
       },
       lock: result.clearedLock || result.lock || null,
+      stateRecovery: result.stateRecovery || { updated: false, changes: [] },
       runtime: buildMirrorRuntimeTelemetry({
-        state: loaded.state,
+        state: runtimeState,
         stateFile,
       }),
     };

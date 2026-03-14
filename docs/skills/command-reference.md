@@ -264,6 +264,13 @@ Mirror runtime notes:
 - `mirror sync unlock` is the explicit operator recovery surface for persisted pending-action locks.
   - invalid and zombie locks can be cleared without `--force`
   - reconciliation-required or still-pending locks require operator review and `--force`
+  - when the lock matches the common persisted manual-review blocker, unlock also clears that state guard so operators do not need to edit the state JSON by hand
+- `mirror go` / `mirror sync` do not accept a daemon `--source` selector.
+  - keep `--source auto|api|on-chain` for `pandora polymarket positions`
+- `mirror sync --stream` is for table-mode terminal streaming.
+  - in JSON workflows, use the bounded JSON payloads or daemon JSONL logs via `PANDORA_DAEMON_LOG_JSONL=1`
+- Hedging is enabled by default on mirror daemon paths.
+  - add `--no-hedge` only when you intentionally want Pandora-only operation
 - `mirror status` always includes `runtime.health`, `runtime.daemon`, `runtime.lastAction`, `runtime.lastError`, `runtime.pendingAction`, and recent `runtime.alerts` when strategy metadata can be resolved.
 - `runtime.health.status` is the operator rollup and can be `running`, `idle`, `blocked`, `degraded`, `stale`, or `error`.
   - start with `runtime.health.code`, `runtime.health.message`, `runtime.health.heartbeatAgeMs`, `runtime.pendingAction`, `runtime.lastAction`, and `runtime.lastError`

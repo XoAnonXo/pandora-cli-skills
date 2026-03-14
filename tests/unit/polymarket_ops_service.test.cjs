@@ -4,6 +4,7 @@ const http = require('node:http');
 
 const {
   runPolymarketBalance,
+  runPolymarketCheck,
   runPolymarketPositions,
   runPolymarketDeposit,
   runPolymarketWithdraw,
@@ -374,4 +375,30 @@ test('runPolymarketPositions marks merge readiness partial when only one outcome
   assert.equal(payload.mergeReadiness.blockingReasons.includes('YES_BALANCE_UNAVAILABLE'), true);
   assert.equal(payload.mergeReadiness.blockingReasons.includes('NO_BALANCE_UNAVAILABLE'), true);
   assert.equal(payload.diagnostics.some((entry) => /Merge readiness is partial/i.test(entry)), true);
+});
+
+test('runPolymarketCheck returns actionable wallet dependency remediation when ethers wallet is unavailable', async () => {
+  const payload = await runPolymarketCheck(
+    {
+      rpcUrl: 'https://polygon.example',
+      env: {
+        POLYMARKET_PRIVATE_KEY: `0x${'8'.repeat(64)}`,
+      },
+    },
+    {
+      viemRuntime: createViemRuntime('0x1111111111111111111111111111111111111111'),
+      publicClient: {
+        getChainId: async () => 137,
+        readContract: async () => 0n,
+      },
+      loadWalletModule: () => {
+        throw new Error('Cannot find module @ethersproject/wallet');
+      },
+    },
+  );
+
+  assert.equal(payload.apiKeySanity.status, 'dependency_error');
+  assert.equal(payload.apiKeySanity.code, 'POLYMARKET_WALLET_DEPENDENCY_MISSING');
+  assert.match(payload.apiKeySanity.reason, /Reinstall pandora-cli-skills/i);
+  assert.match(payload.apiKeySanity.remediation, /@ethersproject\/wallet/i);
 });

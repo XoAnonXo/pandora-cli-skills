@@ -32,7 +32,36 @@ function resolveTradeExecutionRoute(requestedRoute, needsApproval) {
     ? needsApproval
       ? 'flashbots-bundle'
       : 'flashbots-private'
-    : requestedRoute;
+      : requestedRoute;
+}
+
+function describeFallbackState(canFallbackToPublic, runtime) {
+  if (canFallbackToPublic) {
+    return {
+      publicFallbackEligible: true,
+      publicFallbackHint: 'Public fallback is enabled and will be used only when the private route fails before submission.',
+    };
+  }
+  return {
+    publicFallbackEligible: false,
+    publicFallbackHint:
+      runtime && runtime.executionRouteFallback === 'public'
+        ? 'Public fallback is disabled because the private route already submitted or the runtime blocked fallback.'
+        : 'Public fallback is disabled. Set --rebalance-route-fallback public to degrade pre-submission private-route failures to public submission.',
+  };
+}
+
+function appendFallbackGuidance(error, canFallbackToPublic, runtime) {
+  if (!(error && typeof error.message === 'string')) return error;
+  const details = describeFallbackState(canFallbackToPublic, runtime);
+  error.details = {
+    ...(error.details && typeof error.details === 'object' ? error.details : {}),
+    ...details,
+  };
+  if (!canFallbackToPublic && !/fallback/i.test(error.message)) {
+    error.message = `${error.message} ${details.publicFallbackHint}`;
+  }
+  return error;
 }
 
 function hasSubmittedFlashbotsContext(error) {
@@ -59,6 +88,7 @@ async function executeTradeWithRoute(options = {}) {
     requestedRoute: requestedExecutionRoute,
     resolvedRoute: resolvedExecutionRoute,
     executionRouteFallback: runtime.executionRouteFallback || null,
+    ...describeFallbackState(canFallbackToPublic, runtime),
     chainId: runtime.chainId,
     mode: runtime.mode || null,
     flashbotsRelayUrl: runtime.flashbotsRelayUrl || null,
@@ -99,7 +129,7 @@ async function executeTradeWithRoute(options = {}) {
       if (options.needsApproval) {
         throw errorFactory(
           'FLASHBOTS_BUNDLE_REQUIRED',
-          'Flashbots private transaction routing cannot include an approval; use auto or flashbots-bundle.',
+          'Flashbots private transaction routing cannot include an approval. Use auto or flashbots-bundle, or set --rebalance-route-fallback public if you want pre-submission failures to degrade to public execution.',
           buildDetails(),
         );
       }
@@ -118,6 +148,7 @@ async function executeTradeWithRoute(options = {}) {
       buildDetails(),
       errorFactory,
     );
+    appendFallbackGuidance(routeError, canFallbackToPublic, runtime);
     if (!canFallbackToPublic || hasSubmittedFlashbotsContext(routeError)) {
       throw routeError;
     }

@@ -521,6 +521,26 @@ async function wrapDeployExecutionError(err, code, fallbackMessage, details = un
   });
 }
 
+function isRetryablePublicMempoolError(error) {
+  const message = String((error && error.message) || '').toLowerCase();
+  return [
+    'replacement transaction underpriced',
+    'replacement underpriced',
+    'transaction underpriced',
+    'nonce too low',
+    'already known',
+    'temporarily underpriced',
+    'dropped from mempool',
+    'transaction was not mined',
+    'transaction could not be found',
+    'transaction not found',
+  ].some((pattern) => message.includes(pattern));
+}
+
+async function sleepForRetry(delayMs) {
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 function resolveDeployRuntime(options = {}) {
   const viemRuntime = options && options.viem && typeof options.viem === 'object' ? options.viem : {};
   return {
@@ -1179,12 +1199,49 @@ async function deployPandoraAmmMarket(options = {}) {
   }
 
   async function executePublicRoute(routeMetadata) {
-    const approveExecution = await simulateApproveExecution();
+    const submitPublicTransactionWithRetry = async (label, simulateExecution) => {
+      const maxAttempts = 2;
+      let lastError = null;
+      let lastHash = null;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        let execution = null;
+        let txHash = null;
+        try {
+          execution = await simulateExecution();
+          txHash = await walletClient.writeContract(execution.request);
+          lastHash = txHash;
+          await publicClient.waitForTransactionReceipt({ hash: txHash });
+          return {
+            execution,
+            txHash,
+            publicRetryCount: attempt - 1,
+          };
+        } catch (error) {
+          lastError = error;
+          if (!isRetryablePublicMempoolError(error) || attempt >= maxAttempts) {
+            if (lastError && typeof lastError === 'object') {
+              lastError.details = {
+                ...(lastError.details && typeof lastError.details === 'object' ? lastError.details : {}),
+                publicRetryAttempts: attempt,
+                publicRetryLabel: label,
+                publicRetryExhausted: attempt >= maxAttempts && isRetryablePublicMempoolError(error),
+                lastSubmittedHash: txHash || lastHash || null,
+              };
+            }
+            throw lastError;
+          }
+          await sleepForRetry(250 * attempt);
+        }
+      }
+      throw lastError;
+    };
+
+    const initialApproveExecution = await simulateApproveExecution();
     let approveTxHash = null;
-    if (approveExecution.request) {
+    if (initialApproveExecution.request) {
       try {
-        approveTxHash = await walletClient.writeContract(approveExecution.request);
-        await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+        const approvalSubmission = await submitPublicTransactionWithRetry('approve', () => simulateApproveExecution());
+        approveTxHash = approvalSubmission.txHash;
       } catch (err) {
         throw await wrapDeployExecutionError(err, 'APPROVE_EXECUTION_FAILED', 'USDC approve failed.', {
           approveTxHash: approveTxHash || null,
@@ -1192,11 +1249,15 @@ async function deployPandoraAmmMarket(options = {}) {
       }
     }
 
-    const marketExecution = await simulateMarketExecution();
+    let marketExecution = null;
     let marketTxHash;
     try {
-      marketTxHash = await walletClient.writeContract(marketExecution.request);
-      await publicClient.waitForTransactionReceipt({ hash: marketTxHash });
+      const marketSubmission = await submitPublicTransactionWithRetry(
+        marketConfig.functionName,
+        () => simulateMarketExecution(),
+      );
+      marketExecution = marketSubmission.execution;
+      marketTxHash = marketSubmission.txHash;
     } catch (err) {
       throw await wrapDeployExecutionError(
         err,

@@ -5542,6 +5542,60 @@ async function executeTradeOnchain(options) {
     return receipt && receipt.status ? receipt.status : null;
   }
 
+  function isRetryablePublicMempoolError(error) {
+    const message = String((error && error.message) || '').toLowerCase();
+    return [
+      'replacement transaction underpriced',
+      'replacement underpriced',
+      'transaction underpriced',
+      'nonce too low',
+      'already known',
+      'temporarily underpriced',
+      'dropped from mempool',
+      'transaction was not mined',
+      'transaction could not be found',
+      'transaction not found',
+    ].some((pattern) => message.includes(pattern));
+  }
+
+  async function submitPublicTransactionWithRetry(label, simulateExecution, waitForReceipt = true) {
+    const maxAttempts = 2;
+    let lastError = null;
+    let lastHash = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      let execution = null;
+      let txHash = null;
+      try {
+        execution = await simulateExecution();
+        txHash = await walletClient.writeContract(execution.request);
+        lastHash = txHash;
+        const receiptStatus = waitForReceipt ? await waitForReceiptStatus(txHash) : null;
+        return {
+          execution,
+          txHash,
+          receiptStatus,
+          publicRetryCount: attempt - 1,
+        };
+      } catch (error) {
+        lastError = error;
+        if (!isRetryablePublicMempoolError(error) || attempt >= maxAttempts) {
+          if (lastError && typeof lastError === 'object') {
+            lastError.details = {
+              ...(lastError.details && typeof lastError.details === 'object' ? lastError.details : {}),
+              publicRetryAttempts: attempt,
+              publicRetryLabel: label,
+              publicRetryExhausted: attempt >= maxAttempts && isRetryablePublicMempoolError(error),
+              lastSubmittedHash: txHash || lastHash || null,
+            };
+          }
+          throw lastError;
+        }
+        await sleepMs(250 * attempt);
+      }
+    }
+    throw lastError;
+  }
+
   function toSubmittedFlashbotsCliError(error, code, message, details = {}) {
     return new CliError(
       error && error.code ? error.code : code,
@@ -5592,13 +5646,15 @@ async function executeTradeOnchain(options) {
   }
 
   async function executePublicRoute(routeMetadata) {
-    const approveExecution = await simulateApproveRequest();
     let approveTxHash = null;
     let approveStatus = null;
+    let approveExecution = await simulateApproveRequest();
     if (approveExecution.request) {
       try {
-        approveTxHash = await walletClient.writeContract(approveExecution.request);
-        approveStatus = await waitForReceiptStatus(approveTxHash);
+        const approvalSubmission = await submitPublicTransactionWithRetry('approve', () => simulateApproveRequest(), true);
+        approveTxHash = approvalSubmission.txHash;
+        approveStatus = approvalSubmission.receiptStatus;
+        approveExecution = approvalSubmission.execution;
       } catch (error) {
         await decodeTradeError(error, 'APPROVE_EXECUTION_FAILED', `${isSell ? 'Outcome token' : 'USDC'} approve transaction failed.`, {
           stage: 'approve-execute',
@@ -5610,9 +5666,14 @@ async function executeTradeOnchain(options) {
 
     let tradeExecution;
     try {
-      tradeExecution = await simulateTradeRequest();
-      const tradeTxHash = await walletClient.writeContract(tradeExecution.request);
-      const tradeStatus = await waitForReceiptStatus(tradeTxHash);
+      const tradeSubmission = await submitPublicTransactionWithRetry(
+        isSell ? 'sell' : 'buy',
+        () => simulateTradeRequest(),
+        true,
+      );
+      tradeExecution = tradeSubmission.execution;
+      const tradeTxHash = tradeSubmission.txHash;
+      const tradeStatus = tradeSubmission.receiptStatus;
       return buildExecutionPayload(routeMetadata, {
         approveTxHash,
         approveGasEstimate: approveExecution.gasEstimate,

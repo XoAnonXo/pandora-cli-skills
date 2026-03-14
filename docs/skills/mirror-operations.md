@@ -227,7 +227,13 @@ pandora mirror audit --market-address <pandora_market> --polymarket-market-id <p
 - `mirror sync run|once|start` use the same mirror payload assumptions built during deploy/go.
 - `mirror sync run` is the foreground loop.
   - `--stream|--no-stream` only applies to `run`
+  - `--stream` is a table-mode terminal feature; JSON mode stays bounded unless `PANDORA_DAEMON_LOG_JSONL=1` is set for daemon logs
   - `--daemon` is a `run`/family concept; use `mirror sync start` for the detached path
+- `mirror go` / `mirror sync` do not accept a daemon `--source` flag.
+  - `--source auto|api|on-chain` belongs to `pandora polymarket positions`
+- Live daemon execution requires both `--max-open-exposure-usdc` and `--max-trades-per-day`.
+- Hedging is enabled by default on mirror daemon paths; add `--no-hedge` only when you intentionally want Pandora-only operation.
+- Use `mirror-live-repro-checklist.md` for tx-drop, relay-403, and Gamma-search investigations that still need captured evidence.
 - `mirror sync stop|status` can target `--strategy-hash <hash>` or an explicit `--pid-file <path>`.
 - `mirror sync status` is the daemon-health surface.
   - key metadata fields are `status`, `alive`, `checkedAt`, `pidFile`, `logFile`, and `metadata.pidAlive`
@@ -238,6 +244,7 @@ pandora mirror audit --market-address <pandora_market> --polymarket-market-id <p
   - `runtime.health.status` can be `running`, `idle`, `blocked`, `degraded`, `stale`, or `error`
   - start with `runtime.health.code`, `runtime.health.message`, `runtime.health.heartbeatAgeMs`, `runtime.pendingAction`, `runtime.lastAction`, and `runtime.lastError`
   - `blocked` states such as `PENDING_ACTION_LOCK*` or `LAST_ACTION_REQUIRES_REVIEW` are fail-closed; reconcile before restarting or sending another live trade
+  - `mirror sync unlock` is the supported operator recovery command for the common timeout/manual-review path and clears the matching persisted blocker when you intentionally override it
   - `stale` means daemon metadata still reports alive but the heartbeat aged past threshold; inspect pid/log state before trusting it
 - `mirror status --with-live` is the live diagnostic surface for an existing mirror, whether it was resolved from persisted state or direct selectors.
   - `live.verifyDiagnostics` carries verify-time feed/match warnings

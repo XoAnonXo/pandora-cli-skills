@@ -883,11 +883,38 @@ test('deployPandoraAmmMarket executes createPariMutuel when marketType is parimu
   assert.equal(payload.pandora.marketAddress, TEST_MARKET);
   assert.deepEqual(
     simulateCalls.map((entry) => entry.functionName),
-    ['createPoll', 'approve', 'createPariMutuel'],
+    ['createPoll', 'approve', 'approve', 'createPariMutuel'],
   );
   assert.deepEqual(
     writeCalls.map((entry) => entry.functionName),
     ['createPoll', 'approve', 'createPariMutuel'],
+  );
+});
+
+test('deployPandoraAmmMarket retries transient public mempool drops once before failing', async () => {
+  const { publicClient, walletClient, writeCalls } = createDeployClients();
+  const defaultWaitForReceipt = publicClient.waitForTransactionReceipt;
+
+  publicClient.waitForTransactionReceipt = async ({ hash }) => {
+    if (hash === '0xbbb') {
+      throw new Error('transaction dropped from mempool');
+    }
+    return defaultWaitForReceipt({ hash });
+  };
+
+  const payload = await deployPandoraAmmMarket(
+    baseDeployOptions({
+      publicClient,
+      walletClient,
+    }),
+  );
+
+  assert.equal(payload.tx.pollTxHash, '0xaaa');
+  assert.equal(payload.tx.approveTxHash, '0xccc');
+  assert.equal(payload.tx.marketTxHash, '0xddd');
+  assert.deepEqual(
+    writeCalls.map((entry) => entry.functionName),
+    ['createPoll', 'approve', 'approve', 'createMarket'],
   );
 });
 

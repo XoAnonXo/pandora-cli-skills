@@ -430,15 +430,26 @@ async function callFlashbotsJsonRpc(options = {}) {
   }
 
   if (!response || response.ok !== true) {
+    const status = response ? response.status : null;
+    const statusCode =
+      status === 401 || status === 403
+        ? 'FLASHBOTS_RELAY_FORBIDDEN'
+        : 'FLASHBOTS_HTTP_ERROR';
+    const statusMessage =
+      status === 401 || status === 403
+        ? `Flashbots relay rejected the request with HTTP ${status}.`
+        : `Flashbots relay responded with HTTP ${response ? response.status : 'unknown'}.`;
     throw createFlashbotsError(
-      'FLASHBOTS_HTTP_ERROR',
-      `Flashbots relay responded with HTTP ${response ? response.status : 'unknown'}.`,
+      statusCode,
+      statusMessage,
       {
         relayUrl,
         method: request.method,
-        status: response ? response.status : null,
+        status,
         statusText: response ? response.statusText : null,
         response: responseBody,
+        relayRejected: status === 401 || status === 403,
+        preSubmissionFailure: true,
       },
     );
   }

@@ -1696,6 +1696,76 @@ test('browsePolymarketMarkets uses gamma events endpoint for tag-id sports disco
   }
 });
 
+test('browsePolymarketMarkets routes sports-like keyword searches to gamma events by default', async () => {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push(req.url || '/');
+    const parsed = new URL(req.url || '/', 'http://127.0.0.1');
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+
+    if (parsed.pathname !== '/events') {
+      res.end(JSON.stringify({ markets: [] }));
+      return;
+    }
+
+    const tagId = parsed.searchParams.get('tag_id');
+    if (tagId === '82') {
+      res.end(
+        JSON.stringify({
+          events: [
+            {
+              id: 'evt-sports-auto',
+              slug: 'arsenal-v-chelsea',
+              title: 'Arsenal vs Chelsea',
+              markets: [
+                {
+                  condition_id: 'sports-auto-1',
+                  market_slug: 'arsenal-v-chelsea-home',
+                  question: 'Will Arsenal beat Chelsea?',
+                  end_date_iso: '2030-03-09T16:00:00Z',
+                  game_start_time: '2030-03-09T18:00:00Z',
+                  active: true,
+                  closed: false,
+                  volume24hr: 600000,
+                  tokens: [
+                    { outcome: 'Yes', price: '0.52', token_id: 'yes-sports-auto-1' },
+                    { outcome: 'No', price: '0.48', token_id: 'no-sports-auto-1' },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+
+    res.end(JSON.stringify({ events: [] }));
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const gammaUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const payload = await browsePolymarketMarkets({
+      gammaUrl,
+      slug: 'arsenal-v-chelsea',
+      limit: 5,
+    });
+
+    assert.equal(payload.source, 'polymarket:gamma-events');
+    assert.equal(payload.count, 1);
+    assert.equal(payload.items[0].eventSlug, 'arsenal-v-chelsea');
+    assert.match(payload.diagnostics.join('\n'), /sports-like query detected/i);
+    assert.equal(requests.some((entry) => String(entry).startsWith('/events?')), true);
+    assert.equal(requests.some((entry) => String(entry).startsWith('/markets?')), false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('browsePolymarketMarkets supports category/keyword/date filters with explicit sorting', async () => {
   const nowMs = Date.now();
   const toIso = (offsetHours) => new Date(nowMs + offsetHours * 60 * 60 * 1000).toISOString();

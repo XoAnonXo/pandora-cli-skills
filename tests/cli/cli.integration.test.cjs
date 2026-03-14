@@ -7955,6 +7955,10 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   assert.equal(payload.data.notes.some((note) => /\.pandora\/mirror\/STOP/.test(String(note))), true);
   assert.match(payload.data.daemonLifecycle.unlock, /mirror sync unlock/);
   assert.equal(payload.data.notes.some((note) => /mirror sync unlock/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /does not accept a `--source` flag/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /--stream.*JSON mode is restricted/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /Live mirror sync requires both `--max-open-exposure-usdc` and `--max-trades-per-day`/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /Hedging is enabled by default/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /adopt-existing-positions/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /Default hedge scope is `total`/i.test(String(note))), true);
 });
@@ -7989,6 +7993,10 @@ test('mirror go --help json includes flashbots routing flag contract', () => {
   assert.equal(payload.data.notes.some((note) => /validation tickets are bound to the exact final deploy payload/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /two independent public --sources.*even in paper mode/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /market_deployer_a.*prod_trader_a|prod_trader_a.*market_deployer_a/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /auto.*rebalance-route-fallback public/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /flashbots-private.*cannot carry approval/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /does not accept a daemon `--source` selector/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /hedging stays enabled by default/i.test(String(note))), true);
 });
 
 test('mirror deploy --help json surfaces validation-ticket caveats and percentage distribution flags', () => {
@@ -9135,6 +9143,12 @@ test('mirror sync unlock requires force for reconciliation-required locks', () =
         schemaVersion: '1.0.0',
         strategyHash,
         tradesToday: 1,
+        lastExecution: {
+          status: 'pending',
+          requiresManualReview: true,
+          lockNonce: 'nonce-bucket-1',
+          idempotencyKey: 'pending-1',
+        },
       },
       null,
       2,
@@ -9148,6 +9162,7 @@ test('mirror sync unlock requires force for reconciliation-required locks', () =
         status: 'reconciliation-required',
         pid: process.pid,
         lockNonce: 'nonce-bucket-1',
+        idempotencyKey: 'pending-1',
         transactionNonce: 42,
         requiresManualReview: true,
         createdAt: '2026-03-09T10:00:00.000Z',
@@ -9179,7 +9194,12 @@ test('mirror sync unlock requires force for reconciliation-required locks', () =
     const forcedPayload = parseJsonOutput(forced);
     assert.equal(forcedPayload.ok, true);
     assert.equal(forcedPayload.data.cleared, true);
+    assert.equal(forcedPayload.data.stateRecovery.updated, true);
+    assert.deepEqual(forcedPayload.data.stateRecovery.changes, ['lastExecution']);
     assert.equal(fs.existsSync(pendingLockFile), false);
+    const persistedState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.equal(persistedState.lastExecution.requiresManualReview, false);
+    assert.equal(persistedState.lastExecution.status, 'operator-cleared');
   } finally {
     removeDir(tempDir);
   }

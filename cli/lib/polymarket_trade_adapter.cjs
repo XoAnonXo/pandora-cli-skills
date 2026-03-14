@@ -792,6 +792,18 @@ function includesKeyword(textPool, keywords) {
   return textPool.some((text) => keywords.some((keyword) => text.includes(keyword)));
 }
 
+function isSportsLikeBrowseQuery(options = {}) {
+  const textPool = [options.keyword, options.questionContains, options.slug]
+    .map((value) => normalizeText(value))
+    .filter(Boolean);
+  if (!textPool.length) return false;
+  if (includesKeyword(textPool, BROWSE_SPORT_KEYWORDS)) return true;
+  if (includesKeyword(textPool, BROWSE_CRYPTO_KEYWORDS)) return false;
+  if (includesKeyword(textPool, BROWSE_POLITICS_KEYWORDS)) return false;
+  if (includesKeyword(textPool, BROWSE_ENTERTAINMENT_KEYWORDS)) return false;
+  return textPool.some((text) => /\b(vs?|at)\b/.test(text));
+}
+
 function classifyBrowseCategories(item) {
   const row = item && item.raw && typeof item.raw === 'object' ? item.raw : {};
   const tagEntries = collectTagEntries(row);
@@ -1358,10 +1370,18 @@ async function browsePolymarketMarkets(options = {}) {
   const scanLimit = Math.max(requestedLimit * 5, 100);
   const requestedTagIds = normalizeTagIdList(options.polymarketTagIds);
   const categoryFilters = normalizeBrowseCategoryList(options.categories);
-  const autoSportsTagIds = requestedTagIds.length === 0 && categoryFilters.includes('sports') ? [...BROWSE_DEFAULT_SPORT_TAG_IDS] : [];
+  const sportsLikeQuery = requestedTagIds.length === 0 && isSportsLikeBrowseQuery(options);
+  const autoSportsTagIds =
+    requestedTagIds.length === 0 && (categoryFilters.includes('sports') || sportsLikeQuery)
+      ? [...BROWSE_DEFAULT_SPORT_TAG_IDS]
+      : [];
   const polymarketTagIds = requestedTagIds.length ? requestedTagIds : autoSportsTagIds;
   if (autoSportsTagIds.length) {
-    diagnostics.push(`No explicit sports tag ids provided; using defaults: ${autoSportsTagIds.join(', ')}.`);
+    diagnostics.push(
+      categoryFilters.includes('sports')
+        ? `No explicit sports tag ids provided; using defaults: ${autoSportsTagIds.join(', ')}.`
+        : `Sports-like query detected without explicit tag ids; using default sports tags: ${autoSportsTagIds.join(', ')}.`,
+    );
   }
   const useSportsEventsEndpoint = polymarketTagIds.length > 0;
 
@@ -2888,6 +2908,28 @@ async function fetchPolymarketPositionSummary(options = {}) {
   });
 }
 
+function loadEthersWalletModule(loader = require) {
+  try {
+    const loaded = loader('@ethersproject/wallet');
+    if (!(loaded && typeof loaded.Wallet === 'function')) {
+      throw new Error('Loaded module does not expose Wallet.');
+    }
+    return loaded;
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    const dependencyError = new Error(
+      `Unable to load @ethersproject/wallet dependency: ${message}. Reinstall pandora-cli-skills and verify @ethersproject/wallet is present before retrying live Polymarket execution.`,
+    );
+    dependencyError.code = 'POLYMARKET_WALLET_DEPENDENCY_MISSING';
+    dependencyError.details = {
+      packageName: '@ethersproject/wallet',
+      remediation: 'Reinstall pandora-cli-skills and verify @ethersproject/wallet is present before retrying live Polymarket execution.',
+      cause: message,
+    };
+    throw dependencyError;
+  }
+}
+
 async function buildTradingClient(options = {}) {
   const host = options.host || DEFAULT_POLYMARKET_HOST;
   const chain = options.chain || DEFAULT_POLYMARKET_CHAIN;
@@ -2906,12 +2948,7 @@ async function buildTradingClient(options = {}) {
     throw new Error('Missing Polymarket private key for live hedge execution.');
   }
 
-  let Wallet;
-  try {
-    ({ Wallet } = require('@ethersproject/wallet'));
-  } catch (err) {
-    throw new Error(`Unable to load @ethersproject/wallet dependency: ${err && err.message ? err.message : String(err)}`);
-  }
+  const { Wallet } = loadEthersWalletModule(options.walletModuleLoader);
 
   const signer = new Wallet(privateKey);
   let creds = null;
@@ -3127,4 +3164,5 @@ module.exports = {
   fetchPolymarketPositionInventory,
   normalizePolymarketPositionSummary,
   fetchPolymarketPositionSummary,
+  loadEthersWalletModule,
 };

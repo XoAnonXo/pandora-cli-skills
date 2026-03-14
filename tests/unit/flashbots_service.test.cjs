@@ -392,3 +392,43 @@ test('sendFlashbotsPrivateTransaction preserves relay context when the relay res
     },
   );
 });
+
+test('sendFlashbotsPrivateTransaction classifies relay 403 responses as pre-submission forbidden errors', async () => {
+  await assert.rejects(
+    sendFlashbotsPrivateTransaction({
+      publicClient: {
+        async getBlockNumber() {
+          return 700n;
+        },
+      },
+      walletClient: {
+        async signTransaction() {
+          return `0x${'2'.repeat(64)}`;
+        },
+      },
+      transactionRequest: {
+        to: '0x1111111111111111111111111111111111111111',
+        nonce: 8,
+      },
+      relayUrl: 'https://relay.flashbots.example',
+      authAccount: makeAuthAccount(),
+      viemRuntime: makeViemRuntime(),
+      fetchImpl: async () => ({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        async text() {
+          return JSON.stringify({ error: 'forbidden' });
+        },
+      }),
+    }),
+    (error) => {
+      assert.equal(error.code, 'FLASHBOTS_RELAY_FORBIDDEN');
+      assert.equal(error.details.relayMethod, FLASHBOTS_METHODS.sendPrivateTransaction);
+      assert.equal(error.details.status, 403);
+      assert.equal(error.details.preSubmissionFailure, true);
+      assert.equal(error.details.relayRejected, true);
+      return true;
+    },
+  );
+});

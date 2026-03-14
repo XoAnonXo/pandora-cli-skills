@@ -327,6 +327,10 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     'If mirror go will deploy a fresh Pandora market, provide two independent public --sources from different hosts even in paper mode. Polymarket URLs are never copied into sources automatically.',
     'Zero-prereq onboarding uses separate mutable personas: market_deployer_a for Pandora deployment and prod_trader_a for live mirror automation.',
     'Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic or private.',
+    '`auto` only degrades to public rebalance submission when `--rebalance-route-fallback public` is also set. Otherwise private-route failures stay fail-closed.',
+    '`flashbots-private` cannot carry approval + trade together. Use `auto` or `flashbots-bundle` for approval-bearing Pandora paths.',
+    '`mirror go` does not accept a daemon `--source` selector. Use explicit Polymarket market selectors here, and keep `--source auto|api|on-chain` for `pandora polymarket positions`.',
+    'Any live path that continues into daemon sync still needs `--max-open-exposure-usdc` and `--max-trades-per-day`, and hedging stays enabled by default unless you add `--no-hedge`.',
   ];
 
   if (includesHelpFlag(shared.rest)) {

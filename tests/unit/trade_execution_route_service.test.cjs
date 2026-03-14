@@ -148,6 +148,85 @@ test('executeTradeWithRoute rejects single-tx private routing when an approval i
     }),
     (error) => {
       assert.equal(error.code, 'FLASHBOTS_BUNDLE_REQUIRED');
+      assert.equal(error.details.publicFallbackEligible, false);
+      assert.match(error.message, /rebalance-route-fallback public/i);
+      return true;
+    },
+  );
+});
+
+test('executeTradeWithRoute degrades auto routing to public when fallback is explicitly enabled', async () => {
+  let publicMetadata = null;
+  const result = await executeTradeWithRoute({
+    runtime: {
+      chainId: 1,
+      mode: 'live',
+      flashbotsAuthKey: null,
+      executionRouteFallback: 'public',
+    },
+    requestedExecutionRoute: 'auto',
+    needsApproval: false,
+    errorFactory: makeCliError,
+    buildRouteMetadata: (metadata) => metadata,
+    executePublicRoute: async (metadata) => {
+      publicMetadata = metadata;
+      return { route: 'public', metadata };
+    },
+    executeFlashbotsPrivateRoute: async () => ({ route: 'private' }),
+    executeFlashbotsBundleRoute: async () => ({ route: 'bundle' }),
+  });
+
+  assert.equal(result.route, 'public');
+  assert.equal(publicMetadata.executionRouteResolved, 'public');
+  assert.equal(publicMetadata.executionRouteFallbackUsed, true);
+  assert.match(publicMetadata.executionRouteFallbackReason, /requires --flashbots-auth-key/i);
+});
+
+test('executeTradeWithRoute keeps auto routing fail-closed when fallback is not configured', async () => {
+  await assert.rejects(
+    executeTradeWithRoute({
+      runtime: {
+        chainId: 1,
+        mode: 'live',
+        flashbotsAuthKey: null,
+        executionRouteFallback: 'fail',
+      },
+      requestedExecutionRoute: 'auto',
+      needsApproval: false,
+      errorFactory: makeCliError,
+      executePublicRoute: async () => ({ route: 'public' }),
+      executeFlashbotsPrivateRoute: async () => ({ route: 'private' }),
+      executeFlashbotsBundleRoute: async () => ({ route: 'bundle' }),
+    }),
+    (error) => {
+      assert.equal(error.code, 'FLASHBOTS_AUTH_KEY_REQUIRED');
+      assert.equal(error.details.publicFallbackEligible, false);
+      assert.match(error.message, /rebalance-route-fallback public/i);
+      return true;
+    },
+  );
+});
+
+test('executeTradeWithRoute keeps explicit private routing fail-closed when fallback is not configured', async () => {
+  await assert.rejects(
+    executeTradeWithRoute({
+      runtime: {
+        chainId: 1,
+        mode: 'live',
+        flashbotsAuthKey: null,
+        executionRouteFallback: 'fail',
+      },
+      requestedExecutionRoute: 'flashbots-private',
+      needsApproval: false,
+      errorFactory: makeCliError,
+      executePublicRoute: async () => ({ route: 'public' }),
+      executeFlashbotsPrivateRoute: async () => ({ route: 'private' }),
+      executeFlashbotsBundleRoute: async () => ({ route: 'bundle' }),
+    }),
+    (error) => {
+      assert.equal(error.code, 'FLASHBOTS_AUTH_KEY_REQUIRED');
+      assert.equal(error.details.publicFallbackEligible, false);
+      assert.match(error.message, /rebalance-route-fallback public/i);
       return true;
     },
   );

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { saveState } = require('../mirror_state_store.cjs');
+const { loadState: loadMirrorState, saveState } = require('../mirror_state_store.cjs');
 const { daemonStatus: readMirrorDaemonStatus } = require('../mirror_daemon_service.cjs');
 
 const MIRROR_RUNTIME_SCHEMA_VERSION = '1.0.0';
@@ -192,6 +192,56 @@ function buildPendingActionReviewCommand(stateFile, options = {}) {
   }
   args.push('--with-live');
   return args.join(' ');
+}
+
+function pendingActionMatchesLastExecution(lastExecution, pendingAction) {
+  if (!(lastExecution && typeof lastExecution === 'object' && pendingAction && typeof pendingAction === 'object')) {
+    return false;
+  }
+  const lastLockNonce = normalizeLockNonce(lastExecution.lockNonce);
+  const lockNonce = normalizeLockNonce(pendingAction.lockNonce);
+  if (lastLockNonce && lockNonce && lastLockNonce === lockNonce) return true;
+  const lastIdempotencyKey = lastExecution.idempotencyKey ? String(lastExecution.idempotencyKey) : null;
+  const lockIdempotencyKey = pendingAction.idempotencyKey ? String(pendingAction.idempotencyKey) : null;
+  if (lastIdempotencyKey && lockIdempotencyKey && lastIdempotencyKey === lockIdempotencyKey) return true;
+  return false;
+}
+
+function clearLastExecutionReviewBlock(state, pendingAction, now = new Date()) {
+  if (!(state && typeof state === 'object' && state.lastExecution && typeof state.lastExecution === 'object')) {
+    return {
+      updated: false,
+      changes: [],
+    };
+  }
+  if (!pendingActionMatchesLastExecution(state.lastExecution, pendingAction)) {
+    return {
+      updated: false,
+      changes: [],
+    };
+  }
+  const status = String(state.lastExecution.status || '').trim().toLowerCase();
+  const needsReview = Boolean(state.lastExecution.requiresManualReview) || status === 'pending';
+  if (!needsReview) {
+    return {
+      updated: false,
+      changes: [],
+    };
+  }
+  const updatedAt = toIso(now) || new Date().toISOString();
+  state.lastExecution = {
+    ...state.lastExecution,
+    status: status === 'pending' ? 'operator-cleared' : state.lastExecution.status,
+    requiresManualReview: false,
+    lockRetained: false,
+    reviewClearedAt: updatedAt,
+    reviewClearedBy: 'mirror.sync.unlock',
+    recoveryReason: 'operator-unlock',
+  };
+  return {
+    updated: true,
+    changes: ['lastExecution'],
+  };
 }
 
 function readPendingActionLock(stateFile, options = {}) {
@@ -453,11 +503,23 @@ function unlockPendingActionLock(stateFile, options = {}) {
       ? { expectedLockNonce: options.expectedLockNonce }
       : {},
   );
+  let stateRecovery = {
+    updated: false,
+    changes: [],
+  };
+  if (clearResult.cleared) {
+    const loaded = loadMirrorState(stateFile, assessment.strategyHash || null);
+    stateRecovery = clearLastExecutionReviewBlock(loaded.state, assessment.lock, new Date());
+    if (stateRecovery.updated) {
+      saveState(stateFile, loaded.state);
+    }
+  }
   return {
     ...assessment,
     cleared: clearResult.cleared,
     reason: clearResult.reason,
     clearedLock: clearResult.lock || assessment.lock,
+    stateRecovery,
   };
 }
 

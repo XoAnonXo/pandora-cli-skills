@@ -3,6 +3,7 @@ const {
   resolvePolymarketMarket,
   fetchPolymarketPositionInventory,
   fetchPolymarketPositionSummary,
+  loadEthersWalletModule,
 } = require('./polymarket_trade_adapter.cjs');
 
 const POLYMARKET_OPS_SCHEMA_VERSION = '1.0.0';
@@ -967,13 +968,20 @@ async function runApiKeySanity(runtime, signerAddress, deps = {}, strict = false
 
   let Wallet;
   try {
-    ({ Wallet } = require('@ethersproject/wallet'));
+    ({ Wallet } = loadEthersWalletModule(
+      typeof deps.loadWalletModule === 'function' ? deps.loadWalletModule : require,
+    ));
   } catch (err) {
     return {
       attempted: false,
       ok: false,
       status: 'dependency_error',
-      reason: `Unable to load @ethersproject/wallet: ${coerceErrorMessage(err)}`,
+      code: err && err.code ? err.code : 'POLYMARKET_WALLET_DEPENDENCY_MISSING',
+      reason: err && err.message ? err.message : `Unable to load @ethersproject/wallet: ${coerceErrorMessage(err)}`,
+      remediation:
+        err && err.details && err.details.remediation
+          ? err.details.remediation
+          : 'Reinstall pandora-cli-skills and verify @ethersproject/wallet is present before retrying live Polymarket execution.',
     };
   }
 
