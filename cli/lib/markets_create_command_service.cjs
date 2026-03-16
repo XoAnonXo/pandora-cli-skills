@@ -42,7 +42,9 @@ function buildCreateHelp(commandHelpPayload) {
     'Use `markets create run` for dry-run or execute. Execute mode requires prior `agent market validate` attestation.',
     'markets create run supports post-poll execution routing via --tx-route public|auto|flashbots-private|flashbots-bundle. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.',
     'Validation tickets are bound to the exact final payload: question, rules, sources, target timestamp, liquidity, market type, fee/curve params, and distribution. Any change requires a fresh ticket.',
-    'If you omit distribution flags, markets create seeds a balanced 50/50 pool. Set `--distribution-yes-pct` and `--distribution-no-pct` explicitly for directional markets.',
+    'For AMM markets, prefer `--initial-yes-pct` / `--initial-no-pct` to set the opening probability directly.',
+    'Raw `--distribution-yes-pct` / `--distribution-no-pct` control reserve weights, not opening YES price. A 77/23 reserve split opens YES near 23/77.',
+    'If you omit AMM distribution flags, markets create seeds a balanced 50/50 pool.',
     'Legacy `launch` remains script-native; `markets create` is the canonical agent-facing replacement.',
   ];
   return {
@@ -71,6 +73,7 @@ function buildCreatePlanPayload(normalizedArgs, options, resolvedRuntime, requir
       minCloseLeadSeconds: Number.isFinite(Number(options.minCloseLeadSeconds))
         ? Math.max(0, Math.trunc(Number(options.minCloseLeadSeconds)))
         : 0,
+      distributionInputMode: options.distributionInputMode || null,
     },
     execution: {
       supportsDryRun: true,
@@ -85,7 +88,9 @@ function buildCreatePlanPayload(normalizedArgs, options, resolvedRuntime, requir
         ? 'Pari-mutuel creation uses curveFlattener/curveOffset instead of AMM feeTier/maxImbalance.'
         : 'AMM creation uses feeTier/maxImbalance instead of pari-mutuel curve parameters.',
       'Validation tickets are bound to the exact final payload. Changing question, rules, sources, targetTimestamp, liquidity, fee/curve params, or distribution requires a fresh validation pass.',
-      'If you omit distribution flags, markets create seeds a balanced 50/50 pool. Set explicit distribution percentages for directional markets.',
+      'For AMM markets, prefer --initial-yes-pct/--initial-no-pct to set the opening YES/NO probability directly.',
+      'Raw --distribution-yes-pct/--distribution-no-pct control reserve weights, not opening YES price.',
+      'If you omit AMM distribution flags, markets create seeds a balanced 50/50 pool.',
       'Legacy launch remains available for script-native flows, but markets create is the canonical JSON/MCP-safe path.',
     ],
   };

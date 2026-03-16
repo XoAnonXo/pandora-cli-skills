@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   buildRemoveLiquidityPreviewPayload,
+  readCalcRemoveLiquidity,
 } = require('../../cli/lib/market_admin_service.cjs');
 
 function formatUnits(value, decimals) {
@@ -40,4 +41,73 @@ test('buildRemoveLiquidityPreviewPayload derives yes/no outcome scenarios from r
 
 test('buildRemoveLiquidityPreviewPayload returns null when liquidity preview is unavailable', () => {
   assert.equal(buildRemoveLiquidityPreviewPayload(formatUnits, null), null);
+});
+
+test('buildRemoveLiquidityPreviewPayload labels modern AMM yes/no/collateral outputs correctly', () => {
+  const payload = buildRemoveLiquidityPreviewPayload(formatUnits, {
+    collateralOutRaw: '2873872000',
+    yesOutRaw: '833370000000000000000',
+    noOutRaw: '0',
+  });
+
+  assert.deepEqual(payload, {
+    collateralOutRaw: '2873872000',
+    collateralOutUsdc: '2873.872',
+    yesOutRaw: '833370000000000000000',
+    yesOut: '833.37',
+    noOutRaw: '0',
+    noOut: '0',
+    scenarioValues: {
+      yesUsdc: 3707.242,
+      noUsdc: 2873.872,
+      minUsdc: 2873.872,
+      maxUsdc: 3707.242,
+    },
+  });
+});
+
+test('readCalcRemoveLiquidity decodes modern AMM tuples using runtime family probe', async () => {
+  const publicClient = {
+    async call() {
+      return { data: '0x01' };
+    },
+    async readContract() {
+      return [833370000000000000000n, 0n, 2873872000n];
+    },
+  };
+
+  const payload = await readCalcRemoveLiquidity(
+    publicClient,
+    '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    1000n,
+  );
+
+  assert.deepEqual(payload, {
+    collateralOutRaw: '2873872000',
+    yesOutRaw: '833370000000000000000',
+    noOutRaw: '0',
+  });
+});
+
+test('readCalcRemoveLiquidity keeps legacy collateral/yes/no tuples when modern probe is absent', async () => {
+  const publicClient = {
+    async call() {
+      throw new Error('missing function');
+    },
+    async readContract() {
+      return [2873872000n, 833370000000000000000n, 0n];
+    },
+  };
+
+  const payload = await readCalcRemoveLiquidity(
+    publicClient,
+    '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    1000n,
+  );
+
+  assert.deepEqual(payload, {
+    collateralOutRaw: '2873872000',
+    yesOutRaw: '833370000000000000000',
+    noOutRaw: '0',
+  });
 });

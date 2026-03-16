@@ -163,6 +163,8 @@ test('parseMarketsCreateFlags parses amm run payloads with signer/profile-safe f
     '3600',
     '--validation-ticket',
     'market-validate:ticket',
+    '--initial-yes-pct',
+    '77',
   ]);
 
   assert.equal(parsed.command, 'markets.create.run');
@@ -180,8 +182,9 @@ test('parseMarketsCreateFlags parses amm run payloads with signer/profile-safe f
   assert.equal(parsed.options.flashbotsRelayUrl, 'https://relay.flashbots.example');
   assert.equal(parsed.options.flashbotsAuthKey, `0x${'a'.repeat(64)}`);
   assert.equal(parsed.options.flashbotsTargetBlockOffset, 3);
-  assert.equal(parsed.options.distributionYes, 500_000_000);
-  assert.equal(parsed.options.distributionNo, 500_000_000);
+  assert.equal(parsed.options.distributionYes, 230_000_000);
+  assert.equal(parsed.options.distributionNo, 770_000_000);
+  assert.equal(parsed.options.initialYesPct, 77);
 });
 
 test('parseMarketsCreateFlags rejects run without exactly one execution mode', () => {

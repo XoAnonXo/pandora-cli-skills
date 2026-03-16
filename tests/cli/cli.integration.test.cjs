@@ -8006,9 +8006,11 @@ test('mirror deploy --help json surfaces validation-ticket caveats and percentag
   assert.equal(payload.ok, true);
   assert.equal(payload.command, 'mirror.deploy.help');
   assert.equal(Array.isArray(payload.data.notes), true);
+  assert.match(payload.data.usage, /--initial-yes-pct <pct>\|--initial-no-pct <pct>/);
   assert.match(payload.data.usage, /--distribution-yes-pct <pct>/);
   assert.match(payload.data.usage, /--distribution-no-pct <pct>/);
   assert.equal(payload.data.notes.some((note) => /exact final deploy payload/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /initial-yes-pct.*opening probability directly/i.test(String(note))), true);
 });
 
 test('mirror trace --help json includes historical reserve tracing usage and archive notes', () => {
@@ -8110,8 +8112,14 @@ test('command descriptors surface validation, distribution, and stop-file caveat
     true,
   );
 
+  assert.match(descriptors['mirror.go'].usage, /--initial-yes-pct <pct>\|--initial-no-pct <pct>/);
+  assert.ok(descriptors['mirror.go'].inputSchema.properties['initial-yes-pct']);
+  assert.ok(descriptors['mirror.go'].inputSchema.properties['initial-no-pct']);
   assert.match(descriptors['mirror.deploy'].usage, /--distribution-yes-pct <pct>/);
   assert.match(descriptors['mirror.deploy'].usage, /--distribution-no-pct <pct>/);
+  assert.match(descriptors['mirror.deploy'].usage, /--initial-yes-pct <pct>\|--initial-no-pct <pct>/);
+  assert.ok(descriptors['mirror.deploy'].inputSchema.properties['initial-yes-pct']);
+  assert.ok(descriptors['mirror.deploy'].inputSchema.properties['initial-no-pct']);
   assert.ok(descriptors['mirror.deploy'].inputSchema.properties['distribution-yes-pct']);
   assert.ok(descriptors['mirror.deploy'].inputSchema.properties['distribution-no-pct']);
   assert.equal(
@@ -8120,6 +8128,10 @@ test('command descriptors surface validation, distribution, and stop-file caveat
   );
   assert.equal(
     descriptors['mirror.go'].agentWorkflow.notes.some((note) => /exact final deploy payload/i.test(String(note))),
+    true,
+  );
+  assert.equal(
+    descriptors['mirror.go'].agentWorkflow.notes.some((note) => /initial-yes-pct.*opening probability directly/i.test(String(note))),
     true,
   );
 
@@ -11849,6 +11861,8 @@ test('markets create --help json surfaces validation-ticket and balanced-distrib
   assert.equal(Array.isArray(payload.data.notes), true);
   assert.equal(payload.data.notes.some((note) => /exact final payload/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /balanced 50\/50 pool/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /initial-yes-pct/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /reserve weights, not opening YES price/i.test(String(note))), true);
 });
 
 test('agent market hype emits reusable trend-research prompt payload', () => {
@@ -12456,6 +12470,8 @@ test('markets create run --dry-run emits canonical deployment payload', () => {
     FIXED_FUTURE_TIMESTAMP,
     '--liquidity-usdc',
     '100',
+    '--initial-yes-pct',
+    '77',
     '--fee-tier',
     '3000',
     '--tx-route',
@@ -12470,8 +12486,13 @@ test('markets create run --dry-run emits canonical deployment payload', () => {
   assert.equal(payload.command, 'markets.create.run');
   assert.equal(payload.data.mode, 'dry-run');
   assert.equal(payload.data.marketTemplate.marketType, 'amm');
+  assert.equal(payload.data.marketTemplate.ammProbabilityContract.initialYesProbabilityPct, 77);
+  assert.equal(payload.data.marketTemplate.ammProbabilityContract.yesReserveWeightPct, 23);
   assert.equal(payload.data.deployment.mode, 'dry-run');
   assert.equal(payload.data.deployment.deploymentArgs.marketType, 'amm');
+  assert.equal(payload.data.deployment.deploymentArgs.distributionYes, 230000000);
+  assert.equal(payload.data.deployment.deploymentArgs.distributionNo, 770000000);
+  assert.equal(payload.data.deployment.ammProbabilityContract.initialYesProbabilityPct, 77);
   assert.equal(payload.data.deployment.txRouteRequested, 'flashbots-bundle');
   assert.equal(payload.data.deployment.txRouteResolved, 'flashbots-bundle');
   assert.equal(payload.data.deployment.requiredValidation.promptTool, 'agent.market.validate');

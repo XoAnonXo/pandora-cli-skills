@@ -23,6 +23,7 @@ const {
   buildRequiredAgentMarketValidation,
   assertAgentMarketValidation,
 } = require('./agent_market_prompt_service.cjs');
+const { deriveAmmProbabilityContract } = require('./shared/amm_distribution_contract.cjs');
 const {
   DEFAULT_FLASHBOTS_RELAY_URL,
   DEFAULT_FLASHBOTS_TARGET_BLOCK_OFFSET,
@@ -655,6 +656,9 @@ function buildDeploymentArgs(options = {}) {
   }
 
   const marketType = normalizeDeploymentMarketType(options.marketType);
+  const ammProbabilityContract = marketType === 'amm'
+    ? deriveAmmProbabilityContract(distributionYes, distributionNo)
+    : null;
   let feeTier = null;
   let maxImbalance = null;
   let curveFlattener = null;
@@ -700,6 +704,7 @@ function buildDeploymentArgs(options = {}) {
     liquidityUsdc,
     distributionYes,
     distributionNo,
+    ammProbabilityContract,
     marketType,
     feeTier,
     maxImbalance,
@@ -741,6 +746,7 @@ async function deployPandoraAmmMarket(options = {}) {
       factory,
       usdc,
     },
+    ammProbabilityContract: args.ammProbabilityContract,
     tx: null,
     preflight: null,
     requiredValidation,

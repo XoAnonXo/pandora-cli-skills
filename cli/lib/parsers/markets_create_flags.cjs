@@ -1,5 +1,10 @@
 const { MIN_AMM_FEE_TIER, MAX_AMM_FEE_TIER } = require('../shared/constants.cjs');
 const { parsePollCategoryFlag } = require('../shared/poll_categories.cjs');
+const {
+  DISTRIBUTION_SCALE,
+  normalizePercent,
+  deriveDistributionFromInitialYesProbabilityPct,
+} = require('../shared/amm_distribution_contract.cjs');
 const { parseMirrorTargetTimestamp } = require('./mirror_parser_guard.cjs');
 const {
   parseDeployTxRoute,
@@ -12,7 +17,6 @@ const {
 const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
 
 const MAX_UINT24 = 16_777_215;
-const DISTRIBUTION_SCALE = 1_000_000_000;
 const MARKET_TYPES = new Set(['amm', 'parimutuel']);
 const ACTIONS = new Set(['plan', 'run']);
 
@@ -64,8 +68,8 @@ function parseDistributionUnits(value, flagName, CliError, parseInteger) {
 }
 
 function parseDistributionPercent(value, flagName, CliError) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+  const parsed = normalizePercent(value);
+  if (parsed === null) {
     throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be between 0 and 100.`);
   }
   return parsed;
@@ -73,16 +77,22 @@ function parseDistributionPercent(value, flagName, CliError) {
 
 function finalizeDistribution(options, CliError) {
   const hasRaw = options.distributionYes !== null || options.distributionNo !== null;
-  const hasPct = options.distributionYesPct !== null || options.distributionNoPct !== null;
+  const hasReservePct = options.distributionYesPct !== null || options.distributionNoPct !== null;
+  const hasInitialProbabilityPct = options.initialYesPct !== null || options.initialNoPct !== null;
 
-  if (hasRaw && hasPct) {
+  if (
+    Number(hasRaw)
+    + Number(hasReservePct)
+    + Number(hasInitialProbabilityPct)
+    > 1
+  ) {
     throw new CliError(
       'INVALID_ARGS',
-      'Use either raw distribution flags (--distribution-yes/--distribution-no) or percentage flags (--distribution-yes-pct/--distribution-no-pct), not both.',
+      'Use exactly one AMM distribution input style: raw reserve weights (--distribution-yes/--distribution-no), reserve-weight percents (--distribution-yes-pct/--distribution-no-pct), or probability-native flags (--initial-yes-pct/--initial-no-pct).',
     );
   }
 
-  if (hasPct) {
+  if (hasReservePct) {
     const hasYesPct = options.distributionYesPct !== null;
     const hasNoPct = options.distributionNoPct !== null;
     if (hasYesPct && hasNoPct) {
@@ -96,6 +106,24 @@ function finalizeDistribution(options, CliError) {
     const distributionYes = Math.round(yesPct * (DISTRIBUTION_SCALE / 100));
     options.distributionYes = distributionYes;
     options.distributionNo = DISTRIBUTION_SCALE - distributionYes;
+    options.distributionInputMode = 'reserve-weight-pct';
+  }
+
+  if (hasInitialProbabilityPct) {
+    const hasInitialYesPct = options.initialYesPct !== null;
+    const hasInitialNoPct = options.initialNoPct !== null;
+    if (hasInitialYesPct && hasInitialNoPct) {
+      const total = options.initialYesPct + options.initialNoPct;
+      if (Math.abs(total - 100) > 1e-9) {
+        throw new CliError('INVALID_ARGS', '--initial-yes-pct + --initial-no-pct must equal 100.');
+      }
+    }
+
+    const initialYesPct = hasInitialYesPct ? options.initialYesPct : 100 - options.initialNoPct;
+    const derived = deriveDistributionFromInitialYesProbabilityPct(initialYesPct);
+    options.distributionYes = derived.distributionYes;
+    options.distributionNo = derived.distributionNo;
+    options.distributionInputMode = 'initial-probability-pct';
   }
 
   if (
@@ -116,6 +144,9 @@ function finalizeDistribution(options, CliError) {
   if (options.distributionYes === null && options.distributionNo === null) {
     options.distributionYes = 500_000_000;
     options.distributionNo = 500_000_000;
+    options.distributionInputMode = 'default-balanced';
+  } else if (!options.distributionInputMode) {
+    options.distributionInputMode = 'raw-reserve-units';
   }
 }
 
@@ -155,6 +186,9 @@ function createParseMarketsCreateFlags(deps) {
       distributionNo: null,
       distributionYesPct: null,
       distributionNoPct: null,
+      initialYesPct: null,
+      initialNoPct: null,
+      distributionInputMode: null,
       feeTier: 3000,
       feeTierProvided: false,
       maxImbalance: MAX_UINT24,
@@ -264,6 +298,24 @@ function createParseMarketsCreateFlags(deps) {
         options.distributionNoPct = parseDistributionPercent(
           requireFlagValue(rest, i, '--distribution-no-pct'),
           '--distribution-no-pct',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--initial-yes-pct') {
+        options.initialYesPct = parseDistributionPercent(
+          requireFlagValue(rest, i, '--initial-yes-pct'),
+          '--initial-yes-pct',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--initial-no-pct') {
+        options.initialNoPct = parseDistributionPercent(
+          requireFlagValue(rest, i, '--initial-no-pct'),
+          '--initial-no-pct',
           CliError,
         );
         i += 1;

@@ -84,40 +84,59 @@ const OUTCOME_TOKEN_REF_ABI_CANDIDATES = [
 ];
 
 const CALC_REMOVE_LIQUIDITY_ABI_CANDIDATES = [
-  [
-    {
-      type: 'function',
-      name: 'calcRemoveLiquidity',
-      stateMutability: 'view',
-      inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
-      outputs: [
-        { name: 'collateralOut', type: 'uint256' },
-        { name: 'yesOut', type: 'uint256' },
-        { name: 'noOut', type: 'uint256' },
-      ],
-    },
-  ],
-  [
-    {
-      type: 'function',
-      name: 'calcRemoveLiquidity',
-      stateMutability: 'view',
-      inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
-      outputs: [
-        { name: 'collateralOut', type: 'uint256' },
-        { name: 'yesOut', type: 'uint256' },
-      ],
-    },
-  ],
-  [
-    {
-      type: 'function',
-      name: 'calcRemoveLiquidity',
-      stateMutability: 'view',
-      inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
-      outputs: [{ name: 'collateralOut', type: 'uint256' }],
-    },
-  ],
+  {
+    order: 'collateral-yes-no',
+    abi: [
+      {
+        type: 'function',
+        name: 'calcRemoveLiquidity',
+        stateMutability: 'view',
+        inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
+        outputs: [
+          { name: 'collateralOut', type: 'uint256' },
+          { name: 'yesOut', type: 'uint256' },
+          { name: 'noOut', type: 'uint256' },
+        ],
+      },
+    ],
+  },
+  {
+    order: 'collateral-yes',
+    abi: [
+      {
+        type: 'function',
+        name: 'calcRemoveLiquidity',
+        stateMutability: 'view',
+        inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
+        outputs: [
+          { name: 'collateralOut', type: 'uint256' },
+          { name: 'yesOut', type: 'uint256' },
+        ],
+      },
+    ],
+  },
+  {
+    order: 'collateral-only',
+    abi: [
+      {
+        type: 'function',
+        name: 'calcRemoveLiquidity',
+        stateMutability: 'view',
+        inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
+        outputs: [{ name: 'collateralOut', type: 'uint256' }],
+      },
+    ],
+  },
+];
+
+const MODERN_AMM_FAMILY_PROBE_ABI = [
+  {
+    type: 'function',
+    name: 'getPriceWindowStats',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [],
+  },
 ];
 
 const RESOLVE_METHOD_CANDIDATES = [
@@ -903,25 +922,54 @@ async function readOutcomeTokenRefs(publicClient, marketAddress) {
  * @returns {Promise<{collateralOutRaw: string|null, yesOutRaw: string|null, noOutRaw: string|null}|null>}
  */
 async function readCalcRemoveLiquidity(publicClient, marketAddress, sharesRaw) {
-  for (const abi of CALC_REMOVE_LIQUIDITY_ABI_CANDIDATES) {
+  const tupleOrder = await detectCalcRemoveLiquidityTupleOrder(publicClient, marketAddress);
+  for (const candidate of CALC_REMOVE_LIQUIDITY_ABI_CANDIDATES) {
     try {
       const value = await publicClient.readContract({
         address: marketAddress,
-        abi,
+        abi: candidate.abi,
         functionName: 'calcRemoveLiquidity',
         args: [sharesRaw],
       });
       const normalized = Array.isArray(value) ? value : [value];
+      if (normalized.length >= 3 && tupleOrder === 'yes-no-collateral') {
+        return {
+          collateralOutRaw: normalized[2] !== undefined && normalized[2] !== null ? normalized[2].toString() : null,
+          yesOutRaw: normalized[0] !== undefined && normalized[0] !== null ? normalized[0].toString() : null,
+          noOutRaw: normalized[1] !== undefined && normalized[1] !== null ? normalized[1].toString() : null,
+        };
+      }
       return {
-        collateralOutRaw: normalized[0] ? normalized[0].toString() : null,
-        yesOutRaw: normalized[1] ? normalized[1].toString() : null,
-        noOutRaw: normalized[2] ? normalized[2].toString() : null,
+        collateralOutRaw: normalized[0] !== undefined && normalized[0] !== null ? normalized[0].toString() : null,
+        yesOutRaw: normalized[1] !== undefined && normalized[1] !== null ? normalized[1].toString() : null,
+        noOutRaw: normalized[2] !== undefined && normalized[2] !== null ? normalized[2].toString() : null,
       };
     } catch {
       // try next ABI candidate
     }
   }
   return null;
+}
+
+async function detectCalcRemoveLiquidityTupleOrder(publicClient, marketAddress) {
+  try {
+    const { encodeFunctionData } = await loadViemRuntime();
+    const data = encodeFunctionData({
+      abi: MODERN_AMM_FAMILY_PROBE_ABI,
+      functionName: 'getPriceWindowStats',
+      args: [],
+    });
+    const response = await publicClient.call({
+      to: marketAddress,
+      data,
+    });
+    if (response && typeof response.data === 'string' && response.data !== '0x') {
+      return 'yes-no-collateral';
+    }
+  } catch {
+    // fall through to legacy decode order
+  }
+  return 'collateral-yes-no';
 }
 
 function toDecimalNumber(value) {
@@ -2146,5 +2194,6 @@ module.exports = {
   runClaim,
   readPollResolutionState,
   buildOutcomeTokenVisibility,
+  readCalcRemoveLiquidity,
   buildRemoveLiquidityPreviewPayload,
 };

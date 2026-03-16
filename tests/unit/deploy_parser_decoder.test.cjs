@@ -315,6 +315,30 @@ test('buildDeploymentArgs accepts zero and max uint24 maxImbalance bounds', () =
   );
 });
 
+test('buildDeploymentArgs exposes derived AMM opening probabilities from reserve weights', () => {
+  const parsed = buildDeploymentArgs({
+    question: 'Q',
+    rules: 'R',
+    sources: ['https://one.test', 'https://two.test'],
+    targetTimestamp: FUTURE_TS,
+    liquidityUsdc: 100,
+    distributionYes: 230_000_000,
+    distributionNo: 770_000_000,
+    feeTier: 3000,
+    maxImbalance: 0,
+  });
+
+  assert.deepEqual(parsed.ammProbabilityContract, {
+    distributionScale: 1_000_000_000,
+    initialYesProbabilityPct: 77,
+    initialNoProbabilityPct: 23,
+    yesReserveWeightPct: 23,
+    noReserveWeightPct: 77,
+    interpretation:
+      'AMM YES probability is derived from NO reserve share. A higher initial YES probability requires a lower YES reserve weight.',
+  });
+});
+
 test('buildDeploymentArgs supports pari-mutuel market type with curve bounds', () => {
   const parsed = buildDeploymentArgs({
     question: 'Q',
@@ -428,6 +452,16 @@ test('mirror deploy parser defaults maxImbalance to max uint24 and preserves exp
   assert.equal(distribution.distributionYes, 630_000_000);
   assert.equal(distribution.distributionNo, 370_000_000);
   assert.equal(distribution.validationTicket, 'market-validate:abc123');
+
+  const probabilityNative = parseMirrorDeployFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--dry-run',
+    '--initial-yes-pct',
+    '63',
+  ]);
+  assert.equal(probabilityNative.distributionYes, 370_000_000);
+  assert.equal(probabilityNative.distributionNo, 630_000_000);
 });
 
 test('mirror go parser defaults maxImbalance to max uint24 and accepts percentage distributions', () => {
@@ -458,6 +492,15 @@ test('mirror go parser defaults maxImbalance to max uint24 and accepts percentag
   assert.equal(distribution.distributionYes, 400_000_000);
   assert.equal(distribution.distributionNo, 600_000_000);
   assert.equal(distribution.validationTicket, 'market-validate:def456');
+
+  const probabilityNative = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--initial-yes-pct',
+    '40',
+  ]);
+  assert.equal(probabilityNative.distributionYes, 600_000_000);
+  assert.equal(probabilityNative.distributionNo, 400_000_000);
 });
 
 test('mirror deploy parser blocks external file paths in MCP mode', () => {
