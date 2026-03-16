@@ -729,6 +729,29 @@ function renderSportsTable(payload) {
     console.log(`Creation window: ${payload.timing.creationWindow.status} (open=${payload.timing.creationWindow.opensAt}, close=${payload.timing.creationWindow.closesAt})`);
   }
 
+  if (payload.marketTemplate && payload.marketTemplate.question) {
+    console.log(`Question: ${payload.marketTemplate.question}`);
+    if (payload.marketTemplate.semantics) {
+      if (payload.marketTemplate.semantics.yesMeans) {
+        console.log(`YES means: ${payload.marketTemplate.semantics.yesMeans}`);
+      }
+      if (payload.marketTemplate.semantics.noMeans) {
+        console.log(`NO means: ${payload.marketTemplate.semantics.noMeans}`);
+      }
+    }
+  }
+
+  if (payload.timing && payload.timing.confirmation) {
+    const confirmation = payload.timing.confirmation;
+    console.log(
+      `Event start: ${confirmation.eventStart && confirmation.eventStart.utc ? confirmation.eventStart.utc : 'unknown'}`,
+    );
+    console.log(
+      `Market close: ${confirmation.marketClose && confirmation.marketClose.utc ? confirmation.marketClose.utc : 'unknown'}`,
+    );
+    console.log(`Timezone basis: ${confirmation.timezoneBasis || 'unknown'}`);
+  }
+
   console.log('Done.');
 }
 

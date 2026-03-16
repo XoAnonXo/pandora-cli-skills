@@ -39,19 +39,27 @@ function buildInput(selection) {
 
 test('sports create plan rules align with away selection', () => {
   const plan = buildSportsCreatePlan(buildInput('away'));
-  assert.equal(plan.marketTemplate.question, 'Will Chelsea beat Arsenal?');
+  assert.equal(plan.marketTemplate.question, 'Will Chelsea beat Arsenal on 2026-04-01?');
   assert.equal(plan.marketTemplate.rules.includes('Resolves YES if Chelsea wins'), true);
   assert.equal(plan.marketTemplate.rules.includes('Resolves NO if Arsenal wins or match ends draw.'), true);
+  assert.equal(plan.marketTemplate.semantics.yesMeans, 'Chelsea wins in official full-time result.');
+  assert.equal(plan.marketTemplate.semantics.noMeans, 'Chelsea does not win in official full-time result.');
+  assert.equal(plan.timing.confirmation.eventDate, '2026-04-01');
+  assert.equal(plan.timing.confirmation.eventStart.utc, '2026-04-01T18:00:00.000Z');
+  assert.equal(plan.timing.confirmation.marketClose.utc, plan.timing.creationWindow.closesAt);
+  assert.equal(plan.timing.confirmation.timezoneBasis, 'UTC');
 });
 
 test('sports create plan rules align with draw selection', () => {
   const plan = buildSportsCreatePlan(buildInput('draw'));
-  assert.equal(plan.marketTemplate.question, 'Will Arsenal vs Chelsea end in a draw?');
+  assert.equal(plan.marketTemplate.question, 'Will Arsenal vs Chelsea end in a draw on 2026-04-01?');
   assert.equal(
     plan.marketTemplate.rules.includes('Resolves YES if match ends draw in official full-time result.'),
     true,
   );
   assert.equal(plan.marketTemplate.rules.includes('Resolves NO if Arsenal or Chelsea wins.'), true);
+  assert.equal(plan.marketTemplate.semantics.yesMeans, 'The match ends in a draw in official full-time result.');
+  assert.equal(plan.marketTemplate.semantics.noMeans, 'The match does not end in a draw in official full-time result.');
 });
 
 test('sports create plan accepts BYOM probability and bypasses consensus gating', () => {
@@ -116,9 +124,11 @@ test('sports create plan uses moneyline rules for non-soccer events', () => {
   const plan = buildSportsCreatePlan(input);
   assert.equal(plan.event.marketType, 'moneyline');
   assert.equal(plan.marketTemplate.oddsMarketType, 'moneyline');
-  assert.equal(plan.marketTemplate.question, 'Will Arsenal beat Chelsea?');
+  assert.equal(plan.marketTemplate.question, 'Will Arsenal beat Chelsea on 2026-04-01?');
   assert.equal(plan.marketTemplate.rules.includes('match ends draw'), false);
   assert.equal(plan.marketTemplate.rules.includes('Resolves NO if Chelsea wins.'), true);
+  assert.equal(plan.marketTemplate.semantics.yesMeans, 'Arsenal wins.');
+  assert.equal(plan.marketTemplate.semantics.noMeans, 'Arsenal does not win.');
 });
 
 test('sports create plan rejects draw selection for moneyline events', () => {

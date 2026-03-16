@@ -1065,6 +1065,12 @@ test('sports create plan accepts --model-file BYOM input and attributes model so
   assert.equal(planPayload.data.source.model.source, 'my_model_v3');
   assert.equal(planPayload.data.source.model.inputMode, 'file');
   assert.equal(planPayload.data.source.model.modelFile, modelFile);
+  assert.equal(planPayload.data.marketTemplate.question, 'Will Arsenal beat Chelsea on 2030-01-01?');
+  assert.equal(planPayload.data.marketTemplate.semantics.yesMeans, 'Arsenal wins in official full-time result.');
+  assert.equal(planPayload.data.marketTemplate.semantics.noMeans, 'Arsenal does not win in official full-time result.');
+  assert.equal(planPayload.data.timing.confirmation.eventStart.utc, '2030-01-01T12:00:00.000Z');
+  assert.equal(planPayload.data.timing.confirmation.marketClose.utc, planPayload.data.timing.creationWindow.closesAt);
+  assert.equal(planPayload.data.timing.confirmation.timezoneBasis, 'UTC');
   assert.equal(
     planPayload.data.safety.blockedReasons.some((reason) => String(reason).includes('Insufficient book coverage')),
     false,
@@ -1074,6 +1080,87 @@ test('sports create plan accepts --model-file BYOM input and attributes model so
   assert.equal(requestedPaths.length, 2);
   assert.equal(requestedPaths[0], '/events/evt-1/odds');
   assert.equal(requestedPaths[1], '/events/evt-1/status');
+});
+
+test('sports create plan table output shows dated question, outcome semantics, and timezone confirmation', async (t) => {
+  const mock = await startJsonHttpServer(({ url }) => {
+    if (url === '/events/evt-ux/odds') {
+      return {
+        body: {
+          event: {
+            id: 'evt-ux',
+            competitionId: 'nba',
+            home_team: 'Utah Jazz',
+            away_team: 'Sacramento Kings',
+            startTime: '2030-03-15T02:00:00Z',
+            status: 'scheduled',
+            marketType: 'moneyline',
+          },
+          updatedAt: '2030-03-14T21:00:00Z',
+          bookmakers: [
+            {
+              book: 'bet365',
+              outcomes: [
+                { name: 'Utah Jazz', price: '1.9' },
+                { name: 'Sacramento Kings', price: '2.0' },
+              ],
+            },
+            {
+              book: 'William Hill',
+              outcomes: [
+                { name: 'Utah Jazz', price: '1.95' },
+                { name: 'Sacramento Kings', price: '1.98' },
+              ],
+            },
+          ],
+        },
+      };
+    }
+    if (url === '/events/evt-ux/status') {
+      return {
+        body: {
+          event: {
+            id: 'evt-ux',
+            homeTeam: 'Utah Jazz',
+            awayTeam: 'Sacramento Kings',
+            startTime: '2030-03-15T02:00:00Z',
+            status: 'scheduled',
+            marketType: 'moneyline',
+          },
+        },
+      };
+    }
+    return { status: 404, body: { error: `unexpected path ${url}` } };
+  });
+
+  t.after(async () => {
+    await mock.close();
+  });
+
+  const env = createIsolatedSportsEnv(t, {
+    SPORTSBOOK_PRIMARY_BASE_URL: mock.url,
+    SPORTSBOOK_PROVIDER_MODE: 'primary',
+  });
+
+  const result = await runCliAsync([
+    'sports',
+    'create',
+    'plan',
+    '--event-id',
+    'evt-ux',
+    '--competition',
+    'nba',
+    '--now-ms',
+    String(Date.parse('2030-03-14T21:00:00Z')),
+  ], { env });
+
+  assert.equal(result.status, 0, result.output);
+  assert.match(result.stdout, /Question: Will Utah Jazz beat Sacramento Kings on 2030-03-15\?/);
+  assert.match(result.stdout, /YES means: Utah Jazz wins\./);
+  assert.match(result.stdout, /NO means: Utah Jazz does not win\./);
+  assert.match(result.stdout, /Event start: 2030-03-15T02:00:00\.000Z/);
+  assert.match(result.stdout, /Market close: /);
+  assert.match(result.stdout, /Timezone basis: UTC/);
 });
 
 test('sports create run dry-run keeps pari-mutuel creation in planning-only mode', async (t) => {

@@ -28,6 +28,69 @@ function toPartsPerBillionFromPct(pct) {
   return Math.round((bounded / 100) * PPB_TOTAL);
 }
 
+function toDateOnlyUtc(isoString) {
+  const parsed = Date.parse(String(isoString || ''));
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+function inferTimezoneBasis(rawKickoff) {
+  const text = String(rawKickoff || '').trim();
+  if (!text) return 'unknown';
+  if (/[zZ]$/.test(text)) return 'UTC';
+  const offsetMatch = text.match(/([+-]\d{2}:\d{2})$/);
+  if (offsetMatch) return `UTC${offsetMatch[1]}`;
+  return 'source-local-unspecified';
+}
+
+function buildTimeConfirmation(kickoff, creationWindow) {
+  const kickoffIso = kickoff || null;
+  const kickoffDate = toDateOnlyUtc(kickoffIso);
+  const timezoneBasis = inferTimezoneBasis(kickoffIso);
+  return {
+    eventDate: kickoffDate,
+    eventStart: {
+      source: kickoffIso,
+      utc: kickoffIso,
+    },
+    marketClose: {
+      utc: creationWindow && creationWindow.window ? creationWindow.window.closesAt : null,
+    },
+    timezoneBasis,
+  };
+}
+
+function buildOutcomeSemantics(homeTeam, awayTeam, selection = 'home', oddsMarketType = SOCCER_WINNER_MARKET_TYPE) {
+  if (oddsMarketType === MONEYLINE_MARKET_TYPE) {
+    if (selection === 'away') {
+      return {
+        yesMeans: `${awayTeam} wins.`,
+        noMeans: `${awayTeam} does not win.`,
+      };
+    }
+    return {
+      yesMeans: `${homeTeam} wins.`,
+      noMeans: `${homeTeam} does not win.`,
+    };
+  }
+  if (selection === 'away') {
+    return {
+      yesMeans: `${awayTeam} wins in official full-time result.`,
+      noMeans: `${awayTeam} does not win in official full-time result.`,
+    };
+  }
+  if (selection === 'draw') {
+    return {
+      yesMeans: 'The match ends in a draw in official full-time result.',
+      noMeans: 'The match does not end in a draw in official full-time result.',
+    };
+  }
+  return {
+    yesMeans: `${homeTeam} wins in official full-time result.`,
+    noMeans: `${homeTeam} does not win in official full-time result.`,
+  };
+}
+
 function buildRules(homeTeam, awayTeam, selection = 'home', oddsMarketType = SOCCER_WINNER_MARKET_TYPE) {
   if (oddsMarketType === MONEYLINE_MARKET_TYPE) {
     if (selection === 'draw') {
@@ -68,16 +131,18 @@ function buildRules(homeTeam, awayTeam, selection = 'home', oddsMarketType = SOC
 }
 
 function buildQuestion(event, selection, oddsMarketType = SOCCER_WINNER_MARKET_TYPE) {
+  const eventDate = toDateOnlyUtc(event.startTime);
+  const suffix = eventDate ? ` on ${eventDate}` : '';
   if (oddsMarketType === MONEYLINE_MARKET_TYPE && selection === 'draw') {
     throw createCreatePlanError('INVALID_FLAG_VALUE', 'Moneyline events do not support draw selection.');
   }
   if (selection === 'away') {
-    return `Will ${event.awayTeam} beat ${event.homeTeam}?`;
+    return `Will ${event.awayTeam} beat ${event.homeTeam}${suffix}?`;
   }
   if (selection === 'draw') {
-    return `Will ${event.homeTeam} vs ${event.awayTeam} end in a draw?`;
+    return `Will ${event.homeTeam} vs ${event.awayTeam} end in a draw${suffix}?`;
   }
-  return `Will ${event.homeTeam} beat ${event.awayTeam}?`;
+  return `Will ${event.homeTeam} beat ${event.awayTeam}${suffix}?`;
 }
 
 function buildConsensusQuotes(oddsPayload, selection, priorityBooks) {
@@ -240,6 +305,13 @@ function buildSportsCreatePlan(input = {}) {
 
   const question = buildQuestion(event, selection, oddsMarketType);
   const rules = buildRules(event.homeTeam || 'Home Team', event.awayTeam || 'Away Team', selection, oddsMarketType);
+  const semantics = buildOutcomeSemantics(
+    event.homeTeam || 'Home Team',
+    event.awayTeam || 'Away Team',
+    selection,
+    oddsMarketType,
+  );
+  const timeConfirmation = buildTimeConfirmation(kickoff, creationWindow);
   const sources = quotes.slice(0, 5).map((item) => `https://odds.example/${encodeURIComponent(item.book)}`);
   const targetTimestamp = toUnixSeconds(kickoff);
 
@@ -292,6 +364,7 @@ function buildSportsCreatePlan(input = {}) {
       },
       resolveEarliestAt: resolveWindow.resolveOpenAt,
       resolveLatestAt: resolveWindow.resolveCloseAt,
+      confirmation: timeConfirmation,
       statusConfidence: consensus.confidence,
       warnings: blockedReasons,
     },
@@ -301,6 +374,7 @@ function buildSportsCreatePlan(input = {}) {
       selection,
       question,
       rules,
+      semantics,
       sources,
       targetTimestamp,
       targetTimestampOffsetHours: options.targetTimestampOffsetHours || 1,
