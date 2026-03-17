@@ -319,7 +319,7 @@ function evaluateCoveragePolicy(input) {
 
   const totalCoverage = totalBooks > 0 ? includedBooks / totalBooks : 0;
   const tier1Coverage = tier1Total > 0 ? tier1Included / tier1Total : 1;
-  const meetsTotalBooks = includedBooks >= minTotalBooks;
+  const meetsTotalBooks = totalBooks >= minTotalBooks;
   const meetsTier1Books = tier1Included >= minTier1Books;
   const meetsTier1Coverage = tier1Coverage >= minTier1Coverage;
   const insufficientCoverage = !meetsTotalBooks;

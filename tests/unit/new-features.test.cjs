@@ -98,6 +98,7 @@ const {
   MIRROR_SYNC_GATE_CODES,
   applyGateBypassPolicy,
   normalizeSkipGateChecks,
+  buildTickGateContext,
   evaluateSnapshot,
   evaluateStrictGates,
   resolveMinimumTimeToCloseSec,
@@ -3173,6 +3174,7 @@ test('runMirrorSync live mode prioritizes CLI hedge credentials over env default
         trustDeploy: false,
         hedgeEnabled: true,
         hedgeRatio: 1,
+        rebalanceSizingMode: 'incremental',
         intervalMs: 5000,
         driftTriggerBps: 150,
         hedgeTriggerUsdc: 1,
@@ -3248,6 +3250,225 @@ test('runMirrorSync live mode prioritizes CLI hedge credentials over env default
     assert.equal(capturedHedgeOptions.rpcUrl, 'https://primary-rpc.example,https://secondary-rpc.example');
     assert.equal(capturedHedgeOptions.privateKey, privateKey);
     assert.equal(capturedHedgeOptions.funder, funder);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync live mode uses resolved polymarket auth context when explicit credentials are absent', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-live-profile-auth-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  let capturedHedgeOptions = null;
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: null,
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: true,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 150,
+        hedgeTriggerUsdc: 1,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketRpcUrl: 'https://primary-rpc.example,https://secondary-rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+      },
+      {
+        resolvePandoraInventoryAddress: async () => null,
+        resolvePolymarketExecutionContext: async () => ({
+          privateKey: `0x${'e'.repeat(64)}`,
+          funder: '0xcccccccccccccccccccccccccccccccccccccccc',
+          signerAddress: '0xcccccccccccccccccccccccccccccccccccccccc',
+          apiKey: 'resolved-api-key',
+          apiSecret: 'resolved-api-secret',
+          apiPassphrase: 'resolved-api-passphrase',
+          profileBacked: true,
+          profileBackend: 'local-env',
+          profileDerivedPrivateKey: true,
+        }),
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            yesPct: 40,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            sourceFreshness: {
+              transport: 'poll',
+              observedAt: new Date().toISOString(),
+            },
+          },
+          pandora: {
+            yesPct: 40,
+            reserveYes: 2,
+            reserveNo: 8,
+          },
+          expiry: {
+            minTimeToExpirySec: 7200,
+          },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, depthShares: 1000, referencePrice: 0.4, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, depthShares: 1000, referencePrice: 0.6, midPrice: 0.6, worstPrice: 0.61 },
+        }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 2,
+          reserveNoUsdc: 8,
+          pandoraYesPct: 40,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+        hedgeFn: async (options) => {
+          capturedHedgeOptions = options;
+          return {
+            ok: true,
+            response: { status: 'simulated-post' },
+          };
+        },
+        rebalanceFn: async () => ({ ok: true }),
+      },
+    );
+
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions[0].status, 'executed');
+    assert.equal(Boolean(capturedHedgeOptions), true);
+    assert.equal(capturedHedgeOptions.privateKey, `0x${'e'.repeat(64)}`);
+    assert.equal(capturedHedgeOptions.funder, '0xcccccccccccccccccccccccccccccccccccccccc');
+    assert.equal(capturedHedgeOptions.apiKey, 'resolved-api-key');
+    assert.equal(capturedHedgeOptions.apiSecret, 'resolved-api-secret');
+    assert.equal(capturedHedgeOptions.apiPassphrase, 'resolved-api-passphrase');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync adoption forwards resolved polymarket auth context and on-chain fallback client', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-adopt-auth-context-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  const captured = {};
+
+  try {
+    await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: 'poly-slug-1',
+        executeLive: false,
+        trustDeploy: false,
+        hedgeEnabled: false,
+        hedgeRatio: 1,
+        hedgeScope: 'total',
+        adoptExistingPositions: true,
+        intervalMs: 1000,
+        driftTriggerBps: 10_000,
+        hedgeTriggerUsdc: 1000,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketRpcUrl: 'https://polygon-rpc-1.example,https://polygon-rpc-2.example',
+        polymarketHost: 'https://clob.polymarket.com',
+      },
+      {
+        resolvePandoraInventoryAddress: async () => null,
+        resolvePolymarketExecutionContext: async () => ({
+          privateKey: `0x${'c'.repeat(64)}`,
+          funder: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          signerAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          apiKey: 'poly-api-key',
+          apiSecret: 'poly-api-secret',
+          apiPassphrase: 'poly-api-passphrase',
+          profileBacked: true,
+          profileBackend: 'local-keystore',
+          profileDerivedPrivateKey: true,
+        }),
+        polymarketInventoryReadClient: {
+          readContract: async () => 0n,
+        },
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket',
+            marketId: 'poly-cond-1',
+            slug: 'poly-slug-1',
+            yesPct: 55,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+          },
+          pandora: { yesPct: 55, reserveYes: 5, reserveNo: 5 },
+          expiry: { minTimeToExpirySec: 7200 },
+        }),
+        positionSummaryFn: async (options) => {
+          captured.options = options;
+          return {
+            marketId: 'poly-cond-1',
+            slug: 'poly-slug-1',
+            walletAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            yesBalance: 1,
+            noBalance: 2,
+            prices: { yes: 0.55, no: 0.45 },
+            openOrdersCount: 0,
+            openOrders: [],
+            estimatedValueUsd: 1.45,
+            source: { resolved: 'api', balances: 'api' },
+          };
+        },
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, depthShares: 2000, referencePrice: 0.5, midPrice: 0.5, worstPrice: 0.51 },
+          noDepth: { depthUsd: 1000, depthShares: 2000, referencePrice: 0.5, midPrice: 0.5, worstPrice: 0.51 },
+        }),
+      },
+    );
+
+    assert.equal(captured.options.walletAddress, '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    assert.equal(captured.options.privateKey, `0x${'c'.repeat(64)}`);
+    assert.equal(captured.options.funder, '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    assert.equal(captured.options.apiWalletAddress, '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    assert.equal(captured.options.apiKey, 'poly-api-key');
+    assert.equal(captured.options.apiSecret, 'poly-api-secret');
+    assert.equal(captured.options.apiPassphrase, 'poly-api-passphrase');
+    assert.equal(typeof captured.options.publicClient.readContract, 'function');
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -3380,11 +3601,11 @@ test('runMirrorSync paper mode uses on-chain reserves for atomic rebalance plann
         polymarketSlug: null,
         executeLive: false,
         trustDeploy: false,
-        hedgeEnabled: false,
+        hedgeEnabled: true,
         hedgeRatio: 1,
         intervalMs: 5000,
-        driftTriggerBps: 150,
-        hedgeTriggerUsdc: 10_000,
+        driftTriggerBps: 10_000,
+        hedgeTriggerUsdc: 1,
         maxRebalanceUsdc: 40,
         maxHedgeUsdc: 10,
         maxOpenExposureUsdc: 100,
@@ -3468,11 +3689,11 @@ test('runMirrorSync paper mode resolves inventory address cleanly when injected 
         polymarketSlug: null,
         executeLive: false,
         trustDeploy: false,
-        hedgeEnabled: false,
+        hedgeEnabled: true,
         hedgeRatio: 1,
         intervalMs: 5000,
-        driftTriggerBps: 150,
-        hedgeTriggerUsdc: 10_000,
+        driftTriggerBps: 10_000,
+        hedgeTriggerUsdc: 1,
         maxRebalanceUsdc: 40,
         maxHedgeUsdc: 10,
         maxOpenExposureUsdc: 100,
@@ -3863,6 +4084,201 @@ test('runMirrorSync live mode blocks fresh polled sports source data when stream
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test('runMirrorSync live mode blocks hedge execution when depth coverage comes from cached/mock orderbooks', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-cached-depth-gate-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  let executed = false;
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: true,
+        hedgeRatio: 1,
+        intervalMs: 5000,
+        driftTriggerBps: 10_000,
+        hedgeTriggerUsdc: 1,
+        maxRebalanceUsdc: 40,
+        maxHedgeUsdc: 10,
+        maxOpenExposureUsdc: 100,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        priceSource: 'indexer',
+      },
+      {
+        verifyFn: async () => ({
+          matchConfidence: 0.99,
+          gateResult: {
+            ok: true,
+            failedChecks: [],
+            checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+          },
+          sourceMarket: {
+            source: 'polymarket:gamma',
+            marketId: 'poly-cond-1',
+            yesPct: 20,
+            yesTokenId: 'yes-token',
+            noTokenId: 'no-token',
+            sourceFreshness: {
+              transport: 'stream',
+              observedAt: new Date().toISOString(),
+            },
+          },
+          pandora: { yesPct: 80, reserveYes: 8, reserveNo: 2 },
+          expiry: {
+            minTimeToExpirySec: 7200,
+            pandoraTimeToExpirySec: 7200,
+            sourceTimeToExpirySec: 7200,
+          },
+        }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, depthShares: 1000, midPrice: 0.4, worstPrice: 0.41 },
+          noDepth: { depthUsd: 1000, depthShares: 1000, midPrice: 0.6, worstPrice: 0.61 },
+          depthSourceType: 'polymarket:cache',
+          usedCachedOrMockDepth: true,
+          depthFreshness: {
+            sourceType: 'polymarket:cache',
+            fresh: false,
+            trustedForLive: false,
+          },
+        }),
+        rebalanceFn: async () => {
+          executed = true;
+          return { ok: true, txHash: '0xrebalance' };
+        },
+      },
+    );
+
+    assert.equal(executed, false);
+    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.snapshots[0].action.status, 'blocked');
+    assert.equal(payload.snapshots[0].action.failedChecks.includes('DEPTH_COVERAGE'), true);
+    const depthCheck = payload.snapshots[0].strictGate.checks.find((check) => check.code === 'DEPTH_COVERAGE');
+    assert.equal(Boolean(depthCheck), true);
+    assert.equal(depthCheck.ok, false);
+    assert.equal(depthCheck.details.depthUsesCachedOrMock, true);
+    assert.equal(depthCheck.details.depthSourceGateOk, false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('buildTickGateContext uses sell-side depth for recyclable live hedges', () => {
+  const context = buildTickGateContext({
+    verifyPayload: {
+      gateResult: {
+        ok: true,
+        failedChecks: [],
+        checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+      },
+      sourceMarket: {
+        source: 'polymarket:gamma',
+        marketId: 'poly-cond-1',
+        yesTokenId: 'yes-token',
+        noTokenId: 'no-token',
+        sourceFreshness: {
+          transport: 'stream',
+          observedAt: new Date().toISOString(),
+        },
+      },
+      pandora: { yesPct: 80, reserveYes: 8, reserveNo: 2 },
+      expiry: {
+        minTimeToExpirySec: 7200,
+        pandoraTimeToExpirySec: 7200,
+        sourceTimeToExpirySec: 7200,
+      },
+    },
+    options: {
+      executeLive: true,
+      intervalMs: 5000,
+      sourceMaxAgeMs: 30_000,
+      depthSlippageBps: 100,
+      maxOpenExposureUsdc: 100,
+      maxTradesPerDay: 10,
+      strictCloseTimeDelta: false,
+    },
+    state: {
+      currentHedgeUsdc: 5,
+      tradesToday: 0,
+      accounting: {
+        managedPolymarketYesShares: 5,
+        managedPolymarketNoShares: 0,
+      },
+    },
+    plan: {
+      hedgeTriggered: true,
+      plannedHedgeUsdc: 3,
+      plannedHedgeShares: 3,
+      plannedHedgeSignedUsdc: -3,
+      plannedRebalanceUsdc: 0,
+      gapUsdc: -3,
+    },
+    snapshotMetrics: {
+      pandoraTimeToExpirySec: 7200,
+      sourceTimeToExpirySec: 7200,
+      minTimeToExpirySec: 7200,
+    },
+    depth: {
+      yesDepth: {
+        depthUsd: 1,
+        depthShares: 1,
+        referencePrice: 0.4,
+        midPrice: 0.4,
+        worstPrice: 0.41,
+      },
+      noDepth: {
+        depthUsd: 1,
+        depthShares: 1,
+        referencePrice: 0.6,
+        midPrice: 0.6,
+        worstPrice: 0.61,
+      },
+      sellYesDepth: {
+        depthUsd: 10,
+        depthShares: 10,
+        referencePrice: 0.48,
+        midPrice: 0.48,
+        worstPrice: 0.47,
+        sourceType: 'polymarket:api',
+        usedCachedOrMockDepth: false,
+      },
+      depthSourceType: 'polymarket:api',
+      usedCachedOrMockDepth: false,
+      depthFreshness: {
+        sourceType: 'polymarket:api',
+        fresh: true,
+        trustedForLive: true,
+      },
+    },
+    minimumTimeToCloseSec: 30,
+  });
+
+  assert.equal(context.hedgeReferencePrice, 0.48);
+  assert.equal(context.hedgeDepthWithinSlippageUsd, 10);
+  assert.equal(context.hedgeDepthWithinSlippageShares, 10);
+  assert.equal(context.plannedHedgeOrderUsd, 1.44);
+
+  const gate = evaluateStrictGates(context);
+  const depthCheck = gate.checks.find((check) => check.code === 'DEPTH_COVERAGE');
+  assert.equal(Boolean(depthCheck), true);
+  assert.equal(depthCheck.ok, true);
+  assert.equal(depthCheck.details.depthAvailableUsd, 10);
+  assert.equal(depthCheck.details.depthAvailableShares, 10);
 });
 
 test('runMirrorSync leaves tradesToday unchanged when no sync legs are planned', async () => {

@@ -71,10 +71,11 @@ function computeBalanceScore(yesPct) {
 
 function buildDistributionParts(yesPct) {
   const clampedYesPct = clamp(yesPct, 0, 100);
-  const distributionYes = Math.round(clampedYesPct * (DISTRIBUTION_SCALE / 100));
+  // Pandora AMM YES price follows NO reserve share, so reserve weights invert target YES probability.
+  const distributionNo = Math.round(clampedYesPct * (DISTRIBUTION_SCALE / 100));
   return {
-    distributionYes,
-    distributionNo: DISTRIBUTION_SCALE - distributionYes,
+    distributionYes: DISTRIBUTION_SCALE - distributionNo,
+    distributionNo,
   };
 }
 

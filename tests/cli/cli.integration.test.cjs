@@ -11971,8 +11971,8 @@ test('markets hype plan emits reusable frozen hype payload in mock mode', async 
     assert.equal(payload.data.researchSnapshot.promptKind, 'agent.market.hype');
     assert.equal(payload.data.candidates.length, 1);
     assert.equal(payload.data.selectedCandidate.recommendedMarketType, 'amm');
-    assert.equal(payload.data.selectedCandidate.marketDrafts.amm.distributionYes, 570000000);
-    assert.equal(payload.data.selectedCandidate.marketDrafts.amm.distributionNo, 430000000);
+    assert.equal(payload.data.selectedCandidate.marketDrafts.amm.distributionYes, 430000000);
+    assert.equal(payload.data.selectedCandidate.marketDrafts.amm.distributionNo, 570000000);
     assert.equal(payload.data.selectedCandidate.validation.attestation.validationDecision, 'PASS');
     assert.equal(payload.data.selectedCandidate.readyToDeploy, true);
     assert.equal(payload.data.notes.some((note) => /Prefer --ai-provider auto\|openai\|anthropic/i.test(String(note))), true);
@@ -12079,8 +12079,8 @@ test('markets hype run --dry-run reuses a frozen plan file without re-running re
     assert.equal(payload.data.deployment.mode, 'dry-run');
     assert.equal(payload.data.deployment.txRouteRequested, 'flashbots-bundle');
     assert.equal(payload.data.deployment.txRouteResolved, 'flashbots-bundle');
-    assert.equal(payload.data.deployment.deploymentArgs.distributionYes, 570000000);
-    assert.equal(payload.data.deployment.deploymentArgs.distributionNo, 430000000);
+    assert.equal(payload.data.deployment.deploymentArgs.distributionYes, 430000000);
+    assert.equal(payload.data.deployment.deploymentArgs.distributionNo, 570000000);
     assert.equal(payload.data.deployment.requiredValidation.ticket, payload.data.requiredValidation.ticket);
     assert.equal(payload.data.validationResult.decision, 'PASS');
   } finally {

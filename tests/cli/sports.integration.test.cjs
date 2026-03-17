@@ -1069,7 +1069,16 @@ test('sports create plan accepts --model-file BYOM input and attributes model so
   assert.equal(planPayload.data.marketTemplate.semantics.yesMeans, 'Arsenal wins in official full-time result.');
   assert.equal(planPayload.data.marketTemplate.semantics.noMeans, 'Arsenal does not win in official full-time result.');
   assert.equal(planPayload.data.timing.confirmation.eventStart.utc, '2030-01-01T12:00:00.000Z');
-  assert.equal(planPayload.data.timing.confirmation.marketClose.utc, planPayload.data.timing.creationWindow.closesAt);
+  assert.equal(planPayload.data.timing.confirmation.marketClose.utc, '2030-01-01T15:00:00.000Z');
+  assert.equal(planPayload.data.marketTemplate.targetTimestamp, 1893510000);
+  assert.deepEqual(planPayload.data.marketTemplate.sources, [
+    `${mock.url}/events/evt-1/odds`,
+    `${mock.url}/events/evt-1/status`,
+  ]);
+  assert.equal(
+    planPayload.data.marketTemplate.sources.some((source) => String(source).includes('odds.example')),
+    false,
+  );
   assert.equal(planPayload.data.timing.confirmation.timezoneBasis, 'UTC');
   assert.equal(
     planPayload.data.safety.blockedReasons.some((reason) => String(reason).includes('Insufficient book coverage')),
@@ -1159,7 +1168,8 @@ test('sports create plan table output shows dated question, outcome semantics, a
   assert.match(result.stdout, /YES means: Utah Jazz wins\./);
   assert.match(result.stdout, /NO means: Utah Jazz does not win\./);
   assert.match(result.stdout, /Event start: 2030-03-15T02:00:00\.000Z/);
-  assert.match(result.stdout, /Market close: /);
+  assert.match(result.stdout, /Market close: 2030-03-15T05:00:00\.000Z/);
+  assert.match(result.stdout, /Target timestamp \(unix\): 1899781200/);
   assert.match(result.stdout, /Timezone basis: UTC/);
 });
 

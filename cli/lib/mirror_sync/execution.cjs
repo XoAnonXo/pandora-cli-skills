@@ -1008,8 +1008,13 @@ async function executeHedgeLeg(params) {
 
   if (options.executeLive) {
     const envCreds = readTradingCredsFromEnv();
+    const configuredPrivateKey = options.polymarketPrivateKey || options.privateKey || null;
+    const configuredFunder = options.polymarketFunder || options.funder || null;
+    const apiKey = options.polymarketApiKey || envCreds.apiKey;
+    const apiSecret = options.polymarketApiSecret || envCreds.apiSecret;
+    const apiPassphrase = options.polymarketApiPassphrase || envCreds.apiPassphrase;
     let hedgeResult;
-    if (!options.privateKey && envCreds.privateKeyInvalid) {
+    if (!configuredPrivateKey && envCreds.privateKeyInvalid) {
       hedgeResult = {
         ok: false,
         error: {
@@ -1026,11 +1031,11 @@ async function executeHedgeLeg(params) {
           tokenId,
           side: hedgeSide,
           amountUsd: executionPlan.amountUsdc,
-          privateKey: options.privateKey || envCreds.privateKey,
-          funder: options.funder || envCreds.funder,
-          apiKey: envCreds.apiKey,
-          apiSecret: envCreds.apiSecret,
-          apiPassphrase: envCreds.apiPassphrase,
+          privateKey: configuredPrivateKey || envCreds.privateKey,
+          funder: configuredFunder || envCreds.funder,
+          apiKey,
+          apiSecret,
+          apiPassphrase,
         });
       } catch (err) {
         hedgeResult = normalizeExecutionFailure(err);

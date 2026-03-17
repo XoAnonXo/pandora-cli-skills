@@ -749,7 +749,13 @@ function renderSportsTable(payload) {
     console.log(
       `Market close: ${confirmation.marketClose && confirmation.marketClose.utc ? confirmation.marketClose.utc : 'unknown'}`,
     );
+    if (confirmation.creationWindowClose && confirmation.creationWindowClose.utc) {
+      console.log(`Creation window close: ${confirmation.creationWindowClose.utc}`);
+    }
     console.log(`Timezone basis: ${confirmation.timezoneBasis || 'unknown'}`);
+  }
+  if (payload.marketTemplate && Number.isInteger(payload.marketTemplate.targetTimestamp)) {
+    console.log(`Target timestamp (unix): ${payload.marketTemplate.targetTimestamp}`);
   }
 
   console.log('Done.');

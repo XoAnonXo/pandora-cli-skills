@@ -183,6 +183,7 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     maxImbalance: MAX_UINT24,
     minCloseLeadSeconds: 5400,
     targetTimestampOffsetHours: 1,
+    sources: null,
     chainId: null,
     rpcUrl: null,
     privateKey: null,
@@ -460,6 +461,29 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     if (token === '--target-timestamp-offset-hours') {
       options.targetTimestampOffsetHours = parsePositiveInteger(requireFlagValue(args, i, '--target-timestamp-offset-hours'), '--target-timestamp-offset-hours');
       i += 1;
+      continue;
+    }
+    if (token === '--sources') {
+      const values = [];
+      let cursor = i + 1;
+      while (cursor < args.length && !String(args[cursor]).startsWith('--')) {
+        values.push(String(args[cursor] || '').trim());
+        cursor += 1;
+      }
+      const normalized = values.filter(Boolean);
+      if (!normalized.length) {
+        throw new CliError('MISSING_REQUIRED_FLAG', '--sources requires one or more URLs.');
+      }
+      for (const sourceUrl of normalized) {
+        if (!isSecureHttpUrlOrLocal(sourceUrl)) {
+          throw new CliError(
+            'INVALID_FLAG_VALUE',
+            '--sources URLs must use https:// (or http://localhost/127.0.0.1 for local testing).',
+          );
+        }
+      }
+      options.sources = Array.isArray(options.sources) ? options.sources.concat(normalized) : normalized;
+      i = cursor - 1;
       continue;
     }
     if (token === '--chain-id') {

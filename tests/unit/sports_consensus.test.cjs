@@ -59,6 +59,35 @@ test('evaluateCoveragePolicy reports high confidence when total and tier1 covera
   assert.equal(policy.confidence, 'high');
 });
 
+test('evaluateCoveragePolicy uses raw participating books for minimum-book gating', () => {
+  const books = [
+    { book: 'bet365', tier1: true },
+    { book: 'pinnacle', tier1: true },
+    { book: 'book-c', tier1: false },
+    { book: 'book-d', tier1: false },
+    { book: 'book-e', tier1: false },
+    { book: 'book-f', tier1: false },
+  ];
+  const includedRows = [
+    { book: 'bet365', tier1: true },
+    { book: 'pinnacle', tier1: true },
+    { book: 'book-c', tier1: false },
+    { book: 'book-d', tier1: false },
+  ];
+
+  const policy = evaluateCoveragePolicy({
+    books,
+    includedRows,
+    minTotalBooks: 6,
+    minTier1Books: 2,
+    minTier1Coverage: 0.5,
+  });
+
+  assert.equal(policy.totalCoverage, 4 / 6);
+  assert.equal(policy.insufficientCoverage, false);
+  assert.equal(policy.confidence, 'normal');
+});
+
 test('computeSportsConsensus applies trimmed median, marks outliers, and degrades on low coverage', () => {
   const quotes = [
     { book: 'book-low', odds: 8, oddsFormat: 'decimal' },

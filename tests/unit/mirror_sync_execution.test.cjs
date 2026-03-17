@@ -115,6 +115,55 @@ test('executeHedgeLeg submits sell-side hedge when runtime sell depth proves saf
   assert.equal(state.cumulativeHedgeCostApproxUsdc, 0.03);
 });
 
+test('executeHedgeLeg prefers explicit polymarket auth context over legacy privateKey/funder fields', async () => {
+  const action = {};
+  const state = {
+    currentHedgeUsdc: 0,
+    cumulativeHedgeNotionalUsdc: 0,
+    cumulativeHedgeCostApproxUsdc: 0,
+  };
+  const calls = [];
+
+  const actualHedgeUsdc = await executeHedgeLeg({
+    options: {
+      executeLive: true,
+      polymarketHost: 'https://clob.polymarket.com',
+      privateKey: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      funder: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      polymarketPrivateKey: '0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      polymarketFunder: '0xdddddddddddddddddddddddddddddddddddddddd',
+      polymarketApiKey: 'api-key-from-context',
+      polymarketApiSecret: 'api-secret-from-context',
+      polymarketApiPassphrase: 'api-passphrase-from-context',
+    },
+    action,
+    plan: { hedgeTriggered: true, plannedHedgeUsdc: 2, plannedHedgeShares: 2, gapUsdc: 2 },
+    verifyPayload: VERIFY_PAYLOAD,
+    depth: {
+      yesDepth: {
+        depthUsd: 10,
+        depthShares: 10,
+        referencePrice: 0.4,
+        midPrice: 0.4,
+        worstPrice: 0.41,
+      },
+    },
+    hedgeFn: async (params) => {
+      calls.push(params);
+      return { ok: true, status: 'accepted' };
+    },
+    state,
+  });
+
+  assert.equal(actualHedgeUsdc, 0.8);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].privateKey, '0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc');
+  assert.equal(calls[0].funder, '0xdddddddddddddddddddddddddddddddddddddddd');
+  assert.equal(calls[0].apiKey, 'api-key-from-context');
+  assert.equal(calls[0].apiSecret, 'api-secret-from-context');
+  assert.equal(calls[0].apiPassphrase, 'api-passphrase-from-context');
+});
+
 test('buildHedgeExecutionPlan derives order usd from share size and reference price', () => {
   const plan = buildHedgeExecutionPlan({
     options: { executeLive: true },

@@ -134,8 +134,8 @@ test('assertFrozenDraftIntegrity rejects deploy-parameter tampering outside vali
     marketType: 'amm',
     category: 1,
     liquidityUsdc: 100,
-    distributionYes: 570000000,
-    distributionNo: 430000000,
+    distributionYes: 430000000,
+    distributionNo: 570000000,
     feeTier: 3000,
     maxImbalance: 16777215,
     minCloseLeadSeconds: 1800,
@@ -148,8 +148,8 @@ test('assertFrozenDraftIntegrity rejects deploy-parameter tampering outside vali
 
   const tamperedDraft = {
     ...originalDraft,
-    distributionYes: 650000000,
-    distributionNo: 350000000,
+    distributionYes: 350000000,
+    distributionNo: 650000000,
   };
 
   assert.throws(
@@ -182,6 +182,10 @@ test('buildHypePlan stays deterministic when now is fixed', async () => {
   assert.deepEqual(second, first);
   assert.equal(first.generatedAt, options.now);
   assert.equal(first.candidates[0].tradingWindowHours, first.candidates[0].tradingWindowHours);
+  const estimatedYesOdds = Number(first.candidates[0].estimatedYesOdds);
+  const expectedDistributionNo = Math.round(Math.max(0, Math.min(100, estimatedYesOdds)) * 10_000_000);
+  assert.equal(first.candidates[0].marketDrafts.amm.distributionNo, expectedDistributionNo);
+  assert.equal(first.candidates[0].marketDrafts.amm.distributionYes, 1_000_000_000 - expectedDistributionNo);
 });
 
 test('markets hype help includes plan runtime override flags', async () => {

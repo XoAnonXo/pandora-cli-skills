@@ -96,6 +96,7 @@ for (const file of tracked) {
       }
     }
   } catch (error) {
+    // Keep this strict and actionable. Ignore files that cannot be read.
     throw new Error(`Unable to read tracked file ${file}: ${error.message}`);
   }
 }

@@ -1250,6 +1250,9 @@ async function getOrderbook(clientOrOptions, tokenId, fallbackOrderbooks = null,
 async function fetchDepthForMarket(market, options = {}) {
   const slippageBps = Number.isFinite(Number(options.slippageBps)) ? Number(options.slippageBps) : 100;
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const maxAgeMs = Number.isFinite(Number(options.maxAgeMs)) && Number(options.maxAgeMs) > 0
+    ? Number(options.maxAgeMs)
+    : null;
   const diagnostics = [];
   const hosts = normalizeHostList(options.host || options.hosts || process.env.POLYMARKET_HOSTS || DEFAULT_POLYMARKET_HOST);
   const cacheFile =
@@ -1263,6 +1266,9 @@ async function fetchDepthForMarket(market, options = {}) {
   let yesBook = null;
   let noBook = null;
   let hostUsed = null;
+  let depthSourceType = options.mockUrl ? 'polymarket:mock' : 'polymarket:clob';
+  let cachedOrderbookTimestamp = null;
+  let usedCachedOrMockDepth = false;
 
   if (!options.mockUrl) {
     const hostErrors = [];
@@ -1290,24 +1296,47 @@ async function fetchDepthForMarket(market, options = {}) {
   }
 
   if (!yesBook || !noBook) {
-    const fallbackOrderbooks =
-      (market && market.mockOrderbooks && typeof market.mockOrderbooks === 'object' ? market.mockOrderbooks : null) ||
-      (() => {
-        const cached = readCacheFile(cacheFile);
-        return cached && cached.orderbooks && typeof cached.orderbooks === 'object' ? cached.orderbooks : null;
-      })();
+    const mockedOrderbooks =
+      market && market.mockOrderbooks && typeof market.mockOrderbooks === 'object'
+        ? market.mockOrderbooks
+        : null;
+    const cachedPayload = mockedOrderbooks ? null : readCacheFile(cacheFile);
+    const cachedOrderbooks =
+      cachedPayload && cachedPayload.orderbooks && typeof cachedPayload.orderbooks === 'object'
+        ? cachedPayload.orderbooks
+        : null;
+    const fallbackOrderbooks = mockedOrderbooks || cachedOrderbooks;
 
     if (fallbackOrderbooks) {
       const fallbackYes = await getOrderbook(null, market.yesTokenId, fallbackOrderbooks);
       const fallbackNo = await getOrderbook(null, market.noTokenId, fallbackOrderbooks);
       yesBook = yesBook || fallbackYes;
       noBook = noBook || fallbackNo;
+      usedCachedOrMockDepth = true;
+      if (mockedOrderbooks) {
+        depthSourceType = 'polymarket:mock';
+      } else {
+        depthSourceType = 'polymarket:cache';
+        cachedOrderbookTimestamp = cachedPayload && cachedPayload.savedAt ? String(cachedPayload.savedAt) : null;
+      }
       diagnostics.push('Used cached/mock Polymarket orderbooks for depth estimation.');
     }
   }
 
-  const yesDepth = yesBook ? calculateExecutableDepthUsd(yesBook, 'buy', slippageBps) : null;
-  const noDepth = noBook ? calculateExecutableDepthUsd(noBook, 'buy', slippageBps) : null;
+  const annotateDepthEntry = (entry) => {
+    if (!entry || typeof entry !== 'object') return null;
+    return {
+      ...entry,
+      sourceType: depthSourceType,
+      usedCachedOrMockDepth,
+      observedAt: depthSourceType === 'polymarket:clob' ? new Date().toISOString() : cachedOrderbookTimestamp,
+    };
+  };
+
+  const yesDepth = annotateDepthEntry(yesBook ? calculateExecutableDepthUsd(yesBook, 'buy', slippageBps) : null);
+  const noDepth = annotateDepthEntry(noBook ? calculateExecutableDepthUsd(noBook, 'buy', slippageBps) : null);
+  const sellYesDepth = annotateDepthEntry(yesBook ? calculateExecutableDepthUsd(yesBook, 'sell', slippageBps) : null);
+  const sellNoDepth = annotateDepthEntry(noBook ? calculateExecutableDepthUsd(noBook, 'sell', slippageBps) : null);
 
   const candidates = [yesDepth && yesDepth.depthUsd, noDepth && noDepth.depthUsd].filter((value) => Number.isFinite(value));
   const minDepthWithinSlippageUsd = candidates.length ? Math.min(...candidates) : 0;
@@ -1344,14 +1373,39 @@ async function fetchDepthForMarket(market, options = {}) {
     writeCacheFile(cacheFile, cached);
   }
 
+  const depthObservedAt = depthSourceType === 'polymarket:clob'
+    ? new Date().toISOString()
+    : cachedOrderbookTimestamp;
+  const depthAgeMs = depthObservedAt ? Math.max(0, Date.now() - Date.parse(depthObservedAt)) : null;
+  const depthFresh = depthSourceType === 'polymarket:clob'
+    ? true
+    : depthSourceType === 'polymarket:cache' && maxAgeMs !== null && depthAgeMs !== null
+      ? depthAgeMs <= maxAgeMs
+      : false;
+  const depthFreshness = {
+    sourceType: depthSourceType,
+    observedAt: depthObservedAt,
+    ageMs: depthAgeMs,
+    maxAgeMs,
+    fresh: depthFresh,
+    trustedForLive: depthSourceType === 'polymarket:clob',
+  };
+
   return {
     slippageBps,
     host: hostUsed || null,
+    depthSourceType,
+    usedCachedOrMockDepth,
+    depthFreshness,
     depthWithinSlippageUsd: round(depthWithinSlippageUsd, 6) || 0,
     minDepthWithinSlippageUsd: round(minDepthWithinSlippageUsd, 6) || 0,
     bestDepthWithinSlippageUsd: round(bestDepthWithinSlippageUsd, 6) || 0,
     yesDepth,
     noDepth,
+    sellYesDepth,
+    sellNoDepth,
+    yesSellDepth: sellYesDepth,
+    noSellDepth: sellNoDepth,
     cacheFile,
     diagnostics,
   };

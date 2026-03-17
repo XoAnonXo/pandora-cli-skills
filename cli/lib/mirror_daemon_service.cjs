@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const { expandHome } = require('./mirror_state_store.cjs');
 
 const MIRROR_DAEMON_SCHEMA_VERSION = '1.0.0';
@@ -120,6 +120,130 @@ function isPidAlive(pid) {
   }
 }
 
+function hasIdentityMetadata(metadata = {}) {
+  return Boolean(
+    (typeof metadata.launchCommand === 'string' && metadata.launchCommand.trim())
+    || (typeof metadata.cliPath === 'string' && metadata.cliPath.trim())
+    || (Array.isArray(metadata.cliArgs) && metadata.cliArgs.length),
+  );
+}
+
+function readProcessCommandLine(pid) {
+  try {
+    const output = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const commandLine = String(output || '').trim();
+    return commandLine || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildIdentityTokens(metadata = {}, pidFile = null) {
+  const tokens = [];
+  const strategyHash = String(metadata.strategyHash || '').trim().toLowerCase();
+  if (strategyHash) tokens.push(strategyHash);
+  const normalizedPidFile = String(pidFile || metadata.pidFile || '').trim();
+  if (normalizedPidFile) {
+    tokens.push(path.basename(normalizedPidFile).toLowerCase());
+    tokens.push('--pid-file');
+  }
+  if (Array.isArray(metadata.cliArgs) && metadata.cliArgs.length) {
+    const normalizedArgs = metadata.cliArgs.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean);
+    if (normalizedArgs.includes('mirror')) tokens.push('mirror');
+    if (normalizedArgs.includes('sync')) tokens.push('sync');
+    if (normalizedArgs.includes('run')) tokens.push('run');
+    if (normalizedArgs.includes('--strategy-hash')) tokens.push('--strategy-hash');
+  }
+  if (!tokens.length && typeof metadata.launchCommand === 'string' && metadata.launchCommand.trim()) {
+    tokens.push('mirror', 'sync', 'run');
+  }
+  return Array.from(new Set(tokens.filter(Boolean)));
+}
+
+function inspectDaemonPid(metadata = {}, pidFile = null) {
+  const pid = Number(metadata.pid);
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return {
+      pid: null,
+      pidAlive: false,
+      daemonAlive: false,
+      identityRequired: false,
+      identityVerified: false,
+      identityStatus: 'invalid-pid',
+      identityMismatchReason: 'Invalid daemon pid in metadata.',
+      commandLine: null,
+      identityTokens: [],
+    };
+  }
+
+  const pidAlive = isPidAlive(pid);
+  if (!pidAlive) {
+    return {
+      pid,
+      pidAlive: false,
+      daemonAlive: false,
+      identityRequired: hasIdentityMetadata(metadata),
+      identityVerified: false,
+      identityStatus: 'pid-not-alive',
+      identityMismatchReason: null,
+      commandLine: null,
+      identityTokens: [],
+    };
+  }
+
+  const identityRequired = hasIdentityMetadata(metadata);
+  if (!identityRequired) {
+    return {
+      pid,
+      pidAlive: true,
+      daemonAlive: true,
+      identityRequired: false,
+      identityVerified: false,
+      identityStatus: 'legacy-unverified',
+      identityMismatchReason: null,
+      commandLine: null,
+      identityTokens: [],
+    };
+  }
+
+  const commandLine = readProcessCommandLine(pid);
+  if (!commandLine) {
+    return {
+      pid,
+      pidAlive: true,
+      daemonAlive: false,
+      identityRequired: true,
+      identityVerified: false,
+      identityStatus: 'command-unavailable',
+      identityMismatchReason: 'Unable to verify daemon pid ownership from process command line.',
+      commandLine: null,
+      identityTokens: [],
+    };
+  }
+
+  const normalizedCommand = commandLine.toLowerCase();
+  const identityTokens = buildIdentityTokens(metadata, pidFile);
+  const missingTokens = identityTokens.filter((token) => !normalizedCommand.includes(token));
+  const identityVerified = missingTokens.length === 0;
+  return {
+    pid,
+    pidAlive: true,
+    daemonAlive: identityVerified,
+    identityRequired: true,
+    identityVerified,
+    identityStatus: identityVerified ? 'verified' : 'mismatch',
+    identityMismatchReason: identityVerified
+      ? null
+      : `Process command line does not match daemon identity tokens: ${missingTokens.join(', ')}`,
+    commandLine,
+    identityTokens,
+    missingTokens,
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -179,11 +303,28 @@ function startDaemon(options = {}) {
   }
 
   const existing = readJsonFile(pidFile);
-  if (existing && isPidAlive(existing.pid)) {
+  const existingPid = existing ? inspectDaemonPid(existing, pidFile) : null;
+  if (existingPid && existingPid.daemonAlive) {
     throw createServiceError('MIRROR_DAEMON_ALREADY_RUNNING', 'Mirror sync daemon is already running for this strategy.', {
       pidFile,
-      pid: existing.pid,
+      pid: existingPid.pid,
       strategyHash,
+    });
+  }
+  if (existingPid && existingPid.pidAlive && !existingPid.daemonAlive) {
+    writeJsonFile(pidFile, {
+      ...existing,
+      checkedAt: new Date().toISOString(),
+      status: 'stale-pidfile',
+      pidAlive: false,
+      rawPidAlive: true,
+      pidOwnerMismatch: true,
+      identityVerification: {
+        required: existingPid.identityRequired,
+        verified: existingPid.identityVerified,
+        status: existingPid.identityStatus,
+        reason: existingPid.identityMismatchReason,
+      },
     });
   }
 
@@ -275,8 +416,50 @@ async function stopDaemon(options = {}) {
     throw createServiceError('MIRROR_DAEMON_NOT_FOUND', `No daemon metadata found at ${pidFile}.`, { pidFile });
   }
 
-  const pid = Number(metadata.pid);
-  const wasAlive = isPidAlive(pid);
+  const pidState = inspectDaemonPid(metadata, pidFile);
+  const pid = pidState.pid;
+  const wasAlive = Boolean(pidState && pidState.daemonAlive);
+  const pidOwnerMismatch = Boolean(pidState && pidState.pidAlive && !pidState.daemonAlive);
+  if (pidOwnerMismatch) {
+    const updatedStale = {
+      ...metadata,
+      checkedAt: new Date().toISOString(),
+      pidAlive: false,
+      rawPidAlive: true,
+      status: 'stale-pidfile',
+      stopAttemptedAt: new Date().toISOString(),
+      stopSignal: null,
+      stopForceSignal: null,
+      stopSignalSent: false,
+      stopExitObserved: false,
+      stopForceKilled: false,
+      pidOwnerMismatch: true,
+      identityVerification: {
+        required: pidState.identityRequired,
+        verified: pidState.identityVerified,
+        status: pidState.identityStatus,
+        reason: pidState.identityMismatchReason,
+      },
+    };
+    writeJsonFile(pidFile, updatedStale);
+    return {
+      schemaVersion: MIRROR_DAEMON_SCHEMA_VERSION,
+      operationId: updatedStale.strategyHash || null,
+      strategyHash: updatedStale.strategyHash || null,
+      pidFile,
+      pid,
+      wasAlive: false,
+      signalSent: false,
+      forceKilled: false,
+      exitObserved: false,
+      alive: false,
+      rawPidAlive: true,
+      pidOwnerMismatch: true,
+      status: updatedStale.status,
+      metadata: updatedStale,
+    };
+  }
+
   let signalSent = false;
   if (wasAlive) {
     process.kill(pid, 'SIGTERM');
@@ -305,6 +488,7 @@ async function stopDaemon(options = {}) {
     ...metadata,
     checkedAt: new Date().toISOString(),
     pidAlive: alive,
+    rawPidAlive: alive,
     status: alive ? 'running' : 'stopped',
     stopAttemptedAt: new Date().toISOString(),
     stopSignal: signalSent ? 'SIGTERM' : null,
@@ -312,6 +496,13 @@ async function stopDaemon(options = {}) {
     stopSignalSent: signalSent,
     stopExitObserved: exited,
     stopForceKilled: forceKilled,
+    pidOwnerMismatch: false,
+    identityVerification: {
+      required: pidState.identityRequired,
+      verified: pidState.identityVerified,
+      status: pidState.identityStatus,
+      reason: pidState.identityMismatchReason,
+    },
   };
   writeJsonFile(pidFile, updated);
 
@@ -326,6 +517,8 @@ async function stopDaemon(options = {}) {
     forceKilled,
     exitObserved: exited,
     alive,
+    rawPidAlive: alive,
+    pidOwnerMismatch: false,
     status: updated.status,
     metadata: updated,
   };
@@ -349,13 +542,28 @@ function daemonStatus(options = {}) {
     };
   }
 
-  const pid = Number(metadata.pid);
-  const alive = isPidAlive(pid);
+  const pidState = inspectDaemonPid(metadata, pidFile);
+  const pid = pidState.pid;
+  const alive = Boolean(pidState.daemonAlive);
+  const rawPidAlive = Boolean(pidState.pidAlive);
+  const status = alive
+    ? 'running'
+    : rawPidAlive && pidState.identityRequired
+      ? 'stale-pidfile'
+      : 'stopped';
   const updated = {
     ...metadata,
     checkedAt: new Date().toISOString(),
     pidAlive: alive,
-    status: alive ? 'running' : 'stopped',
+    rawPidAlive,
+    status,
+    pidOwnerMismatch: Boolean(rawPidAlive && !alive && pidState.identityRequired),
+    identityVerification: {
+      required: pidState.identityRequired,
+      verified: pidState.identityVerified,
+      status: pidState.identityStatus,
+      reason: pidState.identityMismatchReason,
+    },
   };
   writeJsonFile(pidFile, updated);
 
@@ -367,6 +575,8 @@ function daemonStatus(options = {}) {
       strategyHash: updated.strategyHash || null,
     pid,
     alive,
+    rawPidAlive,
+    pidOwnerMismatch: Boolean(rawPidAlive && !alive && pidState.identityRequired),
     status: updated.status,
     metadata: updated,
   };

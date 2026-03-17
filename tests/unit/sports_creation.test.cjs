@@ -46,7 +46,8 @@ test('sports create plan rules align with away selection', () => {
   assert.equal(plan.marketTemplate.semantics.noMeans, 'Chelsea does not win in official full-time result.');
   assert.equal(plan.timing.confirmation.eventDate, '2026-04-01');
   assert.equal(plan.timing.confirmation.eventStart.utc, '2026-04-01T18:00:00.000Z');
-  assert.equal(plan.timing.confirmation.marketClose.utc, plan.timing.creationWindow.closesAt);
+  assert.equal(plan.timing.confirmation.marketClose.utc, '2026-04-01T21:00:00.000Z');
+  assert.equal(plan.timing.confirmation.creationWindowClose.utc, plan.timing.creationWindow.closesAt);
   assert.equal(plan.timing.confirmation.timezoneBasis, 'UTC');
 });
 
@@ -85,8 +86,73 @@ test('sports create plan accepts BYOM probability and bypasses consensus gating'
   assert.equal(plan.source.model.source, 'my_model_v3');
   assert.equal(plan.source.model.inputMode, 'file');
   assert.equal(plan.source.model.modelFile, '/tmp/model.json');
-  assert.equal(plan.marketTemplate.distributionYes, 620000000);
-  assert.equal(plan.marketTemplate.distributionNo, 380000000);
+  assert.equal(plan.marketTemplate.distributionYes, 380000000);
+  assert.equal(plan.marketTemplate.distributionNo, 620000000);
+  assert.equal(
+    plan.safety.blockedReasons.some((reason) => reason.includes('Insufficient book coverage')),
+    false,
+  );
+});
+
+test('sports create plan derives provider-backed resolution sources and applies target timestamp offset', (t) => {
+  const previousBaseUrl = process.env.SPORTSBOOK_PRIMARY_BASE_URL;
+  const previousOddsPath = process.env.SPORTSBOOK_PRIMARY_ODDS_PATH;
+  const previousStatusPath = process.env.SPORTSBOOK_PRIMARY_STATUS_PATH;
+  process.env.SPORTSBOOK_PRIMARY_BASE_URL = 'https://sportsbook.example';
+  process.env.SPORTSBOOK_PRIMARY_ODDS_PATH = '/events/{eventId}/odds';
+  process.env.SPORTSBOOK_PRIMARY_STATUS_PATH = '/events/{eventId}/status';
+  t.after(() => {
+    if (previousBaseUrl === undefined) {
+      delete process.env.SPORTSBOOK_PRIMARY_BASE_URL;
+    } else {
+      process.env.SPORTSBOOK_PRIMARY_BASE_URL = previousBaseUrl;
+    }
+    if (previousOddsPath === undefined) {
+      delete process.env.SPORTSBOOK_PRIMARY_ODDS_PATH;
+    } else {
+      process.env.SPORTSBOOK_PRIMARY_ODDS_PATH = previousOddsPath;
+    }
+    if (previousStatusPath === undefined) {
+      delete process.env.SPORTSBOOK_PRIMARY_STATUS_PATH;
+    } else {
+      process.env.SPORTSBOOK_PRIMARY_STATUS_PATH = previousStatusPath;
+    }
+  });
+
+  const input = buildInput('home');
+  input.options.provider = 'primary';
+  input.options.targetTimestampOffsetHours = 2;
+  const plan = buildSportsCreatePlan(input);
+  assert.equal(plan.marketTemplate.targetTimestamp, 1775080800);
+  assert.equal(plan.timing.confirmation.marketClose.utc, '2026-04-01T22:00:00.000Z');
+  assert.deepEqual(plan.marketTemplate.sources, [
+    'https://sportsbook.example/events/evt-1/odds',
+    'https://sportsbook.example/events/evt-1/status',
+  ]);
+  assert.equal(
+    plan.marketTemplate.sources.some((source) => String(source).includes('odds.example')),
+    false,
+  );
+});
+
+test('sports create plan does not self-block valid six-book consensus after trimming', () => {
+  const input = buildInput('home');
+  input.oddsPayload.books = [
+    { book: 'Bet365', outcomes: { home: 2.0, draw: 3.2, away: 3.8 } },
+    { book: 'William Hill', outcomes: { home: 2.05, draw: 3.25, away: 3.75 } },
+    { book: 'Ladbrokes', outcomes: { home: 2.1, draw: 3.3, away: 3.7 } },
+    { book: 'Pinnacle', outcomes: { home: 1.98, draw: 3.18, away: 3.82 } },
+    { book: 'Bookmaker', outcomes: { home: 2.08, draw: 3.22, away: 3.76 } },
+    { book: 'BetMGM', outcomes: { home: 2.04, draw: 3.28, away: 3.74 } },
+  ];
+  input.options.minTotalBooks = 6;
+  input.options.minTier1Books = 2;
+
+  const plan = buildSportsCreatePlan(input);
+
+  assert.equal(plan.source.consensus.totalBooks, 6);
+  assert.equal(plan.source.consensus.includedBooks, 4);
+  assert.equal(plan.source.consensus.confidence === 'insufficient', false);
   assert.equal(
     plan.safety.blockedReasons.some((reason) => reason.includes('Insufficient book coverage')),
     false,

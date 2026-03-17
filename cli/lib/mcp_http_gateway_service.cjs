@@ -857,6 +857,12 @@ function createAuthRegistry(parsed) {
         },
       );
     }
+    const activeCount = state.records.filter((entry) => entry.status === 'active').length;
+    if (record.status === 'active' && activeCount <= 1) {
+      throw createGatewayError('AUTH_LAST_PRINCIPAL_FORBIDDEN', 'Refusing to revoke the last active auth principal.', {
+        principalId,
+      });
+    }
     record.revokedTokenDigest = record.tokenDigest;
     record.token = crypto.randomBytes(24).toString('hex');
     record.tokenDigest = buildTokenDigest(record.token);
@@ -1961,7 +1967,7 @@ function createMcpHttpGatewayService(options = {}) {
       const pathname = new URL(req.url, `http://${req.headers.host || `${parsed.host}:${parsed.port}`}`).pathname;
       if (pathname === parsed.healthPath) {
         assertMethod(req, ['GET']);
-        const readiness = createGatewayReadiness(parsed, authConfig, operationService, protocol, metricsState);
+        const readiness = await createGatewayReadiness(parsed, authConfig, operationService, protocol, metricsState);
         sendJson(res, 200, {
           ok: true,
           command: 'mcp.http.health',
@@ -1973,6 +1979,8 @@ function createMcpHttpGatewayService(options = {}) {
             toolExposureMode: parsed.toolExposureMode,
             uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
             ready: readiness.ready,
+            checks: readiness.checks,
+            warnings: readiness.warnings,
             requestCounters: {
               total: metricsState.requestsTotal,
               inFlight: metricsState.inFlightRequests,
@@ -2012,7 +2020,7 @@ function createMcpHttpGatewayService(options = {}) {
       }
 
       if (pathname === authPath || pathname.startsWith(`${authPath}/`)) {
-        assertMethod(req, ['GET', 'POST']);
+        assertMethod(req, ['GET', 'POST', 'DELETE']);
         await handleAuth(req, res, pathname);
         return;
       }
@@ -2080,9 +2088,11 @@ function createMcpHttpGatewayService(options = {}) {
       const statusCode =
         error && error.code === 'UNAUTHORIZED' ? 401
           : error && error.code === 'FORBIDDEN' ? 403
-          : error && error.code === 'OPERATION_NOT_FOUND' ? 404
-            : error && error.code === 'OPERATION_RECEIPT_NOT_FOUND' ? 404
-              : error && error.code === 'NOT_FOUND' ? 404
+            : error && error.code === 'AUTH_LAST_PRINCIPAL_FORBIDDEN' ? 409
+              : error && error.code === 'AUTH_SELF_DELETE_FORBIDDEN' ? 409
+              : error && error.code === 'OPERATION_NOT_FOUND' ? 404
+                : error && error.code === 'OPERATION_RECEIPT_NOT_FOUND' ? 404
+                  : error && error.code === 'NOT_FOUND' ? 404
               : error && error.code === 'METHOD_NOT_ALLOWED' ? 405
               : 500;
       if (error && error.code === 'METHOD_NOT_ALLOWED' && error.details && Array.isArray(error.details.allowedMethods)) {

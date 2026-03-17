@@ -783,6 +783,9 @@ test('mcp http health/capabilities endpoints enforce auth and report remote tran
     assert.equal(health.ok, true);
     assert.equal(health.data.authRequired, true);
     assert.equal(health.data.endpoints.bootstrap, '/bootstrap');
+    assert.equal(typeof health.data.ready, 'boolean');
+    assert.equal(typeof health.data.checks, 'object');
+    assert.equal(Array.isArray(health.data.warnings), true);
 
     const unauthorizedRes = await fetch(`${gateway.config.baseUrl}${gateway.config.capabilitiesPath}`);
     assert.equal(unauthorizedRes.status, 401);
@@ -1446,6 +1449,67 @@ test('mcp http auth admin surface lists, rotates, and revokes principals in mult
         id: 'reader',
         token: 'reader-token',
         scopes: ['capabilities:read'],
+      },
+    ],
+  });
+});
+
+test('mcp http auth admin surface supports DELETE /auth/principals/{id} with execute intent', async () => {
+  await withMcpHttpGateway(async (gateway) => {
+    const baseUrl = gateway.config.baseUrl;
+    const authHeaders = { authorization: 'Bearer admin-token' };
+
+    const deleteRes = await fetch(`${baseUrl}${gateway.config.authPath}/principals/reader`, {
+      method: 'DELETE',
+      headers: {
+        ...authHeaders,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ intent: 'execute' }),
+    });
+    assert.equal(deleteRes.status, 200);
+    const deletePayload = await deleteRes.json();
+    assert.equal(deletePayload.ok, true);
+    assert.equal(deletePayload.command, 'mcp.auth.delete-principal');
+    assert.equal(deletePayload.data.targetPrincipalId, 'reader');
+    assert.equal(deletePayload.data.deleted, true);
+  }, {
+    authTokenRecords: [
+      {
+        id: 'admin',
+        token: 'admin-token',
+        scopes: ['capabilities:read', 'gateway:auth:read', 'gateway:auth:write'],
+      },
+      {
+        id: 'reader',
+        token: 'reader-token',
+        scopes: ['capabilities:read'],
+      },
+    ],
+  });
+});
+
+test('mcp http auth revoke forbids revoking the last active principal', async () => {
+  await withMcpHttpGateway(async (gateway) => {
+    const baseUrl = gateway.config.baseUrl;
+    const response = await fetch(`${baseUrl}${gateway.config.authPath}/principals/admin/revoke`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer admin-token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ intent: 'execute' }),
+    });
+    assert.equal(response.status, 409);
+    const payload = await response.json();
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'AUTH_LAST_PRINCIPAL_FORBIDDEN');
+  }, {
+    authTokenRecords: [
+      {
+        id: 'admin',
+        token: 'admin-token',
+        scopes: ['capabilities:read', 'gateway:auth:read', 'gateway:auth:write'],
       },
     ],
   });

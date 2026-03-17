@@ -15,17 +15,17 @@ function createCreatePlanError(code, message, details = undefined) {
   return err;
 }
 
-function toUnixSeconds(isoString) {
-  const parsed = Date.parse(String(isoString || ''));
-  if (Number.isNaN(parsed)) return null;
-  return Math.floor(parsed / 1000);
-}
-
 function toPartsPerBillionFromPct(pct) {
   const numeric = Number(pct);
   if (!Number.isFinite(numeric)) return null;
   const bounded = Math.min(100, Math.max(0, numeric));
   return Math.round((bounded / 100) * PPB_TOTAL);
+}
+
+function toIsoFromUnixSeconds(seconds) {
+  const numeric = Number(seconds);
+  if (!Number.isFinite(numeric)) return null;
+  return new Date(Math.trunc(numeric) * 1000).toISOString();
 }
 
 function toDateOnlyUtc(isoString) {
@@ -43,10 +43,62 @@ function inferTimezoneBasis(rawKickoff) {
   return 'source-local-unspecified';
 }
 
-function buildTimeConfirmation(kickoff, creationWindow) {
+function buildProviderEventSourceUrl(baseUrl, endpointTemplate, eventId) {
+  const normalizedBase = String(baseUrl || '').trim();
+  const normalizedEventId = String(eventId || '').trim();
+  if (!normalizedBase || !normalizedEventId) return null;
+  const template = String(endpointTemplate || '').trim() || '/events/{eventId}';
+  const endpoint = template.replace(/\{eventId\}/g, encodeURIComponent(normalizedEventId));
+  try {
+    return new URL(endpoint, normalizedBase).toString();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeResolutionSources(input) {
+  const unique = new Set();
+  for (const raw of Array.isArray(input) ? input : []) {
+    const text = String(raw || '').trim();
+    if (!text) continue;
+    try {
+      const parsed = new URL(text);
+      const protocol = String(parsed.protocol || '').toLowerCase();
+      if (protocol !== 'https:' && protocol !== 'http:') continue;
+      unique.add(parsed.toString());
+    } catch {
+      // Ignore invalid source candidates.
+    }
+  }
+  return Array.from(unique);
+}
+
+function buildProviderBackedResolutionSources(options, eventId) {
+  const mode = String(options && options.provider ? options.provider : 'auto').trim().toLowerCase();
+  const roles =
+    mode === 'primary' ? ['PRIMARY']
+      : mode === 'backup' ? ['BACKUP']
+        : ['PRIMARY', 'BACKUP'];
+
+  const urls = [];
+  for (const role of roles) {
+    const base = process.env[`SPORTSBOOK_${role}_BASE_URL`];
+    const oddsPath = process.env[`SPORTSBOOK_${role}_ODDS_PATH`] || '/events/{eventId}/odds';
+    const statusPath = process.env[`SPORTSBOOK_${role}_STATUS_PATH`] || '/events/{eventId}/status';
+    const oddsUrl = buildProviderEventSourceUrl(base, oddsPath, eventId);
+    const statusUrl = buildProviderEventSourceUrl(base, statusPath, eventId);
+    if (oddsUrl) urls.push(oddsUrl);
+    if (statusUrl) urls.push(statusUrl);
+  }
+
+  return normalizeResolutionSources(urls);
+}
+
+function buildTimeConfirmation(kickoff, targetTimestamp, creationWindow, targetTimestampOffsetHours) {
   const kickoffIso = kickoff || null;
   const kickoffDate = toDateOnlyUtc(kickoffIso);
   const timezoneBasis = inferTimezoneBasis(kickoffIso);
+  const marketCloseIso = toIsoFromUnixSeconds(targetTimestamp);
   return {
     eventDate: kickoffDate,
     eventStart: {
@@ -54,6 +106,10 @@ function buildTimeConfirmation(kickoff, creationWindow) {
       utc: kickoffIso,
     },
     marketClose: {
+      utc: marketCloseIso,
+      offsetHours: Number.isFinite(Number(targetTimestampOffsetHours)) ? Number(targetTimestampOffsetHours) : null,
+    },
+    creationWindowClose: {
       utc: creationWindow && creationWindow.window ? creationWindow.window.closesAt : null,
     },
     timezoneBasis,
@@ -303,6 +359,35 @@ function buildSportsCreatePlan(input = {}) {
     blockedReasons.push('Insufficient book coverage for creation policy.');
   }
 
+  const targetTimestampOffsetHours = Math.max(
+    1,
+    Number.isFinite(Number(options.targetTimestampOffsetHours))
+      ? Math.trunc(Number(options.targetTimestampOffsetHours))
+      : 1,
+  );
+  const resolveTargetTimestamp =
+    Number.isFinite(resolveWindow.resolveTargetAtMs)
+      ? Math.floor(resolveWindow.resolveTargetAtMs / 1000)
+      : null;
+  const delayedEventEndTimestamp =
+    Number.isFinite(resolveWindow.eventEndMs)
+      ? Math.floor((resolveWindow.eventEndMs + (targetTimestampOffsetHours * 3600 * 1000)) / 1000)
+      : null;
+  const targetTimestamp =
+    Number.isInteger(resolveTargetTimestamp) || Number.isInteger(delayedEventEndTimestamp)
+      ? Math.max(resolveTargetTimestamp || 0, delayedEventEndTimestamp || 0)
+      : null;
+  if (!Number.isInteger(targetTimestamp) || targetTimestamp <= 0) {
+    blockedReasons.push('Unable to derive targetTimestamp from kickoff; check event timing.');
+  }
+  const eventEndTimestamp =
+    Number.isFinite(resolveWindow.eventEndMs)
+      ? Math.floor(resolveWindow.eventEndMs / 1000)
+      : null;
+  if (Number.isInteger(eventEndTimestamp) && Number.isInteger(targetTimestamp) && targetTimestamp <= eventEndTimestamp) {
+    blockedReasons.push('targetTimestamp must be after event completion plus buffer.');
+  }
+
   const question = buildQuestion(event, selection, oddsMarketType);
   const rules = buildRules(event.homeTeam || 'Home Team', event.awayTeam || 'Away Team', selection, oddsMarketType);
   const semantics = buildOutcomeSemantics(
@@ -311,16 +396,26 @@ function buildSportsCreatePlan(input = {}) {
     selection,
     oddsMarketType,
   );
-  const timeConfirmation = buildTimeConfirmation(kickoff, creationWindow);
-  const sources = quotes.slice(0, 5).map((item) => `https://odds.example/${encodeURIComponent(item.book)}`);
-  const targetTimestamp = toUnixSeconds(kickoff);
+  const explicitSources = normalizeResolutionSources(options.sources);
+  const providerBackedSources = buildProviderBackedResolutionSources(options, event.id || (oddsPayload.event && oddsPayload.event.id));
+  const sources = explicitSources.length ? explicitSources : providerBackedSources;
+  if (sources.length < 2) {
+    blockedReasons.push('At least two explicit public resolution sources are required for deploy-ready sports markets.');
+  }
+  const timeConfirmation = buildTimeConfirmation(
+    kickoff,
+    targetTimestamp,
+    creationWindow,
+    targetTimestampOffsetHours,
+  );
 
   let distributionYes = options.distributionYes;
   let distributionNo = options.distributionNo;
   if (!Number.isInteger(distributionYes) || !Number.isInteger(distributionNo)) {
-    const suggestedYes = toPartsPerBillionFromPct(probabilityYesPct);
-    distributionYes = Number.isInteger(suggestedYes) ? suggestedYes : 500_000_000;
-    distributionNo = PPB_TOTAL - distributionYes;
+    // Pandora AMM YES price follows NO reserve share, so reserve weights are inverse of target YES probability.
+    const suggestedNo = toPartsPerBillionFromPct(probabilityYesPct);
+    distributionNo = Number.isInteger(suggestedNo) ? suggestedNo : 500_000_000;
+    distributionYes = PPB_TOTAL - distributionNo;
   }
 
   const mechanics = deriveMechanics(probabilityYesPct);
@@ -377,7 +472,7 @@ function buildSportsCreatePlan(input = {}) {
       semantics,
       sources,
       targetTimestamp,
-      targetTimestampOffsetHours: options.targetTimestampOffsetHours || 1,
+      targetTimestampOffsetHours,
       liquidityUsdc: Number(options.liquidityUsdc || 100),
       distributionYes,
       distributionNo,

@@ -16,6 +16,26 @@ function normalizeProbabilityFromYesChance(rawYesChance) {
 }
 
 function deriveYesNoPrice(row) {
+  const reserveYes = toNumberOrNull(row && row.reserveYes);
+  const reserveNo = toNumberOrNull(row && row.reserveNo);
+  if (reserveYes !== null && reserveNo !== null) {
+    const total = reserveYes + reserveNo;
+    if (!Number.isFinite(total) || total <= 0) {
+      return {
+        yesPrice: null,
+        noPrice: null,
+        source: 'invalid_reserves',
+      };
+    }
+
+    const yesPrice = reserveNo / total;
+    return {
+      yesPrice,
+      noPrice: 1 - yesPrice,
+      source: 'reserves',
+    };
+  }
+
   const byChance = normalizeProbabilityFromYesChance(row && row.yesChance);
   if (byChance !== null) {
     return {
@@ -25,29 +45,10 @@ function deriveYesNoPrice(row) {
     };
   }
 
-  const reserveYes = toNumberOrNull(row && row.reserveYes);
-  const reserveNo = toNumberOrNull(row && row.reserveNo);
-  if (reserveYes === null || reserveNo === null) {
-    return {
-      yesPrice: null,
-      noPrice: null,
-      source: 'unavailable',
-    };
-  }
-  const total = reserveYes + reserveNo;
-  if (!Number.isFinite(total) || total <= 0) {
-    return {
-      yesPrice: null,
-      noPrice: null,
-      source: 'invalid_reserves',
-    };
-  }
-
-  const yesPrice = reserveNo / total;
   return {
-    yesPrice,
-    noPrice: 1 - yesPrice,
-    source: 'reserves',
+    yesPrice: null,
+    noPrice: null,
+    source: 'unavailable',
   };
 }
 

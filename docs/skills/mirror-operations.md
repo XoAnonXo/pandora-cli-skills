@@ -161,7 +161,7 @@ When a user asks for mirror planning or preflight guidance:
 - choose at least two independent public resolution URLs from different hosts
 - keep the plan’s suggested `targetTimestamp`, or set `--target-timestamp <unix|iso>` explicitly when you have a justified override
 - pick the correct PollCategory (`Sports` / `1` for sports)
-- for any eventual live signing step, prefer a ready signer profile where the command family supports `--profile-id` / `--profile-file`; otherwise use env / `.env` values or another runtime bootstrap you control instead of raw `--private-key`
+- for mirror sync/go, `--profile-id` / `--profile-file` now drive both Pandora signing and Polymarket inventory/hedge auth when the profile can materialize private key material (local-env/local-keystore); external-signer profiles still need explicit `POLYMARKET_*` runtime credentials for CLOB auth
 - if you are exposing mirror flows through `pandora mcp http`, inspect the tool `policyScopes` first and grant only the exact scopes needed for the run
 - inspect `policy list|get` and `profile list|get` before live automation; direct Pandora commands such as `trade`, `sell`, `lp add`, `lp remove`, `resolve`, and `claim` already support profile selectors, and current mirror deployment/sync flows also accept `--profile-id` / `--profile-file`
 

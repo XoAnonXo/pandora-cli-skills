@@ -9,7 +9,12 @@ const {
   resetDailyCountersIfNeeded,
 } = require('./mirror_state_store.cjs');
 const { verifyMirrorPair } = require('./mirror_verify_service.cjs');
-const { fetchDepthForMarket, placeHedgeOrder, fetchPolymarketPositionSummary } = require('./polymarket_trade_adapter.cjs');
+const {
+  fetchDepthForMarket,
+  placeHedgeOrder,
+  fetchPolymarketPositionSummary,
+  readTradingCredsFromEnv,
+} = require('./polymarket_trade_adapter.cjs');
 const { sleepMs, round } = require('./shared/utils.cjs');
 const {
   buildVerifyRequest,
@@ -328,16 +333,136 @@ async function resolvePandoraInventoryAddress(options, deps = {}) {
   return materialized && materialized.signerAddress ? materialized.signerAddress : null;
 }
 
-async function resolvePolymarketInventoryAddress(options, deps = {}) {
+async function resolvePolymarketExecutionContext(options, deps = {}) {
+  if (typeof deps.resolvePolymarketExecutionContext === 'function') {
+    return deps.resolvePolymarketExecutionContext(options);
+  }
+
+  const envCreds = readTradingCredsFromEnv(process.env);
+  const explicitPrivateKey = normalizeOptionalString(options.privateKey);
+  const explicitFunder = normalizeOptionalString(options.funder);
+  let privateKey = explicitPrivateKey || envCreds.privateKey || null;
+  let signerAddress = null;
+  let profileBackend = null;
+  let profileDerivedPrivateKey = null;
+
+  const hasProfileSelector = Boolean(
+    normalizeOptionalString(options.profileId)
+    || normalizeOptionalString(options.profileFile),
+  );
+
+  if (!privateKey && hasProfileSelector) {
+    const profileRpcUrl = resolveRpcCandidates(options.polymarketRpcUrl || options.rpcUrl)[0] || null;
+    if (profileRpcUrl) {
+      const viemRuntime = await loadViemRuntime(deps);
+      const materialized = await materializeExecutionSigner({
+        privateKey: null,
+        profileId: options.profileId || null,
+        profileFile: options.profileFile || null,
+        chainId: POLYMARKET_CHAIN_ID,
+        chain: buildReadChain(POLYMARKET_CHAIN_ID, profileRpcUrl),
+        rpcUrl: profileRpcUrl,
+        viemRuntime,
+        env: process.env,
+        requireSigner: true,
+        mode: options.executeLive ? 'write' : 'read',
+        liveRequested: Boolean(options.executeLive),
+        mutating: Boolean(options.executeLive),
+        command: 'mirror-sync',
+        toolFamily: 'mirror-sync',
+        metadata: { source: 'mirror-sync.polymarket' },
+      });
+      signerAddress = materialized && materialized.signerAddress
+        ? String(materialized.signerAddress)
+        : null;
+      profileBackend = materialized && materialized.backend ? String(materialized.backend) : null;
+      const resolvedProfile = materialized && materialized.resolvedProfile && materialized.resolvedProfile.resolution
+        ? materialized.resolvedProfile.resolution
+        : null;
+      profileDerivedPrivateKey = resolvedProfile && resolvedProfile.secretMaterial && resolvedProfile.secretMaterial.privateKey
+        ? normalizeOptionalString(resolvedProfile.secretMaterial.privateKey)
+        : null;
+      if (profileDerivedPrivateKey) {
+        privateKey = profileDerivedPrivateKey;
+      }
+    }
+  }
+
+  if (!signerAddress && privateKey) {
+    const { privateKeyToAccount } = await loadViemRuntime(deps);
+    signerAddress = privateKeyToAccount(privateKey).address;
+  }
+
+  const funder = explicitFunder || normalizeOptionalString(envCreds.funder) || normalizeOptionalString(signerAddress);
+  return {
+    privateKey,
+    funder,
+    signerAddress: normalizeOptionalString(signerAddress),
+    apiKey: normalizeOptionalString(envCreds.apiKey),
+    apiSecret: normalizeOptionalString(envCreds.apiSecret),
+    apiPassphrase: normalizeOptionalString(envCreds.apiPassphrase),
+    profileBacked: Boolean(hasProfileSelector),
+    profileBackend,
+    profileDerivedPrivateKey: Boolean(profileDerivedPrivateKey),
+    envPrivateKeyInvalid: Boolean(!explicitPrivateKey && envCreds.privateKeyInvalid),
+  };
+}
+
+async function resolvePolymarketInventoryAddress(options, deps = {}, polymarketExecutionContext = null) {
+  const executionContext = polymarketExecutionContext && typeof polymarketExecutionContext === 'object'
+    ? polymarketExecutionContext
+    : null;
+  const funder = normalizeOptionalString(executionContext && executionContext.funder);
+  if (funder) return funder;
+  const signerAddress = normalizeOptionalString(executionContext && executionContext.signerAddress);
+  if (signerAddress) return signerAddress;
+
   const explicitFunder = normalizeOptionalString(options.funder || process.env.POLYMARKET_FUNDER);
   if (explicitFunder) return explicitFunder;
-
   const directPrivateKey = normalizeOptionalString(options.privateKey || process.env.POLYMARKET_PRIVATE_KEY);
-  if (directPrivateKey) {
-    const { privateKeyToAccount } = await loadViemRuntime(deps);
-    return privateKeyToAccount(directPrivateKey).address;
+  if (!directPrivateKey) return null;
+  const { privateKeyToAccount } = await loadViemRuntime(deps);
+  return privateKeyToAccount(directPrivateKey).address;
+}
+
+async function resolvePolymarketInventoryReadClient(options, deps = {}) {
+  if (deps.polymarketInventoryReadClient) {
+    return deps.polymarketInventoryReadClient;
   }
-  return null;
+
+  const candidateUrls = resolveRpcCandidates(options.polymarketRpcUrl || options.rpcUrl);
+  if (!candidateUrls.length) return null;
+
+  const viemRuntime = await loadViemRuntime(deps);
+  if (
+    !viemRuntime
+    || typeof viemRuntime.createPublicClient !== 'function'
+    || typeof viemRuntime.http !== 'function'
+  ) {
+    return null;
+  }
+
+  const clients = candidateUrls.map((rpcUrl) =>
+    viemRuntime.createPublicClient({
+      chain: buildReadChain(POLYMARKET_CHAIN_ID, rpcUrl),
+      transport: viemRuntime.http(rpcUrl),
+    }),
+  );
+  if (clients.length === 1) return clients[0];
+  return {
+    async readContract(params) {
+      let lastError = null;
+      for (const client of clients) {
+        try {
+          return await client.readContract(params);
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      if (lastError) throw lastError;
+      return null;
+    },
+  };
 }
 
 /**
@@ -391,6 +516,8 @@ async function runMirrorSync(options, deps = {}) {
   const webhookReports = [];
   const diagnostics = [];
   let inventoryAddress = null;
+  let polymarketExecutionContext = null;
+  let polymarketInventoryReadClient = null;
   let polymarketInventoryAddress = null;
   let pendingActionRecoveryClient = null;
   const adoptExistingPositions = shouldAdoptExistingPositions(options);
@@ -407,7 +534,55 @@ async function runMirrorSync(options, deps = {}) {
     });
   }
   try {
-    polymarketInventoryAddress = await resolvePolymarketInventoryAddress(options, deps);
+    polymarketExecutionContext = await resolvePolymarketExecutionContext(options, deps);
+    if (
+      polymarketExecutionContext
+      && options.executeLive
+      && polymarketExecutionContext.profileBacked
+      && !polymarketExecutionContext.privateKey
+    ) {
+      pushRunDiagnostic(diagnostics, {
+        level: 'warn',
+        scope: 'inventory-adoption',
+        iteration: 0,
+        timestamp: now().toISOString(),
+        code: 'POLYMARKET_PROFILE_PRIVATE_KEY_UNAVAILABLE',
+        message:
+          'Profile-based signer resolved without exportable private key material; Polymarket API inventory and live hedges may require explicit POLYMARKET_PRIVATE_KEY/POLYMARKET_FUNDER credentials.',
+      });
+    }
+  } catch (err) {
+    pushRunDiagnostic(diagnostics, {
+      level: 'warn',
+      scope: 'inventory-adoption',
+      iteration: 0,
+      timestamp: now().toISOString(),
+      code: err && err.code ? String(err.code) : 'POLYMARKET_AUTH_CONTEXT_UNAVAILABLE',
+      message:
+        err && err.message
+          ? err.message
+          : 'Unable to resolve Polymarket execution context from profile/env selectors.',
+    });
+    polymarketExecutionContext = null;
+  }
+  try {
+    polymarketInventoryReadClient = await resolvePolymarketInventoryReadClient(options, deps);
+  } catch (err) {
+    pushRunDiagnostic(diagnostics, {
+      level: 'warn',
+      scope: 'inventory-adoption',
+      iteration: 0,
+      timestamp: now().toISOString(),
+      code: err && err.code ? String(err.code) : 'POLYMARKET_INVENTORY_RPC_UNAVAILABLE',
+      message:
+        err && err.message
+          ? err.message
+          : 'Unable to initialize Polymarket read client for on-chain inventory fallback.',
+    });
+    polymarketInventoryReadClient = null;
+  }
+  try {
+    polymarketInventoryAddress = await resolvePolymarketInventoryAddress(options, deps, polymarketExecutionContext);
   } catch (err) {
     pushRunDiagnostic(diagnostics, {
       level: 'warn',
@@ -595,6 +770,25 @@ async function runMirrorSync(options, deps = {}) {
                 mockUrl: options.polymarketMockUrl,
                 rpcUrl: options.polymarketRpcUrl || options.rpcUrl || null,
                 source: 'auto',
+                privateKey: polymarketExecutionContext && polymarketExecutionContext.privateKey
+                  ? polymarketExecutionContext.privateKey
+                  : null,
+                funder: polymarketExecutionContext && polymarketExecutionContext.funder
+                  ? polymarketExecutionContext.funder
+                  : null,
+                apiWalletAddress: polymarketExecutionContext && polymarketExecutionContext.signerAddress
+                  ? polymarketExecutionContext.signerAddress
+                  : null,
+                apiKey: polymarketExecutionContext && polymarketExecutionContext.apiKey
+                  ? polymarketExecutionContext.apiKey
+                  : null,
+                apiSecret: polymarketExecutionContext && polymarketExecutionContext.apiSecret
+                  ? polymarketExecutionContext.apiSecret
+                  : null,
+                apiPassphrase: polymarketExecutionContext && polymarketExecutionContext.apiPassphrase
+                  ? polymarketExecutionContext.apiPassphrase
+                  : null,
+                publicClient: polymarketInventoryReadClient || null,
               });
               const managedInventorySeed = {
                 ...extractManagedInventorySeed(positionSummary, polymarketInventoryAddress),
@@ -655,6 +849,29 @@ async function runMirrorSync(options, deps = {}) {
         const tickOptions = {
           ...options,
           priceSource,
+          polymarketPrivateKey: polymarketExecutionContext && polymarketExecutionContext.privateKey
+            ? polymarketExecutionContext.privateKey
+            : null,
+          polymarketFunder: polymarketExecutionContext && polymarketExecutionContext.funder
+            ? polymarketExecutionContext.funder
+            : null,
+          polymarketApiKey: polymarketExecutionContext && polymarketExecutionContext.apiKey
+            ? polymarketExecutionContext.apiKey
+            : null,
+          polymarketApiSecret: polymarketExecutionContext && polymarketExecutionContext.apiSecret
+            ? polymarketExecutionContext.apiSecret
+            : null,
+          polymarketApiPassphrase: polymarketExecutionContext && polymarketExecutionContext.apiPassphrase
+            ? polymarketExecutionContext.apiPassphrase
+            : null,
+          polymarketAuthContext: polymarketExecutionContext
+            ? {
+              signerAddress: polymarketExecutionContext.signerAddress || null,
+              profileBacked: Boolean(polymarketExecutionContext.profileBacked),
+              profileBackend: polymarketExecutionContext.profileBackend || null,
+              profileDerivedPrivateKey: Boolean(polymarketExecutionContext.profileDerivedPrivateKey),
+            }
+            : null,
           _runtimeReserveContext: reserveContext,
         };
 
