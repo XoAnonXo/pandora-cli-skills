@@ -3604,7 +3604,7 @@ test('runMirrorSync paper mode uses on-chain reserves for atomic rebalance plann
         hedgeEnabled: true,
         hedgeRatio: 1,
         intervalMs: 5000,
-        driftTriggerBps: 10_000,
+        driftTriggerBps: 150,
         hedgeTriggerUsdc: 1,
         maxRebalanceUsdc: 40,
         maxHedgeUsdc: 10,
