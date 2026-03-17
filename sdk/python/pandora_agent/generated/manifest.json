@@ -77,7 +77,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.113"
+          "version": "1.1.114"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -279,7 +279,7 @@
   "commandCount": 169,
   "commandDescriptorVersion": "1.4.3",
   "contractCommandDescriptorVersion": "1.4.3",
-  "contractPackageVersion": "1.1.113",
+  "contractPackageVersion": "1.1.114",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
@@ -347,7 +347,7 @@
       "main": "cli/pandora.cjs",
       "name": "pandora-cli-skills",
       "sourceProjectPath": "package.json",
-      "version": "1.1.113"
+      "version": "1.1.114"
     },
     "typescript": {
       "artifactSubpaths": {
@@ -381,14 +381,14 @@
     "canonicalHash": "9d638ee641f11a5ff7361b639583b7420341f9f222587e8f58cdf276a69bc8fb",
     "commandDigestHash": "f82f42c7ae1fc5d2b41e4188facf41e85e5e37f0b91907c30f562c1f6448e020",
     "descriptorHash": "828e8ec853a4c3cf887ad8cb9f88e8be61c741d1a0cee6b9ec464c3e03cd1cbd",
-    "documentationHash": "9f7e75f7557166f26bff22238879b7867d21e7d2b84e39779e25398c4a780189",
+    "documentationHash": "b51bb3dcf77c0a086b6b090ac99d6b41d2a7ff00ea639258800aec992ee94c2b",
     "fullDescriptorHash": "0c4788bc978ba9e628d146f07c8271cc60ed2c8d8507f7638b36424400248337",
     "namespaceHash": "35a0e69c2f30bc8067d11ed5e75cfb3865d63bf662e001c15b0a7778e6b67ce7",
     "policyProfilesHash": "03fdebf46de42775b95e2b4a88c96c41d4c834a3285aa3c546cbf9e89f3efda5",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "db78e40057e3f231880214dd1ac6945ad4153d37df86118a188ef32086a96885",
-    "trustDistributionHash": "c32ddcca9896a9f1a8d6102eb9c4a22c1025c50245c94470d7f1680ecc7aa6a0"
+    "trustDistributionHash": "39675b90c7bf83ee4e517f34810f978ec706959de8200e2ea25c494839e5b6ef"
   },
   "schemaVersion": "1.0.0"
 }
