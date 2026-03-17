@@ -30,6 +30,77 @@ function assertMentionsAll(text, values, messagePrefix) {
   }
 }
 
+function extractMirrorCommandReferenceLine(commandReferenceText, commandName) {
+  const pattern = new RegExp(`^${String(commandName).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\s+(.+)$`, 'm');
+  const match = commandReferenceText.match(pattern);
+  assert.ok(match, `missing mirror command reference line for ${commandName}`);
+  return `${commandName} ${match[1]}`.trim();
+}
+
+function normalizeMirrorHelpUsage(payload, commandName) {
+  assert.equal(payload.ok, true);
+  const usage = String(payload.data && payload.data.usage ? payload.data.usage : '');
+  const prefix = 'pandora [--output table|json] mirror ';
+  assert.ok(usage.startsWith(prefix), `${commandName} help usage must start with mirror prefix`);
+  return usage.slice(prefix.length).trim();
+}
+
+function collectDocFlagMentions(dirPath, pattern, matches = []) {
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectDocFlagMentions(fullPath, pattern, matches);
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.endsWith('.md')) {
+      continue;
+    }
+    const lines = fs.readFileSync(fullPath, 'utf8').split('\n');
+    for (let index = 0; index < lines.length; index += 1) {
+      if (pattern.test(lines[index])) {
+        matches.push({
+          file: path.relative(REPO_ROOT, fullPath),
+          line: index + 1,
+          text: lines[index],
+        });
+      }
+    }
+  }
+  return matches;
+}
+
+test('mirror deploy/go command reference stays aligned with live help and retired AMM flags are docs-migrated', () => {
+  const commandReferenceText = read('docs/skills/command-reference.md');
+  const mirrorDeployHelp = JSON.parse(runCli(['--output', 'json', 'mirror', 'deploy', '--help']).stdout);
+  const mirrorGoHelp = JSON.parse(runCli(['--output', 'json', 'mirror', 'go', '--help']).stdout);
+
+  assert.equal(
+    extractMirrorCommandReferenceLine(commandReferenceText, 'deploy'),
+    normalizeMirrorHelpUsage(mirrorDeployHelp, 'mirror deploy'),
+  );
+  assert.equal(
+    extractMirrorCommandReferenceLine(commandReferenceText, 'go'),
+    normalizeMirrorHelpUsage(mirrorGoHelp, 'mirror go'),
+  );
+  assert.match(commandReferenceText, /--distribution-yes-pct.*retired/i);
+  assert.match(commandReferenceText, /--distribution-no-pct.*retired/i);
+  assert.match(commandReferenceText, /--initial-yes-pct.*opening probability/i);
+  assert.match(commandReferenceText, /--yes-reserve-weight-pct.*explicit reserve weights/i);
+
+  const staleMentions = collectDocFlagMentions(
+    path.join(REPO_ROOT, 'docs'),
+    /distribution-yes-pct|distribution-no-pct/i,
+  );
+  assert.ok(staleMentions.length >= 1, 'expected at least one retired-flag migration note in docs');
+  for (const mention of staleMentions) {
+    assert.match(
+      mention.text,
+      /(retired|rejected|migration)/i,
+      `retired AMM flag docs mention must not present the flag as valid input (${mention.file}:${mention.line})`,
+    );
+  }
+});
+
 test('runtime capabilities and schema stay aligned with shipped skill docs', () => {
   const capabilitiesResult = runCli(['--output', 'json', 'capabilities']);
   assert.equal(capabilitiesResult.status, 0, capabilitiesResult.output);

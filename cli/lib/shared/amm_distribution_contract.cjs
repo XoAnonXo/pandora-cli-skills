@@ -1,6 +1,10 @@
 'use strict';
 
 const DISTRIBUTION_SCALE = 1_000_000_000;
+const LEGACY_DISTRIBUTION_YES_PCT_FLAG = '--distribution-yes-pct';
+const LEGACY_DISTRIBUTION_NO_PCT_FLAG = '--distribution-no-pct';
+const YES_RESERVE_WEIGHT_PCT_FLAG = '--yes-reserve-weight-pct';
+const NO_RESERVE_WEIGHT_PCT_FLAG = '--no-reserve-weight-pct';
 
 function roundPct(value) {
   return Math.round(Number(value) * 1_000_000) / 1_000_000;
@@ -60,9 +64,18 @@ function deriveDistributionFromInitialYesProbabilityPct(initialYesProbabilityPct
   };
 }
 
+function buildLegacyDistributionPercentMigrationMessage(flagName) {
+  return `${flagName} has been retired. Use ${YES_RESERVE_WEIGHT_PCT_FLAG}/${NO_RESERVE_WEIGHT_PCT_FLAG} for explicit reserve weights. For AMM opening probability, use --initial-yes-pct/--initial-no-pct instead. Raw --distribution-yes/--distribution-no remain available for low-level unit control.`;
+}
+
 module.exports = {
   DISTRIBUTION_SCALE,
+  LEGACY_DISTRIBUTION_YES_PCT_FLAG,
+  LEGACY_DISTRIBUTION_NO_PCT_FLAG,
+  YES_RESERVE_WEIGHT_PCT_FLAG,
+  NO_RESERVE_WEIGHT_PCT_FLAG,
   normalizePercent,
   deriveAmmProbabilityContract,
   deriveDistributionFromInitialYesProbabilityPct,
+  buildLegacyDistributionPercentMigrationMessage,
 };

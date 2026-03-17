@@ -444,7 +444,7 @@ test('mirror deploy parser defaults maxImbalance to max uint24 and preserves exp
     '--polymarket-market-id',
     'poly-1',
     '--dry-run',
-    '--distribution-yes-pct',
+    '--yes-reserve-weight-pct',
     '63',
     '--validation-ticket',
     'market-validate:abc123',
@@ -482,9 +482,9 @@ test('mirror go parser defaults maxImbalance to max uint24 and accepts percentag
   const distribution = parseMirrorGoFlags([
     '--polymarket-market-id',
     'poly-1',
-    '--distribution-yes-pct',
+    '--yes-reserve-weight-pct',
     '40',
-    '--distribution-no-pct',
+    '--no-reserve-weight-pct',
     '60',
     '--validation-ticket',
     'market-validate:def456',
@@ -501,6 +501,42 @@ test('mirror go parser defaults maxImbalance to max uint24 and accepts percentag
   ]);
   assert.equal(probabilityNative.distributionYes, 600_000_000);
   assert.equal(probabilityNative.distributionNo, 400_000_000);
+});
+
+test('mirror deploy and go parsers reject legacy ambiguous distribution percent flags', () => {
+  const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildMirrorParserDeps());
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildMirrorParserDeps());
+
+  assert.throws(
+    () =>
+      parseMirrorDeployFlags([
+        '--polymarket-market-id',
+        'poly-1',
+        '--dry-run',
+        '--distribution-yes-pct',
+        '63',
+      ]),
+    (error) =>
+      error
+      && error.code === 'INVALID_ARGS'
+      && /has been retired/i.test(error.message)
+      && /--yes-reserve-weight-pct/i.test(error.message),
+  );
+
+  assert.throws(
+    () =>
+      parseMirrorGoFlags([
+        '--polymarket-market-id',
+        'poly-1',
+        '--distribution-no-pct',
+        '60',
+      ]),
+    (error) =>
+      error
+      && error.code === 'INVALID_ARGS'
+      && /has been retired/i.test(error.message)
+      && /--no-reserve-weight-pct/i.test(error.message),
+  );
 });
 
 test('mirror deploy parser blocks external file paths in MCP mode', () => {
@@ -649,13 +685,34 @@ test('sports parser defaults maxImbalance to max uint24 and accepts percentage d
     'evt-1',
     '--max-imbalance',
     '0',
-    '--distribution-yes-pct',
+    '--yes-reserve-weight-pct',
     '63.5',
   ]);
   assert.equal(Number(explicitZero.options.maxImbalance), 0);
   assert.equal(Boolean(explicitZero.options.maxImbalance), true);
   assert.equal(explicitZero.options.distributionYes, 635_000_000);
   assert.equal(explicitZero.options.distributionNo, 365_000_000);
+});
+
+test('sports parser rejects legacy ambiguous distribution percent flags', () => {
+  const parseSportsFlags = createParseSportsFlags(buildSportsParserDeps());
+
+  assert.throws(
+    () =>
+      parseSportsFlags([
+        'create',
+        'plan',
+        '--event-id',
+        'evt-1',
+        '--distribution-yes-pct',
+        '63.5',
+      ]),
+    (error) =>
+      error
+      && error.code === 'INVALID_ARGS'
+      && /has been retired/i.test(error.message)
+      && /--yes-reserve-weight-pct/i.test(error.message),
+  );
 });
 
 test('poll category helper and creation parsers accept canonical names alongside numeric ids', () => {

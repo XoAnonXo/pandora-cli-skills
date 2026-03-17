@@ -10246,7 +10246,7 @@
         "Use markets.create.plan to normalize a launch payload into a JSON-safe agent contract.",
         "Legacy launch remains script-native; use markets.create.run for the canonical agent/MCP creation surface.",
         "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
-        "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets."
+        "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Use --initial-yes-pct/--initial-no-pct for directional AMM probability or --yes-reserve-weight-pct/--no-reserve-weight-pct for explicit reserve allocation."
       ],
       "recommendedTools": [
         "agent.market.autocomplete"
@@ -10283,7 +10283,7 @@
             "Use markets.create.plan to normalize a launch payload into a JSON-safe agent contract.",
             "Legacy launch remains script-native; use markets.create.run for the canonical agent/MCP creation surface.",
             "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
-            "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets."
+            "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Use --initial-yes-pct/--initial-no-pct for directional AMM probability or --yes-reserve-weight-pct/--no-reserve-weight-pct for explicit reserve allocation."
           ],
           "recommendedTools": [
             "agent.market.autocomplete"
@@ -10427,7 +10427,7 @@
           "Use markets.create.plan to normalize a launch payload into a JSON-safe agent contract.",
           "Legacy launch remains script-native; use markets.create.run for the canonical agent/MCP creation surface.",
           "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
-          "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Set explicit percentage flags for directional markets."
+          "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool. Use --initial-yes-pct/--initial-no-pct for directional AMM probability or --yes-reserve-weight-pct/--no-reserve-weight-pct for explicit reserve allocation."
         ],
         "recommendedTools": [
           "agent.market.autocomplete"
@@ -10550,7 +10550,8 @@
         "markets.create.plan is the canonical JSON-safe planning surface; legacy launch remains script-native.",
         "The emitted validation ticket is bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh validation pass.",
         "For AMM markets, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly.",
-        "Raw --distribution-yes-pct/--distribution-no-pct control reserve weights, not opening YES probability.",
+        "Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve allocation, not opening YES probability.",
+        "Legacy --distribution-yes-pct/--distribution-no-pct are rejected with a migration error because they were ambiguous for AMM pricing.",
         "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool."
       ],
       "recommendedTools": [
@@ -10630,23 +10631,11 @@
           "minimum": 0,
           "type": "integer"
         },
-        "distribution-no-pct": {
-          "description": "Initial NO reserve weight in percent, not opening NO probability.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "number"
-        },
         "distribution-yes": {
           "description": "Initial YES distribution in parts-per-billion.",
           "maximum": 1000000000,
           "minimum": 0,
           "type": "integer"
-        },
-        "distribution-yes-pct": {
-          "description": "Initial YES reserve weight in percent, not opening YES probability.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "number"
         },
         "factory": {
           "description": "Factory contract address.",
@@ -10693,6 +10682,12 @@
           "minimum": 1,
           "type": "integer"
         },
+        "no-reserve-weight-pct": {
+          "description": "Initial NO reserve weight in percent. This controls pool allocation, not opening NO probability.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
         "oracle": {
           "description": "Oracle contract address.",
           "type": "string"
@@ -10732,6 +10727,12 @@
         "usdc": {
           "description": "Collateral token address.",
           "type": "string"
+        },
+        "yes-reserve-weight-pct": {
+          "description": "Initial YES reserve weight in percent. This controls pool allocation, not opening YES probability.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
         }
       },
       "required": [
@@ -10752,7 +10753,8 @@
             "markets.create.plan is the canonical JSON-safe planning surface; legacy launch remains script-native.",
             "The emitted validation ticket is bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh validation pass.",
             "For AMM markets, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly.",
-            "Raw --distribution-yes-pct/--distribution-no-pct control reserve weights, not opening YES probability.",
+            "Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve allocation, not opening YES probability.",
+            "Legacy --distribution-yes-pct/--distribution-no-pct are rejected with a migration error because they were ambiguous for AMM pricing.",
             "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool."
           ],
           "recommendedTools": [
@@ -10769,7 +10771,7 @@
         ],
         "canonicalName": "markets.create.plan",
         "canonicalTool": "markets.create.plan",
-        "canonicalUsage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]",
+        "canonicalUsage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]",
         "command": [
           "markets",
           "create",
@@ -10867,7 +10869,7 @@
         "supportsRemote": true,
         "supportsWebhook": false,
         "topLevelInputConstraints": null,
-        "usage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]"
+        "usage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]"
       }
     },
     "jobCapable": false,
@@ -10901,7 +10903,8 @@
           "markets.create.plan is the canonical JSON-safe planning surface; legacy launch remains script-native.",
           "The emitted validation ticket is bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh validation pass.",
           "For AMM markets, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly.",
-          "Raw --distribution-yes-pct/--distribution-no-pct control reserve weights, not opening YES probability.",
+          "Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve allocation, not opening YES probability.",
+          "Legacy --distribution-yes-pct/--distribution-no-pct are rejected with a migration error because they were ambiguous for AMM pricing.",
           "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool."
         ],
         "recommendedTools": [
@@ -10918,7 +10921,7 @@
       ],
       "canonicalName": "markets.create.plan",
       "canonicalTool": "markets.create.plan",
-      "canonicalUsage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]",
+      "canonicalUsage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]",
       "command": [
         "markets",
         "create",
@@ -11016,7 +11019,7 @@
       "supportsRemote": true,
       "supportsWebhook": false,
       "topLevelInputConstraints": null,
-      "usage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]"
+      "usage": "pandora [--output table|json] markets create plan --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--chain-id <id>] [--rpc-url <url>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--min-close-lead-seconds <n>]"
     }
   },
   {
@@ -11028,7 +11031,8 @@
         "The post-poll approval/createMarket leg supports --tx-route public|auto|flashbots-private|flashbots-bundle. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.",
         "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
         "For AMM markets, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly.",
-        "Raw --distribution-yes-pct/--distribution-no-pct control reserve weights, not opening YES probability.",
+        "Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve allocation, not opening YES probability.",
+        "Legacy --distribution-yes-pct/--distribution-no-pct are rejected with a migration error because they were ambiguous for AMM pricing.",
         "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool."
       ],
       "recommendedTools": [
@@ -11146,23 +11150,11 @@
           "minimum": 0,
           "type": "integer"
         },
-        "distribution-no-pct": {
-          "description": "Initial NO reserve weight in percent, not opening NO probability.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "number"
-        },
         "distribution-yes": {
           "description": "Initial YES distribution in parts-per-billion.",
           "maximum": 1000000000,
           "minimum": 0,
           "type": "integer"
-        },
-        "distribution-yes-pct": {
-          "description": "Initial YES reserve weight in percent, not opening YES probability.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "number"
         },
         "dry-run": {
           "description": "Run dry-run mode.",
@@ -11240,6 +11232,12 @@
           "minimum": 1,
           "type": "integer"
         },
+        "no-reserve-weight-pct": {
+          "description": "Initial NO reserve weight in percent. This controls pool allocation, not opening NO probability.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
         "oracle": {
           "description": "Oracle contract address.",
           "type": "string"
@@ -11311,6 +11309,12 @@
         "validation-ticket": {
           "description": "Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).",
           "type": "string"
+        },
+        "yes-reserve-weight-pct": {
+          "description": "Initial YES reserve weight in percent. This controls pool allocation, not opening YES probability.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
         }
       },
       "required": [
@@ -11332,7 +11336,8 @@
             "The post-poll approval/createMarket leg supports --tx-route public|auto|flashbots-private|flashbots-bundle. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.",
             "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
             "For AMM markets, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly.",
-            "Raw --distribution-yes-pct/--distribution-no-pct control reserve weights, not opening YES probability.",
+            "Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve allocation, not opening YES probability.",
+            "Legacy --distribution-yes-pct/--distribution-no-pct are rejected with a migration error because they were ambiguous for AMM pricing.",
             "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool."
           ],
           "recommendedTools": [
@@ -11351,7 +11356,7 @@
         ],
         "canonicalName": "markets.create.run",
         "canonicalTool": "markets.create.run",
-        "canonicalUsage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]",
+        "canonicalUsage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]",
         "command": [
           "markets",
           "create",
@@ -11501,7 +11506,7 @@
             }
           ]
         },
-        "usage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]"
+        "usage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]"
       }
     },
     "jobCapable": true,
@@ -11540,7 +11545,8 @@
           "The post-poll approval/createMarket leg supports --tx-route public|auto|flashbots-private|flashbots-bundle. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.",
           "Validation tickets are bound to the exact final payload. Any change to question, rules, sources, target timestamp, liquidity, market type, fee/curve params, or distribution requires a fresh ticket.",
           "For AMM markets, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly.",
-          "Raw --distribution-yes-pct/--distribution-no-pct control reserve weights, not opening YES probability.",
+          "Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve allocation, not opening YES probability.",
+          "Legacy --distribution-yes-pct/--distribution-no-pct are rejected with a migration error because they were ambiguous for AMM pricing.",
           "If distribution flags are omitted, markets.create seeds a balanced 50/50 pool."
         ],
         "recommendedTools": [
@@ -11559,7 +11565,7 @@
       ],
       "canonicalName": "markets.create.run",
       "canonicalTool": "markets.create.run",
-      "canonicalUsage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]",
+      "canonicalUsage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]",
       "command": [
         "markets",
         "create",
@@ -11709,7 +11715,7 @@
           }
         ]
       },
-      "usage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]"
+      "usage": "pandora [--output table|json] markets create run --question <text> --rules <text> --sources <url...> --target-timestamp <unix-seconds|iso> --liquidity-usdc <n> [--market-type amm|parimutuel] [--category <id|name>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--curve-flattener <1-11>] [--curve-offset <0-16777215>] [--dry-run|--execute] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--arbiter <address>] [--tx-route public|auto|flashbots-private|flashbots-bundle] [--tx-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--validation-ticket <ticket>] [--min-close-lead-seconds <n>]"
     }
   },
   {
@@ -17490,20 +17496,8 @@
           "minimum": 0,
           "type": "number"
         },
-        "distribution-no-pct": {
-          "description": "Initial NO reserve weight in percent, not opening NO probability.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "number"
-        },
         "distribution-yes": {
           "description": "Initial YES distribution parts.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "distribution-yes-pct": {
-          "description": "Initial YES reserve weight in percent, not opening YES probability.",
-          "maximum": 100,
           "minimum": 0,
           "type": "number"
         },
@@ -17565,6 +17559,12 @@
           "description": "Minimum close lead time in seconds.",
           "minimum": 0,
           "type": "integer"
+        },
+        "no-reserve-weight-pct": {
+          "description": "Initial NO reserve weight in percent. This controls pool allocation, not opening NO probability.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
         },
         "oracle": {
           "description": "Oracle address.",
@@ -17641,6 +17641,12 @@
         "validation-ticket": {
           "description": "Ticket returned by agent.market.validate for the exact final payload (CLI execute mode).",
           "type": "string"
+        },
+        "yes-reserve-weight-pct": {
+          "description": "Initial YES reserve weight in percent. This controls pool allocation, not opening YES probability.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
         }
       },
       "type": "object",
@@ -17670,7 +17676,7 @@
         ],
         "canonicalName": "mirror.deploy",
         "canonicalTool": "mirror.deploy",
-        "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
+        "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
         "command": [
           "mirror",
           "deploy"
@@ -18058,7 +18064,7 @@
             }
           ]
         },
-        "usage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]"
+        "usage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]"
       }
     },
     "jobCapable": false,
@@ -18111,7 +18117,7 @@
       ],
       "canonicalName": "mirror.deploy",
       "canonicalTool": "mirror.deploy",
-      "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
+      "canonicalUsage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]",
       "command": [
         "mirror",
         "deploy"
@@ -18499,7 +18505,7 @@
           }
         ]
       },
-      "usage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]"
+      "usage": "pandora [--output table|json] mirror deploy --plan-file <path>|--polymarket-market-id <id>|--polymarket-slug <slug> --dry-run|--execute [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--oracle <address>] [--factory <address>] [--usdc <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--min-close-lead-seconds <n>]"
     }
   },
   {
@@ -18918,7 +18924,8 @@
         "When mirror go will execute a fresh deploy, provide independent public --sources and a matching validation ticket.",
         "Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live.",
         "Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass.",
-        "For AMM deploy/go flows, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly. Raw --distribution-yes-pct/--distribution-no-pct remain reserve-weight controls.",
+        "For AMM deploy/go flows, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly. Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve-weight control.",
+        "Legacy --distribution-yes-pct/--distribution-no-pct are rejected with a migration error because they were ambiguous for AMM pricing.",
         "Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic."
       ],
       "recommendedTools": [
@@ -19051,20 +19058,8 @@
           "minimum": 0,
           "type": "number"
         },
-        "distribution-no-pct": {
-          "description": "Initial NO reserve weight in percent, not opening NO probability.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "number"
-        },
         "distribution-yes": {
           "description": "Initial YES distribution parts.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "distribution-yes-pct": {
-          "description": "Initial YES reserve weight in percent, not opening YES probability.",
-          "maximum": 100,
           "minimum": 0,
           "type": "number"
         },
@@ -19206,6 +19201,12 @@
         "no-hedge": {
           "description": "Disable source hedge leg.",
           "type": "boolean"
+        },
+        "no-reserve-weight-pct": {
+          "description": "Initial NO reserve weight in percent. This controls pool allocation, not opening NO probability.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
         },
         "oracle": {
           "description": "Oracle address override.",
@@ -19382,6 +19383,12 @@
         "with-rules": {
           "description": "Include rule payloads and copy diagnostics.",
           "type": "boolean"
+        },
+        "yes-reserve-weight-pct": {
+          "description": "Initial YES reserve weight in percent. This controls pool allocation, not opening YES probability.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
         }
       },
       "type": "object",
@@ -19395,7 +19402,8 @@
             "When mirror go will execute a fresh deploy, provide independent public --sources and a matching validation ticket.",
             "Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live.",
             "Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass.",
-            "For AMM deploy/go flows, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly. Raw --distribution-yes-pct/--distribution-no-pct remain reserve-weight controls.",
+            "For AMM deploy/go flows, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly. Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve-weight control.",
+            "Legacy --distribution-yes-pct/--distribution-no-pct are rejected with a migration error because they were ambiguous for AMM pricing.",
             "Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic."
           ],
           "recommendedTools": [
@@ -19413,7 +19421,7 @@
         ],
         "canonicalName": "mirror.go",
         "canonicalTool": "mirror.go",
-        "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
+        "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
         "command": [
           "mirror",
           "go"
@@ -20056,7 +20064,7 @@
             }
           ]
         },
-        "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
+        "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
       }
     },
     "jobCapable": true,
@@ -20095,7 +20103,8 @@
           "When mirror go will execute a fresh deploy, provide independent public --sources and a matching validation ticket.",
           "Run agent.market.validate on that exact payload before rerunning mirror.go with execute or execute-live.",
           "Validation tickets are bound to the exact final deploy payload. Any change to question, rules, sources, target timestamp, liquidity, fee params, or distribution requires a fresh validation pass.",
-          "For AMM deploy/go flows, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly. Raw --distribution-yes-pct/--distribution-no-pct remain reserve-weight controls.",
+          "For AMM deploy/go flows, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly. Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve-weight control.",
+          "Legacy --distribution-yes-pct/--distribution-no-pct are rejected with a migration error because they were ambiguous for AMM pricing.",
           "Private-routing flags affect only the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg atomic."
         ],
         "recommendedTools": [
@@ -20113,7 +20122,7 @@
       ],
       "canonicalName": "mirror.go",
       "canonicalTool": "mirror.go",
-      "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
+      "canonicalUsage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]",
       "command": [
         "mirror",
         "go"
@@ -20756,7 +20765,7 @@
           }
         ]
       },
-      "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--distribution-yes-pct <pct>] [--distribution-no-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
+      "usage": "pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]"
     }
   },
   {

@@ -4,6 +4,11 @@ const {
   DISTRIBUTION_SCALE,
   normalizePercent,
   deriveDistributionFromInitialYesProbabilityPct,
+  LEGACY_DISTRIBUTION_YES_PCT_FLAG,
+  LEGACY_DISTRIBUTION_NO_PCT_FLAG,
+  YES_RESERVE_WEIGHT_PCT_FLAG,
+  NO_RESERVE_WEIGHT_PCT_FLAG,
+  buildLegacyDistributionPercentMigrationMessage,
 } = require('../shared/amm_distribution_contract.cjs');
 const { normalizeMirrorPathForMcp, parseMirrorTargetTimestamp, validateMirrorUrl } = require('./mirror_parser_guard.cjs');
 const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
@@ -60,7 +65,7 @@ function parseDistributionPercent(value, flagName, CliError) {
 
 function finalizeDistribution(options, CliError) {
   const hasRaw = options.distributionYes !== null || options.distributionNo !== null;
-  const hasReservePct = options.distributionYesPct !== null || options.distributionNoPct !== null;
+  const hasReservePct = options.yesReserveWeightPct !== null || options.noReserveWeightPct !== null;
   const hasInitialProbabilityPct = options.initialYesPct !== null || options.initialNoPct !== null;
 
   if (
@@ -71,21 +76,21 @@ function finalizeDistribution(options, CliError) {
   ) {
     throw new CliError(
       'INVALID_ARGS',
-      'Use exactly one AMM distribution input style: raw reserve weights (--distribution-yes/--distribution-no), reserve-weight percents (--distribution-yes-pct/--distribution-no-pct), or probability-native flags (--initial-yes-pct/--initial-no-pct).',
+      `Use exactly one AMM distribution input style: raw reserve weights (--distribution-yes/--distribution-no), explicit reserve-weight percents (${YES_RESERVE_WEIGHT_PCT_FLAG}/${NO_RESERVE_WEIGHT_PCT_FLAG}), or probability-native flags (--initial-yes-pct/--initial-no-pct).`,
     );
   }
 
   if (hasReservePct) {
-    const hasYesPct = options.distributionYesPct !== null;
-    const hasNoPct = options.distributionNoPct !== null;
+    const hasYesPct = options.yesReserveWeightPct !== null;
+    const hasNoPct = options.noReserveWeightPct !== null;
     if (hasYesPct && hasNoPct) {
-      const total = options.distributionYesPct + options.distributionNoPct;
+      const total = options.yesReserveWeightPct + options.noReserveWeightPct;
       if (Math.abs(total - 100) > 1e-9) {
-        throw new CliError('INVALID_ARGS', '--distribution-yes-pct + --distribution-no-pct must equal 100.');
+        throw new CliError('INVALID_ARGS', `${YES_RESERVE_WEIGHT_PCT_FLAG} + ${NO_RESERVE_WEIGHT_PCT_FLAG} must equal 100.`);
       }
     }
 
-    const yesPct = hasYesPct ? options.distributionYesPct : 100 - options.distributionNoPct;
+    const yesPct = hasYesPct ? options.yesReserveWeightPct : 100 - options.noReserveWeightPct;
     const distributionYes = Math.round(yesPct * (DISTRIBUTION_SCALE / 100));
     options.distributionYes = distributionYes;
     options.distributionNo = DISTRIBUTION_SCALE - distributionYes;
@@ -150,8 +155,8 @@ function createParseMirrorDeployFlags(deps) {
       usdc: null,
       distributionYes: null,
       distributionNo: null,
-      distributionYesPct: null,
-      distributionNoPct: null,
+      yesReserveWeightPct: null,
+      noReserveWeightPct: null,
       initialYesPct: null,
       initialNoPct: null,
       distributionInputMode: null,
@@ -337,19 +342,22 @@ function createParseMirrorDeployFlags(deps) {
         i += 1;
         continue;
       }
-      if (token === '--distribution-yes-pct') {
-        options.distributionYesPct = parseDistributionPercent(
-          requireFlagValue(args, i, '--distribution-yes-pct'),
-          '--distribution-yes-pct',
+      if (token === LEGACY_DISTRIBUTION_YES_PCT_FLAG || token === LEGACY_DISTRIBUTION_NO_PCT_FLAG) {
+        throw new CliError('INVALID_ARGS', buildLegacyDistributionPercentMigrationMessage(token));
+      }
+      if (token === YES_RESERVE_WEIGHT_PCT_FLAG) {
+        options.yesReserveWeightPct = parseDistributionPercent(
+          requireFlagValue(args, i, YES_RESERVE_WEIGHT_PCT_FLAG),
+          YES_RESERVE_WEIGHT_PCT_FLAG,
           CliError,
         );
         i += 1;
         continue;
       }
-      if (token === '--distribution-no-pct') {
-        options.distributionNoPct = parseDistributionPercent(
-          requireFlagValue(args, i, '--distribution-no-pct'),
-          '--distribution-no-pct',
+      if (token === NO_RESERVE_WEIGHT_PCT_FLAG) {
+        options.noReserveWeightPct = parseDistributionPercent(
+          requireFlagValue(args, i, NO_RESERVE_WEIGHT_PCT_FLAG),
+          NO_RESERVE_WEIGHT_PCT_FLAG,
           CliError,
         );
         i += 1;

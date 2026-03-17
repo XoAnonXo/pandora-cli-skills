@@ -96,9 +96,9 @@ test('parseMarketsCreateFlags parses parimutuel plan payloads with curve control
     '25000',
     '--liquidity-usdc',
     '100',
-    '--distribution-yes-pct',
+    '--yes-reserve-weight-pct',
     '62',
-    '--distribution-no-pct',
+    '--no-reserve-weight-pct',
     '38',
   ]);
 
@@ -112,6 +112,36 @@ test('parseMarketsCreateFlags parses parimutuel plan payloads with curve control
   assert.equal(parsed.options.dryRun, false);
   assert.equal(parsed.options.execute, false);
   assert.equal(parsed.options.distributionYes + parsed.options.distributionNo, 1_000_000_000);
+});
+
+test('parseMarketsCreateFlags rejects legacy ambiguous distribution percent flags with migration guidance', () => {
+  const parseMarketsCreateFlags = buildParser();
+
+  assert.throws(
+    () =>
+      parseMarketsCreateFlags([
+        'plan',
+        '--question',
+        'Q',
+        '--rules',
+        'R',
+        '--sources',
+        'https://one.example',
+        'https://two.example',
+        '--target-timestamp',
+        '1893499200',
+        '--liquidity-usdc',
+        '100',
+        '--distribution-yes-pct',
+        '62',
+      ]),
+    (error) =>
+      error
+      && error.code === 'INVALID_ARGS'
+      && /has been retired/i.test(error.message)
+      && /--yes-reserve-weight-pct/i.test(error.message)
+      && /--initial-yes-pct/i.test(error.message),
+  );
 });
 
 test('parseMarketsCreateFlags parses amm run payloads with signer/profile-safe flags', () => {

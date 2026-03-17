@@ -1,6 +1,13 @@
 const path = require('path');
 const { parsePollCategoryFlag, DEFAULT_SPORTS_POLL_CATEGORY } = require('../shared/poll_categories.cjs');
 const { assertMcpWorkspacePath } = require('../shared/mcp_path_guard.cjs');
+const {
+  LEGACY_DISTRIBUTION_YES_PCT_FLAG,
+  LEGACY_DISTRIBUTION_NO_PCT_FLAG,
+  YES_RESERVE_WEIGHT_PCT_FLAG,
+  NO_RESERVE_WEIGHT_PCT_FLAG,
+  buildLegacyDistributionPercentMigrationMessage,
+} = require('../shared/amm_distribution_contract.cjs');
 const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
 
 function requireDep(deps, name) {
@@ -94,26 +101,26 @@ function parseDistributionPercent(value, flagName, CliError) {
 
 function finalizeDistribution(options, CliError) {
   const hasRaw = options.distributionYes !== null || options.distributionNo !== null;
-  const hasPct = options.distributionYesPct !== null || options.distributionNoPct !== null;
+  const hasPct = options.yesReserveWeightPct !== null || options.noReserveWeightPct !== null;
 
   if (hasRaw && hasPct) {
     throw new CliError(
       'INVALID_ARGS',
-      'Use either raw distribution flags (--distribution-yes/--distribution-no) or percentage flags (--distribution-yes-pct/--distribution-no-pct), not both.',
+      `Use either raw distribution flags (--distribution-yes/--distribution-no) or explicit reserve-weight percent flags (${YES_RESERVE_WEIGHT_PCT_FLAG}/${NO_RESERVE_WEIGHT_PCT_FLAG}), not both.`,
     );
   }
 
   if (hasPct) {
-    const hasYesPct = options.distributionYesPct !== null;
-    const hasNoPct = options.distributionNoPct !== null;
+    const hasYesPct = options.yesReserveWeightPct !== null;
+    const hasNoPct = options.noReserveWeightPct !== null;
     if (hasYesPct && hasNoPct) {
-      const total = options.distributionYesPct + options.distributionNoPct;
+      const total = options.yesReserveWeightPct + options.noReserveWeightPct;
       if (Math.abs(total - 100) > 1e-9) {
-        throw new CliError('INVALID_ARGS', '--distribution-yes-pct + --distribution-no-pct must equal 100.');
+        throw new CliError('INVALID_ARGS', `${YES_RESERVE_WEIGHT_PCT_FLAG} + ${NO_RESERVE_WEIGHT_PCT_FLAG} must equal 100.`);
       }
     }
 
-    const yesPct = hasYesPct ? options.distributionYesPct : 100 - options.distributionNoPct;
+    const yesPct = hasYesPct ? options.yesReserveWeightPct : 100 - options.noReserveWeightPct;
     const distributionYes = Math.round(yesPct * (DISTRIBUTION_SCALE / 100));
     options.distributionYes = distributionYes;
     options.distributionNo = DISTRIBUTION_SCALE - distributionYes;
@@ -163,8 +170,8 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
     curveOffset: 30000,
     distributionYes: null,
     distributionNo: null,
-    distributionYesPct: null,
-    distributionNoPct: null,
+    yesReserveWeightPct: null,
+    noReserveWeightPct: null,
     creationWindowOpenMin: 1440,
     creationWindowCloseMin: 90,
     syncCadencePrematchMs: 30000,
@@ -342,19 +349,22 @@ function parseBaseSportsFlags(args, deps, defaults = {}) {
       i += 1;
       continue;
     }
-    if (token === '--distribution-yes-pct') {
-      options.distributionYesPct = parseDistributionPercent(
-        requireFlagValue(args, i, '--distribution-yes-pct'),
-        '--distribution-yes-pct',
+    if (token === LEGACY_DISTRIBUTION_YES_PCT_FLAG || token === LEGACY_DISTRIBUTION_NO_PCT_FLAG) {
+      throw new CliError('INVALID_ARGS', buildLegacyDistributionPercentMigrationMessage(token));
+    }
+    if (token === YES_RESERVE_WEIGHT_PCT_FLAG) {
+      options.yesReserveWeightPct = parseDistributionPercent(
+        requireFlagValue(args, i, YES_RESERVE_WEIGHT_PCT_FLAG),
+        YES_RESERVE_WEIGHT_PCT_FLAG,
         CliError,
       );
       i += 1;
       continue;
     }
-    if (token === '--distribution-no-pct') {
-      options.distributionNoPct = parseDistributionPercent(
-        requireFlagValue(args, i, '--distribution-no-pct'),
-        '--distribution-no-pct',
+    if (token === NO_RESERVE_WEIGHT_PCT_FLAG) {
+      options.noReserveWeightPct = parseDistributionPercent(
+        requireFlagValue(args, i, NO_RESERVE_WEIGHT_PCT_FLAG),
+        NO_RESERVE_WEIGHT_PCT_FLAG,
         CliError,
       );
       i += 1;

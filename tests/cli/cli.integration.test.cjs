@@ -7999,7 +7999,7 @@ test('mirror go --help json includes flashbots routing flag contract', () => {
   assert.equal(payload.data.notes.some((note) => /hedging stays enabled by default/i.test(String(note))), true);
 });
 
-test('mirror deploy --help json surfaces validation-ticket caveats and percentage distribution flags', () => {
+test('mirror deploy --help json surfaces validation-ticket caveats and reserve-weight distribution flags', () => {
   const result = runCli(['--output', 'json', 'mirror', 'deploy', '--help']);
   assert.equal(result.status, 0);
   const payload = parseJsonOutput(result);
@@ -8007,10 +8007,11 @@ test('mirror deploy --help json surfaces validation-ticket caveats and percentag
   assert.equal(payload.command, 'mirror.deploy.help');
   assert.equal(Array.isArray(payload.data.notes), true);
   assert.match(payload.data.usage, /--initial-yes-pct <pct>\|--initial-no-pct <pct>/);
-  assert.match(payload.data.usage, /--distribution-yes-pct <pct>/);
-  assert.match(payload.data.usage, /--distribution-no-pct <pct>/);
+  assert.match(payload.data.usage, /--yes-reserve-weight-pct <pct>/);
+  assert.match(payload.data.usage, /--no-reserve-weight-pct <pct>/);
   assert.equal(payload.data.notes.some((note) => /exact final deploy payload/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /initial-yes-pct.*opening probability directly/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /distribution-yes-pct.*rejected/i.test(String(note))), true);
 });
 
 test('mirror trace --help json includes historical reserve tracing usage and archive notes', () => {
@@ -8111,17 +8112,27 @@ test('command descriptors surface validation, distribution, and stop-file caveat
     descriptors['markets.create.run'].agentWorkflow.notes.some((note) => /balanced 50\/50 pool/i.test(String(note))),
     true,
   );
+  assert.equal(
+    descriptors['markets.create.run'].agentWorkflow.notes.some((note) => /distribution-yes-pct.*rejected/i.test(String(note))),
+    true,
+  );
+  assert.ok(descriptors['markets.create.run'].inputSchema.properties['yes-reserve-weight-pct']);
+  assert.ok(descriptors['markets.create.run'].inputSchema.properties['no-reserve-weight-pct']);
 
   assert.match(descriptors['mirror.go'].usage, /--initial-yes-pct <pct>\|--initial-no-pct <pct>/);
+  assert.match(descriptors['mirror.go'].usage, /--yes-reserve-weight-pct <pct>/);
+  assert.match(descriptors['mirror.go'].usage, /--no-reserve-weight-pct <pct>/);
   assert.ok(descriptors['mirror.go'].inputSchema.properties['initial-yes-pct']);
   assert.ok(descriptors['mirror.go'].inputSchema.properties['initial-no-pct']);
-  assert.match(descriptors['mirror.deploy'].usage, /--distribution-yes-pct <pct>/);
-  assert.match(descriptors['mirror.deploy'].usage, /--distribution-no-pct <pct>/);
+  assert.ok(descriptors['mirror.go'].inputSchema.properties['yes-reserve-weight-pct']);
+  assert.ok(descriptors['mirror.go'].inputSchema.properties['no-reserve-weight-pct']);
+  assert.match(descriptors['mirror.deploy'].usage, /--yes-reserve-weight-pct <pct>/);
+  assert.match(descriptors['mirror.deploy'].usage, /--no-reserve-weight-pct <pct>/);
   assert.match(descriptors['mirror.deploy'].usage, /--initial-yes-pct <pct>\|--initial-no-pct <pct>/);
   assert.ok(descriptors['mirror.deploy'].inputSchema.properties['initial-yes-pct']);
   assert.ok(descriptors['mirror.deploy'].inputSchema.properties['initial-no-pct']);
-  assert.ok(descriptors['mirror.deploy'].inputSchema.properties['distribution-yes-pct']);
-  assert.ok(descriptors['mirror.deploy'].inputSchema.properties['distribution-no-pct']);
+  assert.ok(descriptors['mirror.deploy'].inputSchema.properties['yes-reserve-weight-pct']);
+  assert.ok(descriptors['mirror.deploy'].inputSchema.properties['no-reserve-weight-pct']);
   assert.equal(
     descriptors['mirror.deploy'].agentWorkflow.notes.some((note) => /exact final deploy payload/i.test(String(note))),
     true,
@@ -8132,6 +8143,10 @@ test('command descriptors surface validation, distribution, and stop-file caveat
   );
   assert.equal(
     descriptors['mirror.go'].agentWorkflow.notes.some((note) => /initial-yes-pct.*opening probability directly/i.test(String(note))),
+    true,
+  );
+  assert.equal(
+    descriptors['mirror.go'].agentWorkflow.notes.some((note) => /distribution-yes-pct.*rejected/i.test(String(note))),
     true,
   );
 
@@ -11862,7 +11877,8 @@ test('markets create --help json surfaces validation-ticket and balanced-distrib
   assert.equal(payload.data.notes.some((note) => /exact final payload/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /balanced 50\/50 pool/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /initial-yes-pct/i.test(String(note))), true);
-  assert.equal(payload.data.notes.some((note) => /reserve weights, not opening YES price/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /yes-reserve-weight-pct/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /distribution-yes-pct.*rejected/i.test(String(note))), true);
 });
 
 test('agent market hype emits reusable trend-research prompt payload', () => {
