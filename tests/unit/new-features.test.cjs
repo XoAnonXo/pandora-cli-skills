@@ -1061,6 +1061,59 @@ test('fetchPolymarketPositionSummary composes authenticated CTF balances and sco
   ]);
 });
 
+test('fetchPolymarketPositionSummary confirms inferred raw-sized authenticated balances on chain', async () => {
+  const calls = [];
+  const summary = await fetchPolymarketPositionSummary({
+    market: {
+      marketId: 'poly-cond-1',
+      yesTokenId: '101',
+      noTokenId: '202',
+      yesPct: 55,
+      noPct: 45,
+    },
+    walletAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    privateKey: `0x${'1'.repeat(64)}`,
+    client: {
+      getBalanceAllowance: async ({ token_id }) => {
+        calls.push(['getBalanceAllowance', token_id]);
+        if (token_id === '101') return { balance: '50000000' };
+        if (token_id === '202') return { balance: '250000000' };
+        throw new Error(`unexpected token ${token_id}`);
+      },
+      getOpenOrders: async (query) => {
+        calls.push(['getOpenOrders', query]);
+        return [];
+      },
+    },
+    publicClient: {
+      readContract: async ({ args }) => {
+        const tokenId = args[1].toString();
+        calls.push(['readContract', tokenId]);
+        if (tokenId === '101') return 50000000n;
+        if (tokenId === '202') return 250000000n;
+        throw new Error(`unexpected token ${tokenId}`);
+      },
+    },
+  });
+
+  assert.equal(summary.yesBalance, 50);
+  assert.equal(summary.noBalance, 250);
+  assert.equal(summary.source.balances, 'mixed');
+  assert.equal(summary.balances.yes.source, 'on-chain');
+  assert.equal(summary.balances.no.source, 'on-chain');
+  assert.match(
+    summary.diagnostics.join('\n'),
+    /Normalized 2 authenticated Polymarket balance entries from raw base units using on-chain confirmation\./,
+  );
+  assert.deepEqual(calls, [
+    ['getBalanceAllowance', '101'],
+    ['getBalanceAllowance', '202'],
+    ['getOpenOrders', { market: 'poly-cond-1' }],
+    ['readContract', '101'],
+    ['readContract', '202'],
+  ]);
+});
+
 test('resolvePolymarketMarket scans deep pagination for selector matches', async () => {
   const pages = [
     {
@@ -5730,6 +5783,124 @@ test('runMirrorSync adopts existing Polymarket inventory when requested', async 
     assert.equal(payload.state.currentHedgeShares, -3);
     assert.equal(payload.state.currentHedgeUsdc, -3);
     assert.equal(payload.diagnostics.some((entry) => entry.code === 'POLYMARKET_INVENTORY_ADOPTED'), true);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runMirrorSync adopts raw-sized authenticated balances in share units', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-sync-adopt-raw-sized-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+
+  const verifyPayload = {
+    matchConfidence: 0.99,
+    gateResult: {
+      ok: true,
+      failedChecks: [],
+      checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+    },
+    sourceMarket: {
+      source: 'polymarket',
+      marketId: 'poly-cond-1',
+      slug: 'poly-slug-1',
+      yesPct: 55,
+      yesTokenId: '101',
+      noTokenId: '202',
+    },
+    pandora: {
+      yesPct: 55,
+      reserveYes: 5,
+      reserveNo: 5,
+    },
+    expiry: { minTimeToExpirySec: 7200 },
+  };
+
+  try {
+    const payload = await runMirrorSync(
+      {
+        mode: 'once',
+        indexerUrl: 'https://example.invalid/graphql',
+        timeoutMs: 1000,
+        pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        polymarketMarketId: 'poly-cond-1',
+        polymarketSlug: 'poly-slug-1',
+        executeLive: true,
+        trustDeploy: false,
+        hedgeEnabled: false,
+        hedgeRatio: 1,
+        hedgeScope: 'total',
+        adoptExistingPositions: true,
+        intervalMs: 1000,
+        driftTriggerBps: 10000,
+        hedgeTriggerUsdc: 1000,
+        maxRebalanceUsdc: 25,
+        maxHedgeUsdc: 50,
+        maxOpenExposureUsdc: 500,
+        maxTradesPerDay: 10,
+        cooldownMs: 1000,
+        depthSlippageBps: 100,
+        stateFile,
+        killSwitchFile,
+        rpcUrl: 'https://rpc.example',
+        polymarketHost: 'https://clob.polymarket.com',
+        funder: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
+      {
+        verifyFn: async () => verifyPayload,
+        positionSummaryFn: async () =>
+          fetchPolymarketPositionSummary({
+            source: 'auto',
+            walletAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            market: {
+              marketId: 'poly-cond-1',
+              slug: 'poly-slug-1',
+              yesTokenId: '101',
+              noTokenId: '202',
+              yesPct: 55,
+              noPct: 45,
+            },
+            privateKey: `0x${'1'.repeat(64)}`,
+            client: {
+              getBalanceAllowance: async ({ token_id }) => {
+                if (token_id === '101') return { balance: '50000000' };
+                if (token_id === '202') return { balance: '250000000' };
+                throw new Error(`unexpected token ${token_id}`);
+              },
+              getOpenOrders: async () => [],
+            },
+            publicClient: {
+              readContract: async ({ args }) => {
+                const tokenId = args[1].toString();
+                if (tokenId === '101') return 50000000n;
+                if (tokenId === '202') return 250000000n;
+                throw new Error(`unexpected token ${tokenId}`);
+              },
+            },
+          }),
+        depthFn: async () => ({
+          depthWithinSlippageUsd: 1000,
+          yesDepth: { depthUsd: 1000, depthShares: 2000, referencePrice: 0.55, midPrice: 0.55, worstPrice: 0.56 },
+          noDepth: { depthUsd: 1000, depthShares: 2000, referencePrice: 0.45, midPrice: 0.45, worstPrice: 0.46 },
+        }),
+        rebalanceFn: async () => ({ ok: true }),
+        readPandoraReserveContext: async () => ({
+          source: 'onchain:outcome-token-balances',
+          reserveYesUsdc: 5,
+          reserveNoUsdc: 5,
+          pandoraYesPct: 55,
+          feeTier: 3000,
+          readAt: '2026-03-01T10:00:00.000Z',
+        }),
+      },
+    );
+
+    assert.equal(payload.state.accounting.managedInventorySeed.totalYesShares, 50);
+    assert.equal(payload.state.accounting.managedInventorySeed.totalNoShares, 250);
+    assert.equal(payload.state.accounting.managedPolymarketYesShares, 50);
+    assert.equal(payload.state.accounting.managedPolymarketNoShares, 250);
+    assert.equal(payload.state.currentHedgeShares, -200);
+    assert.equal(payload.state.currentHedgeUsdc, -200);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

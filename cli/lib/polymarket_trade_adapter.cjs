@@ -1669,18 +1669,106 @@ function formatPositionBalance(rawValue, decimals = DEFAULT_POLYMARKET_POSITION_
   return Number.isFinite(numeric) ? round(numeric, normalizedDecimals) : null;
 }
 
-function normalizePositionBalanceEntry(rawValue, fallbackSource = null, fallbackTokenId = null) {
+function extractPositionRawBalanceValue(value) {
+  const entry = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  return toStringOrNull(
+    entry &&
+      (entry.balanceRaw ||
+        entry.balance_raw ||
+        entry.rawBalance ||
+        entry.raw_balance ||
+        entry.sizeRaw ||
+        entry.size_raw ||
+        entry.amountRaw ||
+        entry.amount_raw ||
+        entry.quantityRaw ||
+        entry.quantity_raw ||
+        entry.positionRaw ||
+        entry.position_raw ||
+        entry.currentSizeRaw ||
+        entry.current_size_raw ||
+        entry.raw),
+  ) || (typeof value === 'bigint' ? value.toString() : null);
+}
+
+function deriveImplicitRawBalanceText(value, decimals = DEFAULT_POLYMARKET_POSITION_DECIMALS) {
+  const normalizedDecimals = Number.isInteger(decimals) && decimals >= 0 ? decimals : DEFAULT_POLYMARKET_POSITION_DECIMALS;
+  const scale = 10 ** normalizedDecimals;
+  const numeric = toOptionalNumber(value);
+  if (numeric !== null && Number.isFinite(numeric) && Number.isInteger(numeric) && Math.abs(numeric) >= scale) {
+    return Math.trunc(numeric).toString();
+  }
+
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || !/^-?\d+$/.test(text)) return null;
+  const raw = toBigIntOrNull(text);
+  if (raw === null) return null;
+  const minimum = 10n ** BigInt(normalizedDecimals);
+  return raw < 0n ? (-raw >= minimum ? raw.toString() : null) : raw >= minimum ? raw.toString() : null;
+}
+
+function shouldUseImplicitRawBalance(candidateBalance, scaledBalance, hints = {}) {
+  if (candidateBalance === null || scaledBalance === null) return false;
+
+  const sourceHint = normalizeText(hints.sourceHint);
+  const price = toPrice01(hints.price);
+  const estimatedValueUsd = toOptionalNumber(hints.estimatedValueUsd);
+
+  if (price !== null && estimatedValueUsd !== null) {
+    const directEstimate = round(candidateBalance * price, 6);
+    const scaledEstimate = round(scaledBalance * price, 6);
+    const tolerance = Math.max(0.01, Math.abs(estimatedValueUsd) * 0.01);
+    if (
+      Math.abs(scaledEstimate - estimatedValueUsd) <= tolerance
+      && Math.abs(directEstimate - estimatedValueUsd) > tolerance * 10
+    ) {
+      return true;
+    }
+  }
+
+  if (sourceHint === 'api' && price !== null && Math.abs(candidateBalance) >= 10_000_000) {
+    return true;
+  }
+
+  return sourceHint === 'authenticated-clob' && Math.abs(candidateBalance) >= 10_000_000;
+}
+
+function normalizePositionBalanceEntry(rawValue, fallbackSource = null, fallbackTokenId = null, hints = {}) {
   const entry = rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue) ? rawValue : null;
   const tokenId = toStringOrNull(entry && entry.tokenId) || fallbackTokenId || null;
   const source = toStringOrNull(entry && entry.source) || fallbackSource || null;
   const decimals = toIntegerOrNull(entry && entry.decimals) || DEFAULT_POLYMARKET_POSITION_DECIMALS;
-  const rawBalance =
-    toStringOrNull(entry && entry.balanceRaw)
-    || toStringOrNull(entry && entry.raw)
-    || (typeof rawValue === 'bigint' ? rawValue.toString() : null);
+  let rawBalance = extractPositionRawBalanceValue(rawValue);
   let balance = toOptionalNumber(entry && entry.balance !== undefined ? entry.balance : rawValue);
-  if (balance === null && rawBalance !== null) {
-    balance = formatPositionBalance(rawBalance, decimals);
+  if (rawBalance !== null) {
+    const formattedRaw = formatPositionBalance(rawBalance, decimals);
+    if (formattedRaw !== null) {
+      balance = formattedRaw;
+    }
+  } else if (balance !== null) {
+    const implicitRawBalance = deriveImplicitRawBalanceText(entry && entry.balance !== undefined ? entry.balance : rawValue, decimals);
+    const scaledBalance = implicitRawBalance === null ? null : formatPositionBalance(implicitRawBalance, decimals);
+    if (
+      implicitRawBalance !== null
+      && shouldUseImplicitRawBalance(balance, scaledBalance, {
+        sourceHint: hints.sourceHint || (entry && entry.normalizationSourceHint) || source,
+        price:
+          hints.price !== undefined
+            ? hints.price
+            : entry && Object.prototype.hasOwnProperty.call(entry, 'price')
+              ? entry.price
+              : null,
+        estimatedValueUsd:
+          hints.estimatedValueUsd !== undefined
+            ? hints.estimatedValueUsd
+            : entry && Object.prototype.hasOwnProperty.call(entry, 'estimatedValueUsd')
+              ? entry.estimatedValueUsd
+              : null,
+      })
+    ) {
+      rawBalance = implicitRawBalance;
+      balance = scaledBalance;
+    }
   }
 
   return {
@@ -1931,16 +2019,27 @@ function extractPositionConditionId(row) {
   );
 }
 
-function extractPositionBalance(row) {
-  return toOptionalNumber(
-    row &&
-      (row.size ||
-        row.balance ||
-        row.amount ||
-        row.quantity ||
-        row.position ||
-        row.currentSize ||
-        row.current_size),
+function extractPositionBalance(row, hints = {}) {
+  return normalizePositionBalanceEntry(
+    {
+      balance:
+        row &&
+        (row.size ||
+          row.balance ||
+          row.amount ||
+          row.quantity ||
+          row.position ||
+          row.currentSize ||
+          row.current_size),
+      balanceRaw: extractPositionRawBalanceValue(row),
+      source: hints.source || null,
+      normalizationSourceHint: hints.sourceHint || null,
+      price: hints.price,
+      estimatedValueUsd: hints.estimatedValueUsd,
+    },
+    hints.source || null,
+    hints.tokenId || null,
+    hints,
   );
 }
 
@@ -2002,6 +2101,21 @@ function inferMarketTokenIdForOutcome(market, outcome) {
   if (normalizedOutcome === 'no') {
     return toStringOrNull(market.noTokenId);
   }
+  return null;
+}
+
+function inferMarketPriceForToken(market, tokenId, outcome = null) {
+  const normalizedTokenId = normalizeText(tokenId);
+  const normalizedOutcome = normalizeText(outcome);
+  if (!market) return null;
+  if (normalizedTokenId && normalizeText(market.yesTokenId) === normalizedTokenId) {
+    return toPrice01(market.yesPct);
+  }
+  if (normalizedTokenId && normalizeText(market.noTokenId) === normalizedTokenId) {
+    return toPrice01(market.noPct);
+  }
+  if (normalizedOutcome === 'yes') return toPrice01(market.yesPct);
+  if (normalizedOutcome === 'no') return toPrice01(market.noPct);
   return null;
 }
 
@@ -2218,9 +2332,16 @@ async function fetchPolymarketPositionInventory(options = {}) {
           continue;
         }
         if (!tokenId && !conditionId) continue;
-        const balance = extractPositionBalance(row);
         const price = extractPositionPrice(row);
         const estimatedValueUsd = extractPositionEstimatedValue(row);
+        const balanceEntry = extractPositionBalance(row, {
+          source: 'api',
+          sourceHint: 'api',
+          tokenId,
+          price,
+          estimatedValueUsd,
+        });
+        const balance = balanceEntry.balance;
         const entry = {
           tokenId,
           marketId: toStringOrNull(conditionId || (market && market.marketId)),
@@ -2229,8 +2350,8 @@ async function fetchPolymarketPositionInventory(options = {}) {
           question: toStringOrNull(row && (row.question || row.title || (market && market.question))),
           outcome,
           balance: balance === null ? null : round(balance, 6),
-          balanceRaw: null,
-          decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+          balanceRaw: balanceEntry.balanceRaw,
+          decimals: balanceEntry.decimals,
           price: price,
           estimatedValueUsd:
             estimatedValueUsd !== null
@@ -2280,7 +2401,22 @@ async function fetchPolymarketPositionInventory(options = {}) {
             `Polymarket getBalanceAllowance(${tokenId})`,
           );
           if (!responseContainsError(response) && response && response.balance !== undefined) {
-            const balance = toOptionalNumber(response.balance);
+            const normalizedBalance = normalizePositionBalanceEntry(
+              {
+                tokenId,
+                source: 'authenticated-clob',
+                normalizationSourceHint: 'authenticated-clob',
+                balance: response.balance,
+                balanceRaw: extractPositionRawBalanceValue(response),
+                decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+              },
+              'authenticated-clob',
+              tokenId,
+              {
+                sourceHint: 'authenticated-clob',
+                price: inferMarketPriceForToken(market, tokenId),
+              },
+            );
             const key = tokenId;
             const entry = positionsByToken.get(key) || {
               tokenId,
@@ -2293,11 +2429,12 @@ async function fetchPolymarketPositionInventory(options = {}) {
               source: 'authenticated-clob',
               fieldSources: {},
             };
-            entry.balance = balance === null ? null : round(balance, 6);
-            entry.balanceRaw = entry.balanceRaw || null;
+            entry.balance = normalizedBalance.balance === null ? null : round(normalizedBalance.balance, 6);
+            entry.balanceRaw = normalizedBalance.balanceRaw;
+            entry.decimals = normalizedBalance.decimals;
             entry.fieldSources = {
               ...(entry.fieldSources || {}),
-              balance: balance === null ? null : 'authenticated-clob',
+              balance: entry.balance === null ? null : 'authenticated-clob',
             };
             if (entry.price === undefined) {
               entry.price = null;
@@ -2783,6 +2920,7 @@ async function fetchPolymarketPositionSummary(options = {}) {
   let openOrdersSource = null;
   let balancesByToken = null;
   let openOrders = null;
+  const suspiciousAuthenticatedBalanceCandidates = new Map();
 
   if (allowApiLookup) {
     if (!privateKey) {
@@ -2831,15 +2969,33 @@ async function fetchPolymarketPositionSummary(options = {}) {
               return;
             }
             if (response && response.balance !== undefined) {
-              apiBalancesByToken[tokenId] = {
+              const explicitRawBalance = extractPositionRawBalanceValue(response);
+              const normalizedBalance = normalizePositionBalanceEntry(
+                {
+                  tokenId,
+                  source: 'api',
+                  normalizationSourceHint: 'authenticated-clob',
+                  balance: response.balance,
+                  balanceRaw: explicitRawBalance,
+                  decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
+                },
+                'api',
                 tokenId,
+                {
+                  sourceHint: 'authenticated-clob',
+                  price: sideLabel === 'YES' ? baseSummary.yesPrice : baseSummary.noPrice,
+                },
+              );
+              apiBalancesByToken[tokenId] = {
+                ...normalizedBalance,
                 source: 'api',
-                balance: response.balance,
-                balanceRaw: toStringOrNull(response.rawBalance || response.balanceRaw),
-                decimals: DEFAULT_POLYMARKET_POSITION_DECIMALS,
                 readOk: true,
                 error: null,
               };
+              const implicitRawBalance = explicitRawBalance ? null : deriveImplicitRawBalanceText(response.balance);
+              if (implicitRawBalance && String(normalizedBalance.balanceRaw || '') === String(implicitRawBalance)) {
+                suspiciousAuthenticatedBalanceCandidates.set(tokenId, implicitRawBalance);
+              }
             } else {
               diagnostics.push(`${sideLabel} balance response missing balance field.`);
             }
@@ -2906,12 +3062,16 @@ async function fetchPolymarketPositionSummary(options = {}) {
     }
   }
 
-  if (allowOnchainLookup && !balancesByToken) {
+  if (allowOnchainLookup && (!balancesByToken || suspiciousAuthenticatedBalanceCandidates.size > 0)) {
     const publicClient = options.publicClient || null;
     if (!publicClient) {
-      diagnostics.push('RPC client unavailable; skipping on-chain CTF balance lookup.');
+      if (!balancesByToken) {
+        diagnostics.push('RPC client unavailable; skipping on-chain CTF balance lookup.');
+      }
     } else if (!walletAddress) {
-      diagnostics.push('Wallet address unavailable; skipping on-chain CTF balance lookup.');
+      if (!balancesByToken) {
+        diagnostics.push('Wallet address unavailable; skipping on-chain CTF balance lookup.');
+      }
     } else {
       const onchainBalances = {};
       const yesBalance = await readOnchainPositionBalance({
@@ -2940,9 +3100,32 @@ async function fetchPolymarketPositionSummary(options = {}) {
         diagnostics.push(`NO on-chain balance lookup failed: ${noBalance.error}`);
       }
 
-      if (Object.keys(onchainBalances).length) {
+      if (!balancesByToken && Object.keys(onchainBalances).length) {
         balancesByToken = onchainBalances;
         balanceSource = 'on-chain';
+      } else if (balancesByToken && suspiciousAuthenticatedBalanceCandidates.size > 0) {
+        let replacedCount = 0;
+        for (const [tokenId, expectedRawBalance] of suspiciousAuthenticatedBalanceCandidates.entries()) {
+          const onchainEntry = Object.prototype.hasOwnProperty.call(onchainBalances, tokenId)
+            ? onchainBalances[tokenId]
+            : null;
+          if (
+            !onchainEntry
+            || !onchainEntry.readOk
+            || !onchainEntry.balanceRaw
+            || String(onchainEntry.balanceRaw) !== String(expectedRawBalance)
+          ) {
+            continue;
+          }
+          balancesByToken[tokenId] = onchainEntry;
+          replacedCount += 1;
+        }
+        if (replacedCount > 0) {
+          balanceSource = balanceSource === 'api' ? 'mixed' : balanceSource || 'mixed';
+          diagnostics.push(
+            `Normalized ${replacedCount} authenticated Polymarket balance ${replacedCount === 1 ? 'entry' : 'entries'} from raw base units using on-chain confirmation.`,
+          );
+        }
       }
     }
   }
