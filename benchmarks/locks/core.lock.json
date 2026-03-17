@@ -32,7 +32,7 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "db78e40057e3f231880214dd1ac6945ad4153d37df86118a188ef32086a96885",
-      "trustDistributionHash": "39675b90c7bf83ee4e517f34810f978ec706959de8200e2ea25c494839e5b6ef"
+      "trustDistributionHash": "236a6e22fc037961548512891de3fedc13f0cfca1e1480b4ed41d9d1516a125c"
     },
     "generatedManifestVersion": "1.0.0",
     "registryDigest": {
@@ -51,11 +51,11 @@
     "schemaHash": "3d2ead2da140c75fab772372df955720e72ce72bb25fac39137cf666362a51c3"
   },
   "publication": {
-    "contractLockHash": "121891bd45acd17003303c3620f7cdbd44ce17c58b767e74b596d3ddf0735fc4",
+    "contractLockHash": "2b9131821da60b4f4ff9b585262e39904c20e041796e5c2ab40d1a03c0837227",
     "deterministic": true,
     "grade": "release-grade",
     "kind": "benchmark-contract-lock",
-    "lockDocumentHash": "9bf51dfd7e6f74575aab6e64197787314364bbd921fc8061e67ece1a96f79fea",
+    "lockDocumentHash": "e648bfaea7cfcc7c852d325d7c518b128bce407d01e8e23f404bfb71fe0e359d",
     "suiteLockPath": "benchmarks/locks/core.lock.json"
   },
   "schemaVersion": "1.0.0",

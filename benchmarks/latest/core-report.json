@@ -32,7 +32,7 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "db78e40057e3f231880214dd1ac6945ad4153d37df86118a188ef32086a96885",
-      "trustDistributionHash": "39675b90c7bf83ee4e517f34810f978ec706959de8200e2ea25c494839e5b6ef"
+      "trustDistributionHash": "236a6e22fc037961548512891de3fedc13f0cfca1e1480b4ed41d9d1516a125c"
     },
     "generatedManifestVersion": "1.0.0",
     "registryDigest": {
@@ -284,7 +284,7 @@
     ]
   },
   "publication": {
-    "contractLockHash": "121891bd45acd17003303c3620f7cdbd44ce17c58b767e74b596d3ddf0735fc4",
+    "contractLockHash": "2b9131821da60b4f4ff9b585262e39904c20e041796e5c2ab40d1a03c0837227",
     "contractLockStatus": "locked",
     "deterministic": true,
     "expectedScenarioCount": 19,
@@ -293,8 +293,8 @@
     "minimumWeightedScore": 95,
     "releaseGatePass": true,
     "reportPath": "benchmarks/latest/core-report.json",
-    "scorecardHash": "c2cef829f49a2fdb2ab1588b517ca95cd2689608b7b613fcfd893398a7e7ea9c",
-    "suiteLockHash": "72d8af93f42ede5b0443c991d6694d580e25c027aa6ffde0930b9fecd3271470",
+    "scorecardHash": "a297acf00547273e7e6378f925e6a03462579c6809aa075450aa90233ce630fb",
+    "suiteLockHash": "4e58775a01d8dceb8bb746c5d348130423858ddb77d90f0bc3a525ffac22e90d",
     "suiteLockPath": "benchmarks/locks/core.lock.json"
   },
   "runtime": {
