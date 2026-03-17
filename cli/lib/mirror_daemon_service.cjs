@@ -15,6 +15,20 @@ const SENSITIVE_CLI_FLAGS = new Set([
   '--discord-webhook-url',
   '--webhook-template',
 ]);
+const DAEMON_IDENTITY_VALUE_FLAGS = new Set([
+  '--pandora-market-address',
+  '--market-address',
+  '--polymarket-market-id',
+  '--polymarket-slug',
+  '--state-file',
+  '--kill-switch-file',
+  '--strategy-hash',
+  '--pid-file',
+]);
+const DAEMON_IDENTITY_BOOLEAN_FLAGS = new Set([
+  '--paper',
+  '--execute-live',
+]);
 
 function createServiceError(code, message, details = undefined) {
   const err = new Error(message);
@@ -143,19 +157,31 @@ function readProcessCommandLine(pid) {
 
 function buildIdentityTokens(metadata = {}, pidFile = null) {
   const tokens = [];
-  const strategyHash = String(metadata.strategyHash || '').trim().toLowerCase();
-  if (strategyHash) tokens.push(strategyHash);
-  const normalizedPidFile = String(pidFile || metadata.pidFile || '').trim();
-  if (normalizedPidFile) {
-    tokens.push(path.basename(normalizedPidFile).toLowerCase());
-    tokens.push('--pid-file');
+  const cliPath = String(metadata.cliPath || '').trim();
+  if (cliPath) {
+    tokens.push(path.basename(cliPath).toLowerCase());
   }
   if (Array.isArray(metadata.cliArgs) && metadata.cliArgs.length) {
     const normalizedArgs = metadata.cliArgs.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean);
     if (normalizedArgs.includes('mirror')) tokens.push('mirror');
     if (normalizedArgs.includes('sync')) tokens.push('sync');
     if (normalizedArgs.includes('run')) tokens.push('run');
-    if (normalizedArgs.includes('--strategy-hash')) tokens.push('--strategy-hash');
+    for (let index = 0; index < normalizedArgs.length; index += 1) {
+      const token = normalizedArgs[index];
+      if (DAEMON_IDENTITY_BOOLEAN_FLAGS.has(token)) {
+        tokens.push(token);
+        continue;
+      }
+      if (!DAEMON_IDENTITY_VALUE_FLAGS.has(token)) continue;
+      tokens.push(token);
+      const next = normalizedArgs[index + 1];
+      if (!next || next.startsWith('--')) continue;
+      if (token === '--state-file' || token === '--kill-switch-file' || token === '--pid-file') {
+        tokens.push(path.basename(next));
+        continue;
+      }
+      tokens.push(next);
+    }
   }
   if (!tokens.length && typeof metadata.launchCommand === 'string' && metadata.launchCommand.trim()) {
     tokens.push('mirror', 'sync', 'run');
