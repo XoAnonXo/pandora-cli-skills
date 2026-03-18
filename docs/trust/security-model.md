@@ -158,10 +158,12 @@ These controls help consumers verify that release artifacts came from the expect
 ## Benchmarks and release gates
 
 Pandora treats agent readiness as a release surface.
-- build, prepack, and test wire benchmark, generated SDK, docs, and trust checks together
+- the repository uses a verify-once, pack-once, publish-tarball release model
+- repo verification is concentrated in `verify:repo`, `verify:tests`, `release:verify`, and `release:prep`
 - parity failures can zero the benchmark headline score
-- in the source tree, `release:prep` runs packaged-surface smoke checks, `benchmark:check`, regenerates both CycloneDX and SPDX SBOMs, and then runs release-trust checks
-- in the published package, `release:prep` is narrowed to shipped verification only: `benchmark:check`, SBOM generation, and release-trust checks
+- in the source tree, `release:verify` runs the repo verification surface once, and `release:prep` layers SBOM generation plus release-trust and release-drift checks on top
+- `prepack` is packaging-only: it prepares the publish-safe manifest and `postpack` restores the repository manifest after the tarball is built
+- smoke uses manifest prep plus `npm pack --ignore-scripts` so it validates packaged output without recursively re-entering release hooks
 - the tagged GitHub release workflow is gated on Linux/macOS/Windows validation before packaging release assets
 
 This does not guarantee perfect safety for every deployment. It does guarantee that the published contract, generated SDKs, and benchmark pack are checked together before release.

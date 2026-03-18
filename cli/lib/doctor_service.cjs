@@ -211,25 +211,33 @@ function createDoctorService(deps = {}) {
     }
   }
 
-  function hasPolymarketDoctorInputs() {
-    return polymarketDoctorKeys.some((key) => String(process.env[key] || '').trim().length > 0);
+  function getEnvValue(env, key) {
+    if (env && Object.prototype.hasOwnProperty.call(env, key)) {
+      return env[key];
+    }
+    return process.env[key];
   }
 
-  function validateEnvValues(goal) {
+  function hasPolymarketDoctorInputs(env) {
+    return polymarketDoctorKeys.some((key) => String(getEnvValue(env, key) || '').trim().length > 0);
+  }
+
+  function validateEnvValues(goal, env) {
     const goalRequirements = buildGoalRequirements(goal);
     const requiredKeys = goalRequirements.goal ? goalRequirements.requiredEnv : requiredEnvKeys;
     const missing = requiredKeys.filter((key) => {
       if (key === 'PRIVATE_KEY') {
-        const primary = String(process.env.PANDORA_PRIVATE_KEY || '').trim();
-        const legacy = String(process.env.PRIVATE_KEY || '').trim();
+        const primary = String(getEnvValue(env, 'PANDORA_PRIVATE_KEY') || '').trim();
+        const legacy = String(getEnvValue(env, 'PRIVATE_KEY') || '').trim();
         return !primary && !legacy;
       }
-      return !process.env[key] || !String(process.env[key]).trim();
+      const value = getEnvValue(env, key);
+      return !value || !String(value).trim();
     });
     const missingSet = new Set(missing);
     const errors = [];
 
-    const chainIdRaw = String(process.env.CHAIN_ID || '').trim();
+    const chainIdRaw = String(getEnvValue(env, 'CHAIN_ID') || '').trim();
     let chainId = null;
     if (!missingSet.has('CHAIN_ID')) {
       chainId = Number(chainIdRaw);
@@ -240,12 +248,12 @@ function createDoctorService(deps = {}) {
       }
     }
 
-    const rpcUrl = String(process.env.RPC_URL || '').trim();
+    const rpcUrl = String(getEnvValue(env, 'RPC_URL') || '').trim();
     if (!missingSet.has('RPC_URL') && !isSecureHttpUrlOrLocal(rpcUrl)) {
       errors.push(`RPC_URL must use https:// (or http://localhost/127.0.0.1 for local testing). Received: "${rpcUrl}"`);
     }
 
-    const privateKey = String(process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY || '').trim();
+    const privateKey = String(getEnvValue(env, 'PANDORA_PRIVATE_KEY') || getEnvValue(env, 'PRIVATE_KEY') || '').trim();
     if (requiredKeys.includes('PRIVATE_KEY') && !missingSet.has('PRIVATE_KEY') && !isValidPrivateKey(privateKey)) {
       errors.push(
         'PANDORA_PRIVATE_KEY (preferred) or PRIVATE_KEY must be a full 32-byte hex key (0x + 64 hex chars), not a placeholder.',
@@ -256,7 +264,7 @@ function createDoctorService(deps = {}) {
       if (!requiredKeys.includes(key)) {
         continue;
       }
-      const value = String(process.env[key] || '').trim();
+      const value = String(getEnvValue(env, key) || '').trim();
       if (missingSet.has(key)) {
         continue;
       }
@@ -275,9 +283,9 @@ function createDoctorService(deps = {}) {
       chainId,
       rpcUrl,
       addresses: {
-        ORACLE: String(process.env.ORACLE || '').trim(),
-        FACTORY: String(process.env.FACTORY || '').trim(),
-        USDC: String(process.env.USDC || '').trim(),
+        ORACLE: String(getEnvValue(env, 'ORACLE') || '').trim(),
+        FACTORY: String(getEnvValue(env, 'FACTORY') || '').trim(),
+        USDC: String(getEnvValue(env, 'USDC') || '').trim(),
       },
     };
   }
@@ -299,9 +307,13 @@ function createDoctorService(deps = {}) {
       loadEnvFile(options.envFile);
     }
 
+    const runtimeEnv = {
+      ...process.env,
+      ...(options.env && typeof options.env === 'object' ? options.env : {}),
+    };
     const goalRequirements = buildGoalRequirements(options.goal);
-    const envState = validateEnvValues(goalRequirements.goal);
-    const shouldCheckPolymarket = options.checkPolymarket || goalRequirements.needPolymarketCheck || (!goalRequirements.goal && hasPolymarketDoctorInputs());
+    const envState = validateEnvValues(goalRequirements.goal, runtimeEnv);
+    const shouldCheckPolymarket = options.checkPolymarket || goalRequirements.needPolymarketCheck || (!goalRequirements.goal && hasPolymarketDoctorInputs(runtimeEnv));
     const report = {
       goal: goalRequirements.goal,
       env: {
@@ -326,7 +338,7 @@ function createDoctorService(deps = {}) {
       },
       rpc: {
         ok: false,
-        url: String(process.env.RPC_URL || '').trim(),
+        url: String(getEnvValue(runtimeEnv, 'RPC_URL') || '').trim(),
         chainIdHex: null,
         chainId: null,
         expectedChainId: Number.isInteger(envState.chainId) ? envState.chainId : null,
@@ -336,8 +348,8 @@ function createDoctorService(deps = {}) {
       codeChecks: [],
       polymarket: {
         checked: shouldCheckPolymarket,
-        host: String(process.env.POLYMARKET_HOST || defaultPolymarketHost).trim() || defaultPolymarketHost,
-        rpcUrl: String(process.env.POLYMARKET_RPC_URL || defaultPolymarketRpcUrl).trim() || defaultPolymarketRpcUrl,
+        host: String(getEnvValue(runtimeEnv, 'POLYMARKET_HOST') || defaultPolymarketHost).trim() || defaultPolymarketHost,
+        rpcUrl: String(getEnvValue(runtimeEnv, 'POLYMARKET_RPC_URL') || defaultPolymarketRpcUrl).trim() || defaultPolymarketRpcUrl,
         hostReachability: {
           ok: null,
           status: null,
@@ -453,9 +465,9 @@ function createDoctorService(deps = {}) {
       try {
         polyCheck = await runPolymarketCheck({
           rpcUrl: report.polymarket.rpcUrl,
-          privateKey: process.env.POLYMARKET_PRIVATE_KEY || null,
-          funder: process.env.POLYMARKET_FUNDER || null,
-          host: process.env.POLYMARKET_HOST || defaultPolymarketHost,
+          privateKey: getEnvValue(runtimeEnv, 'POLYMARKET_PRIVATE_KEY') || null,
+          funder: getEnvValue(runtimeEnv, 'POLYMARKET_FUNDER') || null,
+          host: getEnvValue(runtimeEnv, 'POLYMARKET_HOST') || defaultPolymarketHost,
         });
         report.polymarket.check = polyCheck;
       } catch (err) {
@@ -522,7 +534,7 @@ function createDoctorService(deps = {}) {
       report.summary.warningCount += report.polymarket.warnings.length;
     }
     if (goalRequirements.needResolutionSources) {
-      const rawResolutionSources = String(process.env.PANDORA_RESOLUTION_SOURCES || '').trim();
+      const rawResolutionSources = String(getEnvValue(runtimeEnv, 'PANDORA_RESOLUTION_SOURCES') || '').trim();
       if (rawResolutionSources) {
         const resolutionSources = normalizeResolutionSources([rawResolutionSources]);
         if (resolutionSources.length < 2) {

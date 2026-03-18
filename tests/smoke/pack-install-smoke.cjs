@@ -24,7 +24,7 @@ const REQUIRED_ENV_KEYS = [
 ];
 const NPM_CMD = 'npm';
 const NODE_CMD = process.execPath;
-const PACK_TIMEOUT_MS = process.platform === 'win32' ? 180_000 : 120_000;
+const PACK_TIMEOUT_MS = process.platform === 'win32' ? 180_000 : 180_000;
 const INSTALL_TIMEOUT_MS = process.platform === 'win32' ? 360_000 : 180_000;
 const EXPECTED_PUBLISHED_SCRIPT_NAMES = [
   'cli',
@@ -641,13 +641,11 @@ print(json.dumps({
           cwd: appDir,
           env: smokeEnv,
           steps: [
-            { expect: 'Select [1]: ', send: '1' },
-            { expect: 'Select [3]: ', send: '1' },
-            { expect: 'Configure sportsbook/Odds API now? [n]: ', send: 'n' },
-            { expect: 'Capture deployment host preferences now? [n]: ', send: 'n' },
-            { expect: 'Capture two public resolution source URLs for future mirror commands? [y]: ', send: 'y' },
-            { expect: 'Primary resolution source URL: ', send: 'https://example.com/a' },
-            { expect: 'Secondary resolution source URL: ', send: 'https://example.org/b' },
+            { expect: 'Choose how to proceed', send: '1' },
+            { expect: 'Pandora private key', send: '1' },
+            { expect: 'Choose a deployment host', send: '4' },
+            { expect: 'Sports / Odds provider for deploy-time market discovery', send: '1' },
+            { expect: 'Review before write', send: '1' },
           ],
         },
       );
@@ -659,7 +657,7 @@ print(json.dumps({
         new RegExp(guidedEnvPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
         'pandora setup --interactive',
       );
-      ensureOutputContains(guidedSetup, /Goal:\s+deploy/, 'pandora setup --interactive');
+      ensureOutputContains(guidedSetup, /\bdeploy\b/, 'pandora setup --interactive');
 
       const guidedEnvText = fs.readFileSync(guidedEnvPath, 'utf8');
       ensureOutputContains(

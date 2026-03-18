@@ -12,9 +12,11 @@ Use this when a CLI change must ship as one coherent release across every public
 This is the canonical release rule for the repository:
 
 1. edit the CLI and/or shared contract
-2. regenerate and verify derived surfaces
-3. tag once
-4. let the release workflow publish every surface from that tag
+2. verify once against the tagged source state
+3. pack once into a single npm tarball
+4. publish that tarball and the rest of the release bundle from the same tag
+
+This repository uses a verify-once, pack-once, publish-tarball model. The release workflow should not repack the tarball for npm, GitHub assets, or trust metadata. It should verify once, pack once, then publish the same tarball everywhere.
 
 Do not publish individual surfaces out of band unless you are recovering a failed release and have documented why.
 

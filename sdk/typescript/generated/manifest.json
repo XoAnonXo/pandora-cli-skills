@@ -79,7 +79,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.117"
+          "version": "1.1.118"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -281,7 +281,7 @@
   "commandCount": 169,
   "commandDescriptorVersion": "1.4.3",
   "contractCommandDescriptorVersion": "1.4.3",
-  "contractPackageVersion": "1.1.117",
+  "contractPackageVersion": "1.1.118",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
@@ -363,7 +363,7 @@
       "main": "cli/pandora.cjs",
       "name": "pandora-cli-skills",
       "sourceProjectPath": "package.json",
-      "version": "1.1.117"
+      "version": "1.1.118"
     },
     "typescript": {
       "artifactSubpaths": {
@@ -395,16 +395,16 @@
   },
   "registryDigest": {
     "canonicalHash": "9d638ee641f11a5ff7361b639583b7420341f9f222587e8f58cdf276a69bc8fb",
-    "commandDigestHash": "ee5de639f395701819d8d9fc5dc3818948a8bfaa1df05a306a219731046ed1a9",
-    "descriptorHash": "9debc047e6c66ce6d731d093f021f6a3d135a305cf9cf92e844354f42e4ee345",
-    "documentationHash": "d2d4e9db964af7bc887c1b55a3382dda91b49047d1202a2eb3587b869e487418",
-    "fullDescriptorHash": "77c429999fc406330b028b92639353180d4407cbe18354c492d6e2a92aaac31f",
+    "commandDigestHash": "9564533a14b7e91d875b13c19c7013c12cb1ed9be62f623cfdd3cc968abab68d",
+    "descriptorHash": "90dcf80002b5c0984348be09bb6205ac229b548b1c7736d57b71fcacbfe202cf",
+    "documentationHash": "4c328cfa22e022abcc5a1e95e03066938ff15056fd1f3be698f180369b1b8d89",
+    "fullDescriptorHash": "b9a5edce17b861b177746cbf7e04ae5907ec92a9a02e065d7328b1464b561773",
     "namespaceHash": "35a0e69c2f30bc8067d11ed5e75cfb3865d63bf662e001c15b0a7778e6b67ce7",
     "policyProfilesHash": "03fdebf46de42775b95e2b4a88c96c41d4c834a3285aa3c546cbf9e89f3efda5",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "db78e40057e3f231880214dd1ac6945ad4153d37df86118a188ef32086a96885",
-    "trustDistributionHash": "3b6d3fbb98e76a3454c9d6968852814a27e8b025f24fd9beaa903766ddc93540"
+    "trustDistributionHash": "0b53899744139a16ad45133bc66f0768075e4278bbd66d25e72681aae81ed680"
   },
   "schemaVersion": "1.0.0"
 }

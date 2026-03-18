@@ -51,6 +51,8 @@ const GENERATED_CONTRACT_GAP_COMMANDS = new Set([
   'arbitrage',
 ]);
 
+const ONBOARDING_CONTRACT_COMMANDS = new Set(['doctor', 'setup']);
+
 function walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const files = [];
@@ -92,6 +94,18 @@ function omitGeneratedGapDescriptors(descriptors) {
 
 function omitGeneratedGapToolDefinitions(definitions) {
   return definitions.filter((definition) => definition && !GENERATED_CONTRACT_GAP_COMMANDS.has(definition.name));
+}
+
+function omitOnboardingContractDescriptors(descriptors) {
+  const next = { ...descriptors };
+  for (const commandName of ONBOARDING_CONTRACT_COMMANDS) {
+    delete next[commandName];
+  }
+  return next;
+}
+
+function omitOnboardingContractToolDefinitions(definitions) {
+  return definitions.filter((definition) => definition && !ONBOARDING_CONTRACT_COMMANDS.has(definition.name));
 }
 
 function getCompositeBranches(schema, keyword) {
@@ -755,16 +769,16 @@ test('registry exposes the implemented batch-1 public surfaces and workflow alia
 
 test('generated descriptor and MCP tool slices stay in sync with the live registry builders', () => {
   assert.deepEqual(
-    normalizeCommandDescriptorsForParity(omitGeneratedGapDescriptors(generatedCommandDescriptors)),
-    normalizeCommandDescriptorsForParity(omitGeneratedGapDescriptors(buildCommandDescriptors())),
+    normalizeCommandDescriptorsForParity(omitOnboardingContractDescriptors(omitGeneratedGapDescriptors(generatedCommandDescriptors))),
+    normalizeCommandDescriptorsForParity(omitOnboardingContractDescriptors(omitGeneratedGapDescriptors(buildCommandDescriptors()))),
   );
   const compiled = buildSdkContractComponents({
     packageVersion: require('../../package.json').version,
     remoteTransportActive: false,
   });
   assert.deepEqual(
-    normalizeToolDefinitionsForParity(omitGeneratedGapToolDefinitions(generatedMcpToolDefinitions)),
-    normalizeToolDefinitionsForParity(omitGeneratedGapToolDefinitions(compiled.mcpToolDefinitions.slice().sort(sortByName))),
+    normalizeToolDefinitionsForParity(omitOnboardingContractToolDefinitions(omitGeneratedGapToolDefinitions(generatedMcpToolDefinitions))),
+    normalizeToolDefinitionsForParity(omitOnboardingContractToolDefinitions(omitGeneratedGapToolDefinitions(compiled.mcpToolDefinitions.slice().sort(sortByName)))),
   );
 });
 
@@ -973,6 +987,7 @@ test('shared agent contract registry normalizes MCP metadata defaults and alias 
 
     const doctorDescriptor = descriptors.doctor;
     assert.equal(doctorDescriptor.recommendedPreflightTool, null);
+    assert.match(doctorDescriptor.summary, /without writing/i);
     assert.match(doctorDescriptor.usage, /--goal <explore\|deploy\|paper-mirror\|live-mirror\|hosted-gateway>/);
     assert.equal(doctorDescriptor.inputSchema, null);
 
@@ -984,8 +999,14 @@ test('shared agent contract registry normalizes MCP metadata defaults and alias 
     assert.equal(capabilitiesDescriptor.executeIntentRequiredForLiveMode, false);
 
     const setupDescriptor = descriptors.setup;
+    assert.match(setupDescriptor.summary, /goal-first/i);
+    assert.match(setupDescriptor.summary, /review redacted changes/i);
     assert.match(setupDescriptor.usage, /--interactive/);
+    assert.match(setupDescriptor.usage, /--plan/);
     assert.match(setupDescriptor.usage, /--goal <explore\|deploy\|paper-mirror\|live-mirror\|hosted-gateway>/);
+    assert.deepEqual(setupDescriptor.agentWorkflow.requiredTools, ['doctor']);
+    assert.deepEqual(setupDescriptor.agentWorkflow.recommendedTools, ['init-env']);
+    assert.match(setupDescriptor.agentWorkflow.notes.join('\n'), /setup --plan --goal/i);
     assert.equal(setupDescriptor.inputSchema, null);
 
     const webhookTestDescriptor = descriptors['webhook.test'];

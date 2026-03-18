@@ -1228,9 +1228,11 @@ async function finalizeNonExecutableAction(params) {
     action.planning = buildActionPlanningTelemetry(snapshot);
   }
   snapshot.action = action;
-  actions.push(action);
   saveState(loadedFilePath, state);
   appendAuditEntries(loadedFilePath, buildMirrorAuditEntries(action));
+  if (Array.isArray(actions)) {
+    actions.push(action);
+  }
   if (sendWebhook) {
     const report = await sendWebhook({
       event: 'mirror.sync.trigger',

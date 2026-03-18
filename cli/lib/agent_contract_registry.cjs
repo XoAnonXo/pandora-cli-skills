@@ -816,17 +816,26 @@ const commandContracts = [
   }),
   commandContract({
     name: 'doctor',
-    summary: 'Run environment, goal, and connectivity diagnostics.',
+    summary: 'Run goal-aware environment and connectivity diagnostics without writing.',
     usage: 'pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]',
     emits: ['doctor', 'doctor.help'],
     dataSchema: '#/definitions/DoctorPayload',
   }),
   commandContract({
     name: 'setup',
-    summary: 'Write env file if needed, run doctor checks, and optionally guide first-run onboarding.',
-    usage: 'pandora [--output table|json] setup [--interactive] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]',
+    summary: 'Run the goal-first onboarding wizard, review redacted changes, then write env files and doctor checks.',
+    usage: 'pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]',
     emits: ['setup', 'setup.help'],
     dataSchema: '#/definitions/SetupPayload',
+    agentWorkflow: {
+      requiredTools: ['doctor'],
+      recommendedTools: ['init-env'],
+      notes: [
+        'Use `setup --plan --goal <goal>` for machine-readable onboarding steps and `doctor --goal <goal>` for non-writing validation.',
+        'Treat setup as the guided write path: ask for the goal first, then show a redacted review summary before any file changes.',
+        'Keep manual setup available through init-env plus doctor for operators who do not want prompts.',
+      ],
+    },
   }),
   commandContract({
     name: 'capabilities',

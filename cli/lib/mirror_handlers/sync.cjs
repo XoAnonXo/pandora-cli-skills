@@ -35,7 +35,14 @@ function normalizeMirrorRebalanceTradeOptions(executionOptions, runtimeOptions) 
 function buildMirrorSyncOperationResult(payload) {
   if (!payload || typeof payload !== 'object') return null;
   const actions = Array.isArray(payload.actions) ? payload.actions : [];
+  const snapshots = Array.isArray(payload.snapshots) ? payload.snapshots : [];
   const lastAction = actions.length ? actions[actions.length - 1] : null;
+  const latestSnapshotAction = snapshots.length
+    ? snapshots[snapshots.length - 1] && snapshots[snapshots.length - 1].action
+      ? snapshots[snapshots.length - 1].action
+      : null
+    : null;
+  const latestAction = latestSnapshotAction || lastAction;
   let lastRebalanceAction = null;
   for (let index = actions.length - 1; index >= 0; index -= 1) {
     const action = actions[index];
@@ -57,7 +64,7 @@ function buildMirrorSyncOperationResult(payload) {
     mode: payload.mode || null,
     executeLive: Boolean(payload.executeLive),
     actionCount: Number.isFinite(payload.actionCount) ? payload.actionCount : actions.length,
-    lastExecutionStatus: lastAction && lastAction.status ? lastAction.status : null,
+    lastExecutionStatus: latestAction && latestAction.status ? latestAction.status : null,
     rebalance:
       rebalanceAction && rebalanceAction.rebalance
         ? {

@@ -23,6 +23,7 @@ An official Pandora release currently has four trust layers:
 
 For current releases, checksum verification, GitHub attestation verification, and cosign verification are all expected verification steps.
 
+The release workflow follows a verify-once, pack-once, publish-tarball model: it verifies the tagged candidate once, packs a single npm tarball, and reuses that tarball for npm publication, GitHub release assets, checksums, attestations, and cosign signatures.
 
 ## Final readiness signoff
 

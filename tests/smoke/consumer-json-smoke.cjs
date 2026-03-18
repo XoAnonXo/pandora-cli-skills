@@ -6,11 +6,12 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
+const PREPARE_PUBLISH_MANIFEST = path.join(ROOT, 'scripts', 'prepare_publish_manifest.cjs');
 const { buildPublishedPackageJson } = require('../../scripts/prepare_publish_manifest.cjs');
 const RESTORE_PUBLISH_MANIFEST = path.join(ROOT, 'scripts', 'restore_publish_manifest.cjs');
 const NPM_CMD = 'npm';
 const NODE_CMD = process.execPath;
-const PACK_TIMEOUT_MS = process.platform === 'win32' ? 240_000 : 180_000;
+const PACK_TIMEOUT_MS = process.platform === 'win32' ? 180_000 : 180_000;
 const INSTALL_TIMEOUT_MS = process.platform === 'win32' ? 360_000 : 180_000;
 const REQUIRED_ENV_KEYS = [
   'CHAIN_ID',
@@ -145,6 +146,13 @@ function restorePublishManifest() {
   });
 }
 
+function preparePublishManifest() {
+  return run(NODE_CMD, [PREPARE_PUBLISH_MANIFEST], {
+    cwd: ROOT,
+    timeoutMs: 120_000,
+  });
+}
+
 function ensurePublishManifestRestored(label = 'restore publish manifest') {
   ensureExitCode(restorePublishManifest(), 0, label);
 }
@@ -158,9 +166,14 @@ function extractTarball(tarballPath, extractDir) {
   );
 }
 
-function getPackResult(packDir) {
+function getPackResult(packDir, options = {}) {
+  const packArgs = ['pack', '--silent'];
+  if (options.ignoreScripts) {
+    packArgs.push('--ignore-scripts');
+  }
+
   if (process.platform === 'win32') {
-    const fallback = runNpm(['pack', '--silent'], { timeoutMs: PACK_TIMEOUT_MS });
+    const fallback = runNpm(packArgs, { timeoutMs: PACK_TIMEOUT_MS });
     if (fallback.status !== 0) return fallback;
 
     const tarball = fallback.stdout
@@ -175,13 +188,13 @@ function getPackResult(packDir) {
     return fallback;
   }
 
-  const withDestination = runNpm(['pack', '--silent', '--pack-destination', packDir], {
+  const withDestination = runNpm([...packArgs, '--pack-destination', packDir], {
     timeoutMs: PACK_TIMEOUT_MS,
   });
   if (withDestination.status === 0) return withDestination;
   if (!/pack-destination/.test(withDestination.output)) return withDestination;
 
-  const fallback = runNpm(['pack', '--silent'], { timeoutMs: PACK_TIMEOUT_MS });
+  const fallback = runNpm(packArgs, { timeoutMs: PACK_TIMEOUT_MS });
   if (fallback.status !== 0) return fallback;
 
   const tarball = fallback.stdout
@@ -407,8 +420,17 @@ function main() {
 
   try {
     ensurePublishManifestRestored('pre-consumer smoke publish manifest cleanup');
-    const pack = getPackResult(packDir);
-    ensureExitCode(pack, 0, 'npm pack');
+    const prepareResult = preparePublishManifest();
+    ensureExitCode(prepareResult, 0, 'prepare publish manifest');
+
+    let pack;
+    try {
+      pack = getPackResult(packDir, { ignoreScripts: true });
+      ensureExitCode(pack, 0, 'npm pack --ignore-scripts');
+    } finally {
+      const restoreResult = restorePublishManifest();
+      ensureExitCode(restoreResult, 0, 'restore publish manifest');
+    }
 
     const tarballName = pack.stdout
       .split(/\r?\n/)
@@ -837,7 +859,6 @@ print(json.dumps({
     console.log('Consumer JSON smoke test passed.');
     console.log(`Tarball: ${tarballPath}`);
   } finally {
-    ensurePublishManifestRestored('post-consumer smoke publish manifest cleanup');
     try {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     } catch (error) {

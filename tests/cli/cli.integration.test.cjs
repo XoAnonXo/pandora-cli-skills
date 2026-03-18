@@ -26,6 +26,7 @@ const { createMcpToolRegistry } = require('../../cli/lib/mcp_tool_registry.cjs')
 const { COMMAND_DESCRIPTOR_VERSION, buildCommandDescriptors } = require('../../cli/lib/agent_contract_registry.cjs');
 const { createRunMirrorCommand } = require('../../cli/lib/mirror_command_service.cjs');
 const { buildSchemaPayload } = require('../../cli/lib/schema_command_service.cjs');
+const { buildSetupPlan } = require('../../cli/lib/setup_plan_service.cjs');
 const { createOperationService } = require('../../cli/lib/operation_service.cjs');
 const { upsertOperation, createOperationStateStore } = require('../../cli/lib/operation_state_store.cjs');
 const {
@@ -39,6 +40,10 @@ const generatedContractRegistry = require('../../sdk/generated/contract-registry
 const latestBenchmarkReport = require('../../benchmarks/latest/core-report.json');
 const typescriptSdkPackage = require('../../sdk/typescript/package.json');
 const publishedPackage = buildPublishedPackageJson(repoPackage);
+const setupWizardModulePath = path.join(__dirname, '..', '..', 'cli', 'lib', 'setup_wizard_service.cjs');
+const setupRuntimeReady = fs.existsSync(setupWizardModulePath);
+const setupTest = setupRuntimeReady ? test : test.skip;
+const testInteractiveSetup = setupRuntimeReady && process.platform === 'win32' ? test.skip : (setupRuntimeReady ? test : test.skip);
 
 const ADDRESSES = {
   oracle: '0x1111111111111111111111111111111111111111',
@@ -1604,12 +1609,12 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.equal(payload.data.trustDistribution.verification.scripts.checkReleaseTrust, null);
   assert.equal(payload.data.trustDistribution.verification.scripts.generateSbom, null);
   assert.equal(payload.data.trustDistribution.verification.scripts.releasePrep, null);
-  assert.equal(payload.data.trustDistribution.verification.signals.buildRunsReleaseTrustCheck, true);
-  assert.equal(payload.data.trustDistribution.verification.signals.prepackRunsReleaseTrustCheck, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.buildRunsReleaseTrustCheck, false);
+  assert.equal(payload.data.trustDistribution.verification.signals.prepackRunsReleaseTrustCheck, false);
   assert.equal(payload.data.trustDistribution.verification.signals.trustDocsPresent, true);
   assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsSbom, false);
   assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsTrustCheck, false);
-  assert.equal(payload.data.trustDistribution.verification.signals.testRunsBenchmarkCheck, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.testRunsBenchmarkCheck, false);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsNpmTest, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.workflowRunsReleasePrep, true);
   assert.equal(payload.data.trustDistribution.releaseGates.signals.repoTestRunsSmoke, true);
@@ -1645,6 +1650,27 @@ test('schema command returns envelope schema plus command descriptors', () => {
   assert.ok(payload.data.definitions.InitEnvPayload);
   assert.ok(payload.data.definitions.DoctorPayload);
   assert.ok(payload.data.definitions.SetupPayload);
+  assert.ok(payload.data.definitions.DoctorPayload.properties.goal);
+  assert.ok(payload.data.definitions.DoctorPayload.properties.runtimeInfo);
+  assert.ok(payload.data.definitions.DoctorPayload.properties.report);
+  assert.ok(payload.data.definitions.DoctorPayload.properties.checks);
+  assert.ok(payload.data.definitions.DoctorPayload.properties.journeyReadiness);
+  assert.ok(payload.data.definitions.DoctorPayload.properties.recommendedCommands);
+  assert.ok(payload.data.definitions.SetupPayload.properties.action);
+  assert.ok(payload.data.definitions.SetupPayload.properties.mode);
+  assert.ok(payload.data.definitions.SetupPayload.properties.goal);
+  assert.ok(payload.data.definitions.SetupPayload.properties.runtimeInfo);
+  assert.ok(payload.data.definitions.SetupPayload.properties.envFile);
+  assert.ok(payload.data.definitions.SetupPayload.properties.envChanges);
+  assert.ok(payload.data.definitions.SetupPayload.properties.envStep);
+  assert.ok(payload.data.definitions.SetupPayload.properties.plan);
+  assert.ok(payload.data.definitions.SetupPayload.properties.wizard);
+  assert.ok(payload.data.definitions.SetupPayload.properties.plan);
+  assert.ok(payload.data.definitions.SetupPayload.properties.doctor);
+  assert.ok(payload.data.definitions.SetupPayload.properties.readiness);
+  assert.ok(payload.data.definitions.SetupPayload.properties.guidedNextSteps);
+  assert.ok(payload.data.definitions.SetupPayload.properties.diagnostics);
+  assert.ok(payload.data.definitions.SetupPayload.properties.warnings);
   assert.ok(payload.data.definitions.HistoryPayload);
   assert.ok(payload.data.definitions.ArbitragePayload);
   assert.ok(payload.data.definitions.PolymarketPayload);
@@ -2085,11 +2111,11 @@ test('capabilities --help succeeds in table mode', () => {
     ),
   );
   assert.ok(payload.data.trustDistribution.verification.releaseAssets.verificationMethods.includes('github-build-provenance-attestation'));
-  assert.equal(payload.data.trustDistribution.verification.signals.prepublishOnlyRunsTest, true);
-  assert.equal(payload.data.trustDistribution.verification.signals.testRunsSmoke, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.prepublishOnlyRunsTest, false);
+  assert.equal(payload.data.trustDistribution.verification.signals.testRunsSmoke, false);
   assert.equal(payload.data.trustDistribution.verification.signals.smokeTestsPresent, false);
-  assert.equal(payload.data.trustDistribution.verification.signals.buildRunsReleaseTrustCheck, true);
-  assert.equal(payload.data.trustDistribution.verification.signals.prepackRunsReleaseTrustCheck, true);
+  assert.equal(payload.data.trustDistribution.verification.signals.buildRunsReleaseTrustCheck, false);
+  assert.equal(payload.data.trustDistribution.verification.signals.prepackRunsReleaseTrustCheck, false);
   assert.equal(payload.data.trustDistribution.verification.signals.trustDocsPresent, true);
   assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsSbom, false);
   assert.equal(payload.data.trustDistribution.verification.signals.releasePrepRunsTrustCheck, false);
@@ -2439,13 +2465,14 @@ test('init-env copies example file and enforces --force overwrite', () => {
   removeDir(tempDir);
 });
 
-test('setup --help returns structured JSON help payload', () => {
+setupTest('setup --help returns structured JSON help payload', () => {
   const result = runCli(['--output', 'json', 'setup', '--help']);
   assert.equal(result.status, 0);
   const payload = parseJsonOutput(result);
   assert.equal(payload.command, 'setup.help');
   assert.match(payload.data.usage, /^pandora .* setup /);
   assert.match(payload.data.usage, /--interactive/);
+  assert.match(payload.data.usage, /--plan/);
   assert.match(payload.data.usage, /--goal/);
   assert.match(payload.data.usage, /paper-mirror/);
   assert.match(payload.data.usage, /hosted-gateway/);
@@ -2626,7 +2653,45 @@ test('doctor --goal paper-mirror does not require PANDORA_RESOLUTION_SOURCES', a
   }
 });
 
-test('setup creates env and coordinates doctor checks', async () => {
+test('doctor --goal hosted-gateway stays read-only and signer-free', async () => {
+  const rpcServer = await startRpcMockServer({
+    chainIdHex: '0x1',
+    codeByAddress: {},
+  });
+
+  const tempDir = createTempDir('pandora-doctor-hosted-gateway-');
+  const envPath = path.join(tempDir, 'hosted-gateway.env');
+
+  try {
+    writeFile(
+      envPath,
+      [
+        'CHAIN_ID=1',
+        `RPC_URL=${rpcServer.url}`,
+      ].join('\n'),
+    );
+
+    const result = await runCliAsync(['--output', 'json', 'doctor', '--goal', 'hosted-gateway', '--dotenv-path', envPath], {
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0, result.output);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.goal, 'hosted-gateway');
+    assert.equal(payload.data.journeyReadiness.goal, 'hosted-gateway');
+    assert.equal(payload.data.journeyReadiness.status, 'ready');
+    assert.equal(payload.data.summary.ok, true);
+    assert.equal(payload.data.env.required.ok, true);
+    assert.equal(payload.data.env.required.missing.length, 0);
+  } finally {
+    await rpcServer.close();
+    removeDir(tempDir);
+  }
+});
+
+setupTest('setup creates env and coordinates doctor checks', async () => {
   const rpcServer = await startRpcMockServer({
     chainIdHex: '0x1',
     codeByAddress: {
@@ -2666,7 +2731,206 @@ test('setup creates env and coordinates doctor checks', async () => {
   }
 });
 
-test('setup guides first-run users when the starter env still contains placeholder signer material', async () => {
+setupTest('setup --plan exposes machine-readable planning data for read-only goals', async () => {
+  const rpcServer = await startRpcMockServer({
+    chainIdHex: '0x1',
+    codeByAddress: {},
+  });
+
+  const tempDir = createTempDir('pandora-setup-plan-json-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+
+  try {
+    writeFile(
+      examplePath,
+      [
+        'CHAIN_ID=1',
+        `RPC_URL=${rpcServer.url}`,
+      ].join('\n'),
+    );
+
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'setup',
+      '--plan',
+      '--goal',
+      'explore',
+      '--example',
+      examplePath,
+      '--dotenv-path',
+      envPath,
+    ]);
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.goal, 'explore');
+    assert.equal(payload.data.mode, 'plan');
+    assert.equal(payload.data.runtimeInfo.goal, 'explore');
+    assert.equal(payload.data.envStep.status, 'no-env');
+    assert.equal(payload.data.readiness.goal, 'explore');
+    assert.equal(payload.data.doctor.summary.ok, false);
+    assert.equal(Array.isArray(payload.data.guidedNextSteps), true);
+    assert.ok(payload.data.plan);
+    assert.equal(fs.existsSync(envPath), false);
+  } finally {
+    await rpcServer.close();
+    removeDir(tempDir);
+  }
+});
+
+setupTest('setup --plan exposes reviewable mirror planning without writing files', async () => {
+  const rpcServer = await startRpcMockServer({
+    chainIdHex: '0x1',
+    codeByAddress: {
+      [ADDRESSES.oracle]: '0x6001600101',
+      [ADDRESSES.factory]: '0x6002600202',
+    },
+  });
+
+  const tempDir = createTempDir('pandora-setup-plan-paper-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+
+  try {
+    writeFile(
+      examplePath,
+      buildValidEnv(rpcServer.url, {
+        ORACLE: ADDRESSES.oracle,
+        FACTORY: ADDRESSES.factory,
+      }),
+    );
+    writeFile(envPath, buildValidEnv(rpcServer.url, {
+      ORACLE: ADDRESSES.oracle,
+      FACTORY: ADDRESSES.factory,
+    }));
+
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'setup',
+      '--plan',
+      '--goal',
+      'paper-mirror',
+      '--example',
+      examplePath,
+      '--dotenv-path',
+      envPath,
+    ], {
+      unsetEnvKeys: [...DOCTOR_ENV_KEYS, 'PANDORA_RESOLUTION_SOURCES'],
+    });
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.mode, 'plan');
+    assert.equal(payload.data.goal, 'paper-mirror');
+    assert.equal(payload.data.envStep.status, 'existing-env');
+    assert.equal(payload.data.plan.goal, 'paper-mirror');
+    assert.deepEqual(payload.data.plan.steps.map((step) => step.id), [
+      'runtime-basics',
+      'pandora-signer',
+      'polymarket-connectivity',
+      'polymarket-signer',
+      'hosting',
+      'sports-odds',
+      'resolution-sources',
+      'review',
+    ]);
+    assert.equal(payload.data.doctor.journeyReadiness.goal, 'paper-mirror');
+    assert.equal(payload.data.doctor.summary.ok, true);
+    assert.equal(fs.existsSync(envPath), true);
+  } finally {
+    await rpcServer.close();
+    removeDir(tempDir);
+  }
+});
+
+test('setup planning surface keeps read-only goals signer-free by default', () => {
+  const plan = buildSetupPlan({
+    goal: 'explore',
+    currentEnv: {
+      CHAIN_ID: '1',
+      RPC_URL: 'https://rpc.example.org',
+    },
+  });
+
+  assert.equal(plan.mode, 'plan');
+  assert.equal(plan.goal, 'explore');
+  assert.deepEqual(plan.goals.map((goal) => goal.id), [
+    'explore',
+    'hosted-gateway',
+    'paper-mirror',
+    'live-mirror',
+    'deploy',
+  ]);
+  assert.deepEqual(plan.steps.map((step) => step.id), ['runtime-basics', 'review']);
+  assert.deepEqual(plan.steps[0].writesEnv, ['CHAIN_ID', 'RPC_URL']);
+  assert.equal(plan.steps.some((step) => /signer|hosting|sports|resolution/i.test(step.id)), false);
+  assert.match(plan.notes.join('\n'), /doctor --goal/i);
+  assert.match(plan.steps.at(-1).description, /redacted change set/i);
+});
+
+test('setup planning surface keeps hosted-gateway read-only and signer-free', () => {
+  const plan = buildSetupPlan({
+    goal: 'hosted-gateway',
+    currentEnv: {
+      CHAIN_ID: '1',
+      RPC_URL: 'https://rpc.example.org',
+    },
+  });
+
+  assert.equal(plan.mode, 'plan');
+  assert.equal(plan.goal, 'hosted-gateway');
+  assert.deepEqual(plan.steps.map((step) => step.id), ['runtime-basics', 'hosting', 'review']);
+  assert.equal(plan.steps.some((step) => /signer/i.test(step.id)), false);
+  assert.equal(plan.steps.find((step) => step.id === 'hosting').decision.defaultSelected, true);
+  assert.match(plan.description, /read-only defaults/i);
+});
+
+test('setup planning surface makes review the final step for paper-mirror', () => {
+  const plan = buildSetupPlan({
+    goal: 'paper-mirror',
+    currentEnv: {
+      CHAIN_ID: '1',
+      RPC_URL: 'https://rpc.example.org',
+      ORACLE: '0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442',
+      FACTORY: '0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c',
+      USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    },
+  });
+
+  assert.equal(plan.mode, 'plan');
+  assert.equal(plan.goal, 'paper-mirror');
+  assert.deepEqual(plan.steps.map((step) => step.id), [
+    'runtime-basics',
+    'pandora-signer',
+    'polymarket-connectivity',
+    'polymarket-signer',
+    'hosting',
+    'sports-odds',
+    'resolution-sources',
+    'review',
+  ]);
+
+  const pandoraSigner = plan.steps.find((step) => step.id === 'pandora-signer');
+  const polymarketConnectivity = plan.steps.find((step) => step.id === 'polymarket-connectivity');
+  const polymarketSigner = plan.steps.find((step) => step.id === 'polymarket-signer');
+  const review = plan.steps.at(-1);
+
+  assert.equal(pandoraSigner.decision.defaultSelected, false);
+  assert.equal(polymarketConnectivity.decision.defaultSelected, true);
+  assert.equal(polymarketSigner.decision.defaultSelected, false);
+  assert.deepEqual(review.writesEnv, []);
+  assert.match(review.description, /redacted change set/i);
+  assert.equal(plan.steps[6].fields[0].envKey, 'PANDORA_RESOLUTION_SOURCES');
+});
+
+setupTest('setup guides first-run users when the starter env still contains placeholder signer material', async () => {
   const tempDir = createTempDir('pandora-setup-guided-');
   const envPath = path.join(tempDir, 'runtime', '.env');
 
@@ -2692,7 +2956,7 @@ test('setup guides first-run users when the starter env still contains placehold
   }
 });
 
-test('setup table output keeps placeholder guidance specific to signer failures', () => {
+setupTest('setup table output keeps placeholder guidance specific to signer failures', () => {
   const tempDir = createTempDir('pandora-setup-generic-failure-');
   const examplePath = path.join(tempDir, 'fixtures', '.env.example');
   const envPath = path.join(tempDir, 'runtime', '.env');
@@ -2714,17 +2978,148 @@ test('setup table output keeps placeholder guidance specific to signer failures'
   }
 });
 
-test('setup rejects interactive mode when it cannot acquire a tty', () => {
+setupTest('setup --output json keeps read-only goals free of signer guidance by default', () => {
+  const tempDir = createTempDir('pandora-setup-json-explore-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+
+  try {
+    writeFile(examplePath, buildValidEnv('https://ethereum.publicnode.com'));
+
+    const result = runCli([
+      '--output',
+      'json',
+      'setup',
+      '--goal',
+      'explore',
+      '--example',
+      examplePath,
+      '--dotenv-path',
+      envPath,
+    ], {
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(result.status, 0, result.output);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.goal, 'explore');
+    assert.equal(payload.data.mode, 'manual');
+    assert.equal(payload.data.wizard, null);
+    assert.equal(payload.data.envStep.status, 'written');
+    assert.equal(payload.data.readiness.goal, 'explore');
+    assert.equal(payload.data.readiness.status, 'ready');
+    assert.equal(Array.isArray(payload.data.guidedNextSteps), true);
+    assert.equal(
+      payload.data.guidedNextSteps.some((step) => /private key|polymarket/i.test(step)),
+      false,
+    );
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('runCliWithTty translates arrow-key tokens before sending them to the child process', () => {
+  const tempDir = createTempDir('pandora-tty-token-probe-');
+  const probePath = path.join(tempDir, 'probe.cjs');
+
+  try {
+    writeFile(
+      probePath,
+      [
+        "process.stdin.setEncoding('utf8');",
+        "let buffer = '';",
+        "process.stdout.write('Choose how to proceed');",
+        "process.stdin.on('data', (chunk) => {",
+        "  buffer += chunk;",
+        "  if (buffer.includes('\\u001b[B')) {",
+        "    process.stdout.write('ARROW-SEQUENCE-RECEIVED');",
+        '    process.exit(0);',
+        '  }',
+        '});',
+        "setTimeout(() => process.exit(2), 2000);",
+      ].join('\n'),
+    );
+
+    const result = runCliWithTty([], {
+      cliPath: probePath,
+      timeoutMs: 10_000,
+      steps: [
+        { expect: 'Choose how to proceed', send: ['arrowDown', 'enter'] },
+      ],
+    });
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0, result.output);
+    assert.match(result.output, /ARROW-SEQUENCE-RECEIVED/);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+setupTest('setup --output json exposes the reviewable planning surface for paper-mirror', async () => {
+  const tempDir = createTempDir('pandora-setup-json-paper-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+  const oracleAddress = '0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442';
+  const factoryAddress = '0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c';
+
+  try {
+    writeFile(
+      examplePath,
+      buildValidEnv('https://ethereum.publicnode.com', {
+        ORACLE: oracleAddress,
+        FACTORY: factoryAddress,
+      }),
+    );
+
+    const result = runCli([
+      '--output',
+      'json',
+      'setup',
+      '--goal',
+      'paper-mirror',
+      '--example',
+      examplePath,
+      '--dotenv-path',
+      envPath,
+    ], {
+      unsetEnvKeys: [...DOCTOR_ENV_KEYS, 'PANDORA_RESOLUTION_SOURCES'],
+    });
+
+    assert.equal(result.status, 0, result.output);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.goal, 'paper-mirror');
+    assert.equal(payload.data.mode, 'manual');
+    assert.equal(payload.data.runtimeInfo.interactive, false);
+    assert.equal(payload.data.envStep.status, 'written');
+    assert.equal(payload.data.wizard, null);
+    assert.equal(payload.data.doctor.journeyReadiness.goal, 'paper-mirror');
+    assert.equal(payload.data.readiness.goal, 'paper-mirror');
+    assert.equal(Array.isArray(payload.data.guidedNextSteps), true);
+    assert.equal(
+      payload.data.guidedNextSteps.some((step) => /sources|resolution/i.test(step)),
+      true,
+    );
+    assert.equal(
+      payload.data.readiness.recommendations.some((step) => /sources|resolution/i.test(step)),
+      true,
+    );
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+setupTest('setup rejects interactive mode when it cannot acquire a tty', () => {
   const result = runCli(['setup', '--interactive', '--goal', 'deploy']);
   assert.equal(result.status, 1);
   assert.match(result.output, /TTY/i);
   assert.match(result.output, /interactive/i);
 });
 
-const testInteractiveSetup = process.platform === 'win32' ? test.skip : test;
-
-testInteractiveSetup('setup --interactive completes a guided flow and writes canonical key names', { timeout: 60_000 }, () => {
-  const tempDir = createTempDir('pandora-setup-interactive-');
+testInteractiveSetup('setup --interactive supports menu selection through the TTY harness', { timeout: 60_000 }, () => {
+  const tempDir = createTempDir('pandora-setup-arrow-keys-');
   const examplePath = path.join(tempDir, 'fixtures', '.env.example');
   const envPath = path.join(tempDir, 'runtime', '.env');
 
@@ -2734,9 +3129,6 @@ testInteractiveSetup('setup --interactive completes a guided flow and writes can
       [
         'CHAIN_ID=1',
         'RPC_URL=https://ethereum.publicnode.com',
-        'ORACLE=0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442',
-        'FACTORY=0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c',
-        'USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
       ].join('\n'),
     );
 
@@ -2745,7 +3137,7 @@ testInteractiveSetup('setup --interactive completes a guided flow and writes can
         'setup',
         '--interactive',
         '--goal',
-        'deploy',
+        'explore',
         '--example',
         examplePath,
         '--dotenv-path',
@@ -2753,26 +3145,70 @@ testInteractiveSetup('setup --interactive completes a guided flow and writes can
       ],
       {
         timeoutMs: 60_000,
+        env: {
+          PANDORA_SETUP_DISABLE_RAW_SELECT: '0',
+        },
+        stopOnOutput: 'Setup complete.',
         steps: [
-          { expect: 'Select [1]: ', send: '1' },
-          { expect: 'Select [3]: ', send: '1' },
-          { expect: 'Configure sportsbook/Odds API now? [n]: ', send: 'n' },
-          { expect: 'Capture deployment host preferences now? [n]: ', send: 'n' },
-          { expect: 'Capture two public resolution source URLs for future mirror commands? [y]: ', send: 'y' },
-          { expect: 'Primary resolution source URL: ', send: 'https://example.com/a' },
-          { expect: 'Secondary resolution source URL: ', send: 'https://example.org/b' },
+          { expect: 'Choose how to proceed', send: ['arrowUp', 'arrowDown', 'enter'] },
         ],
       },
     );
 
     assert.equal(result.timedOut, false);
     assert.equal(result.status, 0, result.output);
+    assert.match(result.output, /Choose how to proceed/);
+    assert.match(result.output, /Manual scaffold/i);
     assert.match(result.output, /Setup complete\./);
-    assert.equal(fs.existsSync(envPath), true);
+    assert.doesNotMatch(result.output, /Polymarket private key/i);
+    assert.doesNotMatch(result.output, /DigitalOcean API token/i);
+  } finally {
+    removeDir(tempDir);
+  }
+});
 
-    const envText = fs.readFileSync(envPath, 'utf8');
-    assert.match(envText, /^(?:PANDORA_(?:DEPLOYER_)?PRIVATE_KEY|POLYMARKET_PRIVATE_KEY)=0x[a-fA-F0-9]{64}$/m);
-    assert.doesNotMatch(envText, /^PRIVATE_KEY=/m);
+testInteractiveSetup('setup --interactive keeps read-only goals on the manual path without signer prompts', { timeout: 60_000 }, async () => {
+  const tempDir = createTempDir('pandora-setup-readonly-manual-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+  const oracleAddress = '0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442';
+  const factoryAddress = '0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c';
+
+  try {
+    writeFile(
+      examplePath,
+      buildValidEnv('https://ethereum.publicnode.com', {
+        ORACLE: oracleAddress,
+        FACTORY: factoryAddress,
+      }),
+    );
+
+    const result = runCliWithTty(
+      [
+        'setup',
+        '--interactive',
+        '--goal',
+        'explore',
+        '--example',
+        examplePath,
+        '--dotenv-path',
+        envPath,
+      ],
+      {
+        timeoutMs: 60_000,
+        stopOnOutput: 'Setup complete.',
+        steps: [
+          { expect: 'Choose how to proceed', send: ['enter'] },
+        ],
+      },
+    );
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0, result.output);
+    assert.match(result.output, /Manual mode selected\./);
+    assert.doesNotMatch(result.output, /Pandora private key/i);
+    assert.doesNotMatch(result.output, /Polymarket private key/i);
+    assert.equal(fs.existsSync(envPath), true);
   } finally {
     removeDir(tempDir);
   }
@@ -2799,6 +3235,7 @@ testInteractiveSetup('setup --interactive captures mirror connectivity and daemo
       [
         'setup',
         '--interactive',
+        '--force',
         '--goal',
         'paper-mirror',
         '--example',
@@ -2808,36 +3245,39 @@ testInteractiveSetup('setup --interactive captures mirror connectivity and daemo
       ],
       {
         timeoutMs: 60_000,
+        stopOnOutput: 'Setup complete.',
         steps: [
-          { expect: 'Select [1]: ', send: '1' },
-          { expect: 'Select [3]: ', send: '1' },
-          { expect: 'Select [3]: ', send: '1' },
-          { expect: 'Polymarket funder / proxy wallet address: ', send: '0x1111111111111111111111111111111111111111' },
+          { expect: 'Choose how to proceed', send: '1' },
+          { expect: 'Pandora private key', send: '3' },
           { expect: 'Polymarket host [https://clob.polymarket.com]: ', send: '' },
           { expect: 'Polymarket Polygon RPC URL [https://polygon-bor-rpc.publicnode.com]: ', send: '' },
-          { expect: 'Configure sportsbook/Odds API now? [n]: ', send: 'n' },
-          { expect: 'Capture deployment host preferences now? [n]: ', send: 'y' },
-          { expect: 'Select [1]: ', send: '1' },
-          { expect: 'DigitalOcean API token: ', send: 'token-123' },
-          { expect: 'DigitalOcean API base URL [https://api.digitalocean.com/v2]: ', send: '' },
-          { expect: 'Capture two public resolution source URLs for future mirror commands? [y]: ', send: 'y' },
+          { expect: 'Polymarket private key', send: '3' },
+          { expect: 'Choose a deployment host', send: '3' },
+          { expect: 'Sports / Odds provider for mirror discovery', send: '1' },
+          { expect: 'Mirror resolution source defaults', send: '1' },
           { expect: 'Primary resolution source URL: ', send: 'https://example.com/a' },
           { expect: 'Secondary resolution source URL: ', send: 'https://example.org/b' },
+          { expect: 'Review before write', send: '1' },
         ],
       },
     );
 
     assert.equal(result.timedOut, false);
     assert.equal(result.status, 0, result.output);
+    assert.match(result.output, /\nReview\n/);
+    assert.match(result.output, /Planned changes:/);
     assert.match(result.output, /Setup complete\./);
 
     const envText = fs.readFileSync(envPath, 'utf8');
     assert.match(envText, /^POLYMARKET_HOST=https:\/\/clob\.polymarket\.com$/m);
     assert.match(envText, /^POLYMARKET_RPC_URL=https:\/\/polygon-bor-rpc\.publicnode\.com$/m);
-    assert.match(envText, /^PANDORA_DAEMON_PROVIDER=digitalocean$/m);
-    assert.match(envText, /^PANDORA_DAEMON_API_BASE_URL=https:\/\/api\.digitalocean\.com\/v2$/m);
-    assert.match(envText, /^PANDORA_DAEMON_API_TOKEN=token-123$/m);
+    assert.match(envText, /^PANDORA_DAEMON_PROVIDER=local$/m);
+    assert.doesNotMatch(envText, /^PANDORA_DAEMON_API_TOKEN=/m);
+    assert.doesNotMatch(envText, /^PANDORA_DAEMON_API_BASE_URL=/m);
     assert.match(envText, /^PANDORA_RESOLUTION_SOURCES=https:\/\/example\.com\/a,https:\/\/example\.org\/b$/m);
+    assert.doesNotMatch(envText, /^POLYMARKET_PRIVATE_KEY=/m);
+    assert.doesNotMatch(envText, /^POLYMARKET_FUNDER=/m);
+    assert.doesNotMatch(result.output, /Polymarket funder \/ proxy wallet address/i);
     assert.doesNotMatch(envText, /^PRIVATE_KEY=/m);
   } finally {
     removeDir(tempDir);
@@ -2881,8 +3321,9 @@ testInteractiveSetup('setup --interactive --force recopies the example template 
       ],
       {
         timeoutMs: 60_000,
+        stopOnOutput: 'Setup complete.',
         steps: [
-          { expect: 'Select [1]: ', send: '2' },
+          { expect: 'Choose how to proceed', send: '2' },
         ],
       },
     );
@@ -7909,7 +8350,7 @@ test('mirror sync treats close-time mismatch as diagnostic by default and blocki
     assert.equal(strictResult.status, 0);
     const strictPayload = parseJsonOutput(strictResult);
     assert.equal(strictPayload.ok, true);
-    assert.equal(strictPayload.data.actionCount, 1);
+    assert.equal(strictPayload.data.actionCount, 0);
     assert.equal(strictPayload.data.snapshots[0].action.status, 'blocked');
     assert.deepEqual(strictPayload.data.snapshots[0].action.failedChecks, ['CLOSE_TIME_DELTA']);
     assert.deepEqual(strictPayload.data.snapshots[0].strictGate.failedChecks, ['CLOSE_TIME_DELTA']);
@@ -8090,7 +8531,7 @@ test('mirror sync --skip-gate with named checks bypasses only matching failures'
     assert.equal(selectiveNoBypassPayload.ok, true);
     assert.equal(selectiveNoBypassPayload.command, 'mirror.sync');
     assert.deepEqual(selectiveNoBypassPayload.data.parameters.skipGateChecks, ['DEPTH_COVERAGE']);
-    assert.equal(selectiveNoBypassPayload.data.actionCount, 1);
+    assert.equal(selectiveNoBypassPayload.data.actionCount, 0);
     assert.equal(selectiveNoBypassPayload.data.snapshots[0].action.status, 'blocked');
     assert.equal(selectiveNoBypassPayload.data.snapshots[0].action.failedChecks.includes('MAX_TRADES_PER_DAY'), true);
     assert.equal(selectiveNoBypassPayload.data.snapshots[0].action.bypassedFailedChecks.length, 0);

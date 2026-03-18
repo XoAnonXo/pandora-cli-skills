@@ -17,6 +17,8 @@ This path is the shipped final signoff contract:
 
 It is not the only evidence artifact. It is the human-readable release gate that binds the required machine-readable evidence bundle together.
 
+The release workflow must follow a verify-once, pack-once, publish-tarball model: verify the release candidate once, pack a single npm tarball, and reuse that exact tarball for npm publication, GitHub release assets, and trust metadata.
+
 The minimum paired machine-readable evidence set for a signoff includes:
 
 - `checksums.sha256`

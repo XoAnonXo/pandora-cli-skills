@@ -3,7 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const { createSetupWizardService, normalizeGoal } = require('./setup_wizard_service.cjs');
+const { createSetupWizardService } = require('./setup_wizard_service.cjs');
+const { buildSetupPlan, normalizeGoal } = require('./setup_plan_service.cjs');
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -256,11 +257,43 @@ function createSetupCommandService(deps = {}) {
     const exampleFile = options.exampleFile || defaultEnvExample;
     const goal = normalizeGoal(options.goal);
     const interactive = Boolean(options.interactive);
+    const planOnly = Boolean(options.plan);
     const runtime = runtimeInfo({ ...options, envFile, exampleFile, goal, interactive });
     const seedState = seedEnvFile(envFile);
     const force = Boolean(options.force);
     let envStep = null;
     let wizardResult = null;
+
+    if (planOnly) {
+      const doctor = await buildDoctorReport({
+        envFile,
+        useEnvFile: seedState.exists,
+        env: seedState.env,
+        checkUsdcCode: Boolean(options.checkUsdcCode),
+        checkPolymarket: Boolean(options.checkPolymarket) || goal === 'live-mirror',
+        rpcTimeoutMs: options.rpcTimeoutMs,
+        goal,
+      });
+      return {
+        mode: 'plan',
+        goal,
+        runtimeInfo: runtime,
+        envStep: {
+          status: seedState.exists ? 'existing-env' : 'no-env',
+          changed: false,
+          envFile,
+          exampleFile,
+          message: seedState.exists ? 'Loaded current env values for planning.' : 'No env file was written during planning.',
+        },
+        plan: buildSetupPlan({ goal, currentEnv: seedState.env }),
+        doctor,
+        readiness: buildReadiness(doctor, goal),
+        guidedNextSteps: [
+          'Review the returned setup plan and collect the relevant fields.',
+          goal ? `Run \`pandora doctor --goal ${goal}\` as you fill values in.` : 'Choose a goal, then rerun setup with `--goal` for a scoped plan.',
+        ],
+      };
+    }
 
     if (interactive) {
       if (!isTTY) {
@@ -271,47 +304,84 @@ function createSetupCommandService(deps = {}) {
         ensureExampleFile(exampleFile);
       }
 
-      const wizardState = force ? readFileIfPresent(exampleFile) : seedState;
+      const wizardState = (force || !seedState.exists) ? readFileIfPresent(exampleFile) : seedState;
 
       wizardResult = await wizard.runSetupWizard({
         goal,
         currentEnv: wizardState.env,
         runtimeInfo: runtime,
+        validateStage: async (validationContext = {}) => buildDoctorReport({
+          envFile,
+          useEnvFile: false,
+          env: validationContext.env,
+          checkUsdcCode: Boolean(options.checkUsdcCode),
+          checkPolymarket: Boolean(options.checkPolymarket)
+            || validationContext.stageId === 'polymarket'
+            || validationContext.stageId === 'final-preview'
+            || goal === 'live-mirror',
+          rpcTimeoutMs: options.rpcTimeoutMs,
+          goal: validationContext.goal || goal,
+        }),
       });
 
-      if (force || !seedState.exists) {
-        envStep = copyExample(envFile, exampleFile, force);
-      } else {
+      if (wizardResult && wizardResult.cancelled) {
         envStep = {
-          status: 'reused',
+          status: 'cancelled',
           changed: false,
           envFile,
           exampleFile,
           force,
+          message: 'Review was cancelled before write. No files were changed.',
         };
-      }
+      } else {
+        if (force || !seedState.exists) {
+          envStep = copyExample(envFile, exampleFile, force);
+        } else {
+          envStep = {
+            status: 'reused',
+            changed: false,
+            envFile,
+            exampleFile,
+            force,
+            message: 'Reused the existing env file before merging guided updates.',
+          };
+        }
 
-      if (wizardResult && wizardResult.updates && Object.keys(wizardResult.updates).length) {
-        const removeKeys = wizardResult.updates.PANDORA_PRIVATE_KEY ? ['PRIVATE_KEY'] : [];
-        envStep = mergeEnvFile(envFile, wizardResult.updates, removeKeys);
-      }
+        if (wizardResult && wizardResult.updates && Object.keys(wizardResult.updates).length) {
+          const removeKeys = wizardResult.updates.PANDORA_PRIVATE_KEY ? ['PRIVATE_KEY'] : [];
+          envStep = mergeEnvFile(envFile, wizardResult.updates, removeKeys);
+        }
 
-      if (wizardResult && Array.isArray(wizardResult.resolutionSources) && wizardResult.resolutionSources.length) {
-        envStep = mergeEnvFile(envFile, {
-          PANDORA_RESOLUTION_SOURCES: wizardResult.resolutionSources.join(','),
-        });
+        if (wizardResult && Array.isArray(wizardResult.resolutionSources) && wizardResult.resolutionSources.length) {
+          envStep = mergeEnvFile(envFile, {
+            PANDORA_RESOLUTION_SOURCES: wizardResult.resolutionSources.join(','),
+          });
+        }
       }
     } else {
       envStep = copyExample(envFile, exampleFile, Boolean(options.force));
     }
 
     const postWriteState = readFileIfPresent(envFile);
-    syncProcessEnv(seedState.env, postWriteState.env);
-    loadEnvFile(envFile);
+    const stagedPreviewEnv = wizardResult && wizardResult.cancelled
+      ? {
+        ...seedState.env,
+        ...(wizardResult.updates || {}),
+        ...(Array.isArray(wizardResult.resolutionSources) && wizardResult.resolutionSources.length
+          ? { PANDORA_RESOLUTION_SOURCES: wizardResult.resolutionSources.join(',') }
+          : {}),
+      }
+      : postWriteState.env;
+
+    syncProcessEnv(seedState.env, stagedPreviewEnv);
+    if (!(wizardResult && wizardResult.cancelled)) {
+      loadEnvFile(envFile);
+    }
 
     const doctor = await buildDoctorReport({
       envFile,
-      useEnvFile: true,
+      useEnvFile: !(wizardResult && wizardResult.cancelled),
+      env: wizardResult && wizardResult.cancelled ? stagedPreviewEnv : undefined,
       checkUsdcCode: Boolean(options.checkUsdcCode),
       checkPolymarket: Boolean(options.checkPolymarket) || goal === 'live-mirror',
       rpcTimeoutMs: options.rpcTimeoutMs,
@@ -332,6 +402,8 @@ function createSetupCommandService(deps = {}) {
       runtimeInfo: runtime,
       envStep,
       wizard: wizardResult,
+      cancelled: Boolean(wizardResult && wizardResult.cancelled),
+      plan: wizardResult && wizardResult.plan ? wizardResult.plan : null,
       doctor,
       readiness,
       guidedNextSteps,

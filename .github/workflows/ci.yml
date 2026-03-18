@@ -124,3 +124,27 @@ jobs:
             benchmarks/latest/core-report.json
             benchmarks/locks/core.lock.json
           if-no-files-found: error
+
+  release-workflow-contract:
+    name: "Release Workflow Contract"
+    runs-on: ubuntu-latest
+    needs: [secret-scan]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Verify verify-once, pack-once, publish-tarball contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          grep -q 'Verify Once, Pack Once, Publish Tarball' .github/workflows/release.yml
+          grep -q 'Pack release tarball once and build checksums' .github/workflows/release.yml
+          grep -q 'Publish packed tarball to npm' .github/workflows/release.yml
+          grep -q 'Upload packed tarball and release assets' .github/workflows/release.yml
+          grep -c 'TARBALL="$(npm pack | tail -n 1)"' .github/workflows/release.yml | grep -qx '1'
+          grep -q 'npm publish "${{ steps.pack.outputs.tarball }}" --access public --provenance' .github/workflows/release.yml
+          grep -q 'verify-once, pack-once, publish-tarball model' docs/trust/release-verification.md
+          grep -q 'verify-once, pack-once, publish-tarball' docs/trust/release-bundle-playbook.md
+          grep -q 'verify-once, pack-once, publish-tarball model' docs/trust/final-readiness-signoff.md

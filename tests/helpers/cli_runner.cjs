@@ -49,6 +49,42 @@ function escapeExpectRegex(text) {
   return String(text || '').replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
 }
 
+function translateTtyToken(token) {
+  const normalized = String(token || '').trim();
+  if (!normalized) return '';
+  switch (normalized) {
+    case 'up':
+    case 'arrowUp':
+      return '\u001b[A';
+    case 'down':
+    case 'arrowDown':
+      return '\u001b[B';
+    case 'right':
+    case 'arrowRight':
+      return '\u001b[C';
+    case 'left':
+    case 'arrowLeft':
+      return '\u001b[D';
+    case 'enter':
+      return '\r';
+    case 'tab':
+      return '\t';
+    case 'escape':
+      return '\u001b';
+    case 'space':
+      return ' ';
+    default:
+      return normalized;
+  }
+}
+
+function normalizeTtySend(send) {
+  if (Array.isArray(send)) {
+    return send.map(translateTtyToken).join('');
+  }
+  return String(send ?? '');
+}
+
 function runCli(args, options = {}) {
   const captureDir = createTempDir('pandora-cli-capture-');
   const stdoutPath = path.join(captureDir, 'stdout.txt');
@@ -202,6 +238,9 @@ function runCliWithTty(args, options = {}) {
   env.EXPECT_NODE = process.execPath;
   env.EXPECT_CLI_PATH = cliPath;
   env.EXPECT_ARGC = String(args.length);
+  if (!Object.prototype.hasOwnProperty.call(env, 'PANDORA_SETUP_DISABLE_RAW_SELECT')) {
+    env.PANDORA_SETUP_DISABLE_RAW_SELECT = '1';
+  }
   args.forEach((arg, index) => {
     env[`EXPECT_ARG_${index}`] = String(arg);
   });
@@ -218,14 +257,26 @@ function runCliWithTty(args, options = {}) {
 
   if (Array.isArray(options.steps) && options.steps.length) {
     for (const step of options.steps) {
-      expectScript.push(`expect -exact ${tclQuote(step.expect)} { send -- ${tclQuote(`${step.send}\r`) } }`);
+      if (Array.isArray(step.send)) {
+        expectScript.push(`expect -exact ${tclQuote(step.expect)} {`);
+        for (const token of step.send) {
+          expectScript.push(`  send -- ${tclQuote(translateTtyToken(token))}`);
+        }
+        if (translateTtyToken(step.send.at(-1)) !== '\r') {
+          expectScript.push('  send -- "\\r"');
+        }
+        expectScript.push('}');
+        continue;
+      }
+
+      const sequence = normalizeTtySend(step.send);
+      expectScript.push(`expect -exact ${tclQuote(step.expect)} { send -- ${tclQuote(`${sequence}\r`)} }`);
     }
     if (options.stopOnOutput) {
       expectScript.push(
         `expect -re ${tclQuote(escapeExpectRegex(options.stopOnOutput))} { catch { exec kill -TERM [exp_pid] }; exit 0 }`,
       );
     } else {
-      expectScript.push('send -- "\\004"');
       expectScript.push('expect eof');
       expectScript.push('set waitResult [wait]');
       expectScript.push('exit [lindex $waitResult 3]');

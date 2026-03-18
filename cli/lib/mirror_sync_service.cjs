@@ -1039,6 +1039,11 @@ async function runMirrorSync(options, deps = {}) {
     stoppedReason = 'Received termination signal.';
   }
 
+  const executableActions = actions.filter((action) => {
+    if (!(action && typeof action === 'object')) return false;
+    return action.status !== 'blocked' && action.status !== 'skipped';
+  });
+
   return {
     schemaVersion: MIRROR_SYNC_SCHEMA_VERSION,
     stateSchemaVersion: MIRROR_STATE_SCHEMA_VERSION,
@@ -1077,8 +1082,8 @@ async function runMirrorSync(options, deps = {}) {
     iterationsCompleted: snapshots.length,
     stoppedReason,
     state,
-    actionCount: actions.length,
-    actions,
+    actionCount: executableActions.length,
+    actions: executableActions,
     snapshots,
     webhookReports,
     diagnostics,

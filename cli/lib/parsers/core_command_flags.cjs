@@ -165,6 +165,7 @@ function createCoreCommandFlagParsers(deps) {
     let checkPolymarket = false;
     let rpcTimeoutMs = defaultRpcTimeoutMs;
     let interactive = false;
+    let plan = false;
     let goal = null;
 
     for (let i = 0; i < args.length; i += 1) {
@@ -177,6 +178,11 @@ function createCoreCommandFlagParsers(deps) {
 
       if (token === '--interactive') {
         interactive = true;
+        continue;
+      }
+
+      if (token === '--plan') {
+        plan = true;
         continue;
       }
 
@@ -221,7 +227,7 @@ function createCoreCommandFlagParsers(deps) {
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for setup: ${token}`);
     }
 
-    return { envFile, exampleFile, force, checkUsdcCode, checkPolymarket, rpcTimeoutMs, interactive, goal };
+    return { envFile, exampleFile, force, checkUsdcCode, checkPolymarket, rpcTimeoutMs, interactive, plan, goal };
   }
 
   function parseInitEnvFlags(args) {

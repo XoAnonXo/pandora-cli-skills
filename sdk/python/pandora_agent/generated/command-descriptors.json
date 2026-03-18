@@ -2093,7 +2093,7 @@
     "riskLevel": "low",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Run environment, goal, and connectivity diagnostics.",
+    "summary": "Run goal-aware environment and connectivity diagnostics without writing.",
     "supportsRemote": false,
     "supportsWebhook": false,
     "usage": "pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
@@ -21782,7 +21782,19 @@
     "usage": "pandora [--output table|json] sell [--indexer-url <url>] [--timeout-ms <ms>] [--dotenv-path <path>] [--skip-dotenv] --market-address <address> --side yes|no --shares <amount>|--amount <amount> --dry-run|--execute [--yes-pct <0-100>] [--slippage-bps <0-10000>] [--min-amount-out-raw <uint>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>]"
   },
   "setup": {
-    "agentWorkflow": null,
+    "agentWorkflow": {
+      "notes": [
+        "Use `setup --plan --goal <goal>` for machine-readable onboarding steps and `doctor --goal <goal>` for non-writing validation.",
+        "Treat setup as the guided write path: ask for the goal first, then show a redacted review summary before any file changes.",
+        "Keep manual setup available through init-env plus doctor for operators who do not want prompts."
+      ],
+      "recommendedTools": [
+        "init-env"
+      ],
+      "requiredTools": [
+        "doctor"
+      ]
+    },
     "aliasOf": null,
     "canRunConcurrent": false,
     "canonicalCommandTokens": null,
@@ -21818,7 +21830,7 @@
       "network:rpc"
     ],
     "preferred": false,
-    "recommendedPreflightTool": null,
+    "recommendedPreflightTool": "doctor",
     "remoteEligible": false,
     "requiresSecrets": false,
     "returnsOperationId": false,
@@ -21826,10 +21838,10 @@
     "riskLevel": "low",
     "safeEquivalent": null,
     "safeFlags": [],
-    "summary": "Write env file if needed, run doctor checks, and optionally guide first-run onboarding.",
+    "summary": "Run the goal-first onboarding wizard, review redacted changes, then write env files and doctor checks.",
     "supportsRemote": false,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] setup [--interactive] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
+    "usage": "pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
   },
   "simulate": {
     "agentWorkflow": null,

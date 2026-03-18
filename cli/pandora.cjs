@@ -1208,7 +1208,7 @@ Usage:
   pandora [--output table|json] --version
   pandora [--output table|json] init-env [--force] [--dotenv-path <path>] [--example <path>]
   pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
-  pandora [--output table|json] setup [--interactive] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
+  pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
   pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
   pandora [--output table|json] markets scan [scan options]
   pandora [--output table|json] markets mine [options]
@@ -2196,10 +2196,17 @@ function renderSetupTable(data) {
     [
       ['mode', String(data.mode || '').toUpperCase() || 'N/A', data.mode === 'manual' ? 'Manual scaffold' : 'Guided onboarding'],
       ['goal', data.goal || 'N/A', data.readiness && data.readiness.goal ? `readiness=${data.readiness.goal}` : ''],
-      ['init-env', data.envStep.status.toUpperCase(), data.envStep.message],
+      ['init-env', data.envStep.status.toUpperCase(), data.envStep.message || ''],
       ['doctor', data.doctor.summary.ok ? 'PASS' : 'FAIL', data.doctor.summary.ok ? 'All checks passed' : `${data.doctor.summary.errorCount} issue(s)`],
     ],
   );
+
+  if (data.wizard && data.wizard.review && Array.isArray(data.wizard.review.entries) && data.wizard.review.entries.length) {
+    printTable(
+      ['Review', 'Value'],
+      data.wizard.review.entries.map((entry) => [entry.key, entry.value]),
+    );
+  }
 
   renderDoctorReportTable(data.doctor);
 
@@ -2210,7 +2217,9 @@ function renderSetupTable(data) {
     }
   }
 
-  if (data.doctor.summary.ok) {
+  if (data.cancelled) {
+    console.log('Setup cancelled before write. No files were changed.');
+  } else if (data.doctor.summary.ok) {
     console.log('Setup complete.');
   } else if (data.placeholderSignerGuidance && Array.isArray(data.guidedNextSteps) && data.guidedNextSteps.length) {
     console.log('Setup wrote a starter env and detected placeholder signer material. Next steps:');
@@ -2224,6 +2233,47 @@ function renderSetupTable(data) {
     }
   } else {
     console.log('Setup incomplete. Resolve doctor failures and rerun `pandora setup`.');
+  }
+}
+
+function renderSetupPlanTable(data) {
+  const runtimeRows = [];
+  if (data.runtimeInfo) {
+    runtimeRows.push(['cwd', data.runtimeInfo.cwd || '']);
+    runtimeRows.push(['env file', data.runtimeInfo.envFile || '']);
+    runtimeRows.push(['goal', data.runtimeInfo.goal || data.goal || '']);
+  }
+
+  if (runtimeRows.length) {
+    printTable(['Runtime', 'Value'], runtimeRows);
+  }
+
+  printTable(
+    ['Plan', 'Value'],
+    [
+      ['mode', 'PLAN'],
+      ['goal', data.goal || 'Choose a goal first'],
+      ['env status', data.envStep && data.envStep.status ? data.envStep.status : ''],
+      ['steps', data.plan && Array.isArray(data.plan.steps) ? String(data.plan.steps.length) : '0'],
+    ],
+  );
+
+  if (data.plan && Array.isArray(data.plan.steps) && data.plan.steps.length) {
+    printTable(
+      ['Step', 'Purpose', 'Writes env'],
+      data.plan.steps.map((step) => [
+        step.id || '',
+        step.title || '',
+        Array.isArray(step.writesEnv) && step.writesEnv.length ? step.writesEnv.join(', ') : 'none',
+      ]),
+    );
+  }
+
+  if (Array.isArray(data.guidedNextSteps) && data.guidedNextSteps.length) {
+    console.log('Next steps:');
+    for (const step of data.guidedNextSteps) {
+      console.log(`- ${step}`);
+    }
   }
 }
 
@@ -9312,6 +9362,16 @@ async function runDoctor(args, outputMode) {
 async function runSetup(args, outputMode) {
   const options = parseSetupFlags(args);
   const payload = await getSetupCommandServiceInstance().runSetup(options);
+  if (payload.mode === 'plan') {
+    emitSuccess(outputMode, 'setup.plan', payload, renderSetupPlanTable);
+    return;
+  }
+
+  if (payload.cancelled) {
+    emitSuccess(outputMode, 'setup', payload, renderSetupTable);
+    return;
+  }
+
   const setupFailed = !payload.doctor.summary.ok;
 
   if (setupFailed && outputMode === 'table') {

@@ -78,7 +78,7 @@ jobs:
         run: ${{ matrix.test_command }}
 
   release:
-    name: Package and Publish Artifacts
+    name: Verify Once, Pack Once, Publish Tarball
     runs-on: ubuntu-latest
     needs: validate
 
@@ -155,7 +155,7 @@ jobs:
       - name: Build standalone SDK artifacts
         run: npm run release:build-sdk-artifacts
 
-      - name: Build npm package and checksums
+      - name: Pack release tarball once and build checksums
         id: pack
         shell: bash
         run: |
@@ -528,7 +528,7 @@ jobs:
           skip-existing: true
           attestations: false
 
-      - name: Publish npm package
+      - name: Publish packed tarball to npm
         shell: bash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -614,7 +614,7 @@ jobs:
             ${{ steps.sign.outputs.certificate_file }}
           if-no-files-found: error
 
-      - name: Upload GitHub release assets
+      - name: Upload packed tarball and release assets
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           files: |

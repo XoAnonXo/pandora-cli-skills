@@ -60,11 +60,14 @@ Use the smaller workflow docs before falling back to this file:
 
 ## First-run onboarding
 - Prefer `pandora setup --interactive` for a fresh install.
-- Use `--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>` to preselect the journey when you already know the target.
+- Pick the goal first with `--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>` so the wizard can suppress irrelevant prompts and stay read-only when needed.
+- Use `pandora setup --plan --goal <goal>` when an MCP client or script needs machine-readable onboarding steps without writing files.
+- Use `pandora doctor --goal <goal>` when you only want planning and readiness checks without writing anything.
+- Use `pandora setup --interactive --goal <goal>` when you want the guided write path after reviewing the redacted summary.
 - Use `pandora setup` when you want manual env scaffolding plus doctor checks without prompts.
 - `PANDORA_PRIVATE_KEY` is the preferred signer env var; `PRIVATE_KEY` remains a backward-compatible alias.
 - `PANDORA_RESOLUTION_SOURCES` can hold comma-separated mirror resolution defaults, but explicit `--sources` still win.
-- Guided onboarding is optional and every step should be skippable.
+- Guided onboarding is optional and every step should be skippable. The wizard should still stop at a review-before-write confirmation before touching disk.
 
 ## High-value command routing reference
 
@@ -83,7 +86,7 @@ pandora [--output table|json] help
 pandora [--output json] bootstrap [--include-compatibility]  # use --include-compatibility only for legacy/debug alias inspection
 pandora [--output table|json] init-env [--force] [--dotenv-path <path>] [--example <path>]
 pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
-pandora [--output table|json] setup [--interactive] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
+pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
 pandora [--output json] capabilities
 pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
 pandora [--output table|json] markets get [--id <id> ...] [--stdin]
