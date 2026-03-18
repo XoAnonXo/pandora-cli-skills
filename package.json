@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.1.115",
+  "version": "1.1.116",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
@@ -75,6 +75,7 @@
     "init-env": "node cli/pandora.cjs init-env",
     "doctor": "node cli/pandora.cjs doctor",
     "setup": "node cli/pandora.cjs setup",
+    "clean:local": "node scripts/clean_local_artifacts.cjs",
     "clean:sdk-python-cache": "node scripts/clean_sdk_python_cache.cjs",
     "generate:sdk-contracts": "npm run clean:sdk-python-cache && node scripts/generate_agent_contract_sdk.cjs",
     "check:sdk-contracts": "npm run clean:sdk-python-cache && node scripts/generate_agent_contract_sdk.cjs --check",

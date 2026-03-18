@@ -52,6 +52,7 @@ function buildSyncStrategy(options) {
     driftTriggerBps: options.driftTriggerBps,
     hedgeEnabled: options.hedgeEnabled,
     hedgeScope: normalizeHedgeScope(options.hedgeScope),
+    skipInitialHedge: normalizeSkipInitialHedge(options.skipInitialHedge),
     hedgeRatio: options.hedgeRatio,
     hedgeTriggerUsdc: options.hedgeTriggerUsdc,
     maxRebalanceUsdc: options.maxRebalanceUsdc,
@@ -80,6 +81,81 @@ function normalizePriceSource(value) {
 function normalizeHedgeScope(value) {
   const normalized = String(value || '').trim().toLowerCase();
   return normalized === 'pool' ? 'pool' : 'total';
+}
+
+function normalizeSkipInitialHedge(value) {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+  }
+  return Boolean(value);
+}
+
+function resolveStartupHedgeBaselineUsdc(state) {
+  const baselineObject = state && state.startupHedgeBaseline && typeof state.startupHedgeBaseline === 'object'
+    ? state.startupHedgeBaseline
+    : null;
+  const baselineFromObject = toNumber(
+    baselineObject
+      ? (baselineObject.baselineUsdc !== undefined
+          ? baselineObject.baselineUsdc
+          : baselineObject.rawGapUsdc !== undefined
+            ? baselineObject.rawGapUsdc
+            : baselineObject.gapUsdc)
+      : null,
+  );
+  if (baselineFromObject !== null) return baselineFromObject;
+  return toNumber(state && state.startupHedgeBaselineUsdc);
+}
+
+function persistStartupHedgeBaseline(state, baselineUsdc) {
+  if (!state || typeof state !== 'object') return null;
+  const normalizedBaselineUsdc = toNumber(baselineUsdc);
+  if (normalizedBaselineUsdc === null) return null;
+  const roundedBaselineUsdc = round(normalizedBaselineUsdc, 6);
+  const baseline = {
+    baselineUsdc: roundedBaselineUsdc,
+    capturedAt: new Date().toISOString(),
+    source: 'skip-initial-hedge',
+  };
+  state.startupHedgeBaseline = baseline;
+  state.startupHedgeBaselineUsdc = baseline.baselineUsdc;
+  state.startupHedgeBaselineCapturedAt = baseline.capturedAt;
+  state.startupHedgeBaselineSource = baseline.source;
+  return baseline;
+}
+
+function resolveStartupAdjustedGap(rawGapUsdc, state, options) {
+  const skipInitialHedge = normalizeSkipInitialHedge(options && options.skipInitialHedge);
+  const existingBaselineUsdc = resolveStartupHedgeBaselineUsdc(state);
+  if (!skipInitialHedge || rawGapUsdc === null) {
+    return {
+      skipInitialHedge,
+      baselineUsdc: existingBaselineUsdc,
+      baselineCaptured: false,
+      skipInitialHedgeApplied: false,
+      gapUsdc: rawGapUsdc,
+    };
+  }
+
+  if (existingBaselineUsdc === null) {
+    const baseline = persistStartupHedgeBaseline(state, rawGapUsdc);
+    return {
+      skipInitialHedge,
+      baselineUsdc: baseline ? baseline.baselineUsdc : toNumber(rawGapUsdc),
+      baselineCaptured: Boolean(baseline),
+      skipInitialHedgeApplied: Boolean(baseline),
+      gapUsdc: 0,
+    };
+  }
+
+  return {
+    skipInitialHedge,
+    baselineUsdc: existingBaselineUsdc,
+    baselineCaptured: false,
+    skipInitialHedgeApplied: false,
+    gapUsdc: normalizeSignedZero(round(rawGapUsdc - existingBaselineUsdc, 6)),
+  };
 }
 
 function derivePandoraYesPctFromReserves(reserveYesUsdc, reserveNoUsdc) {
@@ -306,10 +382,12 @@ function buildResolvedSnapshotMetrics(snapshotMetrics, options, state = null) {
 function buildTickPlan(params) {
   const { snapshotMetrics, state, options } = params;
   const resolvedMetrics = buildResolvedSnapshotMetrics(snapshotMetrics, options, state);
-  const gapUsdc =
+  const rawGapUsdc =
     resolvedMetrics.targetHedgeUsdc === null
       ? null
       : normalizeSignedZero(round(resolvedMetrics.targetHedgeUsdc - (toNumber(state.currentHedgeUsdc) || 0), 6));
+  const startupGap = resolveStartupAdjustedGap(rawGapUsdc, state, options);
+  const gapUsdc = startupGap.gapUsdc;
   const rawHedgeTriggered = gapUsdc !== null && Math.abs(gapUsdc) >= options.hedgeTriggerUsdc;
   const hedgeTriggered = Boolean(options.hedgeEnabled) && rawHedgeTriggered;
 
@@ -368,7 +446,12 @@ function buildTickPlan(params) {
       : 'yes';
 
   return {
+    rawGapUsdc,
     gapUsdc,
+    skipInitialHedge: startupGap.skipInitialHedge,
+    skipInitialHedgeApplied: startupGap.skipInitialHedgeApplied,
+    startupHedgeBaselineUsdc: startupGap.baselineUsdc,
+    startupHedgeBaselineCaptured: startupGap.baselineCaptured,
     rawHedgeTriggered,
     hedgeTriggered,
     plannedHedgeUsdc,
@@ -432,7 +515,12 @@ function buildTickSnapshot(params) {
     },
     metrics: {
       ...resolvedMetrics,
+      rawHedgeGapUsdc: plan.rawGapUsdc,
       hedgeGapUsdc: plan.gapUsdc,
+      skipInitialHedge: plan.skipInitialHedge,
+      skipInitialHedgeApplied: plan.skipInitialHedgeApplied,
+      startupHedgeBaselineUsdc: plan.startupHedgeBaselineUsdc,
+      startupHedgeBaselineCaptured: plan.startupHedgeBaselineCaptured,
       rawHedgeTriggered: plan.rawHedgeTriggered,
       hedgeTriggered: plan.hedgeTriggered,
       hedgeEnabled: Boolean(options.hedgeEnabled),

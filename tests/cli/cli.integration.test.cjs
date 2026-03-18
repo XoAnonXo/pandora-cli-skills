@@ -7936,6 +7936,7 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   assert.match(payload.data.usage, /--verbose/);
   assert.doesNotMatch(payload.data.usage, /--daemon/);
   assert.match(payload.data.usage, /--hedge-scope pool\|total/);
+  assert.match(payload.data.usage, /--skip-initial-hedge/);
   assert.match(payload.data.usage, /--adopt-existing-positions/);
   assert.match(payload.data.usage, /--rebalance-mode atomic\|incremental/);
   assert.match(payload.data.usage, /--price-source on-chain\|indexer/);
@@ -7961,6 +7962,7 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   assert.equal(payload.data.notes.some((note) => /Hedging is enabled by default/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /adopt-existing-positions/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /Default hedge scope is `total`/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /skip-initial-hedge.*baseline/i.test(String(note))), true);
 });
 
 test('mirror sync unlock --help returns recovery-specific guidance', () => {
@@ -7990,6 +7992,8 @@ test('mirror go --help json includes flashbots routing flag contract', () => {
   assert.match(payload.data.usage, /--auto-close/);
   assert.match(payload.data.usage, /--resolve-answer yes\|no/);
   assert.match(payload.data.usage, /--resolve-reason <text>/);
+  assert.match(payload.data.usage, /--hedge-scope pool\|total/);
+  assert.match(payload.data.usage, /--skip-initial-hedge/);
   assert.equal(payload.data.notes.some((note) => /validation tickets are bound to the exact final deploy payload/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /two independent public --sources.*even in paper mode/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /market_deployer_a.*prod_trader_a|prod_trader_a.*market_deployer_a/i.test(String(note))), true);
@@ -7997,6 +8001,7 @@ test('mirror go --help json includes flashbots routing flag contract', () => {
   assert.equal(payload.data.notes.some((note) => /flashbots-private.*cannot carry approval/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /does not accept a daemon `--source` selector/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /hedging stays enabled by default/i.test(String(note))), true);
+  assert.equal(payload.data.notes.some((note) => /skip-initial-hedge.*baseline/i.test(String(note))), true);
 });
 
 test('mirror deploy --help json surfaces validation-ticket caveats and reserve-weight distribution flags', () => {
@@ -8042,6 +8047,10 @@ test('command descriptors expose flashbots routing flags for mirror go and sync 
   assert.match(descriptors['mirror.go'].usage, /--auto-resolve/);
   assert.match(descriptors['mirror.go'].usage, /--auto-close/);
   assert.match(descriptors['mirror.go'].usage, /--resolve-answer yes\|no/);
+  assert.match(descriptors['mirror.go'].usage, /--hedge-scope pool\|total/);
+  assert.match(descriptors['mirror.go'].usage, /--skip-initial-hedge/);
+  assert.ok(descriptors['mirror.go'].inputSchema.properties['hedge-scope']);
+  assert.ok(descriptors['mirror.go'].inputSchema.properties['skip-initial-hedge']);
 
   for (const commandName of ['mirror.sync.once', 'mirror.sync.run', 'mirror.sync.start']) {
     assert.ok(descriptors[commandName], `missing descriptor for ${commandName}`);
@@ -8077,6 +8086,11 @@ test('command descriptors expose flashbots routing flags for mirror go and sync 
     );
     assert.match(
       descriptors[commandName].usage,
+      /--skip-initial-hedge/,
+      `${commandName} usage should advertise skipInitialHedge`,
+    );
+    assert.match(
+      descriptors[commandName].usage,
       /--adopt-existing-positions/,
       `${commandName} usage should advertise adoptExistingPositions`,
     );
@@ -8093,6 +8107,10 @@ test('command descriptors expose flashbots routing flags for mirror go and sync 
     assert.ok(
       descriptors[commandName].inputSchema.properties['adopt-existing-positions'],
       `${commandName} schema should expose adoptExistingPositions`,
+    );
+    assert.ok(
+      descriptors[commandName].inputSchema.properties['skip-initial-hedge'],
+      `${commandName} schema should expose skipInitialHedge`,
     );
   }
 

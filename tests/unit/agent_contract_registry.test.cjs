@@ -454,6 +454,14 @@ test('mirror contract descriptors expose separate-leg sync truth, reserve proven
     descriptors['mirror.go'].usage,
     /--depth-slippage-bps <n>.*--min-time-to-close-sec <n>.*--strict-close-time-delta/,
   );
+  assert.match(
+    descriptors['mirror.go'].usage,
+    /--hedge-scope pool\|total.*--skip-initial-hedge/,
+  );
+  assert.ok(
+    descriptors['mirror.go'].inputSchema.properties['skip-initial-hedge'],
+    'mirror.go should expose skip-initial-hedge',
+  );
 
   assert.match(
     descriptors['mirror.sync'].summary,
@@ -479,6 +487,17 @@ test('mirror contract descriptors expose separate-leg sync truth, reserve proven
     descriptors['mirror.sync.once'].inputSchema.properties['rebalance-mode'].enum,
     ['atomic', 'incremental'],
   );
+  for (const commandName of ['mirror.sync.once', 'mirror.sync.run', 'mirror.sync.start']) {
+    assert.equal(
+      descriptors[commandName].inputSchema.properties['max-rebalance-usdc'].minimum,
+      0,
+      `${commandName} should allow a zero rebalance budget`,
+    );
+    assert.ok(
+      descriptors[commandName].inputSchema.properties['skip-initial-hedge'],
+      `${commandName} should expose skip-initial-hedge`,
+    );
+  }
   assert.deepEqual(
     descriptors['mirror.sync.once'].inputSchema.properties['price-source'].enum,
     ['on-chain', 'indexer'],

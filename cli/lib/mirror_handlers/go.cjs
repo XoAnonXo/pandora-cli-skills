@@ -331,6 +331,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     '`flashbots-private` cannot carry approval + trade together. Use `auto` or `flashbots-bundle` for approval-bearing Pandora paths.',
     '`mirror go` does not accept a daemon `--source` selector. Use explicit Polymarket market selectors here, and keep `--source auto|api|on-chain` for `pandora polymarket positions`.',
     'Any live path that continues into daemon sync still needs `--max-open-exposure-usdc` and `--max-trades-per-day`, and hedging stays enabled by default unless you add `--no-hedge`.',
+    'When `--auto-sync` is enabled, `--hedge-scope` and `--skip-initial-hedge` are forwarded into the sync leg. `--skip-initial-hedge` captures the startup hedge gap as a baseline and only trades later delta changes.',
   ];
 
   if (includesHelpFlag(shared.rest)) {
@@ -593,6 +594,8 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         executeLive: options.executeLive,
         hedgeEnabled: !options.noHedge,
         hedgeRatio: options.hedgeRatio,
+        hedgeScope: options.hedgeScope,
+        skipInitialHedge: options.skipInitialHedge,
         rebalanceSizingMode: options.rebalanceSizingMode,
         priceSource: options.priceSource,
         intervalMs: options.syncIntervalMs,

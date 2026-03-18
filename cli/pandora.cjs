@@ -6032,41 +6032,11 @@ async function runMarketsCommand(args, context) {
   }
 
   if (action === 'mine') {
-    if (includesHelpFlag(actionArgs)) {
-      const usage =
-        'pandora [--output table|json] markets mine [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'markets.mine.help', commandHelpPayload(usage));
-      } else {
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
-
-    const options = parseMarketsMineFlagsFromModule(actionArgs);
-    if (!options.wallet && !options.privateKey && !options.profileId && !options.profileFile) {
-      const envPrivateKey = String(process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY || '').trim();
-      if (isValidPrivateKey(envPrivateKey)) {
-        options.privateKey = envPrivateKey;
-      }
-    }
-    options.indexerUrl = resolveIndexerUrl(shared.indexerUrl || options.indexerUrl || null);
-    if (Number.isFinite(shared.timeoutMs)) {
-      options.timeoutMs = shared.timeoutMs;
-    }
-
-    try {
-      const payload = await getMarketsMineService().discoverOwnedMarkets(options, {
-        collectPortfolioSnapshot,
-        runClaim,
-      });
-      emitSuccess(context.outputMode, 'markets.mine', payload, renderMarketsMineTable);
-    } catch (error) {
-      if (error && error.code) {
-        throw new CliError(error.code, error.message || 'markets mine failed.', error.details);
-      }
-      throw error;
-    }
+    await runMarketsMineCommandFromService(actionArgs, {
+      ...context,
+      indexerUrl,
+      timeoutMs: shared.timeoutMs,
+    });
     return;
   }
 
@@ -7557,6 +7527,24 @@ const runWatchCommandFromService = createLazyFactoryRunner('./lib/watch_command_
   sleepMs,
   renderWatchTable,
 }));
+const runMarketsMineCommandFromService = createLazyFactoryRunner(
+  './lib/markets_mine_command_service.cjs',
+  'createRunMarketsMineCommand',
+  () => ({
+    CliError,
+    includesHelpFlag,
+    emitSuccess,
+    commandHelpPayload,
+    resolveIndexerUrl,
+    parseMarketsMineFlags: parseMarketsMineFlagsFromModule,
+    discoverOwnedMarkets: (options) => getMarketsMineService().discoverOwnedMarkets(options, {
+      collectPortfolioSnapshot,
+      runClaim,
+    }),
+    isValidPrivateKey,
+    renderMarketsMineTable,
+  }),
+);
 
 const runPolymarketCommandFromService = createLazyFactoryRunner('./lib/polymarket_command_service.cjs', 'createRunPolymarketCommand', () => ({
   CliError,
@@ -8686,6 +8674,14 @@ function renderMirrorSyncTickLine(tickContext, outputMode) {
   const action = snapshot.action || null;
   const error = snapshot.error && typeof snapshot.error === 'object' ? snapshot.error : null;
   const actionStatus = action && action.status ? action.status : 'idle';
+  const actionCode =
+    action && (action.code || (action.error && action.error.code))
+      ? String(action.code || action.error.code)
+      : '';
+  const actionReason =
+    action && (action.reason || (action.error && action.error.message))
+      ? String(action.reason || action.error.message)
+      : '';
   const gateCode =
     action && Array.isArray(action.failedChecks) && action.failedChecks.length
       ? action.forcedGateBypass
@@ -8710,6 +8706,8 @@ function renderMirrorSyncTickLine(tickContext, outputMode) {
         gateOk: strictGate.ok,
         gateCode,
         actionStatus,
+        actionCode: actionCode || null,
+        actionReason: actionReason || null,
         errorCode: error && error.code ? error.code : null,
         errorMessage: error && error.message ? error.message : null,
       }),
@@ -8722,7 +8720,8 @@ function renderMirrorSyncTickLine(tickContext, outputMode) {
   const rebalance = metrics.plannedRebalanceUsdc === undefined ? '0' : String(metrics.plannedRebalanceUsdc);
   const hedge = metrics.plannedHedgeUsdc === undefined ? '0' : String(metrics.plannedHedgeUsdc);
   const gateText = strictGate.ok ? 'ok' : gateCode || 'blocked';
-  console.log(`[${ts}] tick=${tickContext.iteration} drift=${drift}bps rebalance=$${rebalance} hedge=$${hedge} action=${actionStatus} gate=${gateText}`);
+  const blockText = actionStatus === 'blocked' && actionCode ? ` block=${actionCode}` : '';
+  console.log(`[${ts}] tick=${tickContext.iteration} drift=${drift}bps rebalance=$${rebalance} hedge=$${hedge} action=${actionStatus} gate=${gateText}${blockText}`);
   if (verbose || error) {
     const reserveYes = metrics.reserveYesUsdc === null || metrics.reserveYesUsdc === undefined ? 'n/a' : metrics.reserveYesUsdc;
     const reserveNo = metrics.reserveNoUsdc === null || metrics.reserveNoUsdc === undefined ? 'n/a' : metrics.reserveNoUsdc;
@@ -8737,6 +8736,9 @@ function renderMirrorSyncTickLine(tickContext, outputMode) {
     console.log(
       `  reserve=${metrics.reserveSource || 'n/a'} yes=${reserveYes} no=${reserveNo} pandoraYes=${pandoraYes}% sourceYes=${sourceYes}% hedgeShares=${hedgeShares} hedgeOrderUsd=${hedgeOrderUsd} scope=${metrics.hedgeScope || 'n/a'}${recycleReason ? ` recycle=${recycleReason}` : ''}`,
     );
+  }
+  if (actionStatus === 'blocked' && actionReason) {
+    console.log(`  block=${actionCode || 'MIRROR_SYNC_BLOCKED'} ${actionReason}`);
   }
   if (error) {
     console.log(`  error=${error.code || 'MIRROR_SYNC_TICK_FAILED'} ${error.message || 'Mirror sync tick failed.'}`);

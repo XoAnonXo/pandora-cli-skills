@@ -643,6 +643,50 @@ function buildModeledActionSummary(plan, snapshot, snapshotMetrics) {
   };
 }
 
+function buildActionPlanningTelemetry(snapshot) {
+  const actionPlan = snapshot && snapshot.actionPlan && typeof snapshot.actionPlan === 'object'
+    ? snapshot.actionPlan
+    : null;
+  if (!actionPlan) return null;
+  return {
+    rebalanceSide: actionPlan.rebalanceSide || null,
+    plannedSpendUsdc:
+      actionPlan.plannedSpendUsdc !== undefined && actionPlan.plannedSpendUsdc !== null
+        ? toNumber(actionPlan.plannedSpendUsdc)
+        : null,
+    hedgeTokenSide: actionPlan.hedgeTokenSide || null,
+    hedgeOrderSide: actionPlan.hedgeOrderSide || null,
+    hedgeExecutionMode: actionPlan.hedgeExecutionMode || null,
+    hedgeStateDeltaUsdc:
+      actionPlan.hedgeStateDeltaUsdc !== undefined && actionPlan.hedgeStateDeltaUsdc !== null
+        ? toNumber(actionPlan.hedgeStateDeltaUsdc)
+        : null,
+    hedgeInventoryUsdcAvailable:
+      actionPlan.hedgeInventoryUsdcAvailable !== undefined && actionPlan.hedgeInventoryUsdcAvailable !== null
+        ? toNumber(actionPlan.hedgeInventoryUsdcAvailable)
+        : null,
+    hedgeInventorySharesAvailable:
+      actionPlan.hedgeInventorySharesAvailable !== undefined && actionPlan.hedgeInventorySharesAvailable !== null
+        ? toNumber(actionPlan.hedgeInventorySharesAvailable)
+        : null,
+    hedgeRecycleEligible: Boolean(actionPlan.hedgeRecycleEligible),
+    hedgeLiveSellAllowed: Boolean(actionPlan.hedgeLiveSellAllowed),
+    hedgeRecycleReason: actionPlan.hedgeRecycleReason || null,
+    hedgeOrderReferencePrice:
+      actionPlan.hedgeOrderReferencePrice !== undefined && actionPlan.hedgeOrderReferencePrice !== null
+        ? toNumber(actionPlan.hedgeOrderReferencePrice)
+        : null,
+    hedgeOrderUsd:
+      actionPlan.hedgeOrderUsd !== undefined && actionPlan.hedgeOrderUsd !== null
+        ? toNumber(actionPlan.hedgeOrderUsd)
+        : null,
+    hedgeOrderShares:
+      actionPlan.hedgeOrderShares !== undefined && actionPlan.hedgeOrderShares !== null
+        ? toNumber(actionPlan.hedgeOrderShares)
+        : null,
+  };
+}
+
 /**
  * Create an executable action envelope for a triggered tick.
  * @param {{options: object, idempotencyKey: string, gate: object}} params
@@ -748,6 +792,8 @@ function extractActionTransactionNonce(action) {
 function buildMirrorAuditEntries(action) {
   if (!action || typeof action !== 'object') return [];
   const timestamp = action.completedAt || action.startedAt || new Date().toISOString();
+  const code = action.error && action.error.code ? action.error.code : action.code || null;
+  const message = action.error && action.error.message ? action.error.message : action.reason || null;
   const entries = [
     {
       classification: 'sync-action',
@@ -755,8 +801,8 @@ function buildMirrorAuditEntries(action) {
       source: 'mirror-sync.execution',
       timestamp,
       status: action.status || null,
-      code: action.error && action.error.code ? action.error.code : null,
-      message: action.error && action.error.message ? action.error.message : null,
+      code,
+      message,
       details: {
         mode: action.mode || null,
         idempotencyKey: action.idempotencyKey || null,
@@ -768,6 +814,12 @@ function buildMirrorAuditEntries(action) {
         lockRetained: Boolean(action.lockRetained),
         transactionNonce: action.transactionNonce ?? null,
         model: action.model || null,
+        block: action.block || null,
+        planning: action.planning || null,
+        pendingAction: action.pendingAction || null,
+        failedChecks: Array.isArray(action.failedChecks) ? action.failedChecks : [],
+        failedChecksRaw: Array.isArray(action.failedChecksRaw) ? action.failedChecksRaw : [],
+        bypassedFailedChecks: Array.isArray(action.bypassedFailedChecks) ? action.bypassedFailedChecks : [],
       },
     },
   ];
@@ -846,15 +898,22 @@ function buildMirrorAuditEntries(action) {
 }
 
 function buildBlockedPendingActionSnapshot(params) {
-  const { options, idempotencyKey, pendingAction, code, tickAt, reason } = params;
+  const { options, idempotencyKey, pendingAction, code, tickAt, reason, blockKind = 'pending-action-lock' } = params;
   return {
     mode: options.executeLive ? 'live' : 'paper',
     status: 'blocked',
     reason: reason || 'Live execution is fail-closed until the pending action is reconciled.',
     code,
+    block: {
+      kind: blockKind,
+      code,
+      reason: reason || 'Live execution is fail-closed until the pending action is reconciled.',
+    },
     idempotencyKey,
     pendingAction,
     blockedAt: tickAt.toISOString(),
+    startedAt: tickAt.toISOString(),
+    completedAt: tickAt.toISOString(),
   };
 }
 
@@ -1149,6 +1208,42 @@ function finalizeExecutedActionState(params) {
   };
 }
 
+async function finalizeNonExecutableAction(params) {
+  const {
+    state,
+    snapshot,
+    action,
+    loadedFilePath,
+    tickAt,
+    sendWebhook,
+    strategyHash,
+    iteration,
+    actions,
+    webhookReports,
+  } = params;
+  if (!(action && typeof action === 'object')) return;
+  if (!action.startedAt) action.startedAt = tickAt.toISOString();
+  if (!action.completedAt) action.completedAt = tickAt.toISOString();
+  if (snapshot && snapshot.actionPlan && !action.planning) {
+    action.planning = buildActionPlanningTelemetry(snapshot);
+  }
+  snapshot.action = action;
+  actions.push(action);
+  saveState(loadedFilePath, state);
+  appendAuditEntries(loadedFilePath, buildMirrorAuditEntries(action));
+  if (sendWebhook) {
+    const report = await sendWebhook({
+      event: 'mirror.sync.trigger',
+      strategyHash,
+      iteration,
+      message: `[Pandora Mirror] action=${action.status} code=${action.code || (action.error && action.error.code) || 'none'} reason=${action.reason || (action.error && action.error.message) || 'n/a'}`,
+      action,
+      snapshot,
+    });
+    webhookReports.push(report);
+  }
+}
+
 /**
  * Execute triggered action path (skip/blocked/executed) for a tick.
  * @param {{options: object, state: object, snapshot: object, plan: object, gate: object, tickAt: Date, loadedFilePath: string, rebalanceFn: Function, hedgeFn: Function, sendWebhook: Function|null, strategyHash: string, iteration: number, actions: Array<object>, webhookReports: Array<object>, snapshotMetrics: object, verifyPayload: object, depth: object}} params
@@ -1262,6 +1357,19 @@ async function processTriggeredAction(params) {
         },
         timestamp: tickAt,
       });
+      snapshot.action.model = buildModeledActionSummary(plan, snapshot, snapshotMetrics);
+      await finalizeNonExecutableAction({
+        state,
+        snapshot,
+        action: snapshot.action,
+        loadedFilePath,
+        tickAt,
+        sendWebhook,
+        strategyHash: hash,
+        iteration,
+        actions,
+        webhookReports,
+      });
       return;
     }
 
@@ -1288,6 +1396,24 @@ async function processTriggeredAction(params) {
           lockNonce: state.lastExecution.lockNonce || null,
         },
         timestamp: tickAt,
+      });
+      snapshot.action.model = buildModeledActionSummary(plan, snapshot, snapshotMetrics);
+      snapshot.action.block = {
+        kind: 'last-execution-review',
+        code: 'LAST_ACTION_REQUIRES_REVIEW',
+        reason: 'Previous live action still requires manual review before another execution.',
+      };
+      await finalizeNonExecutableAction({
+        state,
+        snapshot,
+        action: snapshot.action,
+        loadedFilePath,
+        tickAt,
+        sendWebhook,
+        strategyHash: hash,
+        iteration,
+        actions,
+        webhookReports,
       });
       return;
     }
@@ -1320,6 +1446,24 @@ async function processTriggeredAction(params) {
         },
         timestamp: tickAt,
       });
+      snapshot.action.model = buildModeledActionSummary(plan, snapshot, snapshotMetrics);
+      snapshot.action.block = {
+        kind: 'last-execution-pending',
+        code: 'PENDING_ACTION_STATE',
+        reason: 'Last live action is still marked pending in state and now requires manual review before another execution.',
+      };
+      await finalizeNonExecutableAction({
+        state,
+        snapshot,
+        action: snapshot.action,
+        loadedFilePath,
+        tickAt,
+        sendWebhook,
+        strategyHash: hash,
+        iteration,
+        actions,
+        webhookReports,
+      });
       return;
     }
   }
@@ -1330,7 +1474,23 @@ async function processTriggeredAction(params) {
       status: 'skipped',
       reason: 'Duplicate trigger bucket (idempotency key already processed).',
       idempotencyKey,
+      code: 'DUPLICATE_IDEMPOTENCY_KEY',
+      startedAt: tickAt.toISOString(),
+      completedAt: tickAt.toISOString(),
     };
+    snapshot.action.model = buildModeledActionSummary(plan, snapshot, snapshotMetrics);
+    await finalizeNonExecutableAction({
+      state,
+      snapshot,
+      action: snapshot.action,
+      loadedFilePath,
+      tickAt,
+      sendWebhook,
+      strategyHash: hash,
+      iteration,
+      actions,
+      webhookReports,
+    });
     return;
   }
 
@@ -1339,11 +1499,32 @@ async function processTriggeredAction(params) {
       mode: options.executeLive ? 'live' : 'paper',
       status: 'blocked',
       reason: 'Strict gate blocked execution.',
+      code: 'STRICT_GATE_BLOCKED',
       idempotencyKey,
       failedChecks: gate.failedChecks,
       failedChecksRaw: gate.failedChecksRaw,
       bypassedFailedChecks: gate.bypassedFailedChecks,
+      block: {
+        kind: 'gate',
+        code: 'STRICT_GATE_BLOCKED',
+        reason: 'Strict gate blocked execution.',
+      },
+      startedAt: tickAt.toISOString(),
+      completedAt: tickAt.toISOString(),
     };
+    snapshot.action.model = buildModeledActionSummary(plan, snapshot, snapshotMetrics);
+    await finalizeNonExecutableAction({
+      state,
+      snapshot,
+      action: snapshot.action,
+      loadedFilePath,
+      tickAt,
+      sendWebhook,
+      strategyHash: hash,
+      iteration,
+      actions,
+      webhookReports,
+    });
     return;
   }
 
@@ -1386,6 +1567,19 @@ async function processTriggeredAction(params) {
           lockFile: contestedLock && contestedLock.lockFile ? contestedLock.lockFile : null,
         },
         timestamp: tickAt,
+      });
+      snapshot.action.model = buildModeledActionSummary(plan, snapshot, snapshotMetrics);
+      await finalizeNonExecutableAction({
+        state,
+        snapshot,
+        action: snapshot.action,
+        loadedFilePath,
+        tickAt,
+        sendWebhook,
+        strategyHash: hash,
+        iteration,
+        actions,
+        webhookReports,
       });
       return;
     }
@@ -1597,10 +1791,12 @@ module.exports = {
   buildHedgeExecutionPlan,
   buildIdempotencyKey,
   buildExecutableAction,
+  buildActionPlanningTelemetry,
   normalizeExecutionFailure,
   maybeAutoRecoverPendingActionLock,
   executeRebalanceLeg,
   executeHedgeLeg,
   finalizeExecutedActionState,
+  finalizeNonExecutableAction,
   processTriggeredAction,
 };

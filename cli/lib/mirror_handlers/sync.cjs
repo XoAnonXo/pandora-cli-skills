@@ -392,6 +392,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     'Hedging is enabled by default. Add `--no-hedge` only when you intentionally want Pandora-only mirror operation.',
     'Use `--adopt-existing-positions` after a state wipe when the daemon should seed managed Polymarket inventory from live YES/NO holdings before enabling sell-side recycling.',
     'Default hedge scope is `total`, which includes held Pandora outcome tokens in addition to pool reserves. Use `--hedge-scope pool` only when you intentionally want pool-only hedging.',
+    '`--skip-initial-hedge` captures the startup hedge gap as a baseline and only hedges later delta changes. It does not change the meaning of `--hedge-scope pool|total`.',
   ];
   const commandName =
     requestedAction === 'status' || requestedAction === 'stop' || requestedAction === 'unlock'

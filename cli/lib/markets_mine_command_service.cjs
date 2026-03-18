@@ -5,45 +5,19 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
-function renderMarketsMineTable(payload) {
-  const items = Array.isArray(payload && payload.items) ? payload.items : [];
-  if (!items.length) {
-    // eslint-disable-next-line no-console
-    console.log('No owned market exposure found.');
-    return;
-  }
-
-  // eslint-disable-next-line no-console
-  console.log(`Wallet: ${payload.wallet}`);
-  // eslint-disable-next-line no-console
-  console.log(`Markets: ${items.length}`);
-  // eslint-disable-next-line no-console
-  console.log('');
-  // eslint-disable-next-line no-console
-  console.log('Market                                      Exposure              Question');
-  for (const item of items) {
-    const market = String(item && item.marketAddress ? item.marketAddress : '').padEnd(42, ' ');
-    const exposure = String(Array.isArray(item && item.exposureTypes) ? item.exposureTypes.join(',') : '').padEnd(20, ' ');
-    const question = String(item && item.question ? item.question : '');
-    // eslint-disable-next-line no-console
-    console.log(`${market} ${exposure} ${question}`);
-  }
-}
-
 function createRunMarketsMineCommand(deps) {
   const includesHelpFlag = requireDep(deps, 'includesHelpFlag');
   const emitSuccess = requireDep(deps, 'emitSuccess');
   const commandHelpPayload = requireDep(deps, 'commandHelpPayload');
-  const parseIndexerSharedFlags = requireDep(deps, 'parseIndexerSharedFlags');
-  const maybeLoadIndexerEnv = requireDep(deps, 'maybeLoadIndexerEnv');
   const resolveIndexerUrl = requireDep(deps, 'resolveIndexerUrl');
   const parseMarketsMineFlags = requireDep(deps, 'parseMarketsMineFlags');
   const discoverOwnedMarkets = requireDep(deps, 'discoverOwnedMarkets');
   const CliError = requireDep(deps, 'CliError');
+  const isValidPrivateKey = requireDep(deps, 'isValidPrivateKey');
+  const renderMarketsMineTable = requireDep(deps, 'renderMarketsMineTable');
 
-  return async function runMarketsMineCommand(args, context) {
-    const shared = parseIndexerSharedFlags(args);
-    if (includesHelpFlag(shared.rest)) {
+  return async function runMarketsMineCommand(args, context = {}) {
+    if (includesHelpFlag(args)) {
       const usage =
         'pandora [--output table|json] markets mine [--wallet <address>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--indexer-url <url>] [--timeout-ms <ms>]';
       if (context.outputMode === 'json') {
@@ -55,11 +29,16 @@ function createRunMarketsMineCommand(deps) {
       return;
     }
 
-    maybeLoadIndexerEnv(shared);
-    const options = parseMarketsMineFlags(shared.rest.slice(1));
-    options.indexerUrl = resolveIndexerUrl(shared.indexerUrl || options.indexerUrl || null);
-    if (Number.isFinite(shared.timeoutMs)) {
-      options.timeoutMs = shared.timeoutMs;
+    const options = parseMarketsMineFlags(args);
+    if (!options.wallet && !options.privateKey && !options.profileId && !options.profileFile) {
+      const envPrivateKey = String(process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY || '').trim();
+      if (isValidPrivateKey(envPrivateKey)) {
+        options.privateKey = envPrivateKey;
+      }
+    }
+    options.indexerUrl = resolveIndexerUrl(context.indexerUrl || options.indexerUrl || null);
+    if (Number.isFinite(context.timeoutMs)) {
+      options.timeoutMs = context.timeoutMs;
     }
 
     try {

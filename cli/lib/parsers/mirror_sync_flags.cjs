@@ -74,6 +74,14 @@ function parseRebalanceRouteFallback(value, flagName, CliError) {
   return normalized;
 }
 
+function parseNonNegativeNumber(value, flagName, CliError) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a non-negative number.`);
+  }
+  return parsed;
+}
+
 /**
  * Creates the mirror sync flags parser.
  * @param {object} deps
@@ -111,6 +119,7 @@ function createParseMirrorSyncFlags(deps) {
       executeLive: false,
       hedgeEnabled: true,
       hedgeScope: 'total',
+      skipInitialHedge: false,
       hedgeRatio: 1,
       rebalanceSizingMode: 'atomic',
       priceSource: 'on-chain',
@@ -236,6 +245,10 @@ function createParseMirrorSyncFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--skip-initial-hedge') {
+        options.skipInitialHedge = true;
+        continue;
+      }
       if (token === '--rebalance-mode') {
         const value = String(requireFlagValue(rest, i, '--rebalance-mode')).trim().toLowerCase();
         if (value !== 'atomic' && value !== 'incremental') {
@@ -296,7 +309,11 @@ function createParseMirrorSyncFlags(deps) {
         continue;
       }
       if (token === '--max-rebalance-usdc') {
-        options.maxRebalanceUsdc = parsePositiveNumber(requireFlagValue(rest, i, '--max-rebalance-usdc'), '--max-rebalance-usdc');
+        options.maxRebalanceUsdc = parseNonNegativeNumber(
+          requireFlagValue(rest, i, '--max-rebalance-usdc'),
+          '--max-rebalance-usdc',
+          CliError,
+        );
         i += 1;
         continue;
       }

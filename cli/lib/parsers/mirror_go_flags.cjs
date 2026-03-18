@@ -65,6 +65,22 @@ function parseDistributionPercent(value, flagName, CliError) {
   return parsed;
 }
 
+function parseHedgeScope(value, flagName, CliError) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized !== 'pool' && normalized !== 'total') {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be pool|total.`);
+  }
+  return normalized;
+}
+
+function parseNonNegativeNumber(value, flagName, CliError) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a non-negative number.`);
+  }
+  return parsed;
+}
+
 function parseRebalanceRoute(value, flagName, CliError) {
   const normalized = String(value || '').trim().toLowerCase();
   if (!REBALANCE_ROUTE_VALUES.has(normalized)) {
@@ -199,6 +215,8 @@ function createParseMirrorGoFlags(deps) {
       driftTriggerBps: 150,
       hedgeTriggerUsdc: 10,
       hedgeRatio: 1,
+      hedgeScope: 'total',
+      skipInitialHedge: false,
       rebalanceSizingMode: 'atomic',
       priceSource: 'on-chain',
       rebalanceRoute: 'public',
@@ -372,6 +390,19 @@ function createParseMirrorGoFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--hedge-scope') {
+        options.hedgeScope = parseHedgeScope(
+          requireFlagValue(args, i, '--hedge-scope'),
+          '--hedge-scope',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--skip-initial-hedge') {
+        options.skipInitialHedge = true;
+        continue;
+      }
       if (token === '--rebalance-mode') {
         const value = String(requireFlagValue(args, i, '--rebalance-mode')).trim().toLowerCase();
         if (value !== 'atomic' && value !== 'incremental') {
@@ -436,7 +467,11 @@ function createParseMirrorGoFlags(deps) {
         continue;
       }
       if (token === '--max-rebalance-usdc') {
-        options.maxRebalanceUsdc = parsePositiveNumber(requireFlagValue(args, i, '--max-rebalance-usdc'), '--max-rebalance-usdc');
+        options.maxRebalanceUsdc = parseNonNegativeNumber(
+          requireFlagValue(args, i, '--max-rebalance-usdc'),
+          '--max-rebalance-usdc',
+          CliError,
+        );
         i += 1;
         continue;
       }

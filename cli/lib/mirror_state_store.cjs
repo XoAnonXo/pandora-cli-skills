@@ -42,6 +42,24 @@ function ensureManagedInventorySeedShape(raw) {
   };
 }
 
+function ensureStartupHedgeBaselineShape(raw) {
+  const data = raw && typeof raw === 'object' ? raw : null;
+  if (!data) return null;
+  const baselineUsdc = toFiniteNumberOrNull(
+    data.baselineUsdc !== undefined
+      ? data.baselineUsdc
+      : data.rawGapUsdc !== undefined
+        ? data.rawGapUsdc
+        : data.gapUsdc,
+  );
+  if (baselineUsdc === null) return null;
+  return {
+    baselineUsdc,
+    capturedAt: normalizeOptionalString(data.capturedAt),
+    source: normalizeOptionalString(data.source) || 'skip-initial-hedge',
+  };
+}
+
 function ensureAccountingShape(raw) {
   const data = raw && typeof raw === 'object' ? raw : null;
   if (!data) return null;
@@ -108,6 +126,16 @@ function defaultKillSwitchFile() {
 function ensureStateShape(raw, hash) {
   const data = raw && typeof raw === 'object' ? raw : {};
   const resolvedHash = String(hash || data.strategyHash || '').trim() || null;
+  const startupHedgeBaseline = ensureStartupHedgeBaselineShape(
+    data.startupHedgeBaseline
+    || (data.startupHedgeBaselineUsdc !== undefined
+      ? {
+          baselineUsdc: data.startupHedgeBaselineUsdc,
+          capturedAt: data.startupHedgeBaselineCapturedAt,
+          source: data.startupHedgeBaselineSource,
+        }
+      : null),
+  );
   const currentHedgeShares =
     Number.isFinite(Number(data.currentHedgeShares))
       ? Number(data.currentHedgeShares)
@@ -137,6 +165,10 @@ function ensureStateShape(raw, hash) {
       ? Number(data.cumulativeHedgeCostApproxUsdc)
       : 0,
     accounting: ensureAccountingShape(data.accounting),
+    startupHedgeBaseline,
+    startupHedgeBaselineUsdc: startupHedgeBaseline ? startupHedgeBaseline.baselineUsdc : null,
+    startupHedgeBaselineCapturedAt: startupHedgeBaseline ? startupHedgeBaseline.capturedAt : null,
+    startupHedgeBaselineSource: startupHedgeBaseline ? startupHedgeBaseline.source : null,
     lastExecution: data.lastExecution || null,
     idempotencyKeys: Array.isArray(data.idempotencyKeys) ? data.idempotencyKeys : [],
     alerts: Array.isArray(data.alerts) ? data.alerts : [],

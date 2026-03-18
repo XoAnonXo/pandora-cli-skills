@@ -167,6 +167,8 @@ function buildGoOptions(overrides = {}) {
     driftTriggerBps: 150,
     hedgeTriggerUsdc: 10,
     hedgeRatio: 1,
+    hedgeScope: 'total',
+    skipInitialHedge: false,
     rebalanceRoute: 'public',
     rebalanceRouteFallback: 'fail',
     flashbotsRelayUrl: null,
@@ -257,6 +259,69 @@ test('parseMirrorSyncFlags accepts --polymarket-rpc-url and enforces companion l
       return true;
     },
   );
+});
+
+test('parseMirrorSyncFlags accepts zero max rebalance budget without changing positive values', () => {
+  const parseMirrorSyncFlags = createParseMirrorSyncFlags(buildSyncParserDeps());
+
+  const zeroBudget = parseMirrorSyncFlags([
+    'once',
+    '--market-address',
+    TEST_MARKET,
+    '--polymarket-market-id',
+    'poly-1',
+    '--max-rebalance-usdc',
+    '0',
+    '--paper',
+  ]);
+  assert.equal(zeroBudget.maxRebalanceUsdc, 0);
+
+  const positiveBudget = parseMirrorSyncFlags([
+    'once',
+    '--market-address',
+    TEST_MARKET,
+    '--polymarket-market-id',
+    'poly-1',
+    '--max-rebalance-usdc',
+    '25',
+    '--paper',
+  ]);
+  assert.equal(positiveBudget.maxRebalanceUsdc, 25);
+});
+
+test('parseMirrorGoFlags accepts zero max rebalance budget without changing positive values', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildGoParserDeps());
+
+  const zeroBudget = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--max-rebalance-usdc',
+    '0',
+  ]);
+  assert.equal(zeroBudget.maxRebalanceUsdc, 0);
+
+  const positiveBudget = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--max-rebalance-usdc',
+    '25',
+  ]);
+  assert.equal(positiveBudget.maxRebalanceUsdc, 25);
+});
+
+test('parseMirrorGoFlags accepts sync hedge-scope and skip-initial-hedge controls', () => {
+  const parseMirrorGoFlags = createParseMirrorGoFlags(buildGoParserDeps());
+
+  const parsed = parseMirrorGoFlags([
+    '--polymarket-market-id',
+    'poly-1',
+    '--hedge-scope',
+    'pool',
+    '--skip-initial-hedge',
+  ]);
+
+  assert.equal(parsed.hedgeScope, 'pool');
+  assert.equal(parsed.skipInitialHedge, true);
 });
 
 test('mirror go lifecycle flags require live finite execution plus explicit resolve inputs', () => {
@@ -750,6 +815,81 @@ test('mirror go preflight prefers --polymarket-rpc-url over main --rpc-url', asy
   } finally {
     await rpc.close();
   }
+});
+
+test('mirror go auto-sync forwards hedge-scope and skip-initial-hedge into mirror sync', async () => {
+  let syncOptions = null;
+
+  await handleMirrorGo({
+    shared: {
+      rest: ['--polymarket-market-id', 'poly-1'],
+      timeoutMs: 5000,
+      indexerUrl: 'https://indexer.test',
+    },
+    context: { outputMode: 'json' },
+    mirrorGoUsage: 'mirror go usage',
+    deps: {
+      CliError: TestCliError,
+      includesHelpFlag: () => false,
+      emitSuccess: () => null,
+      commandHelpPayload: () => ({}),
+      maybeLoadTradeEnv: () => null,
+      resolveIndexerUrl: (url) => url,
+      parseMirrorGoFlags: () =>
+        buildGoOptions({
+          autoSync: true,
+          syncOnce: true,
+          executeLive: false,
+          paper: true,
+          hedgeScope: 'pool',
+          skipInitialHedge: true,
+        }),
+      buildMirrorPlan: async () => ({
+        sourceMarket: { marketId: 'poly-1', slug: 'poly-slug-1' },
+        planDigest: 'digest-1',
+      }),
+      deployMirror: async () => ({
+        schemaVersion: '1.0.0',
+        generatedAt: new Date().toISOString(),
+        pandora: {
+          marketAddress: TEST_MARKET,
+          pollAddress: TEST_POLL,
+        },
+      }),
+      resolveTrustedDeployPair: () => {
+        throw new Error('resolveTrustedDeployPair should not be called in this test.');
+      },
+      findMirrorPair: () => ({ filePath: '/tmp/mirror-pairs.json', pair: null }),
+      defaultMirrorManifestFile: () => '/tmp/mirror-pairs.json',
+      hasContractCodeAtAddress: async () => true,
+      verifyMirror: async () => ({
+        pandora: { marketAddress: TEST_MARKET, rules: 'rules' },
+        sourceMarket: { description: 'source' },
+        gateResult: { ok: true },
+      }),
+      runLivePolymarketPreflightForMirror: async () => ({ ok: true }),
+      runMirrorSync: async (input) => {
+        syncOptions = input;
+        return {
+          schemaVersion: '1.0.0',
+          generatedAt: new Date().toISOString(),
+          mode: 'once',
+          executeLive: false,
+          actionCount: 0,
+        };
+      },
+      buildQuotePayload: async () => ({}),
+      executeTradeOnchain: async () => ({}),
+      assertLiveWriteAllowed: async () => null,
+      renderMirrorSyncTickLine: () => null,
+      coerceMirrorServiceError: (error) => error,
+      renderMirrorGoTable: () => null,
+    },
+  });
+
+  assert.ok(syncOptions);
+  assert.equal(syncOptions.hedgeScope, 'pool');
+  assert.equal(syncOptions.skipInitialHedge, true);
 });
 
 test('mirror go surfaces MIRROR_GO_VERIFY_PENDING when deploy succeeded but verify lags', async () => {
