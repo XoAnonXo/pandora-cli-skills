@@ -646,9 +646,10 @@ async function runMcpToolSweep({ client, fixtures, transportLabel = 'stdio' }) {
   const results = [];
 
   async function callToolWithTimeout(name, args) {
-    // Remote MCP calls pay gateway + HTTP transport overhead on top of the tool runtime.
     // The exhaustive sweep is a structured-contract check, not a latency benchmark.
-    const perToolTimeoutMs = transportLabel === 'http' ? 30_000 : 15_000;
+    // `dashboard` summarizes accumulated mirror state, so late-sweep runs can exceed the
+    // default 15s budget once earlier tools have created more contexts to inspect.
+    const perToolTimeoutMs = name === 'dashboard' ? 45_000 : 15_000;
     let timeoutId = null;
     try {
       return await Promise.race([
