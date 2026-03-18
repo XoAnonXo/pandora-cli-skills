@@ -176,6 +176,17 @@ test('standalone typescript sdk tarball installs into a fresh consumer app and s
   fs.mkdirSync(appDir, { recursive: true });
   fs.mkdirSync(runtimeDir, { recursive: true });
   t.after(() => removeDir(tempRoot));
+  const previousDryRun = Object.prototype.hasOwnProperty.call(process.env, 'npm_config_dry_run')
+    ? process.env.npm_config_dry_run
+    : undefined;
+  process.env.npm_config_dry_run = 'true';
+  t.after(() => {
+    if (previousDryRun === undefined) {
+      delete process.env.npm_config_dry_run;
+      return;
+    }
+    process.env.npm_config_dry_run = previousDryRun;
+  });
 
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const packResult = run(npmCommand, ['pack', '--silent', path.join(process.cwd(), 'sdk', 'typescript')], {
@@ -183,6 +194,7 @@ test('standalone typescript sdk tarball installs into a fresh consumer app and s
   });
   ensureExitCode(packResult, 0, 'npm pack ./sdk/typescript');
   const tarballPath = path.join(packDir, getPackedTarballName(packResult, 'npm pack ./sdk/typescript'));
+  assert.ok(fs.existsSync(tarballPath), `Expected standalone TypeScript SDK tarball to exist: ${tarballPath}`);
 
   const npmInitResult = run(npmCommand, ['init', '-y'], { cwd: appDir });
   ensureExitCode(npmInitResult, 0, 'npm init -y (standalone typescript sdk consumer)');

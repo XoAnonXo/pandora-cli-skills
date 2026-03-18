@@ -129,8 +129,15 @@ function moveFileSafe(from, to) {
 }
 
 function runNpm(args, options = {}) {
+  const env = {
+    ...(options.env || process.env),
+  };
+  delete env.npm_config_dry_run;
+  delete env.NPM_CONFIG_DRY_RUN;
+
   return run(NPM_CMD, args, {
     ...options,
+    env,
     shell: process.platform === 'win32',
   });
 }

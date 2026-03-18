@@ -13,9 +13,17 @@ function removeDir(dirPath) {
 }
 
 function run(command, args, options = {}) {
+  const env = {
+    ...(options.env || process.env),
+  };
+  if (/^npm(?:\.cmd)?$/i.test(path.basename(String(command || '')))) {
+    delete env.npm_config_dry_run;
+    delete env.NPM_CONFIG_DRY_RUN;
+  }
+
   const spawnOptions = {
     cwd: options.cwd,
-    env: options.env || process.env,
+    env,
     encoding: 'utf8',
     timeout: options.timeoutMs || 180_000,
   };
