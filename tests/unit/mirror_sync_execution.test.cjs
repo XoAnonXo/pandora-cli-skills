@@ -345,6 +345,331 @@ test('reported live recycle incident shape falls back to buy-side and blocks on 
   assert.equal(auditEntry.details.planning.hedgeRecycleReason, 'insufficient-managed-inventory');
 });
 
+test('processTriggeredAction does not create pending-action state for live no-op ticks', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mirror-sync-noop-live-'));
+  const stateFile = path.join(tempDir, 'state.json');
+  const state = {
+    schemaVersion: '1.0.0',
+    startedAt: '2026-03-18T00:00:00.000Z',
+    lastResetDay: '2026-03-18',
+    dailySpendUsdc: 0,
+    tradesToday: 0,
+    currentHedgeUsdc: 0,
+    currentHedgeShares: 0,
+    cumulativeLpFeesApproxUsdc: 0,
+    cumulativeHedgeNotionalUsdc: 0,
+    cumulativeHedgeCostApproxUsdc: 0,
+    idempotencyKeys: [],
+    alerts: [],
+    accounting: {
+      managedPolymarketYesShares: 0.032,
+      managedPolymarketNoShares: 0,
+      managedPolymarketYesUsdc: 0.032,
+      managedPolymarketNoUsdc: 0,
+    },
+  };
+  const snapshot = { actionPlan: {} };
+  const plan = {
+    hedgeTriggered: false,
+    plannedHedgeUsdc: 0,
+    plannedHedgeShares: 0,
+    plannedSpendUsdc: 0,
+    plannedRebalanceUsdc: 0,
+    gapUsdc: 0,
+    reserveSource: 'onchain:outcome-token-balances',
+  };
+  let rebalanceCalls = 0;
+  let hedgeCalls = 0;
+  const actions = [];
+
+  try {
+    await processTriggeredAction({
+      options: {
+        executeLive: true,
+        pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+        polymarketSlug: 'ucl-bay1-ata1-2026-03-18-bay1',
+        cooldownMs: 60_000,
+        mode: 'run',
+      },
+      state,
+      snapshot,
+      plan,
+      gate: {
+        ok: true,
+        failedChecks: [],
+        failedChecksRaw: [],
+        bypassedFailedChecks: [],
+      },
+      tickAt: new Date('2026-03-18T18:22:00.000Z'),
+      loadedFilePath: stateFile,
+      rebalanceFn: async () => {
+        rebalanceCalls += 1;
+        return { ok: true };
+      },
+      hedgeFn: async () => {
+        hedgeCalls += 1;
+        return { ok: true };
+      },
+      sendWebhook: null,
+      strategyHash: 'incident-168-noop',
+      iteration: 1,
+      actions,
+      webhookReports: [],
+      snapshotMetrics: {
+        driftTriggered: false,
+        driftBps: 0,
+      },
+      verifyPayload: VERIFY_PAYLOAD,
+      depth: {},
+    });
+
+    const persistedState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.equal(rebalanceCalls, 0);
+    assert.equal(hedgeCalls, 0);
+    assert.equal(actions.length, 1);
+    assert.equal(snapshot.action.status, 'executed');
+    assert.equal(fs.existsSync(`${stateFile}.pending-action.json`), false);
+    assert.equal(persistedState.lastExecution.status, 'executed');
+    assert.equal(persistedState.lastExecution.lockFile, null);
+    assert.equal(persistedState.lastExecution.lockRetained, false);
+    assert.equal(persistedState.lastExecution.requiresManualReview, false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('processTriggeredAction clears the live pending-action lock after a rebalance-only startup tick', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mirror-sync-startup-rebalance-live-'));
+  const stateFile = path.join(tempDir, 'state.json');
+  const state = {
+    schemaVersion: '1.0.0',
+    startedAt: '2026-03-18T00:00:00.000Z',
+    lastResetDay: '2026-03-18',
+    dailySpendUsdc: 0,
+    tradesToday: 0,
+    currentHedgeUsdc: 0.032,
+    currentHedgeShares: 0.032,
+    cumulativeLpFeesApproxUsdc: 0,
+    cumulativeHedgeNotionalUsdc: 0,
+    cumulativeHedgeCostApproxUsdc: 0,
+    idempotencyKeys: [],
+    alerts: [],
+    accounting: {
+      managedPolymarketYesShares: 0.032,
+      managedPolymarketNoShares: 0,
+      managedPolymarketYesUsdc: 0.032,
+      managedPolymarketNoUsdc: 0,
+    },
+  };
+  const snapshot = { actionPlan: {} };
+  const plan = {
+    hedgeTriggered: false,
+    plannedHedgeUsdc: 0,
+    plannedHedgeShares: 0,
+    plannedSpendUsdc: 0.427207,
+    plannedRebalanceUsdc: 0.427207,
+    gapUsdc: 0,
+    rebalanceSide: 'yes',
+    rebalanceSizingMode: 'atomic',
+    rebalanceTargetUsdc: 0.427207,
+    reserveSource: 'onchain:outcome-token-balances',
+  };
+  let rebalanceCalls = 0;
+  let hedgeCalls = 0;
+  const actions = [];
+
+  try {
+    await processTriggeredAction({
+      options: {
+        executeLive: true,
+        pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+        polymarketSlug: 'ucl-bay1-ata1-2026-03-18-bay1',
+        cooldownMs: 60_000,
+        mode: 'run',
+      },
+      state,
+      snapshot,
+      plan,
+      gate: {
+        ok: true,
+        failedChecks: [],
+        failedChecksRaw: [],
+        bypassedFailedChecks: [],
+      },
+      tickAt: new Date('2026-03-18T18:22:00.000Z'),
+      loadedFilePath: stateFile,
+      rebalanceFn: async () => {
+        rebalanceCalls += 1;
+        return { ok: true, status: 'accepted' };
+      },
+      hedgeFn: async () => {
+        hedgeCalls += 1;
+        return { ok: true, status: 'accepted' };
+      },
+      sendWebhook: null,
+      strategyHash: 'incident-168-startup-rebalance',
+      iteration: 1,
+      actions,
+      webhookReports: [],
+      snapshotMetrics: {
+        driftTriggered: true,
+        driftBps: 506,
+      },
+      verifyPayload: VERIFY_PAYLOAD,
+      depth: {},
+    });
+
+    const persistedState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    const auditEntries = fs.readFileSync(`${stateFile}.audit.jsonl`, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+
+    assert.equal(rebalanceCalls, 1);
+    assert.equal(hedgeCalls, 0);
+    assert.equal(actions.length, 1);
+    assert.equal(snapshot.action.status, 'executed');
+    assert.equal(snapshot.action.rebalance.side, 'yes');
+    assert.equal(snapshot.action.rebalance.amountUsdc, 0.427207);
+    assert.equal(snapshot.action.hedge, null);
+    assert.equal(fs.existsSync(`${stateFile}.pending-action.json`), false);
+    assert.equal(persistedState.lastExecution.status, 'executed');
+    assert.equal(persistedState.lastExecution.lockRetained, false);
+    assert.equal(persistedState.lastExecution.requiresManualReview, false);
+    assert.equal(auditEntries[0].status, 'executed');
+    assert.equal(auditEntries[0].details.requiresManualReview, false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('processTriggeredAction blocks on a matching reconciliation-required pending-action lock before any buy-side hedge runs', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mirror-sync-incident-lock-'));
+  const stateFile = path.join(tempDir, 'state.json');
+  const lockFile = `${stateFile}.pending-action.json`;
+  const state = {
+    schemaVersion: '1.0.0',
+    startedAt: '2026-03-18T00:00:00.000Z',
+    lastResetDay: '2026-03-18',
+    dailySpendUsdc: 0,
+    tradesToday: 0,
+    currentHedgeUsdc: 0,
+    currentHedgeShares: 0,
+    cumulativeLpFeesApproxUsdc: 0,
+    cumulativeHedgeNotionalUsdc: 0,
+    cumulativeHedgeCostApproxUsdc: 0,
+    idempotencyKeys: [],
+    alerts: [],
+    accounting: {
+      managedPolymarketYesShares: 0.032,
+      managedPolymarketNoShares: 0,
+      managedPolymarketYesUsdc: 0.032,
+      managedPolymarketNoUsdc: 0,
+    },
+    lastExecution: {
+      mode: 'live',
+      status: 'failed',
+      idempotencyKey: 'prior-live-action',
+      requiresManualReview: true,
+      lockNonce: 'incident-lock-nonce',
+      error: {
+        code: 'PENDING_ACTION_TX_REVERTED',
+        message: 'Recorded Pandora transaction reverted on-chain; manual reconciliation is required.',
+      },
+    },
+  };
+  const snapshot = { actionPlan: {} };
+  const actions = [];
+  let rebalanceCalls = 0;
+  let hedgeCalls = 0;
+
+  try {
+    fs.writeFileSync(
+      lockFile,
+      JSON.stringify(
+        {
+          schemaVersion: '1.0.0',
+          status: 'reconciliation-required',
+          createdAt: '2026-03-18T00:05:00.000Z',
+          updatedAt: '2026-03-18T00:05:00.000Z',
+          completedAt: '2026-03-18T00:05:00.000Z',
+          idempotencyKey: 'prior-live-action',
+          lockNonce: 'incident-lock-nonce',
+          requiresManualReview: true,
+        },
+        null,
+        2,
+      ),
+    );
+
+    await processTriggeredAction({
+      options: {
+        executeLive: true,
+        pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+        polymarketSlug: 'ucl-bay1-ata1-2026-03-18-bay1',
+        cooldownMs: 60_000,
+        mode: 'run',
+      },
+      state,
+      snapshot,
+      plan: {
+        hedgeTriggered: true,
+        plannedHedgeUsdc: 50,
+        plannedHedgeShares: 50,
+        plannedSpendUsdc: 8,
+        gapUsdc: 50,
+        rebalanceSide: 'no',
+        plannedRebalanceUsdc: 0,
+        rebalanceSizingMode: 'atomic',
+        rebalanceTargetUsdc: 0,
+        reserveSource: 'onchain:outcome-token-balances',
+      },
+      gate: {
+        ok: true,
+        failedChecks: [],
+        failedChecksRaw: [],
+        bypassedFailedChecks: [],
+      },
+      tickAt: new Date('2026-03-18T10:10:00.000Z'),
+      loadedFilePath: stateFile,
+      rebalanceFn: async () => {
+        rebalanceCalls += 1;
+        return { ok: true };
+      },
+      hedgeFn: async () => {
+        hedgeCalls += 1;
+        return { ok: true };
+      },
+      sendWebhook: null,
+      strategyHash: 'issue-168-lock-latch',
+      iteration: 168,
+      actions,
+      webhookReports: [],
+      snapshotMetrics: {
+        driftTriggered: false,
+        driftBps: 0,
+      },
+      verifyPayload: VERIFY_PAYLOAD,
+      depth: {},
+    });
+
+    assert.equal(rebalanceCalls, 0);
+    assert.equal(hedgeCalls, 0);
+    assert.equal(actions.length, 1);
+    assert.equal(snapshot.action.status, 'blocked');
+    assert.equal(snapshot.action.code, 'PENDING_ACTION_LOCK_REVIEW');
+    assert.equal(snapshot.action.block.kind, 'pending-action-lock');
+    assert.equal(snapshot.action.planning.hedgeOrderSide, 'buy');
+    assert.equal(snapshot.action.planning.hedgeRecycleReason, 'insufficient-managed-inventory');
+
+    const auditFile = `${stateFile}.audit.jsonl`;
+    const auditEntry = JSON.parse(fs.readFileSync(auditFile, 'utf8').trim());
+    assert.equal(auditEntry.code, 'PENDING_ACTION_LOCK_REVIEW');
+    assert.equal(auditEntry.details.block.kind, 'pending-action-lock');
+    assert.equal(auditEntry.details.planning.hedgeOrderSide, 'buy');
+    assert.equal(auditEntry.details.planning.hedgeRecycleReason, 'insufficient-managed-inventory');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('executeHedgeLeg keeps share-named inventory aliases in sync with legacy fields', async () => {
   const action = {};
   const state = {

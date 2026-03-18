@@ -4820,6 +4820,154 @@ test('runMirrorSync blocks live execution when the persisted last action is stil
   }
 });
 
+test('runMirrorSync keeps normal live startup with adopted dust inventory out of pending-action/manual-review latch state', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-startup-latch-168-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const killSwitchFile = path.join(tempDir, 'STOP');
+  let reserveReads = 0;
+  let rebalanceCalls = 0;
+  let hedgeCalls = 0;
+
+  try {
+    const runOptions = {
+      mode: 'once',
+      indexerUrl: 'https://example.invalid/graphql',
+      timeoutMs: 1000,
+      pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      polymarketMarketId: 'poly-cond-1',
+      polymarketSlug: 'ucl-bay1-ata1-2026-03-18-bay1',
+      executeLive: true,
+      trustDeploy: false,
+      hedgeEnabled: true,
+      hedgeRatio: 1,
+      hedgeScope: 'pool',
+      skipInitialHedge: true,
+      adoptExistingPositions: true,
+      intervalMs: 1000,
+      driftTriggerBps: 150,
+      hedgeTriggerUsdc: 1,
+      maxRebalanceUsdc: 25,
+      maxHedgeUsdc: 50,
+      maxOpenExposureUsdc: 100,
+      maxTradesPerDay: 10,
+      cooldownMs: 1000,
+      depthSlippageBps: 100,
+      stateFile,
+      killSwitchFile,
+      rpcUrl: 'https://rpc.example',
+      polymarketHost: 'https://clob.polymarket.com',
+      privateKey: `0x${'1'.repeat(64)}`,
+      funder: '0x2222222222222222222222222222222222222222',
+    };
+    const runDeps = {
+      verifyFn: async () => ({
+        matchConfidence: 0.99,
+        gateResult: {
+          ok: true,
+          failedChecks: [],
+          checks: [{ code: 'CLOSE_TIME_DELTA', ok: true, meta: { closeDeltaHours: 0 } }],
+        },
+        sourceMarket: {
+          source: 'polymarket',
+          marketId: 'poly-cond-1',
+          slug: 'ucl-bay1-ata1-2026-03-18-bay1',
+          yesPct: 55.06,
+          yesTokenId: 'yes-token',
+          noTokenId: 'no-token',
+          sourceFreshness: {
+            transport: 'poll',
+            observedAt: new Date().toISOString(),
+          },
+        },
+        pandora: {
+          yesPct: 50,
+          reserveYes: 4,
+          reserveNo: 6,
+        },
+        expiry: {
+          pandoraTimeToExpirySec: 7200,
+          sourceTimeToExpirySec: 7200,
+          minTimeToExpirySec: 7200,
+        },
+      }),
+      positionSummaryFn: async () => ({
+        marketId: 'poly-cond-1',
+        slug: 'ucl-bay1-ata1-2026-03-18-bay1',
+        walletAddress: '0x2222222222222222222222222222222222222222',
+        yesTokenId: 'yes-token',
+        noTokenId: 'no-token',
+        yesBalance: 0.032,
+        noBalance: 0,
+        prices: { yes: 0.5506, no: 0.4494 },
+        openOrdersCount: 0,
+        openOrders: [],
+        estimatedValueUsd: 0.017619,
+        source: { resolved: 'api', balances: 'api' },
+        diagnostics: ['loaded position inventory'],
+      }),
+      depthFn: async () => ({
+        depthWithinSlippageUsd: 1000,
+        yesDepth: { depthUsd: 1000, depthShares: 1000, referencePrice: 0.5506, midPrice: 0.5506, worstPrice: 0.56 },
+        noDepth: { depthUsd: 1000, depthShares: 1000, referencePrice: 0.4494, midPrice: 0.4494, worstPrice: 0.45 },
+      }),
+      readPandoraReserveContext: async () => {
+        reserveReads += 1;
+        return reserveReads === 1
+          ? {
+              source: 'onchain:outcome-token-balances',
+              reserveYesUsdc: 4,
+              reserveNoUsdc: 6,
+              pandoraYesPct: 50,
+              feeTier: 3000,
+              readAt: new Date().toISOString(),
+            }
+          : {
+              source: 'onchain:outcome-token-balances',
+              reserveYesUsdc: 5.506,
+              reserveNoUsdc: 4.494,
+              pandoraYesPct: 55.06,
+              feeTier: 3000,
+              readAt: new Date().toISOString(),
+            };
+      },
+      rebalanceFn: async () => {
+        rebalanceCalls += 1;
+        return { ok: true, status: 'accepted' };
+      },
+      hedgeFn: async () => {
+        hedgeCalls += 1;
+        return { ok: true, status: 'accepted' };
+      },
+    };
+
+    const firstPayload = await runMirrorSync(runOptions, runDeps);
+    assert.equal(firstPayload.actionCount, 1);
+    assert.equal(firstPayload.actions[0].status, 'executed');
+    assert.equal(firstPayload.actions[0].rebalance.side, 'yes');
+    assert.equal(firstPayload.actions[0].hedge, null);
+    assert.equal(Boolean(firstPayload.actions[0].requiresManualReview), false);
+    assert.equal(readPendingActionLock(stateFile), null);
+    assert.equal(firstPayload.state.lastExecution.requiresManualReview, false);
+    assert.equal(firstPayload.state.startupHedgeBaselineUsdc, 1.968);
+
+    const secondPayload = await runMirrorSync(runOptions, runDeps);
+    assert.equal(secondPayload.actionCount, 1);
+    assert.equal(secondPayload.actions[0].status, 'executed');
+    assert.equal(secondPayload.actions[0].rebalance, null);
+    assert.equal(secondPayload.actions[0].hedge.tokenSide, 'no');
+    assert.equal(secondPayload.actions[0].hedge.side, 'buy');
+    assert.equal(Boolean(secondPayload.actions[0].requiresManualReview), false);
+    assert.equal(readPendingActionLock(stateFile), null);
+    assert.equal(secondPayload.state.lastExecution.requiresManualReview, false);
+    assert.equal(secondPayload.state.lastExecution.status, 'executed');
+    assert.equal(secondPayload.state.startupHedgeBaselineUsdc, 1.968);
+    assert.equal(rebalanceCalls, 1);
+    assert.equal(hedgeCalls, 1);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('runMirrorSync auto-clears orphaned pending-action locks before live execution', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-zombie-lock-'));
   const stateFile = path.join(tempDir, 'mirror-state.json');
@@ -5369,6 +5517,208 @@ test('unlockPendingActionLock requires force for reconciliation-required locks',
 
     const withForce = unlockPendingActionLock(stateFile, { force: true });
     assert.equal(withForce.cleared, true);
+    assert.equal(fs.existsSync(pendingLockFile), false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('unlockPendingActionLock clears matching lastExecution review state when the lock is reconciled', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-unlock-review-clear-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const pendingLockFile = buildPendingActionFilePath(stateFile);
+
+  try {
+    saveMirrorState(stateFile, {
+      strategyHash: 'unlockreview1234',
+      tradesToday: 1,
+      idempotencyKeys: ['prior-live-action'],
+      alerts: [],
+      lastExecution: {
+        mode: 'live',
+        status: 'failed',
+        idempotencyKey: 'prior-live-action',
+        startedAt: '2026-03-18T09:00:00.000Z',
+        completedAt: '2026-03-18T09:02:00.000Z',
+        lockNonce: 'review-lock',
+        requiresManualReview: true,
+        error: {
+          code: 'PENDING_ACTION_TX_REVERTED',
+          message: 'Recorded Pandora transaction reverted on-chain; manual reconciliation is required.',
+        },
+      },
+    });
+    fs.writeFileSync(
+      pendingLockFile,
+      JSON.stringify(
+        {
+          schemaVersion: '1.0.0',
+          status: 'reconciliation-required',
+          pid: process.pid,
+          lockNonce: 'review-lock',
+          idempotencyKey: 'prior-live-action',
+          requiresManualReview: true,
+          createdAt: '2026-03-18T09:02:00.000Z',
+          updatedAt: '2026-03-18T09:03:00.000Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = unlockPendingActionLock(stateFile, { force: true });
+    const persisted = loadMirrorState(stateFile, 'unlockreview1234').state;
+
+    assert.equal(result.cleared, true);
+    assert.equal(result.stateRecovery.updated, true);
+    assert.equal(result.stateRecovery.changes.includes('lastExecution'), true);
+    assert.equal(persisted.lastExecution.requiresManualReview, false);
+    assert.equal(persisted.lastExecution.reviewClearedBy, 'mirror.sync.unlock');
+    assert.equal(persisted.lastExecution.recoveryReason, 'operator-unlock');
+    assert.equal(fs.existsSync(pendingLockFile), false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('unlockPendingActionLock clears orphaned persisted review state with force when the lock file is already gone', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-unlock-state-only-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+
+  try {
+    saveMirrorState(stateFile, {
+      strategyHash: 'unlockstateonly1234',
+      tradesToday: 1,
+      idempotencyKeys: [],
+      alerts: [],
+      lastExecution: {
+        mode: 'live',
+        status: 'failed',
+        idempotencyKey: 'prior-live-action',
+        lockNonce: 'missing-lock-nonce',
+        requiresManualReview: true,
+        error: {
+          code: 'PENDING_ACTION_LOCK_MISSING',
+          message: 'lock file was manually deleted',
+        },
+      },
+    });
+
+    const assessment = assessPendingActionUnlock(stateFile);
+    assert.equal(assessment.found, false);
+    assert.equal(assessment.forceRequired, true);
+    assert.equal(assessment.canClear, false);
+    assert.equal(assessment.code, 'PENDING_ACTION_STATE_ONLY_UNLOCK_FORCE_REQUIRED');
+
+    const withoutForce = unlockPendingActionLock(stateFile);
+    assert.equal(withoutForce.cleared, false);
+    assert.equal(withoutForce.reason, 'force-required');
+
+    const withForce = unlockPendingActionLock(stateFile, { force: true });
+    assert.equal(withForce.cleared, true);
+    assert.equal(withForce.reason, null);
+    assert.equal(withForce.clearedLock, null);
+    assert.equal(withForce.stateRecovery.updated, true);
+
+    const persistedState = loadMirrorState(stateFile, 'unlockstateonly1234').state;
+    assert.equal(persistedState.lastExecution.status, 'failed');
+    assert.equal(persistedState.lastExecution.requiresManualReview, false);
+    assert.equal(persistedState.lastExecution.recoveryReason, 'operator-unlock-state-only');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('unlockPendingActionLock clears state-only lastExecution review blocks with force when the lock file is already gone', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-unlock-state-only-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+
+  try {
+    saveMirrorState(stateFile, {
+      strategyHash: 'unlockstateonly1234',
+      tradesToday: 1,
+      idempotencyKeys: ['prior-live-action'],
+      alerts: [],
+      lastExecution: {
+        mode: 'live',
+        status: 'pending',
+        idempotencyKey: 'prior-live-action',
+        startedAt: '2026-03-18T09:00:00.000Z',
+        lockNonce: 'review-lock',
+        requiresManualReview: true,
+      },
+    });
+
+    const withoutForce = unlockPendingActionLock(stateFile);
+    assert.equal(withoutForce.cleared, false);
+    assert.equal(withoutForce.reason, 'force-required');
+    assert.equal(withoutForce.code, 'PENDING_ACTION_STATE_ONLY_UNLOCK_FORCE_REQUIRED');
+
+    const withForce = unlockPendingActionLock(stateFile, { force: true });
+    const persisted = loadMirrorState(stateFile, 'unlockstateonly1234').state;
+
+    assert.equal(withForce.cleared, true);
+    assert.equal(withForce.stateRecovery.updated, true);
+    assert.equal(persisted.lastExecution.requiresManualReview, false);
+    assert.equal(persisted.lastExecution.reviewClearedBy, 'mirror.sync.unlock');
+    assert.equal(persisted.lastExecution.recoveryReason, 'operator-unlock-state-only');
+    assert.equal(persisted.lastExecution.status, 'operator-cleared');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('unlockPendingActionLock does not clear unrelated lastExecution review state when the lock does not match', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-mirror-unlock-review-mismatch-'));
+  const stateFile = path.join(tempDir, 'mirror-state.json');
+  const pendingLockFile = buildPendingActionFilePath(stateFile);
+
+  try {
+    saveMirrorState(stateFile, {
+      strategyHash: 'unlockreviewmismatch1234',
+      tradesToday: 1,
+      idempotencyKeys: ['different-live-action'],
+      alerts: [],
+      lastExecution: {
+        mode: 'live',
+        status: 'failed',
+        idempotencyKey: 'different-live-action',
+        startedAt: '2026-03-18T09:00:00.000Z',
+        completedAt: '2026-03-18T09:02:00.000Z',
+        lockNonce: 'different-review-lock',
+        requiresManualReview: true,
+        error: {
+          code: 'PENDING_ACTION_TX_REVERTED',
+          message: 'Recorded Pandora transaction reverted on-chain; manual reconciliation is required.',
+        },
+      },
+    });
+    fs.writeFileSync(
+      pendingLockFile,
+      JSON.stringify(
+        {
+          schemaVersion: '1.0.0',
+          status: 'reconciliation-required',
+          pid: process.pid,
+          lockNonce: 'review-lock',
+          idempotencyKey: 'prior-live-action',
+          requiresManualReview: true,
+          createdAt: '2026-03-18T09:02:00.000Z',
+          updatedAt: '2026-03-18T09:03:00.000Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = unlockPendingActionLock(stateFile, { force: true });
+    const persisted = loadMirrorState(stateFile, 'unlockreviewmismatch1234').state;
+
+    assert.equal(result.cleared, true);
+    assert.equal(result.stateRecovery.updated, false);
+    assert.deepEqual(result.stateRecovery.changes, []);
+    assert.equal(persisted.lastExecution.requiresManualReview, true);
+    assert.equal(persisted.lastExecution.reviewClearedBy, undefined);
     assert.equal(fs.existsSync(pendingLockFile), false);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

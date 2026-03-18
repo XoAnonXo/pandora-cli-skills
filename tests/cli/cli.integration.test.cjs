@@ -9965,6 +9965,64 @@ test('mirror sync unlock requires force for reconciliation-required locks', () =
   }
 });
 
+test('mirror sync unlock --force clears orphaned persisted review state when the lock file is already gone', () => {
+  const tempDir = createTempDir('pandora-mirror-sync-unlock-state-only-');
+  const strategyHash = 'feedfacecafebeef';
+  const stateDir = path.join(tempDir, '.pandora', 'mirror');
+  const stateFile = path.join(stateDir, `${strategyHash}.json`);
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        strategyHash,
+        tradesToday: 1,
+        lastExecution: {
+          status: 'failed',
+          requiresManualReview: true,
+          lockNonce: 'nonce-bucket-2',
+          idempotencyKey: 'pending-2',
+          error: {
+            code: 'PENDING_ACTION_LOCK_MISSING',
+            message: 'lock file was manually deleted',
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const blocked = runCli(['--output', 'json', 'mirror', 'sync', 'unlock', '--strategy-hash', strategyHash], {
+      env: { HOME: tempDir },
+    });
+    assert.equal(blocked.status, 0);
+    const blockedPayload = parseJsonOutput(blocked);
+    assert.equal(blockedPayload.ok, true);
+    assert.equal(blockedPayload.data.cleared, false);
+    assert.equal(blockedPayload.data.reason, 'force-required');
+    assert.equal(blockedPayload.data.assessment.code, 'PENDING_ACTION_STATE_ONLY_UNLOCK_FORCE_REQUIRED');
+
+    const forced = runCli(
+      ['--output', 'json', 'mirror', 'sync', 'unlock', '--strategy-hash', strategyHash, '--force'],
+      { env: { HOME: tempDir } },
+    );
+    assert.equal(forced.status, 0);
+    const forcedPayload = parseJsonOutput(forced);
+    assert.equal(forcedPayload.ok, true);
+    assert.equal(forcedPayload.data.cleared, true);
+    assert.equal(forcedPayload.data.lock, null);
+    assert.equal(forcedPayload.data.stateRecovery.updated, true);
+    const persistedState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.equal(persistedState.lastExecution.requiresManualReview, false);
+    assert.equal(persistedState.lastExecution.recoveryReason, 'operator-unlock-state-only');
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
 test('mirror status --help returns usage payload', () => {
   const result = runCli(['--output', 'json', 'mirror', 'status', '--help']);
 

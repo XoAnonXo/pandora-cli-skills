@@ -207,14 +207,8 @@ function pendingActionMatchesLastExecution(lastExecution, pendingAction) {
   return false;
 }
 
-function clearLastExecutionReviewBlock(state, pendingAction, now = new Date()) {
+function clearLastExecutionReviewState(state, now = new Date(), recoveryReason = 'operator-unlock') {
   if (!(state && typeof state === 'object' && state.lastExecution && typeof state.lastExecution === 'object')) {
-    return {
-      updated: false,
-      changes: [],
-    };
-  }
-  if (!pendingActionMatchesLastExecution(state.lastExecution, pendingAction)) {
     return {
       updated: false,
       changes: [],
@@ -236,12 +230,49 @@ function clearLastExecutionReviewBlock(state, pendingAction, now = new Date()) {
     lockRetained: false,
     reviewClearedAt: updatedAt,
     reviewClearedBy: 'mirror.sync.unlock',
-    recoveryReason: 'operator-unlock',
+    recoveryReason,
   };
   return {
     updated: true,
     changes: ['lastExecution'],
   };
+}
+
+function describeStateOnlyReviewBlock(state) {
+  if (!(state && typeof state === 'object' && state.lastExecution && typeof state.lastExecution === 'object')) {
+    return null;
+  }
+  const status = String(state.lastExecution.status || '').trim().toLowerCase();
+  const needsReview = Boolean(state.lastExecution.requiresManualReview) || status === 'pending';
+  if (!needsReview) return null;
+  return {
+    status,
+    lastExecution: {
+      ...state.lastExecution,
+      startedAt: toIso(state.lastExecution.startedAt),
+      completedAt: toIso(state.lastExecution.completedAt),
+    },
+  };
+}
+
+function clearLastExecutionReviewBlock(state, pendingAction, now = new Date()) {
+  if (!(state && typeof state === 'object' && state.lastExecution && typeof state.lastExecution === 'object')) {
+    return {
+      updated: false,
+      changes: [],
+    };
+  }
+  if (!pendingActionMatchesLastExecution(state.lastExecution, pendingAction)) {
+    return {
+      updated: false,
+      changes: [],
+    };
+  }
+  return clearLastExecutionReviewState(state, now, 'operator-unlock');
+}
+
+function clearLastExecutionReviewBlockWithoutLock(state, now = new Date()) {
+  return clearLastExecutionReviewState(state, now, 'operator-unlock-state-only');
 }
 
 function readPendingActionLock(stateFile, options = {}) {
@@ -384,10 +415,48 @@ function assessPendingActionUnlock(stateFile, options = {}) {
     strategyHash,
   });
   if (!lock) {
+    const loaded = stateFile ? loadMirrorState(stateFile, strategyHash || null) : { state: {} };
+    const stateOnlyReview = describeStateOnlyReviewBlock(loaded.state);
+    const resolvedStrategyHash = strategyHash || loaded.state.strategyHash || null;
+    const force = Boolean(options.force);
+    if (stateOnlyReview) {
+      return {
+        found: false,
+        stateFile: stateFile || null,
+        strategyHash: resolvedStrategyHash,
+        code: force
+          ? 'PENDING_ACTION_STATE_ONLY_UNLOCK_ALLOWED'
+          : 'PENDING_ACTION_STATE_ONLY_UNLOCK_FORCE_REQUIRED',
+        message: force
+          ? 'Pending-action lock file is gone, but persisted review state will be cleared.'
+          : 'Pending-action lock file is gone, but persisted last-execution review state is still blocking live execution.',
+        allowedWithoutForce: false,
+        forceRequired: true,
+        canClear: force,
+        blocking: !force,
+        reviewCommand,
+        recommendedCommand: buildPendingActionUnlockCommand(stateFile, {
+          strategyHash: resolvedStrategyHash,
+          force: true,
+          staleAfterMs: options.staleAfterMs,
+        }),
+        guidance: [
+          `Review runtime status with ${reviewCommand} before clearing the orphaned persisted review state.`,
+          'The lock file is already gone, so only the persisted last-execution blocker remains.',
+          `If you intentionally want to clear that persisted blocker, rerun ${buildPendingActionUnlockCommand(stateFile, {
+            strategyHash: resolvedStrategyHash,
+            force: true,
+            staleAfterMs: options.staleAfterMs,
+          })}.`,
+        ],
+        lock: null,
+        stateOnlyRecovery: stateOnlyReview,
+      };
+    }
     return {
       found: false,
       stateFile: stateFile || null,
-      strategyHash,
+      strategyHash: resolvedStrategyHash,
       code: 'PENDING_ACTION_LOCK_MISSING',
       message: 'No pending-action lock exists for this mirror state file.',
       allowedWithoutForce: false,
@@ -396,7 +465,7 @@ function assessPendingActionUnlock(stateFile, options = {}) {
       blocking: false,
       reviewCommand,
       recommendedCommand: buildPendingActionUnlockCommand(stateFile, {
-        strategyHash,
+        strategyHash: resolvedStrategyHash,
         staleAfterMs: options.staleAfterMs,
       }),
       guidance: [
@@ -482,10 +551,24 @@ function assessPendingActionUnlock(stateFile, options = {}) {
 function unlockPendingActionLock(stateFile, options = {}) {
   const assessment = assessPendingActionUnlock(stateFile, options);
   if (!assessment.found) {
+    if (assessment.stateOnlyRecovery && assessment.canClear) {
+      const loaded = loadMirrorState(stateFile, assessment.strategyHash || null);
+      const stateRecovery = clearLastExecutionReviewBlockWithoutLock(loaded.state, new Date());
+      if (stateRecovery.updated) {
+        saveState(stateFile, loaded.state);
+      }
+      return {
+        ...assessment,
+        cleared: stateRecovery.updated,
+        reason: stateRecovery.updated ? null : 'missing',
+        clearedLock: null,
+        stateRecovery,
+      };
+    }
     return {
       ...assessment,
       cleared: false,
-      reason: 'missing',
+      reason: assessment.forceRequired ? 'force-required' : 'missing',
     };
   }
 

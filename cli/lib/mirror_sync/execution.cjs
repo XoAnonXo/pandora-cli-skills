@@ -707,6 +707,17 @@ function buildExecutableAction(params) {
   };
 }
 
+function hasLiveExecutionWork(plan, snapshotMetrics) {
+  // Startup drift can still resolve to a true no-op; only lock when a live leg will run.
+  const rebalanceRequired =
+    Boolean(snapshotMetrics && snapshotMetrics.driftTriggered)
+    && (toNumber(plan && plan.plannedRebalanceUsdc) || 0) > 0;
+  const hedgeRequired =
+    Boolean(plan && plan.hedgeTriggered)
+    && (toNumber(plan && plan.plannedHedgeUsdc) || 0) > 0;
+  return rebalanceRequired || hedgeRequired;
+}
+
 /**
  * Normalize thrown execution errors into service result payloads.
  * @param {any} err
@@ -1530,8 +1541,9 @@ async function processTriggeredAction(params) {
     return;
   }
 
+  const requiresLivePendingLock = Boolean(options.executeLive && hasLiveExecutionWork(plan, snapshotMetrics));
   let livePendingLock = null;
-  if (options.executeLive) {
+  if (requiresLivePendingLock) {
     const lockAttempt = tryAcquirePendingActionLock(loadedFilePath, {
       createdAt: tickAt,
       updatedAt: tickAt,
@@ -1592,16 +1604,18 @@ async function processTriggeredAction(params) {
   const action = buildExecutableAction({ options, idempotencyKey, gate });
   action.model = buildModeledActionSummary(plan, snapshot, snapshotMetrics);
   action.startedAt = tickAt.toISOString();
-  state.lastExecution = {
-    mode: action.mode,
-    status: 'pending',
-    idempotencyKey,
-    startedAt: tickAt.toISOString(),
-    lockFile: livePendingLock ? livePendingLock.lockFile : null,
-    lockNonce: livePendingLock ? livePendingLock.lockNonce || null : null,
-    model: action.model,
-  };
-  saveState(loadedFilePath, state);
+  if (requiresLivePendingLock) {
+    state.lastExecution = {
+      mode: action.mode,
+      status: 'pending',
+      idempotencyKey,
+      startedAt: tickAt.toISOString(),
+      lockFile: livePendingLock ? livePendingLock.lockFile : null,
+      lockNonce: livePendingLock ? livePendingLock.lockNonce || null : null,
+      model: action.model,
+    };
+    saveState(loadedFilePath, state);
+  }
 
   const actualRebalanceUsdc = await executeRebalanceLeg({
     options,
@@ -1622,7 +1636,7 @@ async function processTriggeredAction(params) {
   });
   action.completedAt = new Date().toISOString();
   let lockRetained = false;
-  if (options.executeLive) {
+  if (requiresLivePendingLock) {
     const expectedLockNonce = livePendingLock ? livePendingLock.lockNonce || null : null;
     action.lockNonce = expectedLockNonce;
     action.transactionNonce = extractActionTransactionNonce(action);
