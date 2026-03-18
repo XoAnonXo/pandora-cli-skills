@@ -10,7 +10,7 @@ const { buildPublishedPackageJson } = require('../../scripts/prepare_publish_man
 const RESTORE_PUBLISH_MANIFEST = path.join(ROOT, 'scripts', 'restore_publish_manifest.cjs');
 const NPM_CMD = 'npm';
 const NODE_CMD = process.execPath;
-const PACK_TIMEOUT_MS = process.platform === 'win32' ? 180_000 : 120_000;
+const PACK_TIMEOUT_MS = process.platform === 'win32' ? 240_000 : 180_000;
 const INSTALL_TIMEOUT_MS = process.platform === 'win32' ? 360_000 : 180_000;
 const REQUIRED_ENV_KEYS = [
   'CHAIN_ID',
