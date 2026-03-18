@@ -223,7 +223,7 @@ function createCommandRouter(deps = {}) {
       doctor: async (handlerArgs, handlerContext) => {
         if (includesHelpFlag(handlerArgs)) {
           const usage =
-            'pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]';
+            'pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]';
           if (handlerContext.outputMode === 'json') {
             emitSuccess(handlerContext.outputMode, 'doctor.help', commandHelpPayload(usage));
           } else {
@@ -237,7 +237,7 @@ function createCommandRouter(deps = {}) {
       setup: async (handlerArgs, handlerContext) => {
         if (includesHelpFlag(handlerArgs)) {
           const usage =
-            'pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]';
+            'pandora [--output table|json] setup [--interactive] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]';
           if (handlerContext.outputMode === 'json') {
             emitSuccess(handlerContext.outputMode, 'setup.help', commandHelpPayload(usage));
           } else {
