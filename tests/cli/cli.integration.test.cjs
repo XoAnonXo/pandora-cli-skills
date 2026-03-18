@@ -7635,7 +7635,7 @@ test('mirror sync treats close-time mismatch as diagnostic by default and blocki
     assert.equal(strictResult.status, 0);
     const strictPayload = parseJsonOutput(strictResult);
     assert.equal(strictPayload.ok, true);
-    assert.equal(strictPayload.data.actionCount, 0);
+    assert.equal(strictPayload.data.actionCount, 1);
     assert.equal(strictPayload.data.snapshots[0].action.status, 'blocked');
     assert.deepEqual(strictPayload.data.snapshots[0].action.failedChecks, ['CLOSE_TIME_DELTA']);
     assert.deepEqual(strictPayload.data.snapshots[0].strictGate.failedChecks, ['CLOSE_TIME_DELTA']);
@@ -7816,7 +7816,7 @@ test('mirror sync --skip-gate with named checks bypasses only matching failures'
     assert.equal(selectiveNoBypassPayload.ok, true);
     assert.equal(selectiveNoBypassPayload.command, 'mirror.sync');
     assert.deepEqual(selectiveNoBypassPayload.data.parameters.skipGateChecks, ['DEPTH_COVERAGE']);
-    assert.equal(selectiveNoBypassPayload.data.actionCount, 0);
+    assert.equal(selectiveNoBypassPayload.data.actionCount, 1);
     assert.equal(selectiveNoBypassPayload.data.snapshots[0].action.status, 'blocked');
     assert.equal(selectiveNoBypassPayload.data.snapshots[0].action.failedChecks.includes('MAX_TRADES_PER_DAY'), true);
     assert.equal(selectiveNoBypassPayload.data.snapshots[0].action.bypassedFailedChecks.length, 0);
