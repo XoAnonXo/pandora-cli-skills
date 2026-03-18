@@ -4040,8 +4040,9 @@ test('runMirrorSync live mode blocks stale polled sports source data before exec
     );
 
     assert.equal(executed, false);
-    assert.equal(payload.actionCount, 0);
-    assert.equal(payload.actions.length, 0);
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions.length, 1);
+    assert.equal(payload.actions[0].status, 'blocked');
     assert.equal(payload.snapshots[0].action.status, 'blocked');
     assert.equal(payload.snapshots[0].action.failedChecks.includes('POLYMARKET_SOURCE_FRESH'), true);
     const freshnessCheck = payload.snapshots[0].strictGate.checks.find((check) => check.code === 'POLYMARKET_SOURCE_FRESH');
@@ -4125,7 +4126,8 @@ test('runMirrorSync live mode blocks fresh polled sports source data when stream
     );
 
     assert.equal(executed, false);
-    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions[0].status, 'blocked');
     assert.equal(payload.snapshots[0].action.status, 'blocked');
     assert.equal(payload.snapshots[0].action.failedChecks.includes('POLYMARKET_SOURCE_FRESH'), true);
     const freshnessCheck = payload.snapshots[0].strictGate.checks.find((check) => check.code === 'POLYMARKET_SOURCE_FRESH');
@@ -4218,7 +4220,8 @@ test('runMirrorSync live mode blocks hedge execution when depth coverage comes f
     );
 
     assert.equal(executed, false);
-    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions[0].status, 'blocked');
     assert.equal(payload.snapshots[0].action.status, 'blocked');
     assert.equal(payload.snapshots[0].action.failedChecks.includes('DEPTH_COVERAGE'), true);
     const depthCheck = payload.snapshots[0].strictGate.checks.find((check) => check.code === 'DEPTH_COVERAGE');
@@ -4410,7 +4413,8 @@ test('runMirrorSync leaves tradesToday unchanged when no sync legs are planned',
       },
     );
 
-    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions[0].status, 'blocked');
     assert.equal(payload.state.tradesToday, 0);
     assert.equal(Array.isArray(payload.state.idempotencyKeys), true);
     assert.equal(payload.state.idempotencyKeys.length, 0);
@@ -4612,7 +4616,8 @@ test('runMirrorSync blocks live execution when the last action still requires ma
       },
     );
 
-    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions[0].status, 'blocked');
     assert.equal(payload.snapshots[0].action.status, 'blocked');
     assert.equal(payload.snapshots[0].action.code, 'LAST_ACTION_REQUIRES_REVIEW');
     assert.equal(rebalanceCalls, 0);
@@ -4726,7 +4731,8 @@ test('runMirrorSync blocks live execution when the persisted last action is stil
       },
     );
 
-    assert.equal(payload.actionCount, 0);
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions[0].status, 'blocked');
     assert.equal(payload.snapshots[0].action.status, 'blocked');
     assert.equal(payload.snapshots[0].action.code, 'PENDING_ACTION_STATE');
     assert.equal(rebalanceCalls, 0);
@@ -5487,7 +5493,8 @@ test('runMirrorSync retains manual review when pending-action nonce changes duri
       },
     );
 
-    assert.equal(secondPayload.actionCount, 0);
+    assert.equal(secondPayload.actionCount, 1);
+    assert.equal(secondPayload.actions[0].status, 'blocked');
     assert.equal(secondPayload.snapshots[0].action.status, 'blocked');
     assert.equal(secondPayload.snapshots[0].action.code, 'PENDING_ACTION_LOCK_REVIEW');
   } finally {
