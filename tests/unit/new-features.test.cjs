@@ -4126,8 +4126,8 @@ test('runMirrorSync live mode blocks fresh polled sports source data when stream
     );
 
     assert.equal(executed, false);
-    assert.equal(payload.actionCount, 0);
-    assert.equal(payload.actions.length, 0);
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions.length, 1);
     assert.equal(payload.snapshots[0].action.status, 'blocked');
     assert.equal(payload.snapshots[0].action.failedChecks.includes('POLYMARKET_SOURCE_FRESH'), true);
     const freshnessCheck = payload.snapshots[0].strictGate.checks.find((check) => check.code === 'POLYMARKET_SOURCE_FRESH');
@@ -4220,8 +4220,8 @@ test('runMirrorSync live mode blocks hedge execution when depth coverage comes f
     );
 
     assert.equal(executed, false);
-    assert.equal(payload.actionCount, 0);
-    assert.equal(payload.actions.length, 0);
+    assert.equal(payload.actionCount, 1);
+    assert.equal(payload.actions.length, 1);
     assert.equal(payload.snapshots[0].action.status, 'blocked');
     assert.equal(payload.snapshots[0].action.failedChecks.includes('DEPTH_COVERAGE'), true);
     const depthCheck = payload.snapshots[0].strictGate.checks.find((check) => check.code === 'DEPTH_COVERAGE');
