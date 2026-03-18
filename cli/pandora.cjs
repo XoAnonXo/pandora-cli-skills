@@ -114,6 +114,7 @@ const getBrierScoreService = createLazyModuleLoader('./lib/brier_score_service.c
 const getSchemaCommandService = createLazyModuleLoader('./lib/schema_command_service.cjs');
 const getCapabilitiesCommandService = createLazyModuleLoader('./lib/capabilities_command_service.cjs');
 const getBootstrapCommandService = createLazyModuleLoader('./lib/bootstrap_command_service.cjs');
+const getSetupCommandService = createLazyModuleLoader('./lib/setup_command_service.cjs');
 const getAgentCommandService = createLazyModuleLoader('./lib/agent_command_service.cjs');
 const getMcpServerService = createLazyModuleLoader('./lib/mcp_server_service.cjs');
 const getStreamCommandService = createLazyModuleLoader('./lib/stream_command_service.cjs');
@@ -868,6 +869,7 @@ function createOddsHistoryService(...args) {
 }
 
 let doctorServiceInstance = null;
+let setupCommandServiceInstance = null;
 
 /**
  * Returns memoized doctor service instance configured with CLI validators.
@@ -890,6 +892,26 @@ function getDoctorServiceInstance() {
     });
   }
   return doctorServiceInstance;
+}
+
+/**
+ * Returns memoized setup command service instance configured with CLI validators.
+ * @returns {{ runSetup: (options: object) => Promise<object> }}
+ */
+function getSetupCommandServiceInstance() {
+  if (!setupCommandServiceInstance) {
+    setupCommandServiceInstance = getSetupCommandService().createSetupCommandService({
+      CliError,
+      buildDoctorReport,
+      loadEnvFile,
+      defaultEnvFile: DEFAULT_ENV_FILE,
+      defaultEnvExample: DEFAULT_ENV_EXAMPLE,
+      isTTY: Boolean(process.stdin && process.stdin.isTTY && process.stdout && process.stdout.isTTY),
+      stdin: process.stdin,
+      stdout: process.stdout,
+    });
+  }
+  return setupCommandServiceInstance;
 }
 
 const ROOT = path.resolve(__dirname, '..');
@@ -1185,8 +1207,8 @@ Usage:
   pandora [--output table|json] help
   pandora [--output table|json] --version
   pandora [--output table|json] init-env [--force] [--dotenv-path <path>] [--example <path>]
-  pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
-  pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
+  pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
+  pandora [--output table|json] setup [--interactive] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
   pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
   pandora [--output table|json] markets scan [scan options]
   pandora [--output table|json] markets mine [options]
@@ -2078,6 +2100,9 @@ function printRecord(record) {
 }
 
 function renderDoctorReportTable(report) {
+  if (report.goal) {
+    console.log(`Goal: ${report.goal}`);
+  }
   if (report.env.usedEnvFile) {
     console.log(`Loaded env file: ${report.env.envFile}`);
   } else {
@@ -2085,6 +2110,7 @@ function renderDoctorReportTable(report) {
   }
 
   const statusRows = [
+    ['journey readiness', report.journeyReadiness && report.journeyReadiness.status ? report.journeyReadiness.status.toUpperCase() : 'N/A', report.journeyReadiness && report.journeyReadiness.note ? report.journeyReadiness.note : ''],
     ['required env', report.env.required.ok ? 'PASS' : 'FAIL', report.env.required.ok ? '' : report.env.required.missing.join(', ')],
     ['env validation', report.env.validation.ok ? 'PASS' : 'FAIL', report.env.validation.ok ? '' : `${report.env.validation.errors.length} issue(s)`],
     ['rpc reachability', report.rpc.ok ? 'PASS' : 'FAIL', report.rpc.ok ? `chainId=${report.rpc.chainId}` : report.rpc.error || 'Unavailable'],
@@ -2150,9 +2176,26 @@ function renderDoctorReportTable(report) {
 }
 
 function renderSetupTable(data) {
+  const runtimeRows = [];
+  if (data.runtimeInfo) {
+    runtimeRows.push(['cwd', data.runtimeInfo.cwd || '']);
+    runtimeRows.push(['env file', data.runtimeInfo.envFile || '']);
+    runtimeRows.push(['example file', data.runtimeInfo.exampleFile || '']);
+    runtimeRows.push(['interactive', data.runtimeInfo.interactive ? 'yes' : 'no']);
+    runtimeRows.push(['goal', data.runtimeInfo.goal || data.goal || '']);
+    runtimeRows.push(['node', data.runtimeInfo.nodeVersion || '']);
+    runtimeRows.push(['platform', data.runtimeInfo.platform || '']);
+  }
+
+  if (runtimeRows.length) {
+    printTable(['Runtime', 'Value'], runtimeRows);
+  }
+
   printTable(
     ['Step', 'Status', 'Details'],
     [
+      ['mode', String(data.mode || '').toUpperCase() || 'N/A', data.mode === 'manual' ? 'Manual scaffold' : 'Guided onboarding'],
+      ['goal', data.goal || 'N/A', data.readiness && data.readiness.goal ? `readiness=${data.readiness.goal}` : ''],
       ['init-env', data.envStep.status.toUpperCase(), data.envStep.message],
       ['doctor', data.doctor.summary.ok ? 'PASS' : 'FAIL', data.doctor.summary.ok ? 'All checks passed' : `${data.doctor.summary.errorCount} issue(s)`],
     ],
@@ -2160,10 +2203,22 @@ function renderSetupTable(data) {
 
   renderDoctorReportTable(data.doctor);
 
+  if (Array.isArray(data.wizard && data.wizard.notes) && data.wizard.notes.length) {
+    console.log('Onboarding notes:');
+    for (const note of data.wizard.notes) {
+      console.log(`- ${note}`);
+    }
+  }
+
   if (data.doctor.summary.ok) {
     console.log('Setup complete.');
-  } else if (Array.isArray(data.guidedNextSteps) && data.guidedNextSteps.length) {
+  } else if (data.placeholderSignerGuidance && Array.isArray(data.guidedNextSteps) && data.guidedNextSteps.length) {
     console.log('Setup wrote a starter env and detected placeholder signer material. Next steps:');
+    for (const step of data.guidedNextSteps) {
+      console.log(`- ${step}`);
+    }
+  } else if (Array.isArray(data.guidedNextSteps) && data.guidedNextSteps.length) {
+    console.log('Setup incomplete. Next steps:');
     for (const step of data.guidedNextSteps) {
       console.log(`- ${step}`);
     }
@@ -9256,78 +9311,34 @@ async function runDoctor(args, outputMode) {
 
 async function runSetup(args, outputMode) {
   const options = parseSetupFlags(args);
+  const payload = await getSetupCommandServiceInstance().runSetup(options);
+  const setupFailed = !payload.doctor.summary.ok;
 
-  if (!fs.existsSync(options.exampleFile)) {
-    throw new CliError('EXAMPLE_FILE_NOT_FOUND', `Example env file not found: ${options.exampleFile}`);
+  if (setupFailed && outputMode === 'table') {
+    renderSetupTable(payload);
   }
 
-  let envStep;
-  if (fs.existsSync(options.envFile) && !options.force) {
-    try {
-      fs.chmodSync(options.envFile, 0o600);
-    } catch {
-      // best-effort hardening on pre-existing files
-    }
-    envStep = {
-      status: 'skipped',
-      message: `Env file exists at ${options.envFile}. Reusing existing file.`,
-      envFile: options.envFile,
-      force: false,
-    };
-  } else {
-    fs.mkdirSync(path.dirname(options.envFile), { recursive: true });
-    fs.copyFileSync(options.exampleFile, options.envFile);
-    try {
-      fs.chmodSync(options.envFile, 0o600);
-    } catch {
-      // best-effort hardening on platforms that ignore/limit chmod
-    }
-    envStep = {
-      status: 'written',
-      message: `Wrote env file: ${options.envFile}`,
-      envFile: options.envFile,
-      force: options.force,
-    };
-  }
+  if (setupFailed) {
+    const envValidationErrors = Array.isArray(payload && payload.doctor && payload.doctor.env && payload.doctor.env.validation && payload.doctor.env.validation.errors)
+      ? payload.doctor.env.validation.errors
+      : [];
+    const privateKeyOnlyPlaceholderFailure = envValidationErrors.length > 0
+      && envValidationErrors.every((message) => /private key|placeholder/i.test(String(message || '')));
 
-  const doctor = await buildDoctorReport({
-    envFile: options.envFile,
-    useEnvFile: true,
-    checkUsdcCode: options.checkUsdcCode,
-    checkPolymarket: options.checkPolymarket,
-    rpcTimeoutMs: options.rpcTimeoutMs,
-  });
-
-  const payload = {
-    envStep,
-    doctor,
-  };
-
-  const envValidationErrors = Array.isArray(doctor && doctor.env && doctor.env.validation && doctor.env.validation.errors)
-    ? doctor.env.validation.errors
-    : [];
-  const privateKeyOnlyPlaceholderFailure = !doctor.summary.ok
-    && envValidationErrors.length > 0
-    && envValidationErrors.every((message) => /private key|placeholder/i.test(String(message || '')));
-
-  if (privateKeyOnlyPlaceholderFailure) {
-    payload.guidedNextSteps = [
-      `Populate ${options.envFile} with a real deployer key in PANDORA_DEPLOYER_PRIVATE_KEY or PANDORA_PRIVATE_KEY.`,
-      'Inspect the built-in deployer profile with `pandora --output json profile get --id market_deployer_a`.',
-      'Verify deploy readiness with `pandora --output json profile explain --id market_deployer_a --command markets.create.run --mode execute --chain-id 1 --category Crypto --policy-id execute-with-validation`.',
-    ];
-    emitSuccess(outputMode, 'setup', payload, renderSetupTable);
-    return;
-  }
-
-  if (!doctor.summary.ok) {
-    if (outputMode === 'table') {
-      renderSetupTable(payload);
+    if (privateKeyOnlyPlaceholderFailure) {
+      payload.placeholderSignerGuidance = true;
+      payload.guidedNextSteps = [
+        `Populate ${options.envFile} with a real deployer key in PANDORA_DEPLOYER_PRIVATE_KEY or PANDORA_PRIVATE_KEY.`,
+        'Inspect the built-in deployer profile with `pandora --output json profile get --id market_deployer_a`.',
+        'Verify deploy readiness with `pandora --output json profile explain --id market_deployer_a --command markets.create.run --mode execute --chain-id 1 --category Crypto --policy-id execute-with-validation`.',
+      ];
+      emitSuccess(outputMode, 'setup', payload, renderSetupTable);
+      return;
     }
 
     throw new CliError('SETUP_FAILED', 'Setup completed with issues. Resolve doctor failures and rerun setup.', {
       setup: payload,
-      errors: doctor.summary.failures,
+      errors: payload.doctor.summary.failures,
     });
   }
 

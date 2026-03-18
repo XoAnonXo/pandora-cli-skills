@@ -49,11 +49,23 @@ If you are evaluating Pandora for external use, start here instead of reading th
 - If the goal is "I am writing software on top of Pandora", choose the `SDK`.
 - Most external users should start with `MCP` or `CLI`, not the `SDK`.
 
+### First-run onboarding
+
+If you are starting from a fresh install, use the guided setup path first:
+
+```bash
+npx pandora setup --interactive
+npx pandora setup --interactive --goal live-mirror
+```
+
+Use `setup --interactive` when you want Pandora to walk you through private key management, Polymarket initialization, optional hosting inputs, and provider setup. Use `setup` without `--interactive` when you want the manual `init-env` plus `doctor` flow instead.
+
 ## Start Here
 
 If you want the main documentation map, use these jump points:
 
 - Anthropic skill install: [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
+- Setup and onboarding: [`docs/skills/setup-and-onboarding.md`](./docs/skills/setup-and-onboarding.md)
 - Humans: [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
 - Agents: [`docs/skills/agent-quickstart.md`](./docs/skills/agent-quickstart.md)
 - MCP / JSON contracts: [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
@@ -80,7 +92,7 @@ Build it with `npm run pack:anthropic-skill`, then upload `dist/pandora-skill.zi
 
 ```bash
 npm install
-npm run init-env
+npx pandora setup --interactive
 npm run doctor
 npm run build
 npx pandora help
@@ -89,10 +101,12 @@ npx pandora help
 What each step is for:
 
 - `npm install`: install the local CLI and docs/test dependencies
-- `npm run init-env`: scaffold the expected environment inputs
+- `npx pandora setup --interactive`: scaffold and validate the first-run onboarding path
 - `npm run doctor`: inspect local runtime readiness before live work
 - `npm run build`: run the repo’s verification gates, including docs, trust, SDK parity, and benchmark checks
 - `npx pandora help`: browse the command surface manually
+
+If you prefer manual control, use `npm run init-env` first and then `npm run doctor`. Guided onboarding is optional and can be skipped at any step.
 
 Flashbots routing note for agents and operators:
 
@@ -103,11 +117,12 @@ Flashbots routing note for agents and operators:
 
 ### Human reading order
 
-1. [`docs/skills/command-reference.md`](./docs/skills/command-reference.md) for the command families and flags.
-2. [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md) for discover -> quote -> trade -> claim flows.
-3. [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md) for mirror planning, validation, deploy, sync, and status.
-4. [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md) for portfolio inspection, LP exits, and closeout.
-5. [`docs/trust/release-verification.md`](./docs/trust/release-verification.md) before installs, release checks, or operator handoff.
+1. [`docs/skills/setup-and-onboarding.md`](./docs/skills/setup-and-onboarding.md) for the first-run manual and guided setup path.
+2. [`docs/skills/command-reference.md`](./docs/skills/command-reference.md) for the command families and flags.
+3. [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md) for discover -> quote -> trade -> claim flows.
+4. [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md) for mirror planning, validation, deploy, sync, and status.
+5. [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md) for portfolio inspection, LP exits, and closeout.
+6. [`docs/trust/release-verification.md`](./docs/trust/release-verification.md) before installs, release checks, or operator handoff.
 
 If you are testing the Anthropic skill itself rather than the repo manually, use the install guide first and then come back to the docs above for deeper workflow detail.
 
@@ -238,6 +253,7 @@ npx pandora --output json profile explain --id market_observer_ro
 ## Docs By Task
 
 - General command surface: [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
+- Setup and onboarding: [`docs/skills/setup-and-onboarding.md`](./docs/skills/setup-and-onboarding.md)
 - Trading and claim flows: [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md)
 - Mirror planning and operations: [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md)
 - Portfolio and closeout: [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md)
@@ -289,7 +305,7 @@ Notes:
 
 ```text
 Anthropic skill? Install the generated bundle -> test with Pandora-specific prompts -> keep repo root out of skill upload.
-Human?  Install -> doctor -> build -> read command/workflow docs.
+Human?  Install -> setup -> doctor -> build -> read command/workflow docs.
 Agent?  bootstrap -> capabilities -> schema -> policy/profile -> MCP.
 Live?   Add scopes and secrets only after exact readiness checks pass.
 ```

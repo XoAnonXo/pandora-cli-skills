@@ -27,6 +27,28 @@ function withChildEnv(overrides = {}, unsetKeys = []) {
   return env;
 }
 
+function normalizePtyOutput(text) {
+  return String(text || '')
+    .replace(/^spawn [^\n]*\r?\n/, '')
+    .replace(/^\^D/, '')
+    .replace(/[\u0004\u0008\r]/g, '');
+}
+
+function tclQuote(text) {
+  return `"${String(text || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')}"`;
+}
+
+function escapeExpectRegex(text) {
+  return String(text || '').replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}
+
 function runCli(args, options = {}) {
   const captureDir = createTempDir('pandora-cli-capture-');
   const stdoutPath = path.join(captureDir, 'stdout.txt');
@@ -110,6 +132,144 @@ function runCliAsync(args, options = {}) {
       });
     });
   });
+}
+
+function runCliWithStdin(args, options = {}) {
+  const cliPath = options.cliPath || CLI_PATH;
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [cliPath, ...args], {
+      cwd: options.cwd || REPO_ROOT,
+      env: withChildEnv(options.env, options.unsetEnvKeys),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let timeoutHit = false;
+    const timeoutMs = options.timeoutMs || 30_000;
+
+    const timeout = setTimeout(() => {
+      timeoutHit = true;
+      child.kill('SIGKILL');
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+
+    child.on('error', (error) => {
+      clearTimeout(timeout);
+      resolve({
+        status: 1,
+        stdout,
+        stderr,
+        output: `${stdout}${stderr}`,
+        error,
+        timedOut: false,
+      });
+    });
+
+    child.on('close', (code, signal) => {
+      clearTimeout(timeout);
+      resolve({
+        status: code === null ? 1 : code,
+        signal,
+        stdout,
+        stderr,
+        output: `${stdout}${stderr}`,
+        error: undefined,
+        timedOut: timeoutHit,
+      });
+    });
+
+    if (typeof options.stdin === 'string') {
+      child.stdin.write(options.stdin);
+    }
+    child.stdin.end();
+  });
+}
+
+function runCliWithTty(args, options = {}) {
+  if (process.platform === 'win32') {
+    throw new Error('runCliWithTty is not supported on Windows.');
+  }
+
+  const cliPath = options.cliPath || CLI_PATH;
+  const env = withChildEnv(options.env, options.unsetEnvKeys);
+  env.EXPECT_NODE = process.execPath;
+  env.EXPECT_CLI_PATH = cliPath;
+  env.EXPECT_ARGC = String(args.length);
+  args.forEach((arg, index) => {
+    env[`EXPECT_ARG_${index}`] = String(arg);
+  });
+
+  const expectScript = [
+    'set argc $env(EXPECT_ARGC)',
+    'set cmd [list $env(EXPECT_NODE) $env(EXPECT_CLI_PATH)]',
+    'for {set i 0} {$i < $argc} {incr i} {',
+    '  lappend cmd $env(EXPECT_ARG_$i)',
+    '}',
+    'eval spawn -noecho $cmd',
+    'match_max 100000',
+  ];
+
+  if (Array.isArray(options.steps) && options.steps.length) {
+    for (const step of options.steps) {
+      expectScript.push(`expect -exact ${tclQuote(step.expect)} { send -- ${tclQuote(`${step.send}\r`) } }`);
+    }
+    if (options.stopOnOutput) {
+      expectScript.push(
+        `expect -re ${tclQuote(escapeExpectRegex(options.stopOnOutput))} { catch { exec kill -TERM [exp_pid] }; exit 0 }`,
+      );
+    } else {
+      expectScript.push('send -- "\\004"');
+      expectScript.push('expect eof');
+      expectScript.push('set waitResult [wait]');
+      expectScript.push('exit [lindex $waitResult 3]');
+      return buildSpawnSyncResult('expect', expectScript, env, options);
+    }
+  } else if (typeof options.stdin === 'string') {
+    expectScript.push(`send -- ${tclQuote(options.stdin)}`);
+    expectScript.push('send -- "\\004"');
+  } else {
+    expectScript.push('send -- "\\004"');
+  }
+
+  if (!options.stopOnOutput) {
+    expectScript.push(
+      'expect eof',
+      'set waitResult [wait]',
+      'exit [lindex $waitResult 3]',
+    );
+  }
+
+  return buildSpawnSyncResult('expect', expectScript, env, options);
+}
+
+function buildSpawnSyncResult(command, expectScript, env, options) {
+  const result = spawnSync('expect', ['-c', expectScript.join('\n')], {
+    cwd: options.cwd || REPO_ROOT,
+    env,
+    timeout: options.timeoutMs || 30_000,
+    encoding: 'utf8',
+    killSignal: 'SIGKILL',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  const stdout = normalizePtyOutput(result.stdout || '');
+  const stderr = normalizePtyOutput(result.stderr || '');
+
+  return {
+    status: result.status,
+    stdout,
+    stderr,
+    output: `${stdout}${stderr}`,
+    error: result.error,
+    timedOut: Boolean(result.error && result.error.code === 'ETIMEDOUT'),
+  };
 }
 
 function startJsonHttpServer(handler) {
@@ -198,6 +358,8 @@ module.exports = {
   removeDir,
   runCli,
   runCliAsync,
+  runCliWithStdin,
+  runCliWithTty,
   startJsonHttpServer,
   withChildEnv,
 };

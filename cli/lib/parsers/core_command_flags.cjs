@@ -54,6 +54,23 @@ function createCoreCommandFlagParsers(deps) {
   const defaultIndexerTimeoutMs = requireValue(deps, 'defaultIndexerTimeoutMs');
   const defaultExpiringSoonHours = requireValue(deps, 'defaultExpiringSoonHours');
 
+  const validSetupGoals = new Set(['explore', 'deploy', 'paper-mirror', 'live-mirror', 'hosted-gateway', 'paper', 'live', 'gateway']);
+
+  function normalizeSetupGoal(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return null;
+    if (!validSetupGoals.has(normalized)) {
+      throw new CliError(
+        'INVALID_FLAG_VALUE',
+        `Unknown goal "${value}". Expected one of: explore, deploy, paper-mirror, live-mirror, hosted-gateway.`,
+      );
+    }
+    if (normalized === 'paper') return 'paper-mirror';
+    if (normalized === 'live') return 'live-mirror';
+    if (normalized === 'gateway') return 'hosted-gateway';
+    return normalized;
+  }
+
   function resolveMcpWorkspacePath(next, flagName) {
     assertMcpWorkspacePath(next, {
       flagName,
@@ -93,6 +110,7 @@ function createCoreCommandFlagParsers(deps) {
     let checkUsdcCode = false;
     let checkPolymarket = false;
     let rpcTimeoutMs = defaultRpcTimeoutMs;
+    let goal = null;
 
     for (let i = 0; i < args.length; i += 1) {
       const token = args[i];
@@ -126,10 +144,17 @@ function createCoreCommandFlagParsers(deps) {
         continue;
       }
 
+      if (token === '--goal') {
+        const next = requireFlagValue(args, i, '--goal');
+        goal = normalizeSetupGoal(next);
+        i += 1;
+        continue;
+      }
+
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for doctor: ${token}`);
     }
 
-    return { envFile, useEnvFile, checkUsdcCode, checkPolymarket, rpcTimeoutMs };
+    return { envFile, useEnvFile, checkUsdcCode, checkPolymarket, rpcTimeoutMs, goal };
   }
 
   function parseSetupFlags(args) {
@@ -139,12 +164,19 @@ function createCoreCommandFlagParsers(deps) {
     let checkUsdcCode = false;
     let checkPolymarket = false;
     let rpcTimeoutMs = defaultRpcTimeoutMs;
+    let interactive = false;
+    let goal = null;
 
     for (let i = 0; i < args.length; i += 1) {
       const token = args[i];
 
       if (token === '--force') {
         force = true;
+        continue;
+      }
+
+      if (token === '--interactive') {
+        interactive = true;
         continue;
       }
 
@@ -179,10 +211,17 @@ function createCoreCommandFlagParsers(deps) {
         continue;
       }
 
+      if (token === '--goal') {
+        const next = requireFlagValue(args, i, '--goal');
+        goal = normalizeSetupGoal(next);
+        i += 1;
+        continue;
+      }
+
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for setup: ${token}`);
     }
 
-    return { envFile, exampleFile, force, checkUsdcCode, checkPolymarket, rpcTimeoutMs };
+    return { envFile, exampleFile, force, checkUsdcCode, checkPolymarket, rpcTimeoutMs, interactive, goal };
   }
 
   function parseInitEnvFlags(args) {

@@ -12,6 +12,7 @@ const {
 } = require('../shared/amm_distribution_contract.cjs');
 const { normalizeMirrorPathForMcp, parseMirrorTargetTimestamp, validateMirrorUrl } = require('./mirror_parser_guard.cjs');
 const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
+const { normalizeResolutionSources, readResolutionSourcesEnv } = require('../shared/resolution_sources.cjs');
 
 const MAX_UINT24 = 16_777_215;
 
@@ -20,18 +21,6 @@ function requireDep(deps, name) {
     throw new Error(`createParseMirrorDeployFlags requires deps.${name}()`);
   }
   return deps[name];
-}
-
-function normalizeSources(entries) {
-  const values = [];
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    const parts = String(entry || '').split(/[\n,]/g);
-    for (const part of parts) {
-      const normalized = String(part || '').trim();
-      if (normalized) values.push(normalized);
-    }
-  }
-  return values;
 }
 
 function preserveExplicitZero(value) {
@@ -145,6 +134,7 @@ function createParseMirrorDeployFlags(deps) {
       category: DEFAULT_SPORTS_POLL_CATEGORY,
       sources: [],
       sourcesProvided: false,
+      sourcesSource: null,
       chainId: null,
       rpcUrl: null,
       privateKey: null,
@@ -248,6 +238,7 @@ function createParseMirrorDeployFlags(deps) {
           throw new CliError('MISSING_FLAG_VALUE', 'Missing value for --sources');
         }
         options.sourcesProvided = true;
+        options.sourcesSource = 'cli';
         options.sources.push(...entries);
         i = j - 1;
         continue;
@@ -441,6 +432,15 @@ function createParseMirrorDeployFlags(deps) {
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for mirror deploy: ${token}`);
     }
 
+    const envResolutionSources = readResolutionSourcesEnv(process.env);
+    if (!options.sourcesProvided && envResolutionSources.present) {
+      options.sources = envResolutionSources.sources;
+      options.sourcesProvided = true;
+      options.sourcesSource = 'env';
+    } else if (options.sourcesProvided && !options.sourcesSource) {
+      options.sourcesSource = 'cli';
+    }
+
     if (options.dryRun === options.execute) {
       throw new CliError('INVALID_ARGS', 'mirror deploy requires exactly one mode: --dry-run or --execute.');
     }
@@ -473,7 +473,13 @@ function createParseMirrorDeployFlags(deps) {
     ) {
       throw new CliError('INVALID_ARGS', '--distribution-yes + --distribution-no must equal 1000000000.');
     }
-    if (options.sourcesProvided && normalizeSources(options.sources).length < 2) {
+    if (options.sourcesSource === 'env' && normalizeResolutionSources(options.sources).length < 2) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'PANDORA_RESOLUTION_SOURCES requires at least two non-empty URLs when used as a fallback.',
+      );
+    }
+    if (options.sourcesSource === 'cli' && normalizeResolutionSources(options.sources).length < 2) {
       throw new CliError(
         'INVALID_FLAG_VALUE',
         '--sources requires at least two non-empty URLs when explicitly provided.',

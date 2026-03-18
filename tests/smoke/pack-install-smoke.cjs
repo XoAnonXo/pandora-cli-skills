@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { runCliWithTty } = require('../helpers/cli_runner.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const PREPARE_PUBLISH_MANIFEST = path.join(ROOT, 'scripts', 'prepare_publish_manifest.cjs');
@@ -609,6 +610,68 @@ print(json.dumps({
     });
     ensureExitCode(doctor, 1, 'pandora doctor');
     ensureOutputContains(doctor, /Doctor checks failed\./, 'pandora doctor');
+
+    if (process.platform !== 'win32') {
+      const guidedExamplePath = path.join(appDir, 'guided.example.env');
+      const guidedEnvPath = path.join(appDir, '.guided.env');
+      fs.writeFileSync(
+        guidedExamplePath,
+        [
+          'CHAIN_ID=1',
+          'RPC_URL=https://rpc.example.org',
+          'ORACLE=0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442',
+          'FACTORY=0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c',
+          'USDC=0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+        ].join('\n'),
+      );
+
+      const guidedSetup = runCliWithTty(
+        [
+          'setup',
+          '--interactive',
+          '--goal',
+          'deploy',
+          '--example',
+          guidedExamplePath,
+          '--dotenv-path',
+          guidedEnvPath,
+        ],
+        {
+          cliPath: installedCli,
+          cwd: appDir,
+          env: smokeEnv,
+          steps: [
+            { expect: 'Select [1]: ', send: '1' },
+            { expect: 'Select [3]: ', send: '1' },
+            { expect: 'Configure sportsbook/Odds API now? [n]: ', send: 'n' },
+            { expect: 'Capture deployment host preferences now? [n]: ', send: 'n' },
+            { expect: 'Capture two public resolution source URLs for future mirror commands? [y]: ', send: 'y' },
+            { expect: 'Primary resolution source URL: ', send: 'https://example.com/a' },
+            { expect: 'Secondary resolution source URL: ', send: 'https://example.org/b' },
+          ],
+        },
+      );
+
+      ensureExitCode(guidedSetup, 1, 'pandora setup --interactive');
+      ensureOutputContains(guidedSetup, /Setup completed with issues\./, 'pandora setup --interactive');
+      ensureOutputContains(
+        guidedSetup,
+        new RegExp(guidedEnvPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+        'pandora setup --interactive',
+      );
+      ensureOutputContains(guidedSetup, /Goal:\s+deploy/, 'pandora setup --interactive');
+
+      const guidedEnvText = fs.readFileSync(guidedEnvPath, 'utf8');
+      ensureOutputContains(
+        { output: guidedEnvText },
+        /^(?:PANDORA_(?:DEPLOYER_)?PRIVATE_KEY|POLYMARKET_PRIVATE_KEY)=0x[a-fA-F0-9]{64}$/m,
+        'guided env',
+      );
+      if (/^PRIVATE_KEY=/m.test(guidedEnvText)) {
+        throw new Error('guided env should not write legacy PRIVATE_KEY entries.');
+      }
+      ensureOutputContains({ output: guidedEnvText }, /^RPC_URL=https:\/\/rpc\.example\.org$/m, 'guided env');
+    }
 
     const launchArgs = [
       'launch',

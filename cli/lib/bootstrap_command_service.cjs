@@ -10,6 +10,7 @@ const { buildSkillDocIndex } = require('./skill_doc_registry.cjs');
 
 const BOOTSTRAP_DOC_IDS = Object.freeze([
   'agent-quickstart',
+  'setup-and-onboarding',
   'capabilities',
   'agent-interfaces',
   'policy-profiles',
@@ -434,6 +435,10 @@ function buildNextSteps(options) {
   const sdkSummary = options.sdk;
   const warnings = options.warnings;
   const nextSteps = [];
+  const onboardingDoc = documentation.items.find((doc) => doc.id === 'setup-and-onboarding') || null;
+  const quickstartDoc = documentation.items.find((doc) => doc.id === 'agent-quickstart')
+    || documentation.items[0]
+    || null;
 
   nextSteps.push({
     id: 'inspect-capabilities',
@@ -451,12 +456,32 @@ function buildNextSteps(options) {
     reason: 'Confirm descriptor fields, envelope contracts, and canonical command metadata before calling tools.',
   });
 
-  if (documentation.items[0]) {
+  if (profileSummary.readyMutableBuiltinCount === 0) {
+    nextSteps.push({
+      id: 'guided-first-run-setup',
+      type: 'command',
+      title: 'Run guided onboarding',
+      command: 'pandora setup --interactive',
+      reason: 'Use the guided setup path when you need to generate or import keys, initialize Polymarket, and optionally collect hosting and provider inputs.',
+    });
+  }
+
+  if (onboardingDoc) {
+    nextSteps.push({
+      id: 'read-setup-and-onboarding',
+      type: 'doc',
+      title: onboardingDoc.title,
+      path: onboardingDoc.path,
+      reason: 'Use this first-run guide for the interactive and manual onboarding paths.',
+    });
+  }
+
+  if (quickstartDoc) {
     nextSteps.push({
       id: 'read-agent-quickstart',
       type: 'doc',
-      title: documentation.items[0].title,
-      path: documentation.items[0].path,
+      title: quickstartDoc.title,
+      path: quickstartDoc.path,
       reason: 'Use the smallest doc that explains local CLI, MCP, remote HTTP, SDK, policy, and profile bootstrap.',
     });
   }

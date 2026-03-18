@@ -2,6 +2,8 @@
 
 Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|trace|logs|close`, plus the related top-level `dashboard`, `fund-check`, and `explain` commands.
 
+For first-run setup and optional guided onboarding, see [`setup-and-onboarding.md`](./setup-and-onboarding.md) before you attempt `mirror plan|deploy|go`.
+
 ## Canonical Batch 1 routing
 - `dashboard` is a standalone top-level command.
   - it summarizes discovered mirror markets side-by-side.
@@ -73,6 +75,11 @@ Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|das
 - Live mode also rejects stale polled Polymarket data, not just explicit cache snapshots.
   - short-interval sports sync expects websocket-backed source prices
   - if the source is too old or stream-backed prices were expected but not available, the `POLYMARKET_SOURCE_FRESH` gate blocks execution
+
+## First-run onboarding
+- Fresh installs should start with `pandora setup --interactive --goal paper-mirror` or `--goal live-mirror` before `mirror plan|deploy|go`.
+- The guided setup path surfaces signer, Polymarket, hosting, and provider prerequisites before you reach the mirror validation gates.
+- `PANDORA_RESOLUTION_SOURCES` is a convenience fallback for env-driven setups; explicit `--sources` still win and still require two public URLs from different hosts.
 
 ## Polymarket funding and proxy wallet
 

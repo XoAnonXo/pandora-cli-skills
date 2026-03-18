@@ -973,6 +973,8 @@ test('shared agent contract registry normalizes MCP metadata defaults and alias 
 
     const doctorDescriptor = descriptors.doctor;
     assert.equal(doctorDescriptor.recommendedPreflightTool, null);
+    assert.match(doctorDescriptor.usage, /--goal <explore\|deploy\|paper-mirror\|live-mirror\|hosted-gateway>/);
+    assert.equal(doctorDescriptor.inputSchema, null);
 
     const capabilitiesDescriptor = descriptors.capabilities;
     assert.equal(capabilitiesDescriptor.safeEquivalent, null);
@@ -980,6 +982,11 @@ test('shared agent contract registry normalizes MCP metadata defaults and alias 
     assert.equal(capabilitiesDescriptor.remoteEligible, true);
     assert.equal(capabilitiesDescriptor.executeIntentRequired, false);
     assert.equal(capabilitiesDescriptor.executeIntentRequiredForLiveMode, false);
+
+    const setupDescriptor = descriptors.setup;
+    assert.match(setupDescriptor.usage, /--interactive/);
+    assert.match(setupDescriptor.usage, /--goal <explore\|deploy\|paper-mirror\|live-mirror\|hosted-gateway>/);
+    assert.equal(setupDescriptor.inputSchema, null);
 
     const webhookTestDescriptor = descriptors['webhook.test'];
     assert.deepEqual(webhookTestDescriptor.externalDependencies, ['notification-secrets', 'webhook-endpoint']);

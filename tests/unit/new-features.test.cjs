@@ -72,12 +72,14 @@ const { createErrorRecoveryService } = require('../../cli/lib/error_recovery_ser
 const { createParseTradeFlags } = require('../../cli/lib/parsers/trade_flags.cjs');
 const { createParseWatchFlags } = require('../../cli/lib/parsers/watch_flags.cjs');
 const { createParseAutopilotFlags } = require('../../cli/lib/parsers/autopilot_flags.cjs');
+const { createParseMarketsCreateFlags } = require('../../cli/lib/parsers/markets_create_flags.cjs');
 const { createParseMirrorDeployFlags } = require('../../cli/lib/parsers/mirror_deploy_flags.cjs');
 const { createParseMirrorGoFlags } = require('../../cli/lib/parsers/mirror_go_flags.cjs');
 const {
   createParseMirrorBrowseFlags,
   createParseMirrorTraceFlags,
 } = require('../../cli/lib/parsers/mirror_remaining_flags.cjs');
+const { createCoreCommandFlagParsers } = require('../../cli/lib/parsers/core_command_flags.cjs');
 const { createParseLifecycleFlags } = require('../../cli/lib/parsers/lifecycle_flags.cjs');
 const { createParseOddsFlags } = require('../../cli/lib/parsers/odds_flags.cjs');
 const {
@@ -261,6 +263,30 @@ function buildParserDeps(overrides = {}) {
   };
 }
 
+function buildCoreParserDeps(overrides = {}) {
+  return buildParserDeps({
+    formatErrorValue: (value) => String(value),
+    hasWebhookTargets: () => false,
+    parsePositionsOrderBy: (value) => String(value || '').trim(),
+    parseCsvList: (value) =>
+      String(value || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    mergeWhere: (left, right) => ({
+      ...(left && typeof left === 'object' ? left : {}),
+      ...(right && typeof right === 'object' ? right : {}),
+    }),
+    normalizeDirection: (value) => String(value || '').trim().toLowerCase(),
+    defaultEnvFile: path.join(os.tmpdir(), 'pandora-test.env'),
+    defaultEnvExample: path.join(os.tmpdir(), 'pandora-test.env.example'),
+    defaultRpcTimeoutMs: 5_000,
+    defaultIndexerTimeoutMs: 5_000,
+    defaultExpiringSoonHours: 24,
+    ...overrides,
+  });
+}
+
 function withMcpMode(fn) {
   const original = process.env.PANDORA_MCP_MODE;
   process.env.PANDORA_MCP_MODE = '1';
@@ -438,6 +464,63 @@ test('createParsePolymarketSharedFlags accepts comma-separated rpc fallback chai
     'check',
   );
   assert.equal(parsed.rpcUrl, 'https://primary.example,https://secondary.example');
+});
+
+test('core command flag parsers accept onboarding goal and interactive setup flags', () => {
+  const parsers = createCoreCommandFlagParsers(buildCoreParserDeps());
+  const envFile = path.join(os.tmpdir(), 'pandora-onboarding.env');
+
+  const setup = parsers.parseSetupFlags(['--interactive', '--goal', 'deploy', '--dotenv-path', envFile]);
+  assert.equal(setup.interactive, true);
+  assert.equal(setup.goal, 'deploy');
+  assert.equal(setup.envFile, envFile);
+
+  const doctor = parsers.parseDoctorFlags(['--goal', 'paper-mirror', '--skip-dotenv']);
+  assert.equal(doctor.goal, 'paper-mirror');
+  assert.equal(doctor.useEnvFile, false);
+});
+
+test('mirror and create parsers consume PANDORA_RESOLUTION_SOURCES when --sources is omitted', () => {
+  const original = process.env.PANDORA_RESOLUTION_SOURCES;
+  process.env.PANDORA_RESOLUTION_SOURCES = 'https://one.example,https://two.example';
+
+  try {
+    const parseMarketsCreateFlags = createParseMarketsCreateFlags(buildParserDeps());
+    const marketsCreate = parseMarketsCreateFlags([
+      'plan',
+      '--question',
+      'Will this parse?',
+      '--rules',
+      'YES: yes\nNO: no',
+      '--target-timestamp',
+      '2030-01-01T00:00:00Z',
+      '--liquidity-usdc',
+      '100',
+    ]);
+    assert.deepEqual(marketsCreate.options.sources, ['https://one.example', 'https://two.example']);
+
+    const parseMirrorDeployFlags = createParseMirrorDeployFlags(buildParserDeps());
+    const mirrorDeploy = parseMirrorDeployFlags([
+      '--polymarket-slug',
+      'market-slug',
+      '--dry-run',
+    ]);
+    assert.deepEqual(mirrorDeploy.sources, ['https://one.example', 'https://two.example']);
+
+    const parseMirrorGoFlags = createParseMirrorGoFlags(buildParserDeps());
+    const mirrorGo = parseMirrorGoFlags([
+      '--polymarket-slug',
+      'market-slug',
+      '--paper',
+    ]);
+    assert.deepEqual(mirrorGo.sources, ['https://one.example', 'https://two.example']);
+  } finally {
+    if (original === undefined) {
+      delete process.env.PANDORA_RESOLUTION_SOURCES;
+    } else {
+      process.env.PANDORA_RESOLUTION_SOURCES = original;
+    }
+  }
 });
 
 test('mirror sync selector parser blocks pid files outside workspace in MCP mode', () => {

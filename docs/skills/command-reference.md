@@ -9,6 +9,7 @@ This is the human-oriented scoped command and flag reference. For machine-author
 
 Use the smaller workflow docs before falling back to this file:
 - [`agent-quickstart.md`](./agent-quickstart.md)
+- [`setup-and-onboarding.md`](./setup-and-onboarding.md)
 - [`trading-workflows.md`](./trading-workflows.md)
 - [`portfolio-closeout.md`](./portfolio-closeout.md)
 - [`policy-profiles.md`](./policy-profiles.md)
@@ -57,6 +58,14 @@ Use the smaller workflow docs before falling back to this file:
 - Mirror deploy/go/sync flows and sports live execution paths now also accept profile selectors in current builds.
 - Polymarket and some automation families still commonly resolve signer material from env / `.env` / explicit flags. Use `pandora --output json capabilities` / `schema` to inspect current `policyScopes`, `requiresSecrets`, and per-command profile support.
 
+## First-run onboarding
+- Prefer `pandora setup --interactive` for a fresh install.
+- Use `--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>` to preselect the journey when you already know the target.
+- Use `pandora setup` when you want manual env scaffolding plus doctor checks without prompts.
+- `PANDORA_PRIVATE_KEY` is the preferred signer env var; `PRIVATE_KEY` remains a backward-compatible alias.
+- `PANDORA_RESOLUTION_SOURCES` can hold comma-separated mirror resolution defaults, but explicit `--sources` still win.
+- Guided onboarding is optional and every step should be skippable.
+
 ## High-value command routing reference
 
 This section is intentionally condensed for retrieval. For the exhaustive live contract:
@@ -73,8 +82,8 @@ pandora [--output table|json] --version
 pandora [--output table|json] help
 pandora [--output json] bootstrap [--include-compatibility]  # use --include-compatibility only for legacy/debug alias inspection
 pandora [--output table|json] init-env [--force] [--dotenv-path <path>] [--example <path>]
-pandora [--output table|json] doctor [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
-pandora [--output table|json] setup [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
+pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
+pandora [--output table|json] setup [--interactive] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]
 pandora [--output json] capabilities
 pandora [--output table|json] markets list [--limit <n>] [--after <cursor>] [--before <cursor>] [--order-by <field>] [--order-direction asc|desc] [--chain-id <id>] [--creator <address>] [--poll-address <address>] [--market-type <type>|--type <type>] [--where-json <json>] [--active|--resolved|--expiring-soon] [--expiring-hours <n>] [--min-tvl <usdc>] [--hedgeable] [--expand] [--with-odds]
 pandora [--output table|json] markets get [--id <id> ...] [--stdin]

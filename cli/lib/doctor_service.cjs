@@ -19,6 +19,92 @@ const DEFAULT_POLYMARKET_DOCTOR_KEYS = [
   'POLYMARKET_API_SECRET',
   'POLYMARKET_API_PASSPHRASE',
 ];
+const { normalizeResolutionSources } = require('./shared/resolution_sources.cjs');
+
+function normalizeGoal(goal) {
+  const normalized = String(goal || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'paper') return 'paper-mirror';
+  if (normalized === 'live') return 'live-mirror';
+  if (normalized === 'gateway') return 'hosted-gateway';
+  if (['explore', 'deploy', 'paper-mirror', 'live-mirror', 'hosted-gateway'].includes(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+function buildGoalRequirements(goal) {
+  const normalized = normalizeGoal(goal);
+  if (!normalized) {
+    return {
+      goal: null,
+      requiredEnv: DEFAULT_REQUIRED_ENV_KEYS,
+      needPolymarketCheck: false,
+      needResolutionSources: false,
+      note: null,
+      recommendations: [],
+    };
+  }
+
+  if (normalized === 'explore') {
+    return {
+      goal: normalized,
+      requiredEnv: ['CHAIN_ID', 'RPC_URL'],
+      needPolymarketCheck: false,
+      needResolutionSources: false,
+      note: 'Read-only exploration only needs chain and RPC connectivity.',
+      recommendations: ['Continue with `pandora bootstrap` and `pandora --output json schema`.'],
+    };
+  }
+
+  if (normalized === 'deploy') {
+    return {
+      goal: normalized,
+      requiredEnv: ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC'],
+      needPolymarketCheck: false,
+      needResolutionSources: false,
+      note: 'Deployment readiness requires a deploy signer and core market addresses.',
+      recommendations: ['Run `pandora --output json profile explain` for the deploy signer before execution.'],
+    };
+  }
+
+  if (normalized === 'paper-mirror') {
+    return {
+      goal: normalized,
+      requiredEnv: ['CHAIN_ID', 'RPC_URL', 'ORACLE', 'FACTORY', 'USDC'],
+      needPolymarketCheck: false,
+      needResolutionSources: true,
+      note: 'Paper mirror setup can proceed without live Polymarket credentials.',
+      recommendations: [
+        'Provide two independent public `--sources` when you move from planning to deploy.',
+        'Set `PANDORA_RESOLUTION_SOURCES` if you want env-driven mirror defaults.',
+      ],
+    };
+  }
+
+  if (normalized === 'live-mirror') {
+    return {
+      goal: normalized,
+      requiredEnv: ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC'],
+      needPolymarketCheck: true,
+      needResolutionSources: true,
+      note: 'Live mirror setup needs both Pandora and Polymarket signer material.',
+      recommendations: [
+        'Validate Polymarket credentials and then run `pandora mirror go --execute-live` only after the dry-run passes.',
+        'Set `PANDORA_RESOLUTION_SOURCES` if you want env-driven mirror defaults.',
+      ],
+    };
+  }
+
+  return {
+    goal: normalized,
+    requiredEnv: ['CHAIN_ID', 'RPC_URL'],
+    needPolymarketCheck: false,
+    needResolutionSources: false,
+    note: 'Hosted gateway setup is mostly read-only and can remain signer-light.',
+    recommendations: ['Keep the gateway read-only until you intentionally provision signer material.'],
+  };
+}
 
 /**
  * Creates doctor-report helpers for env/rpc/code health checks.
@@ -129,8 +215,10 @@ function createDoctorService(deps = {}) {
     return polymarketDoctorKeys.some((key) => String(process.env[key] || '').trim().length > 0);
   }
 
-  function validateEnvValues() {
-    const missing = requiredEnvKeys.filter((key) => {
+  function validateEnvValues(goal) {
+    const goalRequirements = buildGoalRequirements(goal);
+    const requiredKeys = goalRequirements.goal ? goalRequirements.requiredEnv : requiredEnvKeys;
+    const missing = requiredKeys.filter((key) => {
       if (key === 'PRIVATE_KEY') {
         const primary = String(process.env.PANDORA_PRIVATE_KEY || '').trim();
         const legacy = String(process.env.PRIVATE_KEY || '').trim();
@@ -158,13 +246,16 @@ function createDoctorService(deps = {}) {
     }
 
     const privateKey = String(process.env.PANDORA_PRIVATE_KEY || process.env.PRIVATE_KEY || '').trim();
-    if (!missingSet.has('PRIVATE_KEY') && !isValidPrivateKey(privateKey)) {
+    if (requiredKeys.includes('PRIVATE_KEY') && !missingSet.has('PRIVATE_KEY') && !isValidPrivateKey(privateKey)) {
       errors.push(
         'PANDORA_PRIVATE_KEY (preferred) or PRIVATE_KEY must be a full 32-byte hex key (0x + 64 hex chars), not a placeholder.',
       );
     }
 
     for (const key of ['ORACLE', 'FACTORY', 'USDC']) {
+      if (!requiredKeys.includes(key)) {
+        continue;
+      }
       const value = String(process.env[key] || '').trim();
       if (missingSet.has(key)) {
         continue;
@@ -208,9 +299,11 @@ function createDoctorService(deps = {}) {
       loadEnvFile(options.envFile);
     }
 
-    const envState = validateEnvValues();
-    const shouldCheckPolymarket = options.checkPolymarket || hasPolymarketDoctorInputs();
+    const goalRequirements = buildGoalRequirements(options.goal);
+    const envState = validateEnvValues(goalRequirements.goal);
+    const shouldCheckPolymarket = options.checkPolymarket || goalRequirements.needPolymarketCheck || (!goalRequirements.goal && hasPolymarketDoctorInputs());
     const report = {
+      goal: goalRequirements.goal,
       env: {
         envFile: options.envFile,
         usedEnvFile: options.useEnvFile,
@@ -222,6 +315,14 @@ function createDoctorService(deps = {}) {
           ok: envState.errors.length === 0,
           errors: envState.errors,
         },
+      },
+      journeyReadiness: {
+        goal: goalRequirements.goal,
+        note: goalRequirements.note,
+        status: 'ready',
+        missing: [],
+        warnings: [],
+        recommendations: goalRequirements.recommendations.slice(),
       },
       rpc: {
         ok: false,
@@ -255,8 +356,15 @@ function createDoctorService(deps = {}) {
 
     if (!report.env.required.ok || !report.env.validation.ok) {
       const envErrorCount = report.env.required.missing.length + report.env.validation.errors.length;
+      const failures = [];
+      failures.push(...report.env.required.missing.map((name) => `Missing required env var: ${name}`));
+      failures.push(...report.env.validation.errors);
+      report.journeyReadiness.missing.push(...report.env.required.missing);
+      report.journeyReadiness.warnings.push(...report.env.validation.errors);
+      report.journeyReadiness.status = report.journeyReadiness.missing.length ? 'blocked' : 'ready-with-notes';
       report.summary.ok = false;
       report.summary.errorCount = envErrorCount;
+      report.summary.failures = failures;
       return report;
     }
 
@@ -275,12 +383,19 @@ function createDoctorService(deps = {}) {
       report.rpc.error = err instanceof CliError ? err.message : String(err);
     }
 
-    const codeTargets = [
-      { key: 'ORACLE', required: true },
-      { key: 'FACTORY', required: true },
-    ];
+    const codeTargets = [];
+    const requiredAddressKeys = new Set(
+      (goalRequirements.goal ? goalRequirements.requiredEnv : requiredEnvKeys)
+        .filter((key) => ['ORACLE', 'FACTORY', 'USDC'].includes(key)),
+    );
+    if (requiredAddressKeys.has('ORACLE')) {
+      codeTargets.push({ key: 'ORACLE', required: true });
+    }
+    if (requiredAddressKeys.has('FACTORY')) {
+      codeTargets.push({ key: 'FACTORY', required: true });
+    }
 
-    if (options.checkUsdcCode) {
+    if (options.checkUsdcCode && requiredAddressKeys.has('USDC')) {
       codeTargets.push({ key: 'USDC', required: false });
     }
 
@@ -374,6 +489,16 @@ function createDoctorService(deps = {}) {
       }
     }
 
+    if (envState.missing.length) {
+      report.journeyReadiness.missing.push(...envState.missing);
+    }
+    if (envState.errors.length) {
+      report.journeyReadiness.warnings.push(...envState.errors);
+    }
+    if (shouldCheckPolymarket && report.polymarket && Array.isArray(report.polymarket.failures)) {
+      report.journeyReadiness.warnings.push(...report.polymarket.failures);
+    }
+
     const failures = [];
     if (!report.env.required.ok) {
       failures.push(...report.env.required.missing.map((name) => `Missing required env var: ${name}`));
@@ -395,6 +520,24 @@ function createDoctorService(deps = {}) {
     if (shouldCheckPolymarket) {
       failures.push(...report.polymarket.failures);
       report.summary.warningCount += report.polymarket.warnings.length;
+    }
+    if (goalRequirements.needResolutionSources) {
+      const rawResolutionSources = String(process.env.PANDORA_RESOLUTION_SOURCES || '').trim();
+      if (rawResolutionSources) {
+        const resolutionSources = normalizeResolutionSources([rawResolutionSources]);
+        if (resolutionSources.length < 2) {
+          const message =
+            'PANDORA_RESOLUTION_SOURCES is optional, but when set it should contain at least two public source URLs.';
+          report.journeyReadiness.warnings.push(message);
+          report.summary.warningCount += 1;
+        }
+      }
+    }
+
+    if (report.journeyReadiness.missing.length) {
+      report.journeyReadiness.status = 'blocked';
+    } else if (report.journeyReadiness.warnings.length) {
+      report.journeyReadiness.status = 'ready-with-notes';
     }
 
     report.summary.errorCount = failures.length;

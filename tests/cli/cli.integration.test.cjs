@@ -11,6 +11,7 @@ const {
   removeDir,
   runCli,
   runCliAsync,
+  runCliWithTty,
   startJsonHttpServer,
 } = require('../helpers/cli_runner.cjs');
 const { assertSchemaValid } = require('../helpers/json_schema_assert.cjs');
@@ -307,6 +308,9 @@ async function startRpcMockServer(options = {}) {
 
     if (bodyJson.method === 'eth_chainId') {
       return {
+        headers: {
+          connection: 'close',
+        },
         body: {
           jsonrpc: '2.0',
           id: bodyJson.id || 1,
@@ -318,6 +322,9 @@ async function startRpcMockServer(options = {}) {
     if (bodyJson.method === 'eth_getCode') {
       const address = String((bodyJson.params && bodyJson.params[0]) || '').toLowerCase();
       return {
+        headers: {
+          connection: 'close',
+        },
         body: {
           jsonrpc: '2.0',
           id: bodyJson.id || 1,
@@ -328,6 +335,9 @@ async function startRpcMockServer(options = {}) {
 
     return {
       status: 400,
+      headers: {
+        connection: 'close',
+      },
       body: {
         jsonrpc: '2.0',
         id: bodyJson.id || 1,
@@ -2435,8 +2445,22 @@ test('setup --help returns structured JSON help payload', () => {
   const payload = parseJsonOutput(result);
   assert.equal(payload.command, 'setup.help');
   assert.match(payload.data.usage, /^pandora .* setup /);
+  assert.match(payload.data.usage, /--interactive/);
+  assert.match(payload.data.usage, /--goal/);
+  assert.match(payload.data.usage, /paper-mirror/);
+  assert.match(payload.data.usage, /hosted-gateway/);
   assert.equal(payload.data.schemaVersion, '1.0.0');
   assertIsoTimestamp(payload.data.generatedAt);
+});
+
+test('doctor --help exposes goal-aware readiness guidance', () => {
+  const result = runCli(['--output', 'json', 'doctor', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.command, 'doctor.help');
+  assert.match(payload.data.usage, /--goal/);
+  assert.match(payload.data.usage, /deploy/);
+  assert.match(payload.data.usage, /live-mirror/);
 });
 
 test('init-env writes env files with 0600 permissions (non-Windows)', () => {
@@ -2559,6 +2583,49 @@ test('doctor validates rpc reachability and contract bytecode checks', async () 
   }
 });
 
+test('doctor --goal paper-mirror does not require PANDORA_RESOLUTION_SOURCES', async () => {
+  const oracleAddress = '0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442';
+  const factoryAddress = '0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c';
+  const rpcServer = await startRpcMockServer({
+    chainIdHex: '0x1',
+    codeByAddress: {
+      [oracleAddress]: '0x6001600101',
+      [factoryAddress]: '0x6002600202',
+    },
+  });
+
+  const tempDir = createTempDir('pandora-doctor-paper-mirror-');
+  const envPath = path.join(tempDir, 'paper-mirror.env');
+
+  try {
+    writeFile(
+      envPath,
+      [
+        'CHAIN_ID=1',
+        `RPC_URL=${rpcServer.url}`,
+        `ORACLE=${oracleAddress}`,
+        `FACTORY=${factoryAddress}`,
+        'USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      ].join('\n'),
+    );
+
+    const result = await runCliAsync(['--output', 'json', 'doctor', '--goal', 'paper-mirror', '--dotenv-path', envPath], {
+      unsetEnvKeys: [...DOCTOR_ENV_KEYS, 'PANDORA_RESOLUTION_SOURCES'],
+    });
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0, result.output);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.summary.ok, true);
+    assert.equal(payload.data.journeyReadiness.status, 'ready');
+    assert.equal(payload.data.journeyReadiness.missing.includes('PANDORA_RESOLUTION_SOURCES'), false);
+  } finally {
+    await rpcServer.close();
+    removeDir(tempDir);
+  }
+});
+
 test('setup creates env and coordinates doctor checks', async () => {
   const rpcServer = await startRpcMockServer({
     chainIdHex: '0x1',
@@ -2620,6 +2687,213 @@ test('setup guides first-run users when the starter env still contains placehold
     assert.equal(payload.ok, true);
     assert.equal(Array.isArray(payload.data.guidedNextSteps), true);
     assert.equal(payload.data.guidedNextSteps.some((step) => /market_deployer_a/.test(step)), true);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('setup table output keeps placeholder guidance specific to signer failures', () => {
+  const tempDir = createTempDir('pandora-setup-generic-failure-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+
+  try {
+    writeFile(examplePath, '# intentionally incomplete\n');
+
+    const result = runCli(['setup', '--goal', 'explore', '--example', examplePath, '--dotenv-path', envPath], {
+      unsetEnvKeys: DOCTOR_ENV_KEYS,
+    });
+
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.output, /placeholder signer material/i);
+    assert.match(result.output, /Setup incomplete\. Next steps:/);
+    assert.match(result.output, /Missing required env var: CHAIN_ID/);
+    assert.match(result.output, /Missing required env var: RPC_URL/);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+test('setup rejects interactive mode when it cannot acquire a tty', () => {
+  const result = runCli(['setup', '--interactive', '--goal', 'deploy']);
+  assert.equal(result.status, 1);
+  assert.match(result.output, /TTY/i);
+  assert.match(result.output, /interactive/i);
+});
+
+const testInteractiveSetup = process.platform === 'win32' ? test.skip : test;
+
+testInteractiveSetup('setup --interactive completes a guided flow and writes canonical key names', { timeout: 60_000 }, () => {
+  const tempDir = createTempDir('pandora-setup-interactive-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+
+  try {
+    writeFile(
+      examplePath,
+      [
+        'CHAIN_ID=1',
+        'RPC_URL=https://ethereum.publicnode.com',
+        'ORACLE=0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442',
+        'FACTORY=0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c',
+        'USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      ].join('\n'),
+    );
+
+    const result = runCliWithTty(
+      [
+        'setup',
+        '--interactive',
+        '--goal',
+        'deploy',
+        '--example',
+        examplePath,
+        '--dotenv-path',
+        envPath,
+      ],
+      {
+        timeoutMs: 60_000,
+        steps: [
+          { expect: 'Select [1]: ', send: '1' },
+          { expect: 'Select [3]: ', send: '1' },
+          { expect: 'Configure sportsbook/Odds API now? [n]: ', send: 'n' },
+          { expect: 'Capture deployment host preferences now? [n]: ', send: 'n' },
+          { expect: 'Capture two public resolution source URLs for future mirror commands? [y]: ', send: 'y' },
+          { expect: 'Primary resolution source URL: ', send: 'https://example.com/a' },
+          { expect: 'Secondary resolution source URL: ', send: 'https://example.org/b' },
+        ],
+      },
+    );
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0, result.output);
+    assert.match(result.output, /Setup complete\./);
+    assert.equal(fs.existsSync(envPath), true);
+
+    const envText = fs.readFileSync(envPath, 'utf8');
+    assert.match(envText, /^(?:PANDORA_(?:DEPLOYER_)?PRIVATE_KEY|POLYMARKET_PRIVATE_KEY)=0x[a-fA-F0-9]{64}$/m);
+    assert.doesNotMatch(envText, /^PRIVATE_KEY=/m);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+testInteractiveSetup('setup --interactive captures mirror connectivity and daemon host settings for paper-mirror', { timeout: 60_000 }, () => {
+  const tempDir = createTempDir('pandora-setup-paper-mirror-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+
+  try {
+    writeFile(
+      examplePath,
+      [
+        'CHAIN_ID=1',
+        'RPC_URL=https://ethereum.publicnode.com',
+        'ORACLE=0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442',
+        'FACTORY=0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c',
+        'USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      ].join('\n'),
+    );
+
+    const result = runCliWithTty(
+      [
+        'setup',
+        '--interactive',
+        '--goal',
+        'paper-mirror',
+        '--example',
+        examplePath,
+        '--dotenv-path',
+        envPath,
+      ],
+      {
+        timeoutMs: 60_000,
+        steps: [
+          { expect: 'Select [1]: ', send: '1' },
+          { expect: 'Select [3]: ', send: '1' },
+          { expect: 'Select [3]: ', send: '1' },
+          { expect: 'Polymarket funder / proxy wallet address: ', send: '0x1111111111111111111111111111111111111111' },
+          { expect: 'Polymarket host [https://clob.polymarket.com]: ', send: '' },
+          { expect: 'Polymarket Polygon RPC URL [https://polygon-bor-rpc.publicnode.com]: ', send: '' },
+          { expect: 'Configure sportsbook/Odds API now? [n]: ', send: 'n' },
+          { expect: 'Capture deployment host preferences now? [n]: ', send: 'y' },
+          { expect: 'Select [1]: ', send: '1' },
+          { expect: 'DigitalOcean API token: ', send: 'token-123' },
+          { expect: 'DigitalOcean API base URL [https://api.digitalocean.com/v2]: ', send: '' },
+          { expect: 'Capture two public resolution source URLs for future mirror commands? [y]: ', send: 'y' },
+          { expect: 'Primary resolution source URL: ', send: 'https://example.com/a' },
+          { expect: 'Secondary resolution source URL: ', send: 'https://example.org/b' },
+        ],
+      },
+    );
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0, result.output);
+    assert.match(result.output, /Setup complete\./);
+
+    const envText = fs.readFileSync(envPath, 'utf8');
+    assert.match(envText, /^POLYMARKET_HOST=https:\/\/clob\.polymarket\.com$/m);
+    assert.match(envText, /^POLYMARKET_RPC_URL=https:\/\/polygon-bor-rpc\.publicnode\.com$/m);
+    assert.match(envText, /^PANDORA_DAEMON_PROVIDER=digitalocean$/m);
+    assert.match(envText, /^PANDORA_DAEMON_API_BASE_URL=https:\/\/api\.digitalocean\.com\/v2$/m);
+    assert.match(envText, /^PANDORA_DAEMON_API_TOKEN=token-123$/m);
+    assert.match(envText, /^PANDORA_RESOLUTION_SOURCES=https:\/\/example\.com\/a,https:\/\/example\.org\/b$/m);
+    assert.doesNotMatch(envText, /^PRIVATE_KEY=/m);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
+testInteractiveSetup('setup --interactive --force recopies the example template before continuing', { timeout: 60_000 }, () => {
+  const tempDir = createTempDir('pandora-setup-interactive-force-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+
+  try {
+    writeFile(
+      examplePath,
+      [
+        'CHAIN_ID=1',
+        'RPC_URL=https://rpc.example.org',
+        'ALPHA=from-example',
+      ].join('\n'),
+    );
+    writeFile(
+      envPath,
+      [
+        'CHAIN_ID=999',
+        'RPC_URL=https://stale.example.org',
+        'STALE_KEY=keep-me',
+      ].join('\n'),
+    );
+
+    const result = runCliWithTty(
+      [
+        'setup',
+        '--interactive',
+        '--goal',
+        'explore',
+        '--force',
+        '--example',
+        examplePath,
+        '--dotenv-path',
+        envPath,
+      ],
+      {
+        timeoutMs: 60_000,
+        steps: [
+          { expect: 'Select [1]: ', send: '2' },
+        ],
+      },
+    );
+
+    assert.equal(result.timedOut, false);
+    assert.equal(fs.existsSync(envPath), true);
+
+    const envText = fs.readFileSync(envPath, 'utf8');
+    assert.match(envText, /^ALPHA=from-example$/m);
+    assert.doesNotMatch(envText, /^STALE_KEY=keep-me$/m);
+    assert.match(envText, /^CHAIN_ID=1$/m);
   } finally {
     removeDir(tempDir);
   }

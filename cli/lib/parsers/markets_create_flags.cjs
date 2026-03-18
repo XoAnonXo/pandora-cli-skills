@@ -20,6 +20,7 @@ const {
   assertNoDeployRoutePlanFlags,
 } = require('./deploy_route_flags.cjs');
 const { consumeProfileSelectorFlag, assertNoMixedSignerSelectors } = require('./shared_profile_selector_flags.cjs');
+const { normalizeResolutionSources, readResolutionSourcesEnv } = require('../shared/resolution_sources.cjs');
 
 const MAX_UINT24 = 16_777_215;
 const MARKET_TYPES = new Set(['amm', 'parimutuel']);
@@ -30,18 +31,6 @@ function requireDep(deps, name) {
     throw new Error(`createParseMarketsCreateFlags requires deps.${name}()`);
   }
   return deps[name];
-}
-
-function normalizeSources(entries) {
-  const values = [];
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    const parts = String(entry || '').split(/[\n,]/g);
-    for (const part of parts) {
-      const normalized = String(part || '').trim();
-      if (normalized) values.push(normalized);
-    }
-  }
-  return values;
 }
 
 function preserveExplicitZero(value) {
@@ -184,6 +173,7 @@ function createParseMarketsCreateFlags(deps) {
       rules: null,
       sources: [],
       sourcesProvided: false,
+      sourcesSource: null,
       targetTimestamp: null,
       marketType: 'amm',
       liquidityUsdc: null,
@@ -247,6 +237,7 @@ function createParseMarketsCreateFlags(deps) {
           throw new CliError('MISSING_FLAG_VALUE', 'Missing value for --sources');
         }
         options.sourcesProvided = true;
+        options.sourcesSource = 'cli';
         options.sources.push(...entries);
         i = j - 1;
         continue;
@@ -504,9 +495,30 @@ function createParseMarketsCreateFlags(deps) {
       throw new CliError('UNKNOWN_FLAG', `Unknown flag for markets create ${action}: ${token}`);
     }
 
+    const envResolutionSources = readResolutionSourcesEnv(process.env);
+    if (!options.sourcesProvided && envResolutionSources.present) {
+      options.sources = envResolutionSources.sources;
+      options.sourcesProvided = true;
+      options.sourcesSource = 'env';
+    } else if (options.sourcesProvided && !options.sourcesSource) {
+      options.sourcesSource = 'cli';
+    }
+
     assertNonEmptyRequired(options.question, '--question', CliError);
     assertNonEmptyRequired(options.rules, '--rules', CliError);
-    if (!options.sourcesProvided || normalizeSources(options.sources).length < 2) {
+    if (!options.sourcesProvided) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'markets create requires --sources with at least two non-empty source entries.',
+      );
+    }
+    if (options.sourcesSource === 'env' && normalizeResolutionSources(options.sources).length < 2) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'PANDORA_RESOLUTION_SOURCES requires at least two non-empty source entries.',
+      );
+    }
+    if (options.sourcesSource === 'cli' && normalizeResolutionSources(options.sources).length < 2) {
       throw new CliError(
         'MISSING_REQUIRED_FLAG',
         'markets create requires --sources with at least two non-empty source entries.',
@@ -560,7 +572,7 @@ function createParseMarketsCreateFlags(deps) {
       command: `markets.create.${action}`,
       options: {
         ...options,
-        sources: normalizeSources(options.sources),
+        sources: normalizeResolutionSources(options.sources),
       },
     };
   };
