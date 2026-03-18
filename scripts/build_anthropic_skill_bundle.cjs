@@ -15,6 +15,7 @@ const SOURCE_DOCS = [
   'docs/skills/capabilities.md',
   'docs/skills/agent-quickstart.md',
   'docs/skills/agent-interfaces.md',
+  'docs/skills/setup-and-onboarding.md',
   'docs/skills/command-reference.md',
   'docs/skills/trading-workflows.md',
   'docs/skills/portfolio-closeout.md',
