@@ -11,8 +11,8 @@
     "lockPath": "benchmarks/locks/core.lock.json",
     "historyPath": "benchmarks/latest/core-history.json",
     "docsHistoryPath": "docs/benchmarks/history.json",
-    "reportSha256": "ab124ddbe9aaab73782bf0423bcaad54d7cd2b6312e3ebe79ac324ef13fa87c9",
-    "lockSha256": "97352193b3462fc647dcee44d735f998eb085d23b0f8731da141026be6532ecc"
+    "reportSha256": "ae36687f4036614bed203e1fa4fcdd362aeace9e4991b9b8a2fd3fb343366c85",
+    "lockSha256": "268b740fda96f5a1775f54320240b2eb6a5cc4cf3094b2b31d636149214b4413"
   },
   "latest": {
     "summary": {
@@ -144,58 +144,58 @@
       ]
     },
     "runtime": {
-      "packageVersion": "1.1.108"
+      "packageVersion": "1.1.116"
     },
     "contractLock": {
-      "capabilitiesLocalHash": "4bb272e4b92283a1db158de5a71d788c5ade4affcb6e3e33ad4c1e237887d137",
-      "capabilitiesRemoteTemplateHash": "fdc9166d5c088f4ad590241042b305b6337c72478c90a8470dde43f527c43d20",
+      "capabilitiesLocalHash": "5213fd5304256f7825a3afed5281cab3264a5410a0da061ad28cc54d6fae81f1",
+      "capabilitiesRemoteTemplateHash": "59fc31ee14f614d72145e2543d08d6a9650aed2540f4ad99566d8e51dda0fc46",
       "commandDescriptorVersion": "1.4.3",
-      "documentationContentHash": "436e6b16f1e5ef98b5a5ae65e4cd865a12e47f4f859b2c942c890212578b53d9",
-      "documentationRegistryHash": "20a56ad590c742cf16c9336a268c63ce8ceb9b69eb4e9a305937e3b4796a1663",
+      "documentationContentHash": "a633b241fbff87683ec18804e70340eca55e1d9200f2f5fdf9c61ffe99754cb0",
+      "documentationRegistryHash": "891f6e82752e986215ce30ae4e7b614df3a30ab812c9670402e847b38aafa704",
       "generatedArtifactHashes": {
-        "generatedCommandDescriptors": "7d64e873e857b9fb80ab4ebfe6a26c873342c2b3d8fb5a24d02dc6db5d05c4b2",
-        "generatedContractRegistry": "041ca256ebf4fc2677e03114a322cc66a060635d314a146cc7445f676a39b847",
-        "generatedManifest": "50419d6eccacb72b7550a0ffd562d7728479cc4439bcf0913bd71fc7ca98a2d7",
-        "generatedMcpToolDefinitions": "b6645e5188730e0ecc126c3f8bb687be4593e7026ea8c79c1bff97f1e393c801",
-        "pyCommandDescriptors": "7d64e873e857b9fb80ab4ebfe6a26c873342c2b3d8fb5a24d02dc6db5d05c4b2",
-        "pyContractRegistry": "041ca256ebf4fc2677e03114a322cc66a060635d314a146cc7445f676a39b847",
-        "pyManifest": "4bffbd9769be8ba17bcecf721811450c8044d0995f11fc6b345967158ccc529e",
-        "pyMcpToolDefinitions": "b6645e5188730e0ecc126c3f8bb687be4593e7026ea8c79c1bff97f1e393c801",
-        "tsCommandDescriptors": "7d64e873e857b9fb80ab4ebfe6a26c873342c2b3d8fb5a24d02dc6db5d05c4b2",
-        "tsContractRegistry": "041ca256ebf4fc2677e03114a322cc66a060635d314a146cc7445f676a39b847",
-        "tsManifest": "29de158b02b304b88d9250938085b832e5ee2debe052fc887fd839536ae46e65",
-        "tsMcpToolDefinitions": "b6645e5188730e0ecc126c3f8bb687be4593e7026ea8c79c1bff97f1e393c801"
+        "generatedCommandDescriptors": "b721feebfd551a5357a54d96a0e1c4b3b7165f88976ff649a29dff31692e4329",
+        "generatedContractRegistry": "3d6dc37e43e4ff2eaeb352fd11496987e3767e1753f81bba34a49e25d978bb61",
+        "generatedManifest": "28dd87d3b46250234b504a47a87c6abddec8398c95ced189778b3ab0fcdc8f70",
+        "generatedMcpToolDefinitions": "c1874df20f2c5bc1e04f155fca8b1f054fc173642ac078cd0e027b821897ec1a",
+        "pyCommandDescriptors": "b721feebfd551a5357a54d96a0e1c4b3b7165f88976ff649a29dff31692e4329",
+        "pyContractRegistry": "3d6dc37e43e4ff2eaeb352fd11496987e3767e1753f81bba34a49e25d978bb61",
+        "pyManifest": "a9c95bbcb082ef517ae5729f42d93e69a3bfe75dde88f4b299143e370ac477d7",
+        "pyMcpToolDefinitions": "c1874df20f2c5bc1e04f155fca8b1f054fc173642ac078cd0e027b821897ec1a",
+        "tsCommandDescriptors": "b721feebfd551a5357a54d96a0e1c4b3b7165f88976ff649a29dff31692e4329",
+        "tsContractRegistry": "3d6dc37e43e4ff2eaeb352fd11496987e3767e1753f81bba34a49e25d978bb61",
+        "tsManifest": "96db5cc9584c09f52354adb9401197fe1a94ade1454872280bc2ca762954fde7",
+        "tsMcpToolDefinitions": "c1874df20f2c5bc1e04f155fca8b1f054fc173642ac078cd0e027b821897ec1a"
       },
       "generatedManifestCommandDescriptorVersion": "1.4.3",
       "generatedManifestPackageVersion": "0.1.0-alpha.21",
       "generatedManifestRegistryDigest": {
         "canonicalHash": "9d638ee641f11a5ff7361b639583b7420341f9f222587e8f58cdf276a69bc8fb",
         "commandDigestHash": "f82f42c7ae1fc5d2b41e4188facf41e85e5e37f0b91907c30f562c1f6448e020",
-        "descriptorHash": "5a8906b5eb67c83e991bca82ee78853c80c8d1b7e8ec2115b39ae1ed3c794dfe",
-        "documentationHash": "20a56ad590c742cf16c9336a268c63ce8ceb9b69eb4e9a305937e3b4796a1663",
-        "fullDescriptorHash": "02330503199d148227dbbe48e461c4b6396eda6fc7b1fdb9d3e5e5af454c3e25",
+        "descriptorHash": "b4c6d86a4b004474a93dd87693ceb7f7839bc90392eb260f587ca8f2400f7a18",
+        "documentationHash": "891f6e82752e986215ce30ae4e7b614df3a30ab812c9670402e847b38aafa704",
+        "fullDescriptorHash": "66bdc84e3a16872bcfeb7e28c706357e50c972759042aa68aa7636d8a7f7fe67",
         "namespaceHash": "35a0e69c2f30bc8067d11ed5e75cfb3865d63bf662e001c15b0a7778e6b67ce7",
         "policyProfilesHash": "03fdebf46de42775b95e2b4a88c96c41d4c834a3285aa3c546cbf9e89f3efda5",
         "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
         "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
         "topLevelHash": "db78e40057e3f231880214dd1ac6945ad4153d37df86118a188ef32086a96885",
-        "trustDistributionHash": "6b0493e759553a7c5ff9175126fdf0b5d04a5de1d4ff62a671d8015210d65b08"
+        "trustDistributionHash": "b264ad304abab6313fde7b7f8aa843e5696a7daeaf39a305fb01ea2b8756df29"
       },
       "generatedManifestVersion": "1.0.0",
       "registryDigest": {
         "canonicalHash": "9d638ee641f11a5ff7361b639583b7420341f9f222587e8f58cdf276a69bc8fb",
         "commandDigestHash": "f82f42c7ae1fc5d2b41e4188facf41e85e5e37f0b91907c30f562c1f6448e020",
-        "descriptorHash": "5a8906b5eb67c83e991bca82ee78853c80c8d1b7e8ec2115b39ae1ed3c794dfe",
-        "documentationHash": "20a56ad590c742cf16c9336a268c63ce8ceb9b69eb4e9a305937e3b4796a1663",
-        "fullDescriptorHash": "02330503199d148227dbbe48e461c4b6396eda6fc7b1fdb9d3e5e5af454c3e25",
+        "descriptorHash": "b4c6d86a4b004474a93dd87693ceb7f7839bc90392eb260f587ca8f2400f7a18",
+        "documentationHash": "891f6e82752e986215ce30ae4e7b614df3a30ab812c9670402e847b38aafa704",
+        "fullDescriptorHash": "66bdc84e3a16872bcfeb7e28c706357e50c972759042aa68aa7636d8a7f7fe67",
         "namespaceHash": "35a0e69c2f30bc8067d11ed5e75cfb3865d63bf662e001c15b0a7778e6b67ce7",
         "policyProfilesHash": "03fdebf46de42775b95e2b4a88c96c41d4c834a3285aa3c546cbf9e89f3efda5",
         "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
         "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
         "topLevelHash": "db78e40057e3f231880214dd1ac6945ad4153d37df86118a188ef32086a96885",
-        "trustDistributionHash": "6b0493e759553a7c5ff9175126fdf0b5d04a5de1d4ff62a671d8015210d65b08"
+        "trustDistributionHash": "b264ad304abab6313fde7b7f8aa843e5696a7daeaf39a305fb01ea2b8756df29"
       },
-      "schemaHash": "d7cc0807c9f1621448ec1f7255313da2a27140ea875724492b50c276d85fe077"
+      "schemaHash": "2f5564b26035829626e0a8470c99b3ceae26b7796660afe70c725096c99c03dc"
     },
     "contractLockMatchesExpected": true
   },
@@ -229,10 +229,10 @@
         "failedParityGroupCount": 0,
         "contractLockMatchesExpected": true,
         "parityFailedGroups": [],
-        "descriptorHash": "5a8906b5eb67c83e991bca82ee78853c80c8d1b7e8ec2115b39ae1ed3c794dfe",
-        "documentationContentHash": "436e6b16f1e5ef98b5a5ae65e4cd865a12e47f4f859b2c942c890212578b53d9",
-        "reportSha256": "ab124ddbe9aaab73782bf0423bcaad54d7cd2b6312e3ebe79ac324ef13fa87c9",
-        "lockSha256": "97352193b3462fc647dcee44d735f998eb085d23b0f8731da141026be6532ecc",
+        "descriptorHash": "b4c6d86a4b004474a93dd87693ceb7f7839bc90392eb260f587ca8f2400f7a18",
+        "documentationContentHash": "a633b241fbff87683ec18804e70340eca55e1d9200f2f5fdf9c61ffe99754cb0",
+        "reportSha256": "ae36687f4036614bed203e1fa4fcdd362aeace9e4991b9b8a2fd3fb343366c85",
+        "lockSha256": "268b740fda96f5a1775f54320240b2eb6a5cc4cf3094b2b31d636149214b4413",
         "lockSchemaVersion": "1.0.0"
       },
       {
