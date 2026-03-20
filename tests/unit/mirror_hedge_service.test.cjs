@@ -406,6 +406,7 @@ test('runMirrorHedge in paper mode ignores internal trades and skips small exter
       pandoraMarketAddress: '0xcccccccccccccccccccccccccccccccccccccccc',
       polymarketMarketId: 'poly-1',
       internalWalletsFile: walletFile,
+      iterations: 1,
       confirmedTrades: [
         {
           id: 'trade-internal',
