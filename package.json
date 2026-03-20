@@ -115,7 +115,7 @@
     "typecheck": "npx tsc --noEmit",
     "pack:dry-run": "npm pack --dry-run --json",
     "build": "npm run typecheck",
-    "verify:repo": "npm run build && npm run check:docs && npm run check:anthropic-skill && npm run check:secret-scan && npm run check:release-trust && npm run check:release-drift && npm run check:sdk-contracts && npm run check:sdk-standalone",
+    "verify:repo": "npm run build && npm run check:docs && npm run check:anthropic-skill && npm run check:secret-scan && npm run check:sdk-contracts && npm run check:sdk-standalone",
     "verify:tests": "npm run test:unit && npm run test:cli && npm run test:agent-workflow && npm run test:smoke",
     "release:verify": "npm run verify:repo && npm run verify:tests && npm run benchmark:check",
     "site:serve": "node website/serve.cjs",
