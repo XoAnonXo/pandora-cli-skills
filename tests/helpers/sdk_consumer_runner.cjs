@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { buildPublicNpmEnv } = require('../smoke/smoke_npm_env_helper.cjs');
 
 function createTempDir(prefix = 'pandora-sdk-consumer-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -13,10 +14,13 @@ function removeDir(dirPath) {
 }
 
 function run(command, args, options = {}) {
-  const env = {
-    ...(options.env || process.env),
-  };
-  if (/^npm(?:\.cmd)?$/i.test(path.basename(String(command || '')))) {
+  const isNpmCommand = /^npm(?:\.cmd)?$/i.test(path.basename(String(command || '')));
+  const env = isNpmCommand
+    ? buildPublicNpmEnv(options.env || process.env)
+    : {
+        ...(options.env || process.env),
+      };
+  if (isNpmCommand) {
     delete env.npm_config_dry_run;
     delete env.NPM_CONFIG_DRY_RUN;
   }
