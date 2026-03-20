@@ -326,6 +326,11 @@ function checkPackageMetadata() {
   assert(pkg.scripts['check:final-readiness'] === 'node scripts/check_a_plus_scorecard.cjs --artifact-neutral', 'package.json must expose check:final-readiness');
   assert(pkg.scripts['benchmark:check'] === 'node scripts/check_agent_benchmarks.cjs', 'package.json must expose benchmark:check with the benchmark freshness gate');
   assert(pkg.scripts['release:build-sdk-artifacts'] === 'node scripts/release/build_standalone_sdk_artifacts.cjs', 'package.json must expose release:build-sdk-artifacts');
+  assert(pkg.scripts['release:pack'] === 'node scripts/release/pack_release_tarball.cjs', 'package.json must expose release:pack');
+  assert(pkg.scripts['release:publish:artifact'] === 'node scripts/release/publish_release_tarball.cjs', 'package.json must expose release:publish:artifact');
+  assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:prep'), 'package.json release:publish must run release:prep');
+  assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:pack'), 'package.json release:publish must run release:pack');
+  assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:publish:artifact'), 'package.json release:publish must run release:publish:artifact');
   assert(pkg.scripts.build === 'npm run typecheck', 'package.json build must stay a narrow compile/typecheck surface');
   assert(typeof pkg.scripts['verify:repo'] === 'string', 'package.json must expose verify:repo');
   assert(typeof pkg.scripts['verify:tests'] === 'string', 'package.json must expose verify:tests');
@@ -388,7 +393,7 @@ function checkPackageMetadata() {
   assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run generate:sbom:spdx'), 'package.json release:prep must generate the SPDX SBOM');
   assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run check:release-trust -- --require-sbom'), 'package.json release:prep must verify release trust with SBOMs');
   assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run check:release-drift -- --require-clean-tree'), 'package.json release:prep must require a clean tree after verification');
-  assert(pkg.scripts.prepublishOnly === 'npm run release:prep', 'package.json prepublishOnly must delegate to release:prep');
+  assert(pkg.scripts.prepublishOnly === 'node scripts/release/block_source_publish.cjs', 'package.json prepublishOnly must block direct source-tree publish');
 }
 
 function checkWorkflowAndInstaller() {
@@ -587,6 +592,7 @@ function checkWorkflowAndInstaller() {
     'npm run benchmark:check',
     'npm run check:release-trust',
     'npm run release:prep',
+    'npm run release:publish',
   ];
   for (const fragment of finalSignoffExpectations) {
     assert(finalSignoffDoc.includes(fragment), `final-readiness-signoff doc is missing required signoff evidence fragment: ${fragment}`);
@@ -626,6 +632,8 @@ function checkWorkflowAndInstaller() {
     'docsHistorySha256',
     'standalone SDK tarball, wheel, and sdist',
     'final-readiness-signoff.md',
+    'npm run release:publish',
+    'source-tree `npm publish` is intentionally blocked',
   ];
   for (const fragment of releaseVerificationExpectations) {
     assert(releaseVerificationDoc.includes(fragment), `release-verification doc is missing required SDK release verification guidance: ${fragment}`);

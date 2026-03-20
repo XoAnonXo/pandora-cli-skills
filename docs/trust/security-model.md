@@ -162,6 +162,7 @@ Pandora treats agent readiness as a release surface.
 - repo verification is concentrated in `verify:repo`, `verify:tests`, `release:verify`, and `release:prep`
 - parity failures can zero the benchmark headline score
 - in the source tree, `release:verify` runs the repo verification surface once, and `release:prep` layers SBOM generation plus release-trust and release-drift checks on top
+- the supported local maintainer publish path is `npm run release:publish`, which runs `release:prep`, packs the tarball once, then publishes that tarball; direct source-tree `npm publish` is intentionally blocked
 - `prepack` is packaging-only: it prepares the publish-safe manifest and `postpack` restores the repository manifest after the tarball is built
 - smoke uses manifest prep plus `npm pack --ignore-scripts` so it validates packaged output without recursively re-entering release hooks
 - the tagged GitHub release workflow is gated on Linux/macOS/Windows validation before packaging release assets

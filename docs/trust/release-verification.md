@@ -495,6 +495,14 @@ npm run release:prep
 
 That is the narrower source-tree trust helper for a checkout. It runs packaged-surface smoke checks, `benchmark:check`, regenerates both the default CycloneDX SBOM and the SPDX SBOM, and then runs the repository's release-trust checks. It still does not run the broader docs, SDK, typecheck, or full test gates by itself, and it is not a substitute for verifying the downloaded release tarball itself.
 
+For the supported local maintainer publish path after the checkout is ready, use:
+
+```bash
+npm run release:publish
+```
+
+That path verifies once, packs once, and publishes the prebuilt tarball. Direct source-tree `npm publish` is intentionally blocked so maintainers do not accidentally re-enter a slower or less explicit release path.
+
 If you want to reproduce the published benchmark evidence from source, use the tagged checkout:
 
 ```bash

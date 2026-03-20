@@ -65,6 +65,8 @@ test('release workflow and installer advertise provenance, sbom, and signature v
 test('trust docs reflect the shipped workflow and verification flow', () => {
   const releaseVerification = readText('docs/trust/release-verification.md');
   const supportMatrix = readText('docs/trust/support-matrix.md');
+  const bundlePlaybook = readText('docs/trust/release-bundle-playbook.md');
+  const finalSignoff = readText('docs/trust/final-readiness-signoff.md');
 
   assert.match(releaseVerification, /actions\/attest-build-provenance|build provenance/i);
   assert.match(releaseVerification, /actions\/attest-sbom|SPDX SBOM attestation/i);
@@ -83,6 +85,12 @@ test('trust docs reflect the shipped workflow and verification flow', () => {
   assert.match(releaseVerification, /\.intoto\.jsonl/);
   assert.match(releaseVerification, /\.sig/);
   assert.match(releaseVerification, /\.pem/);
+  assert.match(releaseVerification, /npm run release:publish/);
+  assert.match(releaseVerification, /Direct source-tree `npm publish` is intentionally blocked/);
+
+  assert.match(bundlePlaybook, /npm run release:publish/);
+  assert.match(bundlePlaybook, /Direct source-tree `npm publish` is intentionally blocked/);
+  assert.match(finalSignoff, /npm run release:publish/);
 
   assert.match(supportMatrix, /Trust docs .* surfaced in the runtime documentation index/i);
   assert.match(

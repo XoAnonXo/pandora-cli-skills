@@ -59,6 +59,14 @@ What these commands guarantee:
 - trust verification is green
 - final readiness gate is evaluated from the current repo state
 
+If you are doing a local npm publication instead of waiting for the tag workflow, use the supported fast path:
+
+```bash
+npm run release:publish
+```
+
+That command verifies once, packs once, and publishes the prebuilt tarball. Direct source-tree `npm publish` is intentionally blocked so maintainers use the tarball publish route explicitly.
+
 ### 2. Bump version and commit
 
 Update the CLI package version and any mirrored version references such as:
