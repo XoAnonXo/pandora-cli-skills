@@ -1,22 +1,22 @@
 {
   "contractLock": {
-    "capabilitiesLocalHash": "8ef9f3e4e990f006db61c67b877c4880b6ca3b99dd4a6b8d182f3d6220bdcda2",
-    "capabilitiesRemoteTemplateHash": "4c2d6851b0f720aa7a5ee1ade2032da0bf47edb331c59821b9b758c991ffce24",
+    "capabilitiesLocalHash": "5f534bb458b042e89bbfc2785122ebfed2890f98b78b497f859c54ec8ab43732",
+    "capabilitiesRemoteTemplateHash": "fd8cbe47dbb0dde7086241d0a1ee64993f70991a7149ae8bd1cce4e108bbfc19",
     "commandDescriptorVersion": "1.4.3",
     "documentationContentHash": "dd74f2fe44afda3d97114523fa684aa07d5d407566bc3babc8ca4a176319d876",
     "documentationRegistryHash": "d57f4f782a615f46a0f1ec7696d761105bb7394f974a70960000cb5635153f7f",
     "generatedArtifactHashes": {
       "generatedCommandDescriptors": "52f22be4d35fab84212020a3191c4a89a2fdfa11476b6e51ee9543686e41399a",
-      "generatedContractRegistry": "7cd8d9cb6900aca69b0af3747a971738fa2cc76c7fd8aa968ab7f52d2fe13ed7",
-      "generatedManifest": "987edf46414d073a245beed10c9aba658000fe8c7eab2fb954ded728a73cc391",
+      "generatedContractRegistry": "35eb6e580d67a214f1aa2c08d2bd24c664a4717a579b67564e9962cd6872ccdc",
+      "generatedManifest": "f48deefbe5789ed1aeca18c46a2838920d33eb937aafe41d7cc76840fb9a9b52",
       "generatedMcpToolDefinitions": "caa1bbcc37a4d3e4ca5be9f175131973344213b71342c1d7f966d6c3902d0601",
       "pyCommandDescriptors": "52f22be4d35fab84212020a3191c4a89a2fdfa11476b6e51ee9543686e41399a",
-      "pyContractRegistry": "7cd8d9cb6900aca69b0af3747a971738fa2cc76c7fd8aa968ab7f52d2fe13ed7",
-      "pyManifest": "c32ed636a07660dafbbaeddcf9bc881c236bac9eb3a2083f5eb9386caafbf492",
+      "pyContractRegistry": "35eb6e580d67a214f1aa2c08d2bd24c664a4717a579b67564e9962cd6872ccdc",
+      "pyManifest": "d993f801829e3ab2444396a3e6d065e05d0da9e1e49302b14ae9e35c7a65c5c6",
       "pyMcpToolDefinitions": "caa1bbcc37a4d3e4ca5be9f175131973344213b71342c1d7f966d6c3902d0601",
       "tsCommandDescriptors": "52f22be4d35fab84212020a3191c4a89a2fdfa11476b6e51ee9543686e41399a",
-      "tsContractRegistry": "7cd8d9cb6900aca69b0af3747a971738fa2cc76c7fd8aa968ab7f52d2fe13ed7",
-      "tsManifest": "290ec44f8f78e782b87224f67084a67630b015aed2699e2b00a9e413f0e71b1e",
+      "tsContractRegistry": "35eb6e580d67a214f1aa2c08d2bd24c664a4717a579b67564e9962cd6872ccdc",
+      "tsManifest": "9c7c297cf6badc448f99437acec81e56214014371c9ef84b14bf4d10edda8069",
       "tsMcpToolDefinitions": "caa1bbcc37a4d3e4ca5be9f175131973344213b71342c1d7f966d6c3902d0601"
     },
     "generatedManifestCommandDescriptorVersion": "1.4.3",
@@ -32,7 +32,7 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-      "trustDistributionHash": "1ca41750dd77d247aec73926d583eacd5d94edf7a83f56f9e148bb7d3e8ed49d"
+      "trustDistributionHash": "2b4b2c327b1424113be92a7b0510c5f4f151a39447429026389c5e9f23fa857e"
     },
     "generatedManifestVersion": "1.0.0",
     "registryDigest": {
@@ -46,16 +46,16 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-      "trustDistributionHash": "1ca41750dd77d247aec73926d583eacd5d94edf7a83f56f9e148bb7d3e8ed49d"
+      "trustDistributionHash": "2b4b2c327b1424113be92a7b0510c5f4f151a39447429026389c5e9f23fa857e"
     },
-    "schemaHash": "21c653a5d6968269d56c77d7ddac96c8ce286250d906d0a6f0de368ed4cd87ae"
+    "schemaHash": "e9703bdd3e246eee4b0209509543300189f1e8095648f75b79a056abcc99198a"
   },
   "publication": {
-    "contractLockHash": "c7ec06d7b58cdf70e457b471a2a8f93eb50e39d750b7dec65507178020ee8609",
+    "contractLockHash": "a2d5da2e34d267f79a8baa739e571e39d5e186c13d615d0c70176cf86c9a6e50",
     "deterministic": true,
     "grade": "release-grade",
     "kind": "benchmark-contract-lock",
-    "lockDocumentHash": "05a38c51dade2c0ff6971d723e06f6dc03e0538a65e2ff4b2ebd7fb38794b24a",
+    "lockDocumentHash": "a5e99d20275f72e160bc86a3cd419fa792bf27ad4dfbaf55dc773b651f767c62",
     "suiteLockPath": "benchmarks/locks/core.lock.json"
   },
   "schemaVersion": "1.0.0",
