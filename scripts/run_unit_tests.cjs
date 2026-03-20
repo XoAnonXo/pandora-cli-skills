@@ -35,10 +35,6 @@ if (testFiles.length === 0) {
   process.exit(1);
 }
 
-// The unit suite shares process-wide globals and temp fixtures in several legacy files.
-// Run serially so CI and local verification stay deterministic.
-const nodeArgs = ['--test', '--test-concurrency=1'];
-
 function supportsTestForceExit() {
   try {
     const help = execFileSync(process.execPath, ['--help'], {
@@ -52,14 +48,21 @@ function supportsTestForceExit() {
   }
 }
 
+// The unit suite shares process-wide globals and temp fixtures in several legacy files.
+// Run serially in isolated processes so leaked handles in one file cannot stall the whole suite.
+const baseNodeArgs = ['--test'];
 if (supportsTestForceExit()) {
-  nodeArgs.push('--test-force-exit');
+  baseNodeArgs.push('--test-force-exit');
 }
-nodeArgs.push(...testFiles);
 
-const result = spawnSync(process.execPath, nodeArgs, {
-  cwd: rootDir,
-  stdio: 'inherit',
-});
+for (const testFile of testFiles) {
+  const result = spawnSync(process.execPath, baseNodeArgs.concat(testFile), {
+    cwd: rootDir,
+    stdio: 'inherit',
+  });
+  if (result.status !== 0) {
+    process.exit(result.status === null ? 1 : result.status);
+  }
+}
 
-process.exit(result.status === null ? 1 : result.status);
+process.exit(0);
