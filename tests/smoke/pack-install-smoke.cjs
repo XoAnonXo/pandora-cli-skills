@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { runCliWithTty } = require('../helpers/cli_runner.cjs');
+const { buildPublicNpmEnv } = require('./smoke_npm_env_helper.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const PREPARE_PUBLISH_MANIFEST = path.join(ROOT, 'scripts', 'prepare_publish_manifest.cjs');
@@ -128,9 +129,7 @@ function moveFileSafe(from, to) {
 }
 
 function runNpm(args, options = {}) {
-  const env = {
-    ...(options.env || process.env),
-  };
+  const env = buildPublicNpmEnv(options.env || process.env);
   delete env.npm_config_dry_run;
   delete env.NPM_CONFIG_DRY_RUN;
 
@@ -233,6 +232,46 @@ function getPackResult(packDir, options = {}) {
   return fallback;
 }
 
+function resolveTarballPath(packDir) {
+  const sharedTarballPath = process.env.PANDORA_SMOKE_TARBALL;
+  if (sharedTarballPath) {
+    const resolved = path.resolve(sharedTarballPath);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`Shared smoke tarball not found at ${resolved}`);
+    }
+    return resolved;
+  }
+
+  ensurePublishManifestRestored('pre-smoke publish manifest cleanup');
+  const prepareResult = preparePublishManifest();
+  ensureExitCode(prepareResult, 0, 'prepare publish manifest');
+  let pack;
+  try {
+    pack = getPackResult(packDir, { ignoreScripts: true });
+    ensureExitCode(pack, 0, 'npm pack --ignore-scripts');
+  } finally {
+    const restoreResult = restorePublishManifest();
+    ensureExitCode(restoreResult, 0, 'restore publish manifest');
+  }
+
+  const tarballName = pack.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .at(-1);
+
+  if (!tarballName) {
+    throw new Error(`Unable to read tarball name from npm pack output:\n${pack.output}`);
+  }
+
+  const tarballPath = path.join(packDir, tarballName);
+  if (!fs.existsSync(tarballPath)) {
+    throw new Error(`Tarball not found at ${tarballPath}`);
+  }
+
+  return tarballPath;
+}
+
 function main() {
   const FIXED_FUTURE_TIMESTAMP = '1893456000'; // 2030-01-01T00:00:00Z
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-pack-smoke-'));
@@ -246,32 +285,7 @@ function main() {
   fs.mkdirSync(runtimeDir, { recursive: true });
 
   try {
-    ensurePublishManifestRestored('pre-smoke publish manifest cleanup');
-    const prepareResult = preparePublishManifest();
-    ensureExitCode(prepareResult, 0, 'prepare publish manifest');
-    let pack;
-    try {
-      pack = getPackResult(packDir, { ignoreScripts: true });
-      ensureExitCode(pack, 0, 'npm pack --ignore-scripts');
-    } finally {
-      const restoreResult = restorePublishManifest();
-      ensureExitCode(restoreResult, 0, 'restore publish manifest');
-    }
-
-    const tarballName = pack.stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .at(-1);
-
-    if (!tarballName) {
-      throw new Error(`Unable to read tarball name from npm pack output:\n${pack.output}`);
-    }
-
-    const tarballPath = path.join(packDir, tarballName);
-    if (!fs.existsSync(tarballPath)) {
-      throw new Error(`Tarball not found at ${tarballPath}`);
-    }
+    const tarballPath = resolveTarballPath(packDir);
 
     extractTarball(tarballPath, extractDir);
 

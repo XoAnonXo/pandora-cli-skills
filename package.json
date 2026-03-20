@@ -130,7 +130,7 @@
     "test:cli": "node --test tests/cli/cli.integration.test.cjs tests/cli/mcp.integration.test.cjs tests/cli/stream.integration.test.cjs tests/cli/sports.integration.test.cjs tests/cli/policy_profile_cli.integration.test.cjs tests/cli/policy_profile_mcp.integration.test.cjs tests/cli/recipe.integration.test.cjs",
     "test:agent-workflow": "node --test tests/cli/agent_workflow.integration.test.cjs",
     "test:smoke:consumer-json": "node tests/smoke/consumer-json-smoke.cjs",
-    "test:smoke": "node tests/smoke/pack-install-smoke.cjs && node tests/smoke/consumer-json-smoke.cjs",
+    "test:smoke": "node scripts/run_smoke_tests.cjs",
     "test": "npm run verify:tests"
   },
   "keywords": [
