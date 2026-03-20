@@ -766,7 +766,10 @@ print(json.dumps({
 function runStandaloneSdkArtifactChecks(options = {}) {
   const tempOutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-sdk-artifacts-'));
   try {
-    const build = buildStandaloneSdkReleaseArtifacts({ outDir: tempOutDir });
+    const build = buildStandaloneSdkReleaseArtifacts({
+      outDir: tempOutDir,
+      sourceChecks: options.sourceChecks || null,
+    });
     return {
       outDir: build.outDir,
       manifestPath: build.manifestPath,
@@ -790,7 +793,7 @@ function buildStandaloneSdkReleaseArtifacts(options = {}) {
   const npmOutDir = path.join(outDir, 'npm');
   const pythonOutDir = path.join(outDir, 'python');
 
-  const sourceChecks = runStandaloneSdkSourceChecks();
+  const sourceChecks = options.sourceChecks || runStandaloneSdkSourceChecks();
   const { metadata, pythonRuntime } = sourceChecks;
 
   ensureCleanDir(outDir);

@@ -15,7 +15,9 @@ function parseArgs(argv) {
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const result = runStandaloneSdkSourceChecks();
-  const artifactChecks = options.sourceOnly ? null : runStandaloneSdkArtifactChecks();
+  const artifactChecks = options.sourceOnly
+    ? null
+    : runStandaloneSdkArtifactChecks({ sourceChecks: result });
   const output = {
     ok: true,
     pythonRuntime: [result.pythonRuntime.command].concat(result.pythonRuntime.prefixArgs || []).join(' '),
