@@ -36,7 +36,7 @@ Use [`final-readiness-signoff.md`](./final-readiness-signoff.md) as the release-
 - signer `runtime-local-readiness` and `profile explain` evidence
 - authenticated remote MCP bootstrap/readiness/metrics and operation receipt surfaces
 - benchmark publication assets (`core-bundle.json`, `core-history.json`, `core-report.json`, `core.lock.json`, `benchmark-publication-manifest.json`, `benchmark-publication-bundle.tar.gz`)
-- release trust and drift gates (`checksums.sha256`, `sbom.spdx.json`, `.intoto.jsonl`, `.sig`, `.pem`, `npm test`, `npm run check:docs`, `npm run check:sdk-contracts`, `npm run benchmark:check`, `npm run check:release-trust`, `npm run release:prep`)
+- release trust and drift gates (`checksums.sha256`, `sbom.spdx.json`, `.intoto.jsonl`, `.sig`, `.pem`, `npm test`, `npm run check:docs`, `npm run check:sdk-contracts`, `npm run benchmark:check`, `npm run check:release-trust`, `npm run release:prep`, `npm run release:finalize`)
 
 Do not call a release final or A+-grade unless that signoff contract is green.
 
@@ -501,7 +501,7 @@ For the supported local maintainer publish path after the checkout is ready, use
 npm run release:publish
 ```
 
-That path verifies once, packs once, and publishes the prebuilt tarball. Direct source-tree `npm publish` is intentionally blocked so maintainers do not accidentally re-enter a slower or less explicit release path.
+That path runs `release:verify`, refreshes benchmark/SBOM artifacts via `release:finalize`, packs once, reuses that packed tarball for the final trust gate, and then publishes the prebuilt tarball. Direct source-tree `npm publish` is intentionally blocked so maintainers do not accidentally re-enter a slower or less explicit release path.
 
 If you want to reproduce the published benchmark evidence from source, use the tagged checkout:
 

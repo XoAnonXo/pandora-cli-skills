@@ -17,6 +17,7 @@ const REQUIRED_REPO_SCRIPTS = Object.freeze([
   'benchmark:history',
   'check:docs',
   'check:release-trust',
+  'release:finalize',
   'release:prep',
   'test:unit',
   'test:cli',

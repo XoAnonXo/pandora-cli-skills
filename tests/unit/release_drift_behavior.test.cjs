@@ -47,6 +47,7 @@ module.exports = {
         'benchmark:history': 'node scripts/benchmark_history.cjs',
         'check:docs': 'node scripts/check_docs.cjs',
         'check:release-trust': 'node scripts/check_release_trust.cjs',
+        'release:finalize': 'node scripts/release_finalize.cjs',
         'release:prep': 'node scripts/release_prep.cjs',
         'test:unit': 'node scripts/test_unit.cjs',
         'test:cli': 'node scripts/test_cli.cjs',

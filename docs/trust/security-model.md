@@ -159,10 +159,10 @@ These controls help consumers verify that release artifacts came from the expect
 
 Pandora treats agent readiness as a release surface.
 - the repository uses a verify-once, pack-once, publish-tarball release model
-- repo verification is concentrated in `verify:repo`, `verify:tests`, `release:verify`, and `release:prep`
+- repo verification is concentrated in `verify:repo`, `verify:tests`, `release:verify`, `release:finalize`, and `release:prep`
 - parity failures can zero the benchmark headline score
-- in the source tree, `verify:repo` covers compile/docs/SDK/secret-scan checks, `release:verify` runs that repo verification surface once alongside tests and benchmark gating, and `release:prep` layers SBOM generation plus the final release-trust and release-drift checks on top
-- the supported local maintainer publish path is `npm run release:publish`, which runs `release:prep`, packs the tarball once, then publishes that tarball; direct source-tree `npm publish` is intentionally blocked
+- in the source tree, `verify:repo` covers compile/docs/SDK/secret-scan checks, `release:verify` runs that repo verification surface once alongside tests and benchmark gating, `release:finalize` refreshes benchmark and SBOM artifacts, and `release:prep` layers the final release-trust and release-drift checks on top
+- the supported local maintainer publish path is `npm run release:publish`, which runs `release:verify`, `release:finalize`, packs the tarball once, reuses that tarball for the final trust gate, then publishes it; direct source-tree `npm publish` is intentionally blocked
 - `prepack` is packaging-only: it prepares the publish-safe manifest and `postpack` restores the repository manifest after the tarball is built
 - smoke builds one publish-safe tarball and reuses it across both packaged-surface smoke checks, avoiding recursive release hooks and duplicate packaging work
 - the tagged GitHub release workflow is gated on Linux/macOS/Windows validation before packaging release assets

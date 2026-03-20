@@ -91,6 +91,7 @@ function defaultSbomPath(format) {
 function parseArgs(argv) {
   const options = {
     json: false,
+    packedTarball: null,
     requireSbom: false,
     sbomPath: defaultSbomPath('cyclonedx'),
   };
@@ -105,6 +106,16 @@ function parseArgs(argv) {
 
     if (arg === '--require-sbom') {
       options.requireSbom = true;
+      continue;
+    }
+
+    if (arg === '--packed-tarball') {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error('--packed-tarball requires a value');
+      }
+      options.packedTarball = path.resolve(ROOT_DIR, value);
+      index += 1;
       continue;
     }
 
@@ -185,6 +196,32 @@ function runNpmPackDryRun() {
   const parsed = JSON.parse(output);
   assert(Array.isArray(parsed) && parsed.length === 1, 'Expected npm pack --dry-run --json to return a single tarball entry');
   return parsed[0];
+}
+
+function listTarArchiveEntries(archivePath) {
+  const output = execFileSync('tar', ['-tzf', archivePath], {
+    cwd: ROOT_DIR,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024 * 32,
+  });
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function resolvePackedTarballPath(targetPath) {
+  if (!targetPath) {
+    return null;
+  }
+  const stats = fs.existsSync(targetPath) ? fs.statSync(targetPath) : null;
+  if (!stats) {
+    throw new Error(`Packed tarball path does not exist: ${path.relative(ROOT_DIR, targetPath)}`);
+  }
+  if (stats.isDirectory()) {
+    return path.join(targetPath, expectedTarballName());
+  }
+  return targetPath;
 }
 
 function runNpmSbomHelp() {
@@ -329,8 +366,11 @@ function checkPackageMetadata() {
   assert(pkg.scripts['release:build-sdk-artifacts'] === 'node scripts/release/build_standalone_sdk_artifacts.cjs', 'package.json must expose release:build-sdk-artifacts');
   assert(pkg.scripts['release:pack'] === 'node scripts/release/pack_release_tarball.cjs', 'package.json must expose release:pack');
   assert(pkg.scripts['release:publish:artifact'] === 'node scripts/release/publish_release_tarball.cjs', 'package.json must expose release:publish:artifact');
-  assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:prep'), 'package.json release:publish must run release:prep');
+  assert(typeof pkg.scripts['release:finalize'] === 'string', 'package.json must expose release:finalize');
+  assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:verify'), 'package.json release:publish must run release:verify');
+  assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:finalize'), 'package.json release:publish must run release:finalize');
   assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:pack'), 'package.json release:publish must run release:pack');
+  assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('--packed-tarball dist/release/npm'), 'package.json release:publish must reuse the packed tarball for trust checks');
   assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:publish:artifact'), 'package.json release:publish must run release:publish:artifact');
   assert(pkg.scripts.build === 'npm run typecheck', 'package.json build must stay a narrow compile/typecheck surface');
   assert(pkg.scripts['verify:repo'] === 'node scripts/run_repo_verification.cjs', 'package.json verify:repo must delegate to scripts/run_repo_verification.cjs');
@@ -391,9 +431,13 @@ function checkPackageMetadata() {
       `package.json release:verify must include ${releaseVerifyFragment}`,
     );
   }
+  assert(typeof pkg.scripts['release:finalize'] === 'string' && pkg.scripts['release:finalize'].includes('npm run clean:sdk-python-cache'), 'package.json release:finalize must clear Python SDK cache');
+  assert(typeof pkg.scripts['release:finalize'] === 'string' && pkg.scripts['release:finalize'].includes('node scripts/run_agent_benchmarks.cjs --suite core --write-lock --out benchmarks/latest/core-report.json'), 'package.json release:finalize must refresh benchmark lock/report artifacts');
+  assert(typeof pkg.scripts['release:finalize'] === 'string' && pkg.scripts['release:finalize'].includes('npm run benchmark:history'), 'package.json release:finalize must refresh benchmark history');
+  assert(typeof pkg.scripts['release:finalize'] === 'string' && pkg.scripts['release:finalize'].includes('npm run generate:sbom'), 'package.json release:finalize must generate the CycloneDX SBOM');
+  assert(typeof pkg.scripts['release:finalize'] === 'string' && pkg.scripts['release:finalize'].includes('npm run generate:sbom:spdx'), 'package.json release:finalize must generate the SPDX SBOM');
   assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run release:verify'), 'package.json release:prep must run release:verify');
-  assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run generate:sbom'), 'package.json release:prep must generate the CycloneDX SBOM');
-  assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run generate:sbom:spdx'), 'package.json release:prep must generate the SPDX SBOM');
+  assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run release:finalize'), 'package.json release:prep must run release:finalize');
   assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run check:release-trust -- --require-sbom'), 'package.json release:prep must verify release trust with SBOMs');
   assert(typeof pkg.scripts['release:prep'] === 'string' && pkg.scripts['release:prep'].includes('npm run check:release-drift -- --require-clean-tree'), 'package.json release:prep must require a clean tree after verification');
   assert(pkg.scripts.prepublishOnly === 'node scripts/release/block_source_publish.cjs', 'package.json prepublishOnly must block direct source-tree publish');
@@ -644,13 +688,29 @@ function checkWorkflowAndInstaller() {
   }
 }
 
-function checkPackedArtifact() {
-  const packResult = runNpmPackDryRun();
-  const packedFiles = new Set(
-    Array.isArray(packResult.files)
-      ? packResult.files.map((entry) => entry && entry.path).filter(Boolean)
-      : []
-  );
+function checkPackedArtifact(options = {}) {
+  const packedTarballPath = resolvePackedTarballPath(options.packedTarball);
+  let packResult;
+  let packedFiles;
+
+  if (packedTarballPath) {
+    assert(fs.existsSync(packedTarballPath), `Packed tarball not found: ${path.relative(ROOT_DIR, packedTarballPath)}`);
+    const archiveEntries = listTarArchiveEntries(packedTarballPath)
+      .map((entry) => entry.replace(/^package\//, ''))
+      .filter(Boolean);
+    packResult = {
+      filename: path.basename(packedTarballPath),
+      entryCount: archiveEntries.length,
+    };
+    packedFiles = new Set(archiveEntries);
+  } else {
+    packResult = runNpmPackDryRun();
+    packedFiles = new Set(
+      Array.isArray(packResult.files)
+        ? packResult.files.map((entry) => entry && entry.path).filter(Boolean)
+        : []
+    );
+  }
 
   assert(packResult.filename === expectedTarballName(), `Expected tarball name ${expectedTarballName()}, received ${packResult.filename}`);
   assert(packedFiles.size > 0, 'Packed artifact contains no files');
@@ -760,7 +820,7 @@ function run() {
     checkPublishedScriptSurface(pkg, publishManifestConfig.publishedScriptNames, 'published package.json');
     checkPublishedFilesSurface(pkg, publishManifestConfig.publishedFileDenylist, 'published package.json');
   }
-  const packSummary = checkPackedArtifact();
+  const packSummary = checkPackedArtifact(options);
   const sbomSummary = checkSbomArtifact(options);
 
   const result = {

@@ -50,7 +50,7 @@ All rows below must be green for signoff.
 | Operation receipts | Mutable operations emit tamper-evident receipts that can be fetched and verified. | local receipt artifacts, `/operations/{operationId}/receipt`, `/operations/{operationId}/receipt/verify`, receipt verification coverage |
 | Benchmark publication | Public benchmark evidence is attached to the release and tied to the same release truth set. | `core-bundle.json`, `core-history.json`, `core-report.json`, `core.lock.json`, `benchmark-publication-manifest.json`, `benchmark-publication-bundle.tar.gz` |
 | Release trust | Package, SBOM, provenance, and signatures verify against the tagged workflow. | `checksums.sha256`, `sbom.spdx.json`, `.intoto.jsonl`, `.sig`, `.pem`, GitHub provenance and cosign verification flows |
-| Release drift discipline | Repo head, packaged surface, generated artifacts, docs, benchmark lock, and release assets are checked together before publish. | `npm test`, `npm run check:docs`, `npm run check:sdk-contracts`, `npm run benchmark:check`, `npm run check:release-trust`, `npm run release:prep`, `npm run release:publish` |
+| Release drift discipline | Repo head, packaged surface, generated artifacts, docs, benchmark lock, and release assets are checked together before publish. | `npm test`, `npm run check:docs`, `npm run check:sdk-contracts`, `npm run benchmark:check`, `npm run check:release-trust`, `npm run release:finalize`, `npm run release:prep`, `npm run release:publish` |
 
 ## Final signoff procedure
 
@@ -107,6 +107,7 @@ A release signoff should record all of the following in one review packet or rel
 - `npm run check:final-readiness`
 - `npm run benchmark:check`
 - `npm run check:release-trust`
+- `npm run release:finalize`
 - `npm run release:prep`
 - `npm run release:publish`
 
@@ -134,7 +135,7 @@ A release must be blocked if any of the following is true:
 - `/operations/{operationId}/receipt` or `/operations/{operationId}/receipt/verify` are undocumented or unverified for mutable-operation audit.
 - benchmark assets are present but not linked through `benchmark-publication-manifest.json` and release checksums.
 - `checksums.sha256`, `sbom.spdx.json`, provenance bundles, and cosign materials do not all verify against the same tagged workflow.
-- `npm test`, `npm run check:docs`, `npm run check:sdk-contracts`, `npm run check:final-readiness`, `npm run benchmark:check`, `npm run check:release-trust`, `npm run release:prep`, or `npm run release:publish` fail on the release candidate.
+- `npm test`, `npm run check:docs`, `npm run check:sdk-contracts`, `npm run check:final-readiness`, `npm run benchmark:check`, `npm run check:release-trust`, `npm run release:finalize`, `npm run release:prep`, or `npm run release:publish` fail on the release candidate.
 
 ## Machine-readable gate
 
