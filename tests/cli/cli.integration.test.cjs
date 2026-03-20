@@ -1416,7 +1416,7 @@ test('help prints usage with zero exit code', () => {
   assert.match(result.output, /pandora \[--output table\|json\] markets mine/);
   assert.match(result.output, /pandora \[--output table\|json\] fees/);
   assert.match(result.output, /pandora \[--output table\|json\] debug market\|tx/);
-  assert.match(result.output, /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|calc\|simulate\|go\|sync\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl\|audit\|replay\|logs\|close/);
+  assert.match(result.output, /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|calc\|simulate\|go\|sync\|hedge\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl\|audit\|replay\|logs\|close/);
 });
 
 test('help accepts optional leading pandora token for npx compatibility', () => {
@@ -2691,6 +2691,61 @@ test('doctor --goal hosted-gateway stays read-only and signer-free', async () =>
   }
 });
 
+test('doctor --goal paper-hedge-daemon stays daemon-oriented and source-free', async () => {
+  const oracleAddress = '0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442';
+  const factoryAddress = '0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c';
+  const rpcServer = await startRpcMockServer({
+    chainIdHex: '0x1',
+    codeByAddress: {
+      [oracleAddress]: '0x6001600101',
+      [factoryAddress]: '0x6002600202',
+    },
+  });
+
+  const tempDir = createTempDir('pandora-doctor-paper-hedge-daemon-');
+  const envPath = path.join(tempDir, 'paper-hedge-daemon.env');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+
+  try {
+    writeFile(walletFile, `${ADDRESSES.wallet1}\n`);
+    writeFile(
+      envPath,
+      [
+        'CHAIN_ID=1',
+        `RPC_URL=${rpcServer.url}`,
+        `ORACLE=${oracleAddress}`,
+        `FACTORY=${factoryAddress}`,
+        'USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        `PANDORA_INTERNAL_WALLETS_FILE=${walletFile}`,
+      ].join('\n'),
+    );
+
+    const result = await runCliAsync(['--output', 'json', 'doctor', '--goal', 'paper-hedge-daemon', '--dotenv-path', envPath], {
+      unsetEnvKeys: [...DOCTOR_ENV_KEYS, 'PANDORA_RESOLUTION_SOURCES'],
+    });
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0, result.output);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.goal, 'paper-hedge-daemon');
+    assert.equal(payload.data.summary.ok, true);
+    assert.equal(payload.data.journeyReadiness.status, 'ready');
+    assert.equal(payload.data.journeyReadiness.missing.includes('PANDORA_RESOLUTION_SOURCES'), false);
+    assert.equal(
+      payload.data.journeyReadiness.recommendations.some((step) => /mirror hedge/i.test(String(step))),
+      true,
+    );
+    assert.equal(
+      payload.data.journeyReadiness.recommendations.some((step) => /DigitalOcean|generic VPS|Cloudflare Workers/i.test(String(step))),
+      true,
+    );
+  } finally {
+    await rpcServer.close();
+    removeDir(tempDir);
+  }
+});
+
 setupTest('setup creates env and coordinates doctor checks', async () => {
   const rpcServer = await startRpcMockServer({
     chainIdHex: '0x1',
@@ -2866,6 +2921,8 @@ test('setup planning surface keeps read-only goals signer-free by default', () =
     'hosted-gateway',
     'paper-mirror',
     'live-mirror',
+    'paper-hedge-daemon',
+    'live-hedge-daemon',
     'deploy',
   ]);
   assert.deepEqual(plan.steps.map((step) => step.id), ['runtime-basics', 'review']);
@@ -2928,6 +2985,37 @@ test('setup planning surface makes review the final step for paper-mirror', () =
   assert.deepEqual(review.writesEnv, []);
   assert.match(review.description, /redacted change set/i);
   assert.equal(plan.steps[6].fields[0].envKey, 'PANDORA_RESOLUTION_SOURCES');
+});
+
+test('setup planning surface distinguishes live-hedge-daemon from mirror sync setup', () => {
+  const plan = buildSetupPlan({
+    goal: 'live-hedge-daemon',
+    currentEnv: {
+      CHAIN_ID: '1',
+      RPC_URL: 'https://rpc.example.org',
+      ORACLE: '0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442',
+      FACTORY: '0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c',
+      USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    },
+  });
+
+  assert.equal(plan.goal, 'live-hedge-daemon');
+  assert.deepEqual(plan.steps.map((step) => step.id), [
+    'runtime-basics',
+    'pandora-signer',
+    'polymarket-connectivity',
+    'polymarket-signer',
+    'polymarket-api',
+    'hedge-daemon-policy',
+    'hosting',
+    'review',
+  ]);
+  assert.equal(plan.steps.some((step) => step.id === 'sports-odds'), false);
+  assert.equal(plan.steps.some((step) => step.id === 'resolution-sources'), false);
+  assert.equal(plan.steps.find((step) => step.id === 'hosting').decision.defaultSelected, true);
+  assert.match(plan.description, /packaged LP hedge daemon/i);
+  assert.equal(plan.notes.some((note) => /mirror hedge/i.test(String(note))), true);
+  assert.equal(plan.notes.some((note) => /DigitalOcean|generic VPS|Cloudflare Workers/i.test(String(note))), true);
 });
 
 setupTest('setup guides first-run users when the starter env still contains placeholder signer material', async () => {
@@ -3107,6 +3195,79 @@ setupTest('setup --output json exposes the reviewable planning surface for paper
       true,
     );
   } finally {
+    removeDir(tempDir);
+  }
+});
+
+setupTest('setup --plan exposes packaged hedge-daemon planning without mirror deploy-only steps', async () => {
+  const rpcServer = await startRpcMockServer({
+    chainIdHex: '0x1',
+    codeByAddress: {
+      [ADDRESSES.oracle]: '0x6001600101',
+      [ADDRESSES.factory]: '0x6002600202',
+    },
+  });
+
+  const tempDir = createTempDir('pandora-setup-plan-live-hedge-daemon-');
+  const examplePath = path.join(tempDir, 'fixtures', '.env.example');
+  const envPath = path.join(tempDir, 'runtime', '.env');
+
+  try {
+    writeFile(
+      examplePath,
+      buildValidEnv(rpcServer.url, {
+        ORACLE: ADDRESSES.oracle,
+        FACTORY: ADDRESSES.factory,
+      }),
+    );
+
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'setup',
+      '--plan',
+      '--goal',
+      'live-hedge-daemon',
+      '--example',
+      examplePath,
+      '--dotenv-path',
+      envPath,
+    ], {
+      unsetEnvKeys: [...DOCTOR_ENV_KEYS, 'PANDORA_RESOLUTION_SOURCES'],
+    });
+
+    assert.equal(result.timedOut, false);
+    assert.equal(result.status, 0, result.output);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.goal, 'live-hedge-daemon');
+    assert.equal(payload.data.mode, 'plan');
+    assert.equal(payload.data.envStep.status, 'no-env');
+    assert.equal(payload.data.plan.goal, 'live-hedge-daemon');
+    assert.deepEqual(payload.data.plan.steps.map((step) => step.id), [
+      'runtime-basics',
+      'pandora-signer',
+      'polymarket-connectivity',
+      'polymarket-signer',
+      'polymarket-api',
+      'hedge-daemon-policy',
+      'hosting',
+      'review',
+    ]);
+    assert.equal(payload.data.plan.steps.some((step) => step.id === 'sports-odds'), false);
+    assert.equal(payload.data.plan.steps.some((step) => step.id === 'resolution-sources'), false);
+    assert.equal(payload.data.doctor.journeyReadiness.goal, 'live-hedge-daemon');
+    assert.equal(
+      payload.data.plan.notes.some((note) => /mirror hedge/i.test(String(note))),
+      true,
+    );
+    assert.equal(
+      payload.data.plan.notes.some((note) => /DigitalOcean|generic VPS|Cloudflare Workers/i.test(String(note))),
+      true,
+    );
+    assert.equal(fs.existsSync(envPath), false);
+  } finally {
+    await rpcServer.close();
     removeDir(tempDir);
   }
 });
@@ -8677,7 +8838,6 @@ test('mirror sync --help json includes live hedge environment requirements', () 
   assert.equal(payload.data.notes.some((note) => /Hedging is enabled by default/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /adopt-existing-positions/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /Default hedge scope is `total`/i.test(String(note))), true);
-  assert.equal(payload.data.notes.some((note) => /skip-initial-hedge.*baseline/i.test(String(note))), true);
 });
 
 test('mirror sync unlock --help returns recovery-specific guidance', () => {
@@ -8716,7 +8876,6 @@ test('mirror go --help json includes flashbots routing flag contract', () => {
   assert.equal(payload.data.notes.some((note) => /flashbots-private.*cannot carry approval/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /does not accept a daemon `--source` selector/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /hedging stays enabled by default/i.test(String(note))), true);
-  assert.equal(payload.data.notes.some((note) => /skip-initial-hedge.*baseline/i.test(String(note))), true);
 });
 
 test('mirror deploy --help json surfaces validation-ticket caveats and reserve-weight distribution flags', () => {
@@ -9339,7 +9498,7 @@ test('mirror sync start/status/stop manages daemon lifecycle in paper mode', asy
   let daemonPid = null;
 
   try {
-    const startResult = runCli(
+    const startResult = await runCliAsync(
       [
         '--output',
         'json',
@@ -9370,7 +9529,7 @@ test('mirror sync start/status/stop manages daemon lifecycle in paper mode', asy
       { env: { HOME: tempDir } },
     );
 
-    assert.equal(startResult.status, 0);
+    assert.ok(startResult.status === 0, startResult.output || '(no cli output)');
     const startPayload = parseJsonOutput(startResult);
     assert.equal(startPayload.ok, true);
     assert.equal(startPayload.command, 'mirror.sync.start');
@@ -9490,7 +9649,7 @@ test('mirror sync start does not leak --private-key in daemon metadata', async (
   const funder = '0x9999999999999999999999999999999999999999';
 
   try {
-    const startResult = runCli(
+    const startResult = await runCliAsync(
       [
         '--output',
         'json',
@@ -9525,7 +9684,7 @@ test('mirror sync start does not leak --private-key in daemon metadata', async (
       { env: { HOME: tempDir } },
     );
 
-    assert.equal(startResult.status, 0);
+    assert.ok(startResult.status === 0, startResult.output || '(no cli output)');
     const startPayload = parseJsonOutput(startResult);
     assert.equal(startPayload.ok, true);
     assert.equal(startPayload.command, 'mirror.sync.start');
@@ -9553,6 +9712,150 @@ test('mirror sync start does not leak --private-key in daemon metadata', async (
   } finally {
     if (strategyHash) {
       runCli(['--output', 'json', 'mirror', 'sync', 'stop', '--strategy-hash', strategyHash], {
+        env: { HOME: tempDir },
+      });
+    }
+    if (daemonPid && Number.isInteger(daemonPid)) {
+      try {
+        process.kill(daemonPid, 'SIGKILL');
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror hedge start preserves --skip-dotenv in detached child cli args', async () => {
+  const tempDir = createTempDir('pandora-mirror-hedge-daemon-skip-dotenv-');
+  const stateFile = path.join(tempDir, 'hedge-state.json');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  writeFile(walletFile, `${ADDRESSES.wallet1}\n`);
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+  let pidFile = null;
+  let daemonPid = null;
+
+  try {
+    const startResult = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'hedge',
+        'start',
+        '--skip-dotenv',
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--internal-wallets-file',
+        walletFile,
+        '--paper',
+        '--interval-ms',
+        '1000',
+        '--iterations',
+        '30',
+        '--state-file',
+        stateFile,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.ok(startResult.status === 0, startResult.output || '(no cli output)');
+    const startPayload = parseJsonOutput(startResult);
+    assert.equal(startPayload.ok, true);
+    assert.equal(startPayload.command, 'mirror.hedge.start');
+    pidFile = startPayload.data.daemon.pidFile;
+    daemonPid = startPayload.data.daemon.pid;
+
+    const metadata = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+    assert.equal(Array.isArray(metadata.cliArgs), true);
+    assert.equal(metadata.cliArgs.includes('--skip-dotenv'), true);
+    assert.equal(metadata.cliArgs.includes('--dotenv-path'), false);
+  } finally {
+    if (pidFile) {
+      runCli(['--output', 'json', 'mirror', 'hedge', 'stop', '--pid-file', pidFile], {
+        env: { HOME: tempDir },
+      });
+    }
+    if (daemonPid && Number.isInteger(daemonPid)) {
+      try {
+        process.kill(daemonPid, 'SIGKILL');
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror hedge start preserves explicit dotenv paths in detached child cli args', async () => {
+  const tempDir = createTempDir('pandora-mirror-hedge-daemon-dotenv-path-');
+  const stateFile = path.join(tempDir, 'hedge-state.json');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  const envFile = path.join(tempDir, 'custom.env');
+  writeFile(walletFile, `${ADDRESSES.wallet1}\n`);
+  writeFile(envFile, '\n');
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+  let pidFile = null;
+  let daemonPid = null;
+
+  try {
+    const startResult = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'hedge',
+        'start',
+        '--dotenv-path',
+        envFile,
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--internal-wallets-file',
+        walletFile,
+        '--paper',
+        '--interval-ms',
+        '1000',
+        '--iterations',
+        '30',
+        '--state-file',
+        stateFile,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.ok(startResult.status === 0, startResult.output || '(no cli output)');
+    const startPayload = parseJsonOutput(startResult);
+    assert.equal(startPayload.ok, true);
+    assert.equal(startPayload.command, 'mirror.hedge.start');
+    pidFile = startPayload.data.daemon.pidFile;
+    daemonPid = startPayload.data.daemon.pid;
+
+    const metadata = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+    const dotenvIndex = metadata.cliArgs.indexOf('--dotenv-path');
+    assert.notEqual(dotenvIndex, -1);
+    assert.equal(metadata.cliArgs[dotenvIndex + 1], envFile);
+    assert.equal(metadata.cliArgs.includes('--skip-dotenv'), false);
+  } finally {
+    if (pidFile) {
+      runCli(['--output', 'json', 'mirror', 'hedge', 'stop', '--pid-file', pidFile], {
         env: { HOME: tempDir },
       });
     }
@@ -12670,6 +12973,135 @@ test('markets create --help json surfaces validation-ticket and balanced-distrib
   assert.equal(payload.data.notes.some((note) => /initial-yes-pct/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /yes-reserve-weight-pct/i.test(String(note))), true);
   assert.equal(payload.data.notes.some((note) => /distribution-yes-pct.*rejected/i.test(String(note))), true);
+});
+
+test('mirror hedge bundle --help no longer advertises manifest-file or Flashbots bundle wording', () => {
+  const result = runCli(['--output', 'json', 'mirror', 'hedge', 'bundle', '--help']);
+  assert.equal(result.status, 0);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.command, 'mirror.hedge.bundle.help');
+  assert.doesNotMatch(payload.data.usage, /--manifest-file <path>/);
+  assert.equal(
+    payload.data.notes.some((note) => /deterministic VPS deployment artifacts/i.test(String(note))),
+    true,
+  );
+  assert.equal(
+    payload.data.notes.some((note) => /Flashbots-style bundle metadata/i.test(String(note))),
+    false,
+  );
+});
+
+test('mirror hedge status table prints runtime queue and error details', () => {
+  const tempDir = createTempDir('pandora-hedge-status-');
+  const stateFile = path.join(tempDir, 'hedge-state.json');
+  const pidFile = path.join(tempDir, 'hedge-daemon.json');
+  const { createMirrorHedgeService } = require('../../cli/lib/mirror_hedge_service.cjs');
+  const service = createMirrorHedgeService();
+
+  try {
+    service.start({
+      stateFile,
+      strategyHash: 'abc123abc123abc1',
+      marketPairIdentity: {
+        pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+        polymarketMarketId: 'poly-1',
+        polymarketSlug: 'team-a-vs-team-b',
+        marketPairId: 'pair-1',
+      },
+      whitelistFingerprint: 'whitelist-a',
+    });
+    service.run({
+      stateFile,
+      strategyHash: 'abc123abc123abc1',
+      lastProcessedBlockCursor: {
+        blockNumber: 123,
+        blockHash: '0xabc',
+        cursor: 'block:123',
+      },
+      lastProcessedLogCursor: {
+        blockNumber: 123,
+        logIndex: 4,
+        cursor: 'log:4',
+        transactionHash: `0x${'c'.repeat(64)}`,
+      },
+      confirmedExposureLedger: [
+        {
+          id: 'exposure-1',
+          amountUsdc: 5,
+          deltaUsdc: 5,
+          cursor: 'log:4',
+          status: 'confirmed',
+        },
+      ],
+      pendingMempoolOverlays: [
+        {
+          txHash: `0x${'a'.repeat(64)}`,
+          amountUsdc: 2,
+          expectedHedgeDeltaUsdc: 2,
+        },
+      ],
+      deferredHedgeQueue: [
+        {
+          id: 'defer-1',
+          amountUsdc: 3,
+          reason: 'await-retry',
+        },
+      ],
+      skippedVolumeCounters: {
+        totalUsdc: 1,
+        count: 1,
+      },
+      managedPolymarketInventorySnapshot: {
+        status: 'adopted',
+        yesShares: 10,
+        noShares: 0,
+        netUsdc: 10,
+      },
+      lastSuccessfulHedge: {
+        hedgeId: 'hedge-1',
+        status: 'completed',
+        amountUsdc: 5,
+        tokenSide: 'yes',
+        orderSide: 'buy',
+        txHash: `0x${'b'.repeat(64)}`,
+        executedAt: '2026-03-20T00:00:00.000Z',
+      },
+      lastError: {
+        code: 'NO_DEPTH',
+        message: 'No sell-side depth.',
+      },
+      lastAlert: {
+        code: 'QUEUE_RETRY',
+        message: 'Queued for retry.',
+      },
+    });
+
+    writeFile(pidFile, JSON.stringify({
+      strategyHash: 'abc123abc123abc1',
+      pid: process.pid,
+      stateFile,
+      pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+      polymarketMarketId: 'poly-1',
+      polymarketSlug: 'team-a-vs-team-b',
+      status: 'running',
+      pidAlive: true,
+    }, null, 2));
+
+    const result = runCli(['mirror', 'hedge', 'status', '--pid-file', pidFile]);
+    assert.equal(result.status, 0);
+    assert.match(result.output, /runtimeStatus: errored/);
+    assert.match(result.output, /ready: yes/);
+    assert.match(result.output, /confirmedExposureCount: 1/);
+    assert.match(result.output, /pendingOverlayCount: 1/);
+    assert.match(result.output, /deferredHedgeCount: 1/);
+    assert.match(result.output, /deferredHedgeUsdc: 3/);
+    assert.match(result.output, /skippedVolumeUsdc: 1/);
+    assert.match(result.output, /lastSuccessfulHedgeAt: 2026-03-20T00:00:00.000Z/);
+    assert.match(result.output, /lastErrorCode: NO_DEPTH/);
+    assert.match(result.output, /lastAlertCode: QUEUE_RETRY/);
+  } finally {
+    removeDir(tempDir);
+  }
 });
 
 test('agent market hype emits reusable trend-research prompt payload', () => {

@@ -8,6 +8,8 @@ const MIRROR_GO_USAGE =
 
 const MIRROR_SYNC_SUMMARY =
   'pandora [--output table|json] mirror sync once|run|start|stop|status|unlock ...';
+const MIRROR_HEDGE_SUMMARY =
+  'pandora [--output table|json] mirror hedge plan|run|start|status|stop|bundle ...';
 
 /**
  * Canonical usage string for `mirror sync`.
@@ -18,7 +20,7 @@ const MIRROR_SYNC_USAGE =
   'pandora [--output table|json] mirror sync once|run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--skip-initial-hedge] [--adopt-existing-positions] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]';
 
 const INVALID_SUBCOMMAND_MESSAGE =
-  'mirror requires subcommand: browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close';
+  'mirror requires subcommand: browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|hedge|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close';
 
 /**
  * Build the `mirror` subcommand dispatcher with lazy-loaded action handlers.
@@ -44,6 +46,7 @@ function createRunMirrorCommand(deps) {
     simulate: () => require('./mirror_handlers/simulate.cjs'),
     go: () => require('./mirror_handlers/go.cjs'),
     sync: () => require('./mirror_handlers/sync.cjs'),
+    hedge: () => require('./mirror_handlers/hedge.cjs'),
     trace: () => require('./mirror_handlers/trace.cjs'),
     dashboard: () => require('./mirror_handlers/dashboard.cjs'),
     status: () => require('./mirror_handlers/status.cjs'),
@@ -95,11 +98,12 @@ function createRunMirrorCommand(deps) {
           context.outputMode,
           'mirror.help',
           commandHelpPayload(
-            'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
+            'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|hedge|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
             [
               'mirror dashboard is the canonical operator summary for active mirror markets; top-level `pandora dashboard` is a convenience alias.',
               'mirror go and mirror sync stay in paper/simulated mode unless --execute-live or --execute is supplied.',
               'Mirror sync simulates or executes Pandora rebalance and Polymarket hedge as separate legs; cross-venue settlement is not atomic.',
+              'Mirror hedge is the LP-hedging runtime family; use it for LP hedge planning and daemon lifecycle control without changing mirror sync semantics.',
               '--rebalance-route and Flashbots flags apply only to the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg private or atomic.',
               '--rebalance-route supports public, auto, flashbots-private, and flashbots-bundle. --rebalance-route-fallback controls whether unsupported private-routing conditions fail closed or fall back to public submission.',
               'mirror trace is the canonical read-only historical reserve surface for Pandora pools; use it for block-by-block reserve forensics and postmortems.',
@@ -129,7 +133,7 @@ function createRunMirrorCommand(deps) {
         );
       } else {
         console.log(
-          'Usage: pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
+          'Usage: pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|hedge|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
         );
         console.log('');
         console.log('Subcommands:');
@@ -162,6 +166,9 @@ function createRunMirrorCommand(deps) {
         );
         console.log(
           `  sync ${MIRROR_SYNC_SUMMARY.replace('pandora [--output table|json] mirror sync ', '')}`,
+        );
+        console.log(
+          `  hedge ${MIRROR_HEDGE_SUMMARY.replace('pandora [--output table|json] mirror hedge ', '')}`,
         );
         console.log('         stop selector: --pid-file <path>|--strategy-hash <hash>|--market-address <address>|--all');
         console.log('         status selector: --pid-file <path>|--strategy-hash <hash>');
@@ -217,6 +224,7 @@ function createRunMirrorCommand(deps) {
         console.log('  Use --polymarket-rpc-url when Polygon preflight should differ from the main --rpc-url; comma-separated fallbacks are tried in order.');
         console.log('  Polymarket outage fallback reuses cached snapshots under ~/.pandora/polymarket in paper mode; live mode blocks cached or stale sources and expects websocket-backed prices for short-interval sports sync.');
         console.log('  mirror sync status reports daemon health metadata such as status, alive, checkedAt, pidFile, logFile, and metadata.pidAlive.');
+        console.log('  mirror hedge is the LP-hedging runtime family; use it for LP hedge planning and daemon lifecycle control without changing mirror sync semantics.');
         console.log('  mirror health is the machine-usable daemon/runtime status shell; mirror panic engages the global risk panic plus mirror stop-file and daemon-stop emergency flow.');
         console.log('  The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror daemons until mirror panic clear mode or manual cleanup removes it.');
         console.log('  For AMM deploy/go flows, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly. Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve-weight control.');

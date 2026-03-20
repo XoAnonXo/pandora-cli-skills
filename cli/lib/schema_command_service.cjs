@@ -3018,6 +3018,25 @@ function buildSchemaPayload(options = {}) {
           state: { type: ['object', 'null'] },
         },
       },
+      MirrorHedgePayload: {
+        type: 'object',
+        properties: {
+          mode: { type: 'string' },
+          schemaVersion: { type: 'string' },
+          generatedAt: { type: 'string', format: 'date-time' },
+          stateFile: { type: ['string', 'null'] },
+          strategyHash: { type: ['string', 'null'] },
+          selector: { type: ['object', 'null'] },
+          plan: { type: ['object', 'null'] },
+          bundle: { type: ['object', 'null'] },
+          daemon: { type: ['object', 'null'] },
+          runtime: { type: ['object', 'null'] },
+          status: { type: ['string', 'null'] },
+          state: { type: ['object', 'null'] },
+          actions: { type: 'array', items: { type: 'object' } },
+          diagnostics: { type: 'array', items: { type: 'string' } },
+        },
+      },
       MirrorReconciliationMetadata: {
         type: 'object',
         properties: {

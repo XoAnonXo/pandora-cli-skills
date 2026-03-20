@@ -1,8 +1,15 @@
 # Mirror Operations Guide
 
-Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|trace|logs|close`, plus the related top-level `dashboard`, `fund-check`, and `explain` commands.
+Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|hedge|sync|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|trace|logs|close`, plus the related top-level `dashboard`, `fund-check`, and `explain` commands.
 
 For first-run setup and optional guided onboarding, see [`setup-and-onboarding.md`](./setup-and-onboarding.md) before you attempt `mirror plan|deploy|go`.
+
+## `mirror hedge` vs `mirror sync`
+- `mirror hedge` is the packaged LP daemon surface for an existing mirror pair.
+- Use `mirror hedge` when you want a bundle-oriented long-running daemon deployment target.
+- `mirror sync` remains the lower-level local/manual loop, one-shot execution surface, and troubleshooting path.
+- Bundle artifacts support DigitalOcean droplets and generic VPS targets today.
+- Cloudflare Workers are not supported in v1 because the hedge daemon expects a long-running stateful runtime with local process/file lifecycle.
 
 ## Canonical Batch 1 routing
 - `dashboard` is a standalone top-level command.
@@ -78,7 +85,9 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
 
 ## First-run onboarding
 - Fresh installs should start with `pandora setup --interactive --goal paper-mirror` or `--goal live-mirror` before `mirror plan|deploy|go`.
+- For packaged LP daemon rollout, start with `pandora setup --interactive --goal paper-hedge-daemon` or `--goal live-hedge-daemon`.
 - The guided setup path surfaces signer, Polymarket, hosting, and provider prerequisites before you reach the mirror validation gates.
+- Hedge-daemon goals intentionally skip deploy-time sports discovery and resolution-source capture; those belong to `paper-mirror` and `live-mirror`.
 - `PANDORA_RESOLUTION_SOURCES` is a convenience fallback for env-driven setups; explicit `--sources` still win and still require two public URLs from different hosts.
 
 ## Polymarket funding and proxy wallet
@@ -231,6 +240,9 @@ pandora mirror audit --market-address <pandora_market> --polymarket-market-id <p
 ```
 
 ## Sync and daemon notes
+- Prefer `mirror hedge` for the packaged LP daemon lifecycle on DigitalOcean droplets or a generic VPS.
+- Use `mirror sync` when you want a local/manual loop, a one-shot reconciliation run, or lower-level troubleshooting.
+- Cloudflare Workers are not supported in v1 for `mirror hedge`; the daemon runtime expects a long-running stateful process with local lifecycle management.
 - `mirror sync run|once|start` use the same mirror payload assumptions built during deploy/go.
 - `mirror sync run` is the foreground loop.
   - `--stream|--no-stream` only applies to `run`

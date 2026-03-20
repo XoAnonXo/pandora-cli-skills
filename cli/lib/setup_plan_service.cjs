@@ -5,6 +5,8 @@ const JOURNEY_GOALS = Object.freeze([
   { id: 'hosted-gateway', label: 'Hosted gateway', description: 'Prepare a remote read-only or operator gateway.' },
   { id: 'paper-mirror', label: 'Paper mirror', description: 'Prepare a paper-mode Polymarket mirror.' },
   { id: 'live-mirror', label: 'Live mirror', description: 'Prepare a live hedging daemon.' },
+  { id: 'paper-hedge-daemon', label: 'Paper hedge daemon', description: 'Prepare the packaged LP hedge daemon in paper mode for an existing mirror pair.' },
+  { id: 'live-hedge-daemon', label: 'Live hedge daemon', description: 'Prepare the packaged LP hedge daemon with live Pandora and Polymarket credentials.' },
   { id: 'deploy', label: 'Deploy', description: 'Prepare a Pandora market for execution.' },
 ]);
 
@@ -14,6 +16,10 @@ function normalizeGoal(goal) {
   if (normalized === 'paper') return 'paper-mirror';
   if (normalized === 'live') return 'live-mirror';
   if (normalized === 'gateway') return 'hosted-gateway';
+  if (normalized === 'paper-hedge') return 'paper-hedge-daemon';
+  if (normalized === 'live-hedge') return 'live-hedge-daemon';
+  if (normalized === 'paper-daemon') return 'paper-hedge-daemon';
+  if (normalized === 'live-daemon') return 'live-hedge-daemon';
   return JOURNEY_GOALS.some((entry) => entry.id === normalized) ? normalized : null;
 }
 
@@ -118,6 +124,55 @@ function buildGoalBlueprint(goal) {
         promptHosting: true,
         defaultHosting: false,
         promptResolutionSources: true,
+      };
+    case 'paper-hedge-daemon':
+      return {
+        goal: normalized,
+        label: 'Paper hedge daemon',
+        description: 'Packaged LP hedge daemon path for an existing mirror pair in paper mode. Unlike mirror sync setup, this path skips deploy-time sports discovery and resolution-source capture.',
+        runtimeFields: [
+          createField('CHAIN_ID', 'Chain ID', 'integer', { required: true, description: 'Pandora chain identifier.' }),
+          createField('RPC_URL', 'RPC URL', 'url', { required: true, description: 'Execution or inspection RPC endpoint.' }),
+          createField('ORACLE', 'Oracle address', 'address', { required: true, description: 'Oracle contract address.' }),
+          createField('FACTORY', 'Factory address', 'address', { required: true, description: 'Pandora factory address.' }),
+          createField('USDC', 'USDC address', 'address', { required: true, description: 'Settlement token address.' }),
+        ],
+        promptPandoraSigner: true,
+        defaultPandoraSigner: false,
+        promptPolymarketConnectivity: true,
+        defaultPolymarketConnectivity: true,
+        promptPolymarketSigner: true,
+        defaultPolymarketSigner: false,
+        promptPolymarketApi: false,
+        promptSports: false,
+        promptHosting: true,
+        defaultHosting: true,
+        promptResolutionSources: false,
+      };
+    case 'live-hedge-daemon':
+      return {
+        goal: normalized,
+        label: 'Live hedge daemon',
+        description: 'Packaged LP hedge daemon path for an existing mirror pair with live Pandora and Polymarket credentials. Unlike mirror sync setup, this path skips deploy-time sports discovery and resolution-source capture.',
+        runtimeFields: [
+          createField('CHAIN_ID', 'Chain ID', 'integer', { required: true, description: 'Pandora chain identifier.' }),
+          createField('RPC_URL', 'RPC URL', 'url', { required: true, description: 'Execution RPC endpoint.' }),
+          createField('ORACLE', 'Oracle address', 'address', { required: true, description: 'Oracle contract address.' }),
+          createField('FACTORY', 'Factory address', 'address', { required: true, description: 'Pandora factory address.' }),
+          createField('USDC', 'USDC address', 'address', { required: true, description: 'Settlement token address.' }),
+        ],
+        promptPandoraSigner: true,
+        defaultPandoraSigner: true,
+        promptPolymarketConnectivity: true,
+        defaultPolymarketConnectivity: true,
+        promptPolymarketSigner: true,
+        defaultPolymarketSigner: true,
+        promptPolymarketApi: true,
+        defaultPolymarketApi: true,
+        promptSports: false,
+        promptHosting: true,
+        defaultHosting: true,
+        promptResolutionSources: false,
       };
     case 'hosted-gateway':
       return {
@@ -275,6 +330,38 @@ function buildSetupPlan(options = {}) {
     });
   }
 
+  if (goal === 'paper-hedge-daemon' || goal === 'live-hedge-daemon') {
+    steps.push({
+      id: 'hedge-daemon-policy',
+      title: 'Hedge daemon policy',
+      description: 'Capture the internal wallet whitelist and hedge guardrails for the packaged LP daemon.',
+      writesEnv: [
+        'PANDORA_INTERNAL_WALLETS_FILE',
+        'PANDORA_HEDGE_MIN_USDC',
+        'PANDORA_HEDGE_PARTIAL_POLICY',
+        'PANDORA_HEDGE_SELL_POLICY',
+      ],
+      fields: [
+        withDefaultValue(createField('PANDORA_INTERNAL_WALLETS_FILE', 'Internal wallet whitelist file', 'path', {
+          required: true,
+          description: 'Newline-delimited wallet file used to ignore internal volume.',
+        }), currentEnv),
+        withDefaultValue(createField('PANDORA_HEDGE_MIN_USDC', 'Minimum hedge size (USDC)', 'number', {
+          required: false,
+          description: 'External trades below this notional are intentionally left unhedged.',
+        }), currentEnv),
+        withDefaultValue(createField('PANDORA_HEDGE_PARTIAL_POLICY', 'Partial hedge policy', 'string', {
+          required: false,
+          description: 'Use `partial` to fill available depth and queue the rest, or `skip` to queue the whole hedge.',
+        }), currentEnv),
+        withDefaultValue(createField('PANDORA_HEDGE_SELL_POLICY', 'Sell hedge policy', 'string', {
+          required: false,
+          description: 'Use `depth-checked` to auto-sell only when depth passes, or `manual-only` to always queue sell-side reductions.',
+        }), currentEnv),
+      ],
+    });
+  }
+
   if (blueprint.promptHosting) {
     steps.push({
       id: 'hosting',
@@ -339,6 +426,16 @@ function buildSetupPlan(options = {}) {
     fields: [],
   });
 
+  const notes = [
+    'Use `doctor --goal <goal>` to validate progress without writing.',
+    'Interactive setup should follow this plan and stop at a redacted review-before-write gate.',
+  ];
+
+  if (goal === 'paper-hedge-daemon' || goal === 'live-hedge-daemon') {
+    notes.push('Bundle artifacts support DigitalOcean droplets and generic VPS targets today; Cloudflare Workers are not supported in v1.');
+    notes.push('Use `mirror hedge` for packaged daemon lifecycle and keep `mirror sync` for local/manual loops or troubleshooting.');
+  }
+
   return {
     goal,
     label: blueprint.label,
@@ -347,10 +444,7 @@ function buildSetupPlan(options = {}) {
     reviewRequired: true,
     goals: JOURNEY_GOALS.map((entry) => ({ ...entry })),
     steps,
-    notes: [
-      'Use `doctor --goal <goal>` to validate progress without writing.',
-      'Interactive setup should follow this plan and stop at a redacted review-before-write gate.',
-    ],
+    notes,
   };
 }
 

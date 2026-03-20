@@ -8,6 +8,13 @@ const { createSetupTerminalUi } = require('./setup_terminal_ui.cjs');
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
 const DEFAULT_POLYMARKET_RPC_URL = 'https://polygon-bor-rpc.publicnode.com';
 const DEFAULT_DIGITALOCEAN_API_BASE_URL = 'https://api.digitalocean.com/v2';
+const MIRROR_GOALS = new Set(['paper-mirror', 'live-mirror']);
+const HEDGE_DAEMON_GOALS = new Set(['paper-hedge-daemon', 'live-hedge-daemon']);
+const POLYMARKET_GOALS = new Set([...MIRROR_GOALS, ...HEDGE_DAEMON_GOALS]);
+const LIVE_POLYMARKET_GOALS = new Set(['live-mirror', 'live-hedge-daemon']);
+const HOSTED_SETUP_GOALS = new Set(['deploy', 'paper-mirror', 'live-mirror', 'paper-hedge-daemon', 'live-hedge-daemon', 'hosted-gateway']);
+const PANDORA_SIGNER_GOALS = new Set(['deploy', 'paper-mirror', 'live-mirror', 'paper-hedge-daemon', 'live-hedge-daemon']);
+const SPORTS_SETUP_GOALS = new Set(['deploy', 'paper-mirror', 'live-mirror']);
 
 function generatePrivateKey() {
   return `0x${crypto.randomBytes(32).toString('hex')}`;
@@ -201,7 +208,7 @@ function createSetupWizardService(deps = {}) {
   }
 
   async function collectPandoraSigner(goal, currentEnv, updates, notes) {
-    if (!(goal === 'deploy' || goal === 'paper-mirror' || goal === 'live-mirror')) {
+    if (!PANDORA_SIGNER_GOALS.has(goal)) {
       notes.push('Skipped Pandora signer setup for the selected goal.');
       return;
     }
@@ -209,7 +216,7 @@ function createSetupWizardService(deps = {}) {
     const decision = await askPrivateKeyDecision(
       'Pandora private key',
       currentEnv.PANDORA_PRIVATE_KEY || currentEnv.PRIVATE_KEY || null,
-      goal === 'live-mirror' || goal === 'deploy',
+      goal === 'live-mirror' || goal === 'live-hedge-daemon' || goal === 'deploy',
     );
 
     if (decision.value) {
@@ -226,7 +233,7 @@ function createSetupWizardService(deps = {}) {
   }
 
   async function collectPolymarketConnectivity(goal, currentEnv, updates, notes) {
-    if (!(goal === 'paper-mirror' || goal === 'live-mirror')) {
+    if (!POLYMARKET_GOALS.has(goal)) {
       return { enabled: false };
     }
 
@@ -244,14 +251,14 @@ function createSetupWizardService(deps = {}) {
   }
 
   async function collectPolymarketSigner(goal, currentEnv, updates, notes) {
-    if (!(goal === 'paper-mirror' || goal === 'live-mirror')) {
+    if (!POLYMARKET_GOALS.has(goal)) {
       return false;
     }
 
     const decision = await askPrivateKeyDecision(
       'Polymarket private key',
       currentEnv.POLYMARKET_PRIVATE_KEY || null,
-      goal === 'live-mirror',
+      LIVE_POLYMARKET_GOALS.has(goal),
     );
     if (decision.value) {
       updates.POLYMARKET_PRIVATE_KEY = decision.value;
@@ -278,7 +285,7 @@ function createSetupWizardService(deps = {}) {
   }
 
   async function collectPolymarketApi(goal, currentEnv, updates, notes) {
-    if (goal !== 'live-mirror') return;
+    if (!LIVE_POLYMARKET_GOALS.has(goal)) return;
 
     const apiKey = normalizeText(await ui.question('Polymarket API key', {
       secret: true,
@@ -299,8 +306,62 @@ function createSetupWizardService(deps = {}) {
     notes.push('Captured Polymarket API credentials.');
   }
 
+  async function collectHedgeDaemonPolicy(goal, currentEnv, updates, notes) {
+    if (!HEDGE_DAEMON_GOALS.has(goal)) return false;
+
+    const internalWalletsFile = normalizeText(await ui.question('Internal wallet whitelist file', {
+      defaultValue: currentEnv.PANDORA_INTERNAL_WALLETS_FILE || null,
+    }));
+    const minHedgeUsdc = normalizeText(await ui.question('Minimum hedge size in USDC', {
+      defaultValue: currentEnv.PANDORA_HEDGE_MIN_USDC || '25',
+    }));
+    const partialPolicy = await ui.select(
+      'Partial hedge policy',
+      [
+        {
+          label: 'Partial fills',
+          description: 'Execute available depth and queue only the residual exposure.',
+          value: 'partial',
+        },
+        {
+          label: 'Queue whole hedge',
+          description: 'Skip execution whenever full depth is not available.',
+          value: 'skip',
+        },
+      ],
+      {
+        initialIndex: String(currentEnv.PANDORA_HEDGE_PARTIAL_POLICY || '').trim().toLowerCase() === 'skip' ? 1 : 0,
+      },
+    );
+    const sellPolicy = await ui.select(
+      'Sell hedge policy',
+      [
+        {
+          label: 'Depth checked',
+          description: 'Auto-sell on Polymarket only when sell-side depth passes.',
+          value: 'depth-checked',
+        },
+        {
+          label: 'Manual only',
+          description: 'Never auto-sell hedge inventory; queue the reduction and alert the operator.',
+          value: 'manual-only',
+        },
+      ],
+      {
+        initialIndex: String(currentEnv.PANDORA_HEDGE_SELL_POLICY || '').trim().toLowerCase() === 'manual-only' ? 1 : 0,
+      },
+    );
+
+    if (internalWalletsFile) updates.PANDORA_INTERNAL_WALLETS_FILE = internalWalletsFile;
+    if (minHedgeUsdc) updates.PANDORA_HEDGE_MIN_USDC = minHedgeUsdc;
+    updates.PANDORA_HEDGE_PARTIAL_POLICY = partialPolicy.value;
+    updates.PANDORA_HEDGE_SELL_POLICY = sellPolicy.value;
+    notes.push('Captured hedge daemon whitelist and hedge policy defaults.');
+    return true;
+  }
+
   async function collectSportsConfig(goal, currentEnv, updates, notes) {
-    if (!(goal === 'deploy' || goal === 'paper-mirror' || goal === 'live-mirror')) return;
+    if (!SPORTS_SETUP_GOALS.has(goal)) return;
 
     const providerChoice = await ui.select(
       goal === 'deploy'
@@ -365,7 +426,7 @@ function createSetupWizardService(deps = {}) {
   }
 
   async function collectHosting(goal, currentEnv, updates, notes) {
-    if (!(goal === 'deploy' || goal === 'paper-mirror' || goal === 'live-mirror' || goal === 'hosted-gateway')) {
+    if (!HOSTED_SETUP_GOALS.has(goal)) {
       return { provider: null };
     }
 
@@ -448,7 +509,7 @@ function createSetupWizardService(deps = {}) {
   }
 
   async function collectResolutionSources(goal, currentEnv, notes) {
-    if (!(goal === 'paper-mirror' || goal === 'live-mirror')) {
+    if (!MIRROR_GOALS.has(goal)) {
       return [];
     }
 
@@ -673,6 +734,14 @@ function createSetupWizardService(deps = {}) {
       presentStep('polymarket-api');
     }
     await collectPolymarketApi(goal, currentEnv, updates, notes);
+
+    if (HEDGE_DAEMON_GOALS.has(goal)) {
+      presentStep('hedge-daemon-policy');
+    }
+    const hedgePolicyEnabled = await collectHedgeDaemonPolicy(goal, currentEnv, updates, notes);
+    if (hedgePolicyEnabled) {
+      await runValidation(context, 'hedge-daemon-policy', goal, mergeEnv(currentEnv, updates), validations);
+    }
 
     if (blueprint.promptHosting) {
       presentStep('hosting');

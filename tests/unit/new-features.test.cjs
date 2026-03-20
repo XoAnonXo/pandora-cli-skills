@@ -8895,7 +8895,7 @@ test('createRunMirrorCommand help lists trace, drift, and hedge-check read surfa
   assert.equal(observed.emitted.length, 1);
   assert.equal(observed.emitted[0][1], 'mirror.help');
   const payload = observed.emitted[0][2];
-  assert.match(payload.usage, /sync\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl/);
+  assert.match(payload.usage, /sync\|hedge\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl/);
   assert.equal(Array.isArray(payload.notes), true);
   assert.equal(
     payload.notes.some((line) => /mirror trace/i.test(String(line))),

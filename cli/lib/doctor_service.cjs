@@ -1,3 +1,5 @@
+const fs = require('fs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createDoctorService requires deps.${name}()`);
@@ -27,7 +29,19 @@ function normalizeGoal(goal) {
   if (normalized === 'paper') return 'paper-mirror';
   if (normalized === 'live') return 'live-mirror';
   if (normalized === 'gateway') return 'hosted-gateway';
-  if (['explore', 'deploy', 'paper-mirror', 'live-mirror', 'hosted-gateway'].includes(normalized)) {
+  if (normalized === 'paper-hedge') return 'paper-hedge-daemon';
+  if (normalized === 'live-hedge') return 'live-hedge-daemon';
+  if (normalized === 'paper-daemon') return 'paper-hedge-daemon';
+  if (normalized === 'live-daemon') return 'live-hedge-daemon';
+  if ([
+    'explore',
+    'deploy',
+    'paper-mirror',
+    'live-mirror',
+    'paper-hedge-daemon',
+    'live-hedge-daemon',
+    'hosted-gateway',
+  ].includes(normalized)) {
     return normalized;
   }
   return null;
@@ -92,6 +106,34 @@ function buildGoalRequirements(goal) {
       recommendations: [
         'Validate Polymarket credentials and then run `pandora mirror go --execute-live` only after the dry-run passes.',
         'Set `PANDORA_RESOLUTION_SOURCES` if you want env-driven mirror defaults.',
+      ],
+    };
+  }
+
+  if (normalized === 'paper-hedge-daemon') {
+    return {
+      goal: normalized,
+      requiredEnv: ['CHAIN_ID', 'RPC_URL', 'ORACLE', 'FACTORY', 'USDC', 'PANDORA_INTERNAL_WALLETS_FILE'],
+      needPolymarketCheck: false,
+      needResolutionSources: false,
+      note: 'Paper hedge daemon readiness targets the packaged LP daemon path for an existing mirror pair, not the deploy-time mirror sync path.',
+      recommendations: [
+        'Use the `mirror hedge` family for packaged LP daemon lifecycle; keep `mirror sync` for local/manual loops and troubleshooting.',
+        'Bundle artifacts support DigitalOcean droplets and generic VPS targets today; Cloudflare Workers are not supported in v1.',
+      ],
+    };
+  }
+
+  if (normalized === 'live-hedge-daemon') {
+    return {
+      goal: normalized,
+      requiredEnv: ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC', 'PANDORA_INTERNAL_WALLETS_FILE'],
+      needPolymarketCheck: true,
+      needResolutionSources: false,
+      note: 'Live hedge daemon readiness targets the packaged LP daemon path for an existing mirror pair and live hedge runtime, not mirror deployment setup.',
+      recommendations: [
+        'Use the `mirror hedge` family for packaged LP daemon lifecycle; keep `mirror sync` for local/manual loops, one-shot execution, and troubleshooting.',
+        'Bundle artifacts support DigitalOcean droplets and generic VPS targets today; Cloudflare Workers are not supported in v1.',
       ],
     };
   }
@@ -275,6 +317,25 @@ function createDoctorService(deps = {}) {
       if (value.toLowerCase() === zeroAddress) {
         errors.push(`${key} cannot be the zero address.`);
       }
+    }
+
+    if (requiredKeys.includes('PANDORA_INTERNAL_WALLETS_FILE') && !missingSet.has('PANDORA_INTERNAL_WALLETS_FILE')) {
+      const walletFile = String(getEnvValue(env, 'PANDORA_INTERNAL_WALLETS_FILE') || '').trim();
+      if (!walletFile) {
+        errors.push('PANDORA_INTERNAL_WALLETS_FILE must point to a newline-delimited wallet whitelist file.');
+      } else if (!fs.existsSync(walletFile)) {
+        errors.push(`PANDORA_INTERNAL_WALLETS_FILE does not exist: "${walletFile}"`);
+      }
+    }
+
+    const partialPolicy = String(getEnvValue(env, 'PANDORA_HEDGE_PARTIAL_POLICY') || '').trim().toLowerCase();
+    if (partialPolicy && partialPolicy !== 'partial' && partialPolicy !== 'skip') {
+      errors.push('PANDORA_HEDGE_PARTIAL_POLICY must be partial|skip when set.');
+    }
+
+    const sellPolicy = String(getEnvValue(env, 'PANDORA_HEDGE_SELL_POLICY') || '').trim().toLowerCase();
+    if (sellPolicy && sellPolicy !== 'depth-checked' && sellPolicy !== 'manual-only') {
+      errors.push('PANDORA_HEDGE_SELL_POLICY must be depth-checked|manual-only when set.');
     }
 
     return {

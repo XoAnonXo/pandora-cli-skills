@@ -54,7 +54,22 @@ function createCoreCommandFlagParsers(deps) {
   const defaultIndexerTimeoutMs = requireValue(deps, 'defaultIndexerTimeoutMs');
   const defaultExpiringSoonHours = requireValue(deps, 'defaultExpiringSoonHours');
 
-  const validSetupGoals = new Set(['explore', 'deploy', 'paper-mirror', 'live-mirror', 'hosted-gateway', 'paper', 'live', 'gateway']);
+  const validSetupGoals = new Set([
+    'explore',
+    'deploy',
+    'paper-mirror',
+    'live-mirror',
+    'paper-hedge-daemon',
+    'live-hedge-daemon',
+    'hosted-gateway',
+    'paper',
+    'live',
+    'gateway',
+    'paper-hedge',
+    'live-hedge',
+    'paper-daemon',
+    'live-daemon',
+  ]);
 
   function normalizeSetupGoal(value) {
     const normalized = String(value || '').trim().toLowerCase();
@@ -62,12 +77,14 @@ function createCoreCommandFlagParsers(deps) {
     if (!validSetupGoals.has(normalized)) {
       throw new CliError(
         'INVALID_FLAG_VALUE',
-        `Unknown goal "${value}". Expected one of: explore, deploy, paper-mirror, live-mirror, hosted-gateway.`,
+        `Unknown goal "${value}". Expected one of: explore, deploy, paper-mirror, live-mirror, paper-hedge-daemon, live-hedge-daemon, hosted-gateway.`,
       );
     }
     if (normalized === 'paper') return 'paper-mirror';
     if (normalized === 'live') return 'live-mirror';
     if (normalized === 'gateway') return 'hosted-gateway';
+    if (normalized === 'paper-hedge' || normalized === 'paper-daemon') return 'paper-hedge-daemon';
+    if (normalized === 'live-hedge' || normalized === 'live-daemon') return 'live-hedge-daemon';
     return normalized;
   }
 

@@ -251,6 +251,46 @@ function buildMirrorHedgeCalc(...args) {
   return getMirrorEconService().buildMirrorHedgeCalc(...args);
 }
 
+/** Proxy to mirror hedge planner. */
+function buildMirrorHedgePlan(...args) {
+  return require('./lib/mirror_hedge_service.cjs').buildMirrorHedgePlan(...args);
+}
+
+/** Proxy to mirror hedge bundle builder. */
+function buildMirrorHedgeBundle(...args) {
+  return require('./lib/mirror_hedge_service.cjs').buildMirrorHedgeBundle(...args);
+}
+
+/** Proxy to mirror hedge runtime runner. */
+function runMirrorHedge(...args) {
+  return require('./lib/mirror_hedge_service.cjs').runMirrorHedge(...args);
+}
+
+/** Proxy to mirror hedge daemon starter. */
+function startMirrorHedgeDaemon(...args) {
+  return require('./lib/mirror_hedge_service.cjs').startMirrorHedgeDaemon(...args);
+}
+
+/** Proxy to mirror hedge daemon stop routine. */
+function stopMirrorHedgeDaemon(...args) {
+  return require('./lib/mirror_hedge_service.cjs').stopMirrorHedgeDaemon(...args);
+}
+
+/** Proxy to mirror hedge daemon status reader. */
+function getMirrorHedgeDaemonStatus(...args) {
+  return require('./lib/mirror_hedge_service.cjs').getMirrorHedgeDaemonStatus(...args);
+}
+
+/** Proxy to mirror hedge default state file resolver. */
+function defaultMirrorHedgeStateFile(...args) {
+  return require('./lib/mirror_hedge_state_store.cjs').defaultStateFile(...args);
+}
+
+/** Proxy to mirror hedge default kill-switch file resolver. */
+function defaultMirrorHedgeKillSwitchFile(...args) {
+  return require('./lib/mirror_hedge_state_store.cjs').defaultKillSwitchFile(...args);
+}
+
 /** Proxy to mirror simulation builder. */
 function buildMirrorSimulate(...args) {
   return getMirrorEconService().buildMirrorSimulate(...args);
@@ -1240,7 +1280,7 @@ Usage:
   pandora [--output table|json] fees [--wallet <address>] [--chain-id <id>] [--tx-hash <hash>] [--event-name <name>] [--limit <n>] [--before <cursor>] [--after <cursor>] [--order-direction asc|desc] [--indexer-url <url>] [--timeout-ms <ms>]
   pandora [--output table|json] fees withdraw --market-address <address> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]
   pandora [--output table|json] debug market|tx ...
-  pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...
+  pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|hedge|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...
   pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...
   pandora [--output table|json] webhook test [--webhook-url <url>] [--webhook-template <json>] [--webhook-secret <secret>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>] [--webhook-timeout-ms <ms>] [--webhook-retries <n>]
   pandora [--output table|json] leaderboard [--metric profit|volume|win-rate] [--chain-id <id>] [--limit <n>] [--min-trades <n>]
@@ -1604,7 +1644,7 @@ function helpJsonPayload() {
       'pandora [--output table|json] fees ...',
       'pandora [--output table|json] fees withdraw ...',
       'pandora [--output table|json] debug market|tx ...',
-      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
+      'pandora [--output table|json] mirror browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|hedge|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close ...',
       'pandora [--output table|json] polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade ...',
       'pandora [--output table|json] webhook test ...',
       'pandora [--output table|json] leaderboard ...',
@@ -7357,6 +7397,32 @@ const parseMirrorHedgeCalcFlagsFromModule = createLazyFactoryRunner('./lib/parse
   ...sharedParserDeps,
   parseCsvNumberList,
 }));
+const parseMirrorHedgePlanFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/mirror_hedge_flags.cjs',
+  'createParseMirrorHedgePlanFlags',
+  () => ({
+    ...sharedParserDeps,
+    defaultMirrorHedgeStateFile,
+  }),
+);
+const parseMirrorHedgeRunFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/mirror_hedge_flags.cjs',
+  'createParseMirrorHedgeRunFlags',
+  () => ({
+    ...sharedParserDeps,
+    defaultMirrorHedgeStateFile,
+    defaultMirrorHedgeKillSwitchFile,
+  }),
+);
+const parseMirrorHedgeDaemonSelectorFlagsFromModule = createLazyFactoryRunner(
+  './lib/parsers/mirror_hedge_flags.cjs',
+  'createParseMirrorHedgeDaemonSelectorFlags',
+  () => ({
+    CliError,
+    requireFlagValue,
+    parseAddressFlag,
+  }),
+);
 const parseMirrorDeployFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_deploy_flags.cjs', 'createParseMirrorDeployFlags', () => sharedParserDeps);
 const parseMirrorGoFlagsFromModule = createLazyFactoryRunner('./lib/parsers/mirror_go_flags.cjs', 'createParseMirrorGoFlags', () => ({
   ...sharedParserDeps,
@@ -8904,6 +8970,9 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   parseMirrorTraceFlags: parseMirrorTraceFlagsFromModule,
   parseMirrorSyncFlags: parseMirrorSyncFlagsFromModule,
   parseMirrorSyncDaemonSelectorFlags: parseMirrorSyncDaemonSelectorFlagsFromModule,
+  parseMirrorHedgePlanFlags: parseMirrorHedgePlanFlagsFromModule,
+  parseMirrorHedgeRunFlags: parseMirrorHedgeRunFlagsFromModule,
+  parseMirrorHedgeDaemonSelectorFlags: parseMirrorHedgeDaemonSelectorFlagsFromModule,
   parseMirrorGoFlags: parseMirrorGoFlagsFromModule,
   parseMirrorCloseFlags: parseMirrorCloseFlagsFromModule,
   parseMirrorLpExplainFlags: parseMirrorLpExplainFlagsFromModule,
@@ -8916,6 +8985,12 @@ const runMirrorCommand = createLazyFactoryRunner('./lib/mirror_command_service.c
   browseMirrorMarkets,
   buildMirrorLpExplain,
   buildMirrorHedgeCalc,
+  buildMirrorHedgePlan,
+  buildMirrorHedgeBundle,
+  runMirrorHedge,
+  startMirrorHedgeDaemon,
+  stopMirrorHedgeDaemon,
+  getMirrorHedgeDaemonStatus,
   buildMirrorSimulate,
   buildMirrorRuntimeTelemetry,
   runMirrorSync,

@@ -5,6 +5,7 @@ const { fetchPolymarketMarkets } = require('./polymarket_adapter.cjs');
 const { questionSimilarityBreakdown } = require('./similarity_service.cjs');
 const { round, toOptionalNumber } = require('./shared/utils.cjs');
 const { resolveMirrorGateCloseTimestamp } = require('./shared/mirror_timing.cjs');
+const { DEFAULT_INDEXER_URL } = require('./shared/constants.cjs');
 
 const MIRROR_VERIFY_SCHEMA_VERSION = '1.0.0';
 const USDC_DECIMALS = 6;
@@ -44,6 +45,11 @@ function normalizeRulesText(rules) {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeSelectorAddress(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized || null;
 }
 
 function hashRules(rules) {
@@ -112,35 +118,110 @@ async function fetchPandoraPoll(client, pollAddress, diagnostics) {
   }
 }
 
-async function fetchPandoraMarketContext(options = {}) {
-  const diagnostics = [];
-  const client = createIndexerClient(options.indexerUrl, options.timeoutMs);
+async function resolvePandoraMarketSelector(options = {}) {
+  const selectorAddress = normalizeSelectorAddress(
+    options.marketAddress || options.pandoraMarketAddress || options.pollAddress,
+  );
+  const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Number(options.timeoutMs) : undefined;
+  const indexerUrl =
+    options.indexerUrl
+    || process.env.PANDORA_INDEXER_URL
+    || process.env.INDEXER_URL
+    || DEFAULT_INDEXER_URL;
+  const client = createIndexerClient(indexerUrl, timeoutMs);
+  const fields = [
+    'id',
+    'chainId',
+    'marketType',
+    'pollAddress',
+    'marketCloseTimestamp',
+    'yesChance',
+    'reserveYes',
+    'reserveNo',
+    'totalVolume',
+    'currentTvl',
+  ];
+
+  if (!selectorAddress) {
+    return {
+      selectorAddress: null,
+      selectorType: null,
+      indexerUrl,
+      market: null,
+      candidates: [],
+      marketAddresses: [],
+    };
+  }
 
   const market = await client.getById({
     queryName: 'markets',
-    fields: [
-      'id',
-      'chainId',
-      'marketType',
-      'pollAddress',
-      'marketCloseTimestamp',
-      'yesChance',
-      'reserveYes',
-      'reserveNo',
-      'totalVolume',
-      'currentTvl',
-    ],
-    id: options.marketAddress,
+    fields,
+    id: selectorAddress,
+  });
+  if (market) {
+    return {
+      selectorAddress,
+      selectorType: 'market',
+      indexerUrl,
+      market,
+      candidates: [market],
+      marketAddresses: [market.id].filter(Boolean),
+    };
+  }
+
+  const page = await client.list({
+    queryName: 'marketss',
+    filterType: 'marketsFilter',
+    fields,
+    variables: {
+      where: {
+        pollAddress: selectorAddress,
+        ...(options.chainId !== null && options.chainId !== undefined ? { chainId: options.chainId } : {}),
+      },
+      orderBy: 'createdAt',
+      orderDirection: 'desc',
+      before: null,
+      after: null,
+      limit: Math.max(2, Math.min(Number(options.limit) || 8, 25)),
+    },
   });
 
+  const candidates = Array.isArray(page.items) ? page.items.filter(Boolean) : [];
+  return {
+    selectorAddress,
+    selectorType: candidates.length ? 'poll' : 'unknown',
+    indexerUrl,
+    market: candidates.length === 1 ? candidates[0] : null,
+    candidates,
+    marketAddresses: Array.from(new Set(candidates.map((entry) => entry && entry.id).filter(Boolean))),
+  };
+}
+
+async function fetchPandoraMarketContext(options = {}) {
+  const diagnostics = [];
+  const resolution = await resolvePandoraMarketSelector(options);
+  const client = createIndexerClient(resolution.indexerUrl || options.indexerUrl || DEFAULT_INDEXER_URL, options.timeoutMs);
+  const market = resolution.market;
+
   if (!market) {
-    throw new Error(`Pandora market not found: ${options.marketAddress}`);
+    const selectorAddress = resolution.selectorAddress || normalizeSelectorAddress(
+      options.marketAddress || options.pandoraMarketAddress || options.pollAddress,
+    );
+    if (resolution.marketAddresses.length > 1) {
+      throw new Error(
+        `Pandora selector ${selectorAddress} matched multiple markets (${resolution.marketAddresses.join(', ')}). Pass a market address instead of a poll address.`,
+      );
+    }
+    throw new Error(`Pandora market not found: ${selectorAddress}`);
   }
 
   const poll = await fetchPandoraPoll(client, market.pollAddress, diagnostics);
   const yesPct = derivePandoraYesPct(market);
   const noPct = yesPct === null ? null : round(100 - yesPct, 6);
   const status = toOptionalNumber(poll && poll.status);
+  if (resolution.selectorType === 'poll' && resolution.selectorAddress && resolution.selectorAddress !== market.id) {
+    diagnostics.push(`Resolved poll selector ${resolution.selectorAddress} to Pandora market ${market.id}.`);
+  }
 
   return {
     marketAddress: market.id,
@@ -506,6 +587,7 @@ module.exports = {
   buildRuleDiffSummary,
   questionSimilarityBreakdown,
   fetchPandoraMarketContext,
+  resolvePandoraMarketSelector,
   verifyMirrorPair,
   preloadPandoraMatchCandidates,
   findBestPandoraMatch,

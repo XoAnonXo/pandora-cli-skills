@@ -562,7 +562,7 @@ print(json.dumps({
     ensureExitCode(mirrorHelp, 0, 'pandora mirror --help');
     ensureOutputContains(
       mirrorHelp,
-      /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|calc\|simulate\|go\|sync\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl\|audit\|replay\|logs\|close/,
+      /mirror browse\|plan\|deploy\|verify\|lp-explain\|hedge-calc\|calc\|simulate\|go\|sync\|hedge\|trace\|dashboard\|status\|health\|panic\|drift\|hedge-check\|pnl\|audit\|replay\|logs\|close/,
       'pandora mirror --help',
     );
 
