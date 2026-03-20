@@ -334,10 +334,16 @@ function ensureStateShape(raw, hash = null) {
     schemaVersion: MIRROR_HEDGE_STATE_SCHEMA_VERSION,
     runtimeType: MIRROR_HEDGE_RUNTIME_TYPE,
     strategyHash: resolvedHash,
-    startedAt: normalizeOptionalString(data.startedAt) || new Date().toISOString(),
-    stoppedAt: normalizeOptionalString(data.stoppedAt),
+    startedAt: normalizeOptionalString(data.startedAt),
+    stoppedAt: normalizeOptionalString(data.stoppedAt || data.exitAt),
     updatedAt: normalizeOptionalString(data.updatedAt) || new Date().toISOString(),
     runtimeStatus: normalizeOptionalString(data.runtimeStatus) || 'idle',
+    lastTickAt: normalizeOptionalString(data.lastTickAt),
+    iterationsRequested: toFiniteNumberOrNull(data.iterationsRequested),
+    iterationsCompleted: Number.isFinite(Number(data.iterationsCompleted)) ? Number(data.iterationsCompleted) : 0,
+    stoppedReason: normalizeOptionalString(data.stoppedReason),
+    exitCode: toFiniteNumberOrNull(data.exitCode),
+    exitAt: normalizeOptionalString(data.exitAt || data.stoppedAt),
     marketPairIdentity,
     marketPairIdentityFingerprint:
       normalizeOptionalString(data.marketPairIdentityFingerprint)

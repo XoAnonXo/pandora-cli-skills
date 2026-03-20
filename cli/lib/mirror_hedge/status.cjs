@@ -106,10 +106,16 @@ function buildHedgeStatusPayload(params = {}) {
       status: bundleFacing.runtimeStatus,
       startedAt: state.startedAt || null,
       stoppedAt: state.stoppedAt || null,
+      stoppedReason: state.stoppedReason || null,
+      exitCode: state.exitCode === null || state.exitCode === undefined ? null : state.exitCode,
+      exitAt: state.exitAt || null,
       updatedAt: state.updatedAt || null,
+      lastTickAt: state.lastTickAt || null,
       lastPlanAt: state.lastPlanAt || null,
       lastRunAt: state.lastRunAt || null,
       lastStatusAt: state.lastStatusAt || null,
+      iterationsRequested: state.iterationsRequested === null || state.iterationsRequested === undefined ? null : state.iterationsRequested,
+      iterationsCompleted: state.iterationsCompleted === null || state.iterationsCompleted === undefined ? 0 : state.iterationsCompleted,
       lastProcessedBlockCursor: state.lastProcessedBlockCursor || null,
       lastProcessedLogCursor: state.lastProcessedLogCursor || null,
     },
@@ -135,6 +141,10 @@ function renderHedgeStatusTable(payload) {
   const rows = [
     ['strategyHash', payload && payload.strategyHash ? payload.strategyHash : ''],
     ['runtimeStatus', runtime.status || ''],
+    ['startedAt', runtime.startedAt || ''],
+    ['lastTickAt', runtime.lastTickAt || ''],
+    ['iterationsRequested', runtime.iterationsRequested === null || runtime.iterationsRequested === undefined ? '' : runtime.iterationsRequested],
+    ['iterationsCompleted', runtime.iterationsCompleted === null || runtime.iterationsCompleted === undefined ? '' : runtime.iterationsCompleted],
     ['ready', readiness.ready ? 'yes' : 'no'],
     ['missing', Array.isArray(readiness.missing) ? readiness.missing.join(', ') : ''],
     ['marketPairId', payload && payload.marketPairIdentity ? payload.marketPairIdentity.marketPairId || '' : ''],
@@ -151,6 +161,9 @@ function renderHedgeStatusTable(payload) {
     ['lastSuccessfulHedgeAt', summary.lastSuccessfulHedgeAt || ''],
     ['lastErrorCode', summary.lastErrorCode || ''],
     ['lastAlertCode', summary.lastAlertCode || ''],
+    ['stoppedReason', runtime.stoppedReason || ''],
+    ['exitCode', runtime.exitCode === null || runtime.exitCode === undefined ? '' : runtime.exitCode],
+    ['exitAt', runtime.exitAt || ''],
   ];
   console.log('Mirror Hedge Runtime');
   for (const [label, value] of rows) {

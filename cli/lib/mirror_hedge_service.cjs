@@ -47,6 +47,7 @@ const {
 const {
   round,
   toOptionalNumber,
+  sleepMs,
 } = require('./shared/utils.cjs');
 
 const MIRROR_HEDGE_SERVICE_SCHEMA_VERSION = '1.0.0';
@@ -56,6 +57,7 @@ const DEFAULT_SELL_HEDGE_POLICY = 'depth-checked';
 const DEFAULT_MARKET_FEE_BPS = 200;
 const DEFAULT_RECENT_TRADE_LIMIT = 75;
 const DEFAULT_BUNDLE_ROOT = 'mirror-hedge-bundles';
+const DEFAULT_HEDGE_INTERVAL_MS = 5000;
 
 function createServiceError(code, message, details = undefined) {
   const err = new Error(message);
@@ -202,6 +204,102 @@ function persistHedgeState(filePath, state) {
   return saveState(filePath, state);
 }
 
+function toRuntimeTimestamp(value = undefined) {
+  const date = value instanceof Date ? value : (value ? new Date(value) : new Date());
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+function normalizeRuntimeIntervalMs(options = {}) {
+  const numeric = toOptionalNumber(options.intervalMs);
+  if (numeric === null || numeric <= 0) return DEFAULT_HEDGE_INTERVAL_MS;
+  return Math.max(1, Math.floor(numeric));
+}
+
+function normalizeRuntimeIterations(options = {}) {
+  const numeric = toOptionalNumber(options.iterations);
+  if (numeric === null || numeric <= 0) return null;
+  return Math.max(1, Math.floor(numeric));
+}
+
+function buildRuntimeErrorEvent(err, timestamp, details = undefined) {
+  const event = {
+    code: normalizeOptionalString(err && err.code) || 'MIRROR_HEDGE_RUNTIME_ERROR',
+    message: normalizeOptionalString(err && err.message) || String(err),
+    severity: 'error',
+    at: toRuntimeTimestamp(timestamp),
+    source: 'mirror-hedge-runtime',
+  };
+  if (details !== undefined) {
+    event.details = details;
+  } else if (err && err.details !== undefined) {
+    event.details = err.details;
+  }
+  return event;
+}
+
+function markHedgeRuntimeStarted(state, options = {}) {
+  const timestamp = toRuntimeTimestamp(options.now);
+  state.runtimeStatus = normalizeOptionalString(options.runtimeStatus) || 'running';
+  state.startedAt = normalizeOptionalString(options.startedAt || state.startedAt) || timestamp;
+  state.stoppedAt = null;
+  state.updatedAt = timestamp;
+  state.lastRunAt = timestamp;
+  state.stoppedReason = null;
+  state.exitCode = null;
+  state.exitAt = null;
+  if (options.iterationsRequested !== undefined) {
+    state.iterationsRequested = options.iterationsRequested;
+  }
+  if (options.resetIterationsCompleted !== false) {
+    state.iterationsCompleted = 0;
+  } else if (!Number.isFinite(Number(state.iterationsCompleted))) {
+    state.iterationsCompleted = 0;
+  }
+  return state;
+}
+
+function markHedgeRuntimeTickStarted(state, options = {}) {
+  const timestamp = toRuntimeTimestamp(options.now);
+  state.runtimeStatus = 'running';
+  state.lastTickAt = timestamp;
+  state.updatedAt = timestamp;
+  return state;
+}
+
+function markHedgeRuntimeTickCompleted(state, options = {}) {
+  const timestamp = toRuntimeTimestamp(options.now);
+  state.runtimeStatus = 'running';
+  state.lastRunAt = timestamp;
+  state.updatedAt = timestamp;
+  if (options.iterationsCompleted !== undefined) {
+    state.iterationsCompleted = options.iterationsCompleted;
+  }
+  return state;
+}
+
+function markHedgeRuntimeStopped(state, options = {}) {
+  const timestamp = toRuntimeTimestamp(options.exitAt || options.now);
+  state.runtimeStatus = normalizeOptionalString(options.runtimeStatus) || 'stopped';
+  state.stoppedAt = timestamp;
+  state.updatedAt = timestamp;
+  state.stoppedReason = normalizeOptionalString(options.stoppedReason);
+  state.exitCode = options.exitCode === null || options.exitCode === undefined ? 0 : Number(options.exitCode);
+  state.exitAt = timestamp;
+  if (options.iterationsRequested !== undefined) {
+    state.iterationsRequested = options.iterationsRequested;
+  }
+  if (options.iterationsCompleted !== undefined) {
+    state.iterationsCompleted = options.iterationsCompleted;
+  }
+  if (options.lastError) {
+    state.lastError = options.lastError;
+  }
+  if (options.lastAlert) {
+    state.lastAlert = options.lastAlert;
+  }
+  return state;
+}
+
 function buildHedgeRuntime(options = {}) {
   const loaded = loadHedgeState(options);
   const state = createState(options.runtimeHash || options.strategyHash || null, loaded.state);
@@ -266,12 +364,12 @@ function startHedge(options = {}) {
   const loaded = loadHedgeState(options);
   const state = createState(options.runtimeHash || options.strategyHash || null, loaded.state);
   ensureStateIdentity(state, options);
-  const timestamp = (options.now instanceof Date ? options.now : new Date()).toISOString();
-  state.runtimeStatus = 'running';
-  state.startedAt = state.startedAt || timestamp;
-  state.stoppedAt = null;
-  state.updatedAt = timestamp;
-  state.lastRunAt = timestamp;
+  markHedgeRuntimeStarted(state, {
+    now: options.now,
+    iterationsRequested: options.iterationsRequested !== undefined
+      ? options.iterationsRequested
+      : normalizeRuntimeIterations(options),
+  });
   if (options.marketPairIdentity) {
     state.marketPairIdentity = {
       ...state.marketPairIdentity,
@@ -295,16 +393,27 @@ function startHedge(options = {}) {
 function stopHedge(options = {}) {
   const loaded = loadHedgeState(options);
   const state = createState(options.runtimeHash || options.strategyHash || null, loaded.state);
-  const timestamp = (options.now instanceof Date ? options.now : new Date()).toISOString();
-  state.runtimeStatus = 'stopped';
-  state.stoppedAt = timestamp;
-  state.updatedAt = timestamp;
+  const timestamp = toRuntimeTimestamp(options.exitAt || options.now);
+  const normalizedLastAlert = options.lastAlert
+    ? {
+        ...options.lastAlert,
+        at: normalizeOptionalString(options.lastAlert.at || options.lastAlert.timestamp) || timestamp,
+      }
+    : null;
   if (options.lastAlert) {
-    state.lastAlert = {
-      ...options.lastAlert,
-      at: normalizeOptionalString(options.lastAlert.at || options.lastAlert.timestamp) || timestamp,
-    };
+    state.lastAlert = normalizedLastAlert;
   }
+  markHedgeRuntimeStopped(state, {
+    now: timestamp,
+    exitAt: timestamp,
+    stoppedReason:
+      options.stoppedReason
+      || (normalizedLastAlert && normalizedLastAlert.message)
+      || 'Hedge runtime stopped.',
+    exitCode: options.exitCode,
+    iterationsCompleted: options.iterationsCompleted,
+    lastAlert: normalizedLastAlert,
+  });
   persistHedgeState(loaded.filePath, state);
   return {
     filePath: loaded.filePath,
@@ -1249,6 +1358,7 @@ function buildMirrorHedgeDaemonCliArgs(options = {}, context = {}) {
   if (options.strategyHash || context.strategyHash) {
     args.push('--strategy-hash', options.strategyHash || context.strategyHash);
   }
+  if (options.killSwitchFile) args.push('--kill-switch-file', options.killSwitchFile);
   if (context.marketPairIdentity && context.marketPairIdentity.pandoraMarketAddress) {
     args.push('--pandora-market-address', context.marketPairIdentity.pandoraMarketAddress);
   }
@@ -1321,35 +1431,170 @@ async function buildMirrorHedgeBundle(options = {}) {
 
 async function runMirrorHedge(options = {}) {
   const context = await prepareHedgeContext(options);
-  const observation = await buildExecutionObservation(options, context, context.state);
-  const runtime = runHedge({
-    stateFile: context.stateFile,
-    strategyHash: context.strategyHash,
-    marketPairIdentity: context.marketPairIdentity,
-    whitelistFingerprint: context.internalWallets.fingerprint,
-    confirmedExposureLedger: observation.confirmedExposureLedger,
-    pendingMempoolOverlays: observation.pendingMempoolOverlays,
-    deferredHedgeQueue: observation.deferredHedgeQueue,
-    managedPolymarketInventorySnapshot: context.inventorySnapshot,
-    skippedVolumeCounters: observation.skippedVolumeCounters,
-    lastSuccessfulHedge: observation.lastSuccessfulHedge,
-    lastError: observation.lastError,
-    lastProcessedBlockCursor: observation.lastProcessedBlockCursor,
-    lastProcessedLogCursor: observation.lastProcessedLogCursor,
-  });
-  const payload = buildCommonPayload(context, observation.diagnostics);
+  const killSwitchFile = resolveKillSwitchFile(options);
+  const intervalMs = normalizeRuntimeIntervalMs(options);
+  const maxIterations = normalizeRuntimeIterations(options);
+  const sleep = typeof options.sleep === 'function' ? options.sleep : sleepMs;
+  const diagnostics = [];
+  const emptyObservation = {
+    diagnostics: [],
+    auditEntries: [],
+    confirmedExposureLedger: [],
+    pendingMempoolOverlays: [],
+    deferredHedgeQueue: [],
+    skippedVolumeCounters: { totalUsdc: 0, yesUsdc: 0, noUsdc: 0, count: 0, byReason: {}, bySide: {} },
+    lastSuccessfulHedge: null,
+    lastError: null,
+    lastProcessedBlockCursor: null,
+    lastProcessedLogCursor: null,
+  };
+  let state = context.state;
+  let latestPlan = context.plan;
+  let latestObservation = emptyObservation;
+  let iterationsCompleted = 0;
+  let totalActionCount = 0;
+  let shouldStop = false;
+  let stoppedReason = null;
+  let fatalError = null;
+
+  const stopHandler = () => {
+    shouldStop = true;
+  };
+
+  process.on('SIGINT', stopHandler);
+  process.on('SIGTERM', stopHandler);
+
+  try {
+    markHedgeRuntimeStarted(state, {
+      now: options.now,
+      iterationsRequested: maxIterations,
+    });
+    persistHedgeState(context.stateFile, state);
+    context.state = state;
+
+    while (!shouldStop && (maxIterations === null || iterationsCompleted < maxIterations)) {
+      if (killSwitchFile && fs.existsSync(killSwitchFile)) {
+        stoppedReason = `Kill switch file detected at ${killSwitchFile}`;
+        break;
+      }
+
+      const tickStartedAt = new Date();
+      markHedgeRuntimeTickStarted(state, { now: tickStartedAt });
+      persistHedgeState(context.stateFile, state);
+
+      try {
+        const observation = await buildExecutionObservation(options, context, state);
+        const runtime = runHedge({
+          stateFile: context.stateFile,
+          strategyHash: context.strategyHash,
+          marketPairIdentity: context.marketPairIdentity,
+          whitelistFingerprint: context.internalWallets.fingerprint,
+          confirmedExposureLedger: observation.confirmedExposureLedger,
+          pendingMempoolOverlays: observation.pendingMempoolOverlays,
+          deferredHedgeQueue: observation.deferredHedgeQueue,
+          managedPolymarketInventorySnapshot: state.managedPolymarketInventorySnapshot || context.inventorySnapshot,
+          skippedVolumeCounters: observation.skippedVolumeCounters,
+          lastSuccessfulHedge: observation.lastSuccessfulHedge,
+          lastError: observation.lastError,
+          lastProcessedBlockCursor: observation.lastProcessedBlockCursor,
+          lastProcessedLogCursor: observation.lastProcessedLogCursor,
+          now: tickStartedAt,
+        });
+        latestObservation = observation;
+        latestPlan = runtime.plan;
+        state = runtime.state;
+        context.state = state;
+        context.plan = runtime.plan;
+        context.inventorySnapshot = state.managedPolymarketInventorySnapshot || context.inventorySnapshot;
+        totalActionCount += Array.isArray(observation.auditEntries) ? observation.auditEntries.length : 0;
+      } catch (err) {
+        const errorAt = new Date();
+        state.lastError = buildRuntimeErrorEvent(err, errorAt, {
+          iteration: iterationsCompleted + 1,
+        });
+        state.runtimeStatus = 'running';
+        state.lastRunAt = errorAt.toISOString();
+        state.updatedAt = errorAt.toISOString();
+        diagnostics.push(`Iteration ${iterationsCompleted + 1} failed: ${state.lastError.message}`);
+      }
+
+      iterationsCompleted += 1;
+      markHedgeRuntimeTickCompleted(state, {
+        now: new Date(),
+        iterationsCompleted,
+      });
+      persistHedgeState(context.stateFile, state);
+
+      if (shouldStop) break;
+      if (maxIterations !== null && iterationsCompleted >= maxIterations) {
+        stoppedReason = `Completed ${iterationsCompleted} hedge iteration${iterationsCompleted === 1 ? '' : 's'}.`;
+        break;
+      }
+      await sleep(intervalMs);
+    }
+  } catch (err) {
+    fatalError = err;
+    const errorAt = new Date();
+    const lastError = buildRuntimeErrorEvent(err, errorAt);
+    markHedgeRuntimeStopped(state, {
+      now: errorAt,
+      runtimeStatus: 'errored',
+      stoppedReason: `Fatal hedge runtime error: ${lastError.message}`,
+      exitCode: 1,
+      iterationsRequested: maxIterations,
+      iterationsCompleted,
+      lastError,
+    });
+    persistHedgeState(context.stateFile, state);
+  } finally {
+    process.off('SIGINT', stopHandler);
+    process.off('SIGTERM', stopHandler);
+    if (!fatalError) {
+      if (!stoppedReason && shouldStop) {
+        stoppedReason = 'Received termination signal.';
+      }
+      if (!stoppedReason) {
+        stoppedReason = 'Hedge runtime stopped.';
+      }
+      markHedgeRuntimeStopped(state, {
+        now: new Date(),
+        stoppedReason,
+        exitCode: 0,
+        iterationsRequested: maxIterations,
+        iterationsCompleted,
+      });
+      persistHedgeState(context.stateFile, state);
+    }
+  }
+
+  if (fatalError) {
+    throw fatalError;
+  }
+
+  context.state = state;
+  context.plan = latestPlan;
+  const payload = buildCommonPayload(context, latestObservation.diagnostics);
   payload.mode = 'run';
-  payload.plan = runtime.plan;
+  payload.plan = latestPlan;
   payload.runtime = {
-    status: runtime.state.runtimeStatus || 'idle',
-    auditEntries: observation.auditEntries,
-    actionCount: observation.auditEntries.length,
+    status: state.runtimeStatus || 'idle',
+    auditEntries: latestObservation.auditEntries,
+    actionCount: totalActionCount,
+    killSwitchFile,
+    intervalMs,
+    iterationsRequested: maxIterations,
+    iterationsCompleted,
+    lastTickAt: state.lastTickAt || null,
+    stoppedReason: state.stoppedReason || null,
+    exitCode: state.exitCode === null || state.exitCode === undefined ? null : state.exitCode,
+    exitAt: state.exitAt || null,
   };
   payload.summary = {
-    confirmedExposureCount: observation.confirmedExposureLedger.length,
-    pendingOverlayCount: observation.pendingMempoolOverlays.length,
-    deferredHedgeCount: observation.deferredHedgeQueue.length,
+    confirmedExposureCount: Array.isArray(state.confirmedExposureLedger) ? state.confirmedExposureLedger.length : latestObservation.confirmedExposureLedger.length,
+    pendingOverlayCount: Array.isArray(state.pendingMempoolOverlays) ? state.pendingMempoolOverlays.length : latestObservation.pendingMempoolOverlays.length,
+    deferredHedgeCount: Array.isArray(state.deferredHedgeQueue) ? state.deferredHedgeQueue.length : latestObservation.deferredHedgeQueue.length,
   };
+  payload.diagnostics = mergeDiagnostics(payload.diagnostics, diagnostics, latestObservation.diagnostics);
   return payload;
 }
 
@@ -1384,7 +1629,20 @@ async function startMirrorHedgeDaemon(options = {}) {
     polymarketMarketId: context.marketPairIdentity.polymarketMarketId,
     polymarketSlug: context.marketPairIdentity.polymarketSlug,
   });
-  const payload = buildCommonPayload(context, []);
+  const diagnostics = [];
+  try {
+    const started = startHedge({
+      stateFile: context.stateFile,
+      strategyHash: context.strategyHash,
+      marketPairIdentity: context.marketPairIdentity,
+      whitelistFingerprint: context.internalWallets.fingerprint,
+      iterationsRequested: normalizeRuntimeIterations(options),
+    });
+    context.state = started.state;
+  } catch (err) {
+    diagnostics.push(`Daemon started but runtime state could not be marked running: ${err && err.message ? err.message : String(err)}`);
+  }
+  const payload = buildCommonPayload(context, diagnostics);
   payload.mode = 'start';
   payload.plan = context.plan;
   payload.daemon = {
@@ -1451,6 +1709,8 @@ async function stopMirrorHedgeDaemon(options = {}) {
       stopHedge({
         stateFile: result.metadata.stateFile,
         strategyHash: result.strategyHash,
+        stoppedReason: 'Hedge daemon stopped by operator.',
+        exitCode: 0,
         lastAlert: {
           code: 'MIRROR_HEDGE_DAEMON_STOPPED',
           message: 'Hedge daemon stopped by operator.',

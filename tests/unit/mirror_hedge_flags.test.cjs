@@ -134,6 +134,44 @@ test('mirror hedge run parser accepts hedge-daemon specific flags', () => {
   assert.equal(options.executeLive, false);
 });
 
+test('mirror hedge run parser accepts strategy-hash for detached lifecycle routing', () => {
+  const parse = createParseMirrorHedgeRunFlags(parserDeps);
+  const strategyHash = 'abc123abc123abc1';
+  const options = parse([
+    'start',
+    '--strategy-hash', strategyHash,
+    '--pandora-market-address', '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    '--polymarket-market-id', 'poly-1',
+    '--internal-wallets-file', '/tmp/wallets.txt',
+    '--paper',
+  ]);
+
+  assert.equal(options.mode, 'start');
+  assert.equal(options.strategyHash, strategyHash);
+  assert.equal(options.stateFile, `/tmp/${strategyHash}.json`);
+  assert.equal(options.executeLive, false);
+  assert.equal(options.daemon, true);
+});
+
+test('mirror hedge run parser rejects malformed strategy-hash values', () => {
+  const parse = createParseMirrorHedgeRunFlags(parserDeps);
+  assert.throws(
+    () => parse([
+      'start',
+      '--strategy-hash', 'not-a-valid-hash',
+      '--pandora-market-address', '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      '--polymarket-market-id', 'poly-1',
+      '--internal-wallets-file', '/tmp/wallets.txt',
+      '--paper',
+    ]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /16-character hex value/i);
+      return true;
+    },
+  );
+});
+
 test('mirror hedge plan parser rejects unsupported manifest-file flag', () => {
   const parse = createParseMirrorHedgePlanFlags(parserDeps);
   assert.throws(

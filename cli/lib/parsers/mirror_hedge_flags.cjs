@@ -502,6 +502,7 @@ function parseRunLikeFlags(args, deps, modeName) {
     mode: modeName,
     stateFile: null,
     killSwitchFile: null,
+    strategyHash: null,
     pandoraMarketAddress: null,
     polymarketMarketId: null,
     polymarketSlug: null,
@@ -554,6 +555,15 @@ function parseRunLikeFlags(args, deps, modeName) {
     const token = args[i];
     if (token === '--state-file') {
       options.stateFile = normalizeMirrorPathForMcp(requireFlagValue(args, i, '--state-file'), '--state-file', CliError);
+      i += 1;
+      continue;
+    }
+    if (token === '--strategy-hash') {
+      const value = String(requireFlagValue(args, i, '--strategy-hash')).trim().toLowerCase();
+      if (!/^[a-f0-9]{16}$/.test(value)) {
+        throw new CliError('INVALID_FLAG_VALUE', '--strategy-hash must be a 16-character hex value.');
+      }
+      options.strategyHash = value;
       i += 1;
       continue;
     }
@@ -864,20 +874,23 @@ function parseRunLikeFlags(args, deps, modeName) {
   }
 
   if (!options.stateFile) {
-    options.stateFile = defaultMirrorWorkspacePath(defaultStateFileForHedge({
-      mode: modeName,
-      pandoraMarketAddress: options.pandoraMarketAddress,
-      polymarketMarketId: options.polymarketMarketId,
-      polymarketSlug: options.polymarketSlug,
-      executeLive: options.executeLive,
-      driftTriggerBps: options.driftTriggerBps,
-      hedgeEnabled: !options.noHedge,
-      hedgeRatio: options.hedgeRatio,
-      hedgeTriggerUsdc: options.hedgeTriggerUsdc,
-      strictCloseTimeDelta: options.strictCloseTimeDelta,
-      forceGate: false,
-      skipGateChecks: [],
-    }));
+    const defaultStateFileOptions = options.strategyHash
+      ? { strategyHash: options.strategyHash }
+      : {
+          mode: modeName,
+          pandoraMarketAddress: options.pandoraMarketAddress,
+          polymarketMarketId: options.polymarketMarketId,
+          polymarketSlug: options.polymarketSlug,
+          executeLive: options.executeLive,
+          driftTriggerBps: options.driftTriggerBps,
+          hedgeEnabled: !options.noHedge,
+          hedgeRatio: options.hedgeRatio,
+          hedgeTriggerUsdc: options.hedgeTriggerUsdc,
+          strictCloseTimeDelta: options.strictCloseTimeDelta,
+          forceGate: false,
+          skipGateChecks: [],
+        };
+    options.stateFile = defaultMirrorWorkspacePath(defaultStateFileForHedge(defaultStateFileOptions));
   }
   if (!options.killSwitchFile) {
     options.killSwitchFile = defaultMirrorWorkspacePath(defaultKillSwitchFileForHedge());

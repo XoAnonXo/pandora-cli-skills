@@ -53,6 +53,10 @@ function renderMirrorHedgeDaemonTable(data) {
     ['alive', daemon.alive === null || daemon.alive === undefined ? '' : daemon.alive ? 'yes' : 'no'],
     ['status', daemon.status || data.status || ''],
     ['runtimeStatus', runtime.status || ''],
+    ['startedAt', runtime.startedAt || ''],
+    ['lastTickAt', runtime.lastTickAt || ''],
+    ['iterationsRequested', runtime.iterationsRequested === null || runtime.iterationsRequested === undefined ? '' : runtime.iterationsRequested],
+    ['iterationsCompleted', runtime.iterationsCompleted === null || runtime.iterationsCompleted === undefined ? '' : runtime.iterationsCompleted],
     ['ready', readiness.ready === null || readiness.ready === undefined ? '' : readiness.ready ? 'yes' : 'no'],
     ['missing', Array.isArray(readiness.missing) ? readiness.missing.join(', ') : ''],
     ['marketAddress', selector.pandoraMarketAddress || ''],
@@ -68,6 +72,9 @@ function renderMirrorHedgeDaemonTable(data) {
     ['lastSuccessfulHedgeAt', summary.lastSuccessfulHedgeAt || ''],
     ['lastErrorCode', summary.lastErrorCode || ''],
     ['lastAlertCode', summary.lastAlertCode || ''],
+    ['stoppedReason', runtime.stoppedReason || ''],
+    ['exitCode', runtime.exitCode === null || runtime.exitCode === undefined ? '' : runtime.exitCode],
+    ['exitAt', runtime.exitAt || ''],
     ['diagnostics', Array.isArray(data.diagnostics) ? data.diagnostics.join(' | ') : ''],
   ]);
 }

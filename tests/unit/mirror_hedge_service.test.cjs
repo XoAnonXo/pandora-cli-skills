@@ -91,6 +91,10 @@ function withPatchedModules(testFn) {
   };
 }
 
+function normalizeIsoOrNull(value) {
+  return typeof value === 'string' && value ? value : null;
+}
+
 test('mirror hedge state store creates a separate runtime shape', () => {
   const state = createState('abc123abc123abc1', {
     marketPairIdentity: {
@@ -240,6 +244,93 @@ test('mirror hedge service lifecycle persists plan, status, and bundle-facing st
     removeDir(tempDir);
   }
 });
+
+test('mirror hedge stop records clean exit metadata for status and persistence', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-stop-metadata-');
+  const stateFile = path.join(tempDir, 'hedge.json');
+  const service = loadMirrorHedgeService();
+  const exitAt = '2026-03-21T00:00:00.000Z';
+
+  try {
+    service.startHedge({
+      stateFile,
+      strategyHash: 'abc123abc123abc1',
+      iterationsRequested: 3,
+      marketPairIdentity: {
+        pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+        polymarketMarketId: 'poly-1',
+        marketPairId: 'pair-1',
+      },
+      whitelistFingerprint: 'whitelist-a',
+    });
+
+    const stopped = service.stopHedge({
+      stateFile,
+      strategyHash: 'abc123abc123abc1',
+      stoppedReason: 'operator-stop',
+      exitCode: 0,
+      iterationsRequested: 3,
+      iterationsCompleted: 3,
+      exitAt,
+      lastAlert: {
+        code: 'STOPPED_BY_OPERATOR',
+        message: 'Stopped cleanly by operator.',
+      },
+    });
+
+    assert.equal(stopped.state.runtimeStatus, 'stopped');
+    assert.equal(stopped.state.stoppedReason, 'operator-stop');
+    assert.equal(stopped.state.exitCode, 0);
+    assert.equal(stopped.state.iterationsRequested, 3);
+    assert.equal(stopped.state.iterationsCompleted, 3);
+    assert.equal(normalizeIsoOrNull(stopped.state.exitAt || stopped.state.stoppedAt), exitAt);
+
+    const persisted = loadState(stateFile, 'abc123abc123abc1').state;
+    assert.equal(persisted.runtimeStatus, 'stopped');
+    assert.equal(persisted.stoppedReason, 'operator-stop');
+    assert.equal(persisted.exitCode, 0);
+    assert.equal(persisted.iterationsRequested, 3);
+    assert.equal(persisted.iterationsCompleted, 3);
+    assert.equal(normalizeIsoOrNull(persisted.exitAt || persisted.stoppedAt), exitAt);
+
+    const status = service.statusHedge({
+      stateFile,
+      strategyHash: 'abc123abc123abc1',
+    });
+
+    assert.equal(status.runtime.status, 'stopped');
+    assert.equal(status.runtime.stoppedReason, 'operator-stop');
+    assert.equal(status.runtime.exitCode, 0);
+    assert.equal(status.runtime.iterationsRequested, 3);
+    assert.equal(status.runtime.iterationsCompleted, 3);
+    assert.equal(normalizeIsoOrNull(status.runtime.exitAt || status.runtime.stoppedAt), exitAt);
+    assert.equal(status.lastAlert.code, 'STOPPED_BY_OPERATOR');
+  } finally {
+    removeDir(tempDir);
+  }
+}));
+
+test('mirror hedge state starts idle without a synthetic startedAt timestamp', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-fresh-state-');
+  const stateFile = path.join(tempDir, 'hedge.json');
+  const service = loadMirrorHedgeService();
+
+  try {
+    const status = service.statusHedge({
+      stateFile,
+      strategyHash: 'abc123abc123abc1',
+    });
+
+    assert.equal(status.runtime.status, 'idle');
+    assert.equal(status.runtime.startedAt, null);
+
+    const persisted = loadState(stateFile, 'abc123abc123abc1').state;
+    assert.equal(persisted.runtimeStatus, 'idle');
+    assert.equal(persisted.startedAt, null);
+  } finally {
+    removeDir(tempDir);
+  }
+}));
 
 test('buildMirrorHedgePlan returns hedge-daemon readiness with whitelist metadata', withPatchedModules(async () => {
   const tempDir = createTempDir('pandora-hedge-plan-');
@@ -409,4 +500,30 @@ test('buildMirrorHedgeDaemonCliArgs preserves explicit dotenv paths for detached
   const dotenvIndex = args.indexOf('--dotenv-path');
   assert.notEqual(dotenvIndex, -1);
   assert.equal(args[dotenvIndex + 1], '/tmp/custom.env');
+});
+
+test('buildMirrorHedgeDaemonCliArgs preserves custom kill-switch files for detached runs', () => {
+  const service = loadMirrorHedgeService();
+  const args = service.buildMirrorHedgeDaemonCliArgs({
+    useEnvFile: false,
+    executeLive: false,
+    killSwitchFile: '/tmp/custom-hedge-stop',
+  }, {
+    stateFile: '/tmp/hedge-state.json',
+    strategyHash: 'abc123abc123abc1',
+    marketPairIdentity: {
+      pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      polymarketMarketId: 'poly-1',
+    },
+    internalWallets: {
+      filePath: '/tmp/internal-wallets.txt',
+    },
+    minHedgeUsdc: 25,
+    partialPolicy: 'partial',
+    sellPolicy: 'depth-checked',
+  });
+
+  const killSwitchIndex = args.indexOf('--kill-switch-file');
+  assert.notEqual(killSwitchIndex, -1);
+  assert.equal(args[killSwitchIndex + 1], '/tmp/custom-hedge-stop');
 });

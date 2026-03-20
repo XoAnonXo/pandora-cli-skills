@@ -78,6 +78,29 @@ function parseJsonOutput(result) {
   return JSON.parse(payloadText);
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPidExit(pid, timeoutMs = 10_000, pollMs = 100) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isPidAlive(pid)) return true;
+    await delay(pollMs);
+  }
+  return !isPidAlive(pid);
+}
+
 function parseNdjsonOutput(output) {
   const text = String(output || '')
     .split(/\r?\n/)
@@ -9860,6 +9883,152 @@ test('mirror hedge start preserves explicit dotenv paths in detached child cli a
       });
     }
     if (daemonPid && Number.isInteger(daemonPid)) {
+      try {
+        process.kill(daemonPid, 'SIGKILL');
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror hedge start accepts strategy-hash, stays alive across an interval, and exits cleanly after bounded iterations', async () => {
+  const tempDir = createTempDir('pandora-mirror-hedge-daemon-strategy-hash-');
+  const stateFile = path.join(tempDir, 'hedge-state.json');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  writeFile(walletFile, `${ADDRESSES.wallet1}\n`);
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+  const strategyHash = 'abc123abc123abc1';
+  let pidFile = null;
+  let daemonPid = null;
+
+  try {
+    const startResult = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'hedge',
+        'start',
+        '--strategy-hash',
+        strategyHash,
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--internal-wallets-file',
+        walletFile,
+        '--paper',
+        '--interval-ms',
+        '1000',
+        '--iterations',
+        '3',
+        '--state-file',
+        stateFile,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(startResult.status, 0, startResult.output || '(no cli output)');
+    const startPayload = parseJsonOutput(startResult);
+    assert.equal(startPayload.ok, true);
+    assert.equal(startPayload.command, 'mirror.hedge.start');
+    pidFile = startPayload.data.daemon.pidFile;
+    daemonPid = startPayload.data.daemon.pid;
+
+    const metadata = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+    assert.equal(Array.isArray(metadata.cliArgs), true);
+    assert.equal(metadata.cliArgs.includes('--strategy-hash'), true);
+    assert.equal(metadata.cliArgs.includes(strategyHash), true);
+
+    await delay(1200);
+    assert.equal(isPidAlive(daemonPid), true);
+    assert.equal(fs.existsSync(stateFile), true);
+
+    const runningStatusResult = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'hedge',
+        'status',
+        '--strategy-hash',
+        strategyHash,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(runningStatusResult.status, 0, runningStatusResult.output || '(no cli output)');
+    const runningStatusPayload = parseJsonOutput(runningStatusResult);
+    assert.equal(runningStatusPayload.ok, true);
+    assert.equal(runningStatusPayload.data.runtime.status, 'running');
+
+    const exited = await waitForPidExit(daemonPid, 10_000, 100);
+    assert.equal(exited, true, `daemon still alive after bounded iterations: ${daemonPid}`);
+
+    const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.equal(persisted.runtimeStatus, 'stopped');
+    assert.equal(persisted.exitCode, 0);
+    assert.equal(persisted.iterationsRequested, 3);
+    assert.equal(persisted.iterationsCompleted, 3);
+    assert.match(String(persisted.stoppedReason || ''), /(iteration|complete|bounded)/i);
+    assert.equal(typeof (persisted.exitAt || persisted.stoppedAt), 'string');
+
+    const statusResult = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'hedge',
+        'status',
+        '--strategy-hash',
+        strategyHash,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.equal(statusResult.status, 0, statusResult.output || '(no cli output)');
+    const statusPayload = parseJsonOutput(statusResult);
+    assert.equal(statusPayload.ok, true);
+    assert.equal(statusPayload.command, 'mirror.hedge.status');
+    assert.equal(statusPayload.data.runtime.status, 'stopped');
+    assert.equal(statusPayload.data.runtime.exitCode, 0);
+    assert.equal(statusPayload.data.runtime.iterationsRequested, 3);
+    assert.equal(statusPayload.data.runtime.iterationsCompleted, 3);
+    assert.match(String(statusPayload.data.runtime.stoppedReason || ''), /(iteration|complete|bounded)/i);
+    assert.equal(typeof (statusPayload.data.runtime.exitAt || statusPayload.data.runtime.stoppedAt), 'string');
+
+    const tableResult = runCli([
+      'mirror',
+      'hedge',
+      'status',
+      '--strategy-hash',
+      strategyHash,
+    ], {
+      env: { HOME: tempDir },
+    });
+
+    assert.equal(tableResult.status, 0, tableResult.output || '(no cli output)');
+    assert.match(tableResult.output, /iterationsRequested:\s*3/);
+    assert.match(tableResult.output, /iterationsCompleted:\s*3/);
+    assert.match(tableResult.output, /stoppedReason:/);
+    assert.match(tableResult.output, /exitCode:\s*0/);
+    assert.match(tableResult.output, /exitAt:|stoppedAt:/);
+  } finally {
+    if (pidFile && daemonPid && isPidAlive(daemonPid)) {
+      runCli(['--output', 'json', 'mirror', 'hedge', 'stop', '--pid-file', pidFile], {
+        env: { HOME: tempDir },
+      });
+    }
+    if (daemonPid && isPidAlive(daemonPid)) {
       try {
         process.kill(daemonPid, 'SIGKILL');
       } catch {
