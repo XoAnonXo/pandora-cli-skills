@@ -50,16 +50,9 @@ const workspacePatterns = [
 ];
 
 const historyPatterns = [
-  '\\bPRIVATE_KEY\\s*[:=]\\s*0x[0-9a-fA-F]{64}\\b',
-  '\\bPANDORA_PRIVATE_KEY\\s*[:=]\\s*0x[0-9a-fA-F]{64}\\b',
-  '\\bDEPLOYER_PRIVATE_KEY\\s*[:=]\\s*0x[0-9a-fA-F]{64}\\b',
-  '\\bPOLYMARKET_PRIVATE_KEY\\s*[:=]\\s*0x[0-9a-fA-F]{64}\\b',
-  'gh[pousr]_[A-Za-z0-9]{36,}',
-  'ghs_[A-Za-z0-9]{36,}',
-  'gho_[A-Za-z0-9]{36,}',
-  'ghr_[A-Za-z0-9]{36,}',
-  'sk_live_[A-Za-z0-9]{20,}',
-  'sk_test_[A-Za-z0-9]{20,}',
+  '\\b[A-Z_]*PRIVATE_KEY\\s*[:=]\\s*0x[0-9a-fA-F]{64}\\b',
+  'gh[a-z]_[A-Za-z0-9]{36,}',
+  'sk_[a-z]+_[A-Za-z0-9]{20,}',
   'AKIA[0-9A-Z]{16}',
   'xoxb-[0-9]{10,}-[0-9]+-[A-Za-z0-9]+',
 ];
