@@ -652,7 +652,7 @@ print(json.dumps({
             { expect: 'Pandora private key', send: '1' },
             { expect: 'Choose a deployment host', send: '4' },
             { expect: 'Sports / Odds provider for deploy-time market discovery', send: '1' },
-            { expect: 'Review before write', send: '1' },
+            { expect: 'Write changes - Persist the reviewed env updates to disk.', send: '1' },
           ],
         },
       );
