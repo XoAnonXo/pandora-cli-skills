@@ -38,7 +38,21 @@ if (testFiles.length === 0) {
 // The unit suite shares process-wide globals and temp fixtures in several legacy files.
 // Run serially so CI and local verification stay deterministic.
 const nodeArgs = ['--test', '--test-concurrency=1'];
-if (process.allowedNodeEnvironmentFlags && process.allowedNodeEnvironmentFlags.has('--test-force-exit')) {
+
+function supportsTestForceExit() {
+  try {
+    const help = execFileSync(process.execPath, ['--help'], {
+      cwd: rootDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return help.includes('--test-force-exit');
+  } catch {
+    return false;
+  }
+}
+
+if (supportsTestForceExit()) {
   nodeArgs.push('--test-force-exit');
 }
 nodeArgs.push(...testFiles);
