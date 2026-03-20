@@ -3,30 +3,44 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const { runNpmPack } = require('./release/pack_release_tarball.cjs');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const NODE_CMD = process.execPath;
 
 function runNodeScript(scriptPath, env) {
-  const result = spawnSync(NODE_CMD, [scriptPath], {
-    cwd: ROOT_DIR,
-    encoding: 'utf8',
-    env,
-    windowsHide: true,
-    maxBuffer: 1024 * 1024 * 32,
-  });
+  return new Promise((resolve, reject) => {
+    const child = spawn(NODE_CMD, [scriptPath], {
+      cwd: ROOT_DIR,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    let stdout = '';
+    let stderr = '';
 
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    throw new Error(`${path.basename(scriptPath)} failed with status ${result.status}\n${[result.stdout, result.stderr].filter(Boolean).join('\n')}`);
-  }
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on('error', reject);
+    child.on('close', (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const reason = signal
+        ? `${path.basename(scriptPath)} terminated with signal ${signal}`
+        : `${path.basename(scriptPath)} failed with status ${code}`;
+      reject(new Error(`${reason}\n${[stdout, stderr].filter(Boolean).join('\n')}`));
+    });
+  });
 }
 
-function main() {
+async function main() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pandora-shared-smoke-'));
   const packDir = path.join(tempRoot, 'pack');
   fs.mkdirSync(packDir, { recursive: true });
@@ -42,15 +56,16 @@ function main() {
     PANDORA_SMOKE_TARBALL: tarballPath,
   };
 
-  runNodeScript(path.join(ROOT_DIR, 'tests', 'smoke', 'pack-install-smoke.cjs'), env);
-  runNodeScript(path.join(ROOT_DIR, 'tests', 'smoke', 'consumer-json-smoke.cjs'), env);
+  const smokeScripts = [
+    path.join(ROOT_DIR, 'tests', 'smoke', 'pack-install-smoke.cjs'),
+    path.join(ROOT_DIR, 'tests', 'smoke', 'consumer-json-smoke.cjs'),
+  ];
+  await Promise.all(smokeScripts.map((scriptPath) => runNodeScript(scriptPath, env)));
 }
 
 if (require.main === module) {
-  try {
-    main();
-  } catch (error) {
+  main().catch((error) => {
     process.stderr.write(`${error.message}\n`);
     process.exit(1);
-  }
+  });
 }
