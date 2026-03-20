@@ -21,6 +21,8 @@ const PYTHON_GENERATED_DIR = path.join(PYTHON_PACKAGE_DIR, 'generated');
 const PYTHON_GENERATED_MANIFEST_PATH = path.join(PYTHON_GENERATED_DIR, 'manifest.json');
 
 const NPM_COMMAND = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const PUBLIC_NPM_REGISTRY = 'https://registry.npmjs.org/';
+const EMPTY_NPMRC_PATH = path.join(os.tmpdir(), 'pandora-sdk-public.npmrc');
 
 function assert(condition, message) {
   if (!condition) {
@@ -135,11 +137,26 @@ function runCommand(command, args, options = {}) {
 }
 
 function buildMutableNpmEnv(overrides = {}) {
+  if (!fs.existsSync(EMPTY_NPMRC_PATH)) {
+    fs.writeFileSync(EMPTY_NPMRC_PATH, '# pandora sdk public npm config\n', 'utf8');
+  }
   const env = {
     ...process.env,
+    npm_config_registry: PUBLIC_NPM_REGISTRY,
+    NPM_CONFIG_REGISTRY: PUBLIC_NPM_REGISTRY,
+    npm_config_userconfig: EMPTY_NPMRC_PATH,
+    NPM_CONFIG_USERCONFIG: EMPTY_NPMRC_PATH,
     ...overrides,
   };
   delete env.npm_config_dry_run;
+  delete env.NPM_CONFIG_DRY_RUN;
+  delete env.NODE_AUTH_TOKEN;
+  delete env.NPM_TOKEN;
+  for (const key of Object.keys(env)) {
+    if (/^npm_config_.*auth/i.test(key) || /^NPM_CONFIG_.*AUTH/i.test(key)) {
+      delete env[key];
+    }
+  }
   return env;
 }
 
@@ -280,10 +297,9 @@ process.stdout.write(JSON.stringify({
 function runTypescriptPackDryRun(metadata) {
   const result = runCommand(NPM_COMMAND, ['pack', '--dry-run', '--json'], {
     cwd: TYPESCRIPT_SDK_DIR,
-    env: {
-      ...process.env,
+    env: buildMutableNpmEnv({
       npm_config_loglevel: process.env.npm_config_loglevel || 'error',
-    },
+    }),
   });
   const parsed = JSON.parse(result.stdout);
   assert(Array.isArray(parsed) && parsed.length === 1, 'Expected npm pack --dry-run --json to return one TypeScript SDK tarball');

@@ -12,6 +12,7 @@ const INSTALLER_PATH = path.join(ROOT_DIR, 'scripts', 'release', 'install_releas
 const SBOM_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'generate_sbom.cjs');
 const SDK_STANDALONE_CHECK_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'check_standalone_sdk_packages.cjs');
 const SDK_RELEASE_ARTIFACT_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'release', 'build_standalone_sdk_artifacts.cjs');
+const REPO_VERIFICATION_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'run_repo_verification.cjs');
 const PREPARE_MANIFEST_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'prepare_publish_manifest.cjs');
 const RESTORE_MANIFEST_SCRIPT_PATH = path.join(ROOT_DIR, 'scripts', 'restore_publish_manifest.cjs');
 const RELEASE_VERIFICATION_DOC_PATH = path.join(ROOT_DIR, 'docs', 'trust', 'release-verification.md');
@@ -332,7 +333,7 @@ function checkPackageMetadata() {
   assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:pack'), 'package.json release:publish must run release:pack');
   assert(typeof pkg.scripts['release:publish'] === 'string' && pkg.scripts['release:publish'].includes('npm run release:publish:artifact'), 'package.json release:publish must run release:publish:artifact');
   assert(pkg.scripts.build === 'npm run typecheck', 'package.json build must stay a narrow compile/typecheck surface');
-  assert(typeof pkg.scripts['verify:repo'] === 'string', 'package.json must expose verify:repo');
+  assert(pkg.scripts['verify:repo'] === 'node scripts/run_repo_verification.cjs', 'package.json verify:repo must delegate to scripts/run_repo_verification.cjs');
   assert(typeof pkg.scripts['verify:tests'] === 'string', 'package.json must expose verify:tests');
   assert(typeof pkg.scripts['release:verify'] === 'string', 'package.json must expose release:verify');
   assert(typeof pkg.scripts.prepack === 'string' && pkg.scripts.prepack.trim() === 'npm run prepare:publish-manifest', 'package.json prepack must be packaging-only and prepare the publish manifest');
@@ -351,17 +352,19 @@ function checkPackageMetadata() {
       `package.json prepack must not rerun heavyweight verification fragment: ${disallowedPrepackFragment}`,
     );
   }
+  const repoVerificationScript = readUtf8(REPO_VERIFICATION_SCRIPT_PATH);
   for (const verifyRepoFragment of [
-    'npm run build',
-    'npm run check:docs',
-    'npm run check:anthropic-skill',
-    'npm run check:secret-scan',
-    'npm run check:sdk-contracts',
-    'npm run check:sdk-standalone',
+    "args: ['run', 'build']",
+    "args: ['run', 'check:docs']",
+    "args: ['run', 'check:anthropic-skill']",
+    "args: ['run', 'check:secret-scan']",
+    "args: ['run', 'check:sdk-contracts']",
+    "args: ['run', 'check:sdk-standalone']",
+    'Promise.all',
   ]) {
     assert(
-      pkg.scripts['verify:repo'].includes(verifyRepoFragment),
-      `package.json verify:repo must include ${verifyRepoFragment}`,
+      repoVerificationScript.includes(verifyRepoFragment),
+      `scripts/run_repo_verification.cjs must include ${verifyRepoFragment}`,
     );
   }
   for (const verifyTestsFragment of [
@@ -403,6 +406,7 @@ function checkWorkflowAndInstaller() {
   ensureFile(SBOM_SCRIPT_PATH);
   ensureFile(SDK_STANDALONE_CHECK_SCRIPT_PATH);
   ensureFile(SDK_RELEASE_ARTIFACT_SCRIPT_PATH);
+  ensureFile(REPO_VERIFICATION_SCRIPT_PATH);
   ensureFile(RELEASE_VERIFICATION_DOC_PATH);
   ensureFile(SUPPORT_MATRIX_DOC_PATH);
   ensureFile(FINAL_SIGNOFF_DOC_PATH);
