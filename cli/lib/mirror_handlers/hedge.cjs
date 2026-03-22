@@ -68,6 +68,18 @@ function renderMirrorHedgeDaemonTable(data) {
     ['pendingOverlayUsdc', summary.pendingOverlayUsdc ?? ''],
     ['deferredHedgeCount', summary.deferredHedgeCount ?? ''],
     ['deferredHedgeUsdc', summary.deferredHedgeUsdc ?? ''],
+    ['targetYesShares', summary.targetYesShares ?? ''],
+    ['targetNoShares', summary.targetNoShares ?? ''],
+    ['currentYesShares', summary.currentYesShares ?? ''],
+    ['currentNoShares', summary.currentNoShares ?? ''],
+    ['excessYesToSell', summary.excessYesToSell ?? ''],
+    ['excessNoToSell', summary.excessNoToSell ?? ''],
+    ['deficitYesToBuy', summary.deficitYesToBuy ?? ''],
+    ['deficitNoToBuy', summary.deficitNoToBuy ?? ''],
+    ['netTargetSide', summary.netTargetSide || ''],
+    ['netTargetShares', summary.netTargetShares ?? ''],
+    ['availableHedgeFeeBudgetUsdc', summary.availableHedgeFeeBudgetUsdc ?? ''],
+    ['belowThresholdPendingUsdc', summary.belowThresholdPendingUsdc ?? ''],
     ['skippedVolumeUsdc', summary.skippedVolumeUsdc ?? ''],
     ['lastSuccessfulHedgeAt', summary.lastSuccessfulHedgeAt || ''],
     ['lastErrorCode', summary.lastErrorCode || ''],
@@ -115,6 +127,8 @@ function buildRunNotes() {
   return [
     'mirror hedge run executes the LP hedge loop in the foreground.',
     'Live hedge execution still needs a valid internal-wallet whitelist plus Polymarket signer/funder readiness.',
+    '--min-hedge-usdc is an execution threshold for the net target-vs-actual hedge gap; it no longer permanently ignores small external trades.',
+    '--adopt-existing-positions treats observed Polymarket inventory as the starting live hedge baseline and then trades only the delta to target.',
     'Use start for detached daemon mode, and status/stop for selector-first lifecycle control.',
   ];
 }

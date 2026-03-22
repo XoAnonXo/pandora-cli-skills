@@ -394,7 +394,35 @@ test('buildMirrorHedgeBundle emits VPS bundle artifacts and excludes Cloudflare 
   }
 }));
 
-test('runMirrorHedge in paper mode ignores internal trades and skips small external trades', withPatchedModules(async () => {
+test('buildMirrorHedgeBundle preserves adopt-existing-positions in emitted launch artifacts', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-bundle-adopt-existing-');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  const outputDir = path.join(tempDir, 'bundle');
+  fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
+
+  try {
+    const service = loadMirrorHedgeService();
+    await service.buildMirrorHedgeBundle({
+      pandoraMarketAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      polymarketSlug: 'team-a-vs-team-b',
+      internalWalletsFile: walletFile,
+      outputDir,
+      adoptExistingPositions: true,
+    });
+
+    const launchScript = fs.readFileSync(path.join(outputDir, 'run-mirror-hedge.sh'), 'utf8');
+    const systemdUnit = fs.readFileSync(path.join(outputDir, 'mirror-hedge.service'), 'utf8');
+    const config = JSON.parse(fs.readFileSync(path.join(outputDir, 'hedge-daemon.config.json'), 'utf8'));
+
+    assert.match(launchScript, /--adopt-existing-positions/);
+    assert.match(systemdUnit, /--adopt-existing-positions/);
+    assert.equal(config.hedgePolicies.adoptExistingPositions, true);
+  } finally {
+    removeDir(tempDir);
+  }
+}));
+
+test('runMirrorHedge in paper mode ignores internal trades and accumulates below-threshold external exposure', withPatchedModules(async () => {
   const tempDir = createTempDir('pandora-hedge-run-');
   const walletFile = path.join(tempDir, 'internal-wallets.txt');
   fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
@@ -437,16 +465,295 @@ test('runMirrorHedge in paper mode ignores internal trades and skips small exter
     });
 
     assert.equal(payload.mode, 'run');
-    assert.equal(payload.summary.confirmedExposureCount, 2);
-    assert.equal(payload.plan.summary.skippedVolumeCount, 2);
+    assert.equal(payload.summary.confirmedExposureCount, 1);
+    assert.equal(payload.plan.summary.skippedVolumeCount, 1);
+    assert.equal(payload.plan.summary.netTargetSide, 'no');
+    assert.equal(payload.plan.summary.netTargetShares > 0, true);
+    assert.equal(payload.plan.summary.belowThresholdPendingUsdc > 0, true);
     assert.equal(
       payload.runtime.auditEntries.some((entry) => entry.kind === 'ignored-internal-trade'),
       true,
     );
     assert.equal(
-      payload.runtime.auditEntries.some((entry) => entry.kind === 'small-trade-skip'),
+      payload.runtime.auditEntries.some((entry) => entry.kind === 'below-threshold-gap'),
       true,
     );
+  } finally {
+    removeDir(tempDir);
+  }
+}));
+
+test('runMirrorHedge nets BUY_YES then BUY_NO into a single NO target inventory', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-net-target-');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
+
+  try {
+    const service = loadMirrorHedgeService();
+    const payload = await service.runMirrorHedge({
+      stateFile: path.join(tempDir, 'runtime.json'),
+      pandoraMarketAddress: '0xdddddddddddddddddddddddddddddddddddddddd',
+      polymarketMarketId: 'poly-1',
+      internalWalletsFile: walletFile,
+      iterations: 1,
+      confirmedTrades: [
+        {
+          id: 'trade-buy-yes',
+          marketAddress: '0xdddddddddddddddddddddddddddddddddddddddd',
+          trader: '0x3333333333333333333333333333333333333333',
+          side: 'yes',
+          tradeType: 'buy',
+          collateralAmount: '50000000',
+          tokenAmount: '87719298',
+          feeAmount: '1000000',
+          timestamp: 1710000000,
+          txHash: `0x${'3'.repeat(64)}`,
+        },
+        {
+          id: 'trade-buy-no',
+          marketAddress: '0xdddddddddddddddddddddddddddddddddddddddd',
+          trader: '0x4444444444444444444444444444444444444444',
+          side: 'no',
+          tradeType: 'buy',
+          collateralAmount: '100000000',
+          tokenAmount: '232558140',
+          feeAmount: '2000000',
+          timestamp: 1710000001,
+          txHash: `0x${'4'.repeat(64)}`,
+        },
+      ],
+      minHedgeUsdc: 25,
+    });
+
+    assert.equal(payload.plan.summary.netTargetSide, 'no');
+    assert.equal(payload.plan.summary.targetYesShares, 0);
+    assert.equal(payload.plan.summary.targetNoShares > 0, true);
+
+    const state = loadState(path.join(tempDir, 'runtime.json')).state;
+    assert.equal(state.targetHedgeInventory.netSide, 'no');
+    assert.equal(state.targetHedgeInventory.yesShares, 0);
+    assert.equal(state.targetHedgeInventory.noShares > 0, true);
+  } finally {
+    removeDir(tempDir);
+  }
+}));
+
+test('runMirrorHedge field report sequence NO then YES then NO ends with a single NO target', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-field-sequence-');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
+
+  try {
+    const service = loadMirrorHedgeService();
+    const payload = await service.runMirrorHedge({
+      stateFile: path.join(tempDir, 'runtime.json'),
+      pandoraMarketAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      polymarketMarketId: 'poly-1',
+      internalWalletsFile: walletFile,
+      iterations: 1,
+      confirmedTrades: [
+        {
+          id: 'trade-no-1',
+          marketAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          trader: '0x3333333333333333333333333333333333333333',
+          side: 'no',
+          tradeType: 'buy',
+          collateralAmount: '100000000',
+          tokenAmount: '157100000',
+          feeAmount: '2000000',
+          timestamp: 1710000000,
+          txHash: `0x${'5'.repeat(64)}`,
+        },
+        {
+          id: 'trade-yes-1',
+          marketAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          trader: '0x4444444444444444444444444444444444444444',
+          side: 'yes',
+          tradeType: 'buy',
+          collateralAmount: '50000000',
+          tokenAmount: '130100000',
+          feeAmount: '1000000',
+          timestamp: 1710000001,
+          txHash: `0x${'6'.repeat(64)}`,
+        },
+        {
+          id: 'trade-no-2',
+          marketAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          trader: '0x5555555555555555555555555555555555555555',
+          side: 'no',
+          tradeType: 'buy',
+          collateralAmount: '50000000',
+          tokenAmount: '78800000',
+          feeAmount: '1000000',
+          timestamp: 1710000002,
+          txHash: `0x${'7'.repeat(64)}`,
+        },
+      ],
+      minHedgeUsdc: 25,
+    });
+
+    assert.equal(payload.plan.summary.netTargetSide, 'no');
+    assert.equal(payload.plan.summary.targetYesShares, 0);
+    assert.equal(payload.plan.summary.targetNoShares > 0, true);
+  } finally {
+    removeDir(tempDir);
+  }
+}));
+
+test('runMirrorHedge accumulates small external trades until the net gap crosses the execution threshold', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-threshold-accumulate-');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  const originalFetchInventory = polymarketModule.fetchPolymarketPositionSummary;
+  polymarketModule.fetchPolymarketPositionSummary = async () => ({
+    marketId: 'poly-1',
+    slug: 'team-a-vs-team-b',
+    walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    yesBalance: 0,
+    noBalance: 0,
+    openOrdersCount: 0,
+    estimatedValueUsd: 0,
+    prices: { yes: 0.57, no: 0.43 },
+    source: { resolved: 'mock' },
+    diagnostics: [],
+  });
+  fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
+
+  try {
+    const service = loadMirrorHedgeService();
+    const stateFile = path.join(tempDir, 'runtime.json');
+
+    const first = await service.runMirrorHedge({
+      stateFile,
+      pandoraMarketAddress: '0xffffffffffffffffffffffffffffffffffffffff',
+      polymarketMarketId: 'poly-1',
+      internalWalletsFile: walletFile,
+      iterations: 1,
+      confirmedTrades: [
+        {
+          id: 'trade-small-1',
+          marketAddress: '0xffffffffffffffffffffffffffffffffffffffff',
+          trader: '0x3333333333333333333333333333333333333333',
+          side: 'no',
+          tradeType: 'buy',
+          collateralAmount: '10000000',
+          tokenAmount: '23255813',
+          feeAmount: '200000',
+          timestamp: 1710000000,
+          txHash: `0x${'8'.repeat(64)}`,
+        },
+      ],
+      minHedgeUsdc: 25,
+    });
+
+    assert.equal(first.plan.summary.belowThresholdPendingUsdc > 0, true);
+    assert.equal(first.runtime.auditEntries.some((entry) => entry.kind === 'hedge-planned'), false);
+
+    const second = await service.runMirrorHedge({
+      stateFile,
+      pandoraMarketAddress: '0xffffffffffffffffffffffffffffffffffffffff',
+      polymarketMarketId: 'poly-1',
+      internalWalletsFile: walletFile,
+      iterations: 1,
+      confirmedTrades: [
+        {
+          id: 'trade-small-2',
+          marketAddress: '0xffffffffffffffffffffffffffffffffffffffff',
+          trader: '0x4444444444444444444444444444444444444444',
+          side: 'no',
+          tradeType: 'buy',
+          collateralAmount: '20000000',
+          tokenAmount: '46511628',
+          feeAmount: '400000',
+          timestamp: 1710000001,
+          txHash: `0x${'9'.repeat(64)}`,
+        },
+      ],
+      minHedgeUsdc: 25,
+    });
+
+    assert.equal(second.plan.summary.belowThresholdPendingUsdc, 0);
+    assert.equal(second.runtime.auditEntries.some((entry) => entry.kind === 'hedge-planned'), true);
+  } finally {
+    polymarketModule.fetchPolymarketPositionSummary = originalFetchInventory;
+    removeDir(tempDir);
+  }
+}));
+
+test('runMirrorHedge blocks expansion buys when estimated execution fee exceeds the accumulated fee budget', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-fee-budget-');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  const originalFetchInventory = polymarketModule.fetchPolymarketPositionSummary;
+  polymarketModule.fetchPolymarketPositionSummary = async () => ({
+    marketId: 'poly-1',
+    slug: 'team-a-vs-team-b',
+    walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    yesBalance: 0,
+    noBalance: 0,
+    openOrdersCount: 0,
+    estimatedValueUsd: 0,
+    prices: { yes: 0.57, no: 0.43 },
+    source: { resolved: 'mock' },
+    diagnostics: [],
+  });
+  fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
+
+  try {
+    const service = loadMirrorHedgeService();
+    const payload = await service.runMirrorHedge({
+      stateFile: path.join(tempDir, 'runtime.json'),
+      pandoraMarketAddress: '0xabababababababababababababababababababab',
+      polymarketMarketId: 'poly-1',
+      internalWalletsFile: walletFile,
+      iterations: 1,
+      estimatedExecutionFeeUsdc: 5,
+      confirmedTrades: [
+        {
+          id: 'trade-budget-blocked',
+          marketAddress: '0xabababababababababababababababababababab',
+          trader: '0x3333333333333333333333333333333333333333',
+          side: 'yes',
+          tradeType: 'buy',
+          collateralAmount: '50000000',
+          tokenAmount: '87719298',
+          feeAmount: '1000000',
+          timestamp: 1710000000,
+          txHash: `0x${'a'.repeat(64)}`,
+        },
+      ],
+      minHedgeUsdc: 25,
+    });
+
+    assert.equal(payload.plan.summary.availableHedgeFeeBudgetUsdc, 1);
+    assert.equal(payload.runtime.auditEntries.some((entry) => entry.reasonCode === 'fee-budget-exhausted'), true);
+    assert.equal(payload.summary.deferredHedgeCount > 0, true);
+  } finally {
+    polymarketModule.fetchPolymarketPositionSummary = originalFetchInventory;
+    removeDir(tempDir);
+  }
+}));
+
+test('runMirrorHedge adopts existing positions as the starting target inventory when requested', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-adopt-existing-');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
+
+  try {
+    const service = loadMirrorHedgeService();
+    const payload = await service.runMirrorHedge({
+      stateFile: path.join(tempDir, 'runtime.json'),
+      pandoraMarketAddress: '0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+      polymarketMarketId: 'poly-1',
+      internalWalletsFile: walletFile,
+      iterations: 1,
+      adoptExistingPositions: true,
+      confirmedTrades: [],
+    });
+
+    const state = loadState(path.join(tempDir, 'runtime.json')).state;
+    assert.equal(state.targetHedgeInventory.initializedFrom, 'adopted-existing-positions');
+    assert.equal(state.targetHedgeInventory.netSide, 'yes');
+    assert.equal(state.targetHedgeInventory.netShares, 12);
+    assert.equal(payload.plan.summary.targetYesShares, 12);
   } finally {
     removeDir(tempDir);
   }
@@ -527,4 +834,28 @@ test('buildMirrorHedgeDaemonCliArgs preserves custom kill-switch files for detac
   const killSwitchIndex = args.indexOf('--kill-switch-file');
   assert.notEqual(killSwitchIndex, -1);
   assert.equal(args[killSwitchIndex + 1], '/tmp/custom-hedge-stop');
+});
+
+test('buildMirrorHedgeDaemonCliArgs preserves adopt-existing-positions for detached runs', () => {
+  const service = loadMirrorHedgeService();
+  const args = service.buildMirrorHedgeDaemonCliArgs({
+    useEnvFile: false,
+    executeLive: false,
+    adoptExistingPositions: true,
+  }, {
+    stateFile: '/tmp/hedge-state.json',
+    strategyHash: 'abc123abc123abc1',
+    marketPairIdentity: {
+      pandoraMarketAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      polymarketMarketId: 'poly-1',
+    },
+    internalWallets: {
+      filePath: '/tmp/internal-wallets.txt',
+    },
+    minHedgeUsdc: 25,
+    partialPolicy: 'partial',
+    sellPolicy: 'depth-checked',
+  });
+
+  assert.equal(args.includes('--adopt-existing-positions'), true);
 });

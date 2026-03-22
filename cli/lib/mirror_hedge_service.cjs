@@ -9,6 +9,7 @@ const {
   saveState,
   createState,
   buildIdentityFingerprint,
+  ensureTargetHedgeInventoryShape,
 } = require('./mirror_hedge_state_store.cjs');
 const {
   planHedgeRuntime,
@@ -23,6 +24,10 @@ const {
   decodePendingPandoraTrade,
 } = require('./mirror_hedge/events.cjs');
 const {
+  shouldSkipInternalWallet,
+  evaluateDepthCheck,
+  evaluatePartialVsSkipPolicy,
+  evaluateDepthCheckedSellPolicy,
   classifyMirrorHedgeExecution,
   reconcileMempoolConfirmRevert,
 } = require('./mirror_hedge/execution.cjs');
@@ -315,6 +320,9 @@ function buildHedgeRuntime(options = {}) {
     pendingMempoolOverlays: options.pendingMempoolOverlays,
     deferredHedgeQueue: options.deferredHedgeQueue,
     managedPolymarketInventorySnapshot: options.managedPolymarketInventorySnapshot,
+    targetHedgeInventory: options.targetHedgeInventory,
+    availableHedgeFeeBudgetUsdc: options.availableHedgeFeeBudgetUsdc,
+    belowThresholdPendingUsdc: options.belowThresholdPendingUsdc,
     skippedVolumeCounters: options.skippedVolumeCounters,
   });
   return {
@@ -341,6 +349,9 @@ function runHedge(options = {}) {
     pendingMempoolOverlays: options.pendingMempoolOverlays,
     deferredHedgeQueue: options.deferredHedgeQueue,
     managedPolymarketInventorySnapshot: options.managedPolymarketInventorySnapshot,
+    targetHedgeInventory: options.targetHedgeInventory,
+    availableHedgeFeeBudgetUsdc: options.availableHedgeFeeBudgetUsdc,
+    belowThresholdPendingUsdc: options.belowThresholdPendingUsdc,
     skippedVolumeCounters: options.skippedVolumeCounters,
     lastSuccessfulHedge: options.lastSuccessfulHedge,
     lastError: options.lastError,
@@ -349,6 +360,9 @@ function runHedge(options = {}) {
   const plan = planHedgeRuntime({
     state,
     now: options.now,
+    targetHedgeInventory: options.targetHedgeInventory,
+    availableHedgeFeeBudgetUsdc: options.availableHedgeFeeBudgetUsdc,
+    belowThresholdPendingUsdc: options.belowThresholdPendingUsdc,
   });
   if (options.persist !== false) {
     persistHedgeState(loaded.filePath, state);
@@ -619,6 +633,267 @@ function normalizeSellPolicy(options = {}) {
   return explicit === 'manual-only' ? 'manual-only' : DEFAULT_SELL_HEDGE_POLICY;
 }
 
+function cloneJson(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function buildCanonicalTargetInventory(netSharesSigned, metadata = {}) {
+  const signed = round(toOptionalNumber(netSharesSigned) || 0, 6) || 0;
+  if (signed > 0) {
+    return ensureTargetHedgeInventoryShape({
+      yesShares: signed,
+      noShares: 0,
+      initializedAt: metadata.initializedAt,
+      initializedFrom: metadata.initializedFrom,
+      updatedAt: metadata.updatedAt,
+    });
+  }
+  if (signed < 0) {
+    return ensureTargetHedgeInventoryShape({
+      yesShares: 0,
+      noShares: Math.abs(signed),
+      initializedAt: metadata.initializedAt,
+      initializedFrom: metadata.initializedFrom,
+      updatedAt: metadata.updatedAt,
+    });
+  }
+  return ensureTargetHedgeInventoryShape({
+    yesShares: 0,
+    noShares: 0,
+    initializedAt: metadata.initializedAt,
+    initializedFrom: metadata.initializedFrom,
+    updatedAt: metadata.updatedAt,
+  });
+}
+
+function getTargetSignedShares(targetInventory) {
+  const target = ensureTargetHedgeInventoryShape(targetInventory);
+  return round((target.yesShares || 0) - (target.noShares || 0), 6) || 0;
+}
+
+function mapTradeToTargetDeltaShares(trade) {
+  const shares = Math.max(0, toOptionalNumber(trade && trade.amountShares) || 0);
+  const orderSide = normalizeLowerText(trade && trade.orderSide);
+  const tokenSide = normalizeLowerText(trade && trade.tokenSide);
+  if (!(shares > 0) || !orderSide || !tokenSide) return 0;
+  if (orderSide === 'buy' && tokenSide === 'yes') return shares;
+  if (orderSide === 'buy' && tokenSide === 'no') return -shares;
+  if (orderSide === 'sell' && tokenSide === 'yes') return -shares;
+  if (orderSide === 'sell' && tokenSide === 'no') return shares;
+  return 0;
+}
+
+function applyTradeToTargetInventory(currentTarget, trade, timestamp) {
+  const before = ensureTargetHedgeInventoryShape(currentTarget);
+  const deltaSharesSigned = mapTradeToTargetDeltaShares(trade);
+  const after = buildCanonicalTargetInventory(
+    getTargetSignedShares(before) + deltaSharesSigned,
+    {
+      initializedAt: before.initializedAt || toRuntimeTimestamp(timestamp),
+      initializedFrom: before.initializedFrom || 'flat',
+      updatedAt: toRuntimeTimestamp(timestamp),
+    },
+  );
+  return {
+    before,
+    after,
+    deltaSharesSigned,
+    yesTargetDeltaShares: round((after.yesShares || 0) - (before.yesShares || 0), 6) || 0,
+    noTargetDeltaShares: round((after.noShares || 0) - (before.noShares || 0), 6) || 0,
+  };
+}
+
+function initializeTargetInventory(state, inventorySnapshot, options = {}) {
+  const existing = ensureTargetHedgeInventoryShape(state && state.targetHedgeInventory);
+  if ((existing.yesShares || 0) > 0 || (existing.noShares || 0) > 0 || existing.initializedAt) {
+    return existing;
+  }
+  const initializedAt = toRuntimeTimestamp(options.now);
+  if (options.adoptExistingPositions && inventorySnapshot) {
+    return buildCanonicalTargetInventory(
+      (toOptionalNumber(inventorySnapshot.yesShares) || 0) - (toOptionalNumber(inventorySnapshot.noShares) || 0),
+      {
+        initializedAt,
+        initializedFrom: 'adopted-existing-positions',
+        updatedAt: initializedAt,
+      },
+    );
+  }
+  return ensureTargetHedgeInventoryShape({
+    initializedAt,
+    initializedFrom: 'flat',
+    updatedAt: initializedAt,
+  });
+}
+
+function getReferencePriceForSide(tokenSide, depth, sourceMarket, inventorySnapshot) {
+  const normalizedSide = normalizeLowerText(tokenSide);
+  if (!normalizedSide) return null;
+  const fromDepth = normalizedSide === 'yes'
+    ? depth && depth.yesDepth && toOptionalNumber(depth.yesDepth.referencePrice)
+    : depth && depth.noDepth && toOptionalNumber(depth.noDepth.referencePrice);
+  if (fromDepth !== null && fromDepth > 0) return fromDepth;
+  const fromInventory = normalizedSide === 'yes'
+    ? (
+        (toOptionalNumber(inventorySnapshot && inventorySnapshot.yesUsdc) !== null
+          && toOptionalNumber(inventorySnapshot && inventorySnapshot.yesShares) > 0)
+          ? round(toOptionalNumber(inventorySnapshot.yesUsdc) / toOptionalNumber(inventorySnapshot.yesShares), 6)
+          : null
+      )
+    : (
+        (toOptionalNumber(inventorySnapshot && inventorySnapshot.noUsdc) !== null
+          && toOptionalNumber(inventorySnapshot && inventorySnapshot.noShares) > 0)
+          ? round(toOptionalNumber(inventorySnapshot.noUsdc) / toOptionalNumber(inventorySnapshot.noShares), 6)
+          : null
+      );
+  if (fromInventory !== null && fromInventory > 0) return fromInventory;
+  const fromMarket = normalizedSide === 'yes'
+    ? toOptionalNumber(sourceMarket && sourceMarket.yesPct)
+    : toOptionalNumber(sourceMarket && sourceMarket.noPct);
+  return fromMarket !== null && fromMarket > 0 ? fromMarket : null;
+}
+
+function buildProjectedInventorySnapshot(baseSnapshot, timestamp) {
+  const current = baseSnapshot && typeof baseSnapshot === 'object' ? baseSnapshot : {};
+  return {
+    ...current,
+    yesShares: Math.max(0, toOptionalNumber(current.yesShares) || 0),
+    noShares: Math.max(0, toOptionalNumber(current.noShares) || 0),
+    adoptedAt: normalizeOptionalString(current.adoptedAt) || toRuntimeTimestamp(timestamp),
+    updatedAt: toRuntimeTimestamp(timestamp),
+    status: normalizeOptionalString(current.status) || 'observed',
+  };
+}
+
+function buildGapShares(targetInventory, inventorySnapshot) {
+  const target = ensureTargetHedgeInventoryShape(targetInventory);
+  const projected = buildProjectedInventorySnapshot(inventorySnapshot);
+  return {
+    targetYesShares: target.yesShares || 0,
+    targetNoShares: target.noShares || 0,
+    currentYesShares: projected.yesShares || 0,
+    currentNoShares: projected.noShares || 0,
+    excessYesToSell: round(Math.max(0, (projected.yesShares || 0) - (target.yesShares || 0)), 6) || 0,
+    excessNoToSell: round(Math.max(0, (projected.noShares || 0) - (target.noShares || 0)), 6) || 0,
+    deficitYesToBuy: round(Math.max(0, (target.yesShares || 0) - (projected.yesShares || 0)), 6) || 0,
+    deficitNoToBuy: round(Math.max(0, (target.noShares || 0) - (projected.noShares || 0)), 6) || 0,
+  };
+}
+
+function estimateExecutionCostUsdc(options = {}, action = {}) {
+  const explicit = toOptionalNumber(
+    options.estimatedExecutionFeeUsdc
+    || options.executionFeeUsdc
+    || process.env.PANDORA_HEDGE_ESTIMATED_EXECUTION_FEE_USDC,
+  );
+  if (explicit !== null && explicit >= 0) return explicit;
+  const percentBps = toOptionalNumber(options.estimatedExecutionFeeBps);
+  if (percentBps !== null && percentBps >= 0 && action.amountUsdc) {
+    return round((action.amountUsdc * percentBps) / 10_000, 6) || 0;
+  }
+  return 0;
+}
+
+function buildTradeForGapAction(action = {}) {
+  return {
+    orderSide: action.orderSide,
+    tokenSide: action.tokenSide,
+    direction: `${action.orderSide}-${action.tokenSide}`,
+    amountShares: action.amountShares,
+    amountUsdc: action.amountUsdc,
+    expectedRevenueUsdc: action.expectedRevenueUsdc,
+    marketAddress: action.marketAddress,
+    marketId: action.marketId,
+    source: action.source || 'mirror-hedge.inventory-gap',
+    feeUsdc: action.feeUsdc,
+    gasUsdc: action.gasUsdc,
+  };
+}
+
+function buildQueueEntryForAction(action, reasonCode, reason, residualShares, residualUsdc, metadata = {}) {
+  return {
+    id: `${action.queueKey}:${reasonCode}`,
+    status: 'queued',
+    marketPairId: action.marketPairId,
+    side: action.direction,
+    tokenSide: action.tokenSide,
+    orderSide: action.orderSide,
+    amountUsdc: roundUsdc(residualUsdc),
+    amountShares: round(toOptionalNumber(residualShares) || 0, 6) || 0,
+    targetUsdc: roundUsdc(action.amountUsdc),
+    targetShares: round(toOptionalNumber(action.amountShares) || 0, 6) || 0,
+    source: metadata.source || 'mirror-hedge.inventory-gap',
+    reason: normalizeOptionalString(reasonCode) || 'unspecified',
+    notes: normalizeOptionalString(reason),
+    createdAt: metadata.createdAt || new Date().toISOString(),
+    updatedAt: metadata.updatedAt || new Date().toISOString(),
+  };
+}
+
+function resolveActionTokenId(tokenSide, sourceMarket) {
+  return normalizeLowerText(tokenSide) === 'no'
+    ? sourceMarket && sourceMarket.noTokenId
+    : sourceMarket && sourceMarket.yesTokenId;
+}
+
+function deriveAllowedShares(action, fillPolicy, depthCheck) {
+  if (!action || !fillPolicy) return 0;
+  if (fillPolicy.status === 'execute') {
+    return round(Math.max(0, toOptionalNumber(action.amountShares) || 0), 6) || 0;
+  }
+  if (fillPolicy.status === 'partial') {
+    if (depthCheck && toOptionalNumber(depthCheck.fillableShares) !== null) {
+      return round(Math.max(0, Math.min(toOptionalNumber(action.amountShares) || 0, toOptionalNumber(depthCheck.fillableShares) || 0)), 6) || 0;
+    }
+    if (toOptionalNumber(action.referencePrice) !== null && toOptionalNumber(action.referencePrice) > 0) {
+      return round((toOptionalNumber(fillPolicy.allowedUsdc) || 0) / toOptionalNumber(action.referencePrice), 6) || 0;
+    }
+  }
+  return 0;
+}
+
+function updateProjectedInventorySnapshot(snapshot, action, executedShares, executedUsdc, timestamp) {
+  const projected = buildProjectedInventorySnapshot(snapshot, timestamp);
+  const shares = Math.max(0, toOptionalNumber(executedShares) || 0);
+  const usdc = Math.max(0, toOptionalNumber(executedUsdc) || 0);
+  if (normalizeLowerText(action && action.tokenSide) === 'yes') {
+    projected.yesShares = round(
+      normalizeLowerText(action && action.orderSide) === 'sell'
+        ? Math.max(0, (toOptionalNumber(projected.yesShares) || 0) - shares)
+        : (toOptionalNumber(projected.yesShares) || 0) + shares,
+      6,
+    ) || 0;
+    if (toOptionalNumber(projected.yesUsdc) !== null || usdc > 0) {
+      projected.yesUsdc = round(
+        normalizeLowerText(action && action.orderSide) === 'sell'
+          ? Math.max(0, (toOptionalNumber(projected.yesUsdc) || 0) - usdc)
+          : (toOptionalNumber(projected.yesUsdc) || 0) + usdc,
+        6,
+      ) || 0;
+    }
+  } else {
+    projected.noShares = round(
+      normalizeLowerText(action && action.orderSide) === 'sell'
+        ? Math.max(0, (toOptionalNumber(projected.noShares) || 0) - shares)
+        : (toOptionalNumber(projected.noShares) || 0) + shares,
+      6,
+    ) || 0;
+    if (toOptionalNumber(projected.noUsdc) !== null || usdc > 0) {
+      projected.noUsdc = round(
+        normalizeLowerText(action && action.orderSide) === 'sell'
+          ? Math.max(0, (toOptionalNumber(projected.noUsdc) || 0) - usdc)
+          : (toOptionalNumber(projected.noUsdc) || 0) + usdc,
+        6,
+      ) || 0;
+    }
+  }
+  if (toOptionalNumber(projected.yesUsdc) !== null || toOptionalNumber(projected.noUsdc) !== null) {
+    projected.netUsdc = round((toOptionalNumber(projected.yesUsdc) || 0) - (toOptionalNumber(projected.noUsdc) || 0), 6) || 0;
+  }
+  projected.updatedAt = toRuntimeTimestamp(timestamp);
+  return projected;
+}
+
 function normalizeTradeRecord(trade, pairContext, options = {}) {
   const amountUsdc = toUsdcAmount(trade && trade.collateralAmount);
   const amountShares = toTokenAmount(trade && (trade.tokenAmountOut || trade.tokenAmount));
@@ -787,7 +1062,9 @@ function buildDeferredQueueEntry(trade, reasonCode, reason, amountUsdc) {
     tokenSide: normalizeOptionalString(trade && trade.tokenSide),
     orderSide: normalizeOptionalString(trade && trade.orderSide),
     amountUsdc: roundUsdc(amountUsdc),
+    amountShares: round(toOptionalNumber(trade && trade.amountShares) || 0, 6) || 0,
     targetUsdc: roundUsdc(amountUsdc),
+    targetShares: round(toOptionalNumber(trade && trade.amountShares) || 0, 6) || 0,
     source: normalizeOptionalString(trade && trade.source) || 'mirror-hedge',
     reason: normalizeOptionalString(reasonCode) || 'unspecified',
     notes: normalizeOptionalString(reason),
@@ -812,7 +1089,7 @@ function incrementSkippedCounters(counters, trade, reasonCode) {
   return next;
 }
 
-function mapConfirmedTradeToLedgerEntry(trade, pairContext) {
+function mapConfirmedTradeToLedgerEntry(trade, pairContext, targetTransition = null) {
   const sign = normalizeLowerText(trade && trade.orderSide) === 'sell' ? -1 : 1;
   return {
     id: normalizeOptionalString(trade && trade.id) || normalizeOptionalString(trade && trade.cursor) || normalizeOptionalString(trade && trade.transactionHash),
@@ -825,12 +1102,18 @@ function mapConfirmedTradeToLedgerEntry(trade, pairContext) {
     tokenSide: normalizeOptionalString(trade && trade.tokenSide),
     orderSide: normalizeOptionalString(trade && trade.orderSide),
     amountUsdc: roundUsdc(trade && trade.amountUsdc),
+    amountShares: round(toOptionalNumber(trade && trade.amountShares) || 0, 6) || 0,
     deltaUsdc: round(sign * (toOptionalNumber(trade && trade.amountUsdc) || 0), 6),
     exposureUsdc: round(sign * (toOptionalNumber(trade && trade.amountUsdc) || 0), 6),
+    yesTargetDeltaShares: targetTransition ? targetTransition.yesTargetDeltaShares : 0,
+    noTargetDeltaShares: targetTransition ? targetTransition.noTargetDeltaShares : 0,
+    expectedRevenueUsdc: roundUsdc(trade && trade.expectedRevenueUsdc),
     cursor: normalizeOptionalString(trade && trade.cursor),
     transactionHash: normalizeOptionalString(trade && trade.transactionHash),
     source: normalizeOptionalString(trade && trade.source) || 'pandora.indexer',
     confirmedAt: normalizeOptionalString(trade && (trade.confirmedAt || trade.timestamp)),
+    targetBefore: targetTransition ? cloneJson(targetTransition.before) : null,
+    targetAfter: targetTransition ? cloneJson(targetTransition.after) : null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -869,6 +1152,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
   let skippedVolumeCounters = null;
   let lastSuccessfulHedge = null;
   let lastError = null;
+  let belowThresholdPendingUsdc = 0;
 
   const depth = pairContext.sourceMarket
     ? await fetchDepthForMarket(pairContext.sourceMarket, {
@@ -881,140 +1165,54 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         return null;
       })
     : null;
+  const inventoryResult = await fetchManagedInventory(options, pairContext.sourceMarket);
+  diagnostics.push(...inventoryResult.diagnostics);
+  const observedInventorySnapshot = inventoryResult.snapshot || state.managedPolymarketInventorySnapshot || null;
+  let projectedInventorySnapshot = buildProjectedInventorySnapshot(observedInventorySnapshot, new Date());
+  let targetHedgeInventory = initializeTargetInventory(state, observedInventorySnapshot, {
+    adoptExistingPositions: options.adoptExistingPositions,
+    now: new Date(),
+  });
+  let availableHedgeFeeBudgetUsdc = round(toOptionalNumber(state.availableHedgeFeeBudgetUsdc) || 0, 6) || 0;
 
   const confirmedResult = await fetchConfirmedTrades(options, pairContext, state);
   diagnostics.push(...confirmedResult.diagnostics);
   for (const trade of confirmedResult.trades) {
-    const classification = classifyMirrorHedgeExecution(trade, {
+    const internalWallet = shouldSkipInternalWallet(trade, {
       internalWallets: pairContext.internalWallets.wallets,
-      minHedgeUsdc: pairContext.minHedgeUsdc,
-      partialPolicy: pairContext.partialPolicy,
-      sellPolicy: pairContext.sellPolicy,
-      mutationVenue: 'polymarket',
-      liveMutation: Boolean(options.executeLive),
-      depth,
-      expectedRevenueUsdc: trade.expectedRevenueUsdc,
     });
+    let targetTransition = {
+      before: ensureTargetHedgeInventoryShape(targetHedgeInventory),
+      after: ensureTargetHedgeInventoryShape(targetHedgeInventory),
+      yesTargetDeltaShares: 0,
+      noTargetDeltaShares: 0,
+      deltaSharesSigned: 0,
+    };
 
-    if (classification.reasonCode === 'internal-wallet' || classification.reasonCode === 'min-hedge') {
-      skippedVolumeCounters = incrementSkippedCounters(skippedVolumeCounters, trade, classification.reasonCode);
-    }
-
-    const ledgerEntry = mapConfirmedTradeToLedgerEntry(trade, pairContext);
-    ledgerEntry.reason = classification.reasonCode;
-    confirmedExposureLedger.push(ledgerEntry);
-
-    const queueForSkip =
-      classification.status === 'skip'
-      && ['depth-unavailable', 'sell-policy-manual-only', 'sell-depth-insufficient', 'fee-vs-revenue'].includes(classification.reasonCode)
-        ? buildDeferredQueueEntry(trade, classification.reasonCode, classification.reason, trade.amountUsdc)
-        : null;
-
-    if (queueForSkip) {
-      deferredHedgeQueue.push(queueForSkip);
-    }
-    if (classification.queue && classification.queue.entry) {
-      deferredHedgeQueue.push(classification.queue.entry);
-    }
-
-    if (classification.status === 'execute' || classification.status === 'partial') {
-      const tokenId = normalizeLowerText(trade.tokenSide) === 'no'
-        ? pairContext.sourceMarket && pairContext.sourceMarket.noTokenId
-        : pairContext.sourceMarket && pairContext.sourceMarket.yesTokenId;
-      if (!tokenId) {
-        const queueEntry = buildDeferredQueueEntry(trade, 'missing-token-id', 'Polymarket token id is unavailable for this market.', classification.allowedUsdc);
-        deferredHedgeQueue.push(queueEntry);
-        auditEntries.push({
-          kind: 'queued',
-          tradeId: trade.id,
-          reasonCode: 'missing-token-id',
-          reason: queueEntry.notes,
-          amountUsdc: classification.allowedUsdc,
-        });
-        continue;
-      }
-
-      if (options.executeLive) {
-        const orderResult = await placeHedgeOrder({
-          privateKey: options.privateKey || process.env.POLYMARKET_PRIVATE_KEY || null,
-          funder: options.funder || process.env.POLYMARKET_FUNDER || null,
-          apiKey: options.apiKey || process.env.POLYMARKET_API_KEY || null,
-          apiSecret: options.apiSecret || process.env.POLYMARKET_API_SECRET || null,
-          apiPassphrase: options.apiPassphrase || process.env.POLYMARKET_API_PASSPHRASE || null,
-          host: options.polymarketHost,
-          timeoutMs: options.timeoutMs,
-          tokenId,
-          side: classification.trade.orderSide,
-          amountUsd: classification.allowedUsdc,
-          mockUrl: options.polymarketMockUrl,
-        });
-        if (orderResult && orderResult.ok) {
-          lastSuccessfulHedge = {
-            hedgeId: trade.id,
-            status: classification.status === 'partial' ? 'partial' : 'completed',
-            executedAt: new Date().toISOString(),
-            amountUsdc: classification.allowedUsdc,
-            tokenSide: trade.tokenSide,
-            orderSide: trade.orderSide,
-            txHash: orderResult.response && orderResult.response.hash ? orderResult.response.hash : null,
-            source: 'polymarket',
-            reason: classification.reasonCode,
-          };
-          auditEntries.push({
-            kind: classification.status === 'partial' ? 'partial-hedge-executed' : 'hedge-executed',
-            tradeId: trade.id,
-            amountUsdc: classification.allowedUsdc,
-            tokenSide: trade.tokenSide,
-            orderSide: trade.orderSide,
-          });
-        } else {
-          const queueEntry = buildDeferredQueueEntry(
-            trade,
-            'execution-failed',
-            orderResult && orderResult.error && orderResult.error.message
-              ? orderResult.error.message
-              : 'Polymarket execution failed.',
-            classification.allowedUsdc || trade.amountUsdc,
-          );
-          deferredHedgeQueue.push(queueEntry);
-          lastError = {
-            code: 'MIRROR_HEDGE_EXECUTION_FAILED',
-            message: queueEntry.notes,
-            at: new Date().toISOString(),
-            amountUsdc: classification.allowedUsdc || trade.amountUsdc,
-          };
-          auditEntries.push({
-            kind: 'queued',
-            tradeId: trade.id,
-            reasonCode: 'execution-failed',
-            reason: queueEntry.notes,
-            amountUsdc: classification.allowedUsdc || trade.amountUsdc,
-          });
-        }
-      } else {
-        auditEntries.push({
-          kind: classification.status === 'partial' ? 'partial-hedge-planned' : 'hedge-planned',
-          tradeId: trade.id,
-          amountUsdc: classification.allowedUsdc,
-          tokenSide: trade.tokenSide,
-          orderSide: trade.orderSide,
-        });
-      }
+    if (internalWallet.skipped) {
+      skippedVolumeCounters = incrementSkippedCounters(skippedVolumeCounters, trade, internalWallet.reasonCode);
     } else {
-      auditEntries.push({
-        kind: classification.reasonCode === 'internal-wallet'
-          ? 'ignored-internal-trade'
-          : classification.reasonCode === 'min-hedge'
-            ? 'small-trade-skip'
-            : queueForSkip
-              ? 'queued'
-              : 'skipped',
-        tradeId: trade.id,
-        reasonCode: classification.reasonCode,
-        reason: classification.reason,
-        amountUsdc: trade.amountUsdc,
-      });
+      targetTransition = applyTradeToTargetInventory(targetHedgeInventory, trade, new Date());
+      targetHedgeInventory = targetTransition.after;
+      availableHedgeFeeBudgetUsdc = round(
+        availableHedgeFeeBudgetUsdc + (toOptionalNumber(trade.expectedRevenueUsdc) || 0),
+        6,
+      ) || 0;
     }
+
+    const ledgerEntry = mapConfirmedTradeToLedgerEntry(trade, pairContext, targetTransition);
+    ledgerEntry.reason = internalWallet.skipped ? internalWallet.reasonCode : 'external-trade';
+    confirmedExposureLedger.push(ledgerEntry);
+    auditEntries.push({
+      kind: internalWallet.skipped ? 'ignored-internal-trade' : 'target-updated',
+      tradeId: trade.id,
+      reasonCode: internalWallet.skipped ? internalWallet.reasonCode : 'external-trade',
+      reason: internalWallet.skipped ? internalWallet.reason : 'Confirmed external trade updated the target hedge inventory.',
+      amountUsdc: trade.amountUsdc,
+      amountShares: trade.amountShares,
+      targetBefore: cloneJson(targetTransition.before),
+      targetAfter: cloneJson(targetTransition.after),
+    });
   }
 
   const pendingTrades = Array.isArray(options.pendingTrades) ? options.pendingTrades : [];
@@ -1087,6 +1285,327 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     }
   }
 
+  async function processInventoryGapAction(action, executionOptions = {}) {
+    const tradeLike = buildTradeForGapAction(action);
+    if (action.orderSide === 'sell' && pairContext.sellPolicy === 'manual-only') {
+      const queueEntry = buildQueueEntryForAction(
+        action,
+        'sell-policy-manual-only',
+        'Sell-side hedge reduction is configured for manual handling only.',
+        action.amountShares,
+        action.amountUsdc,
+      );
+      deferredHedgeQueue.push(queueEntry);
+      auditEntries.push({
+        kind: 'queued',
+        tradeId: action.queueKey,
+        reasonCode: 'sell-policy-manual-only',
+        reason: queueEntry.notes,
+        amountUsdc: action.amountUsdc,
+        amountShares: action.amountShares,
+      });
+      return { blockedBuys: true };
+    }
+
+    if (action.orderSide === 'buy' && action.amountUsdc < pairContext.minHedgeUsdc) {
+      belowThresholdPendingUsdc = round(belowThresholdPendingUsdc + action.amountUsdc, 6) || 0;
+      auditEntries.push({
+        kind: 'below-threshold-gap',
+        tradeId: action.queueKey,
+        reasonCode: 'below-threshold-gap',
+        reason: 'Net hedge adjustment is below the configured execution threshold.',
+        amountUsdc: action.amountUsdc,
+        amountShares: action.amountShares,
+      });
+      return { blockedBuys: false };
+    }
+
+    const depthCheck = evaluateDepthCheck(tradeLike, depth || {}, {
+      allowDepthlessExecution: false,
+      partialPolicy: pairContext.partialPolicy,
+    });
+    const sellPolicy = evaluateDepthCheckedSellPolicy(tradeLike, depthCheck, {
+      requireSellDepthProof: true,
+    });
+    if (!sellPolicy.passed) {
+      const queueEntry = buildQueueEntryForAction(
+        action,
+        sellPolicy.reasonCode,
+        sellPolicy.reason,
+        action.amountShares,
+        action.amountUsdc,
+      );
+      deferredHedgeQueue.push(queueEntry);
+      auditEntries.push({
+        kind: 'queued',
+        tradeId: action.queueKey,
+        reasonCode: sellPolicy.reasonCode,
+        reason: sellPolicy.reason,
+        amountUsdc: action.amountUsdc,
+        amountShares: action.amountShares,
+      });
+      return { blockedBuys: action.orderSide === 'sell' };
+    }
+
+    if (!depthCheck.depthKnown) {
+      const queueEntry = buildQueueEntryForAction(
+        action,
+        'depth-unavailable',
+        'Execution depth snapshot is unavailable and depthless execution is disabled.',
+        action.amountShares,
+        action.amountUsdc,
+      );
+      deferredHedgeQueue.push(queueEntry);
+      auditEntries.push({
+        kind: 'queued',
+        tradeId: action.queueKey,
+        reasonCode: 'depth-unavailable',
+        reason: queueEntry.notes,
+        amountUsdc: action.amountUsdc,
+        amountShares: action.amountShares,
+      });
+      return { blockedBuys: action.orderSide === 'sell' };
+    }
+
+    const estimatedExecutionFeeUsdc = estimateExecutionCostUsdc(options, action);
+    if (action.orderSide === 'buy' && estimatedExecutionFeeUsdc > availableHedgeFeeBudgetUsdc) {
+      const queueEntry = buildQueueEntryForAction(
+        action,
+        'fee-budget-exhausted',
+        'Estimated hedge execution fee exceeds the available accumulated fee budget.',
+        action.amountShares,
+        action.amountUsdc,
+      );
+      deferredHedgeQueue.push(queueEntry);
+      auditEntries.push({
+        kind: 'queued',
+        tradeId: action.queueKey,
+        reasonCode: 'fee-budget-exhausted',
+        reason: queueEntry.notes,
+        amountUsdc: action.amountUsdc,
+        amountShares: action.amountShares,
+      });
+      return { blockedBuys: false };
+    }
+
+    const fillPolicy = evaluatePartialVsSkipPolicy(tradeLike, depthCheck, {
+      partialPolicy: pairContext.partialPolicy,
+      allowDepthlessExecution: false,
+    });
+    if (fillPolicy.status === 'skip') {
+      const queueEntry = buildQueueEntryForAction(
+        action,
+        fillPolicy.reasonCode,
+        fillPolicy.reason,
+        action.amountShares,
+        action.amountUsdc,
+      );
+      deferredHedgeQueue.push(queueEntry);
+      auditEntries.push({
+        kind: 'queued',
+        tradeId: action.queueKey,
+        reasonCode: fillPolicy.reasonCode,
+        reason: queueEntry.notes,
+        amountUsdc: action.amountUsdc,
+        amountShares: action.amountShares,
+      });
+      return { blockedBuys: action.orderSide === 'sell' };
+    }
+
+    const allowedShares = deriveAllowedShares(action, fillPolicy, depthCheck);
+    const allowedUsdc = round(toOptionalNumber(fillPolicy.allowedUsdc) || 0, 6) || 0;
+    const residualShares = round(Math.max(0, (toOptionalNumber(action.amountShares) || 0) - allowedShares), 6) || 0;
+    const residualUsdc = round(Math.max(0, (toOptionalNumber(action.amountUsdc) || 0) - allowedUsdc), 6) || 0;
+    if (residualShares > 0 || residualUsdc > 0) {
+      deferredHedgeQueue.push(buildQueueEntryForAction(
+        action,
+        'residual-exposure',
+        'Residual hedge exposure remains queued after a partial fill.',
+        residualShares,
+        residualUsdc,
+      ));
+    }
+
+    const tokenId = resolveActionTokenId(action.tokenSide, pairContext.sourceMarket);
+    if (!tokenId) {
+      const queueEntry = buildQueueEntryForAction(
+        action,
+        'missing-token-id',
+        'Polymarket token id is unavailable for this market.',
+        action.amountShares,
+        action.amountUsdc,
+      );
+      deferredHedgeQueue.push(queueEntry);
+      auditEntries.push({
+        kind: 'queued',
+        tradeId: action.queueKey,
+        reasonCode: 'missing-token-id',
+        reason: queueEntry.notes,
+        amountUsdc: action.amountUsdc,
+        amountShares: action.amountShares,
+      });
+      return { blockedBuys: action.orderSide === 'sell' };
+    }
+
+    if (options.executeLive) {
+      const orderResult = await placeHedgeOrder({
+        privateKey: options.privateKey || process.env.POLYMARKET_PRIVATE_KEY || null,
+        funder: options.funder || process.env.POLYMARKET_FUNDER || null,
+        apiKey: options.apiKey || process.env.POLYMARKET_API_KEY || null,
+        apiSecret: options.apiSecret || process.env.POLYMARKET_API_SECRET || null,
+        apiPassphrase: options.apiPassphrase || process.env.POLYMARKET_API_PASSPHRASE || null,
+        host: options.polymarketHost,
+        timeoutMs: options.timeoutMs,
+        tokenId,
+        side: action.orderSide,
+        amountUsd: allowedUsdc,
+        mockUrl: options.polymarketMockUrl,
+      });
+      if (!(orderResult && orderResult.ok)) {
+        const queueEntry = buildQueueEntryForAction(
+          action,
+          'execution-failed',
+          orderResult && orderResult.error && orderResult.error.message
+            ? orderResult.error.message
+            : 'Polymarket execution failed.',
+          action.amountShares,
+          action.amountUsdc,
+        );
+        deferredHedgeQueue.push(queueEntry);
+        lastError = {
+          code: 'MIRROR_HEDGE_EXECUTION_FAILED',
+          message: queueEntry.notes,
+          at: new Date().toISOString(),
+          amountUsdc: action.amountUsdc,
+        };
+        auditEntries.push({
+          kind: 'queued',
+          tradeId: action.queueKey,
+          reasonCode: 'execution-failed',
+          reason: queueEntry.notes,
+          amountUsdc: action.amountUsdc,
+          amountShares: action.amountShares,
+        });
+        return { blockedBuys: action.orderSide === 'sell' };
+      }
+      lastSuccessfulHedge = {
+        hedgeId: action.queueKey,
+        status: fillPolicy.status === 'partial' ? 'partial' : 'completed',
+        executedAt: new Date().toISOString(),
+        amountUsdc: allowedUsdc,
+        tokenSide: action.tokenSide,
+        orderSide: action.orderSide,
+        txHash: orderResult.response && orderResult.response.hash ? orderResult.response.hash : null,
+        source: 'polymarket',
+        reason: fillPolicy.reasonCode || 'inventory-gap',
+      };
+    }
+
+    projectedInventorySnapshot = updateProjectedInventorySnapshot(
+      projectedInventorySnapshot,
+      action,
+      allowedShares,
+      allowedUsdc,
+      new Date(),
+    );
+    if (action.orderSide === 'buy' && options.executeLive) {
+      availableHedgeFeeBudgetUsdc = round(Math.max(0, availableHedgeFeeBudgetUsdc - estimatedExecutionFeeUsdc), 6) || 0;
+    }
+    auditEntries.push({
+      kind: options.executeLive
+        ? (fillPolicy.status === 'partial' ? 'partial-hedge-executed' : 'hedge-executed')
+        : (fillPolicy.status === 'partial' ? 'partial-hedge-planned' : 'hedge-planned'),
+      tradeId: action.queueKey,
+      reasonCode: fillPolicy.reasonCode || 'inventory-gap',
+      amountUsdc: allowedUsdc,
+      amountShares: allowedShares,
+      tokenSide: action.tokenSide,
+      orderSide: action.orderSide,
+    });
+    return {
+      blockedBuys: action.orderSide === 'sell' && (residualShares > 0 || residualUsdc > 0),
+    };
+  }
+
+  let gap = buildGapShares(targetHedgeInventory, projectedInventorySnapshot);
+  const sellActions = [];
+  if (gap.excessYesToSell > 0) {
+    const referencePrice = getReferencePriceForSide('yes', depth, pairContext.sourceMarket, observedInventorySnapshot);
+    sellActions.push({
+      queueKey: `${pairContext.marketPairIdentity.marketPairId || pairContext.marketPairIdentity.pandoraMarketAddress}:sell-yes`,
+      marketPairId: pairContext.marketPairIdentity.marketPairId,
+      marketAddress: pairContext.marketPairIdentity.pandoraMarketAddress,
+      marketId: pairContext.marketPairIdentity.polymarketMarketId,
+      tokenSide: 'yes',
+      orderSide: 'sell',
+      direction: 'sell-yes',
+      amountShares: gap.excessYesToSell,
+      amountUsdc: round(gap.excessYesToSell * (referencePrice || 0), 6) || 0,
+      referencePrice,
+    });
+  }
+  if (gap.excessNoToSell > 0) {
+    const referencePrice = getReferencePriceForSide('no', depth, pairContext.sourceMarket, observedInventorySnapshot);
+    sellActions.push({
+      queueKey: `${pairContext.marketPairIdentity.marketPairId || pairContext.marketPairIdentity.pandoraMarketAddress}:sell-no`,
+      marketPairId: pairContext.marketPairIdentity.marketPairId,
+      marketAddress: pairContext.marketPairIdentity.pandoraMarketAddress,
+      marketId: pairContext.marketPairIdentity.polymarketMarketId,
+      tokenSide: 'no',
+      orderSide: 'sell',
+      direction: 'sell-no',
+      amountShares: gap.excessNoToSell,
+      amountUsdc: round(gap.excessNoToSell * (referencePrice || 0), 6) || 0,
+      referencePrice,
+    });
+  }
+
+  let blockFurtherBuys = false;
+  for (const action of sellActions) {
+    const result = await processInventoryGapAction(action, { phase: 'sell' });
+    if (result && result.blockedBuys) {
+      blockFurtherBuys = true;
+    }
+  }
+
+  if (!blockFurtherBuys) {
+    gap = buildGapShares(targetHedgeInventory, projectedInventorySnapshot);
+    const buyActions = [];
+    if (gap.deficitYesToBuy > 0) {
+      const referencePrice = getReferencePriceForSide('yes', depth, pairContext.sourceMarket, observedInventorySnapshot);
+      buyActions.push({
+        queueKey: `${pairContext.marketPairIdentity.marketPairId || pairContext.marketPairIdentity.pandoraMarketAddress}:buy-yes`,
+        marketPairId: pairContext.marketPairIdentity.marketPairId,
+        marketAddress: pairContext.marketPairIdentity.pandoraMarketAddress,
+        marketId: pairContext.marketPairIdentity.polymarketMarketId,
+        tokenSide: 'yes',
+        orderSide: 'buy',
+        direction: 'buy-yes',
+        amountShares: gap.deficitYesToBuy,
+        amountUsdc: round(gap.deficitYesToBuy * (referencePrice || 0), 6) || 0,
+        referencePrice,
+      });
+    }
+    if (gap.deficitNoToBuy > 0) {
+      const referencePrice = getReferencePriceForSide('no', depth, pairContext.sourceMarket, observedInventorySnapshot);
+      buyActions.push({
+        queueKey: `${pairContext.marketPairIdentity.marketPairId || pairContext.marketPairIdentity.pandoraMarketAddress}:buy-no`,
+        marketPairId: pairContext.marketPairIdentity.marketPairId,
+        marketAddress: pairContext.marketPairIdentity.pandoraMarketAddress,
+        marketId: pairContext.marketPairIdentity.polymarketMarketId,
+        tokenSide: 'no',
+        orderSide: 'buy',
+        direction: 'buy-no',
+        amountShares: gap.deficitNoToBuy,
+        amountUsdc: round(gap.deficitNoToBuy * (referencePrice || 0), 6) || 0,
+        referencePrice,
+      });
+    }
+    for (const action of buyActions) {
+      await processInventoryGapAction(action, { phase: 'buy' });
+    }
+  }
+
   const allProcessedTrades = confirmedResult.trades;
   const latestTrade = allProcessedTrades.length ? allProcessedTrades[allProcessedTrades.length - 1] : null;
   return {
@@ -1095,6 +1614,10 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     confirmedExposureLedger,
     pendingMempoolOverlays,
     deferredHedgeQueue,
+    managedPolymarketInventorySnapshot: observedInventorySnapshot,
+    targetHedgeInventory,
+    availableHedgeFeeBudgetUsdc,
+    belowThresholdPendingUsdc,
     skippedVolumeCounters,
     lastSuccessfulHedge,
     lastError,
@@ -1142,12 +1665,19 @@ async function prepareHedgeContext(options = {}) {
     whitelistFingerprint: internalWallets.fingerprint,
   });
   const inventoryResult = await fetchManagedInventory(options, pair.sourceMarket);
+  const initializedTargetInventory = initializeTargetInventory(state, inventoryResult.snapshot || state.managedPolymarketInventorySnapshot, {
+    adoptExistingPositions: options.adoptExistingPositions,
+    now: options.now,
+  });
   const plan = planHedgeRuntime({
     state,
     now: options.now,
     marketPairIdentity,
     whitelistFingerprint: internalWallets.fingerprint,
     managedPolymarketInventorySnapshot: inventoryResult.snapshot || state.managedPolymarketInventorySnapshot,
+    targetHedgeInventory: initializedTargetInventory,
+    availableHedgeFeeBudgetUsdc: state.availableHedgeFeeBudgetUsdc,
+    belowThresholdPendingUsdc: state.belowThresholdPendingUsdc,
   });
   return {
     stateFile: loaded.filePath,
@@ -1159,6 +1689,7 @@ async function prepareHedgeContext(options = {}) {
     sourceMarket: pair.sourceMarket,
     internalWallets,
     inventorySnapshot: inventoryResult.snapshot,
+    targetHedgeInventory: initializedTargetInventory,
     inventoryDiagnostics: inventoryResult.diagnostics,
     plan,
     minHedgeUsdc: normalizeMinHedgeUsdc(options),
@@ -1261,6 +1792,7 @@ function buildBundleConfig(context, options = {}) {
       minHedgeUsdc: context.minHedgeUsdc,
       partialPolicy: context.partialPolicy,
       sellPolicy: context.sellPolicy,
+      adoptExistingPositions: Boolean(options.adoptExistingPositions),
     },
     supportedHosts: ['digitalocean-droplet', 'generic-vps'],
     unsupportedHosts: ['cloudflare-workers'],
@@ -1268,6 +1800,7 @@ function buildBundleConfig(context, options = {}) {
 }
 
 function buildBundleSystemd(context, options = {}) {
+  const adoptExistingPositionsArg = options.adoptExistingPositions ? ' --adopt-existing-positions' : '';
   const cwd = path.resolve(options.bundleRuntimeCwd || process.cwd());
   return [
     '[Unit]',
@@ -1278,7 +1811,7 @@ function buildBundleSystemd(context, options = {}) {
     'Type=simple',
     `WorkingDirectory=${cwd}`,
     `EnvironmentFile=%h/.pandora/mirror-hedge/${context.strategyHash}.env`,
-    `ExecStart=${process.execPath} ${resolveCliPath(options)} mirror hedge run --state-file ${context.stateFile} --strategy-hash ${context.strategyHash} ${options.executeLive ? '--execute-live' : '--paper'} --internal-wallets-file ${context.internalWallets.filePath} ${context.marketPairIdentity.pandoraMarketAddress ? `--pandora-market-address ${context.marketPairIdentity.pandoraMarketAddress}` : ''} ${context.marketPairIdentity.polymarketMarketId ? `--polymarket-market-id ${context.marketPairIdentity.polymarketMarketId}` : `--polymarket-slug ${context.marketPairIdentity.polymarketSlug}`}`.trim(),
+    `ExecStart=${process.execPath} ${resolveCliPath(options)} mirror hedge run --state-file ${context.stateFile} --strategy-hash ${context.strategyHash} ${options.executeLive ? '--execute-live' : '--paper'} --internal-wallets-file ${context.internalWallets.filePath}${adoptExistingPositionsArg} ${context.marketPairIdentity.pandoraMarketAddress ? `--pandora-market-address ${context.marketPairIdentity.pandoraMarketAddress}` : ''} ${context.marketPairIdentity.polymarketMarketId ? `--polymarket-market-id ${context.marketPairIdentity.polymarketMarketId}` : `--polymarket-slug ${context.marketPairIdentity.polymarketSlug}`}`.trim(),
     'Restart=always',
     'RestartSec=5',
     '',
@@ -1289,6 +1822,7 @@ function buildBundleSystemd(context, options = {}) {
 }
 
 function buildBundleLaunchScript(context, options = {}) {
+  const adoptExistingPositionsArg = options.adoptExistingPositions ? ' --adopt-existing-positions' : '';
   return [
     '#!/usr/bin/env bash',
     'set -euo pipefail',
@@ -1300,7 +1834,7 @@ function buildBundleLaunchScript(context, options = {}) {
     '  set +a',
     'fi',
     `export PANDORA_INTERNAL_WALLETS_FILE="${context.internalWallets.filePath}"`,
-    `exec ${process.execPath} "${resolveCliPath(options)}" mirror hedge run --state-file "${context.stateFile}" --strategy-hash "${context.strategyHash}" ${options.executeLive ? '--execute-live' : '--paper'} --internal-wallets-file "${context.internalWallets.filePath}" --pandora-market-address "${context.marketPairIdentity.pandoraMarketAddress}" ${context.marketPairIdentity.polymarketMarketId ? `--polymarket-market-id "${context.marketPairIdentity.polymarketMarketId}"` : `--polymarket-slug "${context.marketPairIdentity.polymarketSlug}"`}`,
+    `exec ${process.execPath} "${resolveCliPath(options)}" mirror hedge run --state-file "${context.stateFile}" --strategy-hash "${context.strategyHash}" ${options.executeLive ? '--execute-live' : '--paper'} --internal-wallets-file "${context.internalWallets.filePath}"${adoptExistingPositionsArg} --pandora-market-address "${context.marketPairIdentity.pandoraMarketAddress}" ${context.marketPairIdentity.polymarketMarketId ? `--polymarket-market-id "${context.marketPairIdentity.polymarketMarketId}"` : `--polymarket-slug "${context.marketPairIdentity.polymarketSlug}"`}`,
     '',
   ].join('\n');
 }
@@ -1359,6 +1893,7 @@ function buildMirrorHedgeDaemonCliArgs(options = {}, context = {}) {
     args.push('--strategy-hash', options.strategyHash || context.strategyHash);
   }
   if (options.killSwitchFile) args.push('--kill-switch-file', options.killSwitchFile);
+  if (options.adoptExistingPositions) args.push('--adopt-existing-positions');
   if (context.marketPairIdentity && context.marketPairIdentity.pandoraMarketAddress) {
     args.push('--pandora-market-address', context.marketPairIdentity.pandoraMarketAddress);
   }
@@ -1442,6 +1977,10 @@ async function runMirrorHedge(options = {}) {
     confirmedExposureLedger: [],
     pendingMempoolOverlays: [],
     deferredHedgeQueue: [],
+    managedPolymarketInventorySnapshot: null,
+    targetHedgeInventory: ensureTargetHedgeInventoryShape({}),
+    availableHedgeFeeBudgetUsdc: 0,
+    belowThresholdPendingUsdc: 0,
     skippedVolumeCounters: { totalUsdc: 0, yesUsdc: 0, noUsdc: 0, count: 0, byReason: {}, bySide: {} },
     lastSuccessfulHedge: null,
     lastError: null,
@@ -1492,7 +2031,10 @@ async function runMirrorHedge(options = {}) {
           confirmedExposureLedger: observation.confirmedExposureLedger,
           pendingMempoolOverlays: observation.pendingMempoolOverlays,
           deferredHedgeQueue: observation.deferredHedgeQueue,
-          managedPolymarketInventorySnapshot: state.managedPolymarketInventorySnapshot || context.inventorySnapshot,
+          managedPolymarketInventorySnapshot: observation.managedPolymarketInventorySnapshot,
+          targetHedgeInventory: observation.targetHedgeInventory,
+          availableHedgeFeeBudgetUsdc: observation.availableHedgeFeeBudgetUsdc,
+          belowThresholdPendingUsdc: observation.belowThresholdPendingUsdc,
           skippedVolumeCounters: observation.skippedVolumeCounters,
           lastSuccessfulHedge: observation.lastSuccessfulHedge,
           lastError: observation.lastError,
@@ -1505,7 +2047,7 @@ async function runMirrorHedge(options = {}) {
         state = runtime.state;
         context.state = state;
         context.plan = runtime.plan;
-        context.inventorySnapshot = state.managedPolymarketInventorySnapshot || context.inventorySnapshot;
+        context.inventorySnapshot = observation.managedPolymarketInventorySnapshot || state.managedPolymarketInventorySnapshot || context.inventorySnapshot;
         totalActionCount += Array.isArray(observation.auditEntries) ? observation.auditEntries.length : 0;
       } catch (err) {
         const errorAt = new Date();
@@ -1590,9 +2132,23 @@ async function runMirrorHedge(options = {}) {
     exitAt: state.exitAt || null,
   };
   payload.summary = {
-    confirmedExposureCount: Array.isArray(state.confirmedExposureLedger) ? state.confirmedExposureLedger.length : latestObservation.confirmedExposureLedger.length,
+    confirmedExposureCount: latestPlan && latestPlan.summary ? latestPlan.summary.confirmedExposureCount : (
+      Array.isArray(state.confirmedExposureLedger) ? state.confirmedExposureLedger.length : latestObservation.confirmedExposureLedger.length
+    ),
     pendingOverlayCount: Array.isArray(state.pendingMempoolOverlays) ? state.pendingMempoolOverlays.length : latestObservation.pendingMempoolOverlays.length,
     deferredHedgeCount: Array.isArray(state.deferredHedgeQueue) ? state.deferredHedgeQueue.length : latestObservation.deferredHedgeQueue.length,
+    targetYesShares: latestPlan && latestPlan.summary ? latestPlan.summary.targetYesShares : 0,
+    targetNoShares: latestPlan && latestPlan.summary ? latestPlan.summary.targetNoShares : 0,
+    currentYesShares: latestPlan && latestPlan.summary ? latestPlan.summary.currentYesShares : 0,
+    currentNoShares: latestPlan && latestPlan.summary ? latestPlan.summary.currentNoShares : 0,
+    excessYesToSell: latestPlan && latestPlan.summary ? latestPlan.summary.excessYesToSell : 0,
+    excessNoToSell: latestPlan && latestPlan.summary ? latestPlan.summary.excessNoToSell : 0,
+    deficitYesToBuy: latestPlan && latestPlan.summary ? latestPlan.summary.deficitYesToBuy : 0,
+    deficitNoToBuy: latestPlan && latestPlan.summary ? latestPlan.summary.deficitNoToBuy : 0,
+    netTargetSide: latestPlan && latestPlan.summary ? latestPlan.summary.netTargetSide : null,
+    netTargetShares: latestPlan && latestPlan.summary ? latestPlan.summary.netTargetShares : 0,
+    availableHedgeFeeBudgetUsdc: latestPlan && latestPlan.summary ? latestPlan.summary.availableHedgeFeeBudgetUsdc : 0,
+    belowThresholdPendingUsdc: latestPlan && latestPlan.summary ? latestPlan.summary.belowThresholdPendingUsdc : 0,
   };
   payload.diagnostics = mergeDiagnostics(payload.diagnostics, diagnostics, latestObservation.diagnostics);
   return payload;

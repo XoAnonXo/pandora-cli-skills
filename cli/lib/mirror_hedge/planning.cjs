@@ -8,6 +8,7 @@ const {
   ensureMarketPairIdentityShape,
   ensurePendingMempoolOverlayShape,
   ensureSkippedVolumeCountersShape,
+  ensureTargetHedgeInventoryShape,
   ensureOutcomeShape,
 } = require('../mirror_hedge_state_store.cjs');
 
@@ -54,6 +55,10 @@ function sumField(entries, fieldName) {
       return total + (numeric === null ? 0 : numeric);
     }, 0),
   ) || 0;
+}
+
+function isHedgeDrivingConfirmedExposure(entry) {
+  return normalizeOptionalString(entry && entry.reason) !== 'internal-wallet';
 }
 
 function summarizeReasons(collection) {
@@ -137,6 +142,7 @@ function planHedgeRuntime(options = {}) {
   const confirmedExposureLedger = asArray(pickArray(options.confirmedExposureLedger, state.confirmedExposureLedger))
     .map(ensureConfirmedExposureLedgerEntryShape)
     .filter((entry) => Boolean(entry.id || entry.cursor || entry.transactionHash));
+  const hedgeDrivingConfirmedExposureLedger = confirmedExposureLedger.filter(isHedgeDrivingConfirmedExposure);
   const pendingMempoolOverlays = asArray(pickArray(options.pendingMempoolOverlays, state.pendingMempoolOverlays))
     .map(ensurePendingMempoolOverlayShape)
     .filter((entry) => Boolean(entry.txHash || entry.cursor || entry.transactionHash));
@@ -147,6 +153,9 @@ function planHedgeRuntime(options = {}) {
   const managedPolymarketInventorySnapshot = managedInventorySource !== undefined && managedInventorySource !== null
     ? ensureManagedInventorySnapshotShape(managedInventorySource)
     : null;
+  const targetHedgeInventory = ensureTargetHedgeInventoryShape(
+    pickArray(options.targetHedgeInventory, state.targetHedgeInventory),
+  );
   const skippedVolumeCounters = mergeCounters(
     state.skippedVolumeCounters,
     pickArray(options.skippedVolumeCounters, {}),
@@ -156,8 +165,8 @@ function planHedgeRuntime(options = {}) {
     whitelistFingerprint,
   });
 
-  const confirmedExposureUsdc = round(sumField(confirmedExposureLedger, 'amountUsdc')) || 0;
-  const confirmedDeltaUsdc = round(sumField(confirmedExposureLedger, 'deltaUsdc')) || 0;
+  const confirmedExposureUsdc = round(sumField(hedgeDrivingConfirmedExposureLedger, 'amountUsdc')) || 0;
+  const confirmedDeltaUsdc = round(sumField(hedgeDrivingConfirmedExposureLedger, 'deltaUsdc')) || 0;
   const pendingOverlayUsdc = round(sumField(pendingMempoolOverlays, 'amountUsdc')) || 0;
   const pendingDeltaUsdc = round(sumField(pendingMempoolOverlays, 'expectedHedgeDeltaUsdc')) || 0;
   const deferredUsdc = round(sumField(deferredHedgeQueue, 'amountUsdc')) || 0;
@@ -165,6 +174,20 @@ function planHedgeRuntime(options = {}) {
     managedPolymarketInventorySnapshot && Number.isFinite(Number(managedPolymarketInventorySnapshot.netUsdc))
       ? Number(managedPolymarketInventorySnapshot.netUsdc)
       : null;
+  const currentYesShares =
+    managedPolymarketInventorySnapshot && Number.isFinite(Number(managedPolymarketInventorySnapshot.yesShares))
+      ? Number(managedPolymarketInventorySnapshot.yesShares)
+      : 0;
+  const currentNoShares =
+    managedPolymarketInventorySnapshot && Number.isFinite(Number(managedPolymarketInventorySnapshot.noShares))
+      ? Number(managedPolymarketInventorySnapshot.noShares)
+      : 0;
+  const targetYesShares = Number(targetHedgeInventory.yesShares || 0);
+  const targetNoShares = Number(targetHedgeInventory.noShares || 0);
+  const excessYesToSell = round(Math.max(0, currentYesShares - targetYesShares)) || 0;
+  const excessNoToSell = round(Math.max(0, currentNoShares - targetNoShares)) || 0;
+  const deficitYesToBuy = round(Math.max(0, targetYesShares - currentYesShares)) || 0;
+  const deficitNoToBuy = round(Math.max(0, targetNoShares - currentNoShares)) || 0;
   const readyMissing = [];
   if (!marketPairIdentity.marketPairId && !marketPairIdentity.pandoraMarketAddress && !marketPairIdentity.polymarketMarketId && !marketPairIdentity.polymarketSlug) {
     readyMissing.push('market-pair-identity');
@@ -174,12 +197,6 @@ function planHedgeRuntime(options = {}) {
   }
   if (!lastProcessedBlockCursor && !lastProcessedLogCursor) {
     readyMissing.push('cursor');
-  }
-  if (!managedPolymarketInventorySnapshot) {
-    readyMissing.push('inventory-snapshot');
-  }
-  if (!confirmedExposureLedger.length) {
-    readyMissing.push('confirmed-ledger');
   }
 
   const recommendedActions = [];
@@ -196,7 +213,7 @@ function planHedgeRuntime(options = {}) {
     marketPairFingerprint: marketPairIdentity.fingerprint,
     whitelistFingerprint,
     runtimeStatus: normalizeOptionalString(state.runtimeStatus) || 'idle',
-    confirmedExposureCount: confirmedExposureLedger.length,
+    confirmedExposureCount: hedgeDrivingConfirmedExposureLedger.length,
     confirmedExposureUsdc,
     confirmedDeltaUsdc,
     pendingOverlayCount: pendingMempoolOverlays.length,
@@ -205,6 +222,22 @@ function planHedgeRuntime(options = {}) {
     deferredHedgeCount: deferredHedgeQueue.length,
     deferredHedgeUsdc: deferredUsdc,
     inventoryNetUsdc,
+    targetYesShares,
+    targetNoShares,
+    currentYesShares,
+    currentNoShares,
+    excessYesToSell,
+    excessNoToSell,
+    deficitYesToBuy,
+    deficitNoToBuy,
+    netTargetSide: targetHedgeInventory.netSide,
+    netTargetShares: targetHedgeInventory.netShares,
+    availableHedgeFeeBudgetUsdc: toFiniteNumberOrNull(
+      pickArray(options.availableHedgeFeeBudgetUsdc, state.availableHedgeFeeBudgetUsdc),
+    ) || 0,
+    belowThresholdPendingUsdc: toFiniteNumberOrNull(
+      pickArray(options.belowThresholdPendingUsdc, state.belowThresholdPendingUsdc),
+    ) || 0,
     skippedVolumeUsdc: skippedVolumeCounters.totalUsdc,
     skippedVolumeCount: skippedVolumeCounters.count,
     ready: readyMissing.length === 0,
@@ -223,6 +256,7 @@ function planHedgeRuntime(options = {}) {
     pendingMempoolOverlays,
     deferredHedgeQueue,
     managedPolymarketInventorySnapshot,
+    targetHedgeInventory,
     skippedVolumeCounters,
     summary,
     recommendedActions,
@@ -315,6 +349,20 @@ function applyHedgeObservation(state, observation = {}, now = new Date()) {
       : null;
   }
 
+  if (observation.targetHedgeInventory !== undefined) {
+    target.targetHedgeInventory = observation.targetHedgeInventory
+      ? ensureTargetHedgeInventoryShape(observation.targetHedgeInventory)
+      : ensureTargetHedgeInventoryShape({});
+  }
+
+  if (observation.availableHedgeFeeBudgetUsdc !== undefined) {
+    target.availableHedgeFeeBudgetUsdc = toFiniteNumberOrNull(observation.availableHedgeFeeBudgetUsdc) || 0;
+  }
+
+  if (observation.belowThresholdPendingUsdc !== undefined) {
+    target.belowThresholdPendingUsdc = toFiniteNumberOrNull(observation.belowThresholdPendingUsdc) || 0;
+  }
+
   if (observation.skippedVolumeCounters) {
     target.skippedVolumeCounters = mergeCounters(target.skippedVolumeCounters, observation.skippedVolumeCounters);
   }
@@ -372,6 +420,9 @@ function buildHedgePlanContext(state, options = {}) {
     pendingMempoolOverlays: options.pendingMempoolOverlays,
     deferredHedgeQueue: options.deferredHedgeQueue,
     managedPolymarketInventorySnapshot: options.managedPolymarketInventorySnapshot,
+    targetHedgeInventory: options.targetHedgeInventory,
+    availableHedgeFeeBudgetUsdc: options.availableHedgeFeeBudgetUsdc,
+    belowThresholdPendingUsdc: options.belowThresholdPendingUsdc,
     skippedVolumeCounters: options.skippedVolumeCounters,
   });
 }

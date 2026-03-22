@@ -7,6 +7,9 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
 ## `mirror hedge` vs `mirror sync`
 - `mirror hedge` is the packaged LP daemon surface for an existing mirror pair.
 - Use `mirror hedge` when you want a bundle-oriented long-running daemon deployment target.
+- `mirror hedge` now manages a net Polymarket inventory target for the market instead of hedging each external Pandora trade independently.
+- `--min-hedge-usdc` is the execution threshold for the current target-vs-actual hedge gap; small external trades still update target exposure and accumulate.
+- `--adopt-existing-positions` treats observed Polymarket inventory as the starting live hedge baseline and then trades only the delta to target.
 - `mirror sync` remains the lower-level local/manual loop, one-shot execution surface, and troubleshooting path.
 - Bundle artifacts support DigitalOcean droplets and generic VPS targets today.
 - Cloudflare Workers are not supported in v1 because the hedge daemon expects a long-running stateful runtime with local process/file lifecycle.

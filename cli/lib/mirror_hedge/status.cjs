@@ -1,5 +1,10 @@
 const { round } = require('../shared/utils.cjs');
-const { ensureMarketPairIdentityShape, ensureManagedInventorySnapshotShape, ensureSkippedVolumeCountersShape } = require('../mirror_hedge_state_store.cjs');
+const {
+  ensureMarketPairIdentityShape,
+  ensureManagedInventorySnapshotShape,
+  ensureSkippedVolumeCountersShape,
+  ensureTargetHedgeInventoryShape,
+} = require('../mirror_hedge_state_store.cjs');
 
 const MIRROR_HEDGE_STATUS_SCHEMA_VERSION = '1.0.0';
 
@@ -23,6 +28,10 @@ function sumField(entries, fieldName) {
   ) || 0;
 }
 
+function isHedgeDrivingConfirmedExposure(entry) {
+  return normalizeOptionalString(entry && entry.reason) !== 'internal-wallet';
+}
+
 function buildBundleFacingHedgePayload(params = {}) {
   const state = params.state && typeof params.state === 'object' ? params.state : {};
   const plan = params.plan && typeof params.plan === 'object' ? params.plan : null;
@@ -32,10 +41,14 @@ function buildBundleFacingHedgePayload(params = {}) {
     : state.managedPolymarketInventorySnapshot
       ? ensureManagedInventorySnapshotShape(state.managedPolymarketInventorySnapshot)
       : null;
+  const targetInventory = params.targetHedgeInventory !== undefined
+    ? ensureTargetHedgeInventoryShape(params.targetHedgeInventory)
+    : ensureTargetHedgeInventoryShape(state.targetHedgeInventory);
   const skippedVolumeCounters = ensureSkippedVolumeCountersShape(params.skippedVolumeCounters || state.skippedVolumeCounters || {});
   const confirmedExposureLedger = Array.isArray(params.confirmedExposureLedger || state.confirmedExposureLedger)
     ? params.confirmedExposureLedger || state.confirmedExposureLedger
     : [];
+  const hedgeDrivingConfirmedExposureLedger = confirmedExposureLedger.filter(isHedgeDrivingConfirmedExposure);
   const pendingMempoolOverlays = Array.isArray(params.pendingMempoolOverlays || state.pendingMempoolOverlays)
     ? params.pendingMempoolOverlays || state.pendingMempoolOverlays
     : [];
@@ -53,13 +66,25 @@ function buildBundleFacingHedgePayload(params = {}) {
     runtimeStatus: normalizeOptionalString(params.runtimeStatus || state.runtimeStatus) || 'idle',
     ready: Boolean(plan && plan.summary && plan.summary.ready),
     summary: {
-      confirmedExposureCount: confirmedExposureLedger.length,
-      confirmedExposureUsdc: sumField(confirmedExposureLedger, 'amountUsdc'),
+      confirmedExposureCount: hedgeDrivingConfirmedExposureLedger.length,
+      confirmedExposureUsdc: sumField(hedgeDrivingConfirmedExposureLedger, 'amountUsdc'),
       pendingOverlayCount: pendingMempoolOverlays.length,
       pendingOverlayUsdc: sumField(pendingMempoolOverlays, 'amountUsdc'),
       deferredHedgeCount: deferredHedgeQueue.length,
       deferredHedgeUsdc: sumField(deferredHedgeQueue, 'amountUsdc'),
       inventoryStatus: inventory ? inventory.status : null,
+      targetYesShares: targetInventory.yesShares || 0,
+      targetNoShares: targetInventory.noShares || 0,
+      currentYesShares: inventory && Number.isFinite(Number(inventory.yesShares)) ? Number(inventory.yesShares) : 0,
+      currentNoShares: inventory && Number.isFinite(Number(inventory.noShares)) ? Number(inventory.noShares) : 0,
+      excessYesToSell: plan && plan.summary ? plan.summary.excessYesToSell : 0,
+      excessNoToSell: plan && plan.summary ? plan.summary.excessNoToSell : 0,
+      deficitYesToBuy: plan && plan.summary ? plan.summary.deficitYesToBuy : 0,
+      deficitNoToBuy: plan && plan.summary ? plan.summary.deficitNoToBuy : 0,
+      netTargetSide: targetInventory.netSide || null,
+      netTargetShares: targetInventory.netShares || 0,
+      availableHedgeFeeBudgetUsdc: Number(state.availableHedgeFeeBudgetUsdc || 0),
+      belowThresholdPendingUsdc: Number(state.belowThresholdPendingUsdc || 0),
       skippedVolumeUsdc: skippedVolumeCounters.totalUsdc || 0,
       lastProcessedBlockNumber: state.lastProcessedBlockNumber || null,
       lastProcessedLogIndex: state.lastProcessedLogIndex || null,
@@ -71,6 +96,7 @@ function buildBundleFacingHedgePayload(params = {}) {
       ...state,
       marketPairIdentity,
       managedPolymarketInventorySnapshot: inventory,
+      targetHedgeInventory: targetInventory,
       skippedVolumeCounters,
     },
     plan,
@@ -81,6 +107,7 @@ function buildBundleFacingHedgePayload(params = {}) {
       pendingMempoolOverlays,
       deferredHedgeQueue,
       managedPolymarketInventorySnapshot: inventory,
+      targetHedgeInventory: targetInventory,
       skippedVolumeCounters,
       lastProcessedBlockCursor: state.lastProcessedBlockCursor || null,
       lastProcessedLogCursor: state.lastProcessedLogCursor || null,
@@ -156,6 +183,18 @@ function renderHedgeStatusTable(payload) {
     ['deferredHedgeCount', summary.deferredHedgeCount],
     ['deferredHedgeUsdc', summary.deferredHedgeUsdc],
     ['inventoryStatus', summary.inventoryStatus || ''],
+    ['targetYesShares', summary.targetYesShares],
+    ['targetNoShares', summary.targetNoShares],
+    ['currentYesShares', summary.currentYesShares],
+    ['currentNoShares', summary.currentNoShares],
+    ['excessYesToSell', summary.excessYesToSell],
+    ['excessNoToSell', summary.excessNoToSell],
+    ['deficitYesToBuy', summary.deficitYesToBuy],
+    ['deficitNoToBuy', summary.deficitNoToBuy],
+    ['netTargetSide', summary.netTargetSide || ''],
+    ['netTargetShares', summary.netTargetShares],
+    ['availableHedgeFeeBudgetUsdc', summary.availableHedgeFeeBudgetUsdc],
+    ['belowThresholdPendingUsdc', summary.belowThresholdPendingUsdc],
     ['lastProcessedBlockNumber', summary.lastProcessedBlockNumber],
     ['lastProcessedLogIndex', summary.lastProcessedLogIndex],
     ['lastSuccessfulHedgeAt', summary.lastSuccessfulHedgeAt || ''],

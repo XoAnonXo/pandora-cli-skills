@@ -126,8 +126,12 @@ function ensureConfirmedExposureLedgerEntryShape(raw) {
     tokenSide: normalizeOptionalString(data.tokenSide),
     orderSide: normalizeOptionalString(data.orderSide),
     amountUsdc: toFiniteNumberOrNull(data.amountUsdc),
+    amountShares: toFiniteNumberOrNull(data.amountShares),
     deltaUsdc: toFiniteNumberOrNull(data.deltaUsdc),
     exposureUsdc: toFiniteNumberOrNull(data.exposureUsdc),
+    yesTargetDeltaShares: toFiniteNumberOrNull(data.yesTargetDeltaShares),
+    noTargetDeltaShares: toFiniteNumberOrNull(data.noTargetDeltaShares),
+    expectedRevenueUsdc: toFiniteNumberOrNull(data.expectedRevenueUsdc),
     blockNumber: toFiniteNumberOrNull(data.blockNumber),
     logIndex: toFiniteNumberOrNull(data.logIndex),
     cursor: normalizeOptionalString(data.cursor),
@@ -135,6 +139,8 @@ function ensureConfirmedExposureLedgerEntryShape(raw) {
     source: normalizeOptionalString(data.source),
     reason: normalizeOptionalString(data.reason),
     notes: normalizeOptionalString(data.notes),
+    targetBefore: data.targetBefore ? ensureTargetHedgeInventoryShape(data.targetBefore) : null,
+    targetAfter: data.targetAfter ? ensureTargetHedgeInventoryShape(data.targetAfter) : null,
     createdAt: normalizeOptionalString(data.createdAt),
     updatedAt: normalizeOptionalString(data.updatedAt),
     confirmedAt: normalizeOptionalString(data.confirmedAt),
@@ -181,7 +187,9 @@ function ensureDeferredHedgeQueueEntryShape(raw) {
     tokenSide: normalizeOptionalString(data.tokenSide),
     orderSide: normalizeOptionalString(data.orderSide),
     amountUsdc: toFiniteNumberOrNull(data.amountUsdc),
+    amountShares: toFiniteNumberOrNull(data.amountShares),
     targetUsdc: toFiniteNumberOrNull(data.targetUsdc),
+    targetShares: toFiniteNumberOrNull(data.targetShares),
     dueAt: normalizeOptionalString(data.dueAt),
     source: normalizeOptionalString(data.source),
     reason: normalizeOptionalString(data.reason),
@@ -214,6 +222,52 @@ function ensureManagedInventorySnapshotShape(raw) {
     estimatedValueUsdc: toFiniteNumberOrNull(data.estimatedValueUsdc),
     openOrdersCount: toFiniteNumberOrNull(data.openOrdersCount),
     diagnostics: Array.isArray(data.diagnostics) ? data.diagnostics.map((entry) => String(entry)) : [],
+  };
+}
+
+function ensureTargetHedgeInventoryShape(raw) {
+  const data = raw && typeof raw === 'object' ? raw : {};
+  const explicitYesShares = toFiniteNumberOrNull(data.yesShares);
+  const explicitNoShares = toFiniteNumberOrNull(data.noShares);
+  const explicitNetShares = toFiniteNumberOrNull(data.netShares);
+  const explicitNetSide = normalizeOptionalString(data.netSide);
+
+  let yesShares = Math.max(0, explicitYesShares || 0);
+  let noShares = Math.max(0, explicitNoShares || 0);
+
+  if (!(yesShares > 0) && !(noShares > 0) && explicitNetShares !== null && explicitNetShares > 0) {
+    if (explicitNetSide === 'yes') {
+      yesShares = explicitNetShares;
+      noShares = 0;
+    } else if (explicitNetSide === 'no') {
+      yesShares = 0;
+      noShares = explicitNetShares;
+    }
+  }
+
+  const signedNetShares = (yesShares || 0) - (noShares || 0);
+  if (signedNetShares > 0) {
+    yesShares = signedNetShares;
+    noShares = 0;
+  } else if (signedNetShares < 0) {
+    yesShares = 0;
+    noShares = Math.abs(signedNetShares);
+  } else {
+    yesShares = 0;
+    noShares = 0;
+  }
+
+  const netSide = yesShares > 0 ? 'yes' : noShares > 0 ? 'no' : null;
+  const netShares = yesShares > 0 ? yesShares : noShares > 0 ? noShares : 0;
+
+  return {
+    yesShares,
+    noShares,
+    netSide,
+    netShares,
+    initializedAt: normalizeOptionalString(data.initializedAt),
+    initializedFrom: normalizeOptionalString(data.initializedFrom),
+    updatedAt: normalizeOptionalString(data.updatedAt),
   };
 }
 
@@ -328,6 +382,7 @@ function ensureStateShape(raw, hash = null) {
   const managedPolymarketInventorySnapshot = data.managedPolymarketInventorySnapshot
     ? ensureManagedInventorySnapshotShape(data.managedPolymarketInventorySnapshot)
     : null;
+  const targetHedgeInventory = ensureTargetHedgeInventoryShape(data.targetHedgeInventory);
   const skippedVolumeCounters = ensureSkippedVolumeCountersShape(data.skippedVolumeCounters);
 
   const state = {
@@ -368,6 +423,9 @@ function ensureStateShape(raw, hash = null) {
     pendingMempoolOverlays,
     deferredHedgeQueue,
     managedPolymarketInventorySnapshot,
+    targetHedgeInventory,
+    availableHedgeFeeBudgetUsdc: toFiniteNumberOrNull(data.availableHedgeFeeBudgetUsdc) || 0,
+    belowThresholdPendingUsdc: toFiniteNumberOrNull(data.belowThresholdPendingUsdc) || 0,
     skippedVolumeCounters,
     lastSuccessfulHedge: ensureOutcomeShape(data.lastSuccessfulHedge),
     lastError: ensureEventShape(data.lastError),
@@ -456,6 +514,7 @@ module.exports = {
   ensurePendingMempoolOverlayShape,
   ensureDeferredHedgeQueueEntryShape,
   ensureManagedInventorySnapshotShape,
+  ensureTargetHedgeInventoryShape,
   ensureSkippedVolumeCountersShape,
   ensureOutcomeShape,
   ensureEventShape,

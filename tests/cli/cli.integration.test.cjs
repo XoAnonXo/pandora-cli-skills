@@ -44,6 +44,7 @@ const setupWizardModulePath = path.join(__dirname, '..', '..', 'cli', 'lib', 'se
 const setupRuntimeReady = fs.existsSync(setupWizardModulePath);
 const setupTest = setupRuntimeReady ? test : test.skip;
 const testInteractiveSetup = setupRuntimeReady && process.platform === 'win32' ? test.skip : (setupRuntimeReady ? test : test.skip);
+const TEST_CLI_PATH = path.join(path.resolve(__dirname, '..', '..'), 'cli', 'pandora.cjs');
 
 const ADDRESSES = {
   oracle: '0x1111111111111111111111111111111111111111',
@@ -8369,7 +8370,7 @@ test('mirror command dispatcher preserves normalized live sync trade execution p
     renderMirrorSyncTickLine: () => {},
     renderMirrorSyncDaemonTable: () => {},
     renderMirrorSyncTable: () => {},
-    cliPath: '/Users/mac/Desktop/pandora-market-setup-shareable/cli/pandora.cjs',
+    cliPath: TEST_CLI_PATH,
   });
 
   await runMirrorCommand(['sync', 'once'], { outputMode: 'json' });
@@ -9876,6 +9877,76 @@ test('mirror hedge start preserves explicit dotenv paths in detached child cli a
     assert.notEqual(dotenvIndex, -1);
     assert.equal(metadata.cliArgs[dotenvIndex + 1], envFile);
     assert.equal(metadata.cliArgs.includes('--skip-dotenv'), false);
+  } finally {
+    if (pidFile) {
+      runCli(['--output', 'json', 'mirror', 'hedge', 'stop', '--pid-file', pidFile], {
+        env: { HOME: tempDir },
+      });
+    }
+    if (daemonPid && Number.isInteger(daemonPid)) {
+      try {
+        process.kill(daemonPid, 'SIGKILL');
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    await indexer.close();
+    await polymarket.close();
+    removeDir(tempDir);
+  }
+});
+
+test('mirror hedge start preserves --adopt-existing-positions in detached child cli args', async () => {
+  const tempDir = createTempDir('pandora-mirror-hedge-daemon-adopt-existing-');
+  const stateFile = path.join(tempDir, 'hedge-state.json');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  writeFile(walletFile, `${ADDRESSES.wallet1}\n`);
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+  let pidFile = null;
+  let daemonPid = null;
+
+  try {
+    const startResult = await runCliAsync(
+      [
+        '--output',
+        'json',
+        'mirror',
+        'hedge',
+        'start',
+        '--skip-dotenv',
+        '--indexer-url',
+        indexer.url,
+        '--polymarket-mock-url',
+        polymarket.url,
+        '--pandora-market-address',
+        ADDRESSES.mirrorMarket,
+        '--polymarket-market-id',
+        'poly-cond-1',
+        '--internal-wallets-file',
+        walletFile,
+        '--paper',
+        '--adopt-existing-positions',
+        '--interval-ms',
+        '1000',
+        '--iterations',
+        '30',
+        '--state-file',
+        stateFile,
+      ],
+      { env: { HOME: tempDir } },
+    );
+
+    assert.ok(startResult.status === 0, startResult.output || '(no cli output)');
+    const startPayload = parseJsonOutput(startResult);
+    assert.equal(startPayload.ok, true);
+    assert.equal(startPayload.command, 'mirror.hedge.start');
+    pidFile = startPayload.data.daemon.pidFile;
+    daemonPid = startPayload.data.daemon.pid;
+
+    const metadata = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+    assert.equal(Array.isArray(metadata.cliArgs), true);
+    assert.equal(metadata.cliArgs.includes('--adopt-existing-positions'), true);
   } finally {
     if (pidFile) {
       runCli(['--output', 'json', 'mirror', 'hedge', 'stop', '--pid-file', pidFile], {
@@ -13226,6 +13297,14 @@ test('mirror hedge status table prints runtime queue and error details', () => {
         noShares: 0,
         netUsdc: 10,
       },
+      targetHedgeInventory: {
+        yesShares: 0,
+        noShares: 4,
+        initializedAt: '2026-03-20T00:00:00.000Z',
+        initializedFrom: 'flat',
+      },
+      availableHedgeFeeBudgetUsdc: 1.25,
+      belowThresholdPendingUsdc: 0.75,
       lastSuccessfulHedge: {
         hedgeId: 'hedge-1',
         status: 'completed',
@@ -13264,6 +13343,12 @@ test('mirror hedge status table prints runtime queue and error details', () => {
     assert.match(result.output, /pendingOverlayCount: 1/);
     assert.match(result.output, /deferredHedgeCount: 1/);
     assert.match(result.output, /deferredHedgeUsdc: 3/);
+    assert.match(result.output, /targetNoShares: 4/);
+    assert.match(result.output, /currentYesShares: 10/);
+    assert.match(result.output, /excessYesToSell: 10/);
+    assert.match(result.output, /deficitNoToBuy: 4/);
+    assert.match(result.output, /availableHedgeFeeBudgetUsdc: 1.25/);
+    assert.match(result.output, /belowThresholdPendingUsdc: 0.75/);
     assert.match(result.output, /skippedVolumeUsdc: 1/);
     assert.match(result.output, /lastSuccessfulHedgeAt: 2026-03-20T00:00:00.000Z/);
     assert.match(result.output, /lastErrorCode: NO_DEPTH/);
