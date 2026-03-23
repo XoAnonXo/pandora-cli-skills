@@ -1,7 +1,7 @@
 {
   "contractLock": {
-    "capabilitiesLocalHash": "4c8e29d98b84fcc79fff15aace727701c2d7ef331f925d0e3c60100423800024",
-    "capabilitiesRemoteTemplateHash": "5c5ca54af4bc0de549d0db1c8209351c78ef31c4688e0f5e68ea420a4f682b2f",
+    "capabilitiesLocalHash": "0fd3651073cc02f0ed6f5c6d3c84a7b8d4e64f51fa3d6d32bd70422e8c61003e",
+    "capabilitiesRemoteTemplateHash": "ba6f8cf27ad2fdcac99ec5affa73274dbe356d8aa117f0883a096647e4351146",
     "commandDescriptorVersion": "1.4.3",
     "documentationContentHash": "5ba1cffa92ef5c9542834befa04c9d59fce395f4063597a86261a20cf90ec1ec",
     "documentationRegistryHash": "98bda73a533c52da94e8db3a076f054757ac23b9adcbb1bd4aebde8029ea7c7c",
@@ -46,16 +46,16 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-      "trustDistributionHash": "3ba3fd2010432713ab02c88d0103fe047e89ef0c949d7df36c02388e1a0f3732"
+      "trustDistributionHash": "7d11cc5631509813194446ae32e47a386935f3f4791e37e170a523443495fb40"
     },
-    "schemaHash": "40d5f9442c2e72c424661157131f660b9b2f00d96081eaac87dc9a348eeffe21"
+    "schemaHash": "8287befafa805bb7bdcfcd03216a502d866e2a44ff168e754376b2888d04d55b"
   },
   "publication": {
-    "contractLockHash": "7538f71fb9efdbb047f1c2ff0bd5db54b21bbfe073c6e1d1a50cb656a6e0e0a7",
+    "contractLockHash": "6def6e8827068a579e3d33efdb5123022a9d2cbac7fe8c8ea6482552699aa5f4",
     "deterministic": true,
     "grade": "release-grade",
     "kind": "benchmark-contract-lock",
-    "lockDocumentHash": "132988645af952c0a2737cd0a7a9e266c571baafc9dc0700efaa0ab1d2565a57",
+    "lockDocumentHash": "575dca28f31cac63a35f09510f208ff9162dcbbb9d695e0b7a0d7ad4c63baf50",
     "suiteLockPath": "benchmarks/locks/core.lock.json"
   },
   "schemaVersion": "1.0.0",
