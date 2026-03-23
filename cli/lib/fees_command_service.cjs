@@ -94,6 +94,13 @@ const ERC20_METADATA_ABI = [
   },
 ];
 
+const FEE_MARKET_DISCOVERY_FIELDS = [
+  'id',
+  'chainId',
+  'creator',
+  'pollAddress',
+];
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunFeesCommand requires deps.${name}()`);
@@ -366,6 +373,8 @@ function assertNoMixedSignerSelectors(options, CliError) {
 function parseFeesWithdrawFlags(args, CliError) {
   const options = {
     marketAddress: null,
+    allMarkets: false,
+    creator: null,
     dryRun: false,
     execute: false,
     chainId: null,
@@ -384,6 +393,18 @@ function parseFeesWithdrawFlags(args, CliError) {
       options.marketAddress = normalizeAddress(requireFlagValue(args, i, token, CliError));
       if (!options.marketAddress) {
         throw new CliError('INVALID_FLAG_VALUE', `${token} must be an EVM address.`);
+      }
+      i += 1;
+      continue;
+    }
+    if (token === '--all-markets') {
+      options.allMarkets = true;
+      continue;
+    }
+    if (token === '--creator') {
+      options.creator = normalizeAddress(requireFlagValue(args, i, '--creator', CliError));
+      if (!options.creator) {
+        throw new CliError('INVALID_FLAG_VALUE', '--creator must be an EVM address.');
       }
       i += 1;
       continue;
@@ -456,8 +477,14 @@ function parseFeesWithdrawFlags(args, CliError) {
     throw new CliError('UNKNOWN_FLAG', `Unknown flag for fees withdraw: ${token}`);
   }
 
-  if (!options.marketAddress) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'fees withdraw requires --market-address <address>.');
+  if (options.marketAddress && options.allMarkets) {
+    throw new CliError('INVALID_ARGS', 'fees withdraw accepts either --market-address <address> or --all-markets, not both.');
+  }
+  if (!options.marketAddress && !options.allMarkets) {
+    throw new CliError('MISSING_REQUIRED_FLAG', 'fees withdraw requires either --market-address <address> or --all-markets.');
+  }
+  if (options.creator && !options.allMarkets) {
+    throw new CliError('INVALID_ARGS', '--creator is only supported together with --all-markets.');
   }
   if (options.dryRun === options.execute) {
     throw new CliError('INVALID_ARGS', 'Use exactly one mode for fees withdraw: --dry-run or --execute.');
@@ -638,12 +665,7 @@ function buildWithdrawPayload({
   };
 }
 
-async function runMarketFeesWithdraw(options = {}, deps = {}) {
-  const marketAddress = normalizeAddress(options.marketAddress);
-  if (!marketAddress) {
-    throw createServiceError('MISSING_REQUIRED_FLAG', 'fees withdraw requires --market-address <address>.');
-  }
-
+async function resolveWithdrawExecutionContext(options = {}, deps = {}) {
   const runtime = await resolveWithdrawRuntime(options, deps);
   const viemRuntime = await loadViemRuntime(deps);
   const publicClient = deps.publicClient || viemRuntime.createPublicClient({
@@ -651,11 +673,12 @@ async function runMarketFeesWithdraw(options = {}, deps = {}) {
     transport: viemRuntime.http(runtime.rpcUrl, { timeout: options.timeoutMs || 12_000 }),
   });
 
+  let account = deps.account && typeof deps.account === 'object' ? deps.account : null;
   let signerAddress = null;
-  let walletClient = deps.walletClient || null;
-  if (deps.account && deps.account.address) {
-    signerAddress = String(deps.account.address).toLowerCase();
+  if (account && account.address) {
+    signerAddress = String(account.address).toLowerCase();
   }
+  let walletClient = deps.walletClient || null;
 
   const needsSigner = Boolean(options.execute);
   const wantsSigner = Boolean(
@@ -667,7 +690,7 @@ async function runMarketFeesWithdraw(options = {}, deps = {}) {
       || runtime.profileFile,
   );
 
-  if (wantsSigner && (!walletClient || !signerAddress)) {
+  if (wantsSigner && (!walletClient || !signerAddress || !account)) {
     try {
       const materialized = await (deps.materializeExecutionSigner || materializeExecutionSigner)({
         privateKey: runtime.privateKey,
@@ -689,9 +712,10 @@ async function runMarketFeesWithdraw(options = {}, deps = {}) {
           action: 'withdrawProtocolFees',
         },
       });
+      account = materialized && materialized.account ? materialized.account : account;
       signerAddress = String(
         materialized && (materialized.signerAddress || (materialized.account && materialized.account.address) || ''),
-      ).toLowerCase() || null;
+      ).toLowerCase() || signerAddress;
       if (!walletClient) {
         walletClient = materialized && materialized.walletClient ? materialized.walletClient : null;
       }
@@ -705,12 +729,208 @@ async function runMarketFeesWithdraw(options = {}, deps = {}) {
     }
   }
 
-  if (needsSigner && (!signerAddress || !walletClient)) {
+  if (needsSigner && (!signerAddress || !walletClient || !account)) {
     throw createServiceError(
       'MISSING_REQUIRED_FLAG',
       'Missing signer credentials. Set PRIVATE_KEY/PANDORA_PRIVATE_KEY or pass --profile-id/--profile-file.',
     );
   }
+
+  return {
+    runtime,
+    viemRuntime,
+    publicClient,
+    walletClient,
+    account,
+    signerAddress,
+  };
+}
+
+function normalizeDiscoveredMarketRows(items, creator) {
+  const normalizedCreator = creator ? String(creator).trim().toLowerCase() : null;
+  const unique = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    const marketAddress = normalizeAddress(item && (item.marketAddress || item.id));
+    if (!marketAddress) continue;
+    const rowCreator = normalizeAddress(item && item.creator);
+    if (normalizedCreator && rowCreator && rowCreator.toLowerCase() !== normalizedCreator) continue;
+    unique.set(marketAddress.toLowerCase(), {
+      marketAddress: marketAddress.toLowerCase(),
+      creator: rowCreator ? rowCreator.toLowerCase() : null,
+      chainId: item && item.chainId !== undefined && item.chainId !== null ? Number(item.chainId) : null,
+      pollAddress: normalizeAddress(item && item.pollAddress),
+    });
+  }
+  return Array.from(unique.values());
+}
+
+async function discoverCreatorFeeMarkets(indexerUrl, options = {}, deps = {}) {
+  const client = deps.indexerClient || createIndexerClient(indexerUrl, options.timeoutMs);
+  const limit = 200;
+  const discovered = [];
+  let after = null;
+  let pageCount = 0;
+
+  while (pageCount < 100) {
+    const page = await client.list({
+      queryName: 'marketss',
+      filterType: 'marketsFilter',
+      fields: FEE_MARKET_DISCOVERY_FIELDS,
+      variables: {
+        where: {
+          creator: options.creator,
+          chainId: options.chainId,
+        },
+        orderBy: 'createdAt',
+        orderDirection: 'desc',
+        after,
+        limit,
+      },
+    });
+
+    discovered.push(...normalizeDiscoveredMarketRows(page.items, options.creator));
+    pageCount += 1;
+    const pageInfo = page && page.pageInfo ? page.pageInfo : null;
+    if (!pageInfo || !pageInfo.hasNextPage || !pageInfo.endCursor) {
+      break;
+    }
+    after = pageInfo.endCursor;
+  }
+
+  return {
+    items: normalizeDiscoveredMarketRows(discovered, options.creator),
+    capped: pageCount >= 100,
+  };
+}
+
+function summarizeBatchWithdrawItems(items = []) {
+  let withdrawableRawTotal = 0n;
+  let platformShareRawTotal = 0n;
+  let creatorShareRawTotal = 0n;
+  let successCount = 0;
+  let failureCount = 0;
+  let noOpCount = 0;
+  let submittedCount = 0;
+  let plannedCount = 0;
+  let decimals = null;
+  let symbol = null;
+
+  for (const entry of Array.isArray(items) ? items : []) {
+    if (!entry || entry.ok !== true || !entry.result) {
+      failureCount += 1;
+      continue;
+    }
+    successCount += 1;
+    const payload = entry.result;
+    if (payload.status === 'no-op') {
+      noOpCount += 1;
+    }
+    if (payload.status === 'submitted') {
+      submittedCount += 1;
+    }
+    if (payload.status === 'planned') {
+      plannedCount += 1;
+    }
+    const feeState = payload.feeState || {};
+    try {
+      withdrawableRawTotal += BigInt(feeState.withdrawableRaw || 0);
+      platformShareRawTotal += BigInt(feeState.platformShareRaw || 0);
+      creatorShareRawTotal += BigInt(feeState.creatorShareRaw || 0);
+    } catch {
+      // Ignore malformed raw values and keep batch execution moving.
+    }
+    if (decimals === null && Number.isInteger(Number(feeState.decimals))) {
+      decimals = Number(feeState.decimals);
+    }
+    if (!symbol && typeof feeState.symbol === 'string' && feeState.symbol.trim()) {
+      symbol = feeState.symbol.trim();
+    }
+  }
+
+  return {
+    marketCount: Array.isArray(items) ? items.length : 0,
+    successCount,
+    failureCount,
+    noOpCount,
+    submittedCount,
+    plannedCount,
+    withdrawableRawTotal: withdrawableRawTotal.toString(),
+    platformShareRawTotal: platformShareRawTotal.toString(),
+    creatorShareRawTotal: creatorShareRawTotal.toString(),
+    withdrawableTotal: decimals === null ? null : toTokenAmountString(withdrawableRawTotal, decimals),
+    platformShareTotal: decimals === null ? null : toTokenAmountString(platformShareRawTotal, decimals),
+    creatorShareTotal: decimals === null ? null : toTokenAmountString(creatorShareRawTotal, decimals),
+    decimals,
+    symbol,
+  };
+}
+
+function buildBatchWithdrawPayload({
+  creator,
+  indexerUrl,
+  runtime,
+  signerAddress,
+  items,
+  execute,
+  capped,
+}) {
+  const summary = summarizeBatchWithdrawItems(items);
+  const diagnostics = [];
+  if (summary.marketCount === 0) {
+    diagnostics.push('No creator-scoped markets were discovered for protocol-fee withdrawal.');
+  }
+  if (capped) {
+    diagnostics.push('Market discovery reached the pagination cap before exhausting the creator market list.');
+  }
+  if (summary.failureCount > 0) {
+    diagnostics.push(`${summary.failureCount} market withdrawal item(s) failed. Inspect item.error for details.`);
+  }
+
+  let status = execute ? 'submitted' : 'planned';
+  if (summary.marketCount === 0 || summary.successCount === 0 && summary.failureCount === 0) {
+    status = 'no-op';
+  } else if (summary.failureCount > 0 && summary.successCount > 0) {
+    status = 'partial';
+  } else if (summary.failureCount > 0) {
+    status = 'failed';
+  } else if (summary.noOpCount === summary.marketCount) {
+    status = 'no-op';
+  }
+
+  return {
+    schemaVersion: FEES_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    action: 'withdraw-all-markets',
+    mode: execute ? 'execute' : 'dry-run',
+    status,
+    creator,
+    indexerUrl,
+    runtime: {
+      mode: runtime.mode,
+      chainId: runtime.chainId,
+      rpcUrl: runtime.rpcUrl,
+      signerAddress,
+    },
+    summary,
+    diagnostics,
+    items,
+  };
+}
+
+async function runMarketFeesWithdraw(options = {}, deps = {}) {
+  const marketAddress = normalizeAddress(options.marketAddress);
+  if (!marketAddress) {
+    throw createServiceError('MISSING_REQUIRED_FLAG', 'fees withdraw requires --market-address <address>.');
+  }
+
+  const {
+    runtime,
+    viemRuntime,
+    publicClient,
+    walletClient,
+    account,
+    signerAddress,
+  } = await resolveWithdrawExecutionContext(options, deps);
 
   let protocolFeesCollected;
   let collateralToken;
@@ -786,7 +1006,7 @@ async function runMarketFeesWithdraw(options = {}, deps = {}) {
     simulation.attempted = true;
     try {
       const simulationResult = await publicClient.simulateContract({
-        account: signerAddress,
+        account: account || signerAddress,
         address: marketAddress,
         abi: MARKET_PROTOCOL_FEES_ABI,
         functionName: 'withdrawProtocolFees',
@@ -832,7 +1052,7 @@ async function runMarketFeesWithdraw(options = {}, deps = {}) {
 
   const txHash = await walletClient.writeContract(
     simulation.request || {
-      account: signerAddress,
+      account: account || signerAddress,
       address: marketAddress,
       abi: MARKET_PROTOCOL_FEES_ABI,
       functionName: 'withdrawProtocolFees',
@@ -869,6 +1089,71 @@ async function runMarketFeesWithdraw(options = {}, deps = {}) {
   return payload;
 }
 
+async function runBatchFeesWithdraw(options = {}, deps = {}) {
+  if (!options.allMarkets) {
+    throw createServiceError('INVALID_ARGS', 'Batch fee withdrawal requires --all-markets.');
+  }
+
+  const context = await resolveWithdrawExecutionContext(options, deps);
+  const creator = normalizeAddress(options.creator || context.signerAddress);
+  if (!creator) {
+    throw createServiceError(
+      'MISSING_REQUIRED_FLAG',
+      'fees withdraw --all-markets requires --creator <address> or signer credentials to infer the creator wallet.',
+    );
+  }
+
+  const indexerUrl = resolveIndexerUrl(options.indexerUrl);
+  const discovery = await discoverCreatorFeeMarkets(indexerUrl, {
+    creator,
+    chainId: context.runtime.chainId,
+    timeoutMs: options.timeoutMs,
+  }, deps);
+
+  const items = [];
+  for (const discovered of discovery.items) {
+    try {
+      const result = await runMarketFeesWithdraw({
+        ...options,
+        creator,
+        marketAddress: discovered.marketAddress,
+        allMarkets: false,
+      }, {
+        ...deps,
+        publicClient: context.publicClient,
+        walletClient: context.walletClient,
+        account: context.account,
+        viemRuntime: context.viemRuntime,
+      });
+      items.push({
+        marketAddress: discovered.marketAddress,
+        ok: true,
+        result,
+      });
+    } catch (error) {
+      items.push({
+        marketAddress: discovered.marketAddress,
+        ok: false,
+        error: {
+          code: error && error.code ? error.code : 'FEES_WITHDRAW_FAILED',
+          message: error && error.message ? error.message : String(error),
+          details: error && error.details ? error.details : null,
+        },
+      });
+    }
+  }
+
+  return buildBatchWithdrawPayload({
+    creator,
+    indexerUrl,
+    runtime: context.runtime,
+    signerAddress: context.signerAddress,
+    items,
+    execute: Boolean(options.execute),
+    capped: discovery.capped,
+  });
+}
+
 function renderFeesTable(data) {
   const summary = data.summary || {};
   // eslint-disable-next-line no-console
@@ -899,6 +1184,30 @@ function renderFeesTable(data) {
 }
 
 function renderFeesWithdrawTable(data) {
+  if (data && data.action === 'withdraw-all-markets') {
+    const summary = data.summary || {};
+    console.log('Fees Withdraw All Markets');
+    console.log(`creator: ${data.creator || ''}`);
+    console.log(`mode: ${data.mode || ''}`);
+    console.log(`marketCount: ${summary.marketCount || 0}`);
+    console.log(`withdrawableTotal: ${summary.withdrawableTotal || '0'} ${summary.symbol || ''}`.trim());
+    console.log(`successCount: ${summary.successCount || 0}`);
+    console.log(`failureCount: ${summary.failureCount || 0}`);
+    if (Array.isArray(data.items) && data.items.length) {
+      console.table(
+        data.items.map((item) => ({
+          marketAddress: item.marketAddress || '',
+          ok: item.ok === true,
+          status: item.ok && item.result ? item.result.status || '' : 'failed',
+          withdrawable: item.ok && item.result && item.result.feeState ? item.result.feeState.withdrawable || '' : '',
+          symbol: item.ok && item.result && item.result.feeState ? item.result.feeState.symbol || '' : '',
+          txHash: item.ok && item.result && item.result.tx ? item.result.tx.txHash || '' : '',
+          errorCode: item.ok ? '' : (item.error && item.error.code ? item.error.code : ''),
+        })),
+      );
+    }
+    return;
+  }
   const feeState = data.feeState || {};
   // eslint-disable-next-line no-console
   console.log('Fees Withdraw');
@@ -939,7 +1248,7 @@ function createRunFeesCommand(deps) {
 
     const familyUsage = [
       'pandora [--output table|json] fees [--wallet <address>] [--chain-id <id>] [--tx-hash <hash>] [--event-name <name>] [--limit <n>] [--before <cursor>] [--after <cursor>] [--order-direction asc|desc] [--indexer-url <url>] [--timeout-ms <ms>]',
-      'pandora [--output table|json] fees withdraw --market-address <address> --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]',
+      'pandora [--output table|json] fees withdraw (--market-address <address>|--all-markets [--creator <address>]) --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--indexer-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]',
     ];
 
     if (includesHelpFlag(shared.rest) || action === 'help') {
@@ -996,7 +1305,8 @@ function createRunFeesCommand(deps) {
         if (context.outputMode === 'json') {
           emitSuccess(context.outputMode, 'fees.withdraw.help', commandHelpPayload(usage, [
             'This calls the market contract `withdrawProtocolFees()` surface that splits collected collateral between the platform treasury and market creator.',
-            'Pass --dry-run for a safe preview, or --execute with signer credentials to submit the transaction.',
+            'Use --market-address for one market, or --all-markets with --creator (or signer credentials) to sweep creator-owned markets.',
+            'Pass --dry-run for a safe preview, or --execute with signer credentials to submit the transaction(s).',
           ]));
         } else {
           // eslint-disable-next-line no-console
@@ -1008,6 +1318,7 @@ function createRunFeesCommand(deps) {
       maybeLoadTradeEnv(shared);
       const options = parseFeesWithdrawFlags(actionArgs, CliError);
       options.timeoutMs = shared.timeoutMs;
+      options.indexerUrl = resolveIndexerUrl(shared.indexerUrl);
 
       if (options.execute && assertLiveWriteAllowed) {
         await assertLiveWriteAllowed('fees.withdraw.execute', {
@@ -1016,7 +1327,11 @@ function createRunFeesCommand(deps) {
       }
 
       try {
-        const payload = await runMarketFeesWithdraw(options, {
+        const payload = options.allMarkets
+          ? await runBatchFeesWithdraw(options, {
+            env: process.env,
+          })
+          : await runMarketFeesWithdraw(options, {
           env: process.env,
         });
         emitSuccess(context.outputMode, 'fees.withdraw', payload, renderFeesWithdrawTable);
@@ -1032,5 +1347,7 @@ function createRunFeesCommand(deps) {
 
 module.exports = {
   createRunFeesCommand,
+  runBatchFeesWithdraw,
+  resolveWithdrawExecutionContext,
   runMarketFeesWithdraw,
 };

@@ -505,15 +505,45 @@ function encodeHexQuantity(value) {
 }
 
 async function startFeesWithdrawRpcMock(options = {}) {
-  const marketAddress = String(options.marketAddress || ADDRESSES.mirrorMarket).toLowerCase();
-  const factory = String(options.factory || ADDRESSES.factory).toLowerCase();
-  const collateralToken = String(options.collateralToken || ADDRESSES.usdc).toLowerCase();
-  const creator = String(options.creator || ADDRESSES.wallet1).toLowerCase();
-  const platformTreasury = String(options.platformTreasury || ADDRESSES.wallet2).toLowerCase();
-  const protocolFeesCollected = BigInt(options.protocolFeesCollected || 0n);
-  const decimals = BigInt(options.decimals === undefined ? 6 : options.decimals);
-  const symbol = String(options.symbol || 'USDC');
+  const markets = Array.isArray(options.markets) && options.markets.length
+    ? options.markets
+    : [{
+      marketAddress: options.marketAddress || ADDRESSES.mirrorMarket,
+      factory: options.factory || ADDRESSES.factory,
+      collateralToken: options.collateralToken || ADDRESSES.usdc,
+      creator: options.creator || ADDRESSES.wallet1,
+      platformTreasury: options.platformTreasury || ADDRESSES.wallet2,
+      protocolFeesCollected: options.protocolFeesCollected || 0n,
+      decimals: options.decimals === undefined ? 6 : options.decimals,
+      symbol: options.symbol || 'USDC',
+    }];
   const chainIdHex = options.chainIdHex || '0x1';
+  const marketMap = new Map();
+  const factoryMap = new Map();
+  const collateralMap = new Map();
+
+  for (const entry of markets) {
+    const marketAddress = String(entry.marketAddress || '').toLowerCase();
+    const factory = String(entry.factory || ADDRESSES.factory).toLowerCase();
+    const collateralToken = String(entry.collateralToken || ADDRESSES.usdc).toLowerCase();
+    const creator = String(entry.creator || ADDRESSES.wallet1).toLowerCase();
+    const platformTreasury = String(entry.platformTreasury || ADDRESSES.wallet2).toLowerCase();
+    const protocolFeesCollected = BigInt(entry.protocolFeesCollected || 0n);
+    const decimals = BigInt(entry.decimals === undefined ? 6 : entry.decimals);
+    const symbol = String(entry.symbol || 'USDC');
+
+    marketMap.set(marketAddress, {
+      factory,
+      collateralToken,
+      creator,
+      platformTreasury,
+      protocolFeesCollected,
+      decimals,
+      symbol,
+    });
+    factoryMap.set(factory, platformTreasury);
+    collateralMap.set(collateralToken, { decimals, symbol });
+  }
 
   return startJsonHttpServer(({ bodyJson }) => {
     const requests = Array.isArray(bodyJson) ? bodyJson : [bodyJson];
@@ -532,26 +562,27 @@ async function startFeesWithdrawRpcMock(options = {}) {
         const target = String(tx.to || '').toLowerCase();
         const selector = String(tx.data || '').toLowerCase().slice(0, 10);
 
-        if (target === marketAddress && selector === '0xcc08b834') {
-          return { jsonrpc: '2.0', id, result: encodeUint256(protocolFeesCollected) };
+        const market = marketMap.get(target);
+        if (market && selector === '0xcc08b834') {
+          return { jsonrpc: '2.0', id, result: encodeUint256(market.protocolFeesCollected) };
         }
-        if (target === marketAddress && selector === '0xb2016bd4') {
-          return { jsonrpc: '2.0', id, result: encodeAddress(collateralToken) };
+        if (market && selector === '0xb2016bd4') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(market.collateralToken) };
         }
-        if (target === marketAddress && selector === '0x02d05d3f') {
-          return { jsonrpc: '2.0', id, result: encodeAddress(creator) };
+        if (market && selector === '0x02d05d3f') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(market.creator) };
         }
-        if (target === marketAddress && selector === '0xc45a0155') {
-          return { jsonrpc: '2.0', id, result: encodeAddress(factory) };
+        if (market && selector === '0xc45a0155') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(market.factory) };
         }
-        if (target === factory && selector === '0xe138818c') {
-          return { jsonrpc: '2.0', id, result: encodeAddress(platformTreasury) };
+        if (factoryMap.has(target) && selector === '0xe138818c') {
+          return { jsonrpc: '2.0', id, result: encodeAddress(factoryMap.get(target)) };
         }
-        if (target === collateralToken && selector === '0x313ce567') {
-          return { jsonrpc: '2.0', id, result: encodeUint256(decimals) };
+        if (collateralMap.has(target) && selector === '0x313ce567') {
+          return { jsonrpc: '2.0', id, result: encodeUint256(collateralMap.get(target).decimals) };
         }
-        if (target === collateralToken && selector === '0x95d89b41') {
-          return { jsonrpc: '2.0', id, result: encodeString(symbol) };
+        if (collateralMap.has(target) && selector === '0x95d89b41') {
+          return { jsonrpc: '2.0', id, result: encodeString(collateralMap.get(target).symbol) };
         }
 
         return {
@@ -4908,6 +4939,105 @@ test('fees withdraw dry-run previews market-level protocol fee splits', async ()
     assert.equal(payload.data.preflight.simulationAttempted, false);
   } finally {
     await rpc.close();
+  }
+});
+
+test('fees withdraw --all-markets dry-run previews creator-scoped protocol fee sweeps', async () => {
+  const creator = ADDRESSES.wallet1.toLowerCase();
+  const marketA = '0x998e2e406a48911bd66bc970c79e727c0bc9788f';
+  const marketB = '0xd4dca4e8d7bf39f2f5a42d604f5c27a0f1fa5b67';
+  const rpc = await startFeesWithdrawRpcMock({
+    markets: [
+      {
+        marketAddress: marketA,
+        factory: ADDRESSES.factory,
+        collateralToken: ADDRESSES.usdc,
+        creator,
+        platformTreasury: ADDRESSES.wallet2,
+        protocolFeesCollected: 72_420_000n,
+        decimals: 6,
+        symbol: 'USDC',
+      },
+      {
+        marketAddress: marketB,
+        factory: ADDRESSES.factory,
+        collateralToken: ADDRESSES.usdc,
+        creator,
+        platformTreasury: ADDRESSES.wallet2,
+        protocolFeesCollected: 47_340_000n,
+        decimals: 6,
+        symbol: 'USDC',
+      },
+    ],
+  });
+  const indexer = await startIndexerMockServer({
+    markets: [
+      {
+        id: marketA,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        creator,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000000',
+        totalVolume: '12345',
+        currentTvl: '4567',
+        yesChance: '0.625',
+        reserveYes: '625',
+        reserveNo: '375',
+        createdAt: '1700000000',
+      },
+      {
+        id: marketB,
+        chainId: 1,
+        chainName: 'ethereum',
+        pollAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        creator,
+        marketType: 'amm',
+        marketCloseTimestamp: '1710000100',
+        totalVolume: '22345',
+        currentTvl: '5567',
+        yesChance: '0.425',
+        reserveYes: '425',
+        reserveNo: '575',
+        createdAt: '1700000050',
+      },
+    ],
+  });
+
+  try {
+    const result = await runCliAsync([
+      '--output',
+      'json',
+      'fees',
+      'withdraw',
+      '--skip-dotenv',
+      '--all-markets',
+      '--creator',
+      creator,
+      '--dry-run',
+      '--indexer-url',
+      indexer.url,
+      '--rpc-url',
+      rpc.url,
+    ]);
+
+    assert.equal(result.status, 0);
+    const payload = parseJsonOutput(result);
+    assert.equal(payload.command, 'fees.withdraw');
+    assert.equal(payload.data.action, 'withdraw-all-markets');
+    assert.equal(payload.data.mode, 'dry-run');
+    assert.equal(payload.data.creator, creator);
+    assert.equal(payload.data.summary.marketCount, 2);
+    assert.equal(payload.data.summary.withdrawableRawTotal, '119760000');
+    assert.equal(payload.data.summary.withdrawableTotal, '119.76');
+    assert.equal(payload.data.summary.platformShareTotal, '59.88');
+    assert.equal(payload.data.summary.creatorShareTotal, '59.88');
+    assert.equal(payload.data.items.length, 2);
+    assert.equal(payload.data.items.every((item) => item.ok === true), true);
+  } finally {
+    await rpc.close();
+    await indexer.close();
   }
 });
 
