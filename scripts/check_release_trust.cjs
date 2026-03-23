@@ -322,9 +322,9 @@ function checkPackageMetadata() {
   assert(pkg.exports && pkg.exports['./sdk/typescript/errors'] === './sdk/typescript/errors.js', 'package.json must export ./sdk/typescript/errors');
   assert(pkg.exports && pkg.exports['./sdk/typescript/generated'] === './sdk/typescript/generated/index.js', 'package.json must export ./sdk/typescript/generated');
   assert(pkg.exports && pkg.exports['./sdk/typescript/generated/manifest'] === './sdk/typescript/generated/manifest.json', 'package.json must export ./sdk/typescript/generated/manifest');
-  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/command-descriptors'] === './sdk/typescript/generated/command-descriptors.json', 'package.json must export ./sdk/typescript/generated/command-descriptors');
-  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/mcp-tool-definitions'] === './sdk/typescript/generated/mcp-tool-definitions.json', 'package.json must export ./sdk/typescript/generated/mcp-tool-definitions');
-  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/contract-registry'] === './sdk/typescript/generated/contract-registry.json', 'package.json must export ./sdk/typescript/generated/contract-registry');
+  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/command-descriptors'] === './sdk/generated/command-descriptors.json', 'package.json must export ./sdk/typescript/generated/command-descriptors via the canonical root contract set');
+  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/mcp-tool-definitions'] === './sdk/generated/mcp-tool-definitions.json', 'package.json must export ./sdk/typescript/generated/mcp-tool-definitions via the canonical root contract set');
+  assert(pkg.exports && pkg.exports['./sdk/typescript/generated/contract-registry'] === './sdk/generated/contract-registry.json', 'package.json must export ./sdk/typescript/generated/contract-registry via the canonical root contract set');
   assert(Array.isArray(pkg.files) && pkg.files.length > 0, 'package.json must define files');
 
   const requiredFileEntries = [
@@ -725,6 +725,9 @@ function checkPackedArtifact(options = {}) {
     'benchmarks/latest/core-history.json',
     'sdk/generated/index.js',
     'sdk/generated/manifest.json',
+    'sdk/generated/command-descriptors.json',
+    'sdk/generated/mcp-tool-definitions.json',
+    'sdk/generated/contract-registry.json',
     'sdk/typescript/index.js',
     'sdk/typescript/index.d.ts',
     'sdk/typescript/generated/**',
@@ -758,6 +761,18 @@ function checkPackedArtifact(options = {}) {
     }
     const packedTarget = target.replace(/^\.\//, '');
     assert(packedFiles.has(packedTarget), `Export ${subpath} points to missing packed file: ${packedTarget}`);
+  }
+
+  const forbiddenDuplicatePackPaths = [
+    'sdk/typescript/generated/command-descriptors.json',
+    'sdk/typescript/generated/mcp-tool-definitions.json',
+    'sdk/typescript/generated/contract-registry.json',
+    'sdk/python/pandora_agent/generated/command-descriptors.json',
+    'sdk/python/pandora_agent/generated/mcp-tool-definitions.json',
+    'sdk/python/pandora_agent/generated/contract-registry.json',
+  ];
+  for (const duplicatePath of forbiddenDuplicatePackPaths) {
+    assert(!packedFiles.has(duplicatePath), `Packed artifact should not ship duplicate generated payload: ${duplicatePath}`);
   }
 
   return {

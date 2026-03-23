@@ -394,7 +394,7 @@
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-    "trustDistributionHash": "50c13562d6aeb387c5f9f898e84570ece052f25fa8ca819915747404ede2b48c"
+    "trustDistributionHash": "3ba3fd2010432713ab02c88d0103fe047e89ef0c949d7df36c02388e1a0f3732"
   },
   "schemaVersion": "1.0.0"
 }

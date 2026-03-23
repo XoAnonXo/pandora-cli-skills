@@ -7,12 +7,19 @@ from typing import Any, Dict, List
 from .errors import PandoraSdkError
 
 _GENERATED_DIR = Path(__file__).resolve().parent / 'generated'
+_ROOT_GENERATED_DIR = Path(__file__).resolve().parents[2] / 'generated'
 _PYTHON_ARTIFACT_KEYS = ('bundle', 'commandDescriptors', 'mcpToolDefinitions')
 
 
 def _resolve_generated_path(name: str) -> Path:
     artifact_name = str(name).strip()
-    return _GENERATED_DIR / artifact_name
+    local_path = _GENERATED_DIR / artifact_name
+    if local_path.is_file():
+        return local_path
+    root_path = _ROOT_GENERATED_DIR / artifact_name
+    if root_path.is_file():
+        return root_path
+    return local_path
 
 
 def _load_json(name: str) -> Dict[str, Any]:

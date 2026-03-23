@@ -331,13 +331,13 @@ function main() {
     if (installedPackageJson.exports['./sdk/typescript/generated/manifest'] !== './sdk/typescript/generated/manifest.json') {
       throw new Error('Installed package exports missing ./sdk/typescript/generated/manifest.');
     }
-    if (installedPackageJson.exports['./sdk/typescript/generated/command-descriptors'] !== './sdk/typescript/generated/command-descriptors.json') {
+    if (installedPackageJson.exports['./sdk/typescript/generated/command-descriptors'] !== './sdk/generated/command-descriptors.json') {
       throw new Error('Installed package exports missing ./sdk/typescript/generated/command-descriptors.');
     }
-    if (installedPackageJson.exports['./sdk/typescript/generated/mcp-tool-definitions'] !== './sdk/typescript/generated/mcp-tool-definitions.json') {
+    if (installedPackageJson.exports['./sdk/typescript/generated/mcp-tool-definitions'] !== './sdk/generated/mcp-tool-definitions.json') {
       throw new Error('Installed package exports missing ./sdk/typescript/generated/mcp-tool-definitions.');
     }
-    if (installedPackageJson.exports['./sdk/typescript/generated/contract-registry'] !== './sdk/typescript/generated/contract-registry.json') {
+    if (installedPackageJson.exports['./sdk/typescript/generated/contract-registry'] !== './sdk/generated/contract-registry.json') {
       throw new Error('Installed package exports missing ./sdk/typescript/generated/contract-registry.');
     }
     if (installedPackageJson.exports['./sdk/typescript/package.json'] !== './sdk/typescript/package.json') {
@@ -354,6 +354,18 @@ function main() {
     }
     if (!fs.existsSync(path.join(installedPackageRoot, 'sdk', 'typescript', 'generated', 'manifest.json'))) {
       throw new Error('Installed package is missing sdk/typescript/generated/manifest.json.');
+    }
+    for (const duplicatePath of [
+      path.join(installedPackageRoot, 'sdk', 'typescript', 'generated', 'command-descriptors.json'),
+      path.join(installedPackageRoot, 'sdk', 'typescript', 'generated', 'mcp-tool-definitions.json'),
+      path.join(installedPackageRoot, 'sdk', 'typescript', 'generated', 'contract-registry.json'),
+      path.join(installedPackageRoot, 'sdk', 'python', 'pandora_agent', 'generated', 'command-descriptors.json'),
+      path.join(installedPackageRoot, 'sdk', 'python', 'pandora_agent', 'generated', 'mcp-tool-definitions.json'),
+      path.join(installedPackageRoot, 'sdk', 'python', 'pandora_agent', 'generated', 'contract-registry.json'),
+    ]) {
+      if (fs.existsSync(duplicatePath)) {
+        throw new Error(`Installed package should not ship duplicate generated payload ${path.relative(installedPackageRoot, duplicatePath)}.`);
+      }
     }
     for (const scriptName of EXPECTED_PUBLISHED_SCRIPT_NAMES) {
       if (typeof installedScripts[scriptName] !== 'string' || installedScripts[scriptName].length === 0) {

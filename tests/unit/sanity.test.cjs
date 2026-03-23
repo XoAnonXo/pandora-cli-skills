@@ -51,7 +51,7 @@ test('package exposes pandora bin entrypoint and packed consumer surface', () =>
   assert.equal(pkg.exports['./sdk/typescript'], './sdk/typescript/index.js');
   assert.equal(pkg.exports['./sdk/generated'], './sdk/generated/index.js');
   assert.equal(pkg.exports['./sdk/typescript/generated'], './sdk/typescript/generated/index.js');
-  assert.equal(pkg.exports['./sdk/typescript/generated/contract-registry'], './sdk/typescript/generated/contract-registry.json');
+  assert.equal(pkg.exports['./sdk/typescript/generated/contract-registry'], './sdk/generated/contract-registry.json');
   const packed = packDryRun();
   const packedFiles = new Set((packed.files || []).map((entry) => entry.path));
   const publishedPkg = buildPublishedPackageJson(pkg);
@@ -73,9 +73,9 @@ test('package exposes pandora bin entrypoint and packed consumer surface', () =>
     'sdk/typescript/backends.js',
     'sdk/typescript/catalog.js',
     'sdk/typescript/errors.js',
-    'sdk/typescript/generated/contract-registry.json',
     'sdk/python/pandora_agent/__init__.py',
-    'sdk/python/pandora_agent/generated/contract-registry.json',
+    'sdk/typescript/generated/manifest.json',
+    'sdk/python/pandora_agent/generated/manifest.json',
     'scripts/create_market_launcher.ts',
     'scripts/create_polymarket_clone_and_bet.ts',
     'scripts/release/install_release.sh',
@@ -103,6 +103,21 @@ test('package exposes pandora bin entrypoint and packed consumer surface', () =>
       Array.from(packedFiles).some((filePath) => filePath.startsWith(forbiddenPrefix)),
       false,
       `packed artifact should not include ${forbiddenPrefix}`,
+    );
+  }
+
+  for (const duplicatePath of [
+    'sdk/typescript/generated/command-descriptors.json',
+    'sdk/typescript/generated/mcp-tool-definitions.json',
+    'sdk/typescript/generated/contract-registry.json',
+    'sdk/python/pandora_agent/generated/command-descriptors.json',
+    'sdk/python/pandora_agent/generated/mcp-tool-definitions.json',
+    'sdk/python/pandora_agent/generated/contract-registry.json',
+  ]) {
+    assert.equal(
+      packedFiles.has(duplicatePath),
+      false,
+      `packed artifact should not include duplicate generated payload ${duplicatePath}`,
     );
   }
 });

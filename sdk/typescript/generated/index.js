@@ -1,8 +1,24 @@
 'use strict';
 const manifest = require('./manifest.json');
-const commandDescriptors = require('./command-descriptors.json');
-const mcpToolDefinitions = require('./mcp-tool-definitions.json');
-const contractRegistry = require('./contract-registry.json');
+
+function loadRootArtifact(name) {
+  return require('../../generated/' + name);
+}
+
+function loadLocalArtifact(name) {
+  try {
+    return require('./' + name);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') {
+      throw error;
+    }
+    return loadRootArtifact(name);
+  }
+}
+
+const commandDescriptors = loadLocalArtifact('command-descriptors.json');
+const mcpToolDefinitions = loadLocalArtifact('mcp-tool-definitions.json');
+const contractRegistry = loadLocalArtifact('contract-registry.json');
 
 function loadGeneratedManifest() {
   return manifest;

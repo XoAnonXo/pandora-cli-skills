@@ -307,6 +307,68 @@ function buildIndexModuleSource(options = {}) {
   return `'use strict';${fallbackPrelude}\nfunction loadGeneratedManifest() {\n  return manifest;\n}\n\nfunction loadGeneratedCommandDescriptors() {\n  return commandDescriptors;\n}\n\nfunction loadGeneratedMcpToolDefinitions() {\n  return mcpToolDefinitions;\n}\n\nfunction loadGeneratedContractRegistry() {\n  return contractRegistry;\n}\n\nfunction loadGeneratedCapabilities() {\n  return contractRegistry && contractRegistry.capabilities ? contractRegistry.capabilities : {};\n}\n\nfunction loadGeneratedToolCatalog() {\n  return contractRegistry && contractRegistry.tools ? contractRegistry.tools : {};\n}\n\nmodule.exports = Object.freeze({\n  manifest,\n  commandDescriptors,\n  mcpToolDefinitions,\n  contractRegistry,\n  loadGeneratedManifest,\n  loadGeneratedCommandDescriptors,\n  loadGeneratedMcpToolDefinitions,\n  loadGeneratedContractRegistry,\n  loadGeneratedCapabilities,\n  loadGeneratedToolCatalog,\n});\n`;
 }
 
+function buildTypescriptGeneratedIndexModuleSource() {
+  return `'use strict';
+const manifest = require('./manifest.json');
+
+function loadRootArtifact(name) {
+  return require('../../generated/' + name);
+}
+
+function loadLocalArtifact(name) {
+  try {
+    return require('./' + name);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') {
+      throw error;
+    }
+    return loadRootArtifact(name);
+  }
+}
+
+const commandDescriptors = loadLocalArtifact('command-descriptors.json');
+const mcpToolDefinitions = loadLocalArtifact('mcp-tool-definitions.json');
+const contractRegistry = loadLocalArtifact('contract-registry.json');
+
+function loadGeneratedManifest() {
+  return manifest;
+}
+
+function loadGeneratedCommandDescriptors() {
+  return commandDescriptors;
+}
+
+function loadGeneratedMcpToolDefinitions() {
+  return mcpToolDefinitions;
+}
+
+function loadGeneratedContractRegistry() {
+  return contractRegistry;
+}
+
+function loadGeneratedCapabilities() {
+  return contractRegistry && contractRegistry.capabilities ? contractRegistry.capabilities : {};
+}
+
+function loadGeneratedToolCatalog() {
+  return contractRegistry && contractRegistry.tools ? contractRegistry.tools : {};
+}
+
+module.exports = Object.freeze({
+  manifest,
+  commandDescriptors,
+  mcpToolDefinitions,
+  contractRegistry,
+  loadGeneratedManifest,
+  loadGeneratedCommandDescriptors,
+  loadGeneratedMcpToolDefinitions,
+  loadGeneratedContractRegistry,
+  loadGeneratedCapabilities,
+  loadGeneratedToolCatalog,
+});
+`;
+}
+
 function buildIndexTypesSource(typeImportPath) {
   return `import type {\n  PandoraCommandDescriptor,\n  PandoraContractRegistry,\n  PandoraGeneratedManifest,\n  PandoraGeneratedMcpToolDefinition,\n} from '${typeImportPath}';\n\ndeclare const sdk: {\n  manifest: PandoraGeneratedManifest;\n  commandDescriptors: Record<string, PandoraCommandDescriptor>;\n  mcpToolDefinitions: PandoraGeneratedMcpToolDefinition[];\n  contractRegistry: PandoraContractRegistry;\n  loadGeneratedManifest(): PandoraGeneratedManifest;\n  loadGeneratedCommandDescriptors(): Record<string, PandoraCommandDescriptor>;\n  loadGeneratedMcpToolDefinitions(): PandoraGeneratedMcpToolDefinition[];\n  loadGeneratedContractRegistry(): PandoraContractRegistry;\n  loadGeneratedCapabilities(): PandoraContractRegistry['capabilities'];\n  loadGeneratedToolCatalog(): PandoraContractRegistry['tools'];\n};\n\nexport = sdk;\n`;
 }
@@ -425,7 +487,7 @@ function buildGeneratedArtifactFiles(options = {}) {
     {
       relativePath: `${TYPESCRIPT_GENERATED_RELATIVE_DIR}/index.js`,
       absolutePath: path.join(TYPESCRIPT_GENERATED_DIR, 'index.js'),
-      content: buildIndexModuleSource(),
+      content: buildTypescriptGeneratedIndexModuleSource(),
     },
     {
       relativePath: `${TYPESCRIPT_GENERATED_RELATIVE_DIR}/index.d.ts`,

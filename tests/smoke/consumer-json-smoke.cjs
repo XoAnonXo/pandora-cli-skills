@@ -511,6 +511,19 @@ function main() {
       fs.existsSync(path.join(installedPackageRoot, 'sdk', 'python', 'pandora_agent', 'generated', 'manifest.json')),
       'Installed package is missing sdk/python/pandora_agent/generated/manifest.json.',
     );
+    for (const duplicatePath of [
+      path.join(installedPackageRoot, 'sdk', 'typescript', 'generated', 'command-descriptors.json'),
+      path.join(installedPackageRoot, 'sdk', 'typescript', 'generated', 'mcp-tool-definitions.json'),
+      path.join(installedPackageRoot, 'sdk', 'typescript', 'generated', 'contract-registry.json'),
+      path.join(installedPackageRoot, 'sdk', 'python', 'pandora_agent', 'generated', 'command-descriptors.json'),
+      path.join(installedPackageRoot, 'sdk', 'python', 'pandora_agent', 'generated', 'mcp-tool-definitions.json'),
+      path.join(installedPackageRoot, 'sdk', 'python', 'pandora_agent', 'generated', 'contract-registry.json'),
+    ]) {
+      ensure(
+        !fs.existsSync(duplicatePath),
+        `Installed package should not ship duplicate generated payload ${path.relative(installedPackageRoot, duplicatePath)}.`,
+      );
+    }
     ensure(
       fs.existsSync(path.join(installedPackageRoot, 'sdk', 'generated', 'index.js')),
       'Installed package is missing sdk/generated/index.js.',
