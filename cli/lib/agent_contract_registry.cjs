@@ -4841,21 +4841,21 @@ const commandContracts = [
     name: 'fees.withdraw',
     summary: 'Dry-run or execute `withdrawProtocolFees()` for one Pandora AMM market or sweep creator-owned markets in batch.',
     usage:
-      'pandora [--output table|json] fees withdraw (--market-address <address>|--all-markets [--creator <address>]) --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--indexer-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]',
+      'pandora [--output table|json] fees withdraw (--market-address <address>|--all-markets --creator <address>) --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--indexer-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]',
     emits: ['fees.withdraw', 'fees.withdraw.help', 'fees.help'],
     dataSchema: GENERIC_DATA_SCHEMA_REF,
     mcpExposed: true,
     mcp: {
       command: ['fees', 'withdraw'],
-      description: 'Dry-run or execute a Pandora market contract `withdrawProtocolFees()` call. Use `--market-address` for one market or `--all-markets` to sweep creator-owned markets discovered from the indexer.',
+      description: 'Dry-run or execute a Pandora market contract `withdrawProtocolFees()` call. Use `--market-address` for one market or `--all-markets --creator <address>` to sweep creator-owned markets discovered from the indexer.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
           'dotenv-path': stringSchema('Env file path.'),
           'skip-dotenv': booleanSchema('Skip env loading.'),
           'market-address': commonFlags.marketAddress,
-          'all-markets': booleanSchema('Discover creator-owned markets from the indexer and withdraw protocol fees across the whole set.'),
-          creator: stringSchema('Creator wallet used to scope `--all-markets`. Defaults to the signer wallet when available.'),
+          'all-markets': booleanSchema('Discover creator-owned markets from the indexer and withdraw protocol fees across the whole set. Requires `--creator`.'),
+          creator: stringSchema('Creator wallet used to scope `--all-markets`. Required for batch sweeps.'),
           'dry-run': booleanSchema('Run dry-run mode.'),
           execute: booleanSchema('Execute the withdrawal transaction.'),
           fork: booleanSchema('Run in fork mode.'),

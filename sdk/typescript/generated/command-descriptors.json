@@ -2608,7 +2608,7 @@
       "withdraw"
     ],
     "canonicalTool": "fees.withdraw",
-    "canonicalUsage": "pandora [--output table|json] fees withdraw (--market-address <address>|--all-markets [--creator <address>]) --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--indexer-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]",
+    "canonicalUsage": "pandora [--output table|json] fees withdraw (--market-address <address>|--all-markets --creator <address>) --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--indexer-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/GenericCommandData",
     "emits": [
@@ -2635,7 +2635,7 @@
       "additionalProperties": false,
       "properties": {
         "all-markets": {
-          "description": "Discover creator-owned markets from the indexer and withdraw protocol fees across the whole set.",
+          "description": "Discover creator-owned markets from the indexer and withdraw protocol fees across the whole set. Requires `--creator`.",
           "type": "boolean"
         },
         "chain-id": {
@@ -2644,7 +2644,7 @@
           "type": "integer"
         },
         "creator": {
-          "description": "Creator wallet used to scope `--all-markets`. Defaults to the signer wallet when available.",
+          "description": "Creator wallet used to scope `--all-markets`. Required for batch sweeps.",
           "type": "string"
         },
         "dotenv-path": {
@@ -2746,7 +2746,7 @@
     "summary": "Dry-run or execute `withdrawProtocolFees()` for one Pandora AMM market or sweep creator-owned markets in batch.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] fees withdraw (--market-address <address>|--all-markets [--creator <address>]) --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--indexer-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]"
+    "usage": "pandora [--output table|json] fees withdraw (--market-address <address>|--all-markets --creator <address>) --dry-run|--execute [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--indexer-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--dotenv-path <path>] [--skip-dotenv] [--timeout-ms <ms>]"
   },
   "fund-check": {
     "agentWorkflow": null,

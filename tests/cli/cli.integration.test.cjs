@@ -5041,6 +5041,24 @@ test('fees withdraw --all-markets dry-run previews creator-scoped protocol fee s
   }
 });
 
+test('fees withdraw --all-markets requires --creator so batch sweep selection stays explicit', async () => {
+  const result = await runCliAsync([
+    '--output',
+    'json',
+    'fees',
+    'withdraw',
+    '--skip-dotenv',
+    '--all-markets',
+    '--dry-run',
+  ]);
+
+  assert.equal(result.status, 1);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'MISSING_REQUIRED_FLAG');
+  assert.match(payload.error.message, /requires --creator <address>/i);
+});
+
 test('table-mode GraphQL errors render human-readable messages', async () => {
   const indexer = await startJsonHttpServer(() => ({
     body: {

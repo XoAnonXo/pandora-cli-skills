@@ -321,3 +321,26 @@ test('runBatchFeesWithdraw execute reuses the local signer across all discovered
     ['submitted', 'submitted'],
   );
 });
+
+test('runBatchFeesWithdraw requires an explicit creator selector for all-markets', async () => {
+  await assert.rejects(
+    () => runBatchFeesWithdraw(
+      {
+        allMarkets: true,
+        dryRun: true,
+        chainId: 1,
+        rpcUrl: 'https://ethereum.example',
+        indexerUrl: 'https://indexer.example',
+      },
+      {
+        publicClient: createReadOnlyClient(),
+        viemRuntime: {},
+      },
+    ),
+    (error) => {
+      assert.equal(error && error.code, 'MISSING_REQUIRED_FLAG');
+      assert.match(String(error && error.message), /requires --creator <address>/i);
+      return true;
+    },
+  );
+});

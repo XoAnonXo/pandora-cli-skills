@@ -486,6 +486,12 @@ function parseFeesWithdrawFlags(args, CliError) {
   if (options.creator && !options.allMarkets) {
     throw new CliError('INVALID_ARGS', '--creator is only supported together with --all-markets.');
   }
+  if (options.allMarkets && !options.creator) {
+    throw new CliError(
+      'MISSING_REQUIRED_FLAG',
+      'fees withdraw --all-markets requires --creator <address> so dry-run and execute sweep the same creator wallet.',
+    );
+  }
   if (options.dryRun === options.execute) {
     throw new CliError('INVALID_ARGS', 'Use exactly one mode for fees withdraw: --dry-run or --execute.');
   }
@@ -1095,11 +1101,11 @@ async function runBatchFeesWithdraw(options = {}, deps = {}) {
   }
 
   const context = await resolveWithdrawExecutionContext(options, deps);
-  const creator = normalizeAddress(options.creator || context.signerAddress);
+  const creator = normalizeAddress(options.creator);
   if (!creator) {
     throw createServiceError(
       'MISSING_REQUIRED_FLAG',
-      'fees withdraw --all-markets requires --creator <address> or signer credentials to infer the creator wallet.',
+      'fees withdraw --all-markets requires --creator <address> so the sweep target is explicit.',
     );
   }
 
