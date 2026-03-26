@@ -53,6 +53,9 @@ jobs:
       - name: Install Python build frontend
         run: python -m pip install --disable-pip-version-check --quiet "setuptools>=68" wheel build
 
+      - name: Repo hygiene
+        run: npm run check:repo-hygiene
+
       - name: Lint
         run: npm run lint
 

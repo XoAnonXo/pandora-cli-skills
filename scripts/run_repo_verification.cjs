@@ -15,6 +15,7 @@ const BUILD_STEP = Object.freeze({
 const POST_BUILD_STEPS = Object.freeze([
   { label: 'check:docs', command: NPM_COMMAND, args: ['run', 'check:docs'] },
   { label: 'check:anthropic-skill', command: NPM_COMMAND, args: ['run', 'check:anthropic-skill'] },
+  { label: 'check:repo-hygiene', command: NPM_COMMAND, args: ['run', 'check:repo-hygiene'] },
   { label: 'check:secret-scan', command: NPM_COMMAND, args: ['run', 'check:secret-scan'] },
   { label: 'check:sdk-contracts', command: NPM_COMMAND, args: ['run', 'check:sdk-contracts'] },
   { label: 'check:sdk-standalone', command: NPM_COMMAND, args: ['run', 'check:sdk-standalone'] },

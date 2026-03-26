@@ -92,6 +92,7 @@
     "check:sbom": "node scripts/generate_sbom.cjs --check",
     "check:release-trust": "node scripts/check_release_trust.cjs",
     "check:release-drift": "node scripts/check_release_drift.cjs",
+    "check:repo-hygiene": "node scripts/check_repo_hygiene.cjs",
     "check:secret-scan": "node scripts/check_secret_scan.cjs",
     "release:pack": "node scripts/release/pack_release_tarball.cjs",
     "release:publish:artifact": "node scripts/release/publish_release_tarball.cjs",
@@ -171,7 +172,6 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
-    "playwright-core": "^1.58.2",
     "typescript": "^5.9.3"
   }
 }
