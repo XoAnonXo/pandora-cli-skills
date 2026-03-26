@@ -1,0 +1,62 @@
+{
+  "state": {
+    "targetHedgeInventory": {
+      "yesShares": 216.3,
+      "noShares": 0,
+      "initializedAt": "2026-03-25T18:00:00.000Z",
+      "initializedFrom": "flat",
+      "updatedAt": "2026-03-25T20:30:00.000Z"
+    },
+    "deferredHedgeQueue": [
+      {
+        "id": "okc-bos:sell-yes:execution-failed",
+        "status": "queued",
+        "tokenSide": "yes",
+        "orderSide": "sell",
+        "amountUsdc": 11.4,
+        "amountShares": 20,
+        "targetUsdc": 11.4,
+        "targetShares": 20,
+        "reason": "execution-failed",
+        "notes": "Stale earlier sell failure that should no longer remain queued.",
+        "createdAt": "2026-03-25T20:10:00.000Z",
+        "updatedAt": "2026-03-25T20:10:00.000Z"
+      }
+    ]
+  },
+  "inventory": {
+    "yesBalance": 207.815,
+    "noBalance": 760,
+    "prices": {
+      "yes": 0.57,
+      "no": 0.44
+    },
+    "estimatedValueUsd": 452.85555
+  },
+  "depth": {
+    "yesDepth": {
+      "depthUsd": 500,
+      "availableUsd": 500,
+      "referencePrice": 0.57,
+      "depthShares": 877.192982
+    },
+    "noDepth": {
+      "depthUsd": 600,
+      "availableUsd": 600,
+      "referencePrice": 0.44,
+      "depthShares": 1363.636364
+    },
+    "sellYesDepth": {
+      "depthUsd": 100,
+      "availableUsd": 100,
+      "referencePrice": 0.57,
+      "depthShares": 175.438596
+    },
+    "sellNoDepth": {
+      "depthUsd": 400,
+      "availableUsd": 400,
+      "referencePrice": 0.44,
+      "depthShares": 909.090909
+    }
+  }
+}

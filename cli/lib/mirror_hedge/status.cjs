@@ -2,6 +2,7 @@ const { round } = require('../shared/utils.cjs');
 const {
   ensureMarketPairIdentityShape,
   ensureManagedInventorySnapshotShape,
+  ensureRetryTelemetryShape,
   ensureSkippedVolumeCountersShape,
   ensureTargetHedgeInventoryShape,
 } = require('../mirror_hedge_state_store.cjs');
@@ -44,6 +45,7 @@ function buildBundleFacingHedgePayload(params = {}) {
   const targetInventory = params.targetHedgeInventory !== undefined
     ? ensureTargetHedgeInventoryShape(params.targetHedgeInventory)
     : ensureTargetHedgeInventoryShape(state.targetHedgeInventory);
+  const retryTelemetry = ensureRetryTelemetryShape(params.retryTelemetry || state.retryTelemetry || {});
   const skippedVolumeCounters = ensureSkippedVolumeCountersShape(params.skippedVolumeCounters || state.skippedVolumeCounters || {});
   const confirmedExposureLedger = Array.isArray(params.confirmedExposureLedger || state.confirmedExposureLedger)
     ? params.confirmedExposureLedger || state.confirmedExposureLedger
@@ -85,7 +87,12 @@ function buildBundleFacingHedgePayload(params = {}) {
       netTargetShares: targetInventory.netShares || 0,
       availableHedgeFeeBudgetUsdc: Number(state.availableHedgeFeeBudgetUsdc || 0),
       belowThresholdPendingUsdc: Number(state.belowThresholdPendingUsdc || 0),
+      sellRetryAttemptedCount: retryTelemetry.sellAttemptedCount || 0,
+      sellRetryBlockedCount: retryTelemetry.sellBlockedCount || 0,
+      sellRetryFailedCount: retryTelemetry.sellFailedCount || 0,
+      sellRetryRecoveredCount: retryTelemetry.sellRecoveredCount || 0,
       skippedVolumeUsdc: skippedVolumeCounters.totalUsdc || 0,
+      warningCount: plan && Array.isArray(plan.warnings) ? plan.warnings.length : 0,
       lastProcessedBlockNumber: state.lastProcessedBlockNumber || null,
       lastProcessedLogIndex: state.lastProcessedLogIndex || null,
       lastSuccessfulHedgeAt: state.lastSuccessfulHedge && state.lastSuccessfulHedge.executedAt ? state.lastSuccessfulHedge.executedAt : null,
@@ -108,6 +115,7 @@ function buildBundleFacingHedgePayload(params = {}) {
       deferredHedgeQueue,
       managedPolymarketInventorySnapshot: inventory,
       targetHedgeInventory: targetInventory,
+      retryTelemetry,
       skippedVolumeCounters,
       lastProcessedBlockCursor: state.lastProcessedBlockCursor || null,
       lastProcessedLogCursor: state.lastProcessedLogCursor || null,
@@ -152,6 +160,7 @@ function buildHedgeStatusPayload(params = {}) {
       missing: plan && plan.summary && Array.isArray(plan.summary.readyMissing) ? plan.summary.readyMissing : [],
       recommendedActions: plan && Array.isArray(plan.recommendedActions) ? plan.recommendedActions : [],
     },
+    warnings: plan && Array.isArray(plan.warnings) ? plan.warnings : [],
     lastSuccessfulHedge: state.lastSuccessfulHedge || null,
     lastError: state.lastError || null,
     lastAlert: state.lastAlert || null,
@@ -195,6 +204,11 @@ function renderHedgeStatusTable(payload) {
     ['netTargetShares', summary.netTargetShares],
     ['availableHedgeFeeBudgetUsdc', summary.availableHedgeFeeBudgetUsdc],
     ['belowThresholdPendingUsdc', summary.belowThresholdPendingUsdc],
+    ['sellRetryAttemptedCount', summary.sellRetryAttemptedCount],
+    ['sellRetryBlockedCount', summary.sellRetryBlockedCount],
+    ['sellRetryFailedCount', summary.sellRetryFailedCount],
+    ['sellRetryRecoveredCount', summary.sellRetryRecoveredCount],
+    ['warningCount', summary.warningCount],
     ['lastProcessedBlockNumber', summary.lastProcessedBlockNumber],
     ['lastProcessedLogIndex', summary.lastProcessedLogIndex],
     ['lastSuccessfulHedgeAt', summary.lastSuccessfulHedgeAt || ''],
@@ -212,6 +226,13 @@ function renderHedgeStatusTable(payload) {
     console.log('recommendedActions:');
     for (const action of readiness.recommendedActions) {
       console.log(`- ${action}`);
+    }
+  }
+  if (Array.isArray(payload.warnings) && payload.warnings.length) {
+    console.log('warnings:');
+    for (const warning of payload.warnings) {
+      const code = warning && warning.code ? `[${warning.code}] ` : '';
+      console.log(`- ${code}${warning && warning.message ? warning.message : JSON.stringify(warning)}`);
     }
   }
 }

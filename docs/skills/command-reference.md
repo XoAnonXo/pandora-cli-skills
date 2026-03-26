@@ -69,6 +69,9 @@ Use the smaller workflow docs before falling back to this file:
 - `mirror hedge` is the long-running bundle-oriented daemon surface. `mirror sync` remains the lower-level local/manual loop and troubleshooting path.
 - `mirror hedge` maintains a net target inventory on Polymarket; opposite-side external flow first shrinks the existing hedge before building new inventory on the other side.
 - `--min-hedge-usdc` on `mirror hedge` is the execution threshold for the current target-vs-actual gap, not a permanent per-trade ignore rule.
+- `mirror hedge status` now surfaces sell retry counters and operator warnings for stuck reductions.
+  - use `sellRetryAttemptedCount`, `sellRetryBlockedCount`, `sellRetryFailedCount`, and `sellRetryRecoveredCount` to understand whether sell-side reductions are progressing
+  - `BOTH_SIDE_INVENTORY_LOCKUP` means actual YES/NO inventory is still dual-sided while the target is single-sided
 - Bundle artifacts support DigitalOcean droplets and generic VPS targets today. Cloudflare Workers are not supported in v1.
 - `PANDORA_PRIVATE_KEY` is the preferred signer env var; `PRIVATE_KEY` remains a backward-compatible alias.
 - `PANDORA_RESOLUTION_SOURCES` can hold comma-separated mirror resolution defaults, but explicit `--sources` still win.

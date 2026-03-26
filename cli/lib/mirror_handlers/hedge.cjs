@@ -80,6 +80,11 @@ function renderMirrorHedgeDaemonTable(data) {
     ['netTargetShares', summary.netTargetShares ?? ''],
     ['availableHedgeFeeBudgetUsdc', summary.availableHedgeFeeBudgetUsdc ?? ''],
     ['belowThresholdPendingUsdc', summary.belowThresholdPendingUsdc ?? ''],
+    ['sellRetryAttemptedCount', summary.sellRetryAttemptedCount ?? ''],
+    ['sellRetryBlockedCount', summary.sellRetryBlockedCount ?? ''],
+    ['sellRetryFailedCount', summary.sellRetryFailedCount ?? ''],
+    ['sellRetryRecoveredCount', summary.sellRetryRecoveredCount ?? ''],
+    ['warningCount', summary.warningCount ?? ''],
     ['skippedVolumeUsdc', summary.skippedVolumeUsdc ?? ''],
     ['lastSuccessfulHedgeAt', summary.lastSuccessfulHedgeAt || ''],
     ['lastErrorCode', summary.lastErrorCode || ''],
@@ -89,6 +94,13 @@ function renderMirrorHedgeDaemonTable(data) {
     ['exitAt', runtime.exitAt || ''],
     ['diagnostics', Array.isArray(data.diagnostics) ? data.diagnostics.join(' | ') : ''],
   ]);
+  if (Array.isArray(data.warnings) && data.warnings.length) {
+    console.log('warnings:');
+    for (const warning of data.warnings) {
+      const code = warning && warning.code ? `[${warning.code}] ` : '';
+      console.log(`- ${code}${warning && warning.message ? warning.message : JSON.stringify(warning)}`);
+    }
+  }
 }
 
 function helpPayload(emitSuccess, commandHelpPayload, context, kind, usage, notes) {

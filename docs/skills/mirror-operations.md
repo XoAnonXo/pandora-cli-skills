@@ -10,6 +10,10 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
 - `mirror hedge` now manages a net Polymarket inventory target for the market instead of hedging each external Pandora trade independently.
 - `--min-hedge-usdc` is the execution threshold for the current target-vs-actual hedge gap; small external trades still update target exposure and accumulate.
 - `--adopt-existing-positions` treats observed Polymarket inventory as the starting live hedge baseline and then trades only the delta to target.
+- Sell-side reductions always run before any new opposite-side buy. If a sell is blocked, partially unresolved, or exchange-failed in the same tick, the daemon skips the buy phase instead of building both-side inventory.
+- `mirror hedge status` is now the operator truth surface for sell retry health.
+  - `sellRetryAttemptedCount`, `sellRetryBlockedCount`, `sellRetryFailedCount`, and `sellRetryRecoveredCount` show whether reductions are being retried, blocked by policy/depth, rejected by the exchange, or cleared from the live queue.
+  - `BOTH_SIDE_INVENTORY_LOCKUP` means actual Polymarket inventory still holds both YES and NO while the target is single-sided, so the operator should inspect sell-side reductions immediately.
 - `mirror sync` remains the lower-level local/manual loop, one-shot execution surface, and troubleshooting path.
 - Bundle artifacts support DigitalOcean droplets and generic VPS targets today.
 - Cloudflare Workers are not supported in v1 because the hedge daemon expects a long-running stateful runtime with local process/file lifecycle.
@@ -92,6 +96,20 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
 - The guided setup path surfaces signer, Polymarket, hosting, and provider prerequisites before you reach the mirror validation gates.
 - Hedge-daemon goals intentionally skip deploy-time sports discovery and resolution-source capture; those belong to `paper-mirror` and `live-mirror`.
 - `PANDORA_RESOLUTION_SOURCES` is a convenience fallback for env-driven setups; explicit `--sources` still win and still require two public URLs from different hosts.
+
+## Live sports sell-side runbook
+- Default live sports stance should stay `--sell-hedge-policy depth-checked`.
+  - this keeps auto-sells on, but only when the orderbook proves there is executable depth
+  - use `manual-only` only when you intentionally want human intervention before every hedge reduction
+- Start volatile sports windows with `--depth-slippage-bps 100`.
+  - if sell retries keep blocking while `BOTH_SIDE_INVENTORY_LOCKUP` stays present, widen cautiously to `150` or `200` before you consider disabling auto-sells
+  - do not let the daemon keep buying the opposite side through a stuck sell; the runtime now skips buy expansion in that case and surfaces the retry counters instead
+- Watch these fields during a live game:
+  - `deferredHedgeCount`
+  - `sellRetryBlockedCount`
+  - `sellRetryFailedCount`
+  - `sellRetryRecoveredCount`
+  - `warningCount` and `BOTH_SIDE_INVENTORY_LOCKUP`
 
 ## Polymarket funding and proxy wallet
 

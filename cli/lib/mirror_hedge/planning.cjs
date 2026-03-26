@@ -7,6 +7,7 @@ const {
   ensureManagedInventorySnapshotShape,
   ensureMarketPairIdentityShape,
   ensurePendingMempoolOverlayShape,
+  ensureRetryTelemetryShape,
   ensureSkippedVolumeCountersShape,
   ensureTargetHedgeInventoryShape,
   ensureOutcomeShape,
@@ -68,6 +69,31 @@ function summarizeReasons(collection) {
     acc[reason] = round((acc[reason] || 0) + amount) || 0;
     return acc;
   }, {});
+}
+
+function buildOperatorWarnings(params = {}) {
+  const targetInventory = ensureTargetHedgeInventoryShape(params.targetHedgeInventory);
+  const inventory = params.managedPolymarketInventorySnapshot
+    ? ensureManagedInventorySnapshotShape(params.managedPolymarketInventorySnapshot)
+    : null;
+  const warnings = [];
+  const currentYesShares = inventory && Number.isFinite(Number(inventory.yesShares)) ? Number(inventory.yesShares) : 0;
+  const currentNoShares = inventory && Number.isFinite(Number(inventory.noShares)) ? Number(inventory.noShares) : 0;
+  if (
+    currentYesShares > 0
+    && currentNoShares > 0
+    && (
+      (targetInventory.yesShares > 0 && targetInventory.noShares === 0)
+      || (targetInventory.noShares > 0 && targetInventory.yesShares === 0)
+    )
+  ) {
+    warnings.push({
+      code: 'BOTH_SIDE_INVENTORY_LOCKUP',
+      severity: 'warning',
+      message: `Observed Polymarket inventory still holds both YES (${currentYesShares}) and NO (${currentNoShares}) while the hedge target is single-sided (${targetInventory.netSide || 'flat'}).`,
+    });
+  }
+  return warnings;
 }
 
 function mergeCounters(base = {}, patch = {}) {
@@ -160,6 +186,9 @@ function planHedgeRuntime(options = {}) {
     state.skippedVolumeCounters,
     pickArray(options.skippedVolumeCounters, {}),
   );
+  const retryTelemetry = ensureRetryTelemetryShape(
+    pickArray(options.retryTelemetry, state.retryTelemetry),
+  );
   const stateKey = buildStateKey({
     marketPairIdentity,
     whitelistFingerprint,
@@ -207,6 +236,13 @@ function planHedgeRuntime(options = {}) {
   if (pendingMempoolOverlays.length) recommendedActions.push('review-pending-mempool-overlays');
   if (deferredHedgeQueue.length) recommendedActions.push('drain-deferred-hedge-queue');
   if (skippedVolumeCounters.totalUsdc > 0) recommendedActions.push('inspect-skipped-volume-counters');
+  const warnings = buildOperatorWarnings({
+    targetHedgeInventory,
+    managedPolymarketInventorySnapshot,
+  });
+  if (warnings.some((warning) => warning.code === 'BOTH_SIDE_INVENTORY_LOCKUP')) {
+    recommendedActions.push('inspect-both-side-inventory-lockup');
+  }
 
   const summary = {
     marketPairId: marketPairIdentity.marketPairId,
@@ -238,8 +274,13 @@ function planHedgeRuntime(options = {}) {
     belowThresholdPendingUsdc: toFiniteNumberOrNull(
       pickArray(options.belowThresholdPendingUsdc, state.belowThresholdPendingUsdc),
     ) || 0,
+    sellRetryAttemptedCount: retryTelemetry.sellAttemptedCount,
+    sellRetryBlockedCount: retryTelemetry.sellBlockedCount,
+    sellRetryFailedCount: retryTelemetry.sellFailedCount,
+    sellRetryRecoveredCount: retryTelemetry.sellRecoveredCount,
     skippedVolumeUsdc: skippedVolumeCounters.totalUsdc,
     skippedVolumeCount: skippedVolumeCounters.count,
+    warningCount: warnings.length,
     ready: readyMissing.length === 0,
     readyMissing,
   };
@@ -258,7 +299,9 @@ function planHedgeRuntime(options = {}) {
     managedPolymarketInventorySnapshot,
     targetHedgeInventory,
     skippedVolumeCounters,
+    retryTelemetry,
     summary,
+    warnings,
     recommendedActions,
     lastSuccessfulHedge: state.lastSuccessfulHedge ? cloneJson(state.lastSuccessfulHedge) : null,
     lastError: state.lastError ? cloneJson(state.lastError) : null,
@@ -324,10 +367,7 @@ function applyHedgeObservation(state, observation = {}, now = new Date()) {
         updatedAt: entry && entry.updatedAt ? entry.updatedAt : timestamp,
       }))
       .filter((entry) => Boolean(entry.txHash || entry.cursor || entry.transactionHash));
-    target.pendingMempoolOverlays = nextEntries.reduce(
-      (collection, entry) => upsertByKey(collection, 'txHash', entry),
-      asArray(target.pendingMempoolOverlays),
-    );
+    target.pendingMempoolOverlays = nextEntries;
   }
 
   if (Array.isArray(observation.deferredHedgeQueue)) {
@@ -337,10 +377,7 @@ function applyHedgeObservation(state, observation = {}, now = new Date()) {
         updatedAt: entry && entry.updatedAt ? entry.updatedAt : timestamp,
       }))
       .filter((entry) => Boolean(entry.id));
-    target.deferredHedgeQueue = nextEntries.reduce(
-      (collection, entry) => upsertByKey(collection, 'id', entry),
-      asArray(target.deferredHedgeQueue),
-    );
+    target.deferredHedgeQueue = nextEntries;
   }
 
   if (observation.managedPolymarketInventorySnapshot !== undefined) {
@@ -365,6 +402,12 @@ function applyHedgeObservation(state, observation = {}, now = new Date()) {
 
   if (observation.skippedVolumeCounters) {
     target.skippedVolumeCounters = mergeCounters(target.skippedVolumeCounters, observation.skippedVolumeCounters);
+  }
+
+  if (observation.retryTelemetry !== undefined) {
+    target.retryTelemetry = observation.retryTelemetry
+      ? ensureRetryTelemetryShape(observation.retryTelemetry)
+      : ensureRetryTelemetryShape({});
   }
 
   if (observation.lastSuccessfulHedge !== undefined) {

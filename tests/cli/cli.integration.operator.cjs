@@ -1404,8 +1404,8 @@ test('mirror hedge status table prints runtime queue and error details', () => {
       managedPolymarketInventorySnapshot: {
         status: 'adopted',
         yesShares: 10,
-        noShares: 0,
-        netUsdc: 10,
+        noShares: 2,
+        netUsdc: 8,
       },
       targetHedgeInventory: {
         yesShares: 0,
@@ -1415,6 +1415,12 @@ test('mirror hedge status table prints runtime queue and error details', () => {
       },
       availableHedgeFeeBudgetUsdc: 1.25,
       belowThresholdPendingUsdc: 0.75,
+      retryTelemetry: {
+        sellAttemptedCount: 4,
+        sellBlockedCount: 2,
+        sellFailedCount: 1,
+        sellRecoveredCount: 3,
+      },
       lastSuccessfulHedge: {
         hedgeId: 'hedge-1',
         status: 'completed',
@@ -1455,14 +1461,21 @@ test('mirror hedge status table prints runtime queue and error details', () => {
     assert.match(result.output, /deferredHedgeUsdc: 3/);
     assert.match(result.output, /targetNoShares: 4/);
     assert.match(result.output, /currentYesShares: 10/);
+    assert.match(result.output, /currentNoShares: 2/);
     assert.match(result.output, /excessYesToSell: 10/);
-    assert.match(result.output, /deficitNoToBuy: 4/);
+    assert.match(result.output, /deficitNoToBuy: 2/);
     assert.match(result.output, /availableHedgeFeeBudgetUsdc: 1.25/);
     assert.match(result.output, /belowThresholdPendingUsdc: 0.75/);
+    assert.match(result.output, /sellRetryAttemptedCount: 4/);
+    assert.match(result.output, /sellRetryBlockedCount: 2/);
+    assert.match(result.output, /sellRetryFailedCount: 1/);
+    assert.match(result.output, /sellRetryRecoveredCount: 3/);
     assert.match(result.output, /skippedVolumeUsdc: 1/);
     assert.match(result.output, /lastSuccessfulHedgeAt: 2026-03-20T00:00:00.000Z/);
     assert.match(result.output, /lastErrorCode: NO_DEPTH/);
     assert.match(result.output, /lastAlertCode: QUEUE_RETRY/);
+    assert.match(result.output, /warningCount: 1/);
+    assert.match(result.output, /BOTH_SIDE_INVENTORY_LOCKUP/);
   } finally {
     removeDir(tempDir);
   }

@@ -9,6 +9,7 @@ const {
   saveState,
   createState,
   buildIdentityFingerprint,
+  ensureRetryTelemetryShape,
   ensureTargetHedgeInventoryShape,
 } = require('./mirror_hedge_state_store.cjs');
 const {
@@ -324,6 +325,7 @@ function buildHedgeRuntime(options = {}) {
     availableHedgeFeeBudgetUsdc: options.availableHedgeFeeBudgetUsdc,
     belowThresholdPendingUsdc: options.belowThresholdPendingUsdc,
     skippedVolumeCounters: options.skippedVolumeCounters,
+    retryTelemetry: options.retryTelemetry,
   });
   return {
     filePath: loaded.filePath,
@@ -353,6 +355,7 @@ function runHedge(options = {}) {
     availableHedgeFeeBudgetUsdc: options.availableHedgeFeeBudgetUsdc,
     belowThresholdPendingUsdc: options.belowThresholdPendingUsdc,
     skippedVolumeCounters: options.skippedVolumeCounters,
+    retryTelemetry: options.retryTelemetry,
     lastSuccessfulHedge: options.lastSuccessfulHedge,
     lastError: options.lastError,
     lastAlert: options.lastAlert,
@@ -363,6 +366,7 @@ function runHedge(options = {}) {
     targetHedgeInventory: options.targetHedgeInventory,
     availableHedgeFeeBudgetUsdc: options.availableHedgeFeeBudgetUsdc,
     belowThresholdPendingUsdc: options.belowThresholdPendingUsdc,
+    retryTelemetry: options.retryTelemetry,
   });
   if (options.persist !== false) {
     persistHedgeState(loaded.filePath, state);
@@ -830,6 +834,44 @@ function buildQueueEntryForAction(action, reasonCode, reason, residualShares, re
   };
 }
 
+function isSellLikeQueueEntry(entry = {}) {
+  const orderSide = normalizeLowerText(entry.orderSide);
+  if (orderSide === 'sell') return true;
+  return normalizeOptionalString(entry.id || '').includes(':sell-');
+}
+
+function buildDepthAuditSnapshot(depthCheck) {
+  if (!depthCheck || typeof depthCheck !== 'object') return null;
+  return {
+    status: normalizeOptionalString(depthCheck.status),
+    depthKnown: Boolean(depthCheck.depthKnown),
+    referencePrice: toOptionalNumber(depthCheck.referencePrice),
+    capacityUsdc: toOptionalNumber(depthCheck.capacityUsdc),
+    depthShares: toOptionalNumber(depthCheck.depthShares),
+    fillableUsdc: toOptionalNumber(depthCheck.fillableUsdc),
+    fillableShares: toOptionalNumber(depthCheck.fillableShares),
+  };
+}
+
+function buildNextRetryTelemetry(previousTelemetry, deltaTelemetry) {
+  const previous = ensureRetryTelemetryShape(previousTelemetry);
+  const delta = deltaTelemetry && typeof deltaTelemetry === 'object' ? deltaTelemetry : {};
+  return ensureRetryTelemetryShape({
+    sellAttemptedCount: previous.sellAttemptedCount + (toOptionalNumber(delta.sellAttemptedCount) || 0),
+    sellBlockedCount: previous.sellBlockedCount + (toOptionalNumber(delta.sellBlockedCount) || 0),
+    sellFailedCount: previous.sellFailedCount + (toOptionalNumber(delta.sellFailedCount) || 0),
+    sellRecoveredCount: previous.sellRecoveredCount + (toOptionalNumber(delta.sellRecoveredCount) || 0),
+    lastAttemptAt: normalizeOptionalString(delta.lastAttemptAt) || previous.lastAttemptAt,
+    lastBlockedAt: normalizeOptionalString(delta.lastBlockedAt) || previous.lastBlockedAt,
+    lastBlockedReasonCode: normalizeOptionalString(delta.lastBlockedReasonCode) || previous.lastBlockedReasonCode,
+    lastBlockedReason: normalizeOptionalString(delta.lastBlockedReason) || previous.lastBlockedReason,
+    lastFailureAt: normalizeOptionalString(delta.lastFailureAt) || previous.lastFailureAt,
+    lastFailureCode: normalizeOptionalString(delta.lastFailureCode) || previous.lastFailureCode,
+    lastFailureMessage: normalizeOptionalString(delta.lastFailureMessage) || previous.lastFailureMessage,
+    lastRecoveryAt: normalizeOptionalString(delta.lastRecoveryAt) || previous.lastRecoveryAt,
+  });
+}
+
 function resolveActionTokenId(tokenSide, sourceMarket) {
   return normalizeLowerText(tokenSide) === 'no'
     ? sourceMarket && sourceMarket.noTokenId
@@ -1149,10 +1191,87 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
   const confirmedExposureLedger = [];
   const deferredHedgeQueue = [];
   const pendingMempoolOverlays = [];
+  const previousDeferredHedgeQueue = Array.isArray(state.deferredHedgeQueue) ? state.deferredHedgeQueue.slice() : [];
   let skippedVolumeCounters = null;
   let lastSuccessfulHedge = null;
   let lastError = null;
   let belowThresholdPendingUsdc = 0;
+  const retryTelemetryDelta = {
+    sellAttemptedCount: 0,
+    sellBlockedCount: 0,
+    sellFailedCount: 0,
+    sellRecoveredCount: 0,
+    lastAttemptAt: null,
+    lastBlockedAt: null,
+    lastBlockedReasonCode: null,
+    lastBlockedReason: null,
+    lastFailureAt: null,
+    lastFailureCode: null,
+    lastFailureMessage: null,
+    lastRecoveryAt: null,
+  };
+
+  function recordSellAttempt(action, depthCheck = null) {
+    const timestamp = new Date().toISOString();
+    retryTelemetryDelta.sellAttemptedCount += 1;
+    retryTelemetryDelta.lastAttemptAt = timestamp;
+    auditEntries.push({
+      kind: 'sell-action-attempted',
+      tradeId: action.queueKey,
+      reasonCode: 'sell-retry-attempted',
+      reason: 'Attempting to reduce excess hedge inventory before any buy-side expansion.',
+      amountUsdc: action.amountUsdc,
+      amountShares: action.amountShares,
+      tokenSide: action.tokenSide,
+      orderSide: action.orderSide,
+      depthSnapshot: buildDepthAuditSnapshot(depthCheck),
+    });
+  }
+
+  function recordSellBlocked(action, reasonCode, reason, depthCheck = null) {
+    const timestamp = new Date().toISOString();
+    retryTelemetryDelta.sellBlockedCount += 1;
+    retryTelemetryDelta.lastBlockedAt = timestamp;
+    retryTelemetryDelta.lastBlockedReasonCode = normalizeOptionalString(reasonCode);
+    retryTelemetryDelta.lastBlockedReason = normalizeOptionalString(reason);
+    auditEntries.push({
+      kind: 'sell-action-blocked',
+      tradeId: action.queueKey,
+      reasonCode,
+      reason,
+      amountUsdc: action.amountUsdc,
+      amountShares: action.amountShares,
+      tokenSide: action.tokenSide,
+      orderSide: action.orderSide,
+      depthSnapshot: buildDepthAuditSnapshot(depthCheck),
+    });
+  }
+
+  function recordSellFailure(action, orderResult, depthCheck = null) {
+    const timestamp = new Date().toISOString();
+    const failureCode = normalizeOptionalString(
+      orderResult && orderResult.error && (orderResult.error.code || orderResult.error.message),
+    ) || 'execution-failed';
+    const failureMessage = normalizeOptionalString(
+      orderResult && orderResult.error && orderResult.error.message,
+    ) || 'Polymarket execution failed.';
+    retryTelemetryDelta.sellFailedCount += 1;
+    retryTelemetryDelta.lastFailureAt = timestamp;
+    retryTelemetryDelta.lastFailureCode = failureCode;
+    retryTelemetryDelta.lastFailureMessage = failureMessage;
+    auditEntries.push({
+      kind: 'sell-action-failed',
+      tradeId: action.queueKey,
+      reasonCode: failureCode,
+      reason: failureMessage,
+      amountUsdc: action.amountUsdc,
+      amountShares: action.amountShares,
+      tokenSide: action.tokenSide,
+      orderSide: action.orderSide,
+      depthSnapshot: buildDepthAuditSnapshot(depthCheck),
+      exchangeError: cloneJson(orderResult && (orderResult.error || orderResult.response || null)),
+    });
+  }
 
   const depth = pairContext.sourceMarket
     ? await fetchDepthForMarket(pairContext.sourceMarket, {
@@ -1287,6 +1406,9 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
 
   async function processInventoryGapAction(action, executionOptions = {}) {
     const tradeLike = buildTradeForGapAction(action);
+    if (action.orderSide === 'sell') {
+      recordSellAttempt(action);
+    }
     if (action.orderSide === 'sell' && pairContext.sellPolicy === 'manual-only') {
       const queueEntry = buildQueueEntryForAction(
         action,
@@ -1304,6 +1426,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         amountUsdc: action.amountUsdc,
         amountShares: action.amountShares,
       });
+      recordSellBlocked(action, 'sell-policy-manual-only', queueEntry.notes);
       return { blockedBuys: true };
     }
 
@@ -1327,6 +1450,17 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     const sellPolicy = evaluateDepthCheckedSellPolicy(tradeLike, depthCheck, {
       requireSellDepthProof: true,
     });
+    if (action.orderSide === 'sell') {
+      auditEntries.push({
+        kind: 'sell-depth-evaluated',
+        tradeId: action.queueKey,
+        reasonCode: sellPolicy.reasonCode || depthCheck.status || 'sell-depth-evaluated',
+        reason: sellPolicy.reason || 'Sell-side depth evaluated.',
+        amountUsdc: action.amountUsdc,
+        amountShares: action.amountShares,
+        depthSnapshot: buildDepthAuditSnapshot(depthCheck),
+      });
+    }
     if (!sellPolicy.passed) {
       const queueEntry = buildQueueEntryForAction(
         action,
@@ -1344,6 +1478,9 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         amountUsdc: action.amountUsdc,
         amountShares: action.amountShares,
       });
+      if (action.orderSide === 'sell') {
+        recordSellBlocked(action, sellPolicy.reasonCode, sellPolicy.reason, depthCheck);
+      }
       return { blockedBuys: action.orderSide === 'sell' };
     }
 
@@ -1364,6 +1501,9 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         amountUsdc: action.amountUsdc,
         amountShares: action.amountShares,
       });
+      if (action.orderSide === 'sell') {
+        recordSellBlocked(action, 'depth-unavailable', queueEntry.notes, depthCheck);
+      }
       return { blockedBuys: action.orderSide === 'sell' };
     }
 
@@ -1409,6 +1549,9 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         amountUsdc: action.amountUsdc,
         amountShares: action.amountShares,
       });
+      if (action.orderSide === 'sell') {
+        recordSellBlocked(action, fillPolicy.reasonCode, queueEntry.notes, depthCheck);
+      }
       return { blockedBuys: action.orderSide === 'sell' };
     }
 
@@ -1424,6 +1567,14 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         residualShares,
         residualUsdc,
       ));
+      if (action.orderSide === 'sell') {
+        recordSellBlocked(
+          action,
+          'residual-exposure',
+          'Residual hedge exposure remains queued after a partial fill.',
+          depthCheck,
+        );
+      }
     }
 
     const tokenId = resolveActionTokenId(action.tokenSide, pairContext.sourceMarket);
@@ -1444,6 +1595,9 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         amountUsdc: action.amountUsdc,
         amountShares: action.amountShares,
       });
+      if (action.orderSide === 'sell') {
+        recordSellBlocked(action, 'missing-token-id', queueEntry.notes, depthCheck);
+      }
       return { blockedBuys: action.orderSide === 'sell' };
     }
 
@@ -1477,6 +1631,13 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
           message: queueEntry.notes,
           at: new Date().toISOString(),
           amountUsdc: action.amountUsdc,
+          details: {
+            queueKey: action.queueKey,
+            tokenSide: action.tokenSide,
+            orderSide: action.orderSide,
+            exchangeError: cloneJson(orderResult && (orderResult.error || orderResult.response || null)),
+            depthSnapshot: buildDepthAuditSnapshot(depthCheck),
+          },
         };
         auditEntries.push({
           kind: 'queued',
@@ -1486,6 +1647,9 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
           amountUsdc: action.amountUsdc,
           amountShares: action.amountShares,
         });
+        if (action.orderSide === 'sell') {
+          recordSellFailure(action, orderResult, depthCheck);
+        }
         return { blockedBuys: action.orderSide === 'sell' };
       }
       lastSuccessfulHedge = {
@@ -1604,7 +1768,46 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     for (const action of buyActions) {
       await processInventoryGapAction(action, { phase: 'buy' });
     }
+  } else {
+    const blockedGap = buildGapShares(targetHedgeInventory, projectedInventorySnapshot);
+    if (blockedGap.deficitYesToBuy > 0 || blockedGap.deficitNoToBuy > 0) {
+      auditEntries.push({
+        kind: 'buy-phase-skipped',
+        tradeId: pairContext.marketPairIdentity.marketPairId || pairContext.marketPairIdentity.pandoraMarketAddress,
+        reasonCode: 'sell-phase-blocked',
+        reason: 'Buy-side hedge expansion was skipped because sell-side reduction is still blocked or pending.',
+        deficitYesToBuy: blockedGap.deficitYesToBuy,
+        deficitNoToBuy: blockedGap.deficitNoToBuy,
+      });
+    }
   }
+
+  const currentDeferredQueueIds = new Set(
+    deferredHedgeQueue
+      .map((entry) => normalizeOptionalString(entry && entry.id))
+      .filter(Boolean),
+  );
+  const recoveredSellEntries = previousDeferredHedgeQueue.filter(
+    (entry) => isSellLikeQueueEntry(entry) && !currentDeferredQueueIds.has(normalizeOptionalString(entry && entry.id)),
+  );
+  if (recoveredSellEntries.length) {
+    retryTelemetryDelta.sellRecoveredCount += recoveredSellEntries.length;
+    retryTelemetryDelta.lastRecoveryAt = new Date().toISOString();
+    for (const entry of recoveredSellEntries) {
+      auditEntries.push({
+        kind: 'deferred-queue-pruned',
+        tradeId: entry.id,
+        reasonCode: 'queue-recovered',
+        reason: 'Deferred sell queue entry was removed because the sell exposure is no longer pending.',
+        amountUsdc: entry.amountUsdc,
+        amountShares: entry.amountShares,
+        tokenSide: entry.tokenSide,
+        orderSide: entry.orderSide,
+      });
+    }
+  }
+
+  const retryTelemetry = buildNextRetryTelemetry(state.retryTelemetry, retryTelemetryDelta);
 
   const allProcessedTrades = confirmedResult.trades;
   const latestTrade = allProcessedTrades.length ? allProcessedTrades[allProcessedTrades.length - 1] : null;
@@ -1619,6 +1822,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     availableHedgeFeeBudgetUsdc,
     belowThresholdPendingUsdc,
     skippedVolumeCounters,
+    retryTelemetry,
     lastSuccessfulHedge,
     lastError,
     lastProcessedBlockCursor: latestTrade
@@ -1982,6 +2186,7 @@ async function runMirrorHedge(options = {}) {
     availableHedgeFeeBudgetUsdc: 0,
     belowThresholdPendingUsdc: 0,
     skippedVolumeCounters: { totalUsdc: 0, yesUsdc: 0, noUsdc: 0, count: 0, byReason: {}, bySide: {} },
+    retryTelemetry: ensureRetryTelemetryShape({}),
     lastSuccessfulHedge: null,
     lastError: null,
     lastProcessedBlockCursor: null,
@@ -2036,6 +2241,7 @@ async function runMirrorHedge(options = {}) {
           availableHedgeFeeBudgetUsdc: observation.availableHedgeFeeBudgetUsdc,
           belowThresholdPendingUsdc: observation.belowThresholdPendingUsdc,
           skippedVolumeCounters: observation.skippedVolumeCounters,
+          retryTelemetry: observation.retryTelemetry,
           lastSuccessfulHedge: observation.lastSuccessfulHedge,
           lastError: observation.lastError,
           lastProcessedBlockCursor: observation.lastProcessedBlockCursor,
@@ -2118,6 +2324,7 @@ async function runMirrorHedge(options = {}) {
   const payload = buildCommonPayload(context, latestObservation.diagnostics);
   payload.mode = 'run';
   payload.plan = latestPlan;
+  payload.warnings = Array.isArray(latestPlan && latestPlan.warnings) ? latestPlan.warnings : [];
   payload.runtime = {
     status: state.runtimeStatus || 'idle',
     auditEntries: latestObservation.auditEntries,
@@ -2130,7 +2337,11 @@ async function runMirrorHedge(options = {}) {
     stoppedReason: state.stoppedReason || null,
     exitCode: state.exitCode === null || state.exitCode === undefined ? null : state.exitCode,
     exitAt: state.exitAt || null,
+    retryTelemetry: ensureRetryTelemetryShape(state.retryTelemetry),
   };
+  payload.lastSuccessfulHedge = state.lastSuccessfulHedge || null;
+  payload.lastError = state.lastError || null;
+  payload.lastAlert = state.lastAlert || null;
   payload.summary = {
     confirmedExposureCount: latestPlan && latestPlan.summary ? latestPlan.summary.confirmedExposureCount : (
       Array.isArray(state.confirmedExposureLedger) ? state.confirmedExposureLedger.length : latestObservation.confirmedExposureLedger.length
@@ -2149,6 +2360,11 @@ async function runMirrorHedge(options = {}) {
     netTargetShares: latestPlan && latestPlan.summary ? latestPlan.summary.netTargetShares : 0,
     availableHedgeFeeBudgetUsdc: latestPlan && latestPlan.summary ? latestPlan.summary.availableHedgeFeeBudgetUsdc : 0,
     belowThresholdPendingUsdc: latestPlan && latestPlan.summary ? latestPlan.summary.belowThresholdPendingUsdc : 0,
+    sellRetryAttemptedCount: latestPlan && latestPlan.summary ? latestPlan.summary.sellRetryAttemptedCount : 0,
+    sellRetryBlockedCount: latestPlan && latestPlan.summary ? latestPlan.summary.sellRetryBlockedCount : 0,
+    sellRetryFailedCount: latestPlan && latestPlan.summary ? latestPlan.summary.sellRetryFailedCount : 0,
+    sellRetryRecoveredCount: latestPlan && latestPlan.summary ? latestPlan.summary.sellRetryRecoveredCount : 0,
+    warningCount: latestPlan && latestPlan.summary ? latestPlan.summary.warningCount : 0,
   };
   payload.diagnostics = mergeDiagnostics(payload.diagnostics, diagnostics, latestObservation.diagnostics);
   return payload;
@@ -2245,6 +2461,7 @@ async function getMirrorHedgeDaemonStatus(options = {}) {
       payload.runtime = runtime.runtime;
       payload.summary = runtime.summary;
       payload.readiness = runtime.readiness;
+      payload.warnings = runtime.warnings;
       payload.lastSuccessfulHedge = runtime.lastSuccessfulHedge;
       payload.lastError = runtime.lastError;
       payload.lastAlert = runtime.lastAlert;

@@ -81,7 +81,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.126"
+          "version": "1.1.127"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -289,7 +289,7 @@
   "commandCount": 176,
   "commandDescriptorVersion": "1.4.3",
   "contractCommandDescriptorVersion": "1.4.3",
-  "contractPackageVersion": "1.1.126",
+  "contractPackageVersion": "1.1.127",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
@@ -329,9 +329,9 @@
     "main": "cli/pandora.cjs",
     "name": "pandora-cli-skills",
     "sourceProjectPath": "package.json",
-    "version": "1.1.126"
+    "version": "1.1.127"
   },
-  "packageVersion": "1.1.126",
+  "packageVersion": "1.1.127",
   "publishedSurfaces": {
     "python": {
       "artifactSubpaths": {
@@ -381,7 +381,7 @@
       "main": "cli/pandora.cjs",
       "name": "pandora-cli-skills",
       "sourceProjectPath": "package.json",
-      "version": "1.1.126"
+      "version": "1.1.127"
     },
     "typescript": {
       "artifactSubpaths": {
@@ -415,14 +415,14 @@
     "canonicalHash": "cce2ede8f658d43e0807f7f194e28fc356085e00fc70d99d27ecbd674be14a9f",
     "commandDigestHash": "ff5ffd264b768cb059973405a2bbac264e790e8c583ce066668263259cf9d565",
     "descriptorHash": "0ce356cf2e77ac1228df9de4a89d5b4bcba73fb5b43a83cf59d34b92bc561d46",
-    "documentationHash": "98bda73a533c52da94e8db3a076f054757ac23b9adcbb1bd4aebde8029ea7c7c",
+    "documentationHash": "2bca31729c9c580125bd25764291699b63532afaa67d9380c72d1dda637944b7",
     "fullDescriptorHash": "a90cc06c3d9ab9068f87e2b1005847e685b7f86952cba5b2af9d2e38b8f963bb",
     "namespaceHash": "cd39afc4f4e8b76473a4768c07d979c44e0421973786c54e12bb6d7888f5952a",
     "policyProfilesHash": "9fb054a4f29be73c2ebf33f643bc17d904b2872dd8e7d564a690db828071a7ce",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-    "trustDistributionHash": "7d11cc5631509813194446ae32e47a386935f3f4791e37e170a523443495fb40"
+    "trustDistributionHash": "ac51fceb7cec36e23b75e82a5ce9ab4905cb637603d65876dcbe4bca52d205f5"
   },
   "schemaVersion": "1.0.0"
 }

@@ -295,6 +295,24 @@ function ensureSkippedVolumeCountersShape(raw) {
   };
 }
 
+function ensureRetryTelemetryShape(raw) {
+  const data = raw && typeof raw === 'object' ? raw : {};
+  return {
+    sellAttemptedCount: toFiniteNumberOrNull(data.sellAttemptedCount) || 0,
+    sellBlockedCount: toFiniteNumberOrNull(data.sellBlockedCount) || 0,
+    sellFailedCount: toFiniteNumberOrNull(data.sellFailedCount) || 0,
+    sellRecoveredCount: toFiniteNumberOrNull(data.sellRecoveredCount) || 0,
+    lastAttemptAt: normalizeOptionalString(data.lastAttemptAt),
+    lastBlockedAt: normalizeOptionalString(data.lastBlockedAt),
+    lastBlockedReasonCode: normalizeOptionalString(data.lastBlockedReasonCode),
+    lastBlockedReason: normalizeOptionalString(data.lastBlockedReason),
+    lastFailureAt: normalizeOptionalString(data.lastFailureAt),
+    lastFailureCode: normalizeOptionalString(data.lastFailureCode),
+    lastFailureMessage: normalizeOptionalString(data.lastFailureMessage),
+    lastRecoveryAt: normalizeOptionalString(data.lastRecoveryAt),
+  };
+}
+
 function ensureOutcomeShape(raw) {
   const data = raw && typeof raw === 'object' ? raw : null;
   if (!data) return null;
@@ -384,6 +402,7 @@ function ensureStateShape(raw, hash = null) {
     : null;
   const targetHedgeInventory = ensureTargetHedgeInventoryShape(data.targetHedgeInventory);
   const skippedVolumeCounters = ensureSkippedVolumeCountersShape(data.skippedVolumeCounters);
+  const retryTelemetry = ensureRetryTelemetryShape(data.retryTelemetry);
 
   const state = {
     schemaVersion: MIRROR_HEDGE_STATE_SCHEMA_VERSION,
@@ -427,6 +446,7 @@ function ensureStateShape(raw, hash = null) {
     availableHedgeFeeBudgetUsdc: toFiniteNumberOrNull(data.availableHedgeFeeBudgetUsdc) || 0,
     belowThresholdPendingUsdc: toFiniteNumberOrNull(data.belowThresholdPendingUsdc) || 0,
     skippedVolumeCounters,
+    retryTelemetry,
     lastSuccessfulHedge: ensureOutcomeShape(data.lastSuccessfulHedge),
     lastError: ensureEventShape(data.lastError),
     lastAlert: ensureEventShape(data.lastAlert),
@@ -516,6 +536,7 @@ module.exports = {
   ensureManagedInventorySnapshotShape,
   ensureTargetHedgeInventoryShape,
   ensureSkippedVolumeCountersShape,
+  ensureRetryTelemetryShape,
   ensureOutcomeShape,
   ensureEventShape,
 };

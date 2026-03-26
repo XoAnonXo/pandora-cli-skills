@@ -759,6 +759,157 @@ test('runMirrorHedge adopts existing positions as the starting target inventory 
   }
 }));
 
+test('runMirrorHedge skips buy expansion when a sell is blocked in the same cycle', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-sell-blocked-');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  const stateFile = path.join(tempDir, 'runtime.json');
+  const originalFetchInventory = polymarketModule.fetchPolymarketPositionSummary;
+  polymarketModule.fetchPolymarketPositionSummary = async () => ({
+    marketId: 'poly-1',
+    slug: 'team-a-vs-team-b',
+    walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    yesBalance: 10,
+    noBalance: 20,
+    openOrdersCount: 0,
+    estimatedValueUsd: 14.3,
+    prices: { yes: 0.57, no: 0.43 },
+    source: { resolved: 'mock' },
+    diagnostics: [],
+  });
+  fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
+  fs.writeFileSync(stateFile, JSON.stringify(createState('abc123abc123abc1', {
+    targetHedgeInventory: {
+      yesShares: 15,
+      noShares: 0,
+      initializedAt: '2026-03-26T00:00:00.000Z',
+      initializedFrom: 'flat',
+    },
+  }), null, 2));
+
+  try {
+    const service = loadMirrorHedgeService();
+    const payload = await service.runMirrorHedge({
+      stateFile,
+      pandoraMarketAddress: '0x1212121212121212121212121212121212121212',
+      polymarketMarketId: 'poly-1',
+      internalWalletsFile: walletFile,
+      iterations: 1,
+      sellHedgePolicy: 'manual-only',
+      confirmedTrades: [],
+      minHedgeUsdc: 1,
+      funder: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    });
+
+    assert.equal(payload.summary.sellRetryAttemptedCount, 1);
+    assert.equal(payload.summary.sellRetryBlockedCount, 1);
+    assert.equal(payload.summary.sellRetryFailedCount, 0);
+    assert.equal(payload.runtime.auditEntries.some((entry) => entry.kind === 'buy-phase-skipped'), true);
+    assert.equal(
+      payload.runtime.auditEntries.some((entry) => entry.kind === 'hedge-planned' && entry.orderSide === 'buy'),
+      false,
+    );
+
+    const state = loadState(stateFile).state;
+    assert.equal(state.deferredHedgeQueue.length, 1);
+    assert.equal(state.deferredHedgeQueue[0].orderSide, 'sell');
+  } finally {
+    polymarketModule.fetchPolymarketPositionSummary = originalFetchInventory;
+    removeDir(tempDir);
+  }
+}));
+
+test('runMirrorHedge OKC/BOS replay fixture prunes stale sell queue entries and records sell failure telemetry', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-okc-bos-replay-');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  const stateFile = path.join(tempDir, 'runtime.json');
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'mirror_hedge', 'okc-bos-sell-failure.json'), 'utf8'),
+  );
+  const originalFetchInventory = polymarketModule.fetchPolymarketPositionSummary;
+  const originalFetchDepth = polymarketModule.fetchDepthForMarket;
+  const originalPlaceOrder = polymarketModule.placeHedgeOrder;
+  const orderCalls = [];
+  polymarketModule.fetchPolymarketPositionSummary = async () => ({
+    marketId: 'poly-1',
+    slug: 'nba-okc-bos-2026-03-25',
+    walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    yesBalance: fixture.inventory.yesBalance,
+    noBalance: fixture.inventory.noBalance,
+    openOrdersCount: 0,
+    estimatedValueUsd: fixture.inventory.estimatedValueUsd,
+    prices: fixture.inventory.prices,
+    source: { resolved: 'mock' },
+    diagnostics: [],
+  });
+  polymarketModule.fetchDepthForMarket = async () => fixture.depth;
+  polymarketModule.placeHedgeOrder = async (options = {}) => {
+    orderCalls.push({ side: options.side, amountUsd: options.amountUsd, tokenId: options.tokenId });
+    return {
+      ok: false,
+      error: {
+        code: 'POLY_FAIL',
+        message: 'order rejected by exchange',
+        details: { status: 403 },
+      },
+      response: {
+        status: 'rejected',
+      },
+    };
+  };
+  fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
+  fs.writeFileSync(stateFile, JSON.stringify(createState('abc123abc123abc1', fixture.state), null, 2));
+
+  try {
+    const service = loadMirrorHedgeService();
+    const payload = await service.runMirrorHedge({
+      stateFile,
+      pandoraMarketAddress: '0x11012fc111111111111111111111111111111111',
+      polymarketMarketId: 'poly-1',
+      internalWalletsFile: walletFile,
+      iterations: 1,
+      executeLive: true,
+      privateKey: '0x' + '1'.repeat(64),
+      funder: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      confirmedTrades: [],
+      minHedgeUsdc: 1,
+    });
+
+    assert.equal(orderCalls.length, 1);
+    assert.equal(String(orderCalls[0].side).toLowerCase(), 'sell');
+    assert.equal(payload.summary.sellRetryAttemptedCount, 1);
+    assert.equal(payload.summary.sellRetryBlockedCount, 0);
+    assert.equal(payload.summary.sellRetryFailedCount, 1);
+    assert.equal(payload.summary.sellRetryRecoveredCount, 1);
+    assert.equal(payload.runtime.auditEntries.some((entry) => entry.kind === 'sell-action-failed'), true);
+    assert.equal(payload.runtime.auditEntries.some((entry) => entry.kind === 'buy-phase-skipped'), true);
+    assert.equal(
+      payload.runtime.auditEntries.some((entry) => entry.kind === 'hedge-executed' && entry.orderSide === 'buy'),
+      false,
+    );
+    assert.equal(
+      payload.runtime.auditEntries.some((entry) => entry.kind === 'hedge-planned' && entry.orderSide === 'buy'),
+      false,
+    );
+    assert.equal(Array.isArray(payload.warnings), true);
+    assert.equal(payload.warnings.some((warning) => warning.code === 'BOTH_SIDE_INVENTORY_LOCKUP'), true);
+    assert.equal(payload.lastError && payload.lastError.details && payload.lastError.details.exchangeError.code, 'POLY_FAIL');
+
+    const state = loadState(stateFile).state;
+    assert.equal(state.deferredHedgeQueue.length, 1);
+    assert.equal(state.deferredHedgeQueue[0].orderSide, 'sell');
+    assert.equal(state.deferredHedgeQueue[0].tokenSide, 'no');
+    assert.equal(state.deferredHedgeQueue.some((entry) => entry.id === 'okc-bos:sell-yes:execution-failed'), false);
+    assert.equal(state.retryTelemetry.sellAttemptedCount, 1);
+    assert.equal(state.retryTelemetry.sellFailedCount, 1);
+    assert.equal(state.retryTelemetry.sellRecoveredCount, 1);
+  } finally {
+    polymarketModule.fetchPolymarketPositionSummary = originalFetchInventory;
+    polymarketModule.fetchDepthForMarket = originalFetchDepth;
+    polymarketModule.placeHedgeOrder = originalPlaceOrder;
+    removeDir(tempDir);
+  }
+}));
+
 test('buildMirrorHedgeDaemonCliArgs preserves --skip-dotenv for detached runs', () => {
   const service = loadMirrorHedgeService();
   const args = service.buildMirrorHedgeDaemonCliArgs({
