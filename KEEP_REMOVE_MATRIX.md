@@ -10,7 +10,7 @@ Simple, we need to have one cleanup table (architecture owner decision matrix) s
 | Release artifacts | `pandora-market-setup-1.0.0.tgz` | Already removed on latest `main` | This was a dead tracked artifact from an older snapshot | No further action beyond ignore rule |
 | Backlog | `todos/` active backlog | Keep | Active planning still belongs in the repo when it affects current implementation work | Keep only the live items in the top-level `todos/` folder |
 | Backlog | `todos/archive/` | Keep archived in-repo | Latest `main` already compacted the backlog and local archive keeps history searchable | No move to a separate repo right now |
-| Orphan scripts | `scripts/build_benchmark_publication_manifest.cjs` | Remove | Unreferenced dead utility, not wired into product or release flow | Delete now |
+| Release helper scripts | `scripts/build_benchmark_publication_manifest.cjs` | Keep | Wired into the GitHub release workflow even though it is not exposed as an npm script | Treat as release infrastructure, not dead code |
 | Orphan scripts | `scripts/generate_cli_visualizer_data.cjs` | Already absent on latest `main` | Not a current cleanup task anymore | None |
 | Orphan scripts | `scripts/serve_cli_visualizer.cjs` | Already absent on latest `main` | Not a current cleanup task anymore | None |
 | SDK generated payloads | `sdk/generated/**`, `sdk/typescript/generated/**`, `sdk/python/pandora_agent/generated/**` | Keep current release model, defer deeper refactor | Publish payload was already reduced in `1.1.126`, but repo still keeps surface-specific generated outputs | Revisit later as a dedicated SDK build/publish refactor |
