@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.1.127",
+  "version": "1.1.128",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {

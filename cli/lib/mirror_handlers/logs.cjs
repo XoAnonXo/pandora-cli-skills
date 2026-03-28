@@ -290,13 +290,6 @@ async function followMirrorLogFile({
   const startedAt = Date.now();
 
   while (true) {
-    if (followTimeoutMs && Date.now() - startedAt >= followTimeoutMs) {
-      return {
-        reason: 'timeout',
-        lastSeenLine,
-      };
-    }
-
     if (fileExists(logFile)) {
       try {
         const delta = readMirrorLogFromLine(logFile, lastSeenLine + 1);
@@ -311,6 +304,13 @@ async function followMirrorLogFile({
           error: err && err.message ? err.message : String(err),
         };
       }
+    }
+
+    if (followTimeoutMs && Date.now() - startedAt >= followTimeoutMs) {
+      return {
+        reason: 'timeout',
+        lastSeenLine,
+      };
     }
 
     await sleep(pollIntervalMs);

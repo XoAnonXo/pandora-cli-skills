@@ -103,6 +103,9 @@ function buildDisabledPortfolioSection(reason, extra = {}) {
 }
 
 function hasExplicitPortfolioContext(options = {}) {
+  if (typeof options.explicitPortfolioContext === 'boolean') {
+    return options.explicitPortfolioContext;
+  }
   return Boolean(
     options.wallet
     || options.privateKey
@@ -218,6 +221,7 @@ function parseDashboardFlags(args, CliError) {
   const options = {
     withLive: true,
     trustDeploy: false,
+    explicitPortfolioContext: false,
     manifestFile: null,
     driftTriggerBps: DEFAULT_DRIFT_TRIGGER_BPS,
     hedgeTriggerUsdc: DEFAULT_HEDGE_TRIGGER_USDC,
@@ -307,6 +311,7 @@ function parseDashboardFlags(args, CliError) {
       if (!options.wallet) {
         throw new CliError('INVALID_FLAG_VALUE', '--wallet must be an EVM address.');
       }
+      options.explicitPortfolioContext = true;
       i += 1;
       continue;
     }
@@ -334,16 +339,19 @@ function parseDashboardFlags(args, CliError) {
       if (!isValidPrivateKey(options.privateKey)) {
         throw new CliError('INVALID_FLAG_VALUE', '--private-key must be a 32-byte hex key.');
       }
+      options.explicitPortfolioContext = true;
       i += 1;
       continue;
     }
     if (token === '--profile-id') {
       options.profileId = requireFlagValue(args, i, '--profile-id', CliError).trim();
+      options.explicitPortfolioContext = true;
       i += 1;
       continue;
     }
     if (token === '--profile-file') {
       options.profileFile = requireFlagValue(args, i, '--profile-file', CliError).trim();
+      options.explicitPortfolioContext = true;
       i += 1;
       continue;
     }
@@ -352,6 +360,7 @@ function parseDashboardFlags(args, CliError) {
       if (!options.funder) {
         throw new CliError('INVALID_FLAG_VALUE', '--funder must be an EVM address.');
       }
+      options.explicitPortfolioContext = true;
       i += 1;
       continue;
     }

@@ -165,3 +165,39 @@ test('dashboard watch mode in JSON requires explicit iterations', async () => {
     },
   );
 });
+
+test('dashboard skips portfolio reads when credentials only come from env fallback', async () => {
+  const observed = [];
+  const originalPrivateKey = process.env.PANDORA_PRIVATE_KEY;
+  process.env.PANDORA_PRIVATE_KEY = '0x1111111111111111111111111111111111111111111111111111111111111111';
+
+  try {
+    const runDashboardCommand = createRunDashboardCommand(createDashboardDeps({
+      emitSuccess: (...args) => observed.push(args),
+      discoverOwnedMarkets: async () => {
+        throw new Error('discoverOwnedMarkets should not run without explicit portfolio context.');
+      },
+      runPolymarketBalance: async () => {
+        throw new Error('runPolymarketBalance should not run without explicit portfolio context.');
+      },
+      readPandoraWalletBalances: async () => {
+        throw new Error('readPandoraWalletBalances should not run without explicit portfolio context.');
+      },
+    }));
+
+    await runDashboardCommand(['--no-live'], { outputMode: 'json' });
+
+    assert.equal(observed.length, 1);
+    const payload = observed[0][2];
+    assert.equal(payload.portfolio.enabled, true);
+    assert.equal(payload.portfolio.claimable.enabled, false);
+    assert.equal(payload.portfolio.liquidCapital.enabled, false);
+    assert.match(payload.portfolio.diagnostics[0], /no explicit wallet or signer context/i);
+  } finally {
+    if (originalPrivateKey === undefined) {
+      delete process.env.PANDORA_PRIVATE_KEY;
+    } else {
+      process.env.PANDORA_PRIVATE_KEY = originalPrivateKey;
+    }
+  }
+});
