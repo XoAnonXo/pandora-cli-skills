@@ -8,6 +8,16 @@ function requireDep(deps, name) {
 }
 
 const DEFAULT_REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC'];
+
+const GOAL_DESCRIPTIONS = Object.freeze({
+  explore: 'Read-only exploration of chain and market data',
+  deploy: 'Deploy contracts with a signing wallet',
+  'paper-mirror': 'Follow Polymarket odds without live credentials',
+  'live-mirror': 'Follow Polymarket odds with live market making',
+  'hosted-gateway': 'Connect to a hosted remote gateway',
+  'paper-hedge-daemon': 'Delta-neutral Polymarket hedging (paper mode)',
+  'live-hedge-daemon': 'Delta-neutral Polymarket hedging (live mode)',
+});
 const DEFAULT_SUPPORTED_CHAIN_IDS = new Set([1]);
 const DEFAULT_ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
@@ -22,6 +32,21 @@ const DEFAULT_POLYMARKET_DOCTOR_KEYS = [
   'POLYMARKET_API_PASSPHRASE',
 ];
 const { normalizeResolutionSources } = require('./shared/resolution_sources.cjs');
+
+const DEFAULT_HELP_NOTES = Object.freeze([
+  'Goal options:',
+  '  explore           Read-only exploration of chain and market data',
+  '  deploy            Deploy contracts with a signing wallet',
+  '  paper-mirror      Follow Polymarket odds without live credentials',
+  '  live-mirror       Follow Polymarket odds with live market making',
+  '  hosted-gateway    Connect to a hosted remote gateway',
+  '  paper-hedge-daemon  Delta-neutral Polymarket hedging (paper mode)',
+  '  live-hedge-daemon   Delta-neutral Polymarket hedging (live mode)',
+]);
+
+function getGoalDescription(goal) {
+  return GOAL_DESCRIPTIONS[normalizeGoal(goal)] || null;
+}
 
 function normalizeGoal(goal) {
   const normalized = String(goal || '').trim().toLowerCase();
