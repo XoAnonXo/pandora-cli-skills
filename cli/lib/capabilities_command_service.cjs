@@ -2133,7 +2133,7 @@ function createRunCapabilitiesCommand(deps) {
         // eslint-disable-next-line no-console
         console.log('  - capabilities payload is available only in --output json mode.');
         // eslint-disable-next-line no-console
-        console.log('  - It is derived from the same command contract registry used by pandora schema.');
+        console.log('  - It is derived from the same command contract registry used by pandora capabilities.');
         // eslint-disable-next-line no-console
         console.log('  - capabilities is the compact discovery digest; schema remains the full contract surface.');
         // eslint-disable-next-line no-console
