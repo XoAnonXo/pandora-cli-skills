@@ -509,6 +509,19 @@ function summarizeSectionIterations(iterations) {
   };
 }
 
+function buildSectionSnapshot(section, baseline, helpContext, iterations) {
+  return {
+    id: section.id,
+    title: section.title,
+    description: section.description,
+    commandPrefixes: section.commandPrefixes,
+    baseline,
+    helpContext,
+    iterations: cloneJson(iterations),
+    summary: summarizeSectionIterations(iterations),
+  };
+}
+
 async function runSectionLoop(options) {
   const { config, cwd, section, iterationsPerSection } = options;
   const baseline = {
@@ -521,17 +534,12 @@ async function runSectionLoop(options) {
   const focusFiles = loadFocusFileContext(section.focusFiles, cwd);
   const iterations = [];
 
+  if (typeof options.onProgress === 'function') {
+    options.onProgress(buildSectionSnapshot(section, baseline, helpContext, iterations));
+  }
+
   if (options.skipModel) {
-    return {
-      id: section.id,
-      title: section.title,
-      description: section.description,
-      commandPrefixes: section.commandPrefixes,
-      baseline,
-      helpContext,
-      iterations,
-      summary: summarizeSectionIterations(iterations),
-    };
+    return buildSectionSnapshot(section, baseline, helpContext, iterations);
   }
 
   for (let index = 0; index < iterationsPerSection; index += 1) {
@@ -569,6 +577,9 @@ async function runSectionLoop(options) {
           message: normalizeText(error && error.message ? error.message : error),
         },
       });
+      if (typeof options.onProgress === 'function') {
+        options.onProgress(buildSectionSnapshot(section, baseline, helpContext, iterations));
+      }
       continue;
     }
 
@@ -607,6 +618,9 @@ async function runSectionLoop(options) {
       };
       iteration.rawProposalExcerpt = truncateText(model.text, 1200);
       iterations.push(iteration);
+      if (typeof options.onProgress === 'function') {
+        options.onProgress(buildSectionSnapshot(section, baseline, helpContext, iterations));
+      }
       continue;
     }
 
@@ -617,6 +631,9 @@ async function runSectionLoop(options) {
         reason: proposal.changeSet.length === 0 ? 'empty-change-set' : 'non-workspace-mode',
       };
       iterations.push(iteration);
+      if (typeof options.onProgress === 'function') {
+        options.onProgress(buildSectionSnapshot(section, baseline, helpContext, iterations));
+      }
       continue;
     }
 
@@ -707,18 +724,12 @@ async function runSectionLoop(options) {
     }
 
     iterations.push(iteration);
+    if (typeof options.onProgress === 'function') {
+      options.onProgress(buildSectionSnapshot(section, baseline, helpContext, iterations));
+    }
   }
 
-  return {
-    id: section.id,
-    title: section.title,
-    description: section.description,
-    commandPrefixes: section.commandPrefixes,
-    baseline,
-    helpContext,
-    iterations,
-    summary: summarizeSectionIterations(iterations),
-  };
+  return buildSectionSnapshot(section, baseline, helpContext, iterations);
 }
 
 async function runCliSectionAutoresearch(options = {}) {
@@ -765,6 +776,7 @@ async function runCliSectionAutoresearch(options = {}) {
   report.artifacts = writeArtifacts(report, config);
 
   for (const section of selectedSections) {
+    const sectionIndex = report.sections.length;
     const sectionReport = await runSectionLoop({
       config,
       cwd,
@@ -772,8 +784,12 @@ async function runCliSectionAutoresearch(options = {}) {
       iterationsPerSection: config.researchLoop.iterationsPerSection,
       modelLoader: options.modelLoader,
       skipModel: options.skipModel,
+      onProgress(snapshot) {
+        report.sections[sectionIndex] = snapshot;
+        report.artifacts = writeArtifacts(report, config);
+      },
     });
-    report.sections.push(sectionReport);
+    report.sections[sectionIndex] = sectionReport;
     report.artifacts = writeArtifacts(report, config);
   }
 
