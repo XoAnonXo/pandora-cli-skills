@@ -149,6 +149,13 @@ function createSetupCommandService(deps = {}) {
     stdout: deps.stdout || process.stdout,
   });
 
+  /**
+   * Returns runtime metadata used by the setup plan builder.
+   *
+   * Goal shorthand aliases: 'paper' → 'paper-mirror', 'live' → 'live-mirror',
+   * 'gateway' → 'hosted-gateway', 'paper-hedge'/'paper-daemon' → 'paper-hedge-daemon',
+   * 'live-hedge'/'live-daemon' → 'live-hedge-daemon'.
+   */
   function runtimeInfo(options = {}) {
     return {
       cwd: options.cwd || process.cwd(),
