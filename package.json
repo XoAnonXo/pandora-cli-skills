@@ -116,6 +116,7 @@
     "benchmark:check": "node scripts/check_agent_benchmarks.cjs",
     "benchmark:history": "node scripts/update_benchmark_history.cjs",
     "proving-ground:autoresearch": "node scripts/run_proving_ground_autoresearch.cjs",
+    "proving-ground:autoresearch:cli": "node scripts/run_cli_section_autoresearch.cjs",
     "test:website": "npm run site:check && node --test tests/unit/website_smoke.test.cjs",
     "dry-run": "node cli/pandora.cjs launch --dry-run",
     "execute": "node cli/pandora.cjs launch --execute",
