@@ -29,6 +29,7 @@ function normalizeGoal(goal) {
   if (normalized === 'paper') return 'paper-mirror';
   if (normalized === 'live') return 'live-mirror';
   if (normalized === 'gateway') return 'hosted-gateway';
+  if (normalized === 'hedge') return 'paper-hedge-daemon';
   if (normalized === 'paper-hedge') return 'paper-hedge-daemon';
   if (normalized === 'live-hedge') return 'live-hedge-daemon';
   if (normalized === 'paper-daemon') return 'paper-hedge-daemon';
