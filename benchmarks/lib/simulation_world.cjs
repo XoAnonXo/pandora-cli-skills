@@ -180,7 +180,6 @@ function buildEventTimeline(input = {}) {
     })
     .map((event, index, events) => normalizeEvent({
       ...event,
-      sequence: index + 1,
       parentEventId: index > 0 ? events[index - 1].id : event.parentEventId,
     }, index, index > 0 ? events[index - 1] : null));
 
