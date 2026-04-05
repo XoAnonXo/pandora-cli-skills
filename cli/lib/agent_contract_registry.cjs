@@ -3458,7 +3458,7 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.hedge',
-    summary: 'LP hedging runtime family for plan, bundle, run, start, status, and stop. This is separate from mirror sync, which continues to manage the Pandora rebalance plus Polymarket hedge legs.',
+    summary: 'Polymarket Hedge Mode for plan, bundle, run, start, status, and stop. Use this when Pandora flow should be hedged on Polymarket without running Pandora Mirroring Mode.',
     usage: 'pandora [--output table|json] mirror hedge plan|run|start|status|stop|bundle ...',
     emits: ['mirror.hedge.help'],
     dataSchema: '#/definitions/MirrorHedgePayload',
@@ -3466,7 +3466,7 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.hedge.plan',
-    summary: 'Build a read-only LP hedge plan from selector-first market context or persisted state.',
+    summary: 'Build a read-only Polymarket Hedge Mode plan from selector-first market context or persisted state.',
     usage:
       'pandora [--output table|json] mirror hedge plan --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) --internal-wallets-file <path> [--min-hedge-usdc <n>] [--partial-hedge-policy partial|skip] [--sell-hedge-policy depth-checked|manual-only] [--trust-deploy] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
     emits: ['mirror.hedge.plan', 'mirror.hedge.plan.help'],
@@ -3474,7 +3474,7 @@ const commandContracts = [
     mcpExposed: true,
     mcp: {
       command: ['mirror', 'hedge', 'plan'],
-      description: 'Build a read-only LP hedge plan from selector-first market context or persisted state. Separate from mirror sync, which still manages the Pandora rebalance plus Polymarket hedge legs.',
+      description: 'Build a read-only Polymarket Hedge Mode plan from selector-first market context or persisted state. Use Pandora Mirroring Mode separately through mirror sync with --no-hedge when Pandora should follow Polymarket odds.',
       inputSchema: buildInputSchema({
         flagProperties: {
           'state-file': commonFlags.stateFile,
@@ -3515,7 +3515,7 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.hedge.bundle',
-    summary: 'Build deterministic VPS deployment artifacts for the LP hedge daemon without submitting a live hedge transaction.',
+    summary: 'Build deterministic VPS deployment artifacts for Polymarket Hedge Mode without submitting a live hedge transaction.',
     usage:
       'pandora [--output table|json] mirror hedge bundle --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) --internal-wallets-file <path> [--output-dir <path>|--bundle-dir <path>] [--min-hedge-usdc <n>] [--partial-hedge-policy partial|skip] [--sell-hedge-policy depth-checked|manual-only] [--trust-deploy] [--indexer-url <url>] [--timeout-ms <ms>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
     emits: ['mirror.hedge.bundle', 'mirror.hedge.bundle.help'],
@@ -3523,7 +3523,7 @@ const commandContracts = [
     mcpExposed: true,
     mcp: {
       command: ['mirror', 'hedge', 'bundle'],
-      description: 'Build deterministic VPS deployment artifacts for the packaged LP hedge daemon without submitting a live hedge transaction.',
+      description: 'Build deterministic VPS deployment artifacts for Polymarket Hedge Mode without submitting a live hedge transaction.',
       inputSchema: buildInputSchema({
         flagProperties: {
           'state-file': commonFlags.stateFile,
@@ -3564,7 +3564,7 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.hedge.run',
-    summary: 'Run the LP hedge loop in the foreground.',
+    summary: 'Run Polymarket Hedge Mode in the foreground.',
     usage:
       'pandora [--output table|json] mirror hedge run --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) --internal-wallets-file <path> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--trust-deploy] [--indexer-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--iterations <n>] [--adopt-existing-positions] [--min-hedge-usdc <n>] [--partial-hedge-policy partial|skip] [--sell-hedge-policy depth-checked|manual-only] [--depth-slippage-bps <n>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
     emits: ['mirror.hedge.run', 'mirror.hedge.help'],
@@ -3574,7 +3574,7 @@ const commandContracts = [
     mutating: true,
     mcp: {
       command: ['mirror', 'hedge', 'run'],
-      description: 'Run the LP hedge loop in the foreground. Separate from mirror sync, which still manages the Pandora rebalance plus Polymarket hedge legs.',
+      description: 'Run Polymarket Hedge Mode in the foreground. Use this when Pandora trades should hedge on Polymarket and Pandora Mirroring Mode should stay off.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3639,7 +3639,7 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.hedge.start',
-    summary: 'Start detached LP hedge daemon.',
+    summary: 'Start detached Polymarket Hedge Mode daemon.',
     usage:
       'pandora [--output table|json] mirror hedge start --state-file <path>|--strategy-hash <hash>|(--pandora-market-address <address>|--market-address <address>) (--polymarket-market-id <id>|--polymarket-slug <slug>) --internal-wallets-file <path> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--trust-deploy] [--indexer-url <url>] [--timeout-ms <ms>] [--interval-ms <ms>] [--iterations <n>] [--adopt-existing-positions] [--min-hedge-usdc <n>] [--partial-hedge-policy partial|skip] [--sell-hedge-policy depth-checked|manual-only] [--depth-slippage-bps <n>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]',
     emits: ['mirror.hedge.start', 'mirror.hedge.help'],
@@ -3649,7 +3649,7 @@ const commandContracts = [
     mutating: true,
     mcp: {
       command: ['mirror', 'hedge', 'start'],
-      description: 'Start detached LP hedge daemon. Separate from mirror sync, which still manages the Pandora rebalance plus Polymarket hedge legs.',
+      description: 'Start detached Polymarket Hedge Mode daemon. Use Pandora Mirroring Mode separately through mirror sync with --no-hedge when you only want Pandora repricing.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -3917,14 +3917,14 @@ const commandContracts = [
   }),
   commandContract({
     name: 'mirror.sync',
-    summary: 'Mirror sync runtime command family for separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
+    summary: 'Mirror sync runtime family. Use `mirror sync --no-hedge` for Pandora Mirroring Mode, or plain mirror sync for the hybrid loop with separate Pandora rebalance and Polymarket hedge legs.',
     usage: 'pandora [--output table|json] mirror sync once|run|start|stop|status|unlock ...',
     emits: ['mirror.sync.help'],
     dataSchema: '#/definitions/MirrorStatusPayload',
   }),
   commandContract({
     name: 'mirror.sync.once',
-    summary: 'Execute one mirror sync tick with separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.',
+    summary: 'Execute one mirror sync tick. `--no-hedge` makes this Pandora Mirroring Mode; without it the loop may rebalance Pandora and hedge on Polymarket as separate Pandora rebalance and Polymarket hedge legs.',
     usage:
       'pandora [--output table|json] mirror sync once --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--skip-initial-hedge] [--adopt-existing-positions] [--no-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]',
     emits: ['mirror.sync.once', 'mirror.sync.help'],
@@ -3937,11 +3937,12 @@ const commandContracts = [
       notes: [
         'The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.',
         'Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale.',
+        'Pandora Mirroring Mode means mirror sync with --no-hedge. For hedge-only operation on Polymarket, use mirror hedge.',
       ],
     },
     mcp: {
       command: ['mirror', 'sync', 'once'],
-      description: 'Execute one mirror sync tick. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.',
+      description: 'Execute one mirror sync tick. Use --no-hedge for Pandora Mirroring Mode, where Pandora follows Polymarket odds without placing a Polymarket hedge. Without --no-hedge, sync is the hybrid loop.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {

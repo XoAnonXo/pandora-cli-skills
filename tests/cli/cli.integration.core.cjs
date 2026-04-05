@@ -1607,7 +1607,7 @@ test('setup planning surface distinguishes live-hedge-daemon from mirror sync se
   assert.equal(plan.steps.some((step) => step.id === 'sports-odds'), false);
   assert.equal(plan.steps.some((step) => step.id === 'resolution-sources'), false);
   assert.equal(plan.steps.find((step) => step.id === 'hosting').decision.defaultSelected, true);
-  assert.match(plan.description, /packaged LP hedge daemon/i);
+  assert.match(plan.description, /Polymarket Hedge Mode/i);
   assert.equal(plan.notes.some((note) => /mirror hedge/i.test(String(note))), true);
   assert.equal(plan.notes.some((note) => /DigitalOcean|generic VPS|Cloudflare Workers/i.test(String(note))), true);
 });
@@ -2094,4 +2094,3 @@ testInteractiveSetup('setup --interactive --force recopies the example template 
     removeDir(tempDir);
   }
 });
-

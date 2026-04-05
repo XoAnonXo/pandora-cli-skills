@@ -3,10 +3,10 @@
 const JOURNEY_GOALS = Object.freeze([
   { id: 'explore', label: 'Explore only', description: 'Read-only discovery and contract inspection.' },
   { id: 'hosted-gateway', label: 'Hosted gateway', description: 'Prepare a remote read-only or operator gateway.' },
-  { id: 'paper-mirror', label: 'Paper mirror', description: 'Prepare a paper-mode Polymarket mirror.' },
-  { id: 'live-mirror', label: 'Live mirror', description: 'Prepare a live hedging daemon.' },
-  { id: 'paper-hedge-daemon', label: 'Paper hedge daemon', description: 'Prepare the packaged LP hedge daemon in paper mode for an existing mirror pair.' },
-  { id: 'live-hedge-daemon', label: 'Live hedge daemon', description: 'Prepare the packaged LP hedge daemon with live Pandora and Polymarket credentials.' },
+  { id: 'paper-mirror', label: 'Paper Pandora mirroring mode', description: 'Prepare Pandora Mirroring Mode in paper mode.' },
+  { id: 'live-mirror', label: 'Live Pandora mirroring mode', description: 'Prepare Pandora Mirroring Mode for live Pandora repricing.' },
+  { id: 'paper-hedge-daemon', label: 'Paper Polymarket hedge mode', description: 'Prepare Polymarket Hedge Mode in paper mode for an existing mirror pair.' },
+  { id: 'live-hedge-daemon', label: 'Live Polymarket hedge mode', description: 'Prepare Polymarket Hedge Mode with live Polymarket credentials for an existing mirror pair.' },
   { id: 'deploy', label: 'Deploy', description: 'Prepare a Pandora market for execution.' },
 ]);
 
@@ -79,8 +79,8 @@ function buildGoalBlueprint(goal) {
     case 'paper-mirror':
       return {
         goal: normalized,
-        label: 'Paper mirror',
-        description: 'Mirror planning with optional signer setup and no live hedge credentials required by default.',
+        label: 'Paper Pandora mirroring mode',
+        description: 'Pandora Mirroring Mode in paper mode, where Pandora follows Polymarket odds without live hedge execution by default.',
         runtimeFields: [
           createField('CHAIN_ID', 'Chain ID', 'integer', { required: true, description: 'Pandora chain identifier.' }),
           createField('RPC_URL', 'RPC URL', 'url', { required: true, description: 'Execution or inspection RPC endpoint.' }),
@@ -103,8 +103,8 @@ function buildGoalBlueprint(goal) {
     case 'live-mirror':
       return {
         goal: normalized,
-        label: 'Live mirror',
-        description: 'Live hedging path with Pandora signer, Polymarket signer, and CLOB API credentials.',
+        label: 'Live Pandora mirroring mode',
+        description: 'Pandora Mirroring Mode for live Pandora repricing. Use this when you want market making on Pandora, not hedge-only operation.',
         runtimeFields: [
           createField('CHAIN_ID', 'Chain ID', 'integer', { required: true, description: 'Pandora chain identifier.' }),
           createField('RPC_URL', 'RPC URL', 'url', { required: true, description: 'Execution RPC endpoint.' }),
@@ -128,8 +128,8 @@ function buildGoalBlueprint(goal) {
     case 'paper-hedge-daemon':
       return {
         goal: normalized,
-        label: 'Paper hedge daemon',
-        description: 'Packaged LP hedge daemon path for an existing mirror pair in paper mode. Unlike mirror sync setup, this path skips deploy-time sports discovery and resolution-source capture.',
+        label: 'Paper Polymarket hedge mode',
+        description: 'Polymarket Hedge Mode in paper mode for an existing mirror pair. Unlike Pandora Mirroring Mode setup, this path skips deploy-time sports discovery and resolution-source capture.',
         runtimeFields: [
           createField('CHAIN_ID', 'Chain ID', 'integer', { required: true, description: 'Pandora chain identifier.' }),
           createField('RPC_URL', 'RPC URL', 'url', { required: true, description: 'Execution or inspection RPC endpoint.' }),
@@ -152,8 +152,8 @@ function buildGoalBlueprint(goal) {
     case 'live-hedge-daemon':
       return {
         goal: normalized,
-        label: 'Live hedge daemon',
-        description: 'Packaged LP hedge daemon path for an existing mirror pair with live Pandora and Polymarket credentials. Unlike mirror sync setup, this path skips deploy-time sports discovery and resolution-source capture.',
+        label: 'Live Polymarket hedge mode',
+        description: 'Polymarket Hedge Mode for an existing mirror pair with live Polymarket credentials. Unlike Pandora Mirroring Mode setup, this path skips deploy-time sports discovery and resolution-source capture.',
         runtimeFields: [
           createField('CHAIN_ID', 'Chain ID', 'integer', { required: true, description: 'Pandora chain identifier.' }),
           createField('RPC_URL', 'RPC URL', 'url', { required: true, description: 'Execution RPC endpoint.' }),

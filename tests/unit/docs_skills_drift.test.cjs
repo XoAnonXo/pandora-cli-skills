@@ -225,6 +225,8 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   assert.match(commandReferenceText, /mirror hedge-check/);
   assert.match(commandReferenceText, /mirror calc/);
   assert.match(commandReferenceText, /fund-check/);
+  assert.match(commandReferenceText, /Pandora Mirroring Mode/);
+  assert.match(commandReferenceText, /Polymarket Hedge Mode/);
   assert.match(commandReferenceText, /polymarket positions/);
   assert.match(commandReferenceText, /--source auto\|api\|on-chain/);
   assert.match(commandReferenceText, /polymarket balance/);
@@ -245,6 +247,8 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
   assert.match(mirrorOperationsText, /mirror hedge-check/);
   assert.match(mirrorOperationsText, /mirror calc/);
   assert.match(mirrorOperationsText, /fund-check/);
+  assert.match(mirrorOperationsText, /Pandora Mirroring Mode/);
+  assert.match(mirrorOperationsText, /Polymarket Hedge Mode/);
   assert.match(mirrorOperationsText, /polymarket positions/);
   assert.match(mirrorOperationsText, /polymarket balance/);
   assert.doesNotMatch(mirrorOperationsText, /Use `pandora polymarket check` when the workflow calls this a "fund-check"/);
@@ -290,6 +294,8 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
     assert.equal(mirrorHelp.data.notes.some((note) => /--polymarket-rpc-url/.test(note)), true);
     assert.equal(mirrorHelp.data.notes.some((note) => /verifyDiagnostics/.test(note)), true);
     assert.equal(mirrorHelp.data.notes.some((note) => /mirror trace/i.test(note)), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /Pandora Mirroring Mode/.test(String(note))), true);
+    assert.equal(mirrorHelp.data.notes.some((note) => /Polymarket Hedge Mode/.test(String(note))), true);
   }
   if (mirrorTraceHelpAvailable) {
     assert.match(mirrorTraceHelp.data.usage, /--pandora-market-address <address>\|--market-address <address>/);
@@ -307,6 +313,7 @@ test('runtime capabilities and schema stay aligned with shipped skill docs', () 
     assert.match(mirrorSyncHelp.data.usage, /--strict-close-time-delta/);
     assert.match(mirrorSyncHelp.data.liveHedgeNotes.rpcFallback, /comma-separated/i);
     assert.match(mirrorSyncHelp.data.staleCacheFallback, /cached snapshots/i);
+    assert.equal(mirrorSyncHelp.data.notes.some((note) => /Pandora Mirroring Mode/.test(String(note))), true);
   }
   if (mirrorStatusHelpAvailable) {
     assert.match(mirrorStatusHelp.data.notes.gracefulFallback, /diagnostics are returned instead of hard failures/i);

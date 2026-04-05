@@ -1,19 +1,25 @@
 # Scenario Catalog
 
 This catalog mirrors the JSON manifests in `benchmarks/scenarios/core`.
+It is the release-proof surface lane for Pandora today.
 
 Current suite facts:
-- suite id: `core`
+- suite storage id: `core`
+- suite public alias: `surface-core`
+- suite role: release-proof surface lane
 - scenario schema version: `1.0.0`
 - expected scenario count: `19`
 - minimum weighted score: `95`
+
+The runner now accepts `surface-core` as a public alias for this same lane.
+The committed manifests and published release artifacts still live under the `core` name today.
 
 Agents can discover this catalog from the benchmark explainability routes published by `pandora --output json capabilities`:
 - `Benchmark methodology, scenarios, or scorecards`
 - `Benchmark scenario catalog and parity coverage`
 - `Benchmark weighted scoring and score interpretation`
 
-Use this file when a report names a failing scenario or parity group and you need the exact transport, assertion, and request shape behind that failure. Use `scorecard.md` when the question is how that failure changes `weightedScore` or readiness interpretation.
+Use this file when a report names a failing scenario or parity group and you need the exact transport, assertion, and request shape behind that failure. Use `scorecard.md` when the question is how that failure changes release readiness.
 
 ## Reproducibility Notes
 
@@ -43,7 +49,7 @@ The current suite defines these parity groups:
 - `workspace-path-denial`
 - `tools-list-bootstrap`
 
-## Core Scenarios
+## Release-Proof Scenarios
 
 | ID | Transport | Assertion | Weight | Target ms | Parity group | Request details |
 | --- | --- | --- | ---: | ---: | --- | --- |
@@ -68,6 +74,11 @@ The current suite defines these parity groups:
 | `cli-operations-close-seeded` | `cli-json` | `operations-close-seeded` | 8 | 5000 | none | `pandora --output json operations close --id benchmark-op-close --reason benchmark-close` |
 
 The expected scenario id order above matches the runner's sorted manifest order and the committed `benchmarks/latest/core-report.json` publication format.
+
+## Release-Proof Notes
+
+This catalog is only for the small surface lane.
+It should stay fixed, auditable, and easy to compare across releases.
 
 ## Seeded-State Notes
 

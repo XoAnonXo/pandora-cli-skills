@@ -102,8 +102,9 @@ function createRunMirrorCommand(deps) {
             [
               'mirror dashboard is the canonical operator summary for active mirror markets; top-level `pandora dashboard` is a convenience alias.',
               'mirror go and mirror sync stay in paper/simulated mode unless --execute-live or --execute is supplied.',
-              'Mirror sync simulates or executes Pandora rebalance and Polymarket hedge as separate legs; cross-venue settlement is not atomic.',
-              'Mirror hedge is the LP-hedging runtime family; use it for LP hedge planning and daemon lifecycle control without changing mirror sync semantics.',
+              'Pandora Mirroring Mode means `mirror sync --no-hedge`: Pandora follows Polymarket odds without placing a Polymarket hedge.',
+              'Polymarket Hedge Mode means `mirror hedge`: it watches Pandora flow and adjusts Polymarket inventory so you can stay delta neutral while earning Pandora fees.',
+              'Plain `mirror sync` without `--no-hedge` is the hybrid path. It can rebalance Pandora and hedge on Polymarket in the same loop, and cross-venue settlement is still not atomic.',
               '--rebalance-route and Flashbots flags apply only to the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg private or atomic.',
               '--rebalance-route supports public, auto, flashbots-private, and flashbots-bundle. --rebalance-route-fallback controls whether unsupported private-routing conditions fail closed or fall back to public submission.',
               'mirror trace is the canonical read-only historical reserve surface for Pandora pools; use it for block-by-block reserve forensics and postmortems.',
@@ -213,7 +214,9 @@ function createRunMirrorCommand(deps) {
         console.log('Notes:');
         console.log('  mirror dashboard is the canonical operator summary for active mirror markets; `pandora dashboard` is a top-level alias.');
         console.log('  mirror go and mirror sync stay in paper/simulated mode unless --execute-live or --execute is supplied.');
-        console.log('  Mirror sync runs Pandora rebalance and Polymarket hedge as separate legs; cross-venue settlement is not atomic.');
+        console.log('  Pandora Mirroring Mode means `mirror sync --no-hedge`: Pandora follows Polymarket odds without placing a Polymarket hedge.');
+        console.log('  Polymarket Hedge Mode means `mirror hedge`: it watches Pandora flow and adjusts Polymarket inventory so you can stay delta neutral while earning Pandora fees.');
+        console.log('  Plain `mirror sync` without `--no-hedge` is the hybrid path. It can rebalance Pandora and hedge on Polymarket in the same loop, and cross-venue settlement is still not atomic.');
         console.log('  --rebalance-route and Flashbots flags apply only to the Ethereum Pandora rebalance leg. They do not make the Polygon hedge leg private or atomic.');
         console.log('  --rebalance-route supports public, auto, flashbots-private, and flashbots-bundle. --rebalance-route-fallback decides whether unsupported private-routing conditions fail or degrade to public submission.');
         console.log('  mirror trace is the canonical read-only historical reserve surface for Pandora pools.');
@@ -224,7 +227,6 @@ function createRunMirrorCommand(deps) {
         console.log('  Use --polymarket-rpc-url when Polygon preflight should differ from the main --rpc-url; comma-separated fallbacks are tried in order.');
         console.log('  Polymarket outage fallback reuses cached snapshots under ~/.pandora/polymarket in paper mode; live mode blocks cached or stale sources and expects websocket-backed prices for short-interval sports sync.');
         console.log('  mirror sync status reports daemon health metadata such as status, alive, checkedAt, pidFile, logFile, and metadata.pidAlive.');
-        console.log('  mirror hedge is the LP-hedging runtime family; use it for LP hedge planning and daemon lifecycle control without changing mirror sync semantics.');
         console.log('  mirror health is the machine-usable daemon/runtime status shell; mirror panic engages the global risk panic plus mirror stop-file and daemon-stop emergency flow.');
         console.log('  The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror daemons until mirror panic clear mode or manual cleanup removes it.');
         console.log('  For AMM deploy/go flows, prefer --initial-yes-pct/--initial-no-pct to set the opening probability directly. Use --yes-reserve-weight-pct/--no-reserve-weight-pct only for explicit reserve-weight control.');

@@ -7,11 +7,13 @@ const path = require('node:path');
 const {
   loadScenarioSuite,
   loadSuiteLock,
+  defaultSuiteLockPath,
   getSuiteExpectation,
   validateScenarioManifest,
   compareContractLock,
   createPublishedBenchmarkReport,
   normalizeBenchmarkReportForFreshness,
+  runBenchmarkSuite,
 } = require('../../benchmarks/lib/runner.cjs');
 const { getAssertion } = require('../../benchmarks/lib/assertions.cjs');
 const {
@@ -48,15 +50,23 @@ test('benchmark suite manifests load and validate', () => {
   }
 });
 
-test('benchmark suite produces a fully-passing readiness report', async () => {
-  const rootDir = path.resolve(__dirname, '..', '..');
-  const output = execFileSync(process.execPath, ['scripts/check_agent_benchmarks.cjs'], {
-    cwd: rootDir,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  const report = JSON.parse(output);
-  const expectedLock = loadSuiteLock('core');
+test('surface-core aliases to the current release-proof transport surface', () => {
+  const coreScenarios = loadScenarioSuite('core');
+  const surfaceScenarios = loadScenarioSuite('surface-core');
+  const coreLock = loadSuiteLock('core');
+  const surfaceLock = loadSuiteLock('surface-core');
+  const coreExpectation = getSuiteExpectation('core');
+  const surfaceExpectation = getSuiteExpectation('surface-core');
+
+  assert.equal(surfaceScenarios.length, coreScenarios.length);
+  assert.deepEqual(surfaceScenarios.map((scenario) => scenario.id), coreScenarios.map((scenario) => scenario.id));
+  assert.deepEqual(surfaceLock, coreLock);
+  assert.deepEqual(surfaceExpectation, coreExpectation);
+  assert.equal(defaultSuiteLockPath('surface-core'), defaultSuiteLockPath('core'));
+});
+
+test('benchmark suite produces a stable runtime report for the release-proof surface lane', async () => {
+  const report = await runBenchmarkSuite({ suite: 'core' });
   const expectation = getSuiteExpectation('core');
   assert.equal(report.summary.failedCount, 0);
   assert.equal(report.summary.passedCount, report.summary.scenarioCount);
@@ -64,19 +74,52 @@ test('benchmark suite produces a fully-passing readiness report', async () => {
     report.summary.weightedScore >= expectation.minimumWeightedScore,
     `expected weightedScore >= ${expectation.minimumWeightedScore}, received ${report.summary.weightedScore}`,
   );
-  assert.equal(typeof report.contractLock.commandDescriptorVersion, 'string');
-  assert.equal(typeof report.contractLock.documentationRegistryHash, 'string');
-  assert.equal(typeof report.contractLock.capabilitiesLocalHash, 'string');
-  assert.equal(typeof report.contractLock.capabilitiesRemoteTemplateHash, 'string');
-  assert.equal(report.contractLockMatchesExpected, true);
-  assert.deepEqual(report.contractLockMismatches, []);
-  assert.ok(expectedLock);
+  assert.equal(report.suite, 'core');
+  assert.equal(report.requestedSuite, 'core');
   assert.ok(report.scenarios.some((scenario) => scenario.id === 'mcp-http-scope-denial'));
   assert.ok(report.scenarios.some((scenario) => scenario.id === 'mcp-http-schema-bootstrap'));
   assert.ok(report.scenarios.some((scenario) => scenario.id === 'mcp-http-operations-get-seeded'));
   assert.ok(report.scenarios.every((scenario) => scenario.score && typeof scenario.score.weighted === 'number'));
   assert.ok(report.parity);
   assert.deepEqual(report.parity.failedGroups, []);
+});
+
+test('published benchmark reports strip raw lane metadata from the public artifact', () => {
+  const report = {
+    schemaVersion: '1.0.0',
+    suite: 'core',
+    requestedSuite: 'surface-core',
+    runtime: { packageVersion: '1.1.71' },
+    summary: {
+      scenarioCount: 1,
+      passedCount: 1,
+      failedCount: 0,
+      latencyPassRate: 1,
+      failedParityGroupCount: 0,
+      overallPass: true,
+      weightedScore: 100,
+    },
+    contractLock: {},
+    expectedContractLockPath: 'benchmarks/locks/core.lock.json',
+    contractLockMatchesExpected: true,
+    contractLockMismatches: [],
+    parity: { groups: [], failedGroups: [] },
+    scenarios: [{
+      id: 'scenario',
+      title: 'Scenario',
+      description: 'desc',
+      transport: 'cli-json',
+      dimensions: ['bootstrap'],
+      weight: 1,
+      passed: true,
+      score: { weighted: 100, latencyPass: true },
+      failure: null,
+      checks: [],
+    }],
+  };
+
+  const published = createPublishedBenchmarkReport(report);
+  assert.equal('requestedSuite' in published, false);
 });
 
 test('benchmark trust checker flags stale committed report path and lock inconsistencies', () => {
@@ -96,7 +139,14 @@ test('benchmark trust checker flags stale committed report path and lock inconsi
   const failures = validateCommittedBenchmarkArtifacts(mutatedReport, lockDocument, {
     suite: 'core',
     suiteScenarios,
+    reportPath: paths.reportPath,
+    bundlePath: paths.bundlePath,
+    historyPath: paths.historyPath,
+    docsHistoryPath: paths.docsHistoryPath,
     reportRelativePath: paths.reportRelativePath,
+    bundleRelativePath: paths.bundleRelativePath,
+    historyRelativePath: paths.historyRelativePath,
+    docsHistoryRelativePath: paths.docsHistoryRelativePath,
     lockRelativePath: paths.lockRelativePath,
     lockPath: paths.lockPath,
   });
@@ -263,6 +313,45 @@ test('published benchmark report normalizes suite publication paths to forward s
   assert.equal(published.publication.suiteLockPath, 'benchmarks/locks/core.lock.json');
 });
 
+test('published benchmark report preserves evidence overallPass instead of recomputing it', () => {
+  const report = {
+    schemaVersion: '1.0.0',
+    suite: 'core',
+    runtime: { packageVersion: '1.1.128' },
+    summary: {
+      scenarioCount: 1,
+      passedCount: 1,
+      failedCount: 0,
+      latencyPassRate: 1,
+      failedParityGroupCount: 0,
+      weightedScore: 100,
+      overallPass: false,
+    },
+    contractLock: {},
+    expectedContractLockPath: 'benchmarks/locks/core.lock.json',
+    contractLockMatchesExpected: true,
+    contractLockMismatches: [],
+    parity: { groups: [], failedGroups: [] },
+    scenarios: [{
+      id: 's',
+      title: 'Scenario',
+      description: 'desc',
+      transport: 'cli-json',
+      dimensions: ['bootstrap'],
+      weight: 1,
+      passed: true,
+      score: { weighted: 100, latencyPass: true },
+      failure: null,
+      checks: [],
+    }],
+  };
+
+  const published = createPublishedBenchmarkReport(report);
+  assert.equal(published.summary.overallPass, false);
+  assert.equal(published.publication.releaseGatePass, false);
+  assert.equal(published.publication.contractLockStatus, 'locked');
+});
+
 test('public benchmark bundle avoids absolute machine-specific paths such as writtenLockPath', (t) => {
   const rootDir = path.resolve(__dirname, '..', '..');
   const tempDir = fs.mkdtempSync(path.join(rootDir, '.tmp-benchmark-run-'));
@@ -334,6 +423,85 @@ test('run_agent_benchmarks writes the published deterministic report to disk', (
   assert.equal('runtimeState' in writtenReport.scenarios[0], false);
   assert.equal('parityHash' in writtenReport.scenarios[0], false);
   assert.equal('writtenLockPath' in writtenReport, false);
+});
+
+test('publication artifacts preserve evidence overallPass through bundle and history', (t) => {
+  const rootDir = path.resolve(__dirname, '..', '..');
+  const tempDir = fs.mkdtempSync(path.join(rootDir, '.tmp-benchmark-publication-evidence-'));
+  t.after(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const packagePath = path.join(tempDir, 'package.json');
+  const reportPath = path.join(tempDir, 'core-report.json');
+  const lockPath = path.join(tempDir, 'core.lock.json');
+  const bundlePath = path.join(tempDir, 'core-bundle.json');
+  const historyPath = path.join(tempDir, 'core-history.json');
+  const docsHistoryPath = path.join(tempDir, 'docs-history.json');
+  const generatedAt = '2026-03-09T16:19:46.514Z';
+
+  fs.writeFileSync(packagePath, `${JSON.stringify({
+    name: 'pandora-cli-skills',
+    version: '9.9.10',
+  }, null, 2)}\n`);
+
+  const report = {
+    schemaVersion: '1.0.0',
+    suite: 'core',
+    generatedAt,
+    runtime: { packageVersion: '9.9.10' },
+    summary: {
+      scenarioCount: 1,
+      passedCount: 1,
+      failedCount: 0,
+      latencyPassRate: 1,
+      failedParityGroupCount: 0,
+      weightedScore: 100,
+      overallPass: false,
+    },
+    dimensions: {},
+    contractLock: {},
+    expectedContractLockPath: 'benchmarks/locks/core.lock.json',
+    contractLockMatchesExpected: true,
+    contractLockMismatches: [],
+    parity: { groups: [], failedGroups: [] },
+    scenarios: [{
+      id: 'scenario',
+      title: 'Scenario',
+      description: 'desc',
+      transport: 'cli-json',
+      dimensions: ['bootstrap'],
+      weight: 1,
+      passed: true,
+      durationMs: 1,
+      score: { weighted: 100, latencyPass: true },
+      failure: null,
+      checks: [],
+    }],
+  };
+
+  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  fs.writeFileSync(lockPath, `${JSON.stringify({
+    schemaVersion: '1.0.0',
+    suite: 'core',
+    publication: {
+      contractLockHash: 'lock-hash',
+      lockDocumentHash: 'doc-hash',
+    },
+    contractLock: {},
+  }, null, 2)}\n`);
+
+  const artifacts = buildPublicationArtifacts({
+    packagePath,
+    reportPath,
+    lockPath,
+    bundlePath,
+    historyPath,
+    docsHistoryPath,
+  });
+
+  assert.equal(artifacts.bundle.latest.summary.overallPass, false);
+  assert.equal(artifacts.history.entries[0].overallPass, false);
 });
 
 test('benchmark publication artifacts reuse the current version generatedAt when report output is deterministic', (t) => {

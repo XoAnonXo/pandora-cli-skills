@@ -184,6 +184,46 @@ test('mirror hedge service lifecycle persists plan, status, and bundle-facing st
           illiquid: 1,
         },
       },
+      lastObservedTrade: {
+        tradeId: 'trade-1',
+        cursor: 'log:4',
+        transactionHash: '0x' + 'd'.repeat(64),
+        walletAddress: '0x1111111111111111111111111111111111111111',
+        marketPairId: 'pair-1',
+        pandoraMarketAddress: '0x1111111111111111111111111111111111111111',
+        polymarketMarketId: 'poly-1',
+        polymarketSlug: 'slug-1',
+        source: 'pandora.indexer',
+        orderSide: 'buy',
+        tokenSide: 'yes',
+        direction: 'buy-yes',
+        amountUsdc: 5,
+        amountShares: 10,
+        expectedRevenueUsdc: 0.1,
+        confirmedAt: '2026-03-20T00:00:00.000Z',
+        observedAt: '2026-03-20T00:00:01.250Z',
+        observationLatencyMs: 1250,
+        hedgeEligible: true,
+        reason: 'external-trade',
+      },
+      lastHedgeSignal: {
+        hedgeId: 'pair-1:buy-yes',
+        status: 'planned',
+        signalAt: '2026-03-20T00:00:01.900Z',
+        tradeId: 'trade-1',
+        cursor: 'log:4',
+        transactionHash: '0x' + 'd'.repeat(64),
+        tradeConfirmedAt: '2026-03-20T00:00:00.000Z',
+        tradeObservedAt: '2026-03-20T00:00:01.250Z',
+        reactionLatencyMs: 1900,
+        observeToSignalLatencyMs: 650,
+        amountUsdc: 5,
+        amountShares: 10,
+        tokenSide: 'yes',
+        orderSide: 'buy',
+        source: 'mirror-hedge-paper',
+        reason: 'inventory-gap',
+      },
       lastSuccessfulHedge: {
         hedgeId: 'hedge-1',
         status: 'completed',
@@ -211,6 +251,12 @@ test('mirror hedge service lifecycle persists plan, status, and bundle-facing st
     assert.equal(status.summary.pendingOverlayUsdc, 2);
     assert.equal(status.summary.deferredHedgeUsdc, 3);
     assert.equal(status.readiness.ready, true);
+    assert.equal(status.summary.lastObservedTradeId, 'trade-1');
+    assert.equal(status.summary.lastTradeObservationLatencyMs, 1250);
+    assert.equal(status.summary.lastHedgeSignalStatus, 'planned');
+    assert.equal(status.summary.lastHedgeReactionLatencyMs, 1900);
+    assert.equal(status.lastObservedTrade.tradeId, 'trade-1');
+    assert.equal(status.lastHedgeSignal.hedgeId, 'pair-1:buy-yes');
 
     const bundle = service.bundleFacing({
       stateFile,
@@ -219,6 +265,8 @@ test('mirror hedge service lifecycle persists plan, status, and bundle-facing st
 
     assert.equal(bundle.runtimeStatus, 'running');
     assert.equal(bundle.bundleFacing.deferredHedgeQueue.length, 1);
+    assert.equal(bundle.bundleFacing.lastObservedTrade.tradeId, 'trade-1');
+    assert.equal(bundle.bundleFacing.lastHedgeSignal.status, 'planned');
     assert.equal(bundle.bundleFacing.lastSuccessfulHedge.hedgeId, 'hedge-1');
 
     const stopped = service.stop({
@@ -240,6 +288,8 @@ test('mirror hedge service lifecycle persists plan, status, and bundle-facing st
     assert.equal(persisted.confirmedExposureLedger.length, 1);
     assert.equal(persisted.pendingMempoolOverlays.length, 1);
     assert.equal(persisted.deferredHedgeQueue.length, 1);
+    assert.equal(persisted.lastObservedTrade.tradeId, 'trade-1');
+    assert.equal(persisted.lastHedgeSignal.hedgeId, 'pair-1:buy-yes');
   } finally {
     removeDir(tempDir);
   }
@@ -814,6 +864,84 @@ test('runMirrorHedge skips buy expansion when a sell is blocked in the same cycl
     assert.equal(state.deferredHedgeQueue[0].orderSide, 'sell');
   } finally {
     polymarketModule.fetchPolymarketPositionSummary = originalFetchInventory;
+    removeDir(tempDir);
+  }
+}));
+
+test('runMirrorHedge queues zero-fill partial buy hedges instead of submitting a zero-notional live order', withPatchedModules(async () => {
+  const tempDir = createTempDir('pandora-hedge-zero-fill-partial-');
+  const walletFile = path.join(tempDir, 'internal-wallets.txt');
+  const stateFile = path.join(tempDir, 'runtime.json');
+  const originalFetchInventory = polymarketModule.fetchPolymarketPositionSummary;
+  const originalFetchDepth = polymarketModule.fetchDepthForMarket;
+  const originalPlaceOrder = polymarketModule.placeHedgeOrder;
+  const orderCalls = [];
+  polymarketModule.fetchPolymarketPositionSummary = async () => ({
+    marketId: 'poly-1',
+    slug: 'team-a-vs-team-b',
+    walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    yesBalance: 0,
+    noBalance: 0,
+    openOrdersCount: 0,
+    estimatedValueUsd: 0,
+    prices: { yes: 0.57, no: 0.43 },
+    source: { resolved: 'mock' },
+    diagnostics: [],
+  });
+  polymarketModule.fetchDepthForMarket = async () => ({
+    yesDepth: { depthUsd: 0, availableUsd: 0, referencePrice: 0.57, depthShares: 0 },
+    noDepth: { depthUsd: 500, availableUsd: 500, referencePrice: 0.43, depthShares: 1162.790697 },
+    sellYesDepth: { depthUsd: 100, availableUsd: 100, referencePrice: 0.57, depthShares: 175.438596 },
+    sellNoDepth: { depthUsd: 100, availableUsd: 100, referencePrice: 0.43, depthShares: 232.558139 },
+    diagnostics: [],
+  });
+  polymarketModule.placeHedgeOrder = async (options = {}) => {
+    orderCalls.push(options);
+    throw new Error('amountUsd must be a positive number for hedge execution.');
+  };
+  fs.writeFileSync(walletFile, '0x1111111111111111111111111111111111111111\n');
+
+  try {
+    const service = loadMirrorHedgeService();
+    const payload = await service.runMirrorHedge({
+      stateFile,
+      pandoraMarketAddress: '0xfefefefefefefefefefefefefefefefefefefefe',
+      polymarketMarketId: 'poly-1',
+      internalWalletsFile: walletFile,
+      iterations: 1,
+      executeLive: true,
+      privateKey: '0x' + '1'.repeat(64),
+      funder: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      confirmedTrades: [
+        {
+          id: 'trade-zero-fill-1',
+          marketAddress: '0xfefefefefefefefefefefefefefefefefefefefe',
+          trader: '0x3333333333333333333333333333333333333333',
+          side: 'yes',
+          tradeType: 'buy',
+          collateralAmount: '50000000',
+          tokenAmount: '87719298',
+          feeAmount: '1000000',
+          timestamp: 1710000000,
+          txHash: `0x${'c'.repeat(64)}`,
+        },
+      ],
+      minHedgeUsdc: 1,
+    });
+
+    assert.equal(orderCalls.length, 0);
+    assert.equal(payload.lastError, null);
+    assert.equal(payload.summary.deferredHedgeCount, 1);
+    assert.equal(payload.runtime.auditEntries.some((entry) => entry.reasonCode === 'non-executable-partial'), true);
+
+    const state = loadState(stateFile).state;
+    assert.equal(state.deferredHedgeQueue.length, 1);
+    assert.equal(state.deferredHedgeQueue[0].reason, 'non-executable-partial');
+    assert.equal(state.deferredHedgeQueue[0].orderSide, 'buy');
+  } finally {
+    polymarketModule.fetchPolymarketPositionSummary = originalFetchInventory;
+    polymarketModule.fetchDepthForMarket = originalFetchDepth;
+    polymarketModule.placeHedgeOrder = originalPlaceOrder;
     removeDir(tempDir);
   }
 }));

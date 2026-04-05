@@ -88,8 +88,9 @@ function buildGoalRequirements(goal) {
       requiredEnv: ['CHAIN_ID', 'RPC_URL', 'ORACLE', 'FACTORY', 'USDC'],
       needPolymarketCheck: false,
       needResolutionSources: true,
-      note: 'Paper mirror setup can proceed without live Polymarket credentials.',
+      note: 'Paper Pandora Mirroring Mode can proceed without live Polymarket credentials.',
       recommendations: [
+        'Choose this path when you want Pandora to follow Polymarket odds. Add `--no-hedge` on mirror sync when you want Pandora-only mirroring.',
         'Provide two independent public `--sources` when you move from planning to deploy.',
         'Set `PANDORA_RESOLUTION_SOURCES` if you want env-driven mirror defaults.',
       ],
@@ -102,9 +103,10 @@ function buildGoalRequirements(goal) {
       requiredEnv: ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC'],
       needPolymarketCheck: true,
       needResolutionSources: true,
-      note: 'Live mirror setup needs both Pandora and Polymarket signer material.',
+      note: 'Live Pandora Mirroring Mode is for market making on Pandora. Use it when you want Pandora to follow Polymarket odds.',
       recommendations: [
-        'Validate Polymarket credentials and then run `pandora mirror go --execute-live` only after the dry-run passes.',
+        'If you want Pandora-only mirroring, use `mirror sync --no-hedge`. Plain `mirror sync` without that flag is the hybrid path.',
+        'Validate credentials and then run live mirror commands only after the dry-run passes.',
         'Set `PANDORA_RESOLUTION_SOURCES` if you want env-driven mirror defaults.',
       ],
     };
@@ -116,9 +118,10 @@ function buildGoalRequirements(goal) {
       requiredEnv: ['CHAIN_ID', 'RPC_URL', 'ORACLE', 'FACTORY', 'USDC', 'PANDORA_INTERNAL_WALLETS_FILE'],
       needPolymarketCheck: false,
       needResolutionSources: false,
-      note: 'Paper hedge daemon readiness targets the packaged LP daemon path for an existing mirror pair, not the deploy-time mirror sync path.',
+      note: 'Paper Polymarket Hedge Mode targets the hedge-only daemon path for an existing mirror pair, not Pandora Mirroring Mode.',
       recommendations: [
-        'Use the `mirror hedge` family for packaged LP daemon lifecycle; keep `mirror sync` for local/manual loops and troubleshooting.',
+        'Use `mirror hedge` when you want delta-neutral Polymarket hedging and fee capture from Pandora flow.',
+        'Use `mirror sync --no-hedge` only when you want Pandora Mirroring Mode instead of hedge-only operation.',
         'Bundle artifacts support DigitalOcean droplets and generic VPS targets today; Cloudflare Workers are not supported in v1.',
       ],
     };
@@ -130,9 +133,10 @@ function buildGoalRequirements(goal) {
       requiredEnv: ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC', 'PANDORA_INTERNAL_WALLETS_FILE'],
       needPolymarketCheck: true,
       needResolutionSources: false,
-      note: 'Live hedge daemon readiness targets the packaged LP daemon path for an existing mirror pair and live hedge runtime, not mirror deployment setup.',
+      note: 'Live Polymarket Hedge Mode targets the hedge-only daemon path for an existing mirror pair and live Polymarket execution, not Pandora Mirroring Mode.',
       recommendations: [
-        'Use the `mirror hedge` family for packaged LP daemon lifecycle; keep `mirror sync` for local/manual loops, one-shot execution, and troubleshooting.',
+        'Use `mirror hedge` when you want delta-neutral Polymarket hedging and fee capture from Pandora flow.',
+        'Use `mirror sync --no-hedge` only when you want Pandora Mirroring Mode instead of hedge-only operation.',
         'Bundle artifacts support DigitalOcean droplets and generic VPS targets today; Cloudflare Workers are not supported in v1.',
       ],
     };

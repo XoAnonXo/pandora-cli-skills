@@ -1,6 +1,15 @@
 # Pandora Benchmark Pack
 
-This repository has one benchmark suite today: `core`.
+This repository stores one committed release-proof suite today under `core`.
+The runner also accepts `surface-core` as a public alias for that same lane.
+That lane is the small, fixed release-proof exam for Pandora's outside promise.
+It is the thing we use to prove that the transport and contract surface still behaves the way the repo says it should.
+
+Pandora also has a separate research lane:
+- `core`: the committed storage and publication name for the release-proof suite
+- `surface-core`: the public alias for that same release-proof lane
+- `proving-ground`: a separate sandbox for long-running mirror, hedge, replay, and strategy research
+
 The current suite currently contains 19 scenarios.
 
 Two different benchmark surfaces exist:
@@ -30,6 +39,11 @@ Benchmark evidence is only one layer of the A+ trust story:
 - benchmark evidence proves what contract/runtime surfaces passed the shipped readiness suite
 - operation receipts prove what a specific installed runtime actually did during terminal mutable work
 
+For the amended architecture:
+- release-proof evidence stays small, fixed, and auditable
+- proving-ground evidence stays separate, large, and exploratory
+- replay is the bridge between both, because it turns real or shadowed actions into evidence that can be compared across runs
+
 ## How Agents Should Reach These Docs
 
 The benchmark explainability surface is part of the documented agent router exposed by `pandora --output json capabilities`:
@@ -42,6 +56,7 @@ The benchmark explainability surface is part of the documented agent router expo
   - `docs/benchmarks/README.md`
   - `docs/benchmarks/scenario-catalog.md`
   - `docs/benchmarks/scorecard.md`
+  - `docs/proving-ground/README.md`
   - `docs/trust/support-matrix.md`
 
 When a benchmark report is not self-explanatory:
@@ -98,10 +113,15 @@ With no extra flags, it:
 - does not update `benchmarks/latest/core-report.json`
 
 Optional runner flags:
-- `--suite <name>`: select the suite; only `core` is implemented today
+- `--suite <name>`: select the suite; `core` is the committed storage name and `surface-core` currently aliases to the same release-proof suite
 - `--out <path>`: write the generated report JSON to a file
 - `--write-lock`: write the generated `contractLock` into the suite lock file
 - `--lock-path <path>`: override the default lock path when `--write-lock` is used
+
+Implementation note:
+- the repo stores release-proof manifests, locks, and published JSONs under `core`
+- the runner can also accept `surface-core` when the caller wants the public lane name
+- the proving-ground does not replace this runner; it lives beside it and reuses the same runtime kernel and replay logic
 
 The default suite expectation is hard-coded in the runner:
 - expected scenario count: `19`
@@ -124,6 +144,12 @@ It reruns the suite and exits non-zero if any of the following are true:
 - `parity.failedGroups.length > 0`
 - `benchmarks/latest/core-report.json` is missing
 - the committed `benchmarks/latest/core-report.json` is stale after the runner's freshness normalization
+
+For the release-proof lane, the check script is the gate.
+For proving-ground work, the gate is different:
+- no hidden normalization
+- no benchmark-only success
+- no promotion without replay and calibration evidence
 
 The freshness comparison is not a raw file diff. The check script normalizes away volatile fields such as `generatedAt` before comparing the committed report to a newly generated one.
 

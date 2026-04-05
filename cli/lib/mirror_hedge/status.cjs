@@ -2,7 +2,9 @@ const { round } = require('../shared/utils.cjs');
 const {
   ensureMarketPairIdentityShape,
   ensureManagedInventorySnapshotShape,
+  ensureObservedTradeShape,
   ensureRetryTelemetryShape,
+  ensureHedgeSignalShape,
   ensureSkippedVolumeCountersShape,
   ensureTargetHedgeInventoryShape,
 } = require('../mirror_hedge_state_store.cjs');
@@ -46,6 +48,12 @@ function buildBundleFacingHedgePayload(params = {}) {
     ? ensureTargetHedgeInventoryShape(params.targetHedgeInventory)
     : ensureTargetHedgeInventoryShape(state.targetHedgeInventory);
   const retryTelemetry = ensureRetryTelemetryShape(params.retryTelemetry || state.retryTelemetry || {});
+  const lastObservedTrade = params.lastObservedTrade !== undefined
+    ? ensureObservedTradeShape(params.lastObservedTrade)
+    : ensureObservedTradeShape(state.lastObservedTrade);
+  const lastHedgeSignal = params.lastHedgeSignal !== undefined
+    ? ensureHedgeSignalShape(params.lastHedgeSignal)
+    : ensureHedgeSignalShape(state.lastHedgeSignal);
   const skippedVolumeCounters = ensureSkippedVolumeCountersShape(params.skippedVolumeCounters || state.skippedVolumeCounters || {});
   const confirmedExposureLedger = Array.isArray(params.confirmedExposureLedger || state.confirmedExposureLedger)
     ? params.confirmedExposureLedger || state.confirmedExposureLedger
@@ -95,6 +103,14 @@ function buildBundleFacingHedgePayload(params = {}) {
       warningCount: plan && Array.isArray(plan.warnings) ? plan.warnings.length : 0,
       lastProcessedBlockNumber: state.lastProcessedBlockNumber || null,
       lastProcessedLogIndex: state.lastProcessedLogIndex || null,
+      lastObservedTradeId: lastObservedTrade ? lastObservedTrade.tradeId : null,
+      lastObservedTradeConfirmedAt: lastObservedTrade ? lastObservedTrade.confirmedAt : null,
+      lastObservedTradeObservedAt: lastObservedTrade ? lastObservedTrade.observedAt : null,
+      lastTradeObservationLatencyMs: lastObservedTrade ? lastObservedTrade.observationLatencyMs : null,
+      lastHedgeSignalAt: lastHedgeSignal ? lastHedgeSignal.signalAt : null,
+      lastHedgeSignalStatus: lastHedgeSignal ? lastHedgeSignal.status : null,
+      lastHedgeReactionLatencyMs: lastHedgeSignal ? lastHedgeSignal.reactionLatencyMs : null,
+      lastHedgeObserveToSignalLatencyMs: lastHedgeSignal ? lastHedgeSignal.observeToSignalLatencyMs : null,
       lastSuccessfulHedgeAt: state.lastSuccessfulHedge && state.lastSuccessfulHedge.executedAt ? state.lastSuccessfulHedge.executedAt : null,
       lastErrorCode: state.lastError && state.lastError.code ? state.lastError.code : null,
       lastAlertCode: state.lastAlert && state.lastAlert.code ? state.lastAlert.code : null,
@@ -105,8 +121,12 @@ function buildBundleFacingHedgePayload(params = {}) {
       managedPolymarketInventorySnapshot: inventory,
       targetHedgeInventory: targetInventory,
       skippedVolumeCounters,
+      lastObservedTrade,
+      lastHedgeSignal,
     },
     plan,
+    lastObservedTrade,
+    lastHedgeSignal,
     bundleFacing: {
       marketPairIdentity,
       whitelistFingerprint: normalizeOptionalString(params.whitelistFingerprint || state.whitelistFingerprint),
@@ -117,6 +137,8 @@ function buildBundleFacingHedgePayload(params = {}) {
       targetHedgeInventory: targetInventory,
       retryTelemetry,
       skippedVolumeCounters,
+      lastObservedTrade,
+      lastHedgeSignal,
       lastProcessedBlockCursor: state.lastProcessedBlockCursor || null,
       lastProcessedLogCursor: state.lastProcessedLogCursor || null,
       lastSuccessfulHedge: state.lastSuccessfulHedge || null,
@@ -161,6 +183,8 @@ function buildHedgeStatusPayload(params = {}) {
       recommendedActions: plan && Array.isArray(plan.recommendedActions) ? plan.recommendedActions : [],
     },
     warnings: plan && Array.isArray(plan.warnings) ? plan.warnings : [],
+    lastObservedTrade: bundleFacing.lastObservedTrade,
+    lastHedgeSignal: bundleFacing.lastHedgeSignal,
     lastSuccessfulHedge: state.lastSuccessfulHedge || null,
     lastError: state.lastError || null,
     lastAlert: state.lastAlert || null,
@@ -211,6 +235,14 @@ function renderHedgeStatusTable(payload) {
     ['warningCount', summary.warningCount],
     ['lastProcessedBlockNumber', summary.lastProcessedBlockNumber],
     ['lastProcessedLogIndex', summary.lastProcessedLogIndex],
+    ['lastObservedTradeId', summary.lastObservedTradeId || ''],
+    ['lastObservedTradeConfirmedAt', summary.lastObservedTradeConfirmedAt || ''],
+    ['lastObservedTradeObservedAt', summary.lastObservedTradeObservedAt || ''],
+    ['lastTradeObservationLatencyMs', summary.lastTradeObservationLatencyMs === null || summary.lastTradeObservationLatencyMs === undefined ? '' : summary.lastTradeObservationLatencyMs],
+    ['lastHedgeSignalAt', summary.lastHedgeSignalAt || ''],
+    ['lastHedgeSignalStatus', summary.lastHedgeSignalStatus || ''],
+    ['lastHedgeReactionLatencyMs', summary.lastHedgeReactionLatencyMs === null || summary.lastHedgeReactionLatencyMs === undefined ? '' : summary.lastHedgeReactionLatencyMs],
+    ['lastHedgeObserveToSignalLatencyMs', summary.lastHedgeObserveToSignalLatencyMs === null || summary.lastHedgeObserveToSignalLatencyMs === undefined ? '' : summary.lastHedgeObserveToSignalLatencyMs],
     ['lastSuccessfulHedgeAt', summary.lastSuccessfulHedgeAt || ''],
     ['lastErrorCode', summary.lastErrorCode || ''],
     ['lastAlertCode', summary.lastAlertCode || ''],

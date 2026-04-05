@@ -8,6 +8,10 @@ const { buildCapabilitiesPayload } = require('../../cli/lib/capabilities_command
 const { buildSchemaPayload } = require('../../cli/lib/schema_command_service.cjs');
 const { upsertOperation } = require('../../cli/lib/operation_state_store.cjs');
 const {
+  buildEventTimeline,
+  normalizeSimulationLock,
+} = require('./simulation_world.cjs');
+const {
   buildBenchmarkEnv,
   createTempDir,
   removeDir,
@@ -27,8 +31,16 @@ const SCORECARD_KIND = 'benchmark-scorecard';
 const LOCK_KIND = 'benchmark-contract-lock';
 const PUBLICATION_GRADE = 'release-grade';
 const DEFAULT_SUITE = 'core';
+const SUITE_ALIASES = Object.freeze({
+  core: 'core',
+  'surface-core': 'core',
+});
 const SUITE_EXPECTATIONS = Object.freeze({
   core: Object.freeze({
+    expectedScenarioCount: 19,
+    minimumWeightedScore: 95,
+  }),
+  'surface-core': Object.freeze({
     expectedScenarioCount: 19,
     minimumWeightedScore: 95,
   }),
@@ -85,8 +97,31 @@ function sortJsonValue(value) {
   return value;
 }
 
+function normalizeSuiteName(suite = DEFAULT_SUITE) {
+  return String(suite || '').trim() || DEFAULT_SUITE;
+}
+
+function resolveSuiteStorageName(suite = DEFAULT_SUITE) {
+  const requested = normalizeSuiteName(suite);
+  if (requested !== 'surface-core') {
+    return SUITE_ALIASES[requested] || requested;
+  }
+
+  const candidateSuiteDir = path.join(SCENARIO_ROOT, 'surface-core');
+  const candidateLockPath = path.join(LOCK_ROOT, 'surface-core.lock.json');
+  const candidateReportPath = path.join(REPO_ROOT, 'benchmarks', 'latest', 'surface-core-report.json');
+  if (
+    fs.existsSync(candidateSuiteDir)
+    || fs.existsSync(candidateLockPath)
+    || fs.existsSync(candidateReportPath)
+  ) {
+    return 'surface-core';
+  }
+  return 'core';
+}
+
 function loadScenarioSuite(suite = DEFAULT_SUITE) {
-  const suiteDir = path.join(SCENARIO_ROOT, suite);
+  const suiteDir = path.join(SCENARIO_ROOT, resolveSuiteStorageName(suite));
   return fs.readdirSync(suiteDir)
     .filter((name) => name.endsWith('.json'))
     .sort(compareStableStrings)
@@ -103,7 +138,8 @@ function normalizePublicationPath(value, fallback) {
 }
 
 function defaultSuiteLockPath(suite = DEFAULT_SUITE) {
-  return path.join(LOCK_ROOT, `${suite}.lock.json`);
+  const resolvedSuite = resolveSuiteStorageName(suite);
+  return path.join(LOCK_ROOT, `${resolvedSuite}.lock.json`);
 }
 
 function defaultSuiteLockId(suite = DEFAULT_SUITE) {
@@ -111,7 +147,8 @@ function defaultSuiteLockId(suite = DEFAULT_SUITE) {
 }
 
 function defaultSuiteReportPath(suite = DEFAULT_SUITE) {
-  return path.join(REPO_ROOT, 'benchmarks', 'latest', `${suite}-report.json`);
+  const resolvedSuite = resolveSuiteStorageName(suite);
+  return path.join(REPO_ROOT, 'benchmarks', 'latest', `${resolvedSuite}-report.json`);
 }
 
 function defaultSuiteReportId(suite = DEFAULT_SUITE) {
@@ -119,7 +156,8 @@ function defaultSuiteReportId(suite = DEFAULT_SUITE) {
 }
 
 function getSuiteExpectation(suite = DEFAULT_SUITE) {
-  return SUITE_EXPECTATIONS[suite] || null;
+  const resolvedSuite = resolveSuiteStorageName(suite);
+  return SUITE_EXPECTATIONS[resolvedSuite] || SUITE_EXPECTATIONS[suite] || null;
 }
 
 function loadSuiteLock(suite = DEFAULT_SUITE) {
@@ -314,15 +352,11 @@ function normalizePublicationParity(parity) {
   };
 }
 
-function computeReleaseGatePass(summary, report) {
-  return Boolean(
-    summary
-    && summary.failedCount === 0
-    && summary.latencyPassRate === 1
-    && Number(summary.failedParityGroupCount || 0) === 0
-    && report
-    && report.contractLockMatchesExpected === true,
-  );
+function normalizePublicationSummary(summary) {
+  const normalized = summary && typeof summary === 'object'
+    ? sortJsonValue(summary)
+    : {};
+  return normalized;
 }
 
 function createPublishedBenchmarkReport(report) {
@@ -342,13 +376,12 @@ function createPublishedBenchmarkReport(report) {
   const contractLock = clone && clone.contractLock && typeof clone.contractLock === 'object'
     ? sortJsonValue(clone.contractLock)
     : {};
+  delete clone.requestedSuite;
   const expectedContractLockPath = normalizePublicationPath(
     clone && clone.expectedContractLockPath,
     defaultSuiteLockId(suite),
   ) || defaultSuiteLockId(suite);
-  const summary = clone && clone.summary && typeof clone.summary === 'object'
-    ? sortJsonValue(clone.summary)
-    : {};
+  const summary = normalizePublicationSummary(clone && clone.summary);
   const published = {
     schemaVersion: clone && clone.schemaVersion ? clone.schemaVersion : REPORT_SCHEMA_VERSION,
     suite,
@@ -378,10 +411,7 @@ function createPublishedBenchmarkReport(report) {
       : [],
   };
   const lockDocument = createLockDocument(suite, contractLock);
-  published.summary = {
-    ...published.summary,
-    overallPass: computeReleaseGatePass(published.summary, published),
-  };
+  // Publication is a projection of evidence, not a second pass that can improve it.
   published.publication = {
     ...published.publication,
     suiteLockHash: stableJsonHash(sortJsonValue(lockDocument)),
@@ -782,7 +812,8 @@ async function executeScenario(scenario, options = {}) {
 }
 
 async function runBenchmarkSuite(options = {}) {
-  const suite = options.suite || DEFAULT_SUITE;
+  const requestedSuite = normalizeSuiteName(options.suite || DEFAULT_SUITE);
+  const suite = resolveSuiteStorageName(requestedSuite);
   const scenarios = loadScenarioSuite(suite);
   const results = [];
   for (const scenario of scenarios) {
@@ -816,6 +847,7 @@ async function runBenchmarkSuite(options = {}) {
     schemaVersion: REPORT_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     suite,
+    requestedSuite,
     runtime: {
       packageVersion: pkg.version,
     },
@@ -846,6 +878,9 @@ module.exports = {
   LOCK_SCHEMA_VERSION,
   DEFAULT_SUITE,
   SUITE_EXPECTATIONS,
+  SUITE_ALIASES,
+  normalizeSuiteName,
+  resolveSuiteStorageName,
   loadScenarioSuite,
   loadSuiteLock,
   defaultSuiteLockPath,
@@ -861,4 +896,6 @@ module.exports = {
   normalizeBenchmarkReportForFreshness,
   defaultSuiteReportPath,
   defaultSuiteReportId,
+  buildEventTimeline,
+  normalizeSimulationLock,
 };

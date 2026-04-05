@@ -11,3 +11,4 @@ dist/
 /*.tgz
 output/
 .pandora/
+proving-ground/reports/

@@ -12,7 +12,12 @@ const {
 } = require('./mirror_verify_service.cjs');
 const { buildRequiredAgentMarketValidation } = require('./agent_market_prompt_service.cjs');
 const { deployPandoraAmmMarket } = require('./pandora_deploy_service.cjs');
-const { defaultManifestFile, upsertPair } = require('./mirror_manifest_store.cjs');
+const { defaultManifestFile, findPair, upsertPair } = require('./mirror_manifest_store.cjs');
+const {
+  beginMirrorDeployGuard,
+  readMirrorDeployGuard,
+  updateMirrorDeployGuard,
+} = require('./mirror_deploy_guard_store.cjs');
 const { createAsyncOperationBridge } = require('./shared/operation_bridge.cjs');
 const { isMcpMode } = require('./shared/mcp_path_guard.cjs');
 const { round } = require('./shared/utils.cjs');
@@ -37,6 +42,76 @@ function createServiceError(code, message, details = undefined) {
     err.details = details;
   }
   return err;
+}
+
+function buildExistingMirrorRecoveryCommand(pair = {}, selector = {}) {
+  const pandoraMarketAddress = pair && pair.pandoraMarketAddress ? pair.pandoraMarketAddress : null;
+  const polymarketMarketId = selector && selector.polymarketMarketId ? selector.polymarketMarketId : null;
+  const polymarketSlug = !polymarketMarketId && selector && selector.polymarketSlug ? selector.polymarketSlug : null;
+  if (!pandoraMarketAddress) return null;
+  const parts = [
+    'pandora mirror verify',
+    `--market-address ${pandoraMarketAddress}`,
+  ];
+  if (polymarketMarketId) {
+    parts.push(`--polymarket-market-id ${polymarketMarketId}`);
+  } else if (polymarketSlug) {
+    parts.push(`--polymarket-slug ${polymarketSlug}`);
+  }
+  parts.push('--trust-deploy');
+  return parts.join(' ');
+}
+
+function buildMirrorSourceSelector(planData = {}, options = {}) {
+  return {
+    polymarketMarketId:
+      (planData.sourceMarket && planData.sourceMarket.marketId ? String(planData.sourceMarket.marketId) : null)
+      || (options.polymarketMarketId ? String(options.polymarketMarketId) : null),
+    polymarketSlug:
+      (planData.sourceMarket && planData.sourceMarket.slug ? String(planData.sourceMarket.slug) : null)
+      || (options.polymarketSlug ? String(options.polymarketSlug) : null),
+  };
+}
+
+function assertMirrorDeployNotDuplicated({ manifestFile, selector, question, ruleHash }) {
+  const lookup = findPair(manifestFile, selector);
+  if (lookup.ambiguous && !lookup.pair) {
+    throw createServiceError(
+      'MIRROR_DEPLOY_MANIFEST_AMBIGUOUS',
+      'Mirror manifest has multiple matching pairs for this Polymarket market and no canonical market is set.',
+      {
+        manifestFile: lookup.filePath,
+        selector,
+        matches: lookup.pairs || [],
+      },
+    );
+  }
+  if (lookup.pair && lookup.pair.trusted !== false) {
+    throw createServiceError(
+      'MIRROR_DEPLOY_ALREADY_EXISTS',
+      'Mirror already exists for this Polymarket market. Reuse the canonical market instead of deploying again.',
+      {
+        manifestFile: lookup.filePath,
+        selector,
+        pair: lookup.pair,
+        sourceQuestion: question || null,
+        sourceRuleHash: ruleHash || null,
+        recovery: {
+          command: buildExistingMirrorRecoveryCommand(lookup.pair, selector),
+        },
+      },
+    );
+  }
+}
+
+function isResumableMirrorDeployGuard(guard = {}) {
+  return (
+    guard
+    && guard.status === 'manual_review_required'
+    && typeof guard.pollAddress === 'string'
+    && /^0x[a-fA-F0-9]{40}$/.test(guard.pollAddress)
+    && !guard.marketTxHash
+  );
 }
 
 function normalizeSources(value) {
@@ -104,6 +179,20 @@ function extractResolveToSelection(description) {
   }
 
   return null;
+}
+
+function isAdministrativeOutcomeLabel(value) {
+  const normalized = normalizeComparableText(value);
+  return normalized === 'yes' || normalized === 'no' || normalized === 'other';
+}
+
+function extractWinnerSelectionFromQuestion(question) {
+  const text = String(question || '').trim();
+  if (!text) return null;
+
+  const match = text.match(/\bwill\s+(.+?)\s+win\b/i);
+  if (!match || !match[1]) return null;
+  return sanitizeParticipantLabel(match[1]) || null;
 }
 
 function findBestParticipantMatch(selection, participants) {
@@ -325,7 +414,7 @@ function buildRuleTemplate(sourceMarket) {
   }
 
   const selectedOutcome = extractResolveToSelection(sourceDescription);
-  if (selectedOutcome) {
+  if (selectedOutcome && !isAdministrativeOutcomeLabel(selectedOutcome)) {
     const participants = extractMatchParticipants(sourceQuestion);
     const selectedParticipant = findBestParticipantMatch(selectedOutcome, participants) || selectedOutcome;
     const opposingParticipant =
@@ -337,6 +426,19 @@ function buildRuleTemplate(sourceMarket) {
     }
     return {
       rulesText: buildWinnerRules(selectedParticipant, opposingParticipant),
+      diagnostics,
+    };
+  }
+
+  const questionWinner = extractWinnerSelectionFromQuestion(sourceQuestion);
+  if (questionWinner) {
+    diagnostics.push(
+      selectedOutcome && isAdministrativeOutcomeLabel(selectedOutcome)
+        ? 'Ignored administrative source outcome label and generated winner rules from the source question.'
+        : 'Generated winner rules from the source question.',
+    );
+    return {
+      rulesText: buildWinnerRules(questionWinner, null),
       diagnostics,
     };
   }
@@ -686,9 +788,79 @@ async function deployMirror(options = {}) {
         validationGate && validationGate.requiredValidation ? validationGate.requiredValidation.ticket : null,
     });
 
+    const manifestFile = options.manifestFile || defaultManifestFile();
+    const sourceSelector = buildMirrorSourceSelector(planData, options);
+    const sourceRuleHash = hashRules(sourceRulesText);
+    let deployGuard = null;
+    let resumePollAddress = null;
+    let chainWriteStarted = false;
+    const deployMarket = typeof options.deployPandoraAmmMarket === 'function'
+      ? options.deployPandoraAmmMarket
+      : deployPandoraAmmMarket;
+
+    if (options.execute) {
+      assertMirrorDeployNotDuplicated({
+        manifestFile,
+        selector: sourceSelector,
+        question,
+        ruleHash: sourceRuleHash,
+      });
+      const existingGuard = readMirrorDeployGuard(sourceSelector, {
+        guardDir: options.deployGuardDir,
+      });
+      if (existingGuard.found && existingGuard.guard && existingGuard.guard.status && existingGuard.guard.status !== 'failed_prewrite') {
+        if (!isResumableMirrorDeployGuard(existingGuard.guard)) {
+          throw createServiceError(
+            existingGuard.guard.status === 'completed' ? 'MIRROR_DEPLOY_ALREADY_EXISTS' : 'MIRROR_DEPLOY_IN_PROGRESS',
+            existingGuard.guard.status === 'completed'
+              ? 'Mirror deploy already completed for this Polymarket market.'
+              : 'Mirror deploy already started for this Polymarket market. Do not rerun until the existing deploy is resolved.',
+            {
+              selector: sourceSelector,
+              deployGuardFile: existingGuard.filePath,
+              guard: existingGuard.guard,
+              recovery: {
+                command: buildExistingMirrorRecoveryCommand(existingGuard.guard, sourceSelector),
+              },
+            },
+          );
+        }
+        resumePollAddress = existingGuard.guard.pollAddress;
+        chainWriteStarted = Boolean(existingGuard.guard.chainWriteStarted);
+        deployGuard = updateMirrorDeployGuard(
+          sourceSelector,
+          {
+            ...existingGuard.guard,
+            status: 'resuming',
+            chainWriteStarted,
+            errorCode: null,
+            errorMessage: null,
+          },
+          {
+            guardDir: options.deployGuardDir,
+          },
+        );
+      } else {
+        deployGuard = beginMirrorDeployGuard(
+          sourceSelector,
+          {
+            operationId: planData && planData.operationId ? planData.operationId : null,
+            planDigest: planData && planData.planDigest ? planData.planDigest : buildPlanDigest(planData),
+            question,
+            sourceRuleHash,
+            status: 'started',
+            chainWriteStarted: false,
+          },
+          {
+            guardDir: options.deployGuardDir,
+          },
+        );
+      }
+    }
+
     let deployPayload;
     try {
-      deployPayload = await deployPandoraAmmMarket({
+      deployPayload = await deployMarket({
         execute: Boolean(options.execute),
         chainId: options.chainId,
         rpcUrl: options.rpcUrl,
@@ -712,11 +884,59 @@ async function deployMirror(options = {}) {
         maxImbalance: options.maxImbalance === null || options.maxImbalance === undefined ? 16_777_215 : Number(options.maxImbalance),
         arbiter: options.arbiter,
         category: options.category,
+        resumePollAddress,
         command: 'mirror.deploy',
         toolFamily: 'mirror',
         source: 'mirror.deploy',
+        onExecutionPhase:
+          options.execute
+            ? async (event = {}) => {
+                if (!deployGuard || !deployGuard.filePath) return;
+                const phase = String(event.phase || '').trim().toLowerCase();
+                if (!phase) return;
+                if (phase === 'poll-submitted' || phase === 'approve-submitted' || phase === 'market-submitted') {
+                  chainWriteStarted = true;
+                }
+                updateMirrorDeployGuard(
+                  sourceSelector,
+                  {
+                    ...deployGuard.guard,
+                    ...event,
+                    status:
+                      phase === 'deploy-complete'
+                        ? 'completed'
+                        : phase === 'poll-submitted' || phase === 'approve-submitted' || phase === 'market-submitted'
+                          ? 'chain_write_started'
+                          : phase === 'poll-confirmed'
+                            ? 'poll_confirmed'
+                            : phase,
+                    chainWriteStarted,
+                  },
+                  {
+                    guardDir: options.deployGuardDir,
+                  },
+                );
+              }
+            : null,
       });
     } catch (err) {
+      if (options.execute && deployGuard && deployGuard.filePath) {
+        updateMirrorDeployGuard(
+          sourceSelector,
+          {
+            ...deployGuard.guard,
+            status: chainWriteStarted ? 'manual_review_required' : 'failed_prewrite',
+            chainWriteStarted,
+            errorCode: err && err.code ? err.code : null,
+            errorMessage: err && err.message ? err.message : String(err),
+            pollTxHash: err && err.details && err.details.pollTxHash ? err.details.pollTxHash : (deployGuard.guard && deployGuard.guard.pollTxHash) || null,
+            marketTxHash: err && err.details && err.details.marketTxHash ? err.details.marketTxHash : (deployGuard.guard && deployGuard.guard.marketTxHash) || null,
+          },
+          {
+            guardDir: options.deployGuardDir,
+          },
+        );
+      }
       throw createServiceError(
         err && err.code ? err.code : 'MIRROR_DEPLOY_FAILED',
         err && err.message ? err.message : String(err),
@@ -731,16 +951,16 @@ async function deployMirror(options = {}) {
 
     let trustManifest = null;
     if (options.execute && deployPayload.pandora && deployPayload.pandora.marketAddress) {
-      const manifestFile = options.manifestFile || defaultManifestFile();
       try {
         const manifestUpdate = upsertPair(manifestFile, {
           trusted: true,
+          canonical: true,
           pandoraMarketAddress: deployPayload.pandora.marketAddress,
           pandoraPollAddress: deployPayload.pandora.pollAddress,
           polymarketMarketId: planData.sourceMarket && planData.sourceMarket.marketId ? String(planData.sourceMarket.marketId) : options.polymarketMarketId || null,
           polymarketSlug: planData.sourceMarket && planData.sourceMarket.slug ? String(planData.sourceMarket.slug) : options.polymarketSlug || null,
           sourceQuestion: planData.sourceMarket && planData.sourceMarket.question ? planData.sourceMarket.question : null,
-          sourceRuleHash: hashRules(sourceRulesText),
+          sourceRuleHash,
         });
         trustManifest = {
           filePath: manifestUpdate.filePath,
@@ -750,6 +970,23 @@ async function deployMirror(options = {}) {
         throw createServiceError(
           'MIRROR_MANIFEST_WRITE_FAILED',
           `Failed to persist mirror trust manifest: ${err && err.message ? err.message : String(err)}`,
+        );
+      }
+      if (deployGuard && deployGuard.filePath) {
+        updateMirrorDeployGuard(
+          sourceSelector,
+          {
+            ...deployGuard.guard,
+            status: 'completed',
+            chainWriteStarted: true,
+            pandoraMarketAddress: deployPayload.pandora.marketAddress,
+            pandoraPollAddress: deployPayload.pandora.pollAddress || null,
+            marketTxHash: deployPayload.tx && deployPayload.tx.marketTxHash ? deployPayload.tx.marketTxHash : null,
+            pollTxHash: deployPayload.tx && deployPayload.tx.pollTxHash ? deployPayload.tx.pollTxHash : null,
+          },
+          {
+            guardDir: options.deployGuardDir,
+          },
         );
       }
     }

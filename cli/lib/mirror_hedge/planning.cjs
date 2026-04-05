@@ -6,8 +6,10 @@ const {
   ensureDeferredHedgeQueueEntryShape,
   ensureManagedInventorySnapshotShape,
   ensureMarketPairIdentityShape,
+  ensureObservedTradeShape,
   ensurePendingMempoolOverlayShape,
   ensureRetryTelemetryShape,
+  ensureHedgeSignalShape,
   ensureSkippedVolumeCountersShape,
   ensureTargetHedgeInventoryShape,
   ensureOutcomeShape,
@@ -189,6 +191,12 @@ function planHedgeRuntime(options = {}) {
   const retryTelemetry = ensureRetryTelemetryShape(
     pickArray(options.retryTelemetry, state.retryTelemetry),
   );
+  const lastObservedTrade = ensureObservedTradeShape(
+    pickArray(options.lastObservedTrade, state.lastObservedTrade),
+  );
+  const lastHedgeSignal = ensureHedgeSignalShape(
+    pickArray(options.lastHedgeSignal, state.lastHedgeSignal),
+  );
   const stateKey = buildStateKey({
     marketPairIdentity,
     whitelistFingerprint,
@@ -303,6 +311,8 @@ function planHedgeRuntime(options = {}) {
     summary,
     warnings,
     recommendedActions,
+    lastObservedTrade: lastObservedTrade ? cloneJson(lastObservedTrade) : null,
+    lastHedgeSignal: lastHedgeSignal ? cloneJson(lastHedgeSignal) : null,
     lastSuccessfulHedge: state.lastSuccessfulHedge ? cloneJson(state.lastSuccessfulHedge) : null,
     lastError: state.lastError ? cloneJson(state.lastError) : null,
     lastAlert: state.lastAlert ? cloneJson(state.lastAlert) : null,
@@ -410,6 +420,18 @@ function applyHedgeObservation(state, observation = {}, now = new Date()) {
       : ensureRetryTelemetryShape({});
   }
 
+  if (observation.lastObservedTrade !== undefined) {
+    target.lastObservedTrade = observation.lastObservedTrade
+      ? ensureObservedTradeShape(observation.lastObservedTrade)
+      : null;
+  }
+
+  if (observation.lastHedgeSignal !== undefined) {
+    target.lastHedgeSignal = observation.lastHedgeSignal
+      ? ensureHedgeSignalShape(observation.lastHedgeSignal)
+      : null;
+  }
+
   if (observation.lastSuccessfulHedge !== undefined) {
     target.lastSuccessfulHedge = observation.lastSuccessfulHedge
       ? {
@@ -467,6 +489,8 @@ function buildHedgePlanContext(state, options = {}) {
     availableHedgeFeeBudgetUsdc: options.availableHedgeFeeBudgetUsdc,
     belowThresholdPendingUsdc: options.belowThresholdPendingUsdc,
     skippedVolumeCounters: options.skippedVolumeCounters,
+    lastObservedTrade: options.lastObservedTrade,
+    lastHedgeSignal: options.lastHedgeSignal,
   });
 }
 

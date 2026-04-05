@@ -991,6 +991,33 @@ test('deployPandoraAmmMarket executes createPariMutuel when marketType is parimu
   );
 });
 
+test('deployPandoraAmmMarket resumes market creation from an existing poll without creating a second poll', async () => {
+  const { publicClient, walletClient, simulateCalls, writeCalls } = createDeployClients();
+
+  const payload = await deployPandoraAmmMarket(
+    baseDeployOptions({
+      resumePollAddress: TEST_POLL,
+      publicClient,
+      walletClient,
+    }),
+  );
+
+  assert.equal(payload.tx.pollTxHash, null);
+  assert.equal(payload.tx.approveTxHash, '0xaaa');
+  assert.equal(payload.tx.marketTxHash, '0xbbb');
+  assert.equal(payload.pandora.pollAddress, TEST_POLL);
+  assert.equal(payload.pandora.marketAddress, TEST_MARKET);
+  assert.match(payload.diagnostics.join('\n'), /resuming deploy from existing poll/i);
+  assert.deepEqual(
+    simulateCalls.map((entry) => entry.functionName),
+    ['approve', 'approve', 'createMarket'],
+  );
+  assert.deepEqual(
+    writeCalls.map((entry) => entry.functionName),
+    ['approve', 'createMarket'],
+  );
+});
+
 test('deployPandoraAmmMarket retries transient public mempool drops once before failing', async () => {
   const { publicClient, walletClient, writeCalls } = createDeployClients();
   const defaultWaitForReceipt = publicClient.waitForTransactionReceipt;
@@ -1016,6 +1043,39 @@ test('deployPandoraAmmMarket retries transient public mempool drops once before 
     writeCalls.map((entry) => entry.functionName),
     ['createPoll', 'approve', 'approve', 'createMarket'],
   );
+});
+
+test('deployPandoraAmmMarket retries market simulation once after approval when allowance propagation lags', async () => {
+  const { publicClient, walletClient } = createDeployClients();
+  const defaultSimulateContract = publicClient.simulateContract;
+  const sleepCalls = [];
+  let marketSimulationAttempts = 0;
+
+  publicClient.simulateContract = async (request) => {
+    if (request.functionName === 'createMarket') {
+      marketSimulationAttempts += 1;
+      if (marketSimulationAttempts === 1) {
+        throw new Error('ERC20: transfer amount exceeds allowance');
+      }
+    }
+    return defaultSimulateContract(request);
+  };
+
+  const payload = await deployPandoraAmmMarket(
+    baseDeployOptions({
+      publicClient,
+      walletClient,
+      sleepForRetry: async (delayMs) => {
+        sleepCalls.push(delayMs);
+      },
+    }),
+  );
+
+  assert.equal(payload.tx.pollTxHash, '0xaaa');
+  assert.equal(payload.tx.approveTxHash, '0xbbb');
+  assert.equal(payload.tx.marketTxHash, '0xccc');
+  assert.equal(marketSimulationAttempts, 2);
+  assert.deepEqual(sleepCalls, [250]);
 });
 
 test('deployPandoraAmmMarket bundles post-poll approval and market creation through Flashbots when txRoute auto needs approval', async () => {

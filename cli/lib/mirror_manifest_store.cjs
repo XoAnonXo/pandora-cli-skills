@@ -92,14 +92,107 @@ function pairMatches(record, selector = {}) {
   return true;
 }
 
-function findPair(filePath, selector = {}) {
+function compareIsoTimestampsDesc(left, right) {
+  const leftValue = typeof left === 'string' && left ? Date.parse(left) : NaN;
+  const rightValue = typeof right === 'string' && right ? Date.parse(right) : NaN;
+  const normalizedLeft = Number.isFinite(leftValue) ? leftValue : 0;
+  const normalizedRight = Number.isFinite(rightValue) ? rightValue : 0;
+  return normalizedRight - normalizedLeft;
+}
+
+function sameSourceIdentity(left = {}, right = {}) {
+  const leftMarketId = String(left.polymarketMarketId || '').toLowerCase();
+  const rightMarketId = String(right.polymarketMarketId || '').toLowerCase();
+  if (leftMarketId && rightMarketId) {
+    return leftMarketId === rightMarketId;
+  }
+
+  const leftSlug = String(left.polymarketSlug || '').toLowerCase();
+  const rightSlug = String(right.polymarketSlug || '').toLowerCase();
+  if (leftSlug && rightSlug) {
+    return leftSlug === rightSlug;
+  }
+
+  return false;
+}
+
+function rankPairs(matches = []) {
+  return matches
+    .slice()
+    .sort((left, right) => {
+      const canonicalDelta = Number(Boolean(right && right.canonical)) - Number(Boolean(left && left.canonical));
+      if (canonicalDelta !== 0) return canonicalDelta;
+      const trustedDelta = Number((right && right.trusted) !== false) - Number((left && left.trusted) !== false);
+      if (trustedDelta !== 0) return trustedDelta;
+      const updatedDelta = compareIsoTimestampsDesc(left && left.updatedAt, right && right.updatedAt);
+      if (updatedDelta !== 0) return updatedDelta;
+      return compareIsoTimestampsDesc(left && left.createdAt, right && right.createdAt);
+    });
+}
+
+function choosePreferredPair(matches = [], selector = {}) {
+  if (!Array.isArray(matches) || matches.length === 0) {
+    return { pair: null, ambiguous: false };
+  }
+
+  const targetMarket = String(selector && selector.pandoraMarketAddress ? selector.pandoraMarketAddress : '').toLowerCase();
+  if (targetMarket) {
+    const exactMatches = matches.filter(
+      (item) => String(item && item.pandoraMarketAddress ? item.pandoraMarketAddress : '').toLowerCase() === targetMarket,
+    );
+    if (exactMatches.length === 1) {
+      return { pair: exactMatches[0], ambiguous: false };
+    }
+    if (exactMatches.length > 1) {
+      const ranked = rankPairs(exactMatches);
+      return { pair: ranked[0] || null, ambiguous: true };
+    }
+    return { pair: null, ambiguous: false };
+  }
+
+  const canonicalTrusted = matches.filter((item) => item && item.canonical && item.trusted !== false);
+  if (canonicalTrusted.length === 1) {
+    return { pair: canonicalTrusted[0], ambiguous: false };
+  }
+  if (canonicalTrusted.length > 1) {
+    return { pair: null, ambiguous: true };
+  }
+
+  const trusted = matches.filter((item) => item && item.trusted !== false);
+  if (trusted.length === 1) {
+    return { pair: trusted[0], ambiguous: false };
+  }
+  if (trusted.length > 1) {
+    return { pair: null, ambiguous: true };
+  }
+
+  if (matches.length === 1) {
+    return { pair: matches[0], ambiguous: false };
+  }
+
+  return { pair: null, ambiguous: true };
+}
+
+function findPairs(filePath, selector = {}) {
   const loaded = readManifest(filePath);
   const pairs = Array.isArray(loaded.manifest.pairs) ? loaded.manifest.pairs : [];
-  const match = pairs.find((record) => pairMatches(record, selector)) || null;
+  const matches = pairs.filter((record) => pairMatches(record, selector));
   return {
     filePath: loaded.filePath,
     manifest: loaded.manifest,
-    pair: match,
+    pairs: rankPairs(matches),
+  };
+}
+
+function findPair(filePath, selector = {}) {
+  const loaded = findPairs(filePath, selector);
+  const preferred = choosePreferredPair(loaded.pairs, selector);
+  return {
+    filePath: loaded.filePath,
+    manifest: loaded.manifest,
+    pair: preferred.pair,
+    pairs: loaded.pairs,
+    ambiguous: preferred.ambiguous,
   };
 }
 
@@ -124,12 +217,14 @@ function upsertPair(filePath, record = {}) {
     createdAt: record.createdAt || nowIso,
     updatedAt: nowIso,
     trusted: record.trusted !== false,
+    canonical: record.canonical === true,
     pandoraMarketAddress: record.pandoraMarketAddress || null,
     pandoraPollAddress: record.pandoraPollAddress || null,
     polymarketMarketId: record.polymarketMarketId || null,
     polymarketSlug: record.polymarketSlug || null,
     sourceQuestion: record.sourceQuestion || null,
     sourceRuleHash: record.sourceRuleHash || null,
+    supersededByPandoraMarketAddress: record.supersededByPandoraMarketAddress || null,
   };
 
   const items = Array.isArray(manifest.pairs) ? manifest.pairs.slice() : [];
@@ -141,7 +236,21 @@ function upsertPair(filePath, record = {}) {
     items.push(pair);
   }
 
-  manifest.pairs = items;
+  if (pair.canonical) {
+    manifest.pairs = items.map((item) => {
+      if (!item || item.id === pair.id) return item;
+      if (!sameSourceIdentity(item, pair)) return item;
+      return {
+        ...item,
+        canonical: false,
+        trusted: false,
+        supersededByPandoraMarketAddress: pair.pandoraMarketAddress || item.supersededByPandoraMarketAddress || null,
+        updatedAt: nowIso,
+      };
+    });
+  } else {
+    manifest.pairs = items;
+  }
   manifest.generatedAt = nowIso;
   const savedPath = saveManifest(loaded.filePath, manifest);
   return {
@@ -157,6 +266,7 @@ module.exports = {
   resolveManifestPath,
   readManifest,
   saveManifest,
+  findPairs,
   findPair,
   upsertPair,
 };

@@ -170,6 +170,15 @@ function normalizeOptionalText(value) {
   return normalized || null;
 }
 
+function normalizeOptionalAddress(value, label) {
+  const normalized = normalizeOptionalText(value);
+  if (!normalized) return null;
+  if (!/^0x[a-fA-F0-9]{40}$/.test(normalized)) {
+    throw createDeployError('INVALID_FLAG_VALUE', `${label} must be an EVM address.`, { value });
+  }
+  return normalized.toLowerCase();
+}
+
 function normalizeDeployTxRoute(value) {
   const normalized = String(value || 'public').trim().toLowerCase() || 'public';
   if (!DEPLOY_TX_ROUTE_VALUES.has(normalized)) {
@@ -489,7 +498,9 @@ async function buildGasReservePlan({
   }
 
   const feePerGasWei = await resolveFeePerGas(publicClient);
-  const pollGasUnits = await estimateContractGasUnits(publicClient, pollRequest, DEFAULT_CREATE_POLL_GAS_UNITS);
+  const pollGasUnits = pollRequest
+    ? await estimateContractGasUnits(publicClient, pollRequest, DEFAULT_CREATE_POLL_GAS_UNITS)
+    : 0n;
   const approveGasUnits =
     needsApproval && approveRequest
       ? await estimateContractGasUnits(publicClient, approveRequest, DEFAULT_APPROVE_GAS_UNITS)
@@ -536,6 +547,14 @@ function isRetryablePublicMempoolError(error) {
     'transaction could not be found',
     'transaction not found',
   ].some((pattern) => message.includes(pattern));
+}
+
+function isRetryableAllowancePropagationError(error) {
+  const message = String((error && error.message) || '').toLowerCase();
+  return (
+    (message.includes('allowance') && message.includes('pending'))
+    || message.includes('transfer amount exceeds allowance')
+  );
 }
 
 async function sleepForRetry(delayMs) {
@@ -718,6 +737,9 @@ function buildDeploymentArgs(options = {}) {
 async function deployPandoraAmmMarket(options = {}) {
   const args = buildDeploymentArgs(options);
   const runtime = resolveDeployRuntime(options);
+  const retrySleep = typeof options.sleepForRetry === 'function' ? options.sleepForRetry : sleepForRetry;
+  const resumePollAddress = normalizeOptionalAddress(options.resumePollAddress, '--resume-poll-address');
+  const resumeExistingPoll = Boolean(resumePollAddress);
   const validationInput = {
     question: args.question,
     rules: args.rules,
@@ -745,6 +767,7 @@ async function deployPandoraAmmMarket(options = {}) {
       oracle,
       factory,
       usdc,
+      resumePollAddress,
     },
     ammProbabilityContract: args.ammProbabilityContract,
     tx: null,
@@ -768,6 +791,15 @@ async function deployPandoraAmmMarket(options = {}) {
     },
     diagnostics: [],
   };
+
+  async function notifyExecutionPhase(phase, details = {}) {
+    if (typeof options.onExecutionPhase !== 'function') return;
+    try {
+      await options.onExecutionPhase({ phase, ...details });
+    } catch {
+      // best-effort phase receipt updates must not mask deploy state
+    }
+  }
 
   if (!options.execute && !shouldCollectDryRunPreflight(options)) {
     return payload;
@@ -840,6 +872,7 @@ async function deployPandoraAmmMarket(options = {}) {
   ]);
 
   const pollFee = operatorGasFee + protocolFee;
+  const effectivePollFee = resumeExistingPoll ? 0n : pollFee;
   const liquidityRaw = runtime.parseUnits(String(args.liquidityUsdc), 6);
   const [maxRulesLength, nativeBalance, usdcBalance, currentAllowance] = await Promise.all([
     resolveMaxRulesLength(publicClient, oracle),
@@ -882,7 +915,7 @@ async function deployPandoraAmmMarket(options = {}) {
       }
     : null;
   const marketConfigForReserve = buildFactoryCreateConfig({
-    pollAddress: ZERO_ADDRESS,
+    pollAddress: resumePollAddress || ZERO_ADDRESS,
     usdc,
     liquidityRaw,
     distributionHint,
@@ -891,14 +924,16 @@ async function deployPandoraAmmMarket(options = {}) {
   const gasReservePlan = await buildGasReservePlan({
     options,
     publicClient,
-    pollRequest: {
-      account,
-      address: oracle,
-      abi: ORACLE_ABI,
-      functionName: 'createPoll',
-      args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
-      value: pollFee,
-    },
+    pollRequest: resumeExistingPoll
+      ? null
+      : {
+          account,
+          address: oracle,
+          abi: ORACLE_ABI,
+          functionName: 'createPoll',
+          args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
+          value: pollFee,
+        },
     approveRequest,
     marketRequest: {
       account,
@@ -917,8 +952,8 @@ async function deployPandoraAmmMarket(options = {}) {
     account: account.address,
     nativeSymbol: chain.nativeCurrency.symbol,
     nativeBalance: formatUnits(nativeBalance, 18),
-    nativeRequired: formatUnits(pollFee + gasReserveWei, 18),
-    pollFeeNative: formatUnits(pollFee, 18),
+    nativeRequired: formatUnits(effectivePollFee + gasReserveWei, 18),
+    pollFeeNative: formatUnits(effectivePollFee, 18),
     gasReserveNative: formatUnits(gasReserveWei, 18),
     gasReserveSource: gasReservePlan.source,
     gasPriceGwei: gasReservePlan.feePerGasWei === null ? null : formatUnits(gasReservePlan.feePerGasWei, 9),
@@ -939,7 +974,7 @@ async function deployPandoraAmmMarket(options = {}) {
   };
   payload.preflight.blockers = buildFundingBlockerSummary({
     nativeBalance,
-    nativeRequired: pollFee + gasReserveWei,
+    nativeRequired: effectivePollFee + gasReserveWei,
     usdcBalance,
     usdcRequired: liquidityRaw,
     nativeSymbol: chain.nativeCurrency.symbol,
@@ -957,7 +992,7 @@ async function deployPandoraAmmMarket(options = {}) {
     }
   }
 
-  if (nativeBalance < pollFee + gasReserveWei) {
+  if (nativeBalance < effectivePollFee + gasReserveWei) {
     throw createDeployError(
       'INSUFFICIENT_NATIVE_BALANCE',
       `Wallet native balance is insufficient for poll fee + gas reserve (${payload.preflight.nativeRequired} ${chain.nativeCurrency.symbol}).`,
@@ -965,24 +1000,29 @@ async function deployPandoraAmmMarket(options = {}) {
     );
   }
 
-  let pollSimulation;
-  try {
-    pollSimulation = await publicClient.simulateContract({
-      account,
-      address: oracle,
-      abi: ORACLE_ABI,
-      functionName: 'createPoll',
-      args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
-      value: pollFee,
-    });
-  } catch (err) {
-    throw await wrapDeployExecutionError(err, 'POLL_SIMULATION_FAILED', 'createPoll simulation failed.', {
-      preflight: payload.preflight,
-    });
+  let pollSimulation = null;
+  if (!resumeExistingPoll) {
+    try {
+      pollSimulation = await publicClient.simulateContract({
+        account,
+        address: oracle,
+        abi: ORACLE_ABI,
+        functionName: 'createPoll',
+        args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
+        value: pollFee,
+      });
+    } catch (err) {
+      throw await wrapDeployExecutionError(err, 'POLL_SIMULATION_FAILED', 'createPoll simulation failed.', {
+        preflight: payload.preflight,
+      });
+    }
   }
 
   if (!options.execute) {
     payload.preflight.simulationSkipped = false;
+    if (resumeExistingPoll) {
+      payload.diagnostics.push(`Dry-run will resume market creation from existing poll ${resumePollAddress}.`);
+    }
     payload.diagnostics.push('Dry-run preflight confirmed signer funding prerequisites for execute mode.');
     return payload;
   }
@@ -994,37 +1034,51 @@ async function deployPandoraAmmMarket(options = {}) {
     );
   }
 
-  let pollTxHash;
-  let pollReceipt;
-  try {
-    pollTxHash = await walletClient.writeContract(pollSimulation.request);
-    pollReceipt = await publicClient.waitForTransactionReceipt({ hash: pollTxHash });
-  } catch (err) {
-    throw await wrapDeployExecutionError(err, 'POLL_EXECUTION_FAILED', 'createPoll transaction failed.', {
-      pollTxHash: pollTxHash || null,
+  let pollTxHash = null;
+  let pollAddress = resumePollAddress;
+  if (resumeExistingPoll) {
+    payload.diagnostics.push(`Resuming deploy from existing poll ${resumePollAddress}.`);
+    await notifyExecutionPhase('poll-resumed', {
+      pollTxHash: null,
+      pollAddress,
     });
-  }
-
-  let pollAddress = pollSimulation.result || null;
-  for (const log of pollReceipt.logs || []) {
-    if (String(log.address || '').toLowerCase() !== oracle) continue;
+  } else {
+    let pollReceipt;
     try {
-      const parsed = decodeEventLog({
-        abi: [POLL_CREATED_EVENT],
-        data: log.data,
-        topics: log.topics,
+      pollTxHash = await walletClient.writeContract(pollSimulation.request);
+      await notifyExecutionPhase('poll-submitted', { pollTxHash });
+      pollReceipt = await publicClient.waitForTransactionReceipt({ hash: pollTxHash });
+    } catch (err) {
+      throw await wrapDeployExecutionError(err, 'POLL_EXECUTION_FAILED', 'createPoll transaction failed.', {
+        pollTxHash: pollTxHash || null,
       });
-      if (parsed && parsed.args && parsed.args.pollAddress) {
-        pollAddress = String(parsed.args.pollAddress).toLowerCase();
-      }
-      break;
-    } catch {
-      // keep fallback
     }
-  }
 
-  if (!pollAddress) {
-    throw new Error('Unable to resolve poll address from createPoll transaction.');
+    pollAddress = pollSimulation.result || null;
+    for (const log of pollReceipt.logs || []) {
+      if (String(log.address || '').toLowerCase() !== oracle) continue;
+      try {
+        const parsed = decodeEventLog({
+          abi: [POLL_CREATED_EVENT],
+          data: log.data,
+          topics: log.topics,
+        });
+        if (parsed && parsed.args && parsed.args.pollAddress) {
+          pollAddress = String(parsed.args.pollAddress).toLowerCase();
+        }
+        break;
+      } catch {
+        // keep fallback
+      }
+    }
+
+    if (!pollAddress) {
+      throw new Error('Unable to resolve poll address from createPoll transaction.');
+    }
+    await notifyExecutionPhase('poll-confirmed', {
+      pollTxHash,
+      pollAddress,
+    });
   }
 
   const marketConfig = buildFactoryCreateConfig({
@@ -1119,89 +1173,99 @@ async function deployPandoraAmmMarket(options = {}) {
     };
   }
 
-  async function simulateMarketExecution(nonceOverride = null, allowManualFallback = false) {
-    try {
-      const marketSimulation = await publicClient.simulateContract({
-        account,
-        address: factory,
-        abi: FACTORY_ABI,
-        functionName: marketConfig.functionName,
-        args: marketConfig.callArgs,
-      });
-      const nonce =
-        nonceOverride !== null && nonceOverride !== undefined
-          ? Number(nonceOverride)
-          : await publicClient.getTransactionCount({
-              address: account.address,
-              blockTag: 'pending',
-            });
-      const signableRequest = await buildSignableContractTransactionRequest({
-        publicClient,
-        runtime,
-        address: factory,
-        abi: FACTORY_ABI,
-        functionName: marketConfig.functionName,
-        args: marketConfig.callArgs,
-        account,
-        chainId,
-        nonce,
-        fallbackGasUnits:
+  async function simulateMarketExecution(nonceOverride = null, allowManualFallback = false, retryAllowancePropagation = false) {
+    const maxAttempts = retryAllowancePropagation ? 3 : 1;
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const marketSimulation = await publicClient.simulateContract({
+          account,
+          address: factory,
+          abi: FACTORY_ABI,
+          functionName: marketConfig.functionName,
+          args: marketConfig.callArgs,
+        });
+        const nonce =
+          nonceOverride !== null && nonceOverride !== undefined
+            ? Number(nonceOverride)
+            : await publicClient.getTransactionCount({
+                address: account.address,
+                blockTag: 'pending',
+              });
+        const signableRequest = await buildSignableContractTransactionRequest({
+          publicClient,
+          runtime,
+          address: factory,
+          abi: FACTORY_ABI,
+          functionName: marketConfig.functionName,
+          args: marketConfig.callArgs,
+          account,
+          chainId,
+          nonce,
+          fallbackGasUnits:
+            gasReservePlan && gasReservePlan.gasUnits && typeof gasReservePlan.gasUnits.market === 'bigint'
+              ? gasReservePlan.gasUnits.market
+              : marketConfig.fallbackGasUnits,
+        });
+        return {
+          request: {
+            ...marketSimulation.request,
+            nonce,
+          },
+          signableRequest,
+          gasEstimate: signableRequest.gas ? signableRequest.gas.toString() : null,
+          nonce,
+          marketAddress: marketSimulation.result ? String(marketSimulation.result).toLowerCase() : null,
+          usedManualRequest: false,
+        };
+      } catch (err) {
+        lastError = err;
+        if (retryAllowancePropagation && attempt < maxAttempts && isRetryableAllowancePropagationError(err)) {
+          await retrySleep(250 * attempt);
+          continue;
+        }
+        if (!allowManualFallback) {
+          throw await wrapDeployExecutionError(
+            err,
+            'MARKET_SIMULATION_FAILED',
+            `${marketConfig.functionName} simulation failed.`,
+            { marketFunctionName: marketConfig.functionName },
+          );
+        }
+        const nonce =
+          nonceOverride !== null && nonceOverride !== undefined
+            ? Number(nonceOverride)
+            : await publicClient.getTransactionCount({
+                address: account.address,
+                blockTag: 'pending',
+              });
+        const gasUnits =
           gasReservePlan && gasReservePlan.gasUnits && typeof gasReservePlan.gasUnits.market === 'bigint'
             ? gasReservePlan.gasUnits.market
-            : marketConfig.fallbackGasUnits,
-      });
-      return {
-        request: {
-          ...marketSimulation.request,
+            : marketConfig.fallbackGasUnits;
+        const signableRequest = await buildSignableContractTransactionRequest({
+          publicClient,
+          runtime,
+          address: factory,
+          abi: FACTORY_ABI,
+          functionName: marketConfig.functionName,
+          args: marketConfig.callArgs,
+          account,
+          chainId,
           nonce,
-        },
-        signableRequest,
-        gasEstimate: signableRequest.gas ? signableRequest.gas.toString() : null,
-        nonce,
-        marketAddress: marketSimulation.result ? String(marketSimulation.result).toLowerCase() : null,
-        usedManualRequest: false,
-      };
-    } catch (err) {
-      if (!allowManualFallback) {
-        throw await wrapDeployExecutionError(
-          err,
-          'MARKET_SIMULATION_FAILED',
-          `${marketConfig.functionName} simulation failed.`,
-          { marketFunctionName: marketConfig.functionName },
-        );
+          fallbackGasUnits: gasUnits,
+        });
+        return {
+          request: null,
+          signableRequest,
+          gasEstimate: signableRequest.gas ? signableRequest.gas.toString() : gasUnits.toString(),
+          nonce,
+          marketAddress: null,
+          usedManualRequest: true,
+        };
       }
-      const nonce =
-        nonceOverride !== null && nonceOverride !== undefined
-          ? Number(nonceOverride)
-          : await publicClient.getTransactionCount({
-              address: account.address,
-              blockTag: 'pending',
-            });
-      const gasUnits =
-        gasReservePlan && gasReservePlan.gasUnits && typeof gasReservePlan.gasUnits.market === 'bigint'
-          ? gasReservePlan.gasUnits.market
-          : marketConfig.fallbackGasUnits;
-      const signableRequest = await buildSignableContractTransactionRequest({
-        publicClient,
-        runtime,
-        address: factory,
-        abi: FACTORY_ABI,
-        functionName: marketConfig.functionName,
-        args: marketConfig.callArgs,
-        account,
-        chainId,
-        nonce,
-        fallbackGasUnits: gasUnits,
-      });
-      return {
-        request: null,
-        signableRequest,
-        gasEstimate: signableRequest.gas ? signableRequest.gas.toString() : gasUnits.toString(),
-        nonce,
-        marketAddress: null,
-        usedManualRequest: true,
-      };
     }
+    throw lastError;
   }
 
   async function executePublicRoute(routeMetadata) {
@@ -1248,6 +1312,7 @@ async function deployPandoraAmmMarket(options = {}) {
       try {
         const approvalSubmission = await submitPublicTransactionWithRetry('approve', () => simulateApproveExecution());
         approveTxHash = approvalSubmission.txHash;
+        await notifyExecutionPhase('approve-submitted', { approveTxHash });
       } catch (err) {
         throw await wrapDeployExecutionError(err, 'APPROVE_EXECUTION_FAILED', 'USDC approve failed.', {
           approveTxHash: approveTxHash || null,
@@ -1260,10 +1325,11 @@ async function deployPandoraAmmMarket(options = {}) {
     try {
       const marketSubmission = await submitPublicTransactionWithRetry(
         marketConfig.functionName,
-        () => simulateMarketExecution(),
+        () => simulateMarketExecution(null, false, Boolean(approveTxHash)),
       );
       marketExecution = marketSubmission.execution;
       marketTxHash = marketSubmission.txHash;
+      await notifyExecutionPhase('market-submitted', { marketTxHash, approveTxHash });
     } catch (err) {
       throw await wrapDeployExecutionError(
         err,
@@ -1303,6 +1369,7 @@ async function deployPandoraAmmMarket(options = {}) {
       targetBlockOffset: txRouteConfig.flashbotsTargetBlockOffset,
       viemRuntime: runtime,
     });
+    await notifyExecutionPhase('market-submitted', { marketTxHash: privateSubmission.transactionHash, approveTxHash: null });
     try {
       await publicClient.waitForTransactionReceipt({ hash: privateSubmission.transactionHash });
     } catch (error) {
@@ -1361,6 +1428,10 @@ async function deployPandoraAmmMarket(options = {}) {
     const marketTxHash = approveExecution.request
       ? bundleSubmission.transactionHashes[1]
       : bundleSubmission.transactionHashes[0];
+    if (approveTxHash) {
+      await notifyExecutionPhase('approve-submitted', { approveTxHash });
+    }
+    await notifyExecutionPhase('market-submitted', { marketTxHash, approveTxHash });
     try {
       if (approveTxHash) {
         await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
@@ -1431,6 +1502,13 @@ async function deployPandoraAmmMarket(options = {}) {
     pollAddress,
     marketAddress: routedExecution.marketAddress || null,
   };
+  await notifyExecutionPhase('deploy-complete', {
+    pollTxHash,
+    approveTxHash: routedExecution.approveTxHash || null,
+    marketTxHash: routedExecution.marketTxHash || null,
+    pollAddress,
+    marketAddress: routedExecution.marketAddress || null,
+  });
 
   if (Array.isArray(routedExecution.diagnostics) && routedExecution.diagnostics.length) {
     payload.diagnostics.push(...routedExecution.diagnostics);

@@ -313,6 +313,61 @@ function ensureRetryTelemetryShape(raw) {
   };
 }
 
+function ensureObservedTradeShape(raw) {
+  const data = raw && typeof raw === 'object' ? raw : null;
+  if (!data) return null;
+  return {
+    tradeId: normalizeOptionalString(data.tradeId || data.id || data.cursor || data.transactionHash),
+    cursor: normalizeOptionalString(data.cursor),
+    transactionHash: normalizeOptionalString(data.transactionHash || data.txHash),
+    walletAddress: normalizeOptionalString(data.walletAddress),
+    marketPairId: normalizeOptionalString(data.marketPairId),
+    pandoraMarketAddress: normalizeOptionalString(data.pandoraMarketAddress || data.marketAddress),
+    polymarketMarketId: normalizeOptionalString(data.polymarketMarketId || data.marketId),
+    polymarketSlug: normalizeOptionalString(data.polymarketSlug || data.slug),
+    source: normalizeOptionalString(data.source),
+    orderSide: normalizeOptionalString(data.orderSide),
+    tokenSide: normalizeOptionalString(data.tokenSide),
+    direction: normalizeOptionalString(data.direction || data.side),
+    amountUsdc: toFiniteNumberOrNull(data.amountUsdc),
+    amountShares: toFiniteNumberOrNull(data.amountShares),
+    expectedRevenueUsdc: toFiniteNumberOrNull(data.expectedRevenueUsdc),
+    confirmedAt: normalizeOptionalString(data.confirmedAt || data.timestamp),
+    observedAt: normalizeOptionalString(data.observedAt || data.ingestedAt || data.seenAt),
+    observationLatencyMs: toFiniteNumberOrNull(data.observationLatencyMs),
+    hedgeEligible:
+      data.hedgeEligible === null || data.hedgeEligible === undefined
+        ? null
+        : Boolean(data.hedgeEligible),
+    reason: normalizeOptionalString(data.reason),
+    details: data.details === undefined ? undefined : cloneJson(data.details),
+  };
+}
+
+function ensureHedgeSignalShape(raw) {
+  const data = raw && typeof raw === 'object' ? raw : null;
+  if (!data) return null;
+  return {
+    hedgeId: normalizeOptionalString(data.hedgeId),
+    status: normalizeOptionalString(data.status),
+    signalAt: normalizeOptionalString(data.signalAt || data.plannedAt || data.executedAt || data.at),
+    tradeId: normalizeOptionalString(data.tradeId || data.cursor || data.transactionHash),
+    cursor: normalizeOptionalString(data.cursor),
+    transactionHash: normalizeOptionalString(data.transactionHash || data.txHash),
+    tradeConfirmedAt: normalizeOptionalString(data.tradeConfirmedAt || data.confirmedAt),
+    tradeObservedAt: normalizeOptionalString(data.tradeObservedAt || data.observedAt || data.ingestedAt),
+    reactionLatencyMs: toFiniteNumberOrNull(data.reactionLatencyMs),
+    observeToSignalLatencyMs: toFiniteNumberOrNull(data.observeToSignalLatencyMs),
+    amountUsdc: toFiniteNumberOrNull(data.amountUsdc),
+    amountShares: toFiniteNumberOrNull(data.amountShares),
+    tokenSide: normalizeOptionalString(data.tokenSide),
+    orderSide: normalizeOptionalString(data.orderSide),
+    source: normalizeOptionalString(data.source),
+    reason: normalizeOptionalString(data.reason),
+    details: data.details === undefined ? undefined : cloneJson(data.details),
+  };
+}
+
 function ensureOutcomeShape(raw) {
   const data = raw && typeof raw === 'object' ? raw : null;
   if (!data) return null;
@@ -447,6 +502,8 @@ function ensureStateShape(raw, hash = null) {
     belowThresholdPendingUsdc: toFiniteNumberOrNull(data.belowThresholdPendingUsdc) || 0,
     skippedVolumeCounters,
     retryTelemetry,
+    lastObservedTrade: ensureObservedTradeShape(data.lastObservedTrade),
+    lastHedgeSignal: ensureHedgeSignalShape(data.lastHedgeSignal),
     lastSuccessfulHedge: ensureOutcomeShape(data.lastSuccessfulHedge),
     lastError: ensureEventShape(data.lastError),
     lastAlert: ensureEventShape(data.lastAlert),
@@ -537,6 +594,8 @@ module.exports = {
   ensureTargetHedgeInventoryShape,
   ensureSkippedVolumeCountersShape,
   ensureRetryTelemetryShape,
+  ensureObservedTradeShape,
+  ensureHedgeSignalShape,
   ensureOutcomeShape,
   ensureEventShape,
 };

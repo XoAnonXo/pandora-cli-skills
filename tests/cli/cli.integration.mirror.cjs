@@ -925,6 +925,91 @@ test('mirror deploy execute requires a validation ticket before any live write',
   }
 });
 
+test('mirror deploy execute refuses a second deploy when a canonical pair already exists', async () => {
+  const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
+  const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
+  const tempDir = createTempDir('pandora-mirror-existing-deploy-');
+  const manifestFile = path.join(tempDir, 'pairs.json');
+
+  try {
+    const dryRunResult = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--dry-run',
+      '--sources',
+      'https://www.nba.com',
+      'https://www.espn.com',
+    ]);
+    assert.equal(dryRunResult.status, 0);
+    const dryRunPayload = parseJsonOutput(dryRunResult);
+    const validationTicket = dryRunPayload.data.requiredValidation.ticket;
+
+    writeFile(
+      manifestFile,
+      JSON.stringify({
+        schemaVersion: '1.0.0',
+        generatedAt: new Date().toISOString(),
+        pairs: [
+          {
+            id: 'canonical-france',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            trusted: true,
+            canonical: true,
+            pandoraMarketAddress: '0x0fea7e320efc2d207e683e7faedeb065c2769c81',
+            pandoraPollAddress: '0xf3d9eac263cc9210980b705fe35beca4927107e3',
+            polymarketMarketId: 'poly-cond-1',
+            polymarketSlug: 'deterministic-tests-pass',
+            sourceQuestion: 'Will deterministic tests pass?',
+            sourceRuleHash: 'rule-hash-1',
+          },
+        ],
+      }, null, 2),
+    );
+
+    const executeResult = await runCliAsync([
+      '--output',
+      'json',
+      'mirror',
+      'deploy',
+      '--skip-dotenv',
+      '--indexer-url',
+      indexer.url,
+      '--polymarket-mock-url',
+      polymarket.url,
+      '--polymarket-market-id',
+      'poly-cond-1',
+      '--execute',
+      '--validation-ticket',
+      validationTicket,
+      '--manifest-file',
+      manifestFile,
+      '--sources',
+      'https://www.nba.com',
+      'https://www.espn.com',
+    ]);
+
+    assert.equal(executeResult.status, 1);
+    const payload = parseJsonOutput(executeResult);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, 'MIRROR_DEPLOY_ALREADY_EXISTS');
+    assert.equal(payload.error.details.pair.pandoraMarketAddress, '0x0fea7e320efc2d207e683e7faedeb065c2769c81');
+  } finally {
+    removeDir(tempDir);
+    await indexer.close();
+    await polymarket.close();
+  }
+});
+
 test('mirror go accepts named --skip-gate lists during parsing', async () => {
   const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());
   const polymarket = await startPolymarketMockServer(buildMirrorPolymarketOverrides());
@@ -4631,4 +4716,3 @@ test('mirror hedge-check returns the dedicated hedge surface and readable table 
     removeDir(tempDir);
   }
 });
-

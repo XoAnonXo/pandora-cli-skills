@@ -9,6 +9,8 @@ const {
   saveState,
   createState,
   buildIdentityFingerprint,
+  ensureHedgeSignalShape,
+  ensureObservedTradeShape,
   ensureRetryTelemetryShape,
   ensureTargetHedgeInventoryShape,
 } = require('./mirror_hedge_state_store.cjs');
@@ -243,6 +245,71 @@ function buildRuntimeErrorEvent(err, timestamp, details = undefined) {
   return event;
 }
 
+function toLatencyMs(later, earlier) {
+  const laterMs = later ? Date.parse(String(later)) : NaN;
+  const earlierMs = earlier ? Date.parse(String(earlier)) : NaN;
+  if (!Number.isFinite(laterMs) || !Number.isFinite(earlierMs)) return null;
+  return Math.max(0, laterMs - earlierMs);
+}
+
+function buildObservedTradeTelemetry(trade, pairContext, options = {}) {
+  if (!trade || typeof trade !== 'object') return null;
+  const confirmedAt = normalizeOptionalString(trade.confirmedAt || trade.timestamp);
+  const observedAt = normalizeOptionalString(trade.ingestedAt || trade.observedAt);
+  return ensureObservedTradeShape({
+    tradeId: normalizeOptionalString(trade.id || trade.cursor || trade.transactionHash),
+    cursor: normalizeOptionalString(trade.cursor),
+    transactionHash: normalizeOptionalString(trade.transactionHash),
+    walletAddress: normalizeOptionalString(trade.walletAddress),
+    marketPairId: pairContext && pairContext.marketPairIdentity ? pairContext.marketPairIdentity.marketPairId : null,
+    pandoraMarketAddress: pairContext && pairContext.marketPairIdentity ? pairContext.marketPairIdentity.pandoraMarketAddress : null,
+    polymarketMarketId: pairContext && pairContext.marketPairIdentity ? pairContext.marketPairIdentity.polymarketMarketId : null,
+    polymarketSlug: pairContext && pairContext.marketPairIdentity ? pairContext.marketPairIdentity.polymarketSlug : null,
+    source: normalizeOptionalString(trade.source) || 'pandora.indexer',
+    orderSide: normalizeOptionalString(trade.orderSide),
+    tokenSide: normalizeOptionalString(trade.tokenSide),
+    direction: normalizeOptionalString(trade.direction),
+    amountUsdc: roundUsdc(trade.amountUsdc),
+    amountShares: round(toOptionalNumber(trade.amountShares) || 0, 6) || 0,
+    expectedRevenueUsdc: roundUsdc(trade.expectedRevenueUsdc),
+    confirmedAt,
+    observedAt,
+    observationLatencyMs: toLatencyMs(observedAt, confirmedAt),
+    hedgeEligible:
+      options.hedgeEligible === null || options.hedgeEligible === undefined
+        ? null
+        : Boolean(options.hedgeEligible),
+    reason: normalizeOptionalString(options.reason),
+    details: options.details,
+  });
+}
+
+function buildHedgeSignalTelemetry(action, fillPolicy, observedTrade, signalAt, options = {}) {
+  const signalTimestamp = toRuntimeTimestamp(signalAt);
+  return ensureHedgeSignalShape({
+    hedgeId: normalizeOptionalString(action && action.queueKey),
+    status: normalizeOptionalString(options.status)
+      || (options.executeLive
+        ? (fillPolicy && fillPolicy.status === 'partial' ? 'partial-executed' : 'executed')
+        : (fillPolicy && fillPolicy.status === 'partial' ? 'partial-planned' : 'planned')),
+    signalAt: signalTimestamp,
+    tradeId: observedTrade ? observedTrade.tradeId : null,
+    cursor: observedTrade ? observedTrade.cursor : null,
+    transactionHash: observedTrade ? observedTrade.transactionHash : null,
+    tradeConfirmedAt: observedTrade ? observedTrade.confirmedAt : null,
+    tradeObservedAt: observedTrade ? observedTrade.observedAt : null,
+    reactionLatencyMs: toLatencyMs(signalTimestamp, observedTrade && observedTrade.confirmedAt),
+    observeToSignalLatencyMs: toLatencyMs(signalTimestamp, observedTrade && observedTrade.observedAt),
+    amountUsdc: roundUsdc(options.amountUsdc !== undefined ? options.amountUsdc : action && action.amountUsdc),
+    amountShares: round(toOptionalNumber(options.amountShares !== undefined ? options.amountShares : action && action.amountShares) || 0, 6) || 0,
+    tokenSide: normalizeOptionalString(action && action.tokenSide),
+    orderSide: normalizeOptionalString(action && action.orderSide),
+    source: options.executeLive ? 'polymarket' : 'mirror-hedge-paper',
+    reason: normalizeOptionalString(fillPolicy && fillPolicy.reasonCode) || normalizeOptionalString(options.reason) || 'inventory-gap',
+    details: options.details,
+  });
+}
+
 function markHedgeRuntimeStarted(state, options = {}) {
   const timestamp = toRuntimeTimestamp(options.now);
   state.runtimeStatus = normalizeOptionalString(options.runtimeStatus) || 'running';
@@ -356,6 +423,8 @@ function runHedge(options = {}) {
     belowThresholdPendingUsdc: options.belowThresholdPendingUsdc,
     skippedVolumeCounters: options.skippedVolumeCounters,
     retryTelemetry: options.retryTelemetry,
+    lastObservedTrade: options.lastObservedTrade,
+    lastHedgeSignal: options.lastHedgeSignal,
     lastSuccessfulHedge: options.lastSuccessfulHedge,
     lastError: options.lastError,
     lastAlert: options.lastAlert,
@@ -1193,6 +1262,8 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
   const pendingMempoolOverlays = [];
   const previousDeferredHedgeQueue = Array.isArray(state.deferredHedgeQueue) ? state.deferredHedgeQueue.slice() : [];
   let skippedVolumeCounters = null;
+  let lastObservedTrade = undefined;
+  let lastHedgeSignal = undefined;
   let lastSuccessfulHedge = null;
   let lastError = null;
   let belowThresholdPendingUsdc = 0;
@@ -1293,6 +1364,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     now: new Date(),
   });
   let availableHedgeFeeBudgetUsdc = round(toOptionalNumber(state.availableHedgeFeeBudgetUsdc) || 0, 6) || 0;
+  let latestHedgeEligibleTrade = null;
 
   const confirmedResult = await fetchConfirmedTrades(options, pairContext, state);
   diagnostics.push(...confirmedResult.diagnostics);
@@ -1317,6 +1389,14 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         availableHedgeFeeBudgetUsdc + (toOptionalNumber(trade.expectedRevenueUsdc) || 0),
         6,
       ) || 0;
+    }
+
+    lastObservedTrade = buildObservedTradeTelemetry(trade, pairContext, {
+      hedgeEligible: !internalWallet.skipped,
+      reason: internalWallet.skipped ? internalWallet.reasonCode : 'external-trade',
+    });
+    if (!internalWallet.skipped) {
+      latestHedgeEligibleTrade = lastObservedTrade;
     }
 
     const ledgerEntry = mapConfirmedTradeToLedgerEntry(trade, pairContext, targetTransition);
@@ -1559,6 +1639,32 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     const allowedUsdc = round(toOptionalNumber(fillPolicy.allowedUsdc) || 0, 6) || 0;
     const residualShares = round(Math.max(0, (toOptionalNumber(action.amountShares) || 0) - allowedShares), 6) || 0;
     const residualUsdc = round(Math.max(0, (toOptionalNumber(action.amountUsdc) || 0) - allowedUsdc), 6) || 0;
+    if (!(allowedUsdc > 0) || !(allowedShares > 0)) {
+      const reasonCode = fillPolicy.status === 'partial' ? 'non-executable-partial' : 'invalid-hedge-amount';
+      const reason = fillPolicy.status === 'partial'
+        ? 'Depth returned no executable notional after partial-fill sizing; keeping the hedge queued for recompute.'
+        : 'Computed hedge amount is non-positive after sizing; skipping live execution and leaving the hedge queued.';
+      const queueEntry = buildQueueEntryForAction(
+        action,
+        reasonCode,
+        reason,
+        action.amountShares,
+        action.amountUsdc,
+      );
+      deferredHedgeQueue.push(queueEntry);
+      auditEntries.push({
+        kind: 'queued',
+        tradeId: action.queueKey,
+        reasonCode,
+        reason,
+        amountUsdc: action.amountUsdc,
+        amountShares: action.amountShares,
+      });
+      if (action.orderSide === 'sell') {
+        recordSellBlocked(action, reasonCode, reason, depthCheck);
+      }
+      return { blockedBuys: action.orderSide === 'sell' };
+    }
     if (residualShares > 0 || residualUsdc > 0) {
       deferredHedgeQueue.push(buildQueueEntryForAction(
         action,
@@ -1686,6 +1792,17 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
       tokenSide: action.tokenSide,
       orderSide: action.orderSide,
     });
+    lastHedgeSignal = buildHedgeSignalTelemetry(
+      action,
+      fillPolicy,
+      latestHedgeEligibleTrade,
+      new Date(),
+      {
+        executeLive: Boolean(options.executeLive),
+        amountUsdc: allowedUsdc,
+        amountShares: allowedShares,
+      },
+    );
     return {
       blockedBuys: action.orderSide === 'sell' && (residualShares > 0 || residualUsdc > 0),
     };
@@ -1823,6 +1940,8 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     belowThresholdPendingUsdc,
     skippedVolumeCounters,
     retryTelemetry,
+    lastObservedTrade,
+    lastHedgeSignal,
     lastSuccessfulHedge,
     lastError,
     lastProcessedBlockCursor: latestTrade
@@ -2242,6 +2361,8 @@ async function runMirrorHedge(options = {}) {
           belowThresholdPendingUsdc: observation.belowThresholdPendingUsdc,
           skippedVolumeCounters: observation.skippedVolumeCounters,
           retryTelemetry: observation.retryTelemetry,
+          lastObservedTrade: observation.lastObservedTrade,
+          lastHedgeSignal: observation.lastHedgeSignal,
           lastSuccessfulHedge: observation.lastSuccessfulHedge,
           lastError: observation.lastError,
           lastProcessedBlockCursor: observation.lastProcessedBlockCursor,
@@ -2339,6 +2460,8 @@ async function runMirrorHedge(options = {}) {
     exitAt: state.exitAt || null,
     retryTelemetry: ensureRetryTelemetryShape(state.retryTelemetry),
   };
+  payload.lastObservedTrade = state.lastObservedTrade || null;
+  payload.lastHedgeSignal = state.lastHedgeSignal || null;
   payload.lastSuccessfulHedge = state.lastSuccessfulHedge || null;
   payload.lastError = state.lastError || null;
   payload.lastAlert = state.lastAlert || null;
@@ -2462,6 +2585,8 @@ async function getMirrorHedgeDaemonStatus(options = {}) {
       payload.summary = runtime.summary;
       payload.readiness = runtime.readiness;
       payload.warnings = runtime.warnings;
+      payload.lastObservedTrade = runtime.lastObservedTrade || null;
+      payload.lastHedgeSignal = runtime.lastHedgeSignal || null;
       payload.lastSuccessfulHedge = runtime.lastSuccessfulHedge;
       payload.lastError = runtime.lastError;
       payload.lastAlert = runtime.lastAlert;

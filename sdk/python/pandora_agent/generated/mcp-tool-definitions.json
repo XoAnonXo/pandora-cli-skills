@@ -21970,7 +21970,7 @@
       "bundle"
     ],
     "controlInputNames": [],
-    "description": "Build deterministic VPS deployment artifacts for the packaged LP hedge daemon without submitting a live hedge transaction.",
+    "description": "Build deterministic VPS deployment artifacts for Polymarket Hedge Mode without submitting a live hedge transaction.",
     "executeFlags": [],
     "expectedLatencyMs": 5000,
     "externalDependencies": [
@@ -22236,7 +22236,7 @@
         "riskLevel": "low",
         "safeEquivalent": null,
         "safeFlags": [],
-        "summary": "Build deterministic VPS deployment artifacts for the LP hedge daemon without submitting a live hedge transaction.",
+        "summary": "Build deterministic VPS deployment artifacts for Polymarket Hedge Mode without submitting a live hedge transaction.",
         "supportsRemote": true,
         "supportsWebhook": false,
         "topLevelInputConstraints": {
@@ -22407,7 +22407,7 @@
       "riskLevel": "low",
       "safeEquivalent": null,
       "safeFlags": [],
-      "summary": "Build deterministic VPS deployment artifacts for the LP hedge daemon without submitting a live hedge transaction.",
+      "summary": "Build deterministic VPS deployment artifacts for Polymarket Hedge Mode without submitting a live hedge transaction.",
       "supportsRemote": true,
       "supportsWebhook": false,
       "topLevelInputConstraints": {
@@ -22458,7 +22458,7 @@
       "plan"
     ],
     "controlInputNames": [],
-    "description": "Build a read-only LP hedge plan from selector-first market context or persisted state. Separate from mirror sync, which still manages the Pandora rebalance plus Polymarket hedge legs.",
+    "description": "Build a read-only Polymarket Hedge Mode plan from selector-first market context or persisted state. Use Pandora Mirroring Mode separately through mirror sync with --no-hedge when Pandora should follow Polymarket odds.",
     "executeFlags": [],
     "expectedLatencyMs": 5000,
     "externalDependencies": [
@@ -22724,7 +22724,7 @@
         "riskLevel": "low",
         "safeEquivalent": null,
         "safeFlags": [],
-        "summary": "Build a read-only LP hedge plan from selector-first market context or persisted state.",
+        "summary": "Build a read-only Polymarket Hedge Mode plan from selector-first market context or persisted state.",
         "supportsRemote": true,
         "supportsWebhook": false,
         "topLevelInputConstraints": {
@@ -22895,7 +22895,7 @@
       "riskLevel": "low",
       "safeEquivalent": null,
       "safeFlags": [],
-      "summary": "Build a read-only LP hedge plan from selector-first market context or persisted state.",
+      "summary": "Build a read-only Polymarket Hedge Mode plan from selector-first market context or persisted state.",
       "supportsRemote": true,
       "supportsWebhook": false,
       "topLevelInputConstraints": {
@@ -22946,7 +22946,7 @@
       "run"
     ],
     "controlInputNames": [],
-    "description": "Run the LP hedge loop in the foreground. Separate from mirror sync, which still manages the Pandora rebalance plus Polymarket hedge legs.",
+    "description": "Run Polymarket Hedge Mode in the foreground. Use this when Pandora trades should hedge on Polymarket and Pandora Mirroring Mode should stay off.",
     "executeFlags": [
       "--execute-live",
       "--execute"
@@ -23320,7 +23320,7 @@
           "--paper",
           "--dry-run"
         ],
-        "summary": "Run the LP hedge loop in the foreground.",
+        "summary": "Run Polymarket Hedge Mode in the foreground.",
         "supportsRemote": true,
         "supportsWebhook": false,
         "topLevelInputConstraints": {
@@ -24731,7 +24731,7 @@
         "--paper",
         "--dry-run"
       ],
-      "summary": "Run the LP hedge loop in the foreground.",
+      "summary": "Run Polymarket Hedge Mode in the foreground.",
       "supportsRemote": true,
       "supportsWebhook": false,
       "topLevelInputConstraints": {
@@ -26008,7 +26008,7 @@
       "start"
     ],
     "controlInputNames": [],
-    "description": "Start detached LP hedge daemon. Separate from mirror sync, which still manages the Pandora rebalance plus Polymarket hedge legs.",
+    "description": "Start detached Polymarket Hedge Mode daemon. Use Pandora Mirroring Mode separately through mirror sync with --no-hedge when you only want Pandora repricing.",
     "executeFlags": [
       "--execute-live",
       "--execute"
@@ -26378,7 +26378,7 @@
           "--paper",
           "--dry-run"
         ],
-        "summary": "Start detached LP hedge daemon.",
+        "summary": "Start detached Polymarket Hedge Mode daemon.",
         "supportsRemote": true,
         "supportsWebhook": false,
         "topLevelInputConstraints": {
@@ -27789,7 +27789,7 @@
         "--paper",
         "--dry-run"
       ],
-      "summary": "Start detached LP hedge daemon.",
+      "summary": "Start detached Polymarket Hedge Mode daemon.",
       "supportsRemote": true,
       "supportsWebhook": false,
       "topLevelInputConstraints": {
@@ -33441,7 +33441,8 @@
       "executeRequiresValidation": false,
       "notes": [
         "The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.",
-        "Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale."
+        "Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale.",
+        "Pandora Mirroring Mode means mirror sync with --no-hedge. For hedge-only operation on Polymarket, use mirror hedge."
       ],
       "recommendedTools": [
         "mirror.panic"
@@ -33457,7 +33458,7 @@
       "once"
     ],
     "controlInputNames": [],
-    "description": "Execute one mirror sync tick. Rebalance-route flags affect only the Ethereum Pandora leg. Snapshot/action payloads expose reserveSource and rebalance sizing provenance.",
+    "description": "Execute one mirror sync tick. Use --no-hedge for Pandora Mirroring Mode, where Pandora follows Polymarket odds without placing a Polymarket hedge. Without --no-hedge, sync is the hybrid loop.",
     "executeFlags": [
       "--execute-live",
       "--execute"
@@ -33766,7 +33767,8 @@
           "executeRequiresValidation": false,
           "notes": [
             "The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.",
-            "Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale."
+            "Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale.",
+            "Pandora Mirroring Mode means mirror sync with --no-hedge. For hedge-only operation on Polymarket, use mirror hedge."
           ],
           "recommendedTools": [
             "mirror.panic"
@@ -33888,7 +33890,7 @@
           "--paper",
           "--dry-run"
         ],
-        "summary": "Execute one mirror sync tick with separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.",
+        "summary": "Execute one mirror sync tick. `--no-hedge` makes this Pandora Mirroring Mode; without it the loop may rebalance Pandora and hedge on Polymarket as separate Pandora rebalance and Polymarket hedge legs.",
         "supportsRemote": true,
         "supportsWebhook": true,
         "topLevelInputConstraints": {
@@ -35213,7 +35215,8 @@
         "executeRequiresValidation": false,
         "notes": [
           "The default mirror stop file is ~/.pandora/mirror/STOP. Its presence intentionally blocks local mirror sync starts and ticks until cleared.",
-          "Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale."
+          "Use mirror.panic clear mode after incident review, or remove the stop file manually only if you know the emergency lock is stale.",
+          "Pandora Mirroring Mode means mirror sync with --no-hedge. For hedge-only operation on Polymarket, use mirror hedge."
         ],
         "recommendedTools": [
           "mirror.panic"
@@ -35335,7 +35338,7 @@
         "--paper",
         "--dry-run"
       ],
-      "summary": "Execute one mirror sync tick with separate Pandora rebalance and Polymarket hedge legs. Rebalance-route flags affect only the Ethereum Pandora leg; cross-venue settlement is not atomic.",
+      "summary": "Execute one mirror sync tick. `--no-hedge` makes this Pandora Mirroring Mode; without it the loop may rebalance Pandora and hedge on Polymarket as separate Pandora rebalance and Polymarket hedge legs.",
       "supportsRemote": true,
       "supportsWebhook": true,
       "topLevelInputConstraints": {

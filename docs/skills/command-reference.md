@@ -65,8 +65,8 @@ Use the smaller workflow docs before falling back to this file:
 - Use `pandora doctor --goal <goal>` when you only want planning and readiness checks without writing anything.
 - Use `pandora setup --interactive --goal <goal>` when you want the guided write path after reviewing the redacted summary.
 - Use `pandora setup` when you want manual env scaffolding plus doctor checks without prompts.
-- Use `paper-mirror` / `live-mirror` for deploy/go planning, and `paper-hedge-daemon` / `live-hedge-daemon` for the packaged `mirror hedge` LP daemon path.
-- `mirror hedge` is the long-running bundle-oriented daemon surface. `mirror sync` remains the lower-level local/manual loop and troubleshooting path.
+- Use `paper-mirror` / `live-mirror` for Pandora Mirroring Mode planning, and `paper-hedge-daemon` / `live-hedge-daemon` for Polymarket Hedge Mode.
+- `mirror hedge` is Polymarket Hedge Mode. `mirror sync --no-hedge` is Pandora Mirroring Mode. Plain `mirror sync` without `--no-hedge` is the hybrid loop.
 - `mirror hedge` maintains a net target inventory on Polymarket; opposite-side external flow first shrinks the existing hedge before building new inventory on the other side.
 - `--min-hedge-usdc` on `mirror hedge` is the execution threshold for the current target-vs-actual gap, not a permanent per-trade ignore rule.
 - `mirror hedge status` now surfaces sell retry counters and operator warnings for stuck reductions.
@@ -267,6 +267,8 @@ Mirror runtime notes:
 - `mirror go` and `mirror sync` stay in paper/simulated mode unless you explicitly pass `--execute-live` or `--execute`.
 - Live `mirror sync` requires both `--max-open-exposure-usdc` and `--max-trades-per-day`.
 - `mirror sync` runs Pandora rebalance and Polymarket hedge as separate legs; cross-venue settlement is not atomic.
+- Add `--no-hedge` when you want Pandora Mirroring Mode.
+- Use `mirror hedge` when you want Polymarket Hedge Mode.
 - `mirror go --auto-sync` inherits the same separate-leg sync semantics and forwards `--strict-close-time-delta` to the sync daemon when requested.
 - `--rebalance-route` and the `flashbots-*` flags affect only the Ethereum Pandora rebalance leg.
   - they do not make the Polygon hedge leg private

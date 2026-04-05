@@ -1,5 +1,14 @@
 # Phase 7 Benchmark Platform
 
+## Status
+
+This roadmap is now mostly historical context.
+
+Current state:
+- the release-proof lane still stores committed artifacts under `core`
+- the runner also accepts `surface-core` as a public alias for that lane
+- the separate `proving-ground` research lane now exists beside the release-proof suite
+
 ## Goal
 Build a reproducible, public-facing benchmark pack for Pandora agent readiness.
 

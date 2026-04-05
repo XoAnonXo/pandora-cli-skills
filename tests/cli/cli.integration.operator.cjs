@@ -1421,6 +1421,19 @@ test('mirror hedge status table prints runtime queue and error details', () => {
         sellFailedCount: 1,
         sellRecoveredCount: 3,
       },
+      lastObservedTrade: {
+        tradeId: 'trade-telemetry-1',
+        confirmedAt: '2026-03-20T00:00:00.000Z',
+        observedAt: '2026-03-20T00:00:01.250Z',
+        observationLatencyMs: 1250,
+      },
+      lastHedgeSignal: {
+        hedgeId: 'pair-1:buy-no',
+        status: 'planned',
+        signalAt: '2026-03-20T00:00:01.900Z',
+        reactionLatencyMs: 1900,
+        observeToSignalLatencyMs: 650,
+      },
       lastSuccessfulHedge: {
         hedgeId: 'hedge-1',
         status: 'completed',
@@ -1471,6 +1484,10 @@ test('mirror hedge status table prints runtime queue and error details', () => {
     assert.match(result.output, /sellRetryFailedCount: 1/);
     assert.match(result.output, /sellRetryRecoveredCount: 3/);
     assert.match(result.output, /skippedVolumeUsdc: 1/);
+    assert.match(result.output, /lastObservedTradeId: trade-telemetry-1/);
+    assert.match(result.output, /lastTradeObservationLatencyMs: 1250/);
+    assert.match(result.output, /lastHedgeSignalStatus: planned/);
+    assert.match(result.output, /lastHedgeReactionLatencyMs: 1900/);
     assert.match(result.output, /lastSuccessfulHedgeAt: 2026-03-20T00:00:00.000Z/);
     assert.match(result.output, /lastErrorCode: NO_DEPTH/);
     assert.match(result.output, /lastAlertCode: QUEUE_RETRY/);

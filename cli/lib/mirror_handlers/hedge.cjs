@@ -86,6 +86,14 @@ function renderMirrorHedgeDaemonTable(data) {
     ['sellRetryRecoveredCount', summary.sellRetryRecoveredCount ?? ''],
     ['warningCount', summary.warningCount ?? ''],
     ['skippedVolumeUsdc', summary.skippedVolumeUsdc ?? ''],
+    ['lastObservedTradeId', summary.lastObservedTradeId || ''],
+    ['lastObservedTradeConfirmedAt', summary.lastObservedTradeConfirmedAt || ''],
+    ['lastObservedTradeObservedAt', summary.lastObservedTradeObservedAt || ''],
+    ['lastTradeObservationLatencyMs', summary.lastTradeObservationLatencyMs === null || summary.lastTradeObservationLatencyMs === undefined ? '' : summary.lastTradeObservationLatencyMs],
+    ['lastHedgeSignalAt', summary.lastHedgeSignalAt || ''],
+    ['lastHedgeSignalStatus', summary.lastHedgeSignalStatus || ''],
+    ['lastHedgeReactionLatencyMs', summary.lastHedgeReactionLatencyMs === null || summary.lastHedgeReactionLatencyMs === undefined ? '' : summary.lastHedgeReactionLatencyMs],
+    ['lastHedgeObserveToSignalLatencyMs', summary.lastHedgeObserveToSignalLatencyMs === null || summary.lastHedgeObserveToSignalLatencyMs === undefined ? '' : summary.lastHedgeObserveToSignalLatencyMs],
     ['lastSuccessfulHedgeAt', summary.lastSuccessfulHedgeAt || ''],
     ['lastErrorCode', summary.lastErrorCode || ''],
     ['lastAlertCode', summary.lastAlertCode || ''],
@@ -120,7 +128,9 @@ function helpPayload(emitSuccess, commandHelpPayload, context, kind, usage, note
 
 function buildFamilyNotes() {
   return [
-    'mirror hedge is the LP-hedging runtime family; it plans and manages LP hedge posture separately from mirror sync, which remains the Pandora rebalance plus Polymarket hedge leg workflow.',
+    'mirror hedge is Polymarket Hedge Mode. It watches Pandora flow and manages the matching Polymarket hedge inventory without using the Pandora mirroring loop.',
+    'Choose Polymarket Hedge Mode when you want to stay delta neutral on Polymarket and earn fees from Pandora flow.',
+    'If you want Pandora Mirroring Mode instead, use `mirror sync --no-hedge` so Pandora follows Polymarket odds without placing Polymarket hedges.',
     'plan and bundle are read-only planning surfaces. run and start are mutating runtime surfaces. status and stop are selector-first detached daemon controls.',
     'bundle produces deterministic VPS deployment artifacts for the packaged hedge daemon; it does not change live positions by itself.',
   ];
@@ -128,16 +138,17 @@ function buildFamilyNotes() {
 
 function buildPlanNotes() {
   return [
-    'mirror hedge plan is read-only and should be used before any live hedge execution.',
+    'mirror hedge plan is the read-only planning surface for Polymarket Hedge Mode and should be used before any live hedge execution.',
     'The planner prefers selector-first resolution from state files, strategy hashes, or resolved market pairs so MCP agents can reason about LP hedge posture without writing state.',
-    'LP hedging keeps separate from mirror sync: sync still drives the Pandora rebalance plus Polymarket hedge legs, while hedge focuses on LP hedge posture and bundle/run lifecycle.',
+    'Polymarket Hedge Mode stays separate from Pandora Mirroring Mode. This path manages Polymarket hedge posture only; it is not the Pandora price-following loop.',
     'Provide --internal-wallets-file so the planner can exclude internal wallet volume from hedge calculations.',
   ];
 }
 
 function buildRunNotes() {
   return [
-    'mirror hedge run executes the LP hedge loop in the foreground.',
+    'mirror hedge run executes Polymarket Hedge Mode in the foreground.',
+    'Use this when someone trades on Pandora and you want the runtime to adjust Polymarket only.',
     'Live hedge execution still needs a valid internal-wallet whitelist plus Polymarket signer/funder readiness.',
     '--min-hedge-usdc is an execution threshold for the net target-vs-actual hedge gap; it no longer permanently ignores small external trades.',
     '--adopt-existing-positions treats observed Polymarket inventory as the starting live hedge baseline and then trades only the delta to target.',
@@ -147,21 +158,22 @@ function buildRunNotes() {
 
 function buildStartNotes() {
   return [
-    'mirror hedge start launches the LP hedge daemon in detached mode.',
+    'mirror hedge start launches Polymarket Hedge Mode in detached daemon form.',
+    'Choose this path when you want delta-neutral Polymarket hedging for Pandora flow, not Pandora repricing.',
     'Use status or stop with the daemon selector flags to inspect or terminate a running hedge daemon.',
   ];
 }
 
 function buildStatusNotes() {
   return [
-    'mirror hedge status is the detached-daemon health and runtime surface for LP hedge runs.',
+    'mirror hedge status is the detached-daemon health and runtime surface for Polymarket Hedge Mode.',
     'Use pid-file or strategy-hash when you already know the daemon identity; use stop with the same selector family to terminate it.',
   ];
 }
 
 function buildStopNotes() {
   return [
-    'mirror hedge stop terminates a selected LP hedge daemon without changing the documented sync semantics.',
+    'mirror hedge stop terminates a selected Polymarket Hedge Mode daemon without changing Pandora Mirroring Mode semantics.',
     'market-address and all selectors are only supported for stop, matching the detached-daemon lifecycle pattern used by mirror sync.',
   ];
 }
@@ -218,7 +230,7 @@ module.exports = async function handleMirrorHedge({ actionArgs, shared, context,
   const subcommandNotes = {
     plan: buildPlanNotes(),
     bundle: [
-      'mirror hedge bundle is the read-only bundle planning surface for LP hedging.',
+      'mirror hedge bundle is the read-only bundle planning surface for Polymarket Hedge Mode.',
       'Use it to emit deterministic VPS deployment artifacts without submitting a live hedge transaction.',
     ],
     run: buildRunNotes(),

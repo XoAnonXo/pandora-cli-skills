@@ -133,10 +133,11 @@ First move:
 - Anthropic skill install and evaluation docs:
   - [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
   - [`docs/skills/anthropic-skill-evals.md`](./docs/skills/anthropic-skill-evals.md)
-- Benchmark methodology and score interpretation:
+- Benchmark and proving-ground evaluation docs:
   - [`docs/benchmarks/README.md`](./docs/benchmarks/README.md)
   - [`docs/benchmarks/scenario-catalog.md`](./docs/benchmarks/scenario-catalog.md)
   - [`docs/benchmarks/scorecard.md`](./docs/benchmarks/scorecard.md)
+  - [`docs/proving-ground/README.md`](./docs/proving-ground/README.md)
 - Release verification and trust posture:
   - [`docs/trust/release-verification.md`](./docs/trust/release-verification.md)
   - [`docs/trust/security-model.md`](./docs/trust/security-model.md)

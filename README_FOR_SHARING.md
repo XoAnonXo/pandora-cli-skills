@@ -64,6 +64,7 @@ docs/
   skills/               human and agent documentation
   trust/                release, security, and support docs
   benchmarks/           benchmark methodology and scorecards
+  proving-ground/       research-lane explainer docs
 sdk/
   typescript/           TypeScript SDK surface
   python/               Python SDK surface
@@ -81,6 +82,7 @@ Included files of interest:
 - `docs/skills/*.md`
 - `docs/trust/*.md`
 - `docs/benchmarks/**`
+- `docs/proving-ground/**`
 - `benchmarks/latest/core-report.json`
 - `sdk/generated/*`
 - `sdk/typescript/**`
@@ -247,6 +249,7 @@ bootstrap
 - Policies, profiles, and scopes: [`docs/skills/policy-profiles.md`](./docs/skills/policy-profiles.md)
 - Recipes: [`docs/skills/recipes.md`](./docs/skills/recipes.md)
 - Benchmarks: [`docs/benchmarks/README.md`](./docs/benchmarks/README.md), [`docs/benchmarks/scenario-catalog.md`](./docs/benchmarks/scenario-catalog.md), [`docs/benchmarks/scorecard.md`](./docs/benchmarks/scorecard.md)
+- Proving-ground research lane: [`docs/proving-ground/README.md`](./docs/proving-ground/README.md)
 - Trust docs: [`docs/trust/release-verification.md`](./docs/trust/release-verification.md), [`docs/trust/release-bundle-playbook.md`](./docs/trust/release-bundle-playbook.md), [`docs/trust/security-model.md`](./docs/trust/security-model.md), [`docs/trust/support-matrix.md`](./docs/trust/support-matrix.md)
 
 ## SDK Surfaces

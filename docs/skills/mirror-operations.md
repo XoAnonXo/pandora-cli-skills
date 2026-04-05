@@ -5,8 +5,9 @@ Use this guide for `mirror browse|plan|deploy|verify|hedge-calc|calc|go|hedge|sy
 For first-run setup and optional guided onboarding, see [`setup-and-onboarding.md`](./setup-and-onboarding.md) before you attempt `mirror plan|deploy|go`.
 
 ## `mirror hedge` vs `mirror sync`
-- `mirror hedge` is the packaged LP daemon surface for an existing mirror pair.
-- Use `mirror hedge` when you want a bundle-oriented long-running daemon deployment target.
+- `mirror hedge` is Polymarket Hedge Mode.
+- Use Polymarket Hedge Mode when you want to stay delta neutral on Polymarket and earn fees from Pandora flow.
+- `mirror hedge` is the packaged daemon surface for an existing mirror pair.
 - `mirror hedge` now manages a net Polymarket inventory target for the market instead of hedging each external Pandora trade independently.
 - `--min-hedge-usdc` is the execution threshold for the current target-vs-actual hedge gap; small external trades still update target exposure and accumulate.
 - `--adopt-existing-positions` treats observed Polymarket inventory as the starting live hedge baseline and then trades only the delta to target.
@@ -14,6 +15,9 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
 - `mirror hedge status` is now the operator truth surface for sell retry health.
   - `sellRetryAttemptedCount`, `sellRetryBlockedCount`, `sellRetryFailedCount`, and `sellRetryRecoveredCount` show whether reductions are being retried, blocked by policy/depth, rejected by the exchange, or cleared from the live queue.
   - `BOTH_SIDE_INVENTORY_LOCKUP` means actual Polymarket inventory still holds both YES and NO while the target is single-sided, so the operator should inspect sell-side reductions immediately.
+- `mirror sync --no-hedge` is Pandora Mirroring Mode.
+- Use Pandora Mirroring Mode when you want to be the market maker on Pandora and keep Pandora odds aligned to Polymarket without placing Polymarket hedges.
+- Plain `mirror sync` without `--no-hedge` is the hybrid loop. It may rebalance Pandora and hedge on Polymarket in the same cycle.
 - `mirror sync` remains the lower-level local/manual loop, one-shot execution surface, and troubleshooting path.
 - Bundle artifacts support DigitalOcean droplets and generic VPS targets today.
 - Cloudflare Workers are not supported in v1 because the hedge daemon expects a long-running stateful runtime with local process/file lifecycle.
@@ -43,6 +47,8 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
 - Use `--target-timestamp <unix|iso>` only when you intentionally need to override the plan’s suggested close time.
 - `mirror go|sync` stay in paper/simulated mode unless you explicitly pass `--execute-live` or `--execute`.
 - `mirror sync` simulates or executes Pandora rebalance and Polymarket hedge as separate legs. It is not atomic across venues.
+- If you want pure Pandora Mirroring Mode, add `--no-hedge`.
+- If you want pure Polymarket Hedge Mode, use `mirror hedge` instead of `mirror sync`.
 - `mirror go --auto-sync` still inherits the same separate-leg sync semantics; it does not turn the cross-venue path into an atomic transaction.
 - `--rebalance-route` and the `flashbots-*` flags apply only to the Ethereum Pandora rebalance leg.
   - they do **not** make the Polygon hedge leg private

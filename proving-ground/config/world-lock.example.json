@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "worldId": "daemon-in-loop-v1",
+  "simulator": {
+    "name": "event-stream",
+    "version": "1.0.0"
+  },
+  "feeModel": {
+    "kind": "fixed-bps",
+    "valueBps": 20
+  },
+  "latencyModel": {
+    "kind": "seeded-lag",
+    "baseDelayMs": 250,
+    "maxDelayMs": 1500
+  },
+  "marketModel": {
+    "kind": "simple-order-book",
+    "version": "1.0.0"
+  },
+  "riskPolicy": {
+    "kind": "hard-invariants",
+    "version": "1.0.0"
+  }
+}
+

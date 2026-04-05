@@ -1,0 +1,152 @@
+{
+  "schemaVersion": "1.0.0",
+  "familyId": "daemon-in-loop",
+  "title": "Daemon-in-loop hedge proving ground",
+  "description": "Deterministic scenario family for sandbox hedge experiments, restart checks, and replay calibration.",
+  "worldLock": {
+    "schemaVersion": "1.0.0",
+    "worldId": "daemon-in-loop-v1",
+    "simulator": {
+      "name": "event-stream",
+      "version": "1.0.0"
+    },
+    "feeModel": {
+      "kind": "fixed-bps",
+      "valueBps": 20
+    },
+    "latencyModel": {
+      "kind": "seeded-lag",
+      "baseDelayMs": 250,
+      "maxDelayMs": 1500
+    },
+    "marketModel": {
+      "kind": "simple-order-book",
+      "version": "1.0.0"
+    },
+    "riskPolicy": {
+      "kind": "hard-invariants",
+      "version": "1.0.0"
+    }
+  },
+  "generator": {
+    "name": "daemon-in-loop-family-generator",
+    "version": "1.0.0",
+    "seed": 42,
+    "parameterSpace": {
+      "externalTradeBurstSizes": [1, 3, 10],
+      "hedgeLagMs": [250, 1000],
+      "restartInjections": [false, true]
+    }
+  },
+  "cases": [
+    {
+      "id": "burst-basic",
+      "sequence": 1,
+      "title": "Burst of outside trades",
+      "description": "A short burst of external trades forces the daemon to hedge under a small exposure window.",
+      "seed": 101,
+      "initialState": {
+        "inventoryUsdc": 100,
+        "exposureBandUsdc": 10
+      },
+      "events": [
+        {
+          "type": "external-trade",
+          "atMs": 100,
+          "side": "yes",
+          "amountUsdc": 10
+        },
+        {
+          "type": "external-trade",
+          "atMs": 200,
+          "side": "no",
+          "amountUsdc": 5
+        },
+        {
+          "type": "external-trade",
+          "atMs": 300,
+          "side": "yes",
+          "amountUsdc": 15
+        }
+      ],
+      "expectations": {
+        "requiresHedge": true,
+        "maxExposureExcursionUsdc": 20,
+        "maxRecoveryMs": 1500
+      }
+    },
+    {
+      "id": "partial-fill-retry",
+      "sequence": 2,
+      "title": "Partial fill and retry",
+      "description": "The hedge path gets a partial fill and must retry without duplicating exposure.",
+      "seed": 202,
+      "initialState": {
+        "inventoryUsdc": 80,
+        "exposureBandUsdc": 8
+      },
+      "events": [
+        {
+          "type": "external-trade",
+          "atMs": 120,
+          "side": "yes",
+          "amountUsdc": 12
+        },
+        {
+          "type": "venue-response",
+          "atMs": 500,
+          "status": "partial-fill",
+          "filledUsdc": 6,
+          "remainingUsdc": 6
+        },
+        {
+          "type": "venue-response",
+          "atMs": 900,
+          "status": "fill",
+          "filledUsdc": 6
+        }
+      ],
+      "expectations": {
+        "requiresHedge": true,
+        "maxDuplicateHedgeCount": 0,
+        "maxRecoveryMs": 2000
+      }
+    },
+    {
+      "id": "restart-recover",
+      "sequence": 3,
+      "title": "Restart and recover",
+      "description": "The daemon restarts mid-stream and must recover without losing causal lineage.",
+      "seed": 303,
+      "initialState": {
+        "inventoryUsdc": 60,
+        "exposureBandUsdc": 6
+      },
+      "events": [
+        {
+          "type": "external-trade",
+          "atMs": 100,
+          "side": "no",
+          "amountUsdc": 8
+        },
+        {
+          "type": "daemon-restart",
+          "atMs": 450,
+          "reason": "simulated-process-restart"
+        },
+        {
+          "type": "external-trade",
+          "atMs": 700,
+          "side": "yes",
+          "amountUsdc": 4
+        }
+      ],
+      "expectations": {
+        "requiresRecovery": true,
+        "maxOrphanPositionCount": 0,
+        "maxRecoveryMs": 2500
+      }
+    }
+  ]
+}
+

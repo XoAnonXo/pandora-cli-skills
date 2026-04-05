@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.1.128",
+  "version": "1.1.129",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
@@ -68,6 +68,7 @@
     "references/creation-script.md",
     "docs/assets/**",
     "docs/benchmarks/**",
+    "docs/proving-ground/**",
     "docs/skills/**",
     "docs/trust/**",
     "tests/skills/**",
@@ -114,6 +115,7 @@
     "benchmark:run": "node scripts/run_agent_benchmarks.cjs",
     "benchmark:check": "node scripts/check_agent_benchmarks.cjs",
     "benchmark:history": "node scripts/update_benchmark_history.cjs",
+    "proving-ground:autoresearch": "node scripts/run_proving_ground_autoresearch.cjs",
     "test:website": "npm run site:check && node --test tests/unit/website_smoke.test.cjs",
     "dry-run": "node cli/pandora.cjs launch --dry-run",
     "execute": "node cli/pandora.cjs launch --execute",

@@ -1197,6 +1197,34 @@ test('fetchPolymarketPositionSummary confirms inferred raw-sized authenticated b
   ]);
 });
 
+test('fetchPolymarketPositionSummary normalizes raw-sized authenticated balances without on-chain confirmation', async () => {
+  const summary = await fetchPolymarketPositionSummary({
+    market: {
+      marketId: 'poly-cond-1',
+      yesTokenId: '101',
+      noTokenId: '202',
+      yesPct: 47,
+      noPct: 53,
+    },
+    walletAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    privateKey: `0x${'1'.repeat(64)}`,
+    client: {
+      getBalanceAllowance: async ({ token_id }) => {
+        if (token_id === '101') return { balance: '0' };
+        if (token_id === '202') return { balance: '5619000' };
+        throw new Error(`unexpected token ${token_id}`);
+      },
+      getOpenOrders: async () => [],
+    },
+  });
+
+  assert.equal(summary.yesBalance, 0);
+  assert.equal(summary.noBalance, 5.619);
+  assert.equal(summary.estimatedValueUsd, 2.97807);
+  assert.equal(summary.balances.no.balanceRaw, '5619000');
+  assert.equal(summary.source.balances, 'api');
+});
+
 test('resolvePolymarketMarket scans deep pagination for selector matches', async () => {
   const pages = [
     {

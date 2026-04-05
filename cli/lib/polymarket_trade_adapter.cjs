@@ -1713,6 +1713,8 @@ function shouldUseImplicitRawBalance(candidateBalance, scaledBalance, hints = {}
   const sourceHint = normalizeText(hints.sourceHint);
   const price = toPrice01(hints.price);
   const estimatedValueUsd = toOptionalNumber(hints.estimatedValueUsd);
+  const apiLikeSource = sourceHint === 'api' || sourceHint === 'authenticated-clob';
+  const baseUnitThreshold = 10 ** DEFAULT_POLYMARKET_POSITION_DECIMALS;
 
   if (price !== null && estimatedValueUsd !== null) {
     const directEstimate = round(candidateBalance * price, 6);
@@ -1726,11 +1728,13 @@ function shouldUseImplicitRawBalance(candidateBalance, scaledBalance, hints = {}
     }
   }
 
-  if (sourceHint === 'api' && price !== null && Math.abs(candidateBalance) >= 10_000_000) {
+  // Authenticated balance endpoints sometimes hand back raw 6-decimal base units in the
+  // `balance` field with no companion `balanceRaw`. Treat large integer-only balances from
+  // those sources as raw units so hedge sizing stays in human share units.
+  if (apiLikeSource && Number.isInteger(candidateBalance) && Math.abs(candidateBalance) >= baseUnitThreshold) {
     return true;
   }
-
-  return sourceHint === 'authenticated-clob' && Math.abs(candidateBalance) >= 10_000_000;
+  return false;
 }
 
 function normalizePositionBalanceEntry(rawValue, fallbackSource = null, fallbackTokenId = null, hints = {}) {

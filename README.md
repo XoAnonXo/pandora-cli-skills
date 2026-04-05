@@ -95,6 +95,7 @@ npm install
 npx pandora setup --interactive
 npm run doctor
 npm run build
+npm run verify:repo
 npx pandora help
 ```
 
@@ -103,7 +104,8 @@ What each step is for:
 - `npm install`: install the local CLI and docs/test dependencies
 - `npx pandora setup --interactive`: scaffold and validate the first-run onboarding path
 - `npm run doctor`: inspect local runtime readiness before live work
-- `npm run build`: run the repo’s verification gates, including docs, trust, SDK parity, and benchmark checks
+- `npm run build`: run the TypeScript typecheck gate
+- `npm run verify:repo`: run repo-wide verification for docs, trust, SDK parity, and hygiene
 - `npx pandora help`: browse the command surface manually
 
 If you prefer manual control, use `npm run init-env` first and then `npm run doctor`. Guided onboarding is optional and can be skipped at any step.
@@ -263,6 +265,7 @@ npx pandora --output json profile explain --id market_observer_ro
 - Policies, profiles, and scopes: [`docs/skills/policy-profiles.md`](./docs/skills/policy-profiles.md)
 - Recipes: [`docs/skills/recipes.md`](./docs/skills/recipes.md)
 - Benchmarks and scorecards: [`docs/benchmarks/README.md`](./docs/benchmarks/README.md), [`docs/benchmarks/scenario-catalog.md`](./docs/benchmarks/scenario-catalog.md), [`docs/benchmarks/scorecard.md`](./docs/benchmarks/scorecard.md)
+- Proving-ground research lane: [`docs/proving-ground/README.md`](./docs/proving-ground/README.md)
 - Trust and release posture: [`docs/trust/release-verification.md`](./docs/trust/release-verification.md), [`docs/trust/release-bundle-playbook.md`](./docs/trust/release-bundle-playbook.md), [`docs/trust/security-model.md`](./docs/trust/security-model.md), [`docs/trust/support-matrix.md`](./docs/trust/support-matrix.md)
 
 ## SDK Surfaces
@@ -286,6 +289,9 @@ Notes:
 |-- docs/skills/          operator and agent documentation
 |-- docs/trust/           release, security, and support docs
 |-- docs/benchmarks/      benchmark methodology and scorecards
+|-- docs/proving-ground/  proving-ground explainer docs
+|-- knowledge-base/       maintained repo wiki layer
+|-- proving-ground/       sandbox research lane and generated local evidence
 |-- sdk/typescript/       TypeScript SDK surface
 |-- sdk/python/           Python SDK surface
 |-- sdk/generated/        shared generated contract bundle

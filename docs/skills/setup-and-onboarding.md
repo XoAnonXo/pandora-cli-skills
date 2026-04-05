@@ -2,7 +2,7 @@
 
 Use this guide when Pandora is freshly installed or when you want the CLI to walk you through first-run configuration. The onboarding flow is goal-first: `pandora setup --plan --goal ...` is the machine-readable planning surface, `pandora doctor --goal ...` is the non-writing readiness check, and `pandora setup --interactive --goal ...` is the guided review-before-write path. `pandora setup` without `--interactive`, plus `init-env` and `doctor`, remains the manual path.
 
-`paper-mirror` and `live-mirror` are the deploy/go onboarding goals. `paper-hedge-daemon` and `live-hedge-daemon` are the packaged LP daemon goals for the new `mirror hedge` surface. Keep that split explicit: `mirror hedge` is the long-running bundle-oriented daemon path, while `mirror sync` remains the lower-level local/manual loop and troubleshooting surface.
+`paper-mirror` and `live-mirror` are the Pandora Mirroring Mode onboarding goals. `paper-hedge-daemon` and `live-hedge-daemon` are the Polymarket Hedge Mode goals. Keep that split explicit: `mirror hedge` is Polymarket Hedge Mode, `mirror sync --no-hedge` is Pandora Mirroring Mode, and plain `mirror sync` without `--no-hedge` is the hybrid loop.
 
 ## Entry Points
 - `npx pandora setup --interactive`
@@ -22,10 +22,10 @@ Use this guide when Pandora is freshly installed or when you want the CLI to wal
 | --- | --- | --- |
 | `explore` | You only want read-only discovery | No secrets, bootstrap, docs, and validation only |
 | `deploy` | You want to deploy a Pandora market | Pandora signer, chain/RPC, and deployment readiness |
-| `paper-mirror` | You want mirror planning without live hedge execution | Pandora signer, Polymarket discovery, and source defaults |
-| `live-mirror` | You want live hedge execution | Pandora signer, Polymarket signer/funder/API keys, and provider readiness |
-| `paper-hedge-daemon` | You already have a mirror pair and want the packaged LP daemon in paper mode | Internal wallet whitelist, Polymarket connectivity, hedge policy defaults, and bundle-oriented host setup |
-| `live-hedge-daemon` | You already have a mirror pair and want the packaged LP daemon live | Internal wallet whitelist, Pandora signer, Polymarket signer/funder/API keys, hedge policy defaults, and bundle-oriented host setup |
+| `paper-mirror` | You want Pandora Mirroring Mode planning without live hedging | Pandora signer, Polymarket discovery, and source defaults |
+| `live-mirror` | You want live Pandora Mirroring Mode | Pandora signer, Polymarket connectivity, and provider readiness for Pandora repricing |
+| `paper-hedge-daemon` | You already have a mirror pair and want Polymarket Hedge Mode in paper mode | Internal wallet whitelist, Polymarket connectivity, hedge policy defaults, and bundle-oriented host setup |
+| `live-hedge-daemon` | You already have a mirror pair and want live Polymarket Hedge Mode | Internal wallet whitelist, Pandora market context, Polymarket signer/funder/API keys, hedge policy defaults, and bundle-oriented host setup |
 | `hosted-gateway` | You want a remote daemon or control-plane host | Host selection, deployment credentials, and runtime connectivity |
 
 ## Guided Flow
@@ -40,7 +40,7 @@ Use this guide when Pandora is freshly installed or when you want the CLI to wal
 3. Polymarket initialization.
    - Initialize the Polymarket wallet only when the selected goal needs it.
    - Collect the Polymarket host, Polygon RPC URL, funder wallet, and API credentials for live hedging.
-   - For `paper-hedge-daemon` and `live-hedge-daemon`, treat this as runtime hedge readiness for an existing LP mirror pair, not deploy-time mirror planning.
+   - For `paper-hedge-daemon` and `live-hedge-daemon`, treat this as Polymarket Hedge Mode readiness for an existing mirror pair, not Pandora Mirroring Mode planning.
 4. Hedge daemon policy.
    - For `paper-hedge-daemon` and `live-hedge-daemon`, collect `PANDORA_INTERNAL_WALLETS_FILE` before host setup.
    - Capture the minimum hedge notional plus partial/sell hedge policies so the bundle matches the operator's intended guardrails.
@@ -61,7 +61,7 @@ Use this guide when Pandora is freshly installed or when you want the CLI to wal
 8. MCP handoff.
    - Use `setup --plan --goal <goal>` to inspect the same journey as structured JSON without a TTY.
    - Pair that with `doctor --goal <goal>` while an MCP client or agent fills the selected fields.
-   - For daemon targets, prefer `paper-hedge-daemon` or `live-hedge-daemon` in planning surfaces so agents do not confuse packaged `mirror hedge` runtime setup with `mirror sync` loop setup.
+   - For daemon targets, prefer `paper-hedge-daemon` or `live-hedge-daemon` in planning surfaces so agents do not confuse Polymarket Hedge Mode with Pandora Mirroring Mode.
 
 ## Canonical Env Names
 - `PANDORA_PRIVATE_KEY` is the preferred Pandora signer env var.
@@ -83,7 +83,7 @@ Use this guide when Pandora is freshly installed or when you want the CLI to wal
 - Stay in read-only mode if you do not want to provide signer material yet.
 - Prefer manual control when you need a custom config path or already manage secrets elsewhere.
 - For MCP-style planning, start with `setup --plan --goal <goal>`, validate with `doctor --goal <goal>`, then hand off to `setup --interactive --goal ...` only when a human is ready to approve the redacted review step.
-- Prefer `paper-hedge-daemon` or `live-hedge-daemon` for packaged `mirror hedge` runtime planning, and keep `paper-mirror` or `live-mirror` for deploy/go planning.
+- Prefer `paper-hedge-daemon` or `live-hedge-daemon` for Polymarket Hedge Mode, and keep `paper-mirror` or `live-mirror` for Pandora Mirroring Mode.
 
 ## Example Runs
 ```bash
@@ -99,6 +99,6 @@ npx pandora doctor --goal deploy
 ## Notes
 - Guided onboarding should never copy discovery URLs into mirror resolution sources automatically.
 - Mirror deploy and mirror go still require two independent public resolution URLs when live source inputs are needed.
-- `mirror hedge` is the packaged LP daemon family. `mirror sync` remains the lower-level local/manual loop and troubleshooting surface.
+- `mirror hedge` is Polymarket Hedge Mode. `mirror sync --no-hedge` is Pandora Mirroring Mode. Plain `mirror sync` without `--no-hedge` remains the hybrid loop.
 - DigitalOcean droplets and generic VPS targets are supported for bundle-based daemon rollout today. Cloudflare Workers are not supported in v1.
 - If the terminal does not provide a TTY, fall back to the manual `init-env` plus `doctor` path.
