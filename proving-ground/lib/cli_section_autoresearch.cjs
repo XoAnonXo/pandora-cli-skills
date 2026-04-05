@@ -88,6 +88,7 @@ function loadCliSectionResearchConfig(options = {}) {
       apiKeyEnv: normalizeText(model.apiKeyEnv) || DEFAULT_MINIMAX_API_KEY_ENV,
       baseUrl: normalizeText(model.baseUrl) || undefined,
       model: normalizeText(model.model) || undefined,
+      temperature: normalizeNumber(model.temperature, 0.2),
       reasoningSplit: model.reasoningSplit !== false,
       timeoutMs: Math.max(1000, normalizeNumber(model.timeoutMs, 120000)),
       maxAttempts: Math.max(1, Math.round(normalizeNumber(model.maxAttempts, 3))),
@@ -172,7 +173,7 @@ function loadFocusFileContext(focusFiles, cwd) {
     const content = fs.readFileSync(absolutePath, 'utf8');
     return {
       path: filePath,
-      excerpt: truncateText(content, 2600),
+      excerpt: truncateText(content, 5000),
     };
   });
 }
@@ -280,7 +281,10 @@ function buildSectionPrompt(options) {
       'Improve clarity, speed, or simplicity without changing behavior and without adding benchmark-only logic.',
       'Prefer deleting indirection, tightening help surfaces, simplifying control flow, and speeding hot paths.',
       'Allowed changeSet operations: replace_once, insert_after_once, insert_before_once.',
+      'Do not emit <think>, reasoning, markdown fences, or commentary before or after the JSON object.',
       'Every match or anchor must be exact current repo text.',
+      'Only use match or anchor text copied verbatim from the provided focus-file excerpts.',
+      'If the needed code is not visible in the excerpt, return an empty changeSet instead of guessing.',
       'Only touch the listed focus files.',
     ].join(' '),
     userPrompt: JSON.stringify({

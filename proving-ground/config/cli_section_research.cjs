@@ -7,6 +7,7 @@ module.exports = {
     apiKeyEnv: 'MINIMAX_API_KEY',
     model: 'MiniMax-M2.7-highspeed',
     baseUrl: 'https://api.minimax.io/v1',
+    temperature: 0.2,
     reasoningSplit: true,
     timeoutMs: 120000,
     maxAttempts: 3,
