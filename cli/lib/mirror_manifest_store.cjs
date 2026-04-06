@@ -96,18 +96,26 @@ function compareIsoTimestampsDesc(left, right) {
   return rightValue - leftValue;
 }
 
-function sameSourceIdentity(left = {}, right = {}) {
-  const leftMarketId = String(left.polymarketMarketId || '').toLowerCase();
-  const rightMarketId = String(right.polymarketMarketId || '').toLowerCase();
-  if (leftMarketId && rightMarketId) {
-    return leftMarketId === rightMarketId;
-  }
+/**
+ * Compare a single field from two objects, case-insensitively.
+ * @param {object} left
+ * @param {object} right
+ * @param {string} field
+ * @returns {string} Lowercased field value or empty string if missing.
+ */
+function getCompareField(left, right, field) {
+  const value = right[field];
+  return value ? String(value).toLowerCase() : '';
+}
 
-  const leftSlug = String(left.polymarketSlug || '').toLowerCase();
-  const rightSlug = String(right.polymarketSlug || '').toLowerCase();
-  if (leftSlug && rightSlug) {
-    return leftSlug === rightSlug;
-  }
+function sameSourceIdentity(left = {}, right = {}) {
+  const leftId = getCompareField(left, left, 'polymarketMarketId');
+  const rightId = getCompareField(left, right, 'polymarketMarketId');
+  if (leftId && rightId) return leftId === rightId;
+
+  const leftSlug = getCompareField(left, left, 'polymarketSlug');
+  const rightSlug = getCompareField(left, right, 'polymarketSlug');
+  if (leftSlug && rightSlug) return leftSlug === rightSlug;
 
   return false;
 }
