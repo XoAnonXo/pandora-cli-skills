@@ -86,7 +86,7 @@ function resolveMirrorSurfaceState(options = {}) {
     return loadMirrorState(stateFile, strategyHash);
   }
   const selector = normalizeSelector(options);
-  if (hasSelector(selector)) {
+  if (Object.values(selector).some((v) => v !== null)) {
     const stateDir = defaultMirrorStateDir();
     if (fs.existsSync(stateDir)) {
       const matches = [];
