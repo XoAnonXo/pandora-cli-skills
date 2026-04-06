@@ -105,13 +105,12 @@ function assertMirrorDeployNotDuplicated({ manifestFile, selector, question, rul
 }
 
 function isResumableMirrorDeployGuard(guard = {}) {
-  return (
-    guard
-    && guard.status === 'manual_review_required'
-    && typeof guard.pollAddress === 'string'
-    && /^0x[a-fA-F0-9]{40}$/.test(guard.pollAddress)
-    && !guard.marketTxHash
-  );
+  if (!guard) return false;
+  if (guard.status !== 'manual_review_required') return false;
+  if (typeof guard.pollAddress !== 'string') return false;
+  if (!/^0x[a-fA-F0-9]{40}$/.test(guard.pollAddress)) return false;
+  if (guard.marketTxHash) return false;
+  return true;
 }
 
 function normalizeSources(value) {
