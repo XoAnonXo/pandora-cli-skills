@@ -20,14 +20,10 @@ function requireDep(deps, name) {
  * @returns {string|null}
  */
 function toWsUrl(indexerUrl) {
-  try {
-    const parsed = new URL(String(indexerUrl || ''));
-    if (parsed.protocol === 'https:') parsed.protocol = 'wss:';
-    if (parsed.protocol === 'http:') parsed.protocol = 'ws:';
-    return parsed.toString();
-  } catch {
-    return null;
-  }
+  const parsed = new URL(String(indexerUrl || ''));
+  if (parsed.protocol === 'https:') parsed.protocol = 'wss:';
+  if (parsed.protocol === 'http:') parsed.protocol = 'ws:';
+  return parsed.toString();
 }
 
 /**
