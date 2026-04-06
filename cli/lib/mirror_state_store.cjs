@@ -89,10 +89,6 @@ function ensureAccountingShape(raw) {
     polymarketInventoryAddress: normalizeOptionalString(data.polymarketInventoryAddress),
     managedPolymarketYesShares,
     managedPolymarketNoShares,
-    managedPolymarketYesUsdc:
-      managedPolymarketYesShares,
-    managedPolymarketNoUsdc:
-      managedPolymarketNoShares,
     managedInventorySeed: ensureManagedInventorySeedShape(data.managedInventorySeed),
   };
 }
