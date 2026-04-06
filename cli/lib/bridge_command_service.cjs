@@ -143,6 +143,27 @@ function buildBridgeSuggestions(plan) {
   return suggestions;
 }
 
+function renderBridgeHelp(context, CliError) {
+  const usage = 'pandora [--output table|json] bridge plan|execute [--target <wallet|polymarket>] --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--provider layerzero] [--dry-run]';
+  const notes = [
+    'bridge plan previews cross-chain USDC movement with gas estimates and route suggestions.',
+    'bridge execute submits a LayerZero bridge transaction or dry-runs preflight checks.',
+    'Use --dry-run with execute to validate without signing.',
+    'After bridging to Polygon, use `pandora polymarket deposit` to fund the proxy wallet.',
+  ];
+
+  if (context && context.outputMode === 'json') {
+    process.stdout.write(JSON.stringify({ ok: true, command: 'bridge.help', data: { usage, notes } }, null, 2) + '\n');
+  } else {
+    // eslint-disable-next-line no-console
+    console.log(`Usage: ${usage}`);
+    notes.forEach((note) => {
+      // eslint-disable-next-line no-console
+      console.log(note);
+    });
+  }
+}
+
 function parseBridgeFlags(args, CliError, config = {}) {function buildBridgeUsageEnvelope() {
   const usage =
     'pandora [--output table|json] bridge plan --target <polymarket|polymarket-cctp> --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--provider layerzero] [--dry-run] [--execute]\n' +
