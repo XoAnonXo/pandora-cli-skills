@@ -80,6 +80,30 @@ test('parseSectionProposal skips stray braces before the real JSON object', () =
   assert.equal(proposal.validationNotes[0], 'Run mirror help tests');
 });
 
+test('parseSectionProposal ignores generic code fences before the real JSON object', () => {
+  const proposal = parseSectionProposal([
+    '```js',
+    "const noisy = 'not json';",
+    '```',
+    '',
+    '{',
+    '  "hypothesisId": "json-after-fence",',
+    '  "summary": "Use the actual JSON block",',
+    '  "why": "The model can emit a helper snippet before the proposal.",',
+    '  "targetFiles": ["cli/lib/mirror_command_service.cjs"],',
+    '  "expectedImpact": {',
+    '    "clarity": "Cleaner parsing",',
+    '    "speed": "No runtime change",',
+    '    "simplicity": "Fewer malformed baton packets"',
+    '  },',
+    '  "validationNotes": ["Run the parser again"],',
+    '  "changeSet": []',
+    '}',
+  ].join('\n'));
+  assert.equal(proposal.hypothesisId, 'json-after-fence');
+  assert.equal(proposal.expectedImpact.simplicity, 'Fewer malformed baton packets');
+});
+
 test('buildDecisionSummary keeps simpler changes even when speed is flat', () => {
   const section = {
     allowNeutralKeep: false,

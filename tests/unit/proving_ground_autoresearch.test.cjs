@@ -56,6 +56,32 @@ test('extractFirstJsonObject and parseResearchProposal handle fenced JSON', () =
   assert.equal(proposal.validationNotes.length, 1);
 });
 
+test('extractFirstJsonObject skips generic code fences and finds the first valid JSON object', () => {
+  const text = [
+    '```js',
+    "const noisy = 'not json';",
+    '```',
+    '',
+    '{',
+    '  "hypothesisId": "h2",',
+    '  "summary": "Trim one validator",',
+    '  "why": "Faster quick gate",',
+    '  "targetFiles": ["package.json"],',
+    '  "expectedImpact": {',
+    '    "speed": "Lower gate time",',
+    '    "simplicity": "Smaller loop",',
+    '    "resilience": "No runtime regression"',
+    '  },',
+    '  "validationNotes": ["Run the quick gate again"],',
+    '  "changeSet": []',
+    '}',
+  ].join('\n');
+
+  assert.match(extractFirstJsonObject(text), /"hypothesisId": "h2"/);
+  const proposal = parseResearchProposal(text);
+  assert.equal(proposal.hypothesisId, 'h2');
+});
+
 test('runValidationPlan records passing and failing commands', () => {
   const plan = runValidationPlan([
     'node -e "process.exit(0)"',

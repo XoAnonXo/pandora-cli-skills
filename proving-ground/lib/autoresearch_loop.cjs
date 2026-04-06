@@ -6,6 +6,7 @@ const { normalizeSimulationLock } = require('../../benchmarks/lib/simulation_wor
 const { applyChangeSet, rollbackAppliedChangeSet } = require('./change_set_engine.cjs');
 const { callMinimaxChat, DEFAULT_MINIMAX_API_KEY_ENV } = require('./minimax_client.cjs');
 const { loadScenarioFamily } = require('./scenario_family_loader.cjs');
+const { extractJsonObjectFromText } = require('./baton_common.cjs');
 
 const RESEARCH_SCHEMA_VERSION = '1.0.0';
 const DEFAULT_GOAL = 'Make Pandora faster, more simple, and more resilient without adding benchmark-only behavior.';
@@ -282,23 +283,7 @@ function buildResearchPrompt(options) {
 }
 
 function extractFirstJsonObject(text) {
-  const trimmed = String(text || '').trim();
-  if (!trimmed) {
-    throw new Error('Model returned an empty response');
-  }
-  const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)```/i) || trimmed.match(/```\s*([\s\S]*?)```/i);
-  if (fencedMatch) {
-    return fencedMatch[1].trim();
-  }
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    return trimmed;
-  }
-  const firstBrace = trimmed.indexOf('{');
-  const lastBrace = trimmed.lastIndexOf('}');
-  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-    throw new Error('Model response does not contain a JSON object');
-  }
-  return trimmed.slice(firstBrace, lastBrace + 1);
+  return extractJsonObjectFromText(text, 'Model response');
 }
 
 function parseResearchProposal(text) {

@@ -138,22 +138,34 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function tryParseJsonCandidate(text) {
+  const trimmed = normalizeText(text);
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
 function extractJsonObjectFromText(text, errorLabel = 'Response') {
   const trimmed = normalizeText(text);
   if (!trimmed) {
     throw new Error(`${errorLabel} was empty`);
   }
-  const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)```/i) || trimmed.match(/```\s*([\s\S]*?)```/i);
-  if (fencedMatch) {
-    return fencedMatch[1].trim();
-  }
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    try {
-      JSON.parse(trimmed);
-      return trimmed;
-    } catch {
-      // Fall through and keep scanning for a valid object.
+  const jsonFenceMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
+  if (jsonFenceMatch) {
+    const candidate = tryParseJsonCandidate(jsonFenceMatch[1]);
+    if (candidate) {
+      return candidate;
     }
+  }
+  const directCandidate = tryParseJsonCandidate(trimmed);
+  if (directCandidate) {
+    return directCandidate;
   }
   for (let start = 0; start < trimmed.length; start += 1) {
     if (trimmed[start] !== '{') {
@@ -193,13 +205,11 @@ function extractJsonObjectFromText(text, errorLabel = 'Response') {
       if (depth !== 0) {
         continue;
       }
-      const candidate = trimmed.slice(start, index + 1);
-      try {
-        JSON.parse(candidate);
+      const candidate = tryParseJsonCandidate(trimmed.slice(start, index + 1));
+      if (candidate) {
         return candidate;
-      } catch {
-        break;
       }
+      break;
     }
   }
   throw new Error(`${errorLabel} did not contain valid JSON`);
