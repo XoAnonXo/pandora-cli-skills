@@ -58,8 +58,8 @@ function computeLiquidityRecommendation(input = {}) {
   const lDepth = depthEpsUsd > 0 ? depthEpsUsd / depthUtilization : 0;
   const lImpact = qTarget / targetSlippage;
 
-  if (v24 <= 0) diagnostics.push('Source 24h volume unavailable/zero; liquidity model relies on depth + impact floors.');
-  if (depthEpsUsd <= 0) diagnostics.push('Source orderbook depth unavailable/zero; liquidity model relies on volume + impact floors.');
+  if (v24 <= 0) diagnostics.push('24h volume unavailable; volume floor disabled; recommendation depends on depth and impact inputs.');
+  if (depthEpsUsd <= 0) diagnostics.push('Orderbook depth unavailable; depth floor disabled; recommendation depends on volume and impact inputs.');
 
   const baseLiquidity = Math.max(lVolume, lDepth, lImpact);
   const recommendedLiquidityUsd = clamp(baseLiquidity * safetyMultiplier, minLiquidityUsd, maxLiquidityUsd);
