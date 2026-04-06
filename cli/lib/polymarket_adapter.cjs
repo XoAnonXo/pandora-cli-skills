@@ -1,5 +1,4 @@
 const { ClobClient, Chain } = require('@polymarket/clob-client');
-const WebSocket = require('ws');
 const { toNumber } = require('./shared/utils.cjs');
 
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
