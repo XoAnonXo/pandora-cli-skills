@@ -20,6 +20,8 @@ function uniqueStrings(values) {
 }
 
 function renderPolicyTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  NAME  SOURCE  DESCRIPTION');
   const items = Array.isArray(payload.items) ? payload.items : [payload.item || payload];
   for (const item of items) {
     if (!item) continue;
@@ -41,6 +43,8 @@ function renderPolicyExplainTable(payload) {
 }
 
 function renderPolicyRecommendTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  DECISION  USABLE  SOURCE');
   const candidates = Array.isArray(payload && payload.candidates) ? payload.candidates : [];
   for (const candidate of candidates) {
     // eslint-disable-next-line no-console

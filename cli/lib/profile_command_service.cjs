@@ -54,6 +54,8 @@ function displayCategoryList(values) {
 }
 
 function renderProfileListTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  BACKEND  MUTABLE  STATUS  SOURCE');
   const items = Array.isArray(payload && payload.items) ? payload.items : [];
   for (const item of items) {
     // eslint-disable-next-line no-console
@@ -68,6 +70,8 @@ function renderProfileGetTable(payload) {
   const resolution = payload && payload.resolution ? payload.resolution : null;
   if (!profile) return;
   // eslint-disable-next-line no-console
+  console.log('ID  BACKEND  MUTABLE');
+  // eslint-disable-next-line no-console
   console.log(`${profile.id}  ${profile.signerBackend}  ${profile.readOnly ? 'read-only' : 'mutable'}`);
   if (resolution) {
     // eslint-disable-next-line no-console
@@ -80,6 +84,8 @@ function renderProfileExplainTable(payload) {
   const resolution = payload && payload.resolution ? payload.resolution : null;
   const explanation = payload && payload.explanation ? payload.explanation : null;
   if (!profile) return;
+  // eslint-disable-next-line no-console
+  console.log('ID  BACKEND  MUTABLE');
   // eslint-disable-next-line no-console
   console.log(`${profile.id}  ${profile.signerBackend}  ${profile.readOnly ? 'read-only' : 'mutable'}`);
   if (!explanation) {
@@ -104,6 +110,8 @@ function renderProfileExplainTable(payload) {
 
 
 function renderProfileRecommendTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  RECOMMENDED_MODE  USABLE  TOOL');
   const items = Array.isArray(payload && payload.items) ? payload.items : [];
   for (const item of items) {
     // eslint-disable-next-line no-console
@@ -112,6 +120,8 @@ function renderProfileRecommendTable(payload) {
 }
 
 function renderProfileValidateTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  BACKEND  MUTABLE  READY');
   const items = Array.isArray(payload && payload.items) ? payload.items : [];
   for (const item of items) {
     // eslint-disable-next-line no-console
