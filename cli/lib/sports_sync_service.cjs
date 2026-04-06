@@ -46,20 +46,6 @@ function toIso(value) {
   return new Date(ms === null ? Date.now() : ms).toISOString();
 }
 /**
- * Return the first defined value among variadic arguments.
- * @param {...unknown} args
- * @returns {unknown}
- */
-function firstOf(...args) {
-  for (const arg of args) {
-    if (arg !== undefined && arg !== null) {
-      return arg;
-    }
-  }
-  return undefined;
-}
-
-/**
  * Infer sync event state (`prematch`, `live`, `near-settle`) from common feed fields.
  * @param {object} event
  * @param {{now?: Date|string|number, nearSettleWindowMs?: number}} [options]
