@@ -143,7 +143,47 @@ function buildBridgeSuggestions(plan) {
   return suggestions;
 }
 
-function parseBridgeFlags(args, CliError, config = {}) {
+function parseBridgeFlags(args, CliError, config = {}) {function buildBridgeUsageEnvelope() {
+  const usage =
+    'pandora [--output table|json] bridge plan --target <polymarket|polymarket-cctp> --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--provider layerzero] [--dry-run] [--execute]\n' +
+    'pandora [--output table|json] bridge execute --provider <layerzero> --target <polymarket|polymarket-cctp> --amount-usdc <n> [--wallet <address>] [--dry-run] [--execute]';
+  const notes = [
+    'Use bridge plan to preview gas requirements, route, and any source-side shortfalls.',
+    'Use bridge execute (or --execute with plan) to submit the LayerZero transaction.',
+    'The target polymarket-cctp uses Circle CCTP for USDC-native transfers; polymarket uses ERC-20 bridging.',
+    '--dry-run simulates preflight without submitting; --execute sends the transaction.',
+  ];
+  return { usage, notes };
+}
+
+function runBridgeHelp(context) {
+  const { outputMode } = context;
+  if (outputMode === 'json') {
+    const { usage, notes } = buildBridgeUsageEnvelope();
+    const envelope = { ok: true, command: 'bridge.help', data: { usage, notes } };
+    process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('Usage: pandora [--output table|json] bridge plan --target <polymarket|polymarket-cctp> --amount-usdc <n> [--wallet <address>] [--to-wallet <address>] [--rpc-url <url>] [--provider layerzero] [--dry-run] [--execute]');
+    // eslint-disable-next-line no-console
+    console.log('       pandora [--output table|json] bridge execute --provider <layerzero> --target <polymarket|polymarket-cctp> --amount-usdc <n> [--wallet <address>] [--dry-run] [--execute]');
+    // eslint-disable-next-line no-console
+    console.log('');
+    // eslint-disable-next-line no-console
+    console.log('Subcommands: plan, execute');
+    // eslint-disable-next-line no-console
+    console.log('');
+    // eslint-disable-next-line no-console
+    console.log('Use bridge plan to preview gas requirements, route, and any source-side shortfalls.');
+    // eslint-disable-next-line no-console
+    console.log('Use bridge execute (or --execute with plan) to submit the LayerZero transaction.');
+    // eslint-disable-next-line no-console
+    console.log("The target polymarket-cctp uses Circle CCTP for USDC-native transfers; polymarket uses ERC-20 bridging.");
+    // eslint-disable-next-line no-console
+    console.log('--dry-run simulates preflight without submitting; --execute sends the transaction.');
+  }
+}
+
   const actionLabel = String(config.actionLabel || 'plan');
   const includeMode = config.includeMode === true;
   const options = {
