@@ -160,8 +160,7 @@ function deriveCadenceByEventState(event = {}, options = {}) {
     Number.isFinite(overrides.prematch) && overrides.prematch > 0 ? Number(overrides.prematch) : DEFAULT_SYNC_CADENCE_MS.prematch;
   const liveCadence =
     Number.isFinite(overrides.live) && overrides.live > 0 ? Number(overrides.live) : DEFAULT_SYNC_CADENCE_MS.live;
-  const nearSettleCadenceInput =
-    overrides.nearSettle !== undefined ? overrides.nearSettle : overrides['near-settle'];
+  const nearSettleCadenceInput = overrides['near-settle'];
   const nearSettleCadence =
     Number.isFinite(nearSettleCadenceInput) && nearSettleCadenceInput > 0
       ? Number(nearSettleCadenceInput)
