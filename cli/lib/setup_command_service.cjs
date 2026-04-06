@@ -133,6 +133,23 @@ function syncProcessEnv(previousEnv, nextEnv) {
   }
 }
 
+// Shared constants for help documentation
+const GOAL_SHORTCUTS = Object.freeze([
+  ['paper', 'paper-mirror'],
+  ['live', 'live-mirror'],
+  ['gateway', 'hosted-gateway'],
+  ['paper-hedge', 'paper-hedge-daemon'],
+  ['live-hedge', 'live-hedge-daemon'],
+  ['paper-daemon', 'paper-hedge-daemon'],
+  ['live-daemon', 'live-hedge-daemon'],
+]);
+const SETUP_NOTES = Object.freeze([
+  'Shorthand goals are accepted: paper → paper-mirror, live → live-mirror, gateway → hosted-gateway, etc.',
+  '--interactive enters a guided setup wizard; --plan previews changes without applying them.',
+  '--example copies an .env file to --dotenv-path before wizard prompts, seeding defaults.',
+  '--force overwrites existing .env files; otherwise setup reuses them with --interactive prompts.',
+  'Use --check-usdc-code and --check-polymarket to validate optional Polymarket integration.',
+]);
 function createSetupCommandService(deps = {}) {
   const CliError = requireDep(deps, 'CliError');
   const buildDoctorReport = requireDep(deps, 'buildDoctorReport');
