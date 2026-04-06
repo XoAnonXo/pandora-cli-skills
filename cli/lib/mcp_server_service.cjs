@@ -40,12 +40,10 @@ function createRunMcpServer(options = {}) {
             notes: [
               'pandora mcp runs an MCP stdio server.',
               'pandora mcp http runs a remote streamable HTTP MCP gateway.',
-              'The HTTP gateway also exposes direct authenticated endpoints for /auth, /bootstrap, /capabilities, /schema, /tools, and /operations.',
               '--compact-tools / --code-mode exposes only search and execute over MCP for reduced tool-list token cost.',
               'Use gateway:auth:read to inspect configured principals and gateway:auth:write to rotate or revoke bearer tokens remotely.',
               '--auth-tokens-file enables multi-principal rotation and durable revocation without restarting the gateway.',
               'If no auth token is provided, the gateway generates one and stores it in ~/.pandora/mcp-http/auth-token.',
-              'Do not pass --output json to this command in normal MCP operation.',
             ],
           },
         };
