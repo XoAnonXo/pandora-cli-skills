@@ -4,10 +4,13 @@ const WEBHOOK_SCHEMA_VERSION = '1.0.0';
 const DEFAULT_WEBHOOK_TIMEOUT_MS = 5_000;
 const DEFAULT_WEBHOOK_RETRIES = 3;
 
+function coalesceStr(value, ifEmpty) {
+  const text = typeof value === 'string' ? value.trim() : String(value || '').trim();
+  return text || ifEmpty;
+}
+
 function normalizeOptionalString(value) {
-  if (value === undefined || value === null) return null;
-  const text = String(value).trim();
-  return text || null;
+  return coalesceStr(value, null);
 }
 
 function hasWebhookTargets(options) {
@@ -25,14 +28,11 @@ function renderTemplate(template, context) {
     let value = context;
     for (const part of parts) {
       if (!value || typeof value !== 'object' || !(part in value)) {
-        value = '';
-        break;
+        return '';
       }
       value = value[part];
     }
-    if (value === null || value === undefined) return '';
-    if (typeof value === 'object') return JSON.stringify(value);
-    return String(value);
+    return coalesceStr(value, '');
   });
 }
 
