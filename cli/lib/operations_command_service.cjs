@@ -58,83 +58,40 @@ function createRunOperationsCommand(deps) {
   const parseOperationsFlags = requireDep(deps, 'parseOperationsFlags');
   const createOperationService = requireDep(deps, 'createOperationService');
 
+  function showActionHelp(action, eventName, usage, outputMode) {
+    if (outputMode === 'json') {
+      emitSuccess(outputMode, eventName, commandHelpPayload(usage));
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(`Usage: ${usage}`);
+    }
+  }
+
+  const VALID_ACTIONS = new Set(['get', 'list', 'receipt', 'verify-receipt', 'cancel', 'close']);
+  const ACTION_USAGE = {
+    get: 'pandora [--output table|json] operations get --id <operation-id>',
+    list: 'pandora [--output table|json] operations list [--status <csv>] [--tool <name>] [--limit <n>]',
+    receipt: 'pandora [--output table|json] operations receipt --id <operation-id>',
+    'verify-receipt': 'pandora [--output table|json] operations verify-receipt --id <operation-id>|--file <path> [--expected-operation-hash <hash>]',
+    cancel: 'pandora [--output table|json] operations cancel --id <operation-id> [--reason <text>]',
+    close: 'pandora [--output table|json] operations close --id <operation-id> [--reason <text>]',
+  };
+
   return async function runOperationsCommand(args, context) {
     const action = args[0];
+    const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'operations.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
+      showActionHelp(null, 'operations.help', 'pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]', context.outputMode);
       return;
     }
 
-    if (action === 'get' && includesHelpFlag(args.slice(1))) {
-      const usage = 'pandora [--output table|json] operations get --id <operation-id>';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'operations.get.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
-      return;
+    if (!VALID_ACTIONS.has(action)) {
+      throw new CliError('INVALID_ARGS', `Unknown operations subcommand: ${action}. Valid: ${[...VALID_ACTIONS].join('|')}`);
     }
 
-    if (action === 'list' && includesHelpFlag(args.slice(1))) {
-      const usage = 'pandora [--output table|json] operations list [--status <csv>] [--tool <name>] [--limit <n>]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'operations.list.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
-
-    if (action === 'receipt' && includesHelpFlag(args.slice(1))) {
-      const usage = 'pandora [--output table|json] operations receipt --id <operation-id>';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'operations.receipt.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
-
-    if (action === 'verify-receipt' && includesHelpFlag(args.slice(1))) {
-      const usage = 'pandora [--output table|json] operations verify-receipt --id <operation-id>|--file <path> [--expected-operation-hash <hash>]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'operations.verify-receipt.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
-
-    if (action === 'cancel' && includesHelpFlag(args.slice(1))) {
-      const usage = 'pandora [--output table|json] operations cancel --id <operation-id> [--reason <text>]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'operations.cancel.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
-
-    if (action === 'close' && includesHelpFlag(args.slice(1))) {
-      const usage = 'pandora [--output table|json] operations close --id <operation-id> [--reason <text>]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'operations.close.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
+    if (includesHelpFlag(actionArgs)) {
+      showActionHelp(action, `operations.${action}.help`, ACTION_USAGE[action], context.outputMode);
       return;
     }
 
