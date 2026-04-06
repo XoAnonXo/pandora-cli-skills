@@ -91,17 +91,24 @@ function computeWebhookBackoffMs(attemptIndex) {
   return Math.min(5_000, 200 * 2 ** attemptIndex);
 }
 
+function getNestedString(obj, ...keys) {
+  let current = obj;
+  for (const key of keys) {
+    if (!current || typeof current !== 'object') return null;
+    current = current[key];
+  }
+  return normalizeOptionalString(current);
+}
+
 function extractWebhookContextHeaders(context = {}) {
-  const eventName = normalizeOptionalString(context.event)
-    || normalizeOptionalString(context && context.payload && context.payload.event)
+  const eventName = getNestedString(context, 'event')
+    || getNestedString(context, 'payload', 'event')
     || 'pandora.alert';
-  const correlationId = normalizeOptionalString(
-    (context && context.operationEvent && context.operationEvent.correlationId)
-    || (context && context.payload && context.payload.operationEvent && context.payload.operationEvent.correlationId)
-    || context.correlationId
-    || (context && context.payload && context.payload.correlationId)
-    || context.requestId,
-  );
+  const correlationId = getNestedString(context, 'operationEvent', 'correlationId')
+    || getNestedString(context, 'payload', 'operationEvent', 'correlationId')
+    || getNestedString(context, 'correlationId')
+    || getNestedString(context, 'payload', 'correlationId')
+    || getNestedString(context, 'requestId');
   const generatedAt = normalizeOptionalString(context.generatedAt) || new Date().toISOString();
   return {
     eventName,
