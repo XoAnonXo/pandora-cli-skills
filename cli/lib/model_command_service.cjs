@@ -1,4 +1,4 @@
-const INVALID_SUBCOMMAND_MESSAGE = 'model requires subcommand: calibrate|correlation|diagnose|score brier';
+const INVALID_SUBCOMMAND_MESSAGE = 'model requires subcommand: calibrate|correlation|diagnose|score brier <metric>';
 
 /**
  * Build the `model` subcommand dispatcher with lazy-loaded action handlers.
