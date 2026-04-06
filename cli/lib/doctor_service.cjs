@@ -8,15 +8,8 @@ function requireDep(deps, name) {
 }
 
 
-const GOAL_NOTES = Object.freeze([
-  'Goal tells doctor which env vars to validate and what to recommend:',
-  '  explore       – read-only discovery (needs CHAIN_ID, RPC_URL only)',
-  '  deploy        – contract deployment (needs full signer + addresses)',
-  '  paper-mirror  – test mirroring without live credentials',
-  '  live-mirror   – production mirroring with Polymarket credentials',
-  '  hosted-gateway – Cloudflare Workers deployment path',
-  'Defaults to explore if --goal is omitted.',
-]);
+const { SETUP_GOAL_NOTES } = require('./setup_command_service.cjs');
+const GOAL_NOTES = SETUP_GOAL_NOTES;
 const DEFAULT_REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC'];
 
 const GOAL_DESCRIPTIONS = Object.freeze({
@@ -43,16 +36,7 @@ const DEFAULT_POLYMARKET_DOCTOR_KEYS = [
 ];
 const { normalizeResolutionSources } = require('./shared/resolution_sources.cjs');
 
-const DEFAULT_HELP_NOTES = Object.freeze([
-  'Goal options:',
-  '  explore           Read-only exploration of chain and market data',
-  '  deploy            Deploy contracts with a signing wallet',
-  '  paper-mirror      Follow Polymarket odds without live credentials',
-  '  live-mirror       Follow Polymarket odds with live market making',
-  '  hosted-gateway    Connect to a hosted remote gateway',
-  '  paper-hedge-daemon  Delta-neutral Polymarket hedging (paper mode)',
-  '  live-hedge-daemon   Delta-neutral Polymarket hedging (live mode)',
-]);
+
 
 function getGoalDescription(goal) {
   return GOAL_DESCRIPTIONS[normalizeGoal(goal)] || null;
