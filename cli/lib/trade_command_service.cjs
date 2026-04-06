@@ -54,7 +54,7 @@ function createRunOutcomeTradeCommand(deps, config) {
           if (typeof printHelpTable === 'function' && defaultMode === 'sell') {
             printHelpTable(true);
           } else {
-            console.log('Usage: pandora trade quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]');
+            console.log('Usage: pandora quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]');
           }
         }
         return;
