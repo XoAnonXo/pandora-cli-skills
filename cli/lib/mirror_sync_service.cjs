@@ -64,7 +64,7 @@ function toFiniteNumberOrNull(value) {
 function roundUsdc(value) {
   const numeric = toFiniteNumberOrNull(value);
   if (numeric === null) return null;
-  return Math.round(numeric * 1_000_000) / 1_000_000;
+  return Math.round(numeric * 1e6) / 1e6;
 }
 
 function parseBooleanish(value) {
