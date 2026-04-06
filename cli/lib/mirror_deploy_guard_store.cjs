@@ -62,12 +62,23 @@ function writeMirrorDeployGuard(input = {}, guard = {}, options = {}) {
     guardId: resolved.guardId,
     ...guard,
   };
-  fs.writeFileSync(resolved.filePath, JSON.stringify(payload, null, 2), { mode: 0o600 });
-  return {
-    ...resolved,
-    found: true,
-    guard: payload,
-  };
+  const tmpPath = `${resolved.filePath}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), { mode: 0o600 });
+    fs.renameSync(tmpPath, resolved.filePath);
+    return {
+      ...resolved,
+      found: true,
+      guard: payload,
+    };
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+      // best-effort temp cleanup
+    }
+    throw err;
+  }
 }
 
 function beginMirrorDeployGuard(input = {}, details = {}, options = {}) {
