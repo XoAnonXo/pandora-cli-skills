@@ -95,9 +95,7 @@ function pairMatches(record, selector = {}) {
 function compareIsoTimestampsDesc(left, right) {
   const leftValue = typeof left === 'string' && left ? Date.parse(left) : NaN;
   const rightValue = typeof right === 'string' && right ? Date.parse(right) : NaN;
-  const normalizedLeft = Number.isFinite(leftValue) ? leftValue : 0;
-  const normalizedRight = Number.isFinite(rightValue) ? rightValue : 0;
-  return normalizedRight - normalizedLeft;
+  return rightValue - leftValue;
 }
 
 function sameSourceIdentity(left = {}, right = {}) {
