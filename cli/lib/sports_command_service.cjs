@@ -24,17 +24,20 @@ const BULK_ODDS_TTL_GT_24H_MS = 5 * 60_000;
 const BULK_ODDS_TTL_GT_1H_MS = 60_000;
 const BULK_ODDS_TTL_LIVE_OR_NEAR_MS = 30_000;
 
+function getPandoraHomeDir() {
+  const home = process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
+  return path.join(home, '.pandora');
+}
+
 function defaultStateFile() {
   if (isMcpMode()) {
     return path.resolve(process.cwd(), '.pandora', 'sports', 'sports_sync_state.json');
   }
-  const home = process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
-  return path.join(home, '.pandora', 'sports_sync_state.json');
+  return path.join(getPandoraHomeDir(), 'sports_sync_state.json');
 }
 
 function defaultBulkOddsCacheDir() {
-  const home = process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
-  return path.join(home, '.pandora', 'cache', 'odds');
+  return path.join(getPandoraHomeDir(), 'cache', 'odds');
 }
 
 function toPositiveIntOrNull(value) {
