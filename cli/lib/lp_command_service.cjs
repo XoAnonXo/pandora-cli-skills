@@ -42,11 +42,6 @@ function inferOperationStatus(payload, defaultStatus) {
 
 function buildLpOperationContext(options = {}, payload = {}) {
   const action = payload && payload.action ? payload.action : options.action;
-  const allMarkets = action === 'remove-all-markets' || Boolean(options.allMarkets);
-  if (!allMarkets) {
-    return null;
-  }
-
   const wallet = normalizeOperationToken(payload.wallet || options.wallet);
   if (!wallet) {
     return null;

@@ -46,7 +46,7 @@ function buildCreateHelp(commandHelpPayload) {
     'Use `--yes-reserve-weight-pct` / `--no-reserve-weight-pct` only for explicit pool allocation. A 77/23 reserve split opens YES near 23/77.',
     'Legacy `--distribution-yes-pct` / `--distribution-no-pct` are rejected with a migration error because they were ambiguous for AMM pricing.',
     'If you omit AMM distribution flags, markets create seeds a balanced 50/50 pool.',
-    'Legacy `launch` remains script-native; `markets create` is the canonical agent-facing replacement.',
+    'Legacy `launch` remains available for script-native flows; `markets create` is the canonical agent-facing replacement.',
   ];
   return {
     command: 'markets.create.help',
