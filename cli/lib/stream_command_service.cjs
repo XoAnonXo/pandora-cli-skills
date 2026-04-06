@@ -46,10 +46,23 @@ function writeNdjson(payload) {
  * @returns {(payload: object) => Promise<void>}
  */
 function createQueuedWriter() {
-  let chain = Promise.resolve();
+  let busy = false;
+  const queue = [];
+
+  async function flush() {
+    while (queue.length > 0) {
+      const payload = queue.shift();
+      await writeNdjson(payload);
+    }
+    busy = false;
+  }
+
   return (payload) => {
-    chain = chain.catch(() => {}).then(() => writeNdjson(payload));
-    return chain;
+    queue.push(payload);
+    if (!busy) {
+      busy = true;
+      flush();
+    }
   };
 }
 
