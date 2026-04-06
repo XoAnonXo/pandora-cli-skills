@@ -75,12 +75,10 @@ function buildDiscordRequest(options, context) {
   };
 }
 
-function isRetryableStatus(statusCode) {
-  return statusCode === 408 || statusCode === 409 || statusCode === 425 || statusCode === 429 || statusCode >= 500;
-}
-
 function isRetryableWebhookFailure(error, statusCode) {
-  if (Number.isInteger(statusCode)) return isRetryableStatus(statusCode);
+  if (Number.isInteger(statusCode)) {
+    return statusCode === 408 || statusCode === 409 || statusCode === 425 || statusCode === 429 || statusCode >= 500;
+  }
   const code = normalizeOptionalString(error && error.code);
   if (code === 'ERR_INVALID_URL') return false;
   if (error && error.name === 'AbortError') return true;
