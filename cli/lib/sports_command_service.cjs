@@ -41,7 +41,7 @@ function defaultBulkOddsCacheDir() {
 }
 
 function toPositiveIntOrNull(value) {
-  if (value === null || value === undefined || value === '') return null;
+  if (value == null || value === '') return null;
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
   return Math.trunc(numeric);
@@ -124,7 +124,7 @@ function deriveBulkOddsTtlPolicy(event, nowMs = Date.now()) {
     return {
       state: 'live',
       ttlMs: BULK_ODDS_TTL_LIVE_OR_NEAR_MS,
-      kickoffAt: event && event.startTime ? event.startTime : null,
+      kickoffAt: event.startTime || null,
     };
   }
 
