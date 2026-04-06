@@ -148,11 +148,16 @@ function isPidAlive(pid) {
 }
 
 function hasIdentityMetadata(metadata = {}) {
-  return Boolean(
-    (typeof metadata.launchCommand === 'string' && metadata.launchCommand.trim())
-    || (typeof metadata.cliPath === 'string' && metadata.cliPath.trim())
-    || (Array.isArray(metadata.cliArgs) && metadata.cliArgs.length),
-  );
+  const values = [
+    metadata.launchCommand,
+    metadata.cliPath,
+    metadata.cliArgs,
+  ];
+  return values.some((v) => {
+    if (typeof v === 'string') return v.trim() !== '';
+    if (Array.isArray(v)) return v.length > 0;
+    return false;
+  });
 }
 
 function readProcessCommandLine(pid) {
