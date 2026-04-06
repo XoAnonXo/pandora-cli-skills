@@ -36,12 +36,7 @@ function createRunModelCommand(deps) {
     }
 
     const loaded = load();
-    const handler =
-      typeof loaded === 'function'
-        ? loaded
-        : loaded && typeof loaded.handle === 'function'
-          ? loaded.handle
-          : null;
+    const handler = loaded && typeof loaded.handle === 'function' ? loaded.handle : null;
 
     if (!handler) {
       throw new Error(`Invalid model handler module for action: ${action}`);
