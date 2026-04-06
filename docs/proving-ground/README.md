@@ -57,6 +57,13 @@ The first loop is now wired in the repo:
 - it only mutates code when the tree is clean and the edit is small and reversible `(structured change-set + rollback)`
 - the full gate now includes one real hedge-daemon rehearsal through the CLI `(deploy dry-run + start daemon + inject outside trade + verify hedge timing)`
 
+The CLI improvement lane is now baton-based:
+- one isolated lane per CLI section `(lane worktree)`
+- one worker gets one try `(single-attempt epoch)`
+- every try writes a handoff `(handoff receipt)`
+- the Council of Six reviews the proposal before code is touched `(review gate)`
+- accepted lane commits replay into one integration branch before the final repo proof `(integration fan-in + promotion gate)`
+
 ## Calibration
 
 The proving ground is only useful if it stays honest.

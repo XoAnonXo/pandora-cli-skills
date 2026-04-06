@@ -23,6 +23,46 @@ module.exports = {
       'npm run verify:tests',
     ],
   },
+  baton: {
+    reportDir: 'proving-ground/reports/baton',
+    laneCount: 10,
+    maxParallelWorkers: 10,
+    heartbeatTimeoutMs: 30000,
+    cleanupPolicy: 'manual',
+    pausePollMs: 250,
+  },
+  worker: {
+    timeBudgetMs: 1800000,
+    tokenBudget: 120000,
+    oneAttempt: true,
+    maxModelCalls: 1,
+    promptVersion: 'baton-v1',
+  },
+  council: {
+    roles: [
+      'correctness',
+      'determinism',
+      'safety',
+      'performance',
+      'simplicity',
+      'goal-fit',
+    ],
+    quorum: 4,
+    reviseCap: 1,
+    dedupe: true,
+  },
+  integration: {
+    branchPrefix: 'codex/baton',
+    mergeOrder: 'lane-index',
+    promotionBranch: 'main',
+    worktreeName: 'integration',
+  },
+  validation: {
+    syntheticModel: false,
+    syntheticCouncil: false,
+    runRealWorktrees: true,
+    failureInjection: {},
+  },
   sections: [
     {
       id: 'onboarding-contracts',

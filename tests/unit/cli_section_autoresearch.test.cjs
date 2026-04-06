@@ -17,6 +17,9 @@ test('CLI section research config loads the expected section registry', () => {
   assert.equal(config.sections.length, 10);
   assert.equal(config.researchLoop.iterationsPerSection, 50);
   assert.equal(config.model.provider, 'minimax');
+  assert.equal(config.baton.laneCount, 10);
+  assert.equal(config.worker.oneAttempt, true);
+  assert.equal(config.council.quorum, 4);
 });
 
 test('CLI section coverage assigns every command descriptor to a section', () => {

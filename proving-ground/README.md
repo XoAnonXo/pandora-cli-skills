@@ -34,24 +34,53 @@ The proving ground now has one production-shaped daemon gate:
 This is still a narrow first lane, not the full long-run sandbox we want.
 But it gives us one honest daemon rehearsal inside the validation gates.
 
-## Autoresearch Loop
+## CLI Baton System
 
-The proving ground now has a first research loop runner:
+The CLI now has a second proving-ground lane for product improvement.
 
-- it loads the sandbox family
-- it runs quick and full validation gates
-- it can ask MiniMax for one bounded improvement idea `(MiniMax-M2.7-highspeed)`
-- it writes a report and handoff for every run
-- it can apply only small structured edits with rollback when the git tree is clean
+What we need to have is a relay race for CLI ideas `(baton control plane)`, not one long worker carrying stale context.
 
-Run it like this:
-
-```bash
-node scripts/run_proving_ground_autoresearch.cjs --mode proposal
+```mermaid
+flowchart LR
+A["10 CLI lanes"] --> B["One fresh worker per lane attempt"]
+B --> C["One proposal"]
+C --> D["Council of Six reviews it"]
+D --> E["Accepted change is tested and committed"]
+E --> F["Worker writes handoff and leaves"]
+F --> G["Fresh worker picks up the next baton"]
 ```
 
-For a safe local proof without calling the model:
+The baton runner now does this:
+
+- creates one isolated worktree per CLI lane `(lane worktree)`
+- gives each worker exactly one try `(single-attempt epoch)`
+- writes a handoff after every attempt `(handoff receipt)`
+- asks the Council of Six before changing code `(review gate)`
+- promotes accepted lane commits into one integration branch `(integration fan-in)`
+- runs the final repo validation before calling the batch ready `(promotion gate)`
+
+Run the baton controller like this:
 
 ```bash
-node scripts/run_proving_ground_autoresearch.cjs --mode baseline --skip-model
+npm run proving-ground:autoresearch:cli:baton
+```
+
+Run the hybrid proof like this:
+
+```bash
+npm run proving-ground:autoresearch:cli:baton:validate
+```
+
+Operator commands:
+
+```bash
+node scripts/run_cli_baton_autoresearch.cjs inspect-batch --batch-dir <batchDir>
+node scripts/run_cli_baton_autoresearch.cjs inspect-lane --batch-dir <batchDir> --lane lane-01
+node scripts/run_cli_baton_autoresearch.cjs inspect-handoff --batch-dir <batchDir> --lane lane-01
+node scripts/run_cli_baton_autoresearch.cjs pause --batch-dir <batchDir> --reason "operator check"
+node scripts/run_cli_baton_autoresearch.cjs resume --batch-dir <batchDir>
+node scripts/run_cli_baton_autoresearch.cjs requeue --batch-dir <batchDir> --lane lane-01
+node scripts/run_cli_baton_autoresearch.cjs archive-lane --batch-dir <batchDir> --lane lane-01
+node scripts/run_cli_baton_autoresearch.cjs promote --batch-dir <batchDir>
+node scripts/run_cli_baton_autoresearch.cjs cleanup --batch-dir <batchDir>
 ```

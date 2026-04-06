@@ -74,6 +74,11 @@ function loadCliSectionResearchConfig(options = {}) {
   const { sourcePath, document } = readConfigDocument(options.configPath, cwd);
   const model = document.model && typeof document.model === 'object' ? document.model : {};
   const researchLoop = document.researchLoop && typeof document.researchLoop === 'object' ? document.researchLoop : {};
+  const baton = document.baton && typeof document.baton === 'object' ? document.baton : {};
+  const worker = document.worker && typeof document.worker === 'object' ? document.worker : {};
+  const council = document.council && typeof document.council === 'object' ? document.council : {};
+  const integration = document.integration && typeof document.integration === 'object' ? document.integration : {};
+  const validation = document.validation && typeof document.validation === 'object' ? document.validation : {};
   const sections = Array.isArray(document.sections) ? document.sections.map((section) => normalizeSection(section, {
     allowNeutralKeep: false,
   })) : [];
@@ -104,6 +109,42 @@ function loadCliSectionResearchConfig(options = {}) {
       allowDirtyTree: options.allowDirty === true || researchLoop.allowDirtyTree === true,
       maxSlowdownRatio: Math.max(1, normalizeNumber(researchLoop.maxSlowdownRatio, 1.02)),
       finalValidation: normalizeStringList(researchLoop.finalValidation),
+    },
+    baton: {
+      reportDir: normalizeText(baton.reportDir) || 'proving-ground/reports/baton',
+      laneCount: Math.max(1, Math.round(normalizeNumber(baton.laneCount, sections.length || 1))),
+      maxParallelWorkers: Math.max(1, Math.round(normalizeNumber(baton.maxParallelWorkers, sections.length || 1))),
+      heartbeatTimeoutMs: Math.max(1000, Math.round(normalizeNumber(baton.heartbeatTimeoutMs, 30000))),
+      cleanupPolicy: normalizeText(baton.cleanupPolicy) || 'manual',
+      pausePollMs: Math.max(100, Math.round(normalizeNumber(baton.pausePollMs, 250))),
+      worktreeRoot: normalizeText(baton.worktreeRoot) || '',
+    },
+    worker: {
+      timeBudgetMs: Math.max(1000, Math.round(normalizeNumber(worker.timeBudgetMs, 30 * 60 * 1000))),
+      tokenBudget: Math.max(0, Math.round(normalizeNumber(worker.tokenBudget, 120000))),
+      oneAttempt: normalizeBoolean(worker.oneAttempt, true),
+      maxModelCalls: Math.max(1, Math.round(normalizeNumber(worker.maxModelCalls, 1))),
+      promptVersion: normalizeText(worker.promptVersion) || 'baton-v1',
+    },
+    council: {
+      roles: normalizeStringList(council.roles, ['correctness', 'determinism', 'safety', 'performance', 'simplicity', 'goal-fit']),
+      quorum: Math.max(1, Math.round(normalizeNumber(council.quorum, 4))),
+      reviseCap: Math.max(0, Math.round(normalizeNumber(council.reviseCap, 1))),
+      dedupe: normalizeBoolean(council.dedupe, true),
+    },
+    integration: {
+      branchPrefix: normalizeText(integration.branchPrefix) || 'codex/baton',
+      mergeOrder: normalizeText(integration.mergeOrder) || 'lane-index',
+      promotionBranch: normalizeText(integration.promotionBranch) || 'main',
+      worktreeName: normalizeText(integration.worktreeName) || 'integration',
+    },
+    validation: {
+      syntheticModel: normalizeBoolean(validation.syntheticModel, false),
+      syntheticCouncil: normalizeBoolean(validation.syntheticCouncil, false),
+      runRealWorktrees: normalizeBoolean(validation.runRealWorktrees, true),
+      failureInjection: validation.failureInjection && typeof validation.failureInjection === 'object'
+        ? cloneJson(validation.failureInjection)
+        : {},
     },
     sections,
   };
@@ -806,10 +847,16 @@ module.exports = {
   CLI_SECTION_RESEARCH_SCHEMA_VERSION,
   DEFAULT_CONFIG_PATH,
   buildDecisionSummary,
+  buildInvalidProposalFallback,
+  captureHelpContext,
+  createEmptyValidationSummary,
   buildSectionCoverage,
   buildSectionPrompt,
+  loadFocusFileContext,
+  loadModelProposalWithRetry,
   loadCliSectionResearchConfig,
   matchesCommandPrefix,
   parseSectionProposal,
   runCliSectionAutoresearch,
+  selectGateSummary,
 };
