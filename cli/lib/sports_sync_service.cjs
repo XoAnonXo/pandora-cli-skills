@@ -82,6 +82,8 @@ function deriveEventState(event = {}, options = {}) {
   const startMs = toEpochMs(event.startAt || event.startsAt || event.startTime || event.commenceTime || null);
   const settleMs = toEpochMs(event.settleAt || event.settlesAt || event.endAt || event.endsAt || event.resolveAt || event.resolvesAt || null);
 
+  const base = { nowMs: currentMs, startMs, settleMs, nearSettleWindowMs };
+
   const explicitNearSettle =
     event.nearSettle === true ||
     rawState.includes('near') ||
@@ -90,60 +92,25 @@ function deriveEventState(event = {}, options = {}) {
     rawState.includes('post');
 
   if (explicitNearSettle) {
-    return {
-      state: 'near-settle',
-      reason: 'explicit-near-settle-state',
-      nowMs: currentMs,
-      startMs,
-      settleMs,
-      nearSettleWindowMs,
-    };
+    return { state: 'near-settle', reason: 'explicit-near-settle-state', ...base };
   }
 
   if (Number.isFinite(settleMs) && settleMs >= currentMs && settleMs - currentMs <= nearSettleWindowMs) {
-    return {
-      state: 'near-settle',
-      reason: 'within-near-settle-window',
-      nowMs: currentMs,
-      startMs,
-      settleMs,
-      nearSettleWindowMs,
-    };
+    return { state: 'near-settle', reason: 'within-near-settle-window', ...base };
   }
 
   const explicitLive =
     event.isLive === true || rawState.includes('live') || rawState.includes('in-play') || rawState.includes('inplay');
 
   if (explicitLive) {
-    return {
-      state: 'live',
-      reason: 'explicit-live-state',
-      nowMs: currentMs,
-      startMs,
-      settleMs,
-      nearSettleWindowMs,
-    };
+    return { state: 'live', reason: 'explicit-live-state', ...base };
   }
 
   if (Number.isFinite(startMs) && startMs <= currentMs) {
-    return {
-      state: 'live',
-      reason: 'past-event-start-time',
-      nowMs: currentMs,
-      startMs,
-      settleMs,
-      nearSettleWindowMs,
-    };
+    return { state: 'live', reason: 'past-event-start-time', ...base };
   }
 
-  return {
-    state: 'prematch',
-    reason: 'default-prematch',
-    nowMs: currentMs,
-    startMs,
-    settleMs,
-    nearSettleWindowMs,
-  };
+  return { state: 'prematch', reason: 'default-prematch', ...base };
 }
 
 /**
