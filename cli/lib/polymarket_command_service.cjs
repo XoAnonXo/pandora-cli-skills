@@ -48,51 +48,6 @@ function parsePositiveIntegerFlag(value, flagName, CliError) {
   return numeric;
 }
 
-function parseFundingActionFlags(actionArgs, actionLabel, CliError) {
-  const result = {
-    amountUsdc: null,
-    to: null,
-    dryRun: false,
-    execute: false,
-  };
-  for (let i = 0; i < actionArgs.length; i += 1) {
-    const token = actionArgs[i];
-    if (token === '--amount-usdc') {
-      result.amountUsdc = parsePositiveNumberFlag(
-        requireFlagValue(actionArgs, i, '--amount-usdc', CliError),
-        '--amount-usdc',
-        CliError,
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--to') {
-      result.to = parseAddressFlagValue(
-        CliError,
-        requireFlagValue(actionArgs, i, '--to', CliError),
-        '--to',
-      );
-      i += 1;
-      continue;
-    }
-    if (token === '--dry-run') {
-      result.dryRun = true;
-      continue;
-    }
-    if (token === '--execute') {
-      result.execute = true;
-      continue;
-    }
-  }
-  if (result.dryRun === result.execute) {
-    throw new CliError('INVALID_ARGS', `polymarket ${actionLabel} requires exactly one mode: --dry-run or --execute.`);
-  }
-  if (result.amountUsdc === null) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing --amount-usdc <amount>.');
-  }
-  return result;
-}
-
 function parsePolymarketFundingFlags(actionArgs, actionLabel, CliError, parsePolymarketSharedFlags) {
   const sharedArgs = [];
   const result = { rpcUrl: null, privateKey: null, funder: null, fork: false, forkRpcUrl: null, forkChainId: null };
