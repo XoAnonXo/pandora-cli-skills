@@ -138,6 +138,73 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function extractJsonObjectFromText(text, errorLabel = 'Response') {
+  const trimmed = normalizeText(text);
+  if (!trimmed) {
+    throw new Error(`${errorLabel} was empty`);
+  }
+  const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)```/i) || trimmed.match(/```\s*([\s\S]*?)```/i);
+  if (fencedMatch) {
+    return fencedMatch[1].trim();
+  }
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      JSON.parse(trimmed);
+      return trimmed;
+    } catch {
+      // Fall through and keep scanning for a valid object.
+    }
+  }
+  for (let start = 0; start < trimmed.length; start += 1) {
+    if (trimmed[start] !== '{') {
+      continue;
+    }
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < trimmed.length; index += 1) {
+      const char = trimmed[index];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (char === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (char === '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+      if (char === '{') {
+        depth += 1;
+        continue;
+      }
+      if (char !== '}') {
+        continue;
+      }
+      depth -= 1;
+      if (depth !== 0) {
+        continue;
+      }
+      const candidate = trimmed.slice(start, index + 1);
+      try {
+        JSON.parse(candidate);
+        return candidate;
+      } catch {
+        break;
+      }
+    }
+  }
+  throw new Error(`${errorLabel} did not contain valid JSON`);
+}
+
 function isProcessAlive(pid) {
   const numeric = Number(pid);
   if (!Number.isInteger(numeric) || numeric <= 0) {
@@ -164,6 +231,7 @@ module.exports = {
   ensureDir,
   formatDuration,
   formatLaneId,
+  extractJsonObjectFromText,
   isProcessAlive,
   normalizeText,
   nowIso,

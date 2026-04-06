@@ -14,6 +14,9 @@ const {
   getWorkingTreeState,
   runValidationPlan,
 } = require('./autoresearch_loop.cjs');
+const {
+  extractJsonObjectFromText,
+} = require('./baton_common.cjs');
 
 const CLI_SECTION_RESEARCH_SCHEMA_VERSION = '1.0.0';
 const DEFAULT_CONFIG_PATH = 'proving-ground/config/cli_section_research.cjs';
@@ -257,23 +260,7 @@ function selectGateSummary(validation) {
 }
 
 function extractFirstJsonObject(text) {
-  const trimmed = normalizeText(text);
-  if (!trimmed) {
-    throw new Error('Model returned an empty response');
-  }
-  const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)```/i) || trimmed.match(/```\s*([\s\S]*?)```/i);
-  if (fencedMatch) {
-    return fencedMatch[1].trim();
-  }
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    return trimmed;
-  }
-  const firstBrace = trimmed.indexOf('{');
-  const lastBrace = trimmed.lastIndexOf('}');
-  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-    throw new Error('Model response does not contain a JSON object');
-  }
-  return trimmed.slice(firstBrace, lastBrace + 1);
+  return extractJsonObjectFromText(text, 'Model response');
 }
 
 function parseSectionProposal(text) {

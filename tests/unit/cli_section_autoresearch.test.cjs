@@ -60,6 +60,26 @@ test('parseSectionProposal extracts clarity, speed, and simplicity expectations'
   assert.equal(proposal.expectedImpact.simplicity, 'Less branching in help text');
 });
 
+test('parseSectionProposal skips stray braces before the real JSON object', () => {
+  const proposal = parseSectionProposal(`const { noisy } = helper;
+
+{
+  "hypothesisId": "trim-help",
+  "summary": "Tighten mirror help copy",
+  "why": "Operators should see the mode split sooner.",
+  "targetFiles": ["cli/lib/mirror_command_service.cjs"],
+  "expectedImpact": {
+    "clarity": "Cleaner mode naming",
+    "speed": "No runtime change",
+    "simplicity": "Less branching in help text"
+  },
+  "validationNotes": ["Run mirror help tests"],
+  "changeSet": []
+}`);
+  assert.equal(proposal.hypothesisId, 'trim-help');
+  assert.equal(proposal.validationNotes[0], 'Run mirror help tests');
+});
+
 test('buildDecisionSummary keeps simpler changes even when speed is flat', () => {
   const section = {
     allowNeutralKeep: false,

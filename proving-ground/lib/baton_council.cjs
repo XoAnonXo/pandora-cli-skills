@@ -1,6 +1,7 @@
 const { callMinimaxChat } = require('./minimax_client.cjs');
 const {
   createFingerprint,
+  extractJsonObjectFromText,
   normalizeText,
 } = require('./baton_common.cjs');
 
@@ -47,23 +48,7 @@ function buildReviewerUserPrompt(packet, role) {
 }
 
 function extractFirstJsonObject(text) {
-  const trimmed = normalizeText(text);
-  if (!trimmed) {
-    throw new Error('Review response was empty');
-  }
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    return trimmed;
-  }
-  const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)```/i) || trimmed.match(/```\s*([\s\S]*?)```/i);
-  if (fencedMatch) {
-    return fencedMatch[1].trim();
-  }
-  const firstBrace = trimmed.indexOf('{');
-  const lastBrace = trimmed.lastIndexOf('}');
-  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-    throw new Error('Review response did not contain JSON');
-  }
-  return trimmed.slice(firstBrace, lastBrace + 1);
+  return extractJsonObjectFromText(text, 'Review response');
 }
 
 function normalizeStringList(list) {

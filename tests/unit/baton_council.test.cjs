@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   aggregateCouncilDecision,
   buildReviewPacket,
+  parseReviewerDecision,
 } = require('../../proving-ground/lib/baton_council.cjs');
 
 test('council accepts when quorum is met without veto roles blocking', () => {
@@ -72,4 +73,20 @@ test('review packet fingerprints proposal and lane context deterministically', (
     promptVersion: 'baton-v1',
   });
   assert.equal(packetA.fingerprint, packetB.fingerprint);
+});
+
+test('parseReviewerDecision skips stray code before the real JSON object', () => {
+  const review = parseReviewerDecision(`const { noisy } = helper;
+{
+  "reviewerId": "correctness-reviewer",
+  "role": "correctness",
+  "verdict": "accept",
+  "confidence": 0.91,
+  "blockers": [],
+  "evidence": ["proposal is lane-scoped"],
+  "lowSignal": false,
+  "duplicateOf": null
+}`, 'correctness');
+  assert.equal(review.verdict, 'accept');
+  assert.equal(review.evidence[0], 'proposal is lane-scoped');
 });

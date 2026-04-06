@@ -54,6 +54,46 @@ function ensureBranchCheckedOut(worktreePath, branchName, startPoint) {
   return branchName;
 }
 
+function ensureSharedNodeModules(repoRoot, worktreePath) {
+  const sourcePath = path.resolve(repoRoot, 'node_modules');
+  if (!fs.existsSync(sourcePath)) {
+    return {
+      linked: false,
+      targetPath: path.resolve(worktreePath, 'node_modules'),
+      sourcePath,
+      reason: 'missing-source',
+    };
+  }
+  const targetPath = path.resolve(worktreePath, 'node_modules');
+  if (fs.existsSync(targetPath)) {
+    try {
+      if (fs.realpathSync(targetPath) === fs.realpathSync(sourcePath)) {
+        return {
+          linked: false,
+          targetPath,
+          sourcePath,
+          reason: 'already-linked',
+        };
+      }
+    } catch {
+      // Leave existing content alone if it cannot be resolved safely.
+    }
+    return {
+      linked: false,
+      targetPath,
+      sourcePath,
+      reason: 'present',
+    };
+  }
+  fs.symlinkSync(sourcePath, targetPath, 'dir');
+  return {
+    linked: true,
+    targetPath,
+    sourcePath,
+    reason: 'linked',
+  };
+}
+
 function createWorktree(repoRoot, options) {
   const worktreePath = path.resolve(options.worktreePath);
   const branchName = normalizeText(options.branchName);
@@ -65,6 +105,7 @@ function createWorktree(repoRoot, options) {
   const args = ['worktree', 'add', '-b', branchName, worktreePath, startPoint];
   const result = runGit(repoRoot, args);
   assertGitOk(result, `git ${args.join(' ')}`);
+  ensureSharedNodeModules(repoRoot, worktreePath);
   return {
     worktreePath,
     branchName,
@@ -72,7 +113,7 @@ function createWorktree(repoRoot, options) {
   };
 }
 
-function prepareExistingWorktree(worktreePath, options = {}) {
+function prepareExistingWorktree(repoRoot, worktreePath, options = {}) {
   const branchName = normalizeText(options.branchName);
   const startPoint = normalizeText(options.startPoint) || 'HEAD';
   if (!fs.existsSync(worktreePath)) {
@@ -86,6 +127,7 @@ function prepareExistingWorktree(worktreePath, options = {}) {
     ? ['checkout', '-B', branchName, startPoint]
     : ['checkout', '-b', branchName, startPoint];
   assertGitOk(runGit(worktreePath, checkoutArgs), `git ${checkoutArgs.join(' ')}`);
+  ensureSharedNodeModules(repoRoot, worktreePath);
   return {
     worktreePath,
     branchName,
@@ -129,6 +171,7 @@ module.exports = {
   createWorktree,
   deleteBranch,
   ensureBranchCheckedOut,
+  ensureSharedNodeModules,
   getHeadCommit,
   gitStatus,
   prepareExistingWorktree,

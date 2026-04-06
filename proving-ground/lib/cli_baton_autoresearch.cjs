@@ -883,7 +883,7 @@ async function prepareLaneForAttempt(repoRoot, config, batchId, laneRecord, atte
   const attemptId = buildAttemptId(attemptIndex);
   const branchName = buildLaneBranchName(config, batchId, laneRecord, attemptId);
   if (fs.existsSync(laneRecord.worktreePath)) {
-    prepareExistingWorktree(laneRecord.worktreePath, {
+    prepareExistingWorktree(repoRoot, laneRecord.worktreePath, {
       branchName,
       startPoint: baseRef,
     });
