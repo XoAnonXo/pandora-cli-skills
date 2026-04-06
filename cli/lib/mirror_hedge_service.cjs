@@ -107,19 +107,14 @@ function normalizeTokenAmount(raw) {
 const toUsdcAmount = normalizeTokenAmount;
 const toTokenAmount = normalizeTokenAmount;
 
-function mergeDiagnostics() {
-  const output = [];
-  for (let index = 0; index < arguments.length; index += 1) {
-    const value = arguments[index];
-    if (!Array.isArray(value)) continue;
-    for (const item of value) {
-      const normalized = normalizeOptionalString(item);
-      if (normalized && !output.includes(normalized)) {
-        output.push(normalized);
-      }
+function mergeDiagnostics(...arrays) {
+  return arrays.flat().reduce((output, item) => {
+    const normalized = normalizeOptionalString(item);
+    if (normalized && !output.includes(normalized)) {
+      output.push(normalized);
     }
-  }
-  return output;
+    return output;
+  }, []);
 }
 
 function ensureDirectory(filePath) {
