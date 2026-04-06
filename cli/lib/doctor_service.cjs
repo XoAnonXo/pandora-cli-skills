@@ -67,8 +67,6 @@ function normalizeGoal(goal) {
   if (normalized === 'hedge') return 'paper-hedge-daemon';
   if (normalized === 'paper-hedge') return 'paper-hedge-daemon';
   if (normalized === 'live-hedge') return 'live-hedge-daemon';
-  if (normalized === 'paper-daemon') return 'paper-hedge-daemon';
-  if (normalized === 'live-daemon') return 'live-hedge-daemon';
   if ([
     'explore',
     'deploy',
