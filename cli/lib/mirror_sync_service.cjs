@@ -7,6 +7,8 @@ const {
   loadState,
   saveState,
   resetDailyCountersIfNeeded,
+  toFiniteNumberOrNull,
+  normalizeOptionalString,
 } = require('./mirror_state_store.cjs');
 const { verifyMirrorPair } = require('./mirror_verify_service.cjs');
 const {
@@ -50,16 +52,6 @@ const RECOVERABLE_RUN_DIAGNOSTIC_CODES = new Set([
   'INDEXER_HTTP_ERROR',
   'INDEXER_REQUEST_FAILED',
 ]);
-
-function normalizeOptionalString(value) {
-  const text = String(value || '').trim();
-  return text || null;
-}
-
-function toFiniteNumberOrNull(value) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
-}
 
 function roundUsdc(value) {
   const numeric = toFiniteNumberOrNull(value);
