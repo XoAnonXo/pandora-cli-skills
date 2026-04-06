@@ -82,6 +82,8 @@ function normalizeGoal(goal) {
 }
 
 function buildGoalRequirements(goal) {
+  const normalized = normalizeGoal(goal);
+
   if (!goal) {
     return {
       goal: null,
