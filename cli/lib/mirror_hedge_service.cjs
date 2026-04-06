@@ -91,9 +91,7 @@ function normalizeAddress(value) {
 }
 
 function roundUsdc(value) {
-  const numeric = toOptionalNumber(value);
-  if (numeric === null) return null;
-  return round(numeric, 6);
+  return round(toOptionalNumber(value), 6);
 }
 
 function normalizeTokenAmount(raw) {
