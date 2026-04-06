@@ -10,13 +10,19 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+const MODE_FLAGS = Object.freeze([
+  ['--execute-live', 'execute-live'],
+  ['--execute', 'execute'],
+  ['--paper', 'paper'],
+  ['--dry-run', 'dry-run'],
+  ['--fork', 'fork'],
+]);
+
 function normalizeModeFromArgs(commandArgs) {
   const args = Array.isArray(commandArgs) ? commandArgs : [];
-  if (args.includes('--execute-live')) return 'execute-live';
-  if (args.includes('--execute')) return 'execute';
-  if (args.includes('--paper')) return 'paper';
-  if (args.includes('--dry-run')) return 'dry-run';
-  if (args.includes('--fork')) return 'fork';
+  for (const [flag, mode] of MODE_FLAGS) {
+    if (args.includes(flag)) return mode;
+  }
   return null;
 }
 
