@@ -7,6 +7,16 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
+
+const GOAL_NOTES = Object.freeze([
+  'Goal tells doctor which env vars to validate and what to recommend:',
+  '  explore       – read-only discovery (needs CHAIN_ID, RPC_URL only)',
+  '  deploy        – contract deployment (needs full signer + addresses)',
+  '  paper-mirror  – test mirroring without live credentials',
+  '  live-mirror   – production mirroring with Polymarket credentials',
+  '  hosted-gateway – Cloudflare Workers deployment path',
+  'Defaults to explore if --goal is omitted.',
+]);
 const DEFAULT_REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC'];
 
 const GOAL_DESCRIPTIONS = Object.freeze({
