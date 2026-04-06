@@ -20,7 +20,9 @@ function requireDep(deps, name) {
  * @returns {string|null}
  */
 function toWsUrl(indexerUrl) {
-  const parsed = new URL(String(indexerUrl || ''));
+  const raw = indexerUrl == null ? '' : String(indexerUrl);
+  if (!raw) return null;
+  const parsed = new URL(raw);
   if (parsed.protocol === 'https:') parsed.protocol = 'wss:';
   if (parsed.protocol === 'http:') parsed.protocol = 'ws:';
   return parsed.toString();
