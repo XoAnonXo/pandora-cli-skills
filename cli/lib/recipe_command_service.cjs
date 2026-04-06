@@ -82,7 +82,7 @@ function createRunRecipeCommand(deps) {
     }
 
     if (action === 'validate' && includesHelpFlag(actionArgs)) {
-      const usage = 'pandora [--output table|json] recipe validate --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>]';
+      const usage = 'pandora [--output table|json] recipe validate --id <recipe-id>|--file <path> [--policy-id <id>] [--profile-id <id>]';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'recipe.validate.help', commandHelpPayload(usage));
       } else {
