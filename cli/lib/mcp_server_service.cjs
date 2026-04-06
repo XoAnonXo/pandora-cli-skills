@@ -52,23 +52,7 @@ function createRunMcpServer(options = {}) {
         process.stdout.write(`${JSON.stringify(usageEnvelope, null, 2)}\n`);
       } else {
         // eslint-disable-next-line no-console
-        console.log('Usage: pandora mcp');
-        // eslint-disable-next-line no-console
-        console.log('       pandora mcp [--compact-tools|--code-mode]');
-        // eslint-disable-next-line no-console
-        console.log('       pandora mcp http [--compact-tools|--code-mode] [--host <host>] [--port <port>] [--public-base-url <url>] [--auth-token <token>|--auth-token-file <path>|--auth-tokens-file <path>] [--auth-scopes <csv>] [--bootstrap-path <path>] [--schema-path <path>] [--tools-path <path>]');
-        // eslint-disable-next-line no-console
-        console.log('Runs Pandora as an MCP stdio server or remote streamable HTTP gateway.');
-        // eslint-disable-next-line no-console
-        console.log('The HTTP gateway exposes /auth, /bootstrap, /capabilities, /schema, /tools, /mcp, and /operations.');
-        // eslint-disable-next-line no-console
-        console.log('--compact-tools / --code-mode exposes only search and execute over MCP for reduced tool-list token cost.');
-        // eslint-disable-next-line no-console
-        console.log('Use gateway:auth:read to inspect principals and gateway:auth:write to rotate or revoke tokens remotely.');
-        // eslint-disable-next-line no-console
-        console.log('--auth-tokens-file enables multi-principal rotation and durable revocation without restarting the gateway.');
-        // eslint-disable-next-line no-console
-        console.log('If no auth token is provided, the HTTP gateway generates one and stores it in ~/.pandora/mcp-http/auth-token.');
+        console.log('Usage: pandora mcp\n       pandora mcp [--compact-tools|--code-mode]\n       pandora mcp http [--compact-tools|--code-mode] [--host <host>] [--port <port>] [--public-base-url <url>] [--auth-token <token>|--auth-token-file <path>|--auth-tokens-file <path>] [--auth-scopes <csv>] [--bootstrap-path <path>] [--schema-path <path>] [--tools-path <path>]\nRuns Pandora as an MCP stdio server or remote streamable HTTP gateway.\nThe HTTP gateway exposes /auth, /bootstrap, /capabilities, /schema, /tools, /mcp, and /operations.\n--compact-tools / --code-mode exposes only search and execute over MCP for reduced tool-list token cost.\nUse gateway:auth:read to inspect principals and gateway:auth:write to rotate or revoke tokens remotely.\n--auth-tokens-file enables multi-principal rotation and durable revocation without restarting the gateway.\nIf no auth token is provided, the HTTP gateway generates one and stores it in ~/.pandora/mcp-http/auth-token.');
       }
       return;
     }
