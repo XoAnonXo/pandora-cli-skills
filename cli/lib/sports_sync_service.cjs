@@ -22,15 +22,15 @@ const DEFAULT_AUTO_PAUSE_THRESHOLDS = Object.freeze({
  * @returns {number|null}
  */
 function toEpochMs(value) {
-  if (value instanceof Date) {
-    const ms = value.getTime();
-    return Number.isFinite(ms) ? ms : null;
-  }
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : null;
   }
   if (typeof value === 'string' && value.trim()) {
     const ms = Date.parse(value);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (value instanceof Date) {
+    const ms = value.getTime();
     return Number.isFinite(ms) ? ms : null;
   }
   return null;
