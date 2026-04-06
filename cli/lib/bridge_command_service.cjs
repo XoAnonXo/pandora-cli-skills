@@ -19,6 +19,19 @@ function requireDep(deps, name) {
   return deps[name];
 }
 
+const BRIDGE_USAGE =
+  'pandora [--output table|json] bridge plan --target <polymarket|address> --amount-usdc <n> [--provider layerzero] [--wallet <address>|--private-key <hex>] [--rpc-url <url>] [--dry-run]';
+
+const BRIDGE_EXECUTE_USAGE =
+  'pandora [--output table|json] bridge execute --target <polymarket|address> --amount-usdc <n> --provider layerzero [--wallet <address>|--private-key <hex>] [--rpc-url <url>] [--dry-run]';
+
+const BRIDGE_NOTES = [
+  'pandora bridge plan shows source-side gas, USDC balances, shortfall, and route suggestions.',
+  'pandora bridge execute submits a LayerZero preflight and optionally broadcasts the bridge transaction.',
+  '--dry-run is recommended before executing to preview gas costs and token amounts.',
+  'Polygon is required for Polymarket deposits; ensure --rpc-url points to a Polygon RPC.',
+];
+
 function normalizeAddress(value) {
   const raw = String(value || '').trim();
   return /^0x[a-fA-F0-9]{40}$/.test(raw) ? raw : null;
