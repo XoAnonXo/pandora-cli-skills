@@ -17,30 +17,27 @@ function createRunRiskCommand(deps) {
   const clearPanic = requireDep(deps, 'clearPanic');
   const renderRiskTable = requireDep(deps, 'renderRiskTable');
 
+  function emitHelp(outputMode, eventName, usage) {
+    if (outputMode === 'json') {
+      emitSuccess(outputMode, eventName, commandHelpPayload(usage));
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(`Usage: ${usage}`);
+    }
+  }
+
   return async function runRiskCommand(args, context) {
     const action = args[0];
     const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'risk.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
+      emitHelp(context.outputMode, 'risk.help', 'pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]');
       return;
     }
 
     if (action === 'show') {
       if (includesHelpFlag(actionArgs)) {
-        const usage = 'pandora [--output table|json] risk show [--risk-file <path>]';
-        if (context.outputMode === 'json') {
-          emitSuccess(context.outputMode, 'risk.show.help', commandHelpPayload(usage));
-        } else {
-          // eslint-disable-next-line no-console
-          console.log(`Usage: ${usage}`);
-        }
+        emitHelp(context.outputMode, 'risk.show.help', 'pandora [--output table|json] risk show [--risk-file <path>]');
         return;
       }
 
@@ -67,14 +64,7 @@ function createRunRiskCommand(deps) {
 
     if (action === 'panic') {
       if (includesHelpFlag(actionArgs)) {
-        const usage =
-          'pandora [--output table|json] risk panic [--risk-file <path>] [--reason <text> --actor <id>] | [--clear --actor <id>]';
-        if (context.outputMode === 'json') {
-          emitSuccess(context.outputMode, 'risk.panic.help', commandHelpPayload(usage));
-        } else {
-          // eslint-disable-next-line no-console
-          console.log(`Usage: ${usage}`);
-        }
+        emitHelp(context.outputMode, 'risk.panic.help', 'pandora [--output table|json] risk panic [--risk-file <path>] [--reason <text> --actor <id>] | [--clear --actor <id>]');
         return;
       }
 
