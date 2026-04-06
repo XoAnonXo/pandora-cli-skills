@@ -56,7 +56,7 @@ function createRunModelCommand(deps) {
     const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...';
+      const usage = 'pandora [--output table|json] model calibrate|correlation|diagnose|score brier';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'model.help', commandHelpPayload(usage));
       } else {
