@@ -49,46 +49,13 @@ function parsePositiveIntegerFlag(value, flagName, CliError) {
 }
 
 function parsePolymarketFundingFlags(actionArgs, actionLabel, CliError, parsePolymarketSharedFlags) {
-  const sharedArgs = [];
-  const result = { rpcUrl: null, privateKey: null, funder: null, fork: false, forkRpcUrl: null, forkChainId: null };
-  const fundingFlags = { amountUsdc: null, to: null, dryRun: false, execute: false };
-
-  for (let i = 0; i < actionArgs.length; i += 1) {
-    const token = actionArgs[i];
-    if (token === '--amount-usdc' || token === '--to' || token === '--dry-run' || token === '--execute') {
-      if (token === '--amount-usdc') {
-        fundingFlags.amountUsdc = parsePositiveNumberFlag(
-          requireFlagValue(actionArgs, i, '--amount-usdc', CliError),
-          '--amount-usdc',
-          CliError,
-        );
-      } else if (token === '--to') {
-        fundingFlags.to = parseAddressFlagValue(
-          CliError,
-          requireFlagValue(actionArgs, i, '--to', CliError),
-          '--to',
-        );
-      } else if (token === '--dry-run') {
-        fundingFlags.dryRun = true;
-      } else if (token === '--execute') {
-        fundingFlags.execute = true;
-      }
-      i += 1;
-      continue;
-    }
-    sharedArgs.push(token);
-  }
-
-  if (fundingFlags.dryRun === fundingFlags.execute) {
-    throw new CliError('INVALID_ARGS', `polymarket ${actionLabel} requires exactly one mode: --dry-run or --execute.`);
-  }
-  if (fundingFlags.amountUsdc === null) {
-    throw new CliError('MISSING_REQUIRED_FLAG', 'Missing --amount-usdc <amount>.');
-  }
-
-  const shared = parsePolymarketSharedFlags(sharedArgs, actionLabel);
+  const fundingFlags = parseFundingActionFlags(actionArgs, actionLabel, CliError);
+  const shared = parsePolymarketSharedFlags(fundingFlags._remainingArgs, actionLabel);
   return {
-    ...fundingFlags,
+    amountUsdc: fundingFlags.amountUsdc,
+    to: fundingFlags.to,
+    dryRun: fundingFlags.dryRun,
+    execute: fundingFlags.execute,
     rpcUrl: shared.rpcUrl,
     privateKey: shared.privateKey,
     funder: shared.funder,
