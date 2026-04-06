@@ -53,11 +53,7 @@ const RECOVERABLE_RUN_DIAGNOSTIC_CODES = new Set([
   'INDEXER_REQUEST_FAILED',
 ]);
 
-function roundUsdc(value) {
-  const numeric = toFiniteNumberOrNull(value);
-  if (numeric === null) return null;
-  return Math.round(numeric * 1e6) / 1e6;
-}
+
 
 function parseBooleanish(value) {
   if (typeof value === 'boolean') return value;
