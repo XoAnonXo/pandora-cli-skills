@@ -89,12 +89,7 @@ function deriveEventState(event = {}, options = {}) {
     };
   }
 
-  if (
-    Number.isFinite(settleMs) &&
-    settleMs !== null &&
-    settleMs >= currentMs &&
-    settleMs - currentMs <= nearSettleWindowMs
-  ) {
+  if (Number.isFinite(settleMs) && settleMs >= currentMs && settleMs - currentMs <= nearSettleWindowMs) {
     return {
       state: 'near-settle',
       reason: 'within-near-settle-window',
@@ -119,7 +114,7 @@ function deriveEventState(event = {}, options = {}) {
     };
   }
 
-  if (Number.isFinite(startMs) && startMs !== null && startMs <= currentMs) {
+  if (Number.isFinite(startMs) && startMs <= currentMs) {
     return {
       state: 'live',
       reason: 'past-event-start-time',

@@ -66,8 +66,7 @@ function normalizeCacheToken(value, fallback = 'unknown') {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+    .replace(/^-+|-+$/g, '');
   return normalized || fallback;
 }
 
