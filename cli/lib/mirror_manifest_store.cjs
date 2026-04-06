@@ -78,17 +78,15 @@ function saveManifest(filePath, manifest) {
 function pairMatches(record, selector = {}) {
   const leftMarket = String(record && record.pandoraMarketAddress ? record.pandoraMarketAddress : '').toLowerCase();
   const rightMarket = String(selector && selector.pandoraMarketAddress ? selector.pandoraMarketAddress : '').toLowerCase();
-  if (leftMarket && rightMarket && leftMarket !== rightMarket) return false;
-
   const leftCondition = String(record && record.polymarketMarketId ? record.polymarketMarketId : '').toLowerCase();
   const rightCondition = String(selector && selector.polymarketMarketId ? selector.polymarketMarketId : '').toLowerCase();
-  if (leftCondition && rightCondition && leftCondition !== rightCondition) return false;
-
   const leftSlug = String(record && record.polymarketSlug ? record.polymarketSlug : '').toLowerCase();
   const rightSlug = String(selector && selector.polymarketSlug ? selector.polymarketSlug : '').toLowerCase();
-  if (leftSlug && rightSlug && leftSlug !== rightSlug) return false;
 
   if (!rightMarket && !rightCondition && !rightSlug) return false;
+  if (leftMarket && rightMarket && leftMarket !== rightMarket) return false;
+  if (leftCondition && rightCondition && leftCondition !== rightCondition) return false;
+  if (leftSlug && rightSlug && leftSlug !== rightSlug) return false;
   return true;
 }
 
