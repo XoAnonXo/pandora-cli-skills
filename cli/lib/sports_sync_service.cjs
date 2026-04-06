@@ -67,9 +67,7 @@ function deriveEventState(event = {}, options = {}) {
     .toLowerCase();
 
   const startMs = toEpochMs(event.startAt || event.startsAt || event.startTime || event.commenceTime || null);
-  const settleMs = toEpochMs(
-    event.settleAt || event.settlesAt || event.endAt || event.endsAt || event.resolveAt || event.resolvesAt || null,
-  );
+  const settleMs = toEpochMs(event.settleAt || event.settlesAt || event.endAt || event.endsAt || event.resolveAt || event.resolvesAt || null);
 
   const explicitNearSettle =
     event.nearSettle === true ||
