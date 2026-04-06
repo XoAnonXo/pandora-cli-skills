@@ -181,6 +181,7 @@ function ensureDeferredHedgeQueueEntryShape(raw) {
   const data = raw && typeof raw === 'object' ? raw : {};
   return {
     id: normalizeOptionalString(data.id) || normalizeOptionalString(data.queueId),
+    queueKey: normalizeOptionalString(data.queueKey) || normalizeOptionalString(data.actionKey),
     status: normalizeOptionalString(data.status) || 'queued',
     marketPairId: normalizeOptionalString(data.marketPairId),
     side: normalizeOptionalString(data.side),

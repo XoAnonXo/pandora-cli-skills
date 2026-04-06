@@ -1,0 +1,46 @@
+{
+  "state": {
+    "targetHedgeInventory": {
+      "yesShares": 15,
+      "noShares": 0,
+      "initializedAt": "2026-04-05T22:00:00.000Z",
+      "initializedFrom": "flat",
+      "updatedAt": "2026-04-05T22:10:00.000Z"
+    }
+  },
+  "inventory": {
+    "yesBalance": 10,
+    "noBalance": 20,
+    "prices": {
+      "yes": 0.57,
+      "no": 0.43
+    },
+    "estimatedValueUsd": 14.3
+  },
+  "depth": {
+    "yesDepth": {
+      "depthUsd": 500,
+      "availableUsd": 500,
+      "referencePrice": 0.57,
+      "depthShares": 877.192982
+    },
+    "noDepth": {
+      "depthUsd": 500,
+      "availableUsd": 500,
+      "referencePrice": 0.43,
+      "depthShares": 1162.790697
+    },
+    "sellYesDepth": {
+      "depthUsd": 100,
+      "availableUsd": 100,
+      "referencePrice": 0.57,
+      "depthShares": 175.438596
+    },
+    "sellNoDepth": {
+      "depthUsd": 100,
+      "availableUsd": 100,
+      "referencePrice": 0.43,
+      "depthShares": 232.558139
+    }
+  }
+}

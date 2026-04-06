@@ -253,6 +253,8 @@ function resetDailyCountersIfNeeded(state, now = new Date()) {
 module.exports = {
   MIRROR_STATE_SCHEMA_VERSION,
   expandHome,
+  toFiniteNumberOrNull,
+  normalizeOptionalString,
   strategyHash,
   defaultStateFile,
   defaultKillSwitchFile,
