@@ -96,7 +96,7 @@ function roundUsdc(value) {
   return round(numeric, 6);
 }
 
-function toUsdcAmount(raw) {
+function normalizeTokenAmount(raw) {
   const numeric = toOptionalNumber(raw);
   if (numeric === null) return null;
   if (!Number.isFinite(numeric)) return null;
@@ -106,15 +106,8 @@ function toUsdcAmount(raw) {
   return round(numeric, 6);
 }
 
-function toTokenAmount(raw) {
-  const numeric = toOptionalNumber(raw);
-  if (numeric === null) return null;
-  if (!Number.isFinite(numeric)) return null;
-  if (Math.abs(numeric) >= 1_000 && /^[0-9]+$/.test(String(raw || '').trim())) {
-    return round(numeric / 10 ** 6, 6);
-  }
-  return round(numeric, 6);
-}
+const toUsdcAmount = normalizeTokenAmount;
+const toTokenAmount = normalizeTokenAmount;
 
 function mergeDiagnostics() {
   const output = [];
