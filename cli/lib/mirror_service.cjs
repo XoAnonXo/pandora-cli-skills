@@ -116,7 +116,7 @@ function isResumableMirrorDeployGuard(guard = {}) {
 function normalizeSources(value) {
   if (!value) return [];
   if (Array.isArray(value)) {
-    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+    return value.map((entry) => String(entry).trim()).filter(Boolean);
   }
   return String(value)
     .split(/[\n,]/g)
