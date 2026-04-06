@@ -5,16 +5,6 @@ const path = require('path');
 
 const { createSetupWizardService } = require('./setup_wizard_service.cjs');
 
-const SETUP_GOAL_NOTES = Object.freeze([
-  'Goal options:',
-  '  explore           Read-only exploration of chain and market data',
-  '  deploy            Deploy contracts with a signing wallet',
-  '  paper-mirror      Follow Polymarket odds without live credentials',
-  '  live-mirror       Follow Polymarket odds with live market making',
-  '  hosted-gateway    Connect to a hosted remote gateway',
-  '  paper-hedge-daemon  Delta-neutral Polymarket hedging (paper mode)',
-  '  live-hedge-daemon   Delta-neutral Polymarket hedging (live mode)',
-]);
 const { buildSetupPlan, normalizeGoal } = require('./setup_plan_service.cjs');
 
 function requireDep(deps, name) {
