@@ -137,7 +137,6 @@ function normalizePublicOperationRecord(record, checkpoints) {
     completedAt: record.completedAt || record.succeededAt || null,
     failedAt: record.failedAt || null,
     canceledAt: record.cancelledAt || null,
-    cancelledAt: record.cancelledAt || null,
     closedAt: record.closedAt || null,
     parentOperationId: record.parentOperationId || null,
     policyPack: record.policyPack || null,
