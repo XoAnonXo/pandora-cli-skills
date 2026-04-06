@@ -74,8 +74,7 @@ function normalizeGoal(goal) {
 }
 
 function buildGoalRequirements(goal) {
-  const normalized = normalizeGoal(goal);
-  if (!normalized) {
+  if (!goal) {
     return {
       goal: null,
       requiredEnv: DEFAULT_REQUIRED_ENV_KEYS,
