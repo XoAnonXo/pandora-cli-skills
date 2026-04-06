@@ -9,7 +9,7 @@ const MIRROR_HEDGE_STATE_SCHEMA_VERSION = '1.0.0';
 const MIRROR_HEDGE_RUNTIME_TYPE = 'lp-hedge';
 
 function resolveHomeDir() {
-  return process.env.HOME || process.env.USERPROFILE || os.homedir() || '.';
+  return expandHome('~') || '.';
 }
 
 function normalizeOptionalString(value) {
@@ -48,11 +48,11 @@ function defaultStateFile(params = {}) {
   const fingerprint = normalizeOptionalString(params.runtimeHash)
     || normalizeOptionalString(params.strategyHash)
     || buildIdentityFingerprint(params.marketPairIdentity || params, params.whitelistFingerprint);
-  return path.join(resolveHomeDir(), '.pandora', 'mirror', 'hedge', `${fingerprint}.json`);
+  return path.join(expandHome('~'), '.pandora', 'mirror', 'hedge', `${fingerprint}.json`);
 }
 
 function defaultKillSwitchFile() {
-  return path.join(resolveHomeDir(), '.pandora', 'mirror', 'hedge', 'STOP');
+  return path.join(expandHome('~'), '.pandora', 'mirror', 'hedge', 'STOP');
 }
 
 function ensureMarketPairIdentityShape(raw) {
