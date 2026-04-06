@@ -12,25 +12,6 @@ const CHAIN_METADATA = {
   137: { id: 137, name: 'Polygon', nativeSymbol: 'MATIC', recommendedNativeGas: 0.2 },
 };
 
-function requireDep(deps, name) {
-const BRIDGE_USAGE =
-  'pandora [--output table|json] bridge plan --target <polymarket|polymarket-cmg|odin|odincrosschain> --amount-usdc <n> [--rpc-url <url>] [--polymarket-rpc-url <url>] [--wallet <address>] [--to-wallet <address>] [--dry-run]\n' +
-  'pandora [--output table|json] bridge execute --provider <layerzero|wormhole> --target <polymarket|polymarket-cmg|odin|odincrosschain> --amount-usdc <n> [--dry-run] [--yes]\n' +
-  'pandora [--output table|json] bridge simulate --target <polymarket|polymarket-cmg|odin|odincrosschain> --amount-usdc <n> [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>] [--profile-id <id>] [--profile-file <path>] [--funder <address>] [--usdc <address>]';
-
-const BRIDGE_NOTES = [
-  'bridge plan estimates gas, finds routes, and suggests next steps before committing funds.',
-  'bridge execute submits cross-chain transfers via the selected provider.',
-  'bridge simulate runs a dry-run estimate without on-chain state changes.',
-  'Use --dry-run with plan or execute to preview without signing.',
-];
-
-  if (!deps || typeof deps[name] !== 'function') {
-    throw new Error(`bridge service requires deps.${name}()`);
-  }
-  return deps[name];
-}
-
 const BRIDGE_USAGE =
   'pandora [--output table|json] bridge plan --target <polymarket|address> --amount-usdc <n> [--provider layerzero] [--wallet <address>|--private-key <hex>] [--rpc-url <url>] [--dry-run]';
 
@@ -43,6 +24,13 @@ const BRIDGE_NOTES = [
   '--dry-run is recommended before executing to preview gas costs and token amounts.',
   'Polygon is required for Polymarket deposits; ensure --rpc-url points to a Polygon RPC.',
 ];
+
+function requireDep(deps, name) {
+  if (!deps || typeof deps[name] !== 'function') {
+    throw new Error(`bridge service requires deps.${name}()`);
+  }
+  return deps[name];
+}
 
 function normalizeAddress(value) {
   const raw = String(value || '').trim();
