@@ -98,11 +98,8 @@ function writeJsonFile(filePath, payload) {
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), { mode: 0o600 });
   fs.renameSync(tmpPath, filePath);
-  try {
-    fs.chmodSync(filePath, 0o600);
-  } catch {
-    // best-effort chmod across platforms
-  }
+  // best-effort chmod in case rename preserved inherited perms
+  try { fs.chmodSync(filePath, 0o600); } catch {}
 }
 
 function buildBulkOddsSnapshotKey(provider, marketType) {
