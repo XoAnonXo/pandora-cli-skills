@@ -93,7 +93,7 @@ function createRunRecipeCommand(deps) {
     }
 
     if (action === 'run' && includesHelpFlag(actionArgs)) {
-      const usage = 'pandora [--output table|json] recipe run --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>] [--timeout-ms <ms>]';
+      const usage = 'pandora [--output table|json] recipe run --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>] [--timeout <seconds>]';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'recipe.run.help', commandHelpPayload(usage));
       } else {
