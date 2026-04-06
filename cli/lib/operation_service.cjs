@@ -78,14 +78,17 @@ function mapPublicStatusToStore(status) {
   return normalizeOperationState(normalized);
 }
 
+const STORE_TO_PUBLIC_STATUS = Object.freeze({
+  running: 'executing',
+  queued: 'queued',
+  paused: 'paused',
+  succeeded: 'completed',
+  cancelled: 'canceled',
+});
+
 function mapStoreStatusToPublic(status) {
   const normalized = normalizeOperationState(status);
-  if (normalized === 'running') return 'executing';
-  if (normalized === 'queued') return 'queued';
-  if (normalized === 'paused') return 'paused';
-  if (normalized === 'succeeded') return 'completed';
-  if (normalized === 'cancelled') return 'canceled';
-  return normalized || 'planned';
+  return STORE_TO_PUBLIC_STATUS[normalized] ?? normalized ?? 'planned';
 }
 
 function deriveTool(command) {
