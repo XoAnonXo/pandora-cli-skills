@@ -80,7 +80,15 @@ function createRunSimulateCommand(deps) {
         // eslint-disable-next-line no-console
         console.log(`Usage: ${SIMULATE_USAGE}`);
         // eslint-disable-next-line no-console
-        console.log('Subcommands: mc, particle-filter, agents');
+        console.log('Subcommands:');
+        // eslint-disable-next-line no-console
+        console.log('  mc               Monte Carlo market simulation (PnL, VaR, ES)');
+        // eslint-disable-next-line no-console
+        console.log('  particle-filter  Sequential Bayesian filtering with observations');
+        // eslint-disable-next-line no-console
+        console.log('  agents           Multi-agent coordination simulation');
+        // eslint-disable-next-line no-console
+        console.log('Run with --help on a subcommand for full flags (e.g., pandora simulate mc --help).');
       }
       return;
     }
