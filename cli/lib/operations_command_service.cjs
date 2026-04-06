@@ -82,7 +82,7 @@ function createRunOperationsCommand(deps) {
     const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      showActionHelp(null, 'operations.help', 'pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [flags]', context.outputMode);
+      showActionHelp(null, 'operations.help', 'pandora [--output table|json] operations get|list|receipt|verify-receipt|cancel|close [--status <csv>] [--tool <name>] [--limit <n>] [--id <operation-id>] [--file <path>] [--reason <text>] [--actor <id>] [--clear]', context.outputMode);
       return;
     }
 
