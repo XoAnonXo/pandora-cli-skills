@@ -153,21 +153,12 @@ function parsePolymarketBalanceFlags(actionArgs, CliError, parsePolymarketShared
     forkRpcUrl: null,
     forkChainId: null,
   };
-  const sharedArgs = [];
-  for (let i = 0; i < actionArgs.length; i += 1) {
-    const token = actionArgs[i];
+  const shared = parsePolymarketSharedFlags(actionArgs, 'balance');
+  for (const { token, value } of shared._rawTokens || []) {
     if (token === '--wallet') {
-      options.wallet = parseAddressFlagValue(
-        CliError,
-        requireFlagValue(actionArgs, i, '--wallet', CliError),
-        '--wallet',
-      );
-      i += 1;
-      continue;
+      options.wallet = parseAddressFlagValue(CliError, value, '--wallet');
     }
-    sharedArgs.push(token);
   }
-  const shared = parsePolymarketSharedFlags(sharedArgs, 'balance');
   return {
     ...options,
     rpcUrl: shared.rpcUrl,
