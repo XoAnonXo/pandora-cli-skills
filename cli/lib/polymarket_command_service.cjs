@@ -208,6 +208,13 @@ function parsePolymarketPreflightFlags(
   }
 
   const shared = parsePolymarketSharedFlags(sharedArgs, 'preflight');
+  const selectorCount = [options.conditionId, options.slug, options.tokenId].filter(Boolean).length;
+  if (selectorCount > 1) {
+    throw new CliError(
+      'INVALID_ARGS',
+      'Provide only one market selector: --condition-id|--market-id, --slug, or --token-id.',
+    );
+  }
   const tradeContextRequested = sawTradeSelector || sawTradeInput;
   if (tradeContextRequested) {
     if (options.amountUsdc === null) {

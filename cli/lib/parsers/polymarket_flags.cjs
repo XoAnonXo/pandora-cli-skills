@@ -558,6 +558,13 @@ function createParsePolymarketTradeFlags(deps) {
         'Provide --condition-id <id> or --slug <slug> when --token-id is not set.',
       );
     }
+    const selectorCount = [options.conditionId, options.slug, options.tokenId].filter(Boolean).length;
+    if (selectorCount > 1) {
+      throw new CliError(
+        'INVALID_ARGS',
+        'Provide only one market selector: --condition-id|--market-id, --slug, or --token-id.',
+      );
+    }
 
     const shared = parsePolymarketSharedFlags(sharedArgs, 'trade');
     options.rpcUrl = shared.rpcUrl;
