@@ -85,6 +85,7 @@ const { createParseOddsFlags } = require('../../cli/lib/parsers/odds_flags.cjs')
 const {
   createParsePolymarketSharedFlags,
   createParsePolymarketPositionsFlags,
+  createParsePolymarketTradeFlags,
 } = require('../../cli/lib/parsers/polymarket_flags.cjs');
 const {
   createParseMirrorSyncFlags,
@@ -8995,6 +8996,34 @@ test('createParsePolymarketPositionsFlags parses selectors and shared runtime fl
   assert.equal(payload.funder, '0x2222222222222222222222222222222222222222');
 });
 
+test('createParsePolymarketTradeFlags rejects conflicting selectors', () => {
+  const parseShared = createParsePolymarketSharedFlags(buildParserDeps());
+  const parseTrade = createParsePolymarketTradeFlags({
+    ...buildParserDeps(),
+    parsePolymarketSharedFlags: parseShared,
+    defaultTimeoutMs: 12000,
+  });
+
+  assert.throws(
+    () =>
+      parseTrade([
+        '--condition-id',
+        `0x${'c'.repeat(64)}`,
+        '--slug',
+        'btc-above-100k',
+        '--token',
+        'yes',
+        '--amount-usdc',
+        '5',
+        '--dry-run',
+      ]),
+    (error) =>
+      error
+      && error.code === 'INVALID_ARGS'
+      && error.message === 'Provide only one market selector: --condition-id|--market-id, --slug, or --token-id.',
+  );
+});
+
 test('fetchPolymarketPositionInventory normalizes mock API rows with provenance', async () => {
   const conditionId = `0x${'b'.repeat(64)}`;
   const server = http.createServer((req, res) => {
@@ -9130,6 +9159,64 @@ test('createRunPolymarketCommand routes positions through the ops service payloa
   assert.equal(observed.emitted[0][2].action, 'positions');
   assert.equal(observed.emitted[0][2].summary.yesBalance, 2);
   assert.equal(observed.emitted[0][2].runtime.mode, 'live');
+});
+
+test('createRunPolymarketCommand preflight rejects conflicting selectors before network resolution', async () => {
+  const runPolymarketCommand = createRunPolymarketCommand({
+    CliError: ParserCliError,
+    includesHelpFlag: (args) => Array.isArray(args) && args.includes('--help'),
+    emitSuccess: () => {},
+    commandHelpPayload: (usage, notes) => ({ usage, notes }),
+    loadEnvIfPresent: () => {},
+    parsePolymarketSharedFlags: () => ({}),
+    parsePolymarketApproveFlags: () => {
+      throw new Error('not used');
+    },
+    parsePolymarketPositionsFlags: () => {
+      throw new Error('not used');
+    },
+    parsePolymarketTradeFlags: () => {
+      throw new Error('not used');
+    },
+    resolveForkRuntime: () => ({ mode: 'live', chainId: 137, rpcUrl: null }),
+    isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
+    runPolymarketCheck: async () => ({}),
+    runPolymarketApprove: async () => ({}),
+    runPolymarketPreflight: async () => {
+      throw new Error('preflight should not execute');
+    },
+    runPolymarketPositions: async () => ({}),
+    resolvePolymarketMarket: async () => ({}),
+    readTradingCredsFromEnv: () => ({}),
+    placeHedgeOrder: async () => ({}),
+    renderPolymarketCheckTable: () => {},
+    renderPolymarketApproveTable: () => {},
+    renderPolymarketPreflightTable: () => {},
+    renderSingleEntityTable: () => {},
+    defaultEnvFile: '/tmp/.env',
+  });
+
+  await assert.rejects(
+    () =>
+      runPolymarketCommand(
+        [
+          'preflight',
+          '--condition-id',
+          `0x${'c'.repeat(64)}`,
+          '--slug',
+          'btc-above-100k',
+          '--token',
+          'yes',
+          '--amount-usdc',
+          '5',
+        ],
+        { outputMode: 'json' },
+      ),
+    (error) =>
+      error
+      && error.code === 'INVALID_ARGS'
+      && error.message === 'Provide only one market selector: --condition-id|--market-id, --slug, or --token-id.',
+  );
 });
 
 test('error recovery service returns hints for all mapped codes', () => {
