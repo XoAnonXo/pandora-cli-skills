@@ -1,6 +1,11 @@
 'use strict';
 
+const POLICY_HELP_PREFIX = 'pandora [--output table|json] policy [--mode <safe|dry-run|paper|fork>]';
 const SAFE_POLICY_MODES = new Set(['safe', 'dry-run', 'paper', 'fork']);
+
+function buildPolicyUsage(suffix) {
+  return POLICY_HELP_PREFIX + ' ' + suffix;
+}
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -20,6 +25,8 @@ function uniqueStrings(values) {
 }
 
 function renderPolicyTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  NAME  SOURCE  DESCRIPTION');
   const items = Array.isArray(payload.items) ? payload.items : [payload.item || payload];
   for (const item of items) {
     if (!item) continue;
@@ -28,12 +35,18 @@ function renderPolicyTable(payload) {
   }
 }
 
+const POLICY_EXPLAIN_HEADER_PREFIX = 'ID  DECISION  USABLE';
+
 function renderPolicyExplainTable(payload) {
   const item = payload && payload.item ? payload.item : null;
   const explanation = payload && payload.explanation ? payload.explanation : null;
   if (!item || !explanation) return;
   // eslint-disable-next-line no-console
-  console.log(`${item.id}  ${explanation.decision}  ${explanation.usable ? 'usable' : 'blocked'}  ${explanation.request.command || '-'}`);
+  console.log(`${POLICY_EXPLAIN_HEADER_PREFIX}  COMMAND`);
+  // eslint-disable-next-line no-console
+  const usableState = explanation.usable ? 'usable' : 'blocked';
+  const requestCmd = explanation.request && explanation.request.command ? explanation.request.command : '-';
+  console.log(`${item.id}  ${explanation.decision}  ${usableState}  ${requestCmd}`);
   for (const step of Array.isArray(explanation.remediation) ? explanation.remediation : []) {
     // eslint-disable-next-line no-console
     console.log(`action: ${step.message}`);
@@ -41,6 +54,8 @@ function renderPolicyExplainTable(payload) {
 }
 
 function renderPolicyRecommendTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log(`${POLICY_EXPLAIN_HEADER_PREFIX}  SOURCE`);
   const candidates = Array.isArray(payload && payload.candidates) ? payload.candidates : [];
   for (const candidate of candidates) {
     // eslint-disable-next-line no-console
@@ -50,7 +65,14 @@ function renderPolicyRecommendTable(payload) {
 
 function remediationKey(action) {
   if (!action || typeof action !== 'object') return 'summary';
-  return JSON.stringify(action);
+  const type = action.type || null;
+  const packId = Object.prototype.hasOwnProperty.call(action, 'packId') ? action.packId : null;
+  const command = Object.prototype.hasOwnProperty.call(action, 'command') ? action.command : null;
+  const reason = Object.prototype.hasOwnProperty.call(action, 'reason') ? action.reason : null;
+  const profileId = Object.prototype.hasOwnProperty.call(action, 'profileId') ? action.profileId : null;
+  const field = Object.prototype.hasOwnProperty.call(action, 'field') ? action.field : null;
+  const value = Object.prototype.hasOwnProperty.call(action, 'value') ? action.value : null;
+  return JSON.stringify({ type, packId, command, reason, profileId, field, value });
 }
 
 function formatRemediationAction(action, summary) {
@@ -284,7 +306,7 @@ function createRunPolicyCommand(deps) {
     const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] policy list|get|explain|recommend|lint [flags]';
+      const usage = 'pandora [--output table|json] policy list|get|explain|recommend|lint [--command <cmd>] [--mode <mode>] [--chain-id <id>] [--category <cat>] [--policy-id <id>]';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'policy.help', commandHelpPayload(usage));
       } else {

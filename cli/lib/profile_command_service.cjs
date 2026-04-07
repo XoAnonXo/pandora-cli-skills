@@ -2,6 +2,8 @@
 
 const { POLL_CATEGORY_IDS } = require('./shared/poll_categories.cjs');
 
+const PROFILE_HELP_PREFIX = 'pandora [--output table|json] profile [--mode <safe|dry-run|paper|fork>]';
+
 const EXACT_CONTEXT_FLAGS = Object.freeze([
   { key: 'command', flag: '--command' },
   { key: 'mode', flag: '--mode' },
@@ -16,6 +18,10 @@ const CATEGORY_NAME_BY_ID = Object.freeze(
     Object.entries(POLL_CATEGORY_IDS).map(([name, id]) => [String(id), name]),
   ),
 );
+
+function buildProfileUsage(suffix) {
+  return PROFILE_HELP_PREFIX + ' ' + suffix;
+}
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -54,6 +60,8 @@ function displayCategoryList(values) {
 }
 
 function renderProfileListTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  SIGNER_BACKEND  MUTABLE  STATUS  SOURCE');
   const items = Array.isArray(payload && payload.items) ? payload.items : [];
   for (const item of items) {
     // eslint-disable-next-line no-console
@@ -63,12 +71,19 @@ function renderProfileListTable(payload) {
   }
 }
 
+function renderProfileRow(profile) {
+  if (!profile) return;
+  // eslint-disable-next-line no-console
+  console.log(`${profile.id}  ${profile.signerBackend}  ${profile.readOnly ? 'read-only' : 'mutable'}`);
+}
+
 function renderProfileGetTable(payload) {
   const profile = payload && payload.profile ? payload.profile : null;
   const resolution = payload && payload.resolution ? payload.resolution : null;
   if (!profile) return;
   // eslint-disable-next-line no-console
-  console.log(`${profile.id}  ${profile.signerBackend}  ${profile.readOnly ? 'read-only' : 'mutable'}`);
+  console.log('ID  SIGNER_BACKEND  MUTABLE');
+  renderProfileRow(profile);
   if (resolution) {
     // eslint-disable-next-line no-console
     console.log(`resolution=${resolution.status}  ready=${resolution.ready ? 'yes' : 'no'}`);
@@ -81,7 +96,8 @@ function renderProfileExplainTable(payload) {
   const explanation = payload && payload.explanation ? payload.explanation : null;
   if (!profile) return;
   // eslint-disable-next-line no-console
-  console.log(`${profile.id}  ${profile.signerBackend}  ${profile.readOnly ? 'read-only' : 'mutable'}`);
+  console.log('ID  SIGNER_BACKEND  MUTABLE');
+  renderProfileRow(profile);
   if (!explanation) {
     if (resolution) {
       // eslint-disable-next-line no-console
@@ -104,6 +120,8 @@ function renderProfileExplainTable(payload) {
 
 
 function renderProfileRecommendTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  RECOMMENDED_MODE  USABLE  TOOL');
   const items = Array.isArray(payload && payload.items) ? payload.items : [];
   for (const item of items) {
     // eslint-disable-next-line no-console
@@ -112,6 +130,8 @@ function renderProfileRecommendTable(payload) {
 }
 
 function renderProfileValidateTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  SIGNER_BACKEND  MUTABLE  READY');
   const items = Array.isArray(payload && payload.items) ? payload.items : [];
   for (const item of items) {
     // eslint-disable-next-line no-console
@@ -588,7 +608,7 @@ function createRunProfileCommand(deps) {
     const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] profile list|get|explain|recommend|validate [flags]';
+      const usage = 'pandora [--output table|json] profile list|get|explain|recommend|validate [--command <cmd>] [--mode <mode>] [--chain-id <id>] [--category <cat>] [--profile-id <id>]';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'profile.help', commandHelpPayload(usage));
       } else {

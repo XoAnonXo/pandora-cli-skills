@@ -4,18 +4,17 @@ const WEBHOOK_SCHEMA_VERSION = '1.0.0';
 const DEFAULT_WEBHOOK_TIMEOUT_MS = 5_000;
 const DEFAULT_WEBHOOK_RETRIES = 3;
 
+function coalesceStr(value, ifEmpty) {
+  const text = typeof value === 'string' ? value.trim() : String(value || '').trim();
+  return text || ifEmpty;
+}
+
 function normalizeOptionalString(value) {
-  if (value === undefined || value === null) return null;
-  const text = String(value).trim();
-  return text || null;
+  return coalesceStr(value, null);
 }
 
 function hasWebhookTargets(options) {
-  return Boolean(
-    (options && options.webhookUrl) ||
-      (options && options.telegramBotToken && options.telegramChatId) ||
-      (options && options.discordWebhookUrl),
-  );
+  return !!(options?.webhookUrl || (options?.telegramBotToken && options?.telegramChatId) || options?.discordWebhookUrl);
 }
 
 function renderTemplate(template, context) {
@@ -25,14 +24,11 @@ function renderTemplate(template, context) {
     let value = context;
     for (const part of parts) {
       if (!value || typeof value !== 'object' || !(part in value)) {
-        value = '';
-        break;
+        return '';
       }
       value = value[part];
     }
-    if (value === null || value === undefined) return '';
-    if (typeof value === 'object') return JSON.stringify(value);
-    return String(value);
+    return coalesceStr(value, '');
   });
 }
 
@@ -75,15 +71,14 @@ function buildDiscordRequest(options, context) {
   };
 }
 
-function isRetryableStatus(statusCode) {
-  return statusCode === 408 || statusCode === 409 || statusCode === 425 || statusCode === 429 || statusCode >= 500;
-}
+const RETRYABLE_STATUS_CODES = new Set([408, 409, 425, 429]);
 
 function isRetryableWebhookFailure(error, statusCode) {
-  if (Number.isInteger(statusCode)) return isRetryableStatus(statusCode);
-  const code = normalizeOptionalString(error && error.code);
-  if (code === 'ERR_INVALID_URL') return false;
+  if (Number.isInteger(statusCode)) {
+    return RETRYABLE_STATUS_CODES.has(statusCode) || statusCode >= 500;
+  }
   if (error && error.name === 'AbortError') return true;
+  if (error && error.code === 'ERR_INVALID_URL') return false;
   return true;
 }
 
@@ -91,17 +86,24 @@ function computeWebhookBackoffMs(attemptIndex) {
   return Math.min(5_000, 200 * 2 ** attemptIndex);
 }
 
+function getNestedString(obj, ...keys) {
+  let current = obj;
+  for (const key of keys) {
+    if (!current || typeof current !== 'object') return null;
+    current = current[key];
+  }
+  return normalizeOptionalString(current);
+}
+
 function extractWebhookContextHeaders(context = {}) {
-  const eventName = normalizeOptionalString(context.event)
-    || normalizeOptionalString(context && context.payload && context.payload.event)
+  const eventName = getNestedString(context, 'event')
+    || getNestedString(context, 'payload', 'event')
     || 'pandora.alert';
-  const correlationId = normalizeOptionalString(
-    (context && context.operationEvent && context.operationEvent.correlationId)
-    || (context && context.payload && context.payload.operationEvent && context.payload.operationEvent.correlationId)
-    || context.correlationId
-    || (context && context.payload && context.payload.correlationId)
-    || context.requestId,
-  );
+  const correlationId = getNestedString(context, 'operationEvent', 'correlationId')
+    || getNestedString(context, 'payload', 'operationEvent', 'correlationId')
+    || getNestedString(context, 'correlationId')
+    || getNestedString(context, 'payload', 'correlationId')
+    || getNestedString(context, 'requestId');
   const generatedAt = normalizeOptionalString(context.generatedAt) || new Date().toISOString();
   return {
     eventName,
@@ -116,6 +118,8 @@ async function sendJson(url, body, options) {
   const maxAttempts = retries + 1;
   const deliveryId = normalizeOptionalString(options.webhookDeliveryId) || `wh_${crypto.randomUUID()}`;
   const attempts = [];
+
+  // Extract context headers once; they don't change across retry attempts
   const { eventName, correlationId, generatedAt } = extractWebhookContextHeaders(body);
 
   let lastError = null;

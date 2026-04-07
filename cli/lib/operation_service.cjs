@@ -78,14 +78,20 @@ function mapPublicStatusToStore(status) {
   return normalizeOperationState(normalized);
 }
 
+const STORE_TO_PUBLIC_STATUS = Object.freeze({
+  planned: 'planned',
+  validated: 'validated',
+  queued: 'queued',
+  running: 'executing',
+  paused: 'paused',
+  succeeded: 'completed',
+  failed: 'failed',
+  cancelled: 'canceled',
+  closed: 'closed',
+});
+
 function mapStoreStatusToPublic(status) {
-  const normalized = normalizeOperationState(status);
-  if (normalized === 'running') return 'executing';
-  if (normalized === 'queued') return 'queued';
-  if (normalized === 'paused') return 'paused';
-  if (normalized === 'succeeded') return 'completed';
-  if (normalized === 'cancelled') return 'canceled';
-  return normalized || 'planned';
+  return STORE_TO_PUBLIC_STATUS[normalizeOperationState(status)] ?? 'planned';
 }
 
 function deriveTool(command) {
@@ -134,7 +140,6 @@ function normalizePublicOperationRecord(record, checkpoints) {
     completedAt: record.completedAt || record.succeededAt || null,
     failedAt: record.failedAt || null,
     canceledAt: record.cancelledAt || null,
-    cancelledAt: record.cancelledAt || null,
     closedAt: record.closedAt || null,
     parentOperationId: record.parentOperationId || null,
     policyPack: record.policyPack || null,
