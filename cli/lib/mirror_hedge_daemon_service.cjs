@@ -28,6 +28,7 @@ const DAEMON_IDENTITY_BOOLEAN_FLAGS = new Set([
   '--paper',
   '--execute-live',
 ]);
+const STRATEGY_HASH_PATTERN = /^[a-f0-9]{16}$/;
 
 function createServiceError(code, message, details = undefined) {
   const err = new Error(message);
@@ -40,7 +41,7 @@ function createServiceError(code, message, details = undefined) {
 
 function normalizeStrategyHash(strategyHash) {
   const value = String(strategyHash || '').trim().toLowerCase();
-  if (!/^[a-f0-9]{16}$/.test(value)) {
+  if (!STRATEGY_HASH_PATTERN.test(value)) {
     throw createServiceError('INVALID_FLAG_VALUE', '--strategy-hash must be a 16-character hex value.');
   }
   return value;
@@ -67,27 +68,26 @@ function resolveHomeDir() {
 function sanitizeCliArgs(args = []) {
   const sanitized = [];
   for (let i = 0; i < args.length; i += 1) {
-    const token = String(args[i] || '');
-    const eqIndex = token.indexOf('=');
+    const rawFlag = String(args[i] || '');
+    const eqIndex = rawFlag.indexOf('=');
     if (eqIndex > 0) {
-      const flag = token.slice(0, eqIndex);
-      if (SENSITIVE_CLI_FLAGS.has(flag)) {
-        sanitized.push(`${flag}=[redacted]`);
-        continue;
-      }
+      const flag = rawFlag.slice(0, eqIndex);
+      sanitized.push(SENSITIVE_CLI_FLAGS.has(flag) ? `${flag}=[redacted]` : rawFlag);
+      continue;
     }
 
-    if (SENSITIVE_CLI_FLAGS.has(token)) {
-      sanitized.push(token);
+    if (rawFlag.startsWith('--')) {
       const next = i + 1 < args.length ? String(args[i + 1] || '') : '';
-      if (next && !next.startsWith('--')) {
-        sanitized.push('[redacted]');
+      if (SENSITIVE_CLI_FLAGS.has(rawFlag) && next && !next.startsWith('--')) {
+        sanitized.push(rawFlag, '[redacted]');
         i += 1;
+      } else {
+        sanitized.push(rawFlag);
       }
       continue;
     }
 
-    sanitized.push(token);
+    sanitized.push(rawFlag);
   }
   return sanitized;
 }
@@ -630,6 +630,7 @@ function daemonStatus(options = {}) {
 
 module.exports = {
   MIRROR_HEDGE_DAEMON_SCHEMA_VERSION,
+  createServiceError,
   defaultPidFile,
   defaultLogFile,
   startDaemon,

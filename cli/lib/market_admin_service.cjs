@@ -83,49 +83,25 @@ const OUTCOME_TOKEN_REF_ABI_CANDIDATES = [
   ],
 ];
 
+const CALC_REMOVE_LIQUIDITY_BASE = {
+  type: 'function',
+  name: 'calcRemoveLiquidity',
+  stateMutability: 'view',
+  inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
+};
+
 const CALC_REMOVE_LIQUIDITY_ABI_CANDIDATES = [
   {
     order: 'collateral-yes-no',
-    abi: [
-      {
-        type: 'function',
-        name: 'calcRemoveLiquidity',
-        stateMutability: 'view',
-        inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
-        outputs: [
-          { name: 'collateralOut', type: 'uint256' },
-          { name: 'yesOut', type: 'uint256' },
-          { name: 'noOut', type: 'uint256' },
-        ],
-      },
-    ],
+    abi: [{ ...CALC_REMOVE_LIQUIDITY_BASE, outputs: [{ name: 'collateralOut', type: 'uint256' }, { name: 'yesOut', type: 'uint256' }, { name: 'noOut', type: 'uint256' }] }],
   },
   {
     order: 'collateral-yes',
-    abi: [
-      {
-        type: 'function',
-        name: 'calcRemoveLiquidity',
-        stateMutability: 'view',
-        inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
-        outputs: [
-          { name: 'collateralOut', type: 'uint256' },
-          { name: 'yesOut', type: 'uint256' },
-        ],
-      },
-    ],
+    abi: [{ ...CALC_REMOVE_LIQUIDITY_BASE, outputs: [{ name: 'collateralOut', type: 'uint256' }, { name: 'yesOut', type: 'uint256' }] }],
   },
   {
     order: 'collateral-only',
-    abi: [
-      {
-        type: 'function',
-        name: 'calcRemoveLiquidity',
-        stateMutability: 'view',
-        inputs: [{ name: 'sharesToBurn', type: 'uint256' }],
-        outputs: [{ name: 'collateralOut', type: 'uint256' }],
-      },
-    ],
+    abi: [{ ...CALC_REMOVE_LIQUIDITY_BASE, outputs: [{ name: 'collateralOut', type: 'uint256' }] }],
   },
 ];
 
