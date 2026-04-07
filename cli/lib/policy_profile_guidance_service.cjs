@@ -2,7 +2,7 @@
 
 const { buildCommandDescriptors } = require('./agent_contract_registry.cjs');
 
-const SAFE_MODES = new Set(['dry-run', 'paper', 'fork']);
+const SAFE_MODES = new Set(['safe', 'dry-run', 'paper', 'fork']);
 const LIVE_MODES = new Set(['execute', 'execute-live']);
 const EXPLAIN_SUFFIXES = new Set(['execute', 'plan', 'validate', 'status', 'cancel', 'close', 'run', 'start', 'stop', 'once']);
 

@@ -26,69 +26,50 @@ function createRunRiskCommand(deps) {
     }
   }
 
+  function buildRiskSnapshotPayload(state, extra = {}) {
+    return {
+      ...extra,
+      riskFile: state.riskFile,
+      max_position_usd: state.guardrails ? state.guardrails.maxSingleLiveNotionalUsdc : state.max_position_usd,
+      max_daily_loss_usd: state.guardrails ? state.guardrails.maxDailyLiveNotionalUsdc : state.max_daily_loss_usd,
+      max_open_markets: state.guardrails ? state.guardrails.maxDailyLiveOps : state.max_open_markets,
+      kill_switch: state.kill_switch,
+      metadata: state.metadata,
+      panic: state.panic,
+      guardrails: state.guardrails,
+      counters: state.counters,
+    };
+  }
+
   return async function runRiskCommand(args, context) {
     const action = args[0];
-    const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      emitHelp(context.outputMode, 'risk.help', 'pandora [--output table|json] risk show|panic [--risk-file <path>] [--clear] [--reason <text>] [--actor <id>]');
+      emitHelp(context.outputMode, 'risk.help', 'pandora [--output table|json] risk show\n  panic: pandora [--output table|json] risk panic [--risk-file <path>] [--reason <text>] [--actor <id>]\n  clear: pandora [--output table|json] risk panic --clear [--actor <id>]');
       return;
     }
 
     if (action === 'show') {
-      if (includesHelpFlag(actionArgs)) {
+      if (includesHelpFlag(args.slice(1))) {
         emitHelp(context.outputMode, 'risk.show.help', 'pandora [--output table|json] risk show [--risk-file <path>]');
         return;
       }
 
-      const options = parseRiskShowFlags(actionArgs);
+      const options = parseRiskShowFlags(args.slice(1));
       const snapshot = getRiskSnapshot(options);
-      emitSuccess(
-        context.outputMode,
-        'risk.show',
-        {
-          riskFile: snapshot.riskFile,
-          max_position_usd: snapshot.state.max_position_usd,
-          max_daily_loss_usd: snapshot.state.max_daily_loss_usd,
-          max_open_markets: snapshot.state.max_open_markets,
-          kill_switch: snapshot.state.kill_switch,
-          metadata: snapshot.state.metadata,
-          panic: snapshot.state.panic,
-          guardrails: snapshot.state.guardrails,
-          counters: snapshot.state.counters,
-        },
-        renderRiskTable,
-      );
+      emitSuccess(context.outputMode, 'risk.show', buildRiskSnapshotPayload(snapshot.state, { riskFile: snapshot.riskFile }), renderRiskTable);
       return;
     }
 
     if (action === 'panic') {
-      if (includesHelpFlag(actionArgs)) {
+      if (includesHelpFlag(args.slice(1))) {
         emitHelp(context.outputMode, 'risk.panic.help', 'pandora [--output table|json] risk panic [--risk-file <path>] [--reason <text> --actor <id>] | [--clear --actor <id>]');
         return;
       }
 
-      const options = parseRiskPanicFlags(actionArgs);
+      const options = parseRiskPanicFlags(args.slice(1));
       const result = options.clear ? clearPanic(options) : setPanic(options);
-      emitSuccess(
-        context.outputMode,
-        'risk.panic',
-        {
-          action: result.action,
-          changed: result.changed,
-          riskFile: result.riskFile,
-          max_position_usd: result.guardrails ? result.guardrails.maxSingleLiveNotionalUsdc : null,
-          max_daily_loss_usd: result.guardrails ? result.guardrails.maxDailyLiveNotionalUsdc : null,
-          max_open_markets: result.guardrails ? result.guardrails.maxDailyLiveOps : null,
-          kill_switch: result.kill_switch,
-          metadata: result.metadata,
-          panic: result.panic,
-          guardrails: result.guardrails,
-          counters: result.counters,
-          stopFiles: result.stopFiles,
-        },
-        renderRiskTable,
-      );
+      emitSuccess(context.outputMode, 'risk.panic', buildRiskSnapshotPayload(result, { action: result.action, changed: result.changed, stopFiles: result.stopFiles }), renderRiskTable);
       return;
     }
 

@@ -14,11 +14,7 @@ function normalizeOptionalString(value) {
 }
 
 function hasWebhookTargets(options) {
-  return Boolean(
-    (options && options.webhookUrl) ||
-      (options && options.telegramBotToken && options.telegramChatId) ||
-      (options && options.discordWebhookUrl),
-  );
+  return !!(options?.webhookUrl || (options?.telegramBotToken && options?.telegramChatId) || options?.discordWebhookUrl);
 }
 
 function renderTemplate(template, context) {
@@ -75,13 +71,14 @@ function buildDiscordRequest(options, context) {
   };
 }
 
+const RETRYABLE_STATUS_CODES = new Set([408, 409, 425, 429]);
+
 function isRetryableWebhookFailure(error, statusCode) {
   if (Number.isInteger(statusCode)) {
-    return statusCode === 408 || statusCode === 409 || statusCode === 425 || statusCode === 429 || statusCode >= 500;
+    return RETRYABLE_STATUS_CODES.has(statusCode) || statusCode >= 500;
   }
-  const code = normalizeOptionalString(error && error.code);
-  if (code === 'ERR_INVALID_URL') return false;
   if (error && error.name === 'AbortError') return true;
+  if (error && error.code === 'ERR_INVALID_URL') return false;
   return true;
 }
 
@@ -121,6 +118,8 @@ async function sendJson(url, body, options) {
   const maxAttempts = retries + 1;
   const deliveryId = normalizeOptionalString(options.webhookDeliveryId) || `wh_${crypto.randomUUID()}`;
   const attempts = [];
+
+  // Extract context headers once; they don't change across retry attempts
   const { eventName, correlationId, generatedAt } = extractWebhookContextHeaders(body);
 
   let lastError = null;

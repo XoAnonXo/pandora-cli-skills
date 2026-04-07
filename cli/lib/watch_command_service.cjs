@@ -23,24 +23,27 @@ function normalizeTrackedProbability(value) {
   return probability;
 }
 
-function resolveWatchProbabilityYes(options, quote) {
-  const fromOdds = quote
-    && quote.odds
-    && Number.isFinite(Number(quote.odds.yesProbability))
-    ? normalizeTrackedProbability(quote.odds.yesProbability)
-    : null;
-  if (fromOdds !== null) return fromOdds;
+function resolveWatchProbabilityYes(quote, side, yesPct) {
+  // Normalize input once
+  const normalizedYesPct = normalizeTrackedProbability(yesPct);
 
-  if (quote && quote.estimate && Number.isFinite(Number(quote.estimate.impliedProbability))) {
+  // Priority 1: odds.yesProbability
+  if (quote?.odds) {
+    const fromOdds = normalizeTrackedProbability(quote.odds.yesProbability);
+    if (fromOdds !== null) return fromOdds;
+  }
+
+  // Priority 2: estimate.impliedProbability (side-adjusted)
+  if (quote?.estimate) {
     const implied = normalizeTrackedProbability(quote.estimate.impliedProbability);
     if (implied !== null) {
-      return options.side === 'no' ? 1 - implied : implied;
+      return side === 'no' ? 1 - implied : implied;
     }
   }
 
-  if (Number.isFinite(Number(options.yesPct))) {
-    return normalizeTrackedProbability(options.yesPct);
-  }
+  // Priority 3: direct yesPct
+  if (normalizedYesPct !== null) return normalizedYesPct;
+
   return null;
 }
 
@@ -111,7 +114,7 @@ function createRunWatchCommand(deps) {
 
       if (options.wallet) {
         portfolio = await collectPortfolioSnapshot(indexerUrl, options, shared.timeoutMs);
-        snapshot.portfolioSummary = portfolio.summary;
+        snapshot.portfolioSummary = { ...portfolio.summary };
       }
 
       if (options.marketAddress) {
@@ -133,7 +136,7 @@ function createRunWatchCommand(deps) {
           };
           brierTracking.skippedCount += 1;
         } else {
-          const probabilityYes = resolveWatchProbabilityYes(options, snapshot.quote);
+          const probabilityYes = resolveWatchProbabilityYes(snapshot.quote, options.side, options.yesPct);
           if (probabilityYes === null) {
             snapshot.brierTracking = {
               tracked: false,

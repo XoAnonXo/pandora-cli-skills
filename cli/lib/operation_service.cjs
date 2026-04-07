@@ -79,16 +79,19 @@ function mapPublicStatusToStore(status) {
 }
 
 const STORE_TO_PUBLIC_STATUS = Object.freeze({
-  running: 'executing',
+  planned: 'planned',
+  validated: 'validated',
   queued: 'queued',
+  running: 'executing',
   paused: 'paused',
   succeeded: 'completed',
+  failed: 'failed',
   cancelled: 'canceled',
+  closed: 'closed',
 });
 
 function mapStoreStatusToPublic(status) {
-  const normalized = normalizeOperationState(status);
-  return STORE_TO_PUBLIC_STATUS[normalized] ?? normalized ?? 'planned';
+  return STORE_TO_PUBLIC_STATUS[normalizeOperationState(status)] ?? 'planned';
 }
 
 function deriveTool(command) {

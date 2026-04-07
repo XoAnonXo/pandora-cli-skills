@@ -1,5 +1,11 @@
 'use strict';
 
+const RECIPE_HELP_PREFIX = 'pandora [--output table|json] recipe';
+
+function buildRecipeUsage(suffix) {
+  return RECIPE_HELP_PREFIX + ' ' + suffix;
+}
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunRecipeCommand requires deps.${name}()`);
@@ -8,6 +14,8 @@ function requireDep(deps, name) {
 }
 
 function renderRecipeTable(payload) {
+  // eslint-disable-next-line no-console
+  console.log('ID  DISPLAY_NAME  SOURCE  APPROVAL_STATUS  RISK_LEVEL  TOOL  DEFAULT_POLICY  DEFAULT_PROFILE');
   const items = Array.isArray(payload.items)
     ? payload.items
     : [payload.item || payload.summary || payload];
@@ -44,58 +52,26 @@ function createRunRecipeCommand(deps) {
     return recipeRecord;
   }
 
+  const HELP_USAGE = {
+    '': 'list|get|validate|run [--source <source>] [--id <id>] [--file <path>]',
+    'list': 'list [--source <first-party|user|all>] [--approval-status <approved|unreviewed|experimental|deprecated|all>] [--risk-level <read-only|paper|dry-run|live|all>]',
+    'get': 'get [--id <recipe-id>] [--file <path>]',
+    'validate': 'validate [--id <recipe-id>] [--file <path>] [--policy-id <id>] [--profile-id <id>]',
+    'run': 'run [--id <recipe-id>] [--file <path>] [--mode <safe|dry-run|paper|fork|execute|execute-live>] [--set key=value] [--policy-id <id>] [--profile-id <id>] [--timeout <seconds>]',
+  };
+  const VALID_ACTIONS = new Set(['list', 'get', 'validate', 'run']);
+
   return async function runRecipeCommand(args, context) {
     const action = args[0];
     const actionArgs = args.slice(1);
+    const showingHelp = !action || action === '--help' || action === '-h' || includesHelpFlag(actionArgs);
 
-    if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] recipe list|get|validate|run [flags]';
+    const usageKey = showingHelp ? (VALID_ACTIONS.has(action) ? action : '') : null;
+    if (usageKey !== null) {
+      const usage = buildRecipeUsage(HELP_USAGE[usageKey]);
+      const eventName = usageKey ? `recipe.${usageKey}.help` : 'recipe.help';
       if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'recipe.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
-
-    if (action === 'list' && includesHelpFlag(actionArgs)) {
-      const usage = 'pandora [--output table|json] recipe list [--source first-party|user|all] [--approval-status approved|unreviewed|experimental|deprecated|all] [--risk-level read-only|paper|dry-run|live|all]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'recipe.list.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
-
-    if (action === 'get' && includesHelpFlag(actionArgs)) {
-      const usage = 'pandora [--output table|json] recipe get --id <recipe-id>|--file <path>';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'recipe.get.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
-
-    if (action === 'validate' && includesHelpFlag(actionArgs)) {
-      const usage = 'pandora [--output table|json] recipe validate --id <recipe-id>|--file <path> [--policy-id <id>] [--profile-id <id>]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'recipe.validate.help', commandHelpPayload(usage));
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`Usage: ${usage}`);
-      }
-      return;
-    }
-
-    if (action === 'run' && includesHelpFlag(actionArgs)) {
-      const usage = 'pandora [--output table|json] recipe run --id <recipe-id>|--file <path> [--set key=value] [--policy-id <id>] [--profile-id <id>] [--timeout <seconds>]';
-      if (context.outputMode === 'json') {
-        emitSuccess(context.outputMode, 'recipe.run.help', commandHelpPayload(usage));
+        emitSuccess(context.outputMode, eventName, commandHelpPayload(usage));
       } else {
         // eslint-disable-next-line no-console
         console.log(`Usage: ${usage}`);
