@@ -42,6 +42,10 @@ function createRunOutcomeTradeCommand(deps, config) {
     printHelpTable,
   } = config;
 
+  function normalizeTradeMode(parsedOptions, commandDefaultMode) {
+    return commandDefaultMode === 'sell' ? 'sell' : (parsedOptions.mode || 'buy');
+  }
+
   return async function runOutcomeTradeCommand(args, context) {
     const shared = parseIndexerSharedFlags(args);
     if (shared.rest[0] === 'quote') {
@@ -64,7 +68,7 @@ function createRunOutcomeTradeCommand(deps, config) {
       const parsedQuoteOptions = parseQuoteFlags(quoteArgs);
       const quoteOptions = {
         ...parsedQuoteOptions,
-        mode: defaultMode === 'sell' ? 'sell' : (parsedQuoteOptions.mode || 'buy'),
+        mode: normalizeTradeMode(parsedQuoteOptions, defaultMode),
       };
       const payload = await buildQuotePayload(indexerUrl, quoteOptions, shared.timeoutMs);
       emitSuccess(context.outputMode, `${commandName}.quote`, payload, renderQuoteTable);
@@ -83,7 +87,7 @@ function createRunOutcomeTradeCommand(deps, config) {
     const parsedOptions = parseTradeFlags(shared.rest);
     const options = {
       ...parsedOptions,
-      mode: defaultMode === 'sell' ? 'sell' : (parsedOptions.mode || 'buy'),
+      mode: normalizeTradeMode(parsedOptions, defaultMode),
     };
     const indexerUrl = resolveIndexerUrl(shared.indexerUrl);
     const quote = await buildQuotePayload(indexerUrl, options, shared.timeoutMs);

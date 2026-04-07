@@ -1,3 +1,5 @@
+const LP_USAGE = 'pandora [--output table|json] lp add|remove|positions|remove-all [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]';
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunLpCommand requires deps.${name}()`);
@@ -6,7 +8,7 @@ function requireDep(deps, name) {
 }
 
 function normalizeOperationToken(value, options = {}) {
-  if (value === undefined || value === null) return null;
+  if (value == null) return null;
   const trimmed = String(value).trim();
   if (!trimmed) return null;
   return options.preserveCase ? trimmed : trimmed.toLowerCase();
@@ -14,30 +16,26 @@ function normalizeOperationToken(value, options = {}) {
 
 function encodeOperationIdPart(value, options = {}) {
   const normalized = normalizeOperationToken(value, options);
-  return normalized ? encodeURIComponent(normalized) : null;
+  return normalized && encodeURIComponent(normalized);
 }
 
 function normalizeOperationChainId(value) {
   const numeric = Number(value);
-  if (!Number.isInteger(numeric) || numeric <= 0) {
-    return null;
-  }
-  return numeric;
+  return numeric > 0 && Number.isInteger(numeric) ? numeric : null;
 }
 
 function inferOperationStatus(payload, defaultStatus) {
-  if (payload && payload.mode === 'dry-run') {
+  if (payload?.mode === 'dry-run') {
     return 'planned';
   }
-  const successCount = Number.isInteger(payload && payload.successCount) ? payload.successCount : null;
-  const failureCount = Number.isInteger(payload && payload.failureCount) ? payload.failureCount : null;
-  if (successCount === null || failureCount === null) {
+  const successCount = Number.isInteger(payload?.successCount) ? payload.successCount : null;
+  const failureCount = Number.isInteger(payload?.failureCount) ? payload.failureCount : null;
+  if (!Number.isInteger(successCount) || !Number.isInteger(failureCount)) {
     return defaultStatus;
   }
-  if (failureCount === 0) {
-    return successCount > 0 ? 'completed' : 'no-op';
-  }
-  return successCount > 0 ? 'partial' : 'failed';
+  return successCount > 0
+    ? (failureCount > 0 ? 'partial' : 'completed')
+    : (failureCount > 0 ? 'failed' : 'no-op');
 }
 
 function buildLpOperationContext(options = {}, payload = {}) {
@@ -46,7 +44,6 @@ function buildLpOperationContext(options = {}, payload = {}) {
   if (!allMarkets) {
     return null;
   }
-
   const wallet = normalizeOperationToken(payload.wallet || options.wallet);
   if (!wallet) {
     return null;
@@ -127,14 +124,14 @@ function createRunLpCommand(deps) {
           context.outputMode,
           'lp.help',
           commandHelpPayload(
-            'pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]\n'
-              + 'pandora [--output table|json] lp simulate-remove --market-address <address> [--wallet <address>] [--lp-tokens <n>|--all] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]',
+            `${LP_USAGE}
+pandora [--output table|json] lp simulate-remove --market-address <address> [--wallet <address>] [--lp-tokens <n>|--all] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]`,
           ),
         );
       } else {
         // eslint-disable-next-line no-console
         console.log(
-          'Usage: pandora [--output table|json] lp add|remove|positions [--market-address <address>] [--wallet <address>] [--amount-usdc <n>] [--lp-tokens <n>|--all|--all-markets] [--dry-run|--execute] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--usdc <address>] [--deadline-seconds <n>] [--indexer-url <url>] [--timeout-ms <ms>]\n'
+          `Usage: ${LP_USAGE}\n`
             + '       pandora [--output table|json] lp simulate-remove --market-address <address> [--wallet <address>] [--lp-tokens <n>|--all] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--chain-id <id>] [--rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]',
         );
       }
