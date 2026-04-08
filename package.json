@@ -4,7 +4,8 @@
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
-    "pandora": "cli/pandora.cjs"
+    "pandora": "cli/pandora.cjs",
+    "overnight-engine": "scripts/run_overnight_engine.cjs"
   },
   "exports": {
     ".": "./cli/pandora.cjs",
@@ -52,6 +53,10 @@
     "!sdk/python/pandora_agent/**/*.pyc",
     "sdk/python/pyproject.toml",
     "sdk/python/README.md",
+    "proving-ground/lib/baton_common.cjs",
+    "proving-ground/lib/baton_worktree_manager.cjs",
+    "proving-ground/lib/minimax_client.cjs",
+    "proving-ground/lib/overnight_*.cjs",
     "benchmarks/latest/core-report.json",
     "benchmarks/latest/core-bundle.json",
     "benchmarks/latest/core-history.json",
@@ -60,6 +65,7 @@
     "scripts/create_polymarket_clone_and_bet.ts",
     "scripts/build_anthropic_skill_bundle.cjs",
     "scripts/check_anthropic_skill_bundle.cjs",
+    "scripts/run_overnight_engine.cjs",
     "scripts/.env.example",
     "scripts/release/install_release.sh",
     "anthropic-skill-src/SKILL.md",
@@ -119,6 +125,9 @@
     "proving-ground:autoresearch:cli": "node scripts/run_cli_section_autoresearch.cjs",
     "proving-ground:autoresearch:cli:baton": "node scripts/run_cli_baton_autoresearch.cjs start",
     "proving-ground:autoresearch:cli:baton:validate": "node scripts/run_cli_baton_autoresearch.cjs validate",
+    "overnight:init": "node scripts/run_overnight_engine.cjs init",
+    "overnight:validate": "node scripts/run_overnight_engine.cjs validate-adapter --adapter overnight.yaml --objective objective.yaml",
+    "overnight:run": "node scripts/run_overnight_engine.cjs run --adapter overnight.yaml --objective objective.yaml",
     "test:website": "npm run site:check && node --test tests/unit/website_smoke.test.cjs",
     "dry-run": "node cli/pandora.cjs launch --dry-run",
     "execute": "node cli/pandora.cjs launch --execute",
@@ -173,7 +182,8 @@
     "@polymarket/clob-client": "^5.2.4",
     "tsx": "^4.21.0",
     "viem": "^2.46.2",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",

@@ -10,6 +10,7 @@
     "deferredHedgeQueue": [
       {
         "id": "okc-bos:sell-yes:execution-failed",
+        "queueKey": "okc-bos:sell-yes",
         "status": "queued",
         "tokenSide": "yes",
         "orderSide": "sell",

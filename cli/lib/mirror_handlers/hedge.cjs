@@ -11,12 +11,55 @@ function renderKeyValueRows(title, rows) {
   }
 }
 
+function buildMirrorHedgeDiagnostics(data = {}) {
+  const diagnostics = [];
+  const seen = new Set();
+  const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+
+  function push(message) {
+    const text = String(message || '').trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    diagnostics.push(text);
+  }
+
+  if (Array.isArray(data.diagnostics)) {
+    for (const diagnostic of data.diagnostics) {
+      push(diagnostic);
+    }
+  }
+
+  for (const warning of warnings) {
+    const code = String(warning && warning.code ? warning.code : '').trim();
+    if (!code.startsWith('BUG-006')) continue;
+    const message = warning && warning.message ? warning.message : JSON.stringify(warning);
+    push(`[${code}] ${message}`);
+  }
+
+  const summary = data.summary || {};
+  if (!warnings.some((warning) => warning && warning.code === 'BUG-006_QUEUE_PRUNE')
+      && Number(summary.deferredHedgeRecoveredCount || 0) > 0) {
+    push(`[BUG-006_QUEUE_PRUNE] Deferred sell queue auto-pruned ${summary.deferredHedgeRecoveredCount} stale ${summary.deferredHedgeRecoveredCount === 1 ? 'entry' : 'entries'} after sell exposure cleared.${summary.deferredHedgeLastRecoveryAt ? ` Last recovery at ${summary.deferredHedgeLastRecoveryAt}.` : ''}`);
+  }
+  if (!warnings.some((warning) => warning && warning.code === 'BUG-006_QUEUE_INVALIDATION')
+      && Number(summary.deferredHedgeInvalidCount || 0) > 0) {
+    push(`[BUG-006_QUEUE_INVALIDATION] Deferred hedge queue still contains ${summary.deferredHedgeInvalidCount} invalid or non-executable ${summary.deferredHedgeInvalidCount === 1 ? 'entry' : 'entries'}.`);
+  }
+  if (!warnings.some((warning) => warning && warning.code === 'BUG-006_SELL_BLOCKED_BUY_PHASE')
+      && summary.queueStatusMessage) {
+    push(`[BUG-006_SELL_BLOCKED_BUY_PHASE] ${summary.queueStatusMessage}`);
+  }
+
+  return diagnostics;
+}
+
 function renderMirrorHedgeTable(data) {
   const selector = data.selector || {};
   const plan = data.plan || {};
   const bundle = data.bundle || {};
   const daemon = data.daemon || {};
   const runtime = data.runtime || {};
+  const diagnostics = buildMirrorHedgeDiagnostics(data);
 
   renderKeyValueRows('Mirror Hedge', [
     ['mode', data.mode || ''],
@@ -32,7 +75,7 @@ function renderMirrorHedgeTable(data) {
     ['planSummary', plan.summary || plan.actionSummary || plan.rebalanceSummary || ''],
     ['bundleSummary', bundle.summary || bundle.route || ''],
     ['runtimeStatus', runtime.status || ''],
-    ['diagnostics', Array.isArray(data.diagnostics) ? data.diagnostics.join(' | ') : ''],
+    ['diagnostics', diagnostics.join(' | ')],
   ]);
 }
 
@@ -42,6 +85,7 @@ function renderMirrorHedgeDaemonTable(data) {
   const runtime = data.runtime || {};
   const summary = data.summary || {};
   const readiness = data.readiness || {};
+  const diagnostics = buildMirrorHedgeDiagnostics(data);
   renderKeyValueRows('Mirror Hedge Daemon', [
     ['mode', data.mode || ''],
     ['stateFile', data.stateFile || ''],
@@ -68,6 +112,15 @@ function renderMirrorHedgeDaemonTable(data) {
     ['pendingOverlayUsdc', summary.pendingOverlayUsdc ?? ''],
     ['deferredHedgeCount', summary.deferredHedgeCount ?? ''],
     ['deferredHedgeUsdc', summary.deferredHedgeUsdc ?? ''],
+    ['deferredHedgeOldestAgeMs', summary.deferredHedgeOldestAgeMs ?? ''],
+    ['deferredHedgeInvalidCount', summary.deferredHedgeInvalidCount ?? ''],
+    ['deferredHedgeRecoveredCount', summary.deferredHedgeRecoveredCount ?? ''],
+    ['deferredHedgeLastBlockedReasonCode', summary.deferredHedgeLastBlockedReasonCode || ''],
+    ['deferredHedgeLastBlockedReason', summary.deferredHedgeLastBlockedReason || ''],
+    ['deferredHedgeLastFailureCode', summary.deferredHedgeLastFailureCode || ''],
+    ['deferredHedgeLastFailureMessage', summary.deferredHedgeLastFailureMessage || ''],
+    ['deferredHedgeLastRecoveryAt', summary.deferredHedgeLastRecoveryAt || ''],
+    ['queueStatusMessage', summary.queueStatusMessage || ''],
     ['targetYesShares', summary.targetYesShares ?? ''],
     ['targetNoShares', summary.targetNoShares ?? ''],
     ['currentYesShares', summary.currentYesShares ?? ''],
@@ -100,7 +153,7 @@ function renderMirrorHedgeDaemonTable(data) {
     ['stoppedReason', runtime.stoppedReason || ''],
     ['exitCode', runtime.exitCode === null || runtime.exitCode === undefined ? '' : runtime.exitCode],
     ['exitAt', runtime.exitAt || ''],
-    ['diagnostics', Array.isArray(data.diagnostics) ? data.diagnostics.join(' | ') : ''],
+    ['diagnostics', diagnostics.join(' | ')],
   ]);
   if (Array.isArray(data.warnings) && data.warnings.length) {
     console.log('warnings:');

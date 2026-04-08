@@ -46,6 +46,7 @@
             "types": "sdk/generated/index.d.ts"
           },
           "binNames": [
+            "overnight-engine",
             "pandora"
           ],
           "exportSubpaths": [
@@ -12631,7 +12632,7 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-      "trustDistributionHash": "3a926813503a3638bd98ce9689077494031ba758b0a322c4218815935d105459"
+      "trustDistributionHash": "0a1bfd31d9eb9bcba5a33a5b1e2024560ac2b05e54b0dcddbe90ecf4f1105fe8"
     },
     "roadmapSignals": {
       "jobCapableCommands": 16,
@@ -13675,6 +13676,7 @@
         },
         "rootPackage": {
           "binNames": [
+            "overnight-engine",
             "pandora"
           ],
           "exportSubpaths": [
@@ -13720,6 +13722,10 @@
             "docs/proving-ground/**",
             "docs/skills/**",
             "docs/trust/**",
+            "proving-ground/lib/baton_common.cjs",
+            "proving-ground/lib/baton_worktree_manager.cjs",
+            "proving-ground/lib/minimax_client.cjs",
+            "proving-ground/lib/overnight_*.cjs",
             "references/checklist.md",
             "references/contracts.md",
             "references/creation-script.md",
@@ -13729,6 +13735,7 @@
             "scripts/create_market_launcher.ts",
             "scripts/create_polymarket_clone_and_bet.ts",
             "scripts/release/install_release.sh",
+            "scripts/run_overnight_engine.cjs",
             "sdk/generated/**",
             "sdk/python/README.md",
             "sdk/python/pandora_agent/**",
@@ -44093,7 +44100,7 @@
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-    "trustDistributionHash": "3a926813503a3638bd98ce9689077494031ba758b0a322c4218815935d105459"
+    "trustDistributionHash": "0a1bfd31d9eb9bcba5a33a5b1e2024560ac2b05e54b0dcddbe90ecf4f1105fe8"
   },
   "schemaVersion": "1.0.0",
   "schemas": {
@@ -95666,6 +95673,7 @@
           },
           "rootPackage": {
             "binNames": [
+              "overnight-engine",
               "pandora"
             ],
             "exportSubpaths": [
@@ -95711,6 +95719,10 @@
               "docs/proving-ground/**",
               "docs/skills/**",
               "docs/trust/**",
+              "proving-ground/lib/baton_common.cjs",
+              "proving-ground/lib/baton_worktree_manager.cjs",
+              "proving-ground/lib/minimax_client.cjs",
+              "proving-ground/lib/overnight_*.cjs",
               "references/checklist.md",
               "references/contracts.md",
               "references/creation-script.md",
@@ -95720,6 +95732,7 @@
               "scripts/create_market_launcher.ts",
               "scripts/create_polymarket_clone_and_bet.ts",
               "scripts/release/install_release.sh",
+              "scripts/run_overnight_engine.cjs",
               "sdk/generated/**",
               "sdk/python/README.md",
               "sdk/python/pandora_agent/**",

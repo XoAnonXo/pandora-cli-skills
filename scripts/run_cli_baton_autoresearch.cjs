@@ -26,6 +26,8 @@ function parseArgs(argv) {
     laneId: null,
     section: null,
     attemptsPerLane: null,
+    laneCount: null,
+    maxParallelWorkers: null,
     allowDirty: false,
     syntheticModel: false,
     syntheticCouncil: false,
@@ -71,6 +73,16 @@ function parseArgs(argv) {
     }
     if (token === '--attempts-per-lane') {
       options.attemptsPerLane = Number(tokens[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token === '--lane-count') {
+      options.laneCount = Number(tokens[index + 1]) || null;
+      index += 1;
+      continue;
+    }
+    if (token === '--max-parallel-workers') {
+      options.maxParallelWorkers = Number(tokens[index + 1]) || null;
       index += 1;
       continue;
     }
@@ -128,6 +140,8 @@ async function dispatch(options) {
       batchId: options.batchId,
       section: options.section,
       attemptsPerLane: options.attemptsPerLane,
+      laneCount: options.laneCount,
+      maxParallelWorkers: options.maxParallelWorkers,
       allowDirty: options.allowDirty,
       syntheticModel: options.syntheticModel,
       syntheticCouncil: options.syntheticCouncil,
@@ -233,6 +247,8 @@ async function dispatch(options) {
       configPath: options.configPath,
       batchId: options.batchId,
       allowDirty: options.allowDirty,
+      laneCount: options.laneCount,
+      maxParallelWorkers: options.maxParallelWorkers,
     });
   }
   throw new Error(`Unknown CLI baton subcommand: ${options.command}`);

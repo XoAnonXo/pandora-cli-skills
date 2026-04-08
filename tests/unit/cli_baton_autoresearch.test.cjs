@@ -32,12 +32,13 @@ function copyFileIntoRepo(tempRepo, relativePath) {
 }
 
 function buildFixtureConfig(options = {}) {
+  const sectionCount = Math.max(1, Number(options.sectionCount) || 10);
   const sections = [];
   const commandDescriptors = {};
   const conflictLaneIds = Array.isArray(options.failureInjection && options.failureInjection.integrationConflictLaneIds)
     ? options.failureInjection.integrationConflictLaneIds
     : [];
-  for (let index = 1; index <= 10; index += 1) {
+  for (let index = 1; index <= sectionCount; index += 1) {
     const laneId = String(index).padStart(2, '0');
     const sectionId = `section-${laneId}`;
     const prefix = `cmd${laneId}`;
@@ -86,11 +87,12 @@ function buildFixtureConfig(options = {}) {
       },
       baton: {
         reportDir: 'proving-ground/reports/baton',
-        laneCount: 10,
-        maxParallelWorkers: 10,
+        laneCount: sectionCount,
+        maxParallelWorkers: sectionCount,
         heartbeatTimeoutMs: 30000,
         cleanupPolicy: 'manual',
         pausePollMs: 100,
+        ...(options.baton || {}),
       },
       worker: {
         timeBudgetMs: 30000,
@@ -141,6 +143,7 @@ function createBatonFixtureRepo(options = {}) {
   filesToCopy.forEach((relativePath) => copyFileIntoRepo(tempRepo, relativePath));
 
   const { commandDescriptors, config } = buildFixtureConfig(options);
+  const sectionCount = Math.max(1, Number(options.sectionCount) || 10);
   fs.mkdirSync(path.join(tempRepo, 'sdk', 'generated'), { recursive: true });
   fs.writeFileSync(
     path.join(tempRepo, 'sdk', 'generated', 'command-descriptors.json'),
@@ -153,7 +156,7 @@ function createBatonFixtureRepo(options = {}) {
     `module.exports = ${JSON.stringify(config, null, 2)};\n`,
     'utf8',
   );
-  for (let index = 1; index <= 10; index += 1) {
+  for (let index = 1; index <= sectionCount; index += 1) {
     const laneId = String(index).padStart(2, '0');
     const fileName = (options.failureInjection && Array.isArray(options.failureInjection.integrationConflictLaneIds) && options.failureInjection.integrationConflictLaneIds.includes(`lane-${laneId}`))
       ? 'shared-conflict.cjs'
@@ -317,6 +320,45 @@ test('cli baton batch reclaims stale workers before issuing a fresh baton', asyn
     assert.equal(lane.lane.status, 'kept');
     const history = fs.readFileSync(lane.lane.historyPath, 'utf8');
     assert.match(history, /lane-reclaimed/);
+  } finally {
+    removeDir(tempRepo);
+  }
+});
+
+test('cli baton batch can fan out more lanes than sections and honor worker overrides', async () => {
+  const tempRepo = createBatonFixtureRepo({
+    sectionCount: 3,
+    baton: {
+      laneCount: 3,
+      maxParallelWorkers: 3,
+    },
+  });
+  try {
+    const batch = await runCliBatonBatch({
+      cwd: tempRepo,
+      configPath: 'proving-ground/config/cli_section_research.cjs',
+      syntheticModel: true,
+      syntheticCouncil: true,
+      attemptsPerLane: 1,
+      laneCount: 8,
+      maxParallelWorkers: 8,
+    });
+    const summary = inspectCliBatonBatch({ batchDir: batch.batchDir });
+    assert.equal(summary.lanes.length, 8);
+    assert.equal(summary.lanes.every((lane) => lane.status === 'kept'), true);
+
+    const manifestPaths = buildManifestPaths(batch.batchDir);
+    const manifest = loadBatchManifest(manifestPaths.manifestPath);
+    assert.equal(manifest.maxParallelWorkers, 8);
+    assert.equal(manifest.lanes.length, 8);
+
+    const laneSectionIds = manifest.lanes.map((lane) => lane.sectionId);
+    assert.deepEqual(
+      laneSectionIds,
+      ['section-01', 'section-02', 'section-03', 'section-01', 'section-02', 'section-03', 'section-01', 'section-02'],
+    );
+    assert.equal(manifest.lanes[3].title.includes('[Shard 2/3]'), true);
+    assert.equal(manifest.lanes[6].title.includes('[Shard 3/3]'), true);
   } finally {
     removeDir(tempRepo);
   }

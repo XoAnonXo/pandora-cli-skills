@@ -96,13 +96,19 @@ function loadCliBatonConfig(options = {}) {
   const council = raw && raw.council && typeof raw.council === 'object' ? raw.council : {};
   const integration = raw && raw.integration && typeof raw.integration === 'object' ? raw.integration : {};
   const validation = raw && raw.validation && typeof raw.validation === 'object' ? raw.validation : {};
-  const laneCount = Math.max(1, Math.round(normalizeNumber(baton.laneCount, sectionConfig.sections.length)));
+  const laneCount = Math.max(1, Math.round(normalizeNumber(
+    options.laneCount,
+    normalizeNumber(baton.laneCount, sectionConfig.sections.length),
+  )));
   return {
     ...sectionConfig,
     baton: {
       reportDir: normalizeText(baton.reportDir) || DEFAULT_BATON_REPORT_DIR,
       laneCount,
-      maxParallelWorkers: Math.max(1, Math.round(normalizeNumber(baton.maxParallelWorkers, laneCount))),
+      maxParallelWorkers: Math.max(1, Math.round(normalizeNumber(
+        options.maxParallelWorkers,
+        normalizeNumber(baton.maxParallelWorkers, laneCount),
+      ))),
       heartbeatTimeoutMs: Math.max(1000, normalizeNumber(baton.heartbeatTimeoutMs, 30_000)),
       cleanupPolicy: normalizeText(baton.cleanupPolicy) || 'manual',
       pausePollMs: Math.max(100, normalizeNumber(baton.pausePollMs, 250)),
@@ -151,6 +157,34 @@ function selectSections(config, sectionId) {
     throw new Error(`Unknown CLI baton section: ${sectionId}`);
   }
   return selected;
+}
+
+function expandSectionsToLanePlan(sections, requestedLaneCount) {
+  const sourceSections = Array.isArray(sections) ? sections.slice() : [];
+  if (sourceSections.length === 0) {
+    return [];
+  }
+  const laneCount = Math.max(1, Math.round(normalizeNumber(requestedLaneCount, sourceSections.length)));
+  const perSectionCounts = new Map();
+  for (let index = 0; index < laneCount; index += 1) {
+    const section = sourceSections[index % sourceSections.length];
+    perSectionCounts.set(section.id, (perSectionCounts.get(section.id) || 0) + 1);
+  }
+  const seenPerSection = new Map();
+  return Array.from({ length: laneCount }, (_, index) => {
+    const section = sourceSections[index % sourceSections.length];
+    const totalSlots = perSectionCounts.get(section.id) || 1;
+    const shardIndex = (seenPerSection.get(section.id) || 0) + 1;
+    seenPerSection.set(section.id, shardIndex);
+    const shardSuffix = totalSlots > 1 ? ` [Shard ${shardIndex}/${totalSlots}]` : '';
+    return {
+      laneIndex: index + 1,
+      section,
+      sectionSlotIndex: shardIndex,
+      sectionSlotCount: totalSlots,
+      title: `${section.title}${shardSuffix}`,
+    };
+  });
 }
 
 function buildBatchBranchPrefix(config, batchId) {
@@ -954,6 +988,8 @@ async function initializeBatchState(options) {
     cwd,
     configPath: options.configPath,
     allowDirty: options.allowDirty,
+    laneCount: options.laneCount,
+    maxParallelWorkers: options.maxParallelWorkers,
   });
   const dirtyTree = getWorkingTreeState(cwd);
   if (dirtyTree.isDirty && !config.researchLoop.allowDirtyTree) {
@@ -965,6 +1001,7 @@ async function initializeBatchState(options) {
     throw new Error(`CLI section coverage is incomplete. Uncovered commands: ${coverage.uncoveredCommands.join(', ')}`);
   }
   const sections = selectSections(config, options.section);
+  const lanePlan = expandSectionsToLanePlan(sections, config.baton.laneCount);
   const batchId = normalizeText(options.batchId) || buildBatchId('cli-baton');
   const reportRoot = path.resolve(cwd, config.baton.reportDir, batchId);
   const manifestPaths = buildManifestPaths(reportRoot);
@@ -982,16 +1019,18 @@ async function initializeBatchState(options) {
     : defaultWorktreeRoot(cwd, batchId);
   const integrationBranch = buildIntegrationBranchName(config, batchId);
   const integrationWorktreePath = path.join(worktreeRoot, config.integration.worktreeName);
-  const lanes = sections.map((section, index) => {
-    const laneId = formatLaneId(index + 1);
+  const lanes = lanePlan.map((entry) => {
+    const laneId = formatLaneId(entry.laneIndex);
     const lanePaths = buildLanePaths(reportRoot, worktreeRoot, laneId);
     return {
       laneId,
-      laneIndex: index + 1,
-      sectionId: section.id,
-      title: section.title,
-      commandPrefixes: section.commandPrefixes,
-      focusFiles: section.focusFiles,
+      laneIndex: entry.laneIndex,
+      sectionId: entry.section.id,
+      title: entry.title,
+      commandPrefixes: entry.section.commandPrefixes,
+      focusFiles: entry.section.focusFiles,
+      sectionSlotIndex: entry.sectionSlotIndex,
+      sectionSlotCount: entry.sectionSlotCount,
       branchFamily: `${buildBatchBranchPrefix(config, batchId)}/${laneId}`,
       worktreePath: lanePaths.worktreePath,
       statusPath: lanePaths.statusPath,

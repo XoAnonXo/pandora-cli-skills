@@ -64,6 +64,33 @@ The CLI improvement lane is now baton-based:
 - the Council of Six reviews the proposal before code is touched `(review gate)`
 - accepted lane commits replay into one integration branch before the final repo proof `(integration fan-in + promotion gate)`
 
+## Reusable Overnight Engine
+
+The repo now also has a more disciplined engine for cross-project reuse.
+
+What we need to have is a machine that only changes code when it has a real reason `(objective-driven executor)`.
+
+It works from two files:
+- `overnight.yaml` = the map of safe mutable surfaces
+- `objective.yaml` = the exact goal for this run
+
+The operator surface is:
+
+```bash
+node scripts/run_overnight_engine.cjs init
+node scripts/run_overnight_engine.cjs validate-adapter --adapter overnight.yaml --objective objective.yaml
+node scripts/run_overnight_engine.cjs run --adapter overnight.yaml --objective objective.yaml
+node scripts/run_overnight_engine.cjs inspect --batch-dir <batchDir>
+node scripts/run_overnight_engine.cjs promote --batch-dir <batchDir>
+node scripts/run_overnight_engine.cjs cleanup --batch-dir <batchDir>
+```
+
+This engine is intentionally conservative:
+- it rejects production edits that do not include test work
+- it blocks duplicate or reopened ideas through a batch ledger
+- it uses one heterogeneous audit gate instead of the old same-family council
+- it still leaves the final morning merge decision to a human
+
 ## Calibration
 
 The proving ground is only useful if it stays honest.

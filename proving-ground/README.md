@@ -84,3 +84,37 @@ node scripts/run_cli_baton_autoresearch.cjs archive-lane --batch-dir <batchDir> 
 node scripts/run_cli_baton_autoresearch.cjs promote --batch-dir <batchDir>
 node scripts/run_cli_baton_autoresearch.cjs cleanup --batch-dir <batchDir>
 ```
+
+## Objective-Driven Engine
+
+What we need to have is one reusable overnight executor `(adapter + objective + proof engine)`, not just a Pandora-only swarm.
+
+```mermaid
+flowchart LR
+A["Repo adapter (overnight.yaml)"] --> B["Objective contract (objective.yaml)"]
+B --> C["One safe room per surface"]
+C --> D["Worker makes one bounded proposal"]
+D --> E["Engine checks scope, tests, and duplicates"]
+E --> F["Local validation"]
+F --> G["One independent audit gate"]
+G --> H["Proof packet + handoff"]
+H --> I["Manual morning promotion"]
+```
+
+The new generic engine now lives beside the baton runner:
+
+```bash
+node scripts/run_overnight_engine.cjs validate-adapter --adapter overnight.yaml --objective objective.yaml
+node scripts/run_overnight_engine.cjs run --adapter overnight.yaml --objective objective.yaml
+node scripts/run_overnight_engine.cjs inspect --batch-dir <batchDir>
+node scripts/run_overnight_engine.cjs promote --batch-dir <batchDir>
+node scripts/run_overnight_engine.cjs cleanup --batch-dir <batchDir>
+```
+
+This path is stricter than the older swarm loop:
+
+- every run starts from a declared objective
+- every mutable area is a named surface with invariants
+- production code changes need matching test work
+- accepted or failed ideas are remembered so the engine does not keep retrying the same thing
+- publish to `main` remains manual

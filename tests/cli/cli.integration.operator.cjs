@@ -1491,8 +1491,13 @@ test('mirror hedge status table prints runtime queue and error details', () => {
     assert.match(result.output, /lastSuccessfulHedgeAt: 2026-03-20T00:00:00.000Z/);
     assert.match(result.output, /lastErrorCode: NO_DEPTH/);
     assert.match(result.output, /lastAlertCode: QUEUE_RETRY/);
-    assert.match(result.output, /warningCount: 1/);
+    assert.match(result.output, /deferredHedgeOldestAgeMs: /);
+    assert.match(result.output, /deferredHedgeRecoveredCount: 3/);
+    assert.match(result.output, /queueStatusMessage: Buy phase is skipped while live sell reduction remains pending\./);
+    assert.match(result.output, /warningCount: 3/);
     assert.match(result.output, /BOTH_SIDE_INVENTORY_LOCKUP/);
+    assert.match(result.output, /LIVE_SELL_REDUCTION_PENDING/);
+    assert.match(result.output, /DEFERRED_QUEUE_PRUNED/);
   } finally {
     removeDir(tempDir);
   }
