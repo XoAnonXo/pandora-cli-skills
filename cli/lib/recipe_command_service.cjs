@@ -1,6 +1,6 @@
 'use strict';
 
-const RECIPE_HELP_PREFIX = 'pandora [--output table|json] recipe';
+const RECIPE_HELP_PREFIX = 'pandora [--output table|json] recipe [--mode <dry-run|paper|fork|execute|execute-live>]';
 
 function buildRecipeUsage(suffix) {
   return RECIPE_HELP_PREFIX + ' ' + suffix;
@@ -53,11 +53,11 @@ function createRunRecipeCommand(deps) {
   }
 
   const HELP_USAGE = {
-    '': 'list|get|validate|run [--source <source>] [--id <id>] [--file <path>]',
-    'list': 'list [--source <first-party|user|all>] [--approval-status <approved|unreviewed|experimental|deprecated|all>] [--risk-level <read-only|paper|dry-run|live|all>]',
-    'get': 'get [--id <recipe-id>] [--file <path>]',
-    'validate': 'validate [--id <recipe-id>] [--file <path>] [--policy-id <id>] [--profile-id <id>]',
-    'run': 'run [--id <recipe-id>] [--file <path>] [--mode <safe|dry-run|paper|fork|execute|execute-live>] [--set key=value] [--policy-id <id>] [--profile-id <id>] [--timeout <seconds>]',
+    '': 'list|get|validate|run\n  [--source <source>] [--id <id>] [--file <path>]',
+    'list': 'list\n  [--source <first-party|user|all>]\n  [--approval-status <approved|unreviewed|experimental|deprecated|all>]\n  [--risk-level <read-only|paper|dry-run|live|all>]',
+    'get': 'get\n  [--id <recipe-id>]\n  [--file <path>]',
+    'validate': 'validate\n  [--id <recipe-id>]\n  [--file <path>]\n  [--policy-id <id>]\n  [--profile-id <id>]',
+    'run': 'run\n  [--id <recipe-id>]\n  [--file <path>]\n  [--mode <dry-run|paper|fork|execute|execute-live>]\n  [--set key=value]\n  [--policy-id <id>]\n  [--profile-id <id>]\n  [--timeout <seconds>]',
   };
   const VALID_ACTIONS = new Set(['list', 'get', 'validate', 'run']);
 

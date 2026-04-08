@@ -1,6 +1,6 @@
 'use strict';
 
-const POLICY_HELP_PREFIX = 'pandora [--output table|json] policy [--mode <safe|dry-run|paper|fork>]';
+const POLICY_HELP_PREFIX = 'pandora [--output table|json] policy [--mode <safe|dry-run|paper|fork|execute|execute-live>]';
 const SAFE_POLICY_MODES = new Set(['safe', 'dry-run', 'paper', 'fork']);
 
 function buildPolicyUsage(suffix) {

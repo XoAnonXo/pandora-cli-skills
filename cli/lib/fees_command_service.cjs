@@ -101,6 +101,9 @@ const FEE_MARKET_DISCOVERY_FIELDS = [
   'pollAddress',
 ];
 
+const ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
+const PRIVATE_KEY_PATTERN = /^0x[a-fA-F0-9]{64}$/;
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunFeesCommand requires deps.${name}()`);
@@ -110,11 +113,11 @@ function requireDep(deps, name) {
 
 function normalizeAddress(value) {
   const raw = String(value || '').trim();
-  return /^0x[a-fA-F0-9]{40}$/.test(raw) ? raw : null;
+  return ADDRESS_PATTERN.test(raw) ? raw : null;
 }
 
 function isValidPrivateKey(value) {
-  return /^0x[a-fA-F0-9]{64}$/.test(String(value || '').trim());
+  return PRIVATE_KEY_PATTERN.test(String(value || '').trim());
 }
 
 function requireFlagValue(args, index, flagName, CliError) {

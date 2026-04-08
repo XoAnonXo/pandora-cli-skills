@@ -108,12 +108,15 @@ function createServiceError(code, message, details = undefined) {
   return error;
 }
 
+const ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
+const PRIVATE_KEY_PATTERN = /^0x[a-fA-F0-9]{64}$/;
+
 function isValidAddress(value) {
-  return /^0x[a-fA-F0-9]{40}$/.test(String(value || '').trim());
+  return ADDRESS_PATTERN.test(String(value || '').trim());
 }
 
 function isValidPrivateKey(value) {
-  return /^0x[a-fA-F0-9]{64}$/.test(String(value || '').trim());
+  return PRIVATE_KEY_PATTERN.test(String(value || '').trim());
 }
 
 function normalizeAddress(value, label) {

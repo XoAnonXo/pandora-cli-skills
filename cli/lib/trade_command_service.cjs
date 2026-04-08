@@ -1,5 +1,7 @@
 const { buildTradeForkPreview } = require('./fork_preview_service.cjs');
 
+const QUOTE_USAGE = 'Usage: pandora quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]';
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createRunTradeCommand requires deps.${name}()`);
@@ -58,7 +60,7 @@ function createRunOutcomeTradeCommand(deps, config) {
           if (typeof printHelpTable === 'function' && defaultMode === 'sell') {
             printHelpTable(true);
           } else {
-            console.log('Usage: pandora trade quote --market-address <address> --side yes|no --amount-usdc <amount>|--amounts <csv> [--yes-pct <0-100>] [--slippage-bps <0-10000>]');
+            console.log(QUOTE_USAGE);
           }
         }
         return;

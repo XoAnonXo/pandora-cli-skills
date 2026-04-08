@@ -56,7 +56,7 @@ function createRunModelCommand(deps) {
     const actionArgs = args.slice(1);
 
     if (!action || action === '--help' || action === '-h') {
-      const usage = 'pandora [--output table|json] model calibrate|correlation|diagnose|score brier ...';
+      const usage = 'pandora [--output table|json] model calibrate|correlation|diagnose|score brier';
       if (context.outputMode === 'json') {
         emitSuccess(context.outputMode, 'model.help', commandHelpPayload(usage));
       } else {
@@ -71,18 +71,20 @@ function createRunModelCommand(deps) {
       if (metric !== 'brier') {
         throw new CliError('INVALID_ARGS', INVALID_SUBCOMMAND_MESSAGE);
       }
-      const handler = getHandler('score');
+    }
+
+    const handler = getHandler(action);
+    if (!handler) {
+      throw new CliError('INVALID_ARGS', INVALID_SUBCOMMAND_MESSAGE);
+    }
+
+    if (action === 'score') {
       await handler({
         actionArgs: actionArgs.slice(1),
         context,
         deps,
       });
       return;
-    }
-
-    const handler = getHandler(action);
-    if (!handler) {
-      throw new CliError('INVALID_ARGS', INVALID_SUBCOMMAND_MESSAGE);
     }
 
     await handler({

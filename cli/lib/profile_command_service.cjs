@@ -2,7 +2,7 @@
 
 const { POLL_CATEGORY_IDS } = require('./shared/poll_categories.cjs');
 
-const PROFILE_HELP_PREFIX = 'pandora [--output table|json] profile [--mode <safe|dry-run|paper|fork>]';
+const PROFILE_HELP_PREFIX = 'pandora [--output table|json] profile [--mode <safe|dry-run|paper|fork|execute|execute-live>]';
 
 const EXACT_CONTEXT_FLAGS = Object.freeze([
   { key: 'command', flag: '--command' },

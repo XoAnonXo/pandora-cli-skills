@@ -4,10 +4,29 @@
  * @type {string}
  */
 const MIRROR_GO_USAGE =
-  'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug> [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>] [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once] [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>] [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--skip-initial-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>] [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>] [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>] [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>] [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]';
+  'pandora [--output table|json] mirror go --polymarket-market-id <id>|--polymarket-slug <slug>'
+  + ' [--liquidity-usdc <n>] [--fee-tier <500-50000>] [--max-imbalance <n>] [--arbiter <address>]'
+  + ' [--category <id|name>] [--paper|--dry-run|--execute-live|--execute] [--auto-sync] [--sync-once]'
+  + ' [--auto-resolve] [--auto-close] [--resolve-answer yes|no] [--resolve-reason <text>]'
+  + ' [--resolve-watch-interval-ms <ms>] [--resolve-watch-timeout-ms <ms>] [--sync-interval-ms <ms>]'
+  + ' [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total]'
+  + ' [--skip-initial-hedge] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer]'
+  + ' [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public]'
+  + ' [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>]'
+  + ' [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>]'
+  + ' [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>]'
+  + ' [--min-time-to-close-sec <n>] [--strict-close-time-delta] [--chain-id <id>] [--rpc-url <url>]'
+  + ' [--polymarket-rpc-url <url>] [--private-key <hex>|--profile-id <id>|--profile-file <path>]'
+  + ' [--funder <address>] [--usdc <address>] [--oracle <address>] [--factory <address>]'
+  + ' [--initial-yes-pct <pct>|--initial-no-pct <pct>] [--distribution-yes <parts>]'
+  + ' [--distribution-no <parts>] [--yes-reserve-weight-pct <pct>] [--no-reserve-weight-pct <pct>]'
+  + ' [--sources <url...>] [--validation-ticket <ticket>] [--target-timestamp <unix|iso>]'
+  + ' [--manifest-file <path>] [--trust-deploy] [--skip-gate] [--polymarket-host <url>]'
+  + ' [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]'
+  + ' [--with-rules] [--include-similarity] [--min-close-lead-seconds <n>] [--dotenv-path <path>]';
 
 const MIRROR_SYNC_SUMMARY =
-  'pandora [--output table|json] mirror sync once|run|start|stop|status|unlock ...';
+  'pandora [--output table|json] mirror sync once|run|start|stop|status ...';
 const MIRROR_HEDGE_SUMMARY =
   'pandora [--output table|json] mirror hedge plan|run|start|status|stop|bundle ...';
 
@@ -17,10 +36,31 @@ const MIRROR_HEDGE_SUMMARY =
  * @type {string}
  */
 const MIRROR_SYNC_USAGE =
-  'pandora [--output table|json] mirror sync once|run --pandora-market-address <address>|--market-address <address> --polymarket-market-id <id>|--polymarket-slug <slug> [--paper|--dry-run|--execute-live|--execute] [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>] [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate] [--strict-close-time-delta] [--stream|--no-stream] [--verbose] [--interval-ms <ms>] [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>] [--hedge-scope pool|total] [--skip-initial-hedge] [--adopt-existing-positions] [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer] [--rebalance-route public|auto|flashbots-private|flashbots-bundle] [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>] [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--no-hedge] [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>] [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>] [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>] [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>] [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>] [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>] [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>] [--discord-webhook-url <url>]';
+  'pandora [--output table|json] mirror sync once|run'
+  + ' --pandora-market-address <address>|--market-address <address>'
+  + ' --polymarket-market-id <id>|--polymarket-slug <slug>'
+  + ' [--paper|--dry-run|--execute-live|--execute]'
+  + ' [--private-key <hex>|--profile-id <id>|--profile-file <path>] [--funder <address>]'
+  + ' [--usdc <address>] [--trust-deploy] [--manifest-file <path>] [--skip-gate]'
+  + ' [--strict-close-time-delta] [--stream|--no-stream] [--verbose] [--interval-ms <ms>]'
+  + ' [--drift-trigger-bps <n>] [--hedge-trigger-usdc <n>] [--hedge-ratio <n>]'
+  + ' [--hedge-scope pool|total] [--skip-initial-hedge] [--adopt-existing-positions]'
+  + ' [--rebalance-mode atomic|incremental] [--price-source on-chain|indexer]'
+  + ' [--rebalance-route public|auto|flashbots-private|flashbots-bundle]'
+  + ' [--rebalance-route-fallback fail|public] [--flashbots-relay-url <url>]'
+  + ' [--flashbots-auth-key <key>] [--flashbots-target-block-offset <n>] [--no-hedge]'
+  + ' [--max-rebalance-usdc <n>] [--max-hedge-usdc <n>] [--max-open-exposure-usdc <amount>]'
+  + ' [--max-trades-per-day <n>] [--cooldown-ms <ms>] [--depth-slippage-bps <n>]'
+  + ' [--min-time-to-close-sec <n>] [--iterations <n>] [--state-file <path>]'
+  + ' [--kill-switch-file <path>] [--chain-id <id>] [--rpc-url <url>]'
+  + ' [--polymarket-rpc-url <url>] [--polymarket-host <url>] [--polymarket-gamma-url <url>]'
+  + ' [--polymarket-gamma-mock-url <url>] [--polymarket-mock-url <url>]'
+  + ' [--webhook-url <url>] [--telegram-bot-token <token>] [--telegram-chat-id <id>]'
+  + ' [--discord-webhook-url <url>]';
 
 const INVALID_SUBCOMMAND_MESSAGE =
   'mirror requires subcommand: browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|hedge|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close';
+
 
 /**
  * Build the `mirror` subcommand dispatcher with lazy-loaded action handlers.

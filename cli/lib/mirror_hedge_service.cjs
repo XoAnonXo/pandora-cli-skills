@@ -93,44 +93,29 @@ function normalizeAddress(value) {
 }
 
 function roundUsdc(value) {
-  const numeric = toOptionalNumber(value);
-  if (numeric === null) return null;
-  return round(numeric, 6);
+  return round(toOptionalNumber(value), 6);
 }
 
-function toUsdcAmount(raw) {
+function normalizeTokenAmount(raw) {
   const numeric = toOptionalNumber(raw);
   if (numeric === null) return null;
-  if (!Number.isFinite(numeric)) return null;
   if (Math.abs(numeric) >= 1_000 && /^[0-9]+$/.test(String(raw || '').trim())) {
     return round(numeric / 10 ** 6, 6);
   }
   return round(numeric, 6);
 }
 
-function toTokenAmount(raw) {
-  const numeric = toOptionalNumber(raw);
-  if (numeric === null) return null;
-  if (!Number.isFinite(numeric)) return null;
-  if (Math.abs(numeric) >= 1_000 && /^[0-9]+$/.test(String(raw || '').trim())) {
-    return round(numeric / 10 ** 6, 6);
-  }
-  return round(numeric, 6);
-}
+const toUsdcAmount = normalizeTokenAmount;
+const toTokenAmount = normalizeTokenAmount;
 
-function mergeDiagnostics() {
-  const output = [];
-  for (let index = 0; index < arguments.length; index += 1) {
-    const value = arguments[index];
-    if (!Array.isArray(value)) continue;
-    for (const item of value) {
-      const normalized = normalizeOptionalString(item);
-      if (normalized && !output.includes(normalized)) {
-        output.push(normalized);
-      }
+function mergeDiagnostics(...arrays) {
+  return arrays.flat().reduce((output, item) => {
+    const normalized = normalizeOptionalString(item);
+    if (normalized && !output.includes(normalized)) {
+      output.push(normalized);
     }
-  }
-  return output;
+    return output;
+  }, []);
 }
 
 function ensureDirectory(filePath) {

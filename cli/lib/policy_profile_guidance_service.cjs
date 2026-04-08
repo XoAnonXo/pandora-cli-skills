@@ -26,6 +26,7 @@ function stableSortById(items) {
 }
 
 function normalizeCommandForDescriptor(command, descriptors) {
+  if (!descriptors) return null;
   const normalized = normalizeText(command);
   if (!normalized) return null;
   if (descriptors[normalized]) return normalized;
@@ -95,9 +96,14 @@ function dedupeSteps(steps) {
   return result;
 }
 
+const POLICY_ID_MODE_MAP = Object.freeze({
+  'research-only': 'read-only',
+  'paper-trading': 'paper',
+});
+
 function determinePolicyMode(policyId, context, evaluation) {
-  if (policyId === 'research-only') return 'read-only';
-  if (policyId === 'paper-trading') return 'paper';
+  const mappedMode = POLICY_ID_MODE_MAP[policyId];
+  if (mappedMode) return mappedMode;
   const requestedMode = normalizeMode(context && context.mode);
   if (requestedMode && (SAFE_MODES.has(requestedMode) || LIVE_MODES.has(requestedMode))) {
     return requestedMode;

@@ -1,6 +1,6 @@
 {
   "name": "pandora-cli-skills",
-  "version": "1.1.130",
+  "version": "1.1.131",
   "description": "Pandora CLI & Skills",
   "main": "cli/pandora.cjs",
   "bin": {
@@ -68,7 +68,6 @@
     "references/creation-script.md",
     "docs/assets/**",
     "docs/benchmarks/**",
-    "docs/proving-ground/**",
     "docs/skills/**",
     "docs/trust/**",
     "tests/skills/**",
@@ -116,6 +115,12 @@
     "benchmark:check": "node scripts/check_agent_benchmarks.cjs",
     "benchmark:history": "node scripts/update_benchmark_history.cjs",
     "proving-ground:autoresearch": "node scripts/run_proving_ground_autoresearch.cjs",
+    "proving-ground:autoresearch:cli": "node scripts/run_cli_section_autoresearch.cjs",
+    "proving-ground:autoresearch:cli:baton": "node scripts/run_cli_baton_autoresearch.cjs start",
+    "proving-ground:autoresearch:cli:baton:validate": "node scripts/run_cli_baton_autoresearch.cjs validate",
+    "overnight:init": "node scripts/run_overnight_engine.cjs init",
+    "overnight:validate": "node scripts/run_overnight_engine.cjs validate-adapter",
+    "overnight:run": "node scripts/run_overnight_engine.cjs run",
     "test:website": "npm run site:check && node --test tests/unit/website_smoke.test.cjs",
     "dry-run": "node cli/pandora.cjs launch --dry-run",
     "execute": "node cli/pandora.cjs launch --execute",
@@ -170,7 +175,8 @@
     "@polymarket/clob-client": "^5.2.4",
     "tsx": "^4.21.0",
     "viem": "^2.46.2",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
