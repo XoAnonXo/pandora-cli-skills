@@ -26,7 +26,11 @@ function toIsoString(value) {
 }
 
 function cloneJson(value) {
-  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  if (value === undefined) return undefined;
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
 }
 
 function buildIdentityFingerprint(identity = {}, whitelistFingerprint = null) {
@@ -177,6 +181,7 @@ function ensureDeferredHedgeQueueEntryShape(raw) {
   const data = raw && typeof raw === 'object' ? raw : {};
   return {
     id: normalizeOptionalString(data.id) || normalizeOptionalString(data.queueId),
+    queueKey: normalizeOptionalString(data.queueKey) || normalizeOptionalString(data.actionKey),
     status: normalizeOptionalString(data.status) || 'queued',
     marketPairId: normalizeOptionalString(data.marketPairId),
     side: normalizeOptionalString(data.side),

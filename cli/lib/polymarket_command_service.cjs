@@ -1,5 +1,6 @@
 const { buildPolymarketForkPreview } = require('./fork_preview_service.cjs');
 const DEFAULT_POLYMARKET_TIMEOUT_MS = 12_000;
+const ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
 
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
@@ -18,7 +19,7 @@ function requireStringDep(deps, name) {
 
 function parseAddressFlagValue(CliError, value, flagName) {
   const normalized = String(value || '').trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(normalized)) {
+  if (!ADDRESS_PATTERN.test(normalized)) {
     throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a valid address.`);
   }
   return normalized.toLowerCase();
@@ -66,23 +67,15 @@ function parsePolymarketFundingFlags(actionArgs, actionLabel, CliError, parsePol
 }
 
 function parsePolymarketBalanceFlags(actionArgs, CliError, parsePolymarketSharedFlags) {
-  const options = {
-    wallet: null,
-    rpcUrl: null,
-    privateKey: null,
-    funder: null,
-    fork: false,
-    forkRpcUrl: null,
-    forkChainId: null,
-  };
   const shared = parsePolymarketSharedFlags(actionArgs, 'balance');
+  let wallet = null;
   for (const { token, value } of shared._rawTokens || []) {
     if (token === '--wallet') {
-      options.wallet = parseAddressFlagValue(CliError, value, '--wallet');
+      wallet = parseAddressFlagValue(CliError, value, '--wallet');
     }
   }
   return {
-    ...options,
+    wallet,
     rpcUrl: shared.rpcUrl,
     privateKey: shared.privateKey,
     funder: shared.funder,
@@ -108,12 +101,6 @@ function parsePolymarketPreflightFlags(
     host: null,
     polymarketMockUrl: null,
     timeoutMs: null,
-    rpcUrl: null,
-    privateKey: null,
-    funder: null,
-    fork: false,
-    forkRpcUrl: null,
-    forkChainId: null,
   };
 
   let sawTradeSelector = false;

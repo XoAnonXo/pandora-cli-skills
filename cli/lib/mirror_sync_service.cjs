@@ -53,14 +53,19 @@ const RECOVERABLE_RUN_DIAGNOSTIC_CODES = new Set([
   'INDEXER_REQUEST_FAILED',
 ]);
 
+function roundUsdc(value) {
+  if (!Number.isFinite(Number(value))) return null;
+  return round(Number(value), 6);
+}
 
+const PARSE_BOOLEANISH_TRUTHY = new Set(['1', 'true', 'yes', 'y', 'on']);
 
 function parseBooleanish(value) {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value !== 0;
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return false;
-  return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
+  return PARSE_BOOLEANISH_TRUTHY.has(normalized);
 }
 
 function shouldAdoptExistingPositions(options = {}, env = process.env) {
@@ -70,11 +75,6 @@ function shouldAdoptExistingPositions(options = {}, env = process.env) {
   return parseBooleanish(env.PANDORA_MIRROR_ADOPT_EXISTING_POSITIONS || env.MIRROR_SYNC_ADOPT_EXISTING_POSITIONS);
 }
 
-function normalizeOpenOrderSide(value) {
-  const normalized = normalizeOptionalString(value);
-  return normalized ? normalized.toLowerCase() : null;
-}
-
 function sumReservedSellShares(openOrders, tokenId) {
   if (!Array.isArray(openOrders) || !openOrders.length || !tokenId) return 0;
   let reservedShares = 0;
@@ -82,7 +82,7 @@ function sumReservedSellShares(openOrders, tokenId) {
     if (!order || typeof order !== 'object') continue;
     const orderTokenId = normalizeOptionalString(order.tokenId || order.assetId || order.asset_id);
     if (!orderTokenId || orderTokenId !== tokenId) continue;
-    const side = normalizeOpenOrderSide(order.side);
+    const side = normalizeOptionalString(order.side)?.toLowerCase() ?? null;
     if (side !== 'sell') continue;
     const remainingSize = toFiniteNumberOrNull(
       order.remainingSize !== undefined ? order.remainingSize : order.remaining_size,

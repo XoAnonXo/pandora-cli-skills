@@ -10,14 +10,16 @@ function normalizeProbability(raw) {
 }
 
 function computeDistributionHint(yesProbability) {
+  const diagnostics = [];
   const p = normalizeProbability(yesProbability);
   if (p === null) {
+    diagnostics.push('YES probability unavailable; using balanced 50/50 distribution hint.');
     return {
       probabilityYes: null,
       probabilityNo: null,
       distributionYes: 500_000_000,
       distributionNo: 500_000_000,
-      diagnostics: ['YES probability unavailable; using balanced 50/50 distribution hint.'],
+      diagnostics,
     };
   }
 

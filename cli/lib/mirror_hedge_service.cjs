@@ -66,6 +66,8 @@ const DEFAULT_MARKET_FEE_BPS = 200;
 const DEFAULT_RECENT_TRADE_LIMIT = 75;
 const DEFAULT_BUNDLE_ROOT = 'mirror-hedge-bundles';
 const DEFAULT_HEDGE_INTERVAL_MS = 5000;
+const MAX_DEFERRED_RETRY_HINT_USDC = 1_000_000;
+const MAX_DEFERRED_RETRY_HINT_SHARES = 1_000_000;
 
 function createServiceError(code, message, details = undefined) {
   const err = new Error(message);
@@ -97,7 +99,6 @@ function roundUsdc(value) {
 function normalizeTokenAmount(raw) {
   const numeric = toOptionalNumber(raw);
   if (numeric === null) return null;
-  if (!Number.isFinite(numeric)) return null;
   if (Math.abs(numeric) >= 1_000 && /^[0-9]+$/.test(String(raw || '').trim())) {
     return round(numeric / 10 ** 6, 6);
   }
@@ -872,6 +873,7 @@ function buildTradeForGapAction(action = {}) {
 function buildQueueEntryForAction(action, reasonCode, reason, residualShares, residualUsdc, metadata = {}) {
   return {
     id: `${action.queueKey}:${reasonCode}`,
+    queueKey: normalizeOptionalString(metadata.queueKey || action.queueKey),
     status: 'queued',
     marketPairId: action.marketPairId,
     side: action.direction,
@@ -889,10 +891,113 @@ function buildQueueEntryForAction(action, reasonCode, reason, residualShares, re
   };
 }
 
+function sanitizeDeferredRetryHint(value, maxValue) {
+  const numeric = toOptionalNumber(value);
+  if (numeric === null || !Number.isFinite(numeric)) return null;
+  if (numeric <= 0 || numeric > maxValue) return null;
+  const rounded = round(numeric, 6);
+  return rounded > 0 ? rounded : null;
+}
+
+function describeDeferredQueueSizingIssue(original, strippedFields) {
+  const absurdFields = [];
+  const nonPositiveFields = [];
+  for (const field of strippedFields) {
+    const numeric = toOptionalNumber(original && original[field]);
+    if (numeric === null) continue;
+    const limit = field.toLowerCase().includes('usdc')
+      ? MAX_DEFERRED_RETRY_HINT_USDC
+      : MAX_DEFERRED_RETRY_HINT_SHARES;
+    if (numeric > limit) {
+      absurdFields.push(field);
+    } else if (numeric <= 0) {
+      nonPositiveFields.push(field);
+    }
+  }
+  if (absurdFields.length && nonPositiveFields.length) {
+    return 'Deferred hedge retry sizing contained stale oversized values and non-positive values; the daemon will recompute the live hedge amount instead of trusting queued sizing.';
+  }
+  if (absurdFields.length) {
+    return 'Deferred hedge retry sizing contained stale oversized values; the daemon will recompute the live hedge amount instead of trusting queued sizing.';
+  }
+  if (nonPositiveFields.length) {
+    return 'Deferred hedge retry sizing was non-positive after normalization; the daemon will recompute the live hedge amount instead of trusting queued sizing.';
+  }
+  return 'Deferred hedge retry sizing was sanitized; the daemon will recompute the live hedge amount instead of trusting queued sizing.';
+}
+
+function sanitizeDeferredQueueEntry(entry = {}) {
+  if (!entry || typeof entry !== 'object') {
+    return { entry: null, strippedFields: [], original: {} };
+  }
+  const original = {
+    amountUsdc: toOptionalNumber(entry.amountUsdc),
+    amountShares: toOptionalNumber(entry.amountShares),
+    targetUsdc: toOptionalNumber(entry.targetUsdc),
+    targetShares: toOptionalNumber(entry.targetShares),
+  };
+  const sanitized = {
+    ...entry,
+    amountUsdc: sanitizeDeferredRetryHint(entry.amountUsdc, MAX_DEFERRED_RETRY_HINT_USDC),
+    amountShares: sanitizeDeferredRetryHint(entry.amountShares, MAX_DEFERRED_RETRY_HINT_SHARES),
+    targetUsdc: sanitizeDeferredRetryHint(entry.targetUsdc, MAX_DEFERRED_RETRY_HINT_USDC),
+    targetShares: sanitizeDeferredRetryHint(entry.targetShares, MAX_DEFERRED_RETRY_HINT_SHARES),
+  };
+  const strippedFields = Object.keys(original).filter((field) => {
+    const hadValue = original[field] !== null;
+    const keptValue = sanitized[field] !== null;
+    return hadValue && !keptValue;
+  });
+  return { entry: sanitized, strippedFields, original };
+}
+
 function isSellLikeQueueEntry(entry = {}) {
   const orderSide = normalizeLowerText(entry.orderSide);
   if (orderSide === 'sell') return true;
   return normalizeOptionalString(entry.id || '').includes(':sell-');
+}
+
+function getDeferredQueueKey(entry = {}) {
+  const explicit = normalizeOptionalString(entry.queueKey || entry.actionKey);
+  if (explicit) return explicit;
+  const id = normalizeOptionalString(entry.id || entry.queueId);
+  if (!id) return null;
+  const separator = id.lastIndexOf(':');
+  return separator > 0 ? id.slice(0, separator) : id;
+}
+
+function computeDeferredQueueAgeMs(entry = {}) {
+  const timestamp = normalizeOptionalString(entry.createdAt || entry.updatedAt || entry.dueAt);
+  if (!timestamp) return null;
+  const ms = new Date(timestamp).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return Math.max(0, Date.now() - ms);
+}
+
+function resolveDeferredQueueStaleAgeMs(options = {}) {
+  const explicit = toOptionalNumber(options.deferredQueueStaleAgeMs || process.env.PANDORA_HEDGE_DEFERRED_QUEUE_STALE_AGE_MS);
+  if (explicit !== null && explicit > 0) return explicit;
+  return Math.max(60_000, normalizeRuntimeIntervalMs(options) * 20);
+}
+
+function isClearlyInvalidDeferredQueueEntry(entry = {}) {
+  const reason = normalizeOptionalString(entry.reason);
+  const amountUsdc = toOptionalNumber(entry.amountUsdc);
+  const amountShares = toOptionalNumber(entry.amountShares);
+  const targetUsdc = toOptionalNumber(entry.targetUsdc);
+  const targetShares = toOptionalNumber(entry.targetShares);
+  if (reason === 'invalid-hedge-amount' || reason === 'non-executable-partial') {
+    return true;
+  }
+  if (amountUsdc !== null && amountUsdc <= 0) return true;
+  if (amountShares !== null && amountShares <= 0) return true;
+  if (targetUsdc !== null && targetUsdc <= 0) return true;
+  if (targetShares !== null && targetShares <= 0) return true;
+  if (amountUsdc !== null && amountUsdc > MAX_DEFERRED_RETRY_HINT_USDC) return true;
+  if (amountShares !== null && amountShares > MAX_DEFERRED_RETRY_HINT_SHARES) return true;
+  if (targetUsdc !== null && targetUsdc > MAX_DEFERRED_RETRY_HINT_USDC) return true;
+  if (targetShares !== null && targetShares > MAX_DEFERRED_RETRY_HINT_SHARES) return true;
+  return false;
 }
 
 function buildDepthAuditSnapshot(depthCheck) {
@@ -1153,6 +1258,7 @@ async function fetchManagedInventory(options = {}, sourceMarket) {
 function buildDeferredQueueEntry(trade, reasonCode, reason, amountUsdc) {
   return {
     id: `${normalizeOptionalString(trade && (trade.id || trade.cursor || trade.transactionHash || trade.canonicalKey)) || Date.now().toString(36)}:${reasonCode}`,
+    queueKey: normalizeOptionalString(trade && (trade.queueKey || trade.canonicalKey || trade.id || trade.cursor || trade.transactionHash)),
     status: 'queued',
     marketPairId: normalizeOptionalString(trade && trade.marketPairId),
     side: normalizeOptionalString(trade && trade.direction),
@@ -1247,6 +1353,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
   const deferredHedgeQueue = [];
   const pendingMempoolOverlays = [];
   const previousDeferredHedgeQueue = Array.isArray(state.deferredHedgeQueue) ? state.deferredHedgeQueue.slice() : [];
+  const deferredQueueStaleAgeMs = resolveDeferredQueueStaleAgeMs(options);
   let skippedVolumeCounters = null;
   let lastObservedTrade = undefined;
   let lastHedgeSignal = undefined;
@@ -1267,6 +1374,55 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     lastFailureMessage: null,
     lastRecoveryAt: null,
   };
+
+  function findPreviousDeferredEntry(entry = {}) {
+    const queueKey = getDeferredQueueKey(entry);
+    if (!queueKey) return null;
+    return previousDeferredHedgeQueue.find((candidate) => getDeferredQueueKey(candidate) === queueKey) || null;
+  }
+
+  function queueDeferredEntry(entry, metadata = {}) {
+    const prepared = sanitizeDeferredQueueEntry(entry);
+    if (!prepared.entry) return null;
+    const previousEntry = findPreviousDeferredEntry(prepared.entry);
+    if (previousEntry && normalizeOptionalString(previousEntry.createdAt)) {
+      prepared.entry.createdAt = previousEntry.createdAt;
+    }
+    const queueAgeMs = computeDeferredQueueAgeMs(prepared.entry);
+    if (queueAgeMs !== null && queueAgeMs >= deferredQueueStaleAgeMs) {
+      auditEntries.push({
+        kind: 'queue-entry-expired',
+        tradeId: prepared.entry.id,
+        reasonCode: 'stale-retry-expired',
+        reason: `Deferred hedge retry exceeded the stale age threshold (${deferredQueueStaleAgeMs} ms) and was dropped so the next cycle can recompute from live gap.`,
+        tokenSide: prepared.entry.tokenSide,
+        orderSide: prepared.entry.orderSide,
+        ageMs: queueAgeMs,
+      });
+      diagnostics.push(
+        `Expired stale deferred ${prepared.entry.side || prepared.entry.id || 'hedge'} retry after ${queueAgeMs} ms and will recompute from live gap next cycle.`,
+      );
+      return null;
+    }
+    deferredHedgeQueue.push(prepared.entry);
+    if (prepared.strippedFields.length > 0) {
+      auditEntries.push({
+        kind: 'deferred-queue-sanitized',
+        tradeId: prepared.entry.id,
+        reasonCode: 'retry-metadata-sanitized',
+        reason: normalizeOptionalString(metadata.reason)
+          || describeDeferredQueueSizingIssue(prepared.original, prepared.strippedFields),
+        tokenSide: prepared.entry.tokenSide,
+        orderSide: prepared.entry.orderSide,
+        strippedFields: prepared.strippedFields.slice(),
+        originalAmountUsdc: prepared.original.amountUsdc,
+        originalAmountShares: prepared.original.amountShares,
+        originalTargetUsdc: prepared.original.targetUsdc,
+        originalTargetShares: prepared.original.targetShares,
+      });
+    }
+    return prepared.entry;
+  }
 
   function recordSellAttempt(action, depthCheck = null) {
     const timestamp = new Date().toISOString();
@@ -1422,8 +1578,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     });
     let queueEntry = null;
     if (classification.queue && classification.queue.entry) {
-      queueEntry = classification.queue.entry;
-      deferredHedgeQueue.push(queueEntry);
+      queueEntry = queueDeferredEntry(classification.queue.entry);
     } else if (classification.status === 'skip' && classification.reasonCode !== 'internal-wallet') {
       queueEntry = buildDeferredQueueEntry(
         pendingTrade,
@@ -1431,7 +1586,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         classification.reason || 'Pending hedge requires review.',
         pendingTrade.amountUsdc,
       );
-      deferredHedgeQueue.push(queueEntry);
+      queueEntry = queueDeferredEntry(queueEntry);
     }
     pendingMempoolOverlays.push(mapPendingTradeToOverlay(pendingTrade, pairContext, queueEntry));
     auditEntries.push({
@@ -1455,7 +1610,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
       amountUsdc: reconciliation.residualUsdc || 0,
     });
     if (reconciliation.shouldRestoreResidualExposure && reconciliation.residualUsdc > 0) {
-      deferredHedgeQueue.push({
+      queueDeferredEntry({
         id: `${reconciliation.queueKey}:revert`,
         status: 'queued',
         marketPairId: pairContext.marketPairIdentity.marketPairId,
@@ -1483,7 +1638,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         action.amountShares,
         action.amountUsdc,
       );
-      deferredHedgeQueue.push(queueEntry);
+      queueDeferredEntry(queueEntry);
       auditEntries.push({
         kind: 'queued',
         tradeId: action.queueKey,
@@ -1535,7 +1690,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         action.amountShares,
         action.amountUsdc,
       );
-      deferredHedgeQueue.push(queueEntry);
+      queueDeferredEntry(queueEntry);
       auditEntries.push({
         kind: 'queued',
         tradeId: action.queueKey,
@@ -1558,7 +1713,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         action.amountShares,
         action.amountUsdc,
       );
-      deferredHedgeQueue.push(queueEntry);
+      queueDeferredEntry(queueEntry);
       auditEntries.push({
         kind: 'queued',
         tradeId: action.queueKey,
@@ -1582,7 +1737,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         action.amountShares,
         action.amountUsdc,
       );
-      deferredHedgeQueue.push(queueEntry);
+      queueDeferredEntry(queueEntry);
       auditEntries.push({
         kind: 'queued',
         tradeId: action.queueKey,
@@ -1606,7 +1761,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         action.amountShares,
         action.amountUsdc,
       );
-      deferredHedgeQueue.push(queueEntry);
+      queueDeferredEntry(queueEntry);
       auditEntries.push({
         kind: 'queued',
         tradeId: action.queueKey,
@@ -1629,17 +1784,9 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
       const reasonCode = fillPolicy.status === 'partial' ? 'non-executable-partial' : 'invalid-hedge-amount';
       const reason = fillPolicy.status === 'partial'
         ? 'Depth returned no executable notional after partial-fill sizing; keeping the hedge queued for recompute.'
-        : 'Computed hedge amount is non-positive after sizing; skipping live execution and leaving the hedge queued.';
-      const queueEntry = buildQueueEntryForAction(
-        action,
-        reasonCode,
-        reason,
-        action.amountShares,
-        action.amountUsdc,
-      );
-      deferredHedgeQueue.push(queueEntry);
+        : 'Computed hedge amount is non-positive after sizing; skipping live execution and forcing the next cycle to recompute from the live gap.';
       auditEntries.push({
-        kind: 'queued',
+        kind: 'queue-entry-suppressed',
         tradeId: action.queueKey,
         reasonCode,
         reason,
@@ -1652,7 +1799,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
       return { blockedBuys: action.orderSide === 'sell' };
     }
     if (residualShares > 0 || residualUsdc > 0) {
-      deferredHedgeQueue.push(buildQueueEntryForAction(
+      queueDeferredEntry(buildQueueEntryForAction(
         action,
         'residual-exposure',
         'Residual hedge exposure remains queued after a partial fill.',
@@ -1678,7 +1825,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         action.amountShares,
         action.amountUsdc,
       );
-      deferredHedgeQueue.push(queueEntry);
+      queueDeferredEntry(queueEntry);
       auditEntries.push({
         kind: 'queued',
         tradeId: action.queueKey,
@@ -1717,7 +1864,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
           action.amountShares,
           action.amountUsdc,
         );
-        deferredHedgeQueue.push(queueEntry);
+        queueDeferredEntry(queueEntry);
         lastError = {
           code: 'MIRROR_HEDGE_EXECUTION_FAILED',
           message: queueEntry.notes,
@@ -1885,28 +2032,49 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
     }
   }
 
+  const currentDeferredQueueKeys = new Set(
+    deferredHedgeQueue
+      .map((entry) => getDeferredQueueKey(entry))
+      .filter(Boolean),
+  );
   const currentDeferredQueueIds = new Set(
     deferredHedgeQueue
       .map((entry) => normalizeOptionalString(entry && entry.id))
       .filter(Boolean),
   );
-  const recoveredSellEntries = previousDeferredHedgeQueue.filter(
-    (entry) => isSellLikeQueueEntry(entry) && !currentDeferredQueueIds.has(normalizeOptionalString(entry && entry.id)),
+  const recoveredDeferredEntries = previousDeferredHedgeQueue.filter(
+    (entry) => {
+      const queueKey = getDeferredQueueKey(entry);
+      if (queueKey) {
+        return !currentDeferredQueueKeys.has(queueKey);
+      }
+      return !currentDeferredQueueIds.has(normalizeOptionalString(entry && entry.id));
+    },
   );
-  if (recoveredSellEntries.length) {
+  const recoveredSellEntries = recoveredDeferredEntries.filter((entry) => isSellLikeQueueEntry(entry));
+  if (recoveredDeferredEntries.length) {
     retryTelemetryDelta.sellRecoveredCount += recoveredSellEntries.length;
     retryTelemetryDelta.lastRecoveryAt = new Date().toISOString();
-    for (const entry of recoveredSellEntries) {
+    for (const entry of recoveredDeferredEntries) {
+      const invalidRecoveredEntry = isClearlyInvalidDeferredQueueEntry(entry);
       auditEntries.push({
         kind: 'deferred-queue-pruned',
         tradeId: entry.id,
-        reasonCode: 'queue-recovered',
-        reason: 'Deferred sell queue entry was removed because the sell exposure is no longer pending.',
+        reasonCode: invalidRecoveredEntry ? 'invalid-stale-entry-pruned' : 'queue-recovered',
+        reason: invalidRecoveredEntry
+          ? 'Deferred queue entry was removed because its retry sizing was invalid and the daemon now recomputes from the live gap.'
+          : 'Deferred queue entry was removed because the live exposure is no longer pending.',
         amountUsdc: entry.amountUsdc,
         amountShares: entry.amountShares,
         tokenSide: entry.tokenSide,
         orderSide: entry.orderSide,
       });
+    }
+    const invalidRecoveredCount = recoveredDeferredEntries.filter((entry) => isClearlyInvalidDeferredQueueEntry(entry)).length;
+    if (invalidRecoveredCount > 0) {
+      diagnostics.push(
+        `Pruned ${invalidRecoveredCount} invalid deferred hedge entr${invalidRecoveredCount === 1 ? 'y' : 'ies'} and recomputed from live gap.`,
+      );
     }
   }
 

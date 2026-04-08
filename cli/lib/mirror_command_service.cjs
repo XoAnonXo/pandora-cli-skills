@@ -59,7 +59,7 @@ const MIRROR_SYNC_USAGE =
   + ' [--discord-webhook-url <url>]';
 
 const INVALID_SUBCOMMAND_MESSAGE =
-  'mirror requires subcommand: browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|hedge|...';
+  'mirror requires subcommand: browse|plan|deploy|verify|lp-explain|hedge-calc|calc|simulate|go|sync|hedge|trace|dashboard|status|health|panic|drift|hedge-check|pnl|audit|replay|logs|close';
 
 
 /**

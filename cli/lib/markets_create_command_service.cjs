@@ -43,9 +43,7 @@ function buildCreateHelp(commandHelpPayload) {
     'markets create run supports post-poll execution routing via --tx-route public|auto|flashbots-private|flashbots-bundle. auto chooses flashbots-private when no approval is needed and flashbots-bundle when approval is required.',
     'Validation tickets are bound to the exact final payload: question, rules, sources, target timestamp, liquidity, market type, fee/curve params, and distribution. Any change requires a fresh ticket.',
     'For AMM markets, prefer `--initial-yes-pct` / `--initial-no-pct` to set the opening probability directly.',
-    'Use `--yes-reserve-weight-pct` / `--no-reserve-weight-pct` only for explicit pool allocation. A 77/23 reserve split opens YES near 23/77.',
-    'Legacy `--distribution-yes-pct` / `--distribution-no-pct` are rejected with a migration error because they were ambiguous for AMM pricing.',
-    'If you omit AMM distribution flags, markets create seeds a balanced 50/50 pool.',
+    'For AMM markets, `--initial-yes-pct` / `--initial-no-pct` set the opening YES probability directly. Use `--yes-reserve-weight-pct` / `--no-reserve-weight-pct` only for explicit pool allocation (e.g., 77/23 opens YES near 23/77). Omitting both seeds a balanced 50/50 pool. Legacy `--distribution-yes-pct` / `--distribution-no-pct` are rejected with a migration error.',
 
   ];
   return {

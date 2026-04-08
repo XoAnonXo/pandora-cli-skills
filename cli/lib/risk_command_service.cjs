@@ -27,12 +27,13 @@ function createRunRiskCommand(deps) {
   }
 
   function buildRiskSnapshotPayload(state, extra = {}) {
+    const { guardrails } = state;
     return {
       ...extra,
       riskFile: state.riskFile,
-      max_position_usd: state.guardrails ? state.guardrails.maxSingleLiveNotionalUsdc : state.max_position_usd,
-      max_daily_loss_usd: state.guardrails ? state.guardrails.maxDailyLiveNotionalUsdc : state.max_daily_loss_usd,
-      max_open_markets: state.guardrails ? state.guardrails.maxDailyLiveOps : state.max_open_markets,
+      max_position_usd: guardrails ? guardrails.maxSingleLiveNotionalUsdc : state.max_position_usd,
+      max_daily_loss_usd: guardrails ? guardrails.maxDailyLiveNotionalUsdc : state.max_daily_loss_usd,
+      max_open_markets: guardrails ? guardrails.maxDailyLiveOps : state.max_open_markets,
       kill_switch: state.kill_switch,
       metadata: state.metadata,
       panic: state.panic,
@@ -63,7 +64,7 @@ function createRunRiskCommand(deps) {
 
     if (action === 'panic') {
       if (includesHelpFlag(args.slice(1))) {
-        emitHelp(context.outputMode, 'risk.panic.help', 'pandora [--output table|json] risk panic [--risk-file <path>] [--reason <text> --actor <id>] | [--clear --actor <id>]');
+        emitHelp(context.outputMode, 'risk.panic.help', 'pandora [--output table|json] risk panic [--risk-file <path>] [--reason <text>] [--actor <id>] | [--clear --actor <id>]');
         return;
       }
 
