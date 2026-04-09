@@ -42,7 +42,11 @@ function createServiceError(code, message, details = undefined) {
 function normalizeStrategyHash(strategyHash) {
   const value = String(strategyHash || '').trim().toLowerCase();
   if (!STRATEGY_HASH_PATTERN.test(value)) {
-    throw createServiceError('INVALID_FLAG_VALUE', '--strategy-hash must be a 16-character hex value.');
+    throw createServiceError('INVALID_FLAG_VALUE', '--strategy-hash must be a 16-character hex value.', {
+      flag: '--strategy-hash',
+      receivedValue: String(strategyHash || ''),
+      expectedFormat: '16-character lowercase hex value',
+    });
   }
   return value;
 }
@@ -311,6 +315,10 @@ function resolvePidFile(options = {}) {
   throw createServiceError(
     'MISSING_REQUIRED_FLAG',
     'mirror hedge daemon lifecycle requires --pid-file <path> or --strategy-hash <hash>.',
+    {
+      requiresOneOf: ['--pid-file <path>', '--strategy-hash <hash>'],
+      operation: 'mirror hedge daemon lifecycle',
+    },
   );
 }
 

@@ -24,9 +24,19 @@ function sleepMs(ms) {
 }
 
 function parsePositiveInteger(value, flagName, CliError) {
-  const numeric = Number(value);
-  if (!Number.isInteger(numeric) || numeric <= 0) {
-    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a positive integer.`);
+  const raw = String(value ?? '').trim();
+  if (!raw) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must not be empty.`);
+  }
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a number.`);
+  }
+  if (!Number.isInteger(numeric)) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be a whole number.`);
+  }
+  if (numeric <= 0) {
+    throw new CliError('INVALID_FLAG_VALUE', `${flagName} must be greater than zero.`);
   }
   return numeric;
 }

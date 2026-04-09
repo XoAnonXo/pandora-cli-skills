@@ -787,6 +787,138 @@ function buildUnifiedDiff(cwd, changedFiles) {
   return result.stdout || '';
 }
 
+function splitUnifiedDiffByPath(unifiedDiff = '') {
+  const patches = new Map();
+  const lines = String(unifiedDiff || '').split('\n');
+  let currentPath = null;
+  let buffer = [];
+
+  function flush() {
+    if (!currentPath) return;
+    patches.set(currentPath, buffer.join('\n'));
+  }
+
+  for (const line of lines) {
+    const diffMatch = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+    if (diffMatch) {
+      flush();
+      currentPath = diffMatch[2];
+      buffer = [line];
+      continue;
+    }
+    if (currentPath) {
+      buffer.push(line);
+    }
+  }
+  flush();
+  return patches;
+}
+
+function collectPatchLines(patchText = '') {
+  const added = [];
+  const removed = [];
+  for (const line of String(patchText || '').split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue;
+    if (line.startsWith('+')) {
+      added.push(line.slice(1));
+      continue;
+    }
+    if (line.startsWith('-')) {
+      removed.push(line.slice(1));
+    }
+  }
+  return { added, removed };
+}
+
+function isStructuralOrCommentLine(line = '') {
+  const trimmed = String(line || '').trim();
+  if (!trimmed) return true;
+  if (/^(\/\/|\/\*|\*\/|\*|#)/.test(trimmed)) return true;
+  if (/^[{}[\]();,]+$/.test(trimmed)) return true;
+  return false;
+}
+
+function hasMeaningfulSourceDelta(lines = []) {
+  return lines.some((line) => !isStructuralOrCommentLine(line));
+}
+
+function lineLooksLikeProofAssertion(line = '') {
+  return /assert\.(equal|deepEqual|strictEqual|match|ok|throws|rejects|doesNotThrow)|payload\.error\.(code|message)|error\.code|error\.message/.test(String(line || ''));
+}
+
+function lineLooksLikeValidationTightening(line = '') {
+  return /throw new|INVALID_|MISSING_|requires .* value|must be |unknown flag|createServiceError/i.test(String(line || ''));
+}
+
+function lineIntroducesPlainError(line = '') {
+  return /new Error\(/.test(String(line || '')) && !/new CliError\(/.test(String(line || ''));
+}
+
+function gateDeferredAuditCandidate(report) {
+  if (!report || !report.proposal || !report.diffSummary || !report.diffSummary.unifiedDiff) {
+    return { ok: true };
+  }
+
+  const codePaths = Array.isArray(report.proposal.codeChanges) ? report.proposal.codeChanges.map((entry) => entry.path) : [];
+  const testPaths = Array.isArray(report.proposal.testChanges) ? report.proposal.testChanges.map((entry) => entry.path) : [];
+  if (codePaths.length === 0) {
+    return { ok: true };
+  }
+
+  const patches = splitUnifiedDiffByPath(report.diffSummary.unifiedDiff);
+  const codeLines = [];
+  const testLines = [];
+  for (const filePath of codePaths) {
+    const patch = patches.get(filePath);
+    if (!patch) continue;
+    const { added, removed } = collectPatchLines(patch);
+    codeLines.push(...added, ...removed);
+  }
+  for (const filePath of testPaths) {
+    const patch = patches.get(filePath);
+    if (!patch) continue;
+    const { added, removed } = collectPatchLines(patch);
+    testLines.push(...added, ...removed);
+  }
+
+  if (!hasMeaningfulSourceDelta(codeLines)) {
+    return {
+      ok: false,
+      reasonCode: 'cosmetic-only-change',
+      nextStep: 'Keep cosmetic-only edits out of the deferred audit queue.',
+    };
+  }
+
+  const validationTightening = codeLines.some(lineLooksLikeValidationTightening);
+  const meaningfulTestProof = testLines.some(lineLooksLikeProofAssertion);
+
+  if (testPaths.length > 0 && !meaningfulTestProof) {
+    return {
+      ok: false,
+      reasonCode: 'weak-test-proof',
+      nextStep: 'Add direct assertions that prove the changed behavior, not just a failing exit status.',
+    };
+  }
+
+  if (validationTightening && !meaningfulTestProof) {
+    return {
+      ok: false,
+      reasonCode: 'weak-test-proof',
+      nextStep: 'Validation changes need targeted assertions for the exact rejected path.',
+    };
+  }
+
+  if (validationTightening && codeLines.some(lineIntroducesPlainError)) {
+    return {
+      ok: false,
+      reasonCode: 'plain-error-validation',
+      nextStep: 'Use the repo validation error shape before deferring audit.',
+    };
+  }
+
+  return { ok: true };
+}
+
 function createAttemptReport(options) {
   return {
     schemaVersion: OVERNIGHT_ENGINE_SCHEMA_VERSION,
@@ -1367,6 +1499,20 @@ async function executeLegacySurfaceAttempt(options) {
       };
     }
     if (report.audit.verdict === 'deferred') {
+      const deferredGate = gateDeferredAuditCandidate(report);
+      if (!deferredGate.ok) {
+        rollbackAppliedPatchSet(appliedPatchSet);
+        report.rollbackApplied = true;
+        return {
+          patchFingerprint,
+          report: discardAttempt(report, {
+            reasonCode: deferredGate.reasonCode,
+            nextStep: deferredGate.nextStep,
+            failureStage: 'audit',
+            failureKind: deferredGate.reasonCode,
+          }),
+        };
+      }
       report.failureStage = 'audit';
       const commit = commitAcceptedIteration({
         cwd: surfacePaths.worktreePath,
@@ -1851,6 +1997,20 @@ async function executeStagedSurfaceAttempt(options) {
       };
     }
     if (report.audit.verdict === 'deferred') {
+      const deferredGate = gateDeferredAuditCandidate(report);
+      if (!deferredGate.ok) {
+        rollbackAppliedPatchSet(appliedPatchSet);
+        report.rollbackApplied = true;
+        return {
+          patchFingerprint,
+          report: discardAttempt(report, {
+            reasonCode: deferredGate.reasonCode,
+            nextStep: deferredGate.nextStep,
+            failureStage: 'audit',
+            failureKind: deferredGate.reasonCode,
+          }),
+        };
+      }
       report.failureStage = 'audit';
       const commit = commitAcceptedIteration({
         cwd: surfacePaths.worktreePath,

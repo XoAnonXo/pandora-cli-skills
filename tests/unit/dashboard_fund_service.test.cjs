@@ -166,6 +166,58 @@ test('dashboard watch mode in JSON requires explicit iterations', async () => {
   );
 });
 
+test('dashboard rejects empty refresh interval values with a specific message', async () => {
+  const runDashboardCommand = createRunDashboardCommand(createDashboardDeps());
+
+  await assert.rejects(
+    () => runDashboardCommand(['--refresh-ms', ''], { outputMode: 'json' }),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /--refresh-ms must not be empty/i);
+      return true;
+    },
+  );
+});
+
+test('dashboard rejects non-numeric iteration counts with a specific message', async () => {
+  const runDashboardCommand = createRunDashboardCommand(createDashboardDeps());
+
+  await assert.rejects(
+    () => runDashboardCommand(['--iterations', 'soon'], { outputMode: 'json' }),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /--iterations must be a number/i);
+      return true;
+    },
+  );
+});
+
+test('dashboard rejects fractional iteration counts with a specific message', async () => {
+  const runDashboardCommand = createRunDashboardCommand(createDashboardDeps());
+
+  await assert.rejects(
+    () => runDashboardCommand(['--iterations', '1.5'], { outputMode: 'json' }),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /--iterations must be a whole number/i);
+      return true;
+    },
+  );
+});
+
+test('dashboard rejects non-positive iteration counts with a specific message', async () => {
+  const runDashboardCommand = createRunDashboardCommand(createDashboardDeps());
+
+  await assert.rejects(
+    () => runDashboardCommand(['--iterations', '0'], { outputMode: 'json' }),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /--iterations must be greater than zero/i);
+      return true;
+    },
+  );
+});
+
 test('dashboard skips portfolio reads when credentials only come from env fallback', async () => {
   const observed = [];
   const originalPrivateKey = process.env.PANDORA_PRIVATE_KEY;

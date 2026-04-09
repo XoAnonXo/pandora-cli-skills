@@ -353,6 +353,78 @@ function throwingProposalLoader() {
   throw new Error('synthetic proposal failure');
 }
 
+function weakTestProofProposalLoader() {
+  return {
+    provider: 'synthetic',
+    model: 'synthetic-worker',
+    usage: {},
+    elapsedMs: 0,
+    text: JSON.stringify({
+      logical_explanation: {
+        problem: 'Clamp sanitizeCount at 100 with a weak non-proof test touch.',
+        why_this_surface: 'The source and test file both live in the core surface.',
+        invariants_preserved: ['sanitizeCount stays deterministic'],
+        why_this_is_bounded: 'One source edit and one trivial test-file touch.',
+        residual_risks: ['the test touch does not prove the new behavior'],
+      },
+      code_changes: [
+        {
+          path: 'src/calc.cjs',
+          search: '  return value < 0 ? 0 : value;',
+          replace: '  if (value > 100) return 100;\n  return value < 0 ? 0 : value;',
+          context_before: '  if (!Number.isFinite(value)) return 0;\n',
+          context_after: '\n}\n',
+        },
+      ],
+      test_changes: [
+        {
+          path: 'tests/unit/calc.test.cjs',
+          search: "test('sanitizeCount floors negatives', () => {",
+          replace: "// weak proof touch that does not assert the new clamp path\ntest('sanitizeCount floors negatives', () => {",
+          context_before: '',
+          context_after: '\n  assert.equal(sanitizeCount(-5), 0);\n',
+        },
+      ],
+    }),
+  };
+}
+
+function plainErrorValidationProposalLoader() {
+  return {
+    provider: 'synthetic',
+    model: 'synthetic-worker',
+    usage: {},
+    elapsedMs: 0,
+    text: JSON.stringify({
+      logical_explanation: {
+        problem: 'Reject oversized counts, but currently with a plain Error.',
+        why_this_surface: 'The source and its proof live in the same surface.',
+        invariants_preserved: ['sanitizeCount stays deterministic for supported inputs'],
+        why_this_is_bounded: 'One source edit plus one targeted assertion.',
+        residual_risks: ['validation shape no longer matches repo conventions'],
+      },
+      code_changes: [
+        {
+          path: 'src/calc.cjs',
+          search: '  return value < 0 ? 0 : value;',
+          replace: "  if (value > 100) throw new Error('Count exceeds 100.');\n  return value < 0 ? 0 : value;",
+          context_before: '  if (!Number.isFinite(value)) return 0;\n',
+          context_after: '\n}\n',
+        },
+      ],
+      test_changes: [
+        {
+          path: 'tests/unit/calc.test.cjs',
+          search: "  assert.equal(sanitizeCount(9), 9);",
+          replace: "  assert.equal(sanitizeCount(9), 9);\n  assert.throws(() => sanitizeCount(400), /Count exceeds 100\\./);",
+          context_before: "test('sanitizeCount floors negatives', () => {\n  assert.equal(sanitizeCount(-5), 0);\n",
+          context_after: '\n});',
+        },
+      ],
+    }),
+  };
+}
+
 function repairDropsTestsProposalLoader({ prompt }) {
   if (String(prompt && prompt.userPrompt || '').includes('Repair the previous proposal')) {
     return {
@@ -636,6 +708,42 @@ test('resolveDeferredAudit can reject a pending change and keep it out of promot
     batchDir: batch.reportRoot,
   });
   assert.equal(promotion.pickedCommits.length, 0);
+});
+
+test('runOvernightBatch rejects deferred candidates whose test touch does not prove the new behavior', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-engine-'));
+  writeFixtureRepo(rootDir);
+
+  const batch = await runOvernightBatch({
+    cwd: rootDir,
+    adapterPath: 'overnight.yaml',
+    objectivePath: 'objective.yaml',
+    proposalLoader: weakTestProofProposalLoader,
+    reviewLoader: deferredAudit,
+  });
+
+  assert.equal(batch.status, 'awaiting-promotion');
+  assert.equal(batch.surfaces[0].status, 'discarded');
+  assert.equal(batch.surfaces[0].pendingAuditCommits.length, 0);
+  assert.equal(batch.ledger[0].reasonCode, 'weak-test-proof');
+});
+
+test('runOvernightBatch rejects deferred candidates that tighten validation with plain Error', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-engine-'));
+  writeFixtureRepo(rootDir);
+
+  const batch = await runOvernightBatch({
+    cwd: rootDir,
+    adapterPath: 'overnight.yaml',
+    objectivePath: 'objective.yaml',
+    proposalLoader: plainErrorValidationProposalLoader,
+    reviewLoader: deferredAudit,
+  });
+
+  assert.equal(batch.status, 'awaiting-promotion');
+  assert.equal(batch.surfaces[0].status, 'discarded');
+  assert.equal(batch.surfaces[0].pendingAuditCommits.length, 0);
+  assert.equal(batch.ledger[0].reasonCode, 'plain-error-validation');
 });
 
 test('runOvernightBatch rejects production edits that do not include tests', async () => {

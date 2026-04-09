@@ -123,3 +123,34 @@ test('mirror hedge stopDaemon refuses to signal a stale pidfile process when pid
     removeDir(tempHome);
   }
 });
+
+test('mirror hedge daemonStatus reports structured details for invalid strategy hashes', () => {
+  assert.throws(
+    () => daemonStatus({ strategyHash: 'not-a-hash' }),
+    (error) => {
+      assert.equal(error.code, 'INVALID_FLAG_VALUE');
+      assert.match(error.message, /16-character hex value/i);
+      assert.deepEqual(error.details, {
+        flag: '--strategy-hash',
+        receivedValue: 'not-a-hash',
+        expectedFormat: '16-character lowercase hex value',
+      });
+      return true;
+    },
+  );
+});
+
+test('mirror hedge stopDaemon reports structured selector requirements when no pid selector is provided', async () => {
+  await assert.rejects(
+    () => stopDaemon({}),
+    (error) => {
+      assert.equal(error.code, 'MISSING_REQUIRED_FLAG');
+      assert.match(error.message, /requires --pid-file <path> or --strategy-hash <hash>/i);
+      assert.deepEqual(error.details, {
+        requiresOneOf: ['--pid-file <path>', '--strategy-hash <hash>'],
+        operation: 'mirror hedge daemon lifecycle',
+      });
+      return true;
+    },
+  );
+});

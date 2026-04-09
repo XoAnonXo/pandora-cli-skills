@@ -14,9 +14,18 @@ function requireDep(deps, name) {
 
 function readFlagValue(args, index, flagName) {
   const value = args[index + 1];
-  if (typeof value !== 'string' || value.startsWith('--')) {
-    const error = new Error(`${flagName} requires a value.`);
+  if (typeof value !== 'string' || !String(value).trim() || value.startsWith('--')) {
+    const nextToken = typeof value === 'string' ? value : null;
+    const error = new Error(
+      nextToken && nextToken.startsWith('--')
+        ? `${flagName} requires a value before ${nextToken}.`
+        : `${flagName} requires a value.`,
+    );
     error.code = 'MISSING_FLAG_VALUE';
+    error.details = {
+      flag: flagName,
+      nextToken,
+    };
     throw error;
   }
   return value;
