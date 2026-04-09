@@ -320,6 +320,43 @@ function listNoRetryIdeas(ledger, objectiveHash, surfaceId) {
     }));
 }
 
+const STICKY_SOURCE_TARGET_REASONS = new Set([
+  'duplicate',
+  'weak-test-proof',
+  'validation-failed',
+  'full-validation-failed',
+  'missing-tests',
+  'audit-reject',
+  'awaiting-codex-audit',
+]);
+
+function listBlockedSourceTargets(ledger, objectiveHash, surfaceId) {
+  const blocked = new Map();
+  for (const entry of ledger) {
+    if (entry.objectiveHash !== objectiveHash || entry.surfaceId !== surfaceId) {
+      continue;
+    }
+    const sourceTargetId = buildSourceTargetKey(entry.sourceTarget);
+    if (!sourceTargetId) {
+      continue;
+    }
+    const stickyReason = STICKY_SOURCE_TARGET_REASONS.has(entry.reasonCode)
+      || STICKY_SOURCE_TARGET_REASONS.has(entry.failureKind)
+      || entry.outcome === 'pending-audit';
+    if (!stickyReason) {
+      continue;
+    }
+    if (!blocked.has(sourceTargetId)) {
+      blocked.set(sourceTargetId, {
+        id: sourceTargetId,
+        reasonCode: entry.reasonCode,
+        summary: entry.summary,
+      });
+    }
+  }
+  return Array.from(blocked.values());
+}
+
 function buildPromptContext(adapter, objective, surface, contextRepoRoot = adapter.repoRoot) {
   const repoRoot = path.resolve(contextRepoRoot || adapter.repoRoot);
   const excerpts = [];
@@ -637,6 +674,10 @@ function gatePlannerDecision(adapter, objective, surface, plan, ledger, surfaceS
   }
   if (isForbiddenPath(surface, plan.sourceTarget.path) || isForbiddenPath(surface, plan.testTarget.path)) {
     return buildCandidateRejection('forbidden-path', 'Remove forbidden paths from the planned target pair.');
+  }
+  const blockedSourceTargets = listBlockedSourceTargets(ledger, objective.objectiveHash, surface.id);
+  if (blockedSourceTargets.some((entry) => entry.id === plan.sourceTargetId)) {
+    return buildCandidateRejection('duplicate-family', 'Choose a different source target family instead of revisiting a rejected one.');
   }
   const candidateFingerprint = buildCandidateFingerprint(objective.objectiveHash, surface.id, plan);
   const duplicate = ledger.find((entry) => (
@@ -1622,11 +1663,13 @@ async function executeStagedSurfaceAttempt(options) {
     const promptContext = buildPromptContext(adapter, objective, surface, surfacePaths.worktreePath);
     const noRetryIdeas = listNoRetryIdeas(manifest.ledger, objective.objectiveHash, surface.id);
     const plannerAnchorFailures = listAnchorFailures(manifest.ledger, objective.objectiveHash, surface.id);
+    const blockedSourceTargets = listBlockedSourceTargets(manifest.ledger, objective.objectiveHash, surface.id);
     const candidates = mineSurfaceCandidates(adapter, surface, surfacePaths.worktreePath);
     const plannerPrompt = buildPlannerPrompt({
       context: promptContext,
       candidates,
       noRetryIdeas,
+      blockedSourceTargets,
       anchorFailures: plannerAnchorFailures,
     });
 
@@ -1660,6 +1703,18 @@ async function executeStagedSurfaceAttempt(options) {
     report.plan = loadedPlan.plan;
     report.repairTurnsUsed += loadedPlan.repairTurnsUsed;
 
+    if (report.plan.decision === 'no_safe_change') {
+      return {
+        patchFingerprint,
+        report: discardAttempt(report, {
+          reasonCode: 'no-safe-change',
+          nextStep: 'Planner did not identify a safe bounded target pair.',
+          failureStage: 'planning',
+          failureKind: 'no-safe-change',
+        }),
+      };
+    }
+
     if (!report.plan.sourceTarget && report.plan.sourceTargetId) {
       report.plan.sourceTarget = candidates.registry && candidates.registry.byId
         ? candidates.registry.byId[report.plan.sourceTargetId] || null
@@ -1683,17 +1738,6 @@ async function executeStagedSurfaceAttempt(options) {
     }
 
     const plannerGate = gatePlannerDecision(adapter, objective, surface, report.plan, manifest.ledger, surfaceState);
-    if (plannerGate.noSafeChange) {
-      return {
-        patchFingerprint,
-        report: discardAttempt(report, {
-          reasonCode: 'no-safe-change',
-          nextStep: 'Planner did not identify a safe bounded target pair.',
-          failureStage: 'planning',
-          failureKind: 'no-safe-change',
-        }),
-      };
-    }
     if (!plannerGate.ok) {
       return {
         patchFingerprint,
@@ -2697,6 +2741,7 @@ module.exports = {
   cleanupOvernightBatch,
   initOvernightEngine,
   inspectOvernightBatch,
+  listBlockedSourceTargets,
   loadProposalWithRepair,
   parseProposal,
   promoteOvernightBatch,

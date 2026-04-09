@@ -10,6 +10,7 @@ const {
   resolveDeferredAudit,
   runOvernightBatch,
   runSurfaceAttempt,
+  listBlockedSourceTargets,
 } = require('../../proving-ground/lib/overnight_engine.cjs');
 const { loadOvernightAdapter, findSurface } = require('../../proving-ground/lib/overnight_adapter.cjs');
 const { buildOvernightManifestPaths, loadOvernightManifest } = require('../../proving-ground/lib/overnight_manifest.cjs');
@@ -516,9 +517,10 @@ function buildStagedPlan(overrides = {}) {
 }
 
 function buildStagedEditorProposal(overrides = {}) {
-  return {
+  const defaults = {
     decision: 'edit',
     source_edit: {
+      edit_mode: 'subrange',
       target_id: 'source:calc:sanitize-count',
       operation: 'replace_block',
       start_line: 1,
@@ -532,6 +534,7 @@ function buildStagedEditorProposal(overrides = {}) {
       ].join('\n'),
     },
     test_edit: {
+      edit_mode: 'subrange',
       target_id: 'test:calc-test:sanitize-count-floors-negatives',
       operation: 'replace_block',
       start_line: 4,
@@ -552,8 +555,21 @@ function buildStagedEditorProposal(overrides = {}) {
       why_this_is_bounded: 'One source edit plus one paired test edit.',
       residual_risks: [],
     },
+  };
+  const proposal = {
+    ...defaults,
     ...overrides,
   };
+  proposal.source_edit = Object.prototype.hasOwnProperty.call(overrides, 'source_edit')
+    ? overrides.source_edit
+    : defaults.source_edit;
+  proposal.test_edit = Object.prototype.hasOwnProperty.call(overrides, 'test_edit')
+    ? overrides.test_edit
+    : defaults.test_edit;
+  proposal.logical_explanation = Object.prototype.hasOwnProperty.call(overrides, 'logical_explanation')
+    ? overrides.logical_explanation
+    : defaults.logical_explanation;
+  return proposal;
 }
 
 function createStagedProposalLoader(handlers = {}) {
@@ -834,6 +850,45 @@ test('runOvernightBatch honors repeated attempts and shared-ledger duplicate blo
   assert.equal(batch.ledger[1].reasonCode, 'duplicate');
 });
 
+test('listBlockedSourceTargets keeps rejected source families out of later staged plans', () => {
+  const blocked = listBlockedSourceTargets([
+    {
+      objectiveHash: 'objective-a',
+      surfaceId: 'core',
+      outcome: 'discarded',
+      reasonCode: 'weak-test-proof',
+      failureKind: 'weak-test-proof',
+      sourceTarget: {
+        id: 'source:calc:sanitize-count',
+        path: 'src/calc.cjs',
+        symbol: 'sanitizeCount',
+      },
+      summary: 'Weak proof on sanitizeCount.',
+    },
+    {
+      objectiveHash: 'objective-a',
+      surfaceId: 'core',
+      outcome: 'discarded',
+      reasonCode: 'editor-schema-failed',
+      failureKind: 'editor-schema-failed',
+      sourceTarget: {
+        id: 'source:calc:ignored',
+        path: 'src/calc.cjs',
+        symbol: 'ignoredHelper',
+      },
+      summary: 'Schema failure only.',
+    },
+  ], 'objective-a', 'core');
+
+  assert.deepEqual(blocked, [
+    {
+      id: 'source:calc:sanitize-count',
+      reasonCode: 'weak-test-proof',
+      summary: 'Weak proof on sanitizeCount.',
+    },
+  ]);
+});
+
 test('runOvernightBatch can execute multiple surfaces in parallel when maxParallelWorkers is raised', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-engine-parallel-'));
   writeParallelFixtureRepo(rootDir);
@@ -962,6 +1017,52 @@ test('staged mode rejects planner targets that leave the allowed surface', async
   assert.equal(batch.ledger[0].stage, 'planning');
 });
 
+test('staged mode maps planner no_safe_change to no-safe-change instead of invalid-target-id', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-staged-engine-'));
+  writeFixtureRepo(rootDir);
+
+  const batch = await runOvernightBatch({
+    cwd: rootDir,
+    adapterPath: 'overnight.yaml',
+    objectivePath: 'objective.yaml',
+    proposalMode: 'staged',
+    proposalLoader: createStagedProposalLoader({
+      planner: () => ({
+        decision: 'no_safe_change',
+        change_summary: 'No safe bounded change found.',
+      }),
+    }),
+    reviewLoader: acceptAudit,
+  });
+
+  assert.equal(batch.surfaces[0].status, 'discarded');
+  assert.equal(batch.ledger[0].reasonCode, 'no-safe-change');
+  assert.equal(batch.ledger[0].stage, 'planning');
+});
+
+test('staged mode blocks revisiting a rejected source family before it becomes a duplicate candidate', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-staged-engine-'));
+  writeFixtureRepo(rootDir);
+
+  const batch = await runOvernightBatch({
+    cwd: rootDir,
+    adapterPath: 'overnight.yaml',
+    objectivePath: 'objective.yaml',
+    proposalMode: 'staged',
+    proposalLoader: createStagedProposalLoader({
+      planner: () => buildStagedPlan(),
+      editor: () => buildStagedEditorProposal(),
+    }),
+    reviewLoader: rejectAudit,
+    attemptLimit: 2,
+  });
+
+  assert.equal(batch.status, 'awaiting-promotion');
+  assert.equal(batch.ledger[0].reasonCode, 'audit-reject');
+  assert.equal(batch.ledger[1].reasonCode, 'duplicate-family');
+  assert.equal(batch.ledger[1].stage, 'planning');
+});
+
 test('staged mode rejects editor patches that escape the chosen window', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-staged-engine-'));
   writeFixtureRepo(rootDir);
@@ -1047,6 +1148,7 @@ test('staged mode can repair a null editor response into a bounded kept change',
       editor: () => 'null',
       'editor-repair': () => buildStagedEditorProposal({
         source_edit: {
+          edit_mode: 'full_window',
           replacement: [
             'function sanitizeCount(value) {',
             '  if (!Number.isFinite(value)) return 0;',
@@ -1056,6 +1158,7 @@ test('staged mode can repair a null editor response into a bounded kept change',
           ].join('\n'),
         },
         test_edit: {
+          edit_mode: 'full_window',
           replacement: [
             '',
             "test('sanitizeCount floors negatives', () => {",
@@ -1090,6 +1193,7 @@ test('staged mode can repair a missing paired test edit inside the chosen window
       }),
       'editor-repair': () => buildStagedEditorProposal({
         source_edit: {
+          edit_mode: 'full_window',
           replacement: [
             'function sanitizeCount(value) {',
             '  if (!Number.isFinite(value)) return 0;',
@@ -1099,6 +1203,7 @@ test('staged mode can repair a missing paired test edit inside the chosen window
           ].join('\n'),
         },
         test_edit: {
+          edit_mode: 'full_window',
           replacement: [
             '',
             "test('sanitizeCount floors negatives', () => {",
@@ -1130,6 +1235,7 @@ test('staged mode binds omitted editor target ids to the chosen planner targets'
       planner: () => buildStagedPlan(),
       editor: () => buildStagedEditorProposal({
         source_edit: {
+          edit_mode: 'subrange',
           operation: 'replace_block',
           start_line: 1,
           end_line: 4,
@@ -1142,6 +1248,7 @@ test('staged mode binds omitted editor target ids to the chosen planner targets'
           ].join('\n'),
         },
         test_edit: {
+          edit_mode: 'subrange',
           operation: 'replace_block',
           start_line: 4,
           end_line: 8,

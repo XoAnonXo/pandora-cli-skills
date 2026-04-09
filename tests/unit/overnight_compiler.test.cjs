@@ -174,6 +174,7 @@ test('compileEditSketch binds omitted target ids to the caller-selected windows'
     sketch: {
       decision: 'edit',
       source_edit: {
+        edit_mode: 'subrange',
         operation: 'replace_block',
         start_line: 1,
         end_line: 4,
@@ -186,6 +187,7 @@ test('compileEditSketch binds omitted target ids to the caller-selected windows'
         ].join('\n'),
       },
       test_edit: {
+        edit_mode: 'subrange',
         operation: 'replace_block',
         start_line: 5,
         end_line: 8,
@@ -214,6 +216,7 @@ test('compileEditSketch binds omitted line bounds to the full chosen windows', (
     sketch: {
       decision: 'edit',
       source_edit: {
+        edit_mode: 'full_window',
         replacement: [
           'function sanitizeCount(value) {',
           '  if (!Number.isFinite(value)) return 0;',
@@ -225,6 +228,7 @@ test('compileEditSketch binds omitted line bounds to the full chosen windows', (
         ].join('\n'),
       },
       test_edit: {
+        edit_mode: 'full_window',
         replacement: [
           "const test = require('node:test');",
           "const assert = require('node:assert/strict');",
@@ -247,8 +251,52 @@ test('compileEditSketch binds omitted line bounds to the full chosen windows', (
   assert.equal(result.boundEdits.source.endLine, null);
   assert.equal(result.boundEdits.test.startLine, null);
   assert.equal(result.boundEdits.test.endLine, null);
+  assert.equal(result.boundEdits.source.editMode, 'full_window');
+  assert.equal(result.boundEdits.test.editMode, 'full_window');
   assert.equal(result.patchSet[0].search, sourceWindow.excerpt);
   assert.equal(result.patchSet[1].search, testWindow.excerpt);
+});
+
+test('compileEditSketch supports explicit subrange edit_mode', () => {
+  const result = compileEditSketch({
+    sketch: {
+      decision: 'edit',
+      source_edit: {
+        edit_mode: 'subrange',
+        target_id: 'src:calc:sanitizeCount',
+        operation: 'replace_block',
+        start_line: 1,
+        end_line: 4,
+        replacement: [
+          'function sanitizeCount(value) {',
+          '  if (!Number.isFinite(value)) return 0;',
+          '  if (value > 100) return 100;',
+          '  return value < 0 ? 0 : value;',
+          '}',
+        ].join('\n'),
+      },
+      test_edit: {
+        edit_mode: 'subrange',
+        target_id: 'test:calc:sanitizeCount',
+        operation: 'replace_block',
+        start_line: 5,
+        end_line: 8,
+        replacement: [
+          "test('sanitizeCount floors negatives', () => {",
+          '  assert.equal(sanitizeCount(-5), 0);',
+          '  assert.equal(sanitizeCount(9), 9);',
+          '  assert.equal(sanitizeCount(400), 100);',
+          '});',
+        ].join('\n'),
+      },
+    },
+    sourceWindow: buildWindow(),
+    testWindow: buildTestWindow(),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.boundEdits.source.editMode, 'subrange');
+  assert.equal(result.boundEdits.test.editMode, 'subrange');
 });
 
 test('compileEditSketch preserves parsed camelCase null line bounds', () => {

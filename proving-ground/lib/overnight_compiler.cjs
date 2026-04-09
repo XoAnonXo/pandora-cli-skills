@@ -45,25 +45,42 @@ function normalizeTargetWindow(window, role) {
   return normalized;
 }
 
+function normalizeEditMode(value, role, startLine, endLine) {
+  const normalized = normalizeText(value).toLowerCase().replace(/-/g, '_');
+  if (!normalized) {
+    return startLine === null && endLine === null ? 'full_window' : 'subrange';
+  }
+  if (!['full_window', 'subrange'].includes(normalized)) {
+    throw new Error(`${role} edit_mode must be full_window or subrange`);
+  }
+  return normalized;
+}
+
 function normalizeEditBlock(block, role) {
   if (!block || typeof block !== 'object' || Array.isArray(block)) {
     throw new Error(`${role} edit must be an object`);
   }
   const startLineValue = block.start_line ?? block.startLine;
   const endLineValue = block.end_line ?? block.endLine;
+  const startLine = startLineValue === undefined || startLineValue === null
+    ? null
+    : Number(startLineValue);
+  const endLine = endLineValue === undefined || endLineValue === null
+    ? null
+    : Number(endLineValue);
   const normalized = {
     targetId: normalizeText(block.target_id || block.targetId || block.id),
     operation: normalizeText(block.operation).toLowerCase() || 'replace_block',
-    startLine: startLineValue === undefined || startLineValue === null
-      ? null
-      : Number(startLineValue),
-    endLine: endLineValue === undefined || endLineValue === null
-      ? null
-      : Number(endLineValue),
+    editMode: normalizeEditMode(block.edit_mode ?? block.editMode, role, startLine, endLine),
+    startLine,
+    endLine,
     replacement: String(block.replacement ?? block.new_code ?? block.newCode ?? ''),
   };
   if (normalized.operation !== 'replace_block') {
     throw new Error(`${role} edit operation must be replace_block`);
+  }
+  if (normalized.editMode === 'subrange' && (normalized.startLine === null || normalized.endLine === null)) {
+    throw new Error(`${role} subrange edit must include start_line and end_line`);
   }
   if (!normalized.replacement) {
     throw new Error(`${role} edit is missing replacement`);
@@ -108,8 +125,17 @@ function buildPatchBlock(window, edit, role) {
   const lines = splitWindowLines(window);
   const windowStart = window.startLine;
   const windowEnd = window.endLine;
-  const startLine = edit.startLine === null ? windowStart : edit.startLine;
-  const endLine = edit.endLine === null ? windowEnd : edit.endLine;
+  if (edit.editMode === 'full_window') {
+    const startMatches = edit.startLine === null || edit.startLine === windowStart;
+    const endMatches = edit.endLine === null || edit.endLine === windowEnd;
+    if (!startMatches || !endMatches) {
+      const error = new Error(`${role} full_window edit must reuse the chosen window bounds`);
+      error.reasonCode = 'out-of-bound-edit';
+      throw error;
+    }
+  }
+  const startLine = edit.editMode === 'full_window' ? windowStart : edit.startLine;
+  const endLine = edit.editMode === 'full_window' ? windowEnd : edit.endLine;
   if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) {
     throw new Error(`${role} edit must include valid startLine and endLine or omit both`);
   }
