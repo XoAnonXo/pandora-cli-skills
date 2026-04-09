@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0.0",
+  "suite": "daemon-in-loop",
+  "defaultFamilyPath": "proving-ground/scenarios/daemon-in-loop/family.json",
+  "reportDir": "proving-ground/reports",
+  "model": {
+    "provider": "minimax",
+    "apiKeyEnv": "MINIMAX_API_KEY",
+    "model": "MiniMax-M2.7-highspeed",
+    "baseUrl": "https://api.minimax.io/v1",
+    "reasoningSplit": true,
+    "timeoutMs": 120000
+  },
+  "researchLoop": {
+    "goal": "Make Pandora faster, more simple, and more resilient without adding benchmark-only behavior.",
+    "mode": "proposal",
+    "maxIterations": 1,
+    "allowDirtyTree": false,
+    "maxSlowdownRatio": 1.02,
+    "focusFiles": [
+      "benchmarks/lib/runner.cjs",
+      "benchmarks/lib/simulation_world.cjs",
+      "cli/lib/mirror_replay_service.cjs",
+      "proving-ground/lib/scenario_family_loader.cjs"
+    ],
+    "quickValidation": [
+      "node --test tests/unit/simulation_world.test.cjs",
+      "node --test tests/unit/proving_ground_scenario_loader.test.cjs",
+      "node --test tests/unit/mirror_replay_service.test.cjs"
+    ],
+    "fullValidation": [
+      "node --test tests/unit/benchmark_runner.test.cjs",
+      "node --test tests/cli/mirror_replay.integration.test.cjs",
+      "node --test tests/cli/mirror_hedge_daemon_sandbox.integration.test.cjs"
+    ]
+  },
+  "holdoutPolicy": {
+    "enabled": true,
+    "holdoutRatio": 0.2,
+    "refreshStrategy": "shadow-trace"
+  },
+  "calibrationPolicy": {
+    "enabled": true,
+    "comparisonMode": "shadow-live",
+    "driftThresholdBps": 25
+  }
+}

@@ -1,0 +1,405 @@
+repo:
+  name: pandora-cli-skills
+  setup: npm install
+  baseline_validation:
+    - npm run typecheck
+  final_validation:
+    - npm run verify:tests
+
+surfaces:
+  - id: onboarding-contracts
+    title: Onboarding And Contracts
+    description: Clarify setup, doctor, schema, and capabilities without changing what commands mean.
+    paths:
+      - cli/lib/bootstrap_command_service.cjs
+      - cli/lib/setup_command_service.cjs
+      - cli/lib/doctor_service.cjs
+      - cli/lib/schema_command_service.cjs
+      - cli/lib/capabilities_command_service.cjs
+      - cli/lib/explain_command_service.cjs
+    test_paths:
+      - tests/unit/bootstrap_command_service.test.cjs
+      - tests/unit/sdk_contract_service.test.cjs
+      - tests/unit/explain_command_service.test.cjs
+      - tests/cli/explain.integration.test.cjs
+      - tests/cli/mcp.integration.test.cjs
+    invariants:
+      - Command meaning and required safety steps stay the same.
+      - Doctor onboarding must reject unsupported goal combinations clearly.
+      - Schema and capabilities output must remain machine-readable.
+    risk: safe
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+      - sdk/generated/command-descriptors.json
+    allowed_dependencies:
+      - cli/lib/**
+      - sdk/generated/**
+    forbidden_paths:
+      - cli/lib/mirror_hedge/**
+    quick_validation:
+      - node --test tests/unit/bootstrap_command_service.test.cjs tests/unit/sdk_contract_service.test.cjs tests/unit/explain_command_service.test.cjs
+    full_validation:
+      - node --test tests/cli/explain.integration.test.cjs tests/cli/mcp.integration.test.cjs
+
+  - id: policy-profile-recipe
+    title: Policy, Profiles, And Recipes
+    description: Make policy, profile, and recipe guidance clearer without weakening safety rules.
+    paths:
+      - cli/lib/policy_command_service.cjs
+      - cli/lib/profile_command_service.cjs
+      - cli/lib/policy_profile_guidance_service.cjs
+      - cli/lib/recipe_command_service.cjs
+      - cli/lib/recipe_runtime_service.cjs
+    test_paths:
+      - tests/unit/policy_profile_services.test.cjs
+      - tests/unit/policy_profile_contracts.test.cjs
+      - tests/unit/recipe_runtime.test.cjs
+      - tests/cli/policy_profile_cli.integration.test.cjs
+      - tests/cli/policy_profile_mcp.integration.test.cjs
+      - tests/cli/recipe.integration.test.cjs
+    invariants:
+      - Policy safety rules and profile semantics stay unchanged.
+      - Recipe execution behavior must remain backward compatible.
+      - Operator-facing output can get clearer but not looser.
+    risk: safe
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+    allowed_dependencies:
+      - cli/lib/**
+    forbidden_paths:
+      - cli/lib/mirror_hedge/**
+    quick_validation:
+      - node --test tests/unit/policy_profile_services.test.cjs tests/unit/policy_profile_contracts.test.cjs tests/unit/recipe_runtime.test.cjs
+    full_validation:
+      - node --test tests/cli/policy_profile_cli.integration.test.cjs tests/cli/policy_profile_mcp.integration.test.cjs tests/cli/recipe.integration.test.cjs
+
+  - id: markets-liquidity-lifecycle
+    title: Markets, Liquidity, And Lifecycle
+    description: Keep market creation, trading, liquidity, and closeout flows lean while preserving execution behavior.
+    paths:
+      - cli/lib/markets_create_command_service.cjs
+      - cli/lib/trade_command_service.cjs
+      - cli/lib/lp_command_service.cjs
+      - cli/lib/market_admin_service.cjs
+      - cli/lib/lifecycle_command_service.cjs
+    test_paths:
+      - tests/unit/markets_hype_command_service.test.cjs
+      - tests/unit/lp_command_service.test.cjs
+      - tests/unit/claim_command_service.test.cjs
+      - tests/unit/market_admin_resolution_state.test.cjs
+      - tests/cli/cli.integration.market_ops.cjs
+    invariants:
+      - Trading, LP, and resolution semantics must not change.
+      - Any selector or flag validation must fail earlier, not later.
+      - Liquidity and lifecycle operations must remain deterministic.
+    risk: safe
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+    allowed_dependencies:
+      - cli/lib/**
+    forbidden_paths:
+      - cli/lib/mirror_hedge/**
+    quick_validation:
+      - node --test tests/unit/markets_hype_command_service.test.cjs tests/unit/lp_command_service.test.cjs tests/unit/claim_command_service.test.cjs tests/unit/market_admin_resolution_state.test.cjs
+    full_validation:
+      - node --test tests/cli/cli.integration.market_ops.cjs
+
+  - id: mirror-deploy-lifecycle
+    title: Mirror Deploy And Lifecycle
+    description: Keep deploy, verify, resume, replay, and general mirror control readable and safe.
+    paths:
+      - cli/lib/mirror_command_service.cjs
+      - cli/lib/mirror_service.cjs
+      - cli/lib/mirror_manifest_store.cjs
+      - cli/lib/mirror_deploy_guard_store.cjs
+      - cli/lib/mirror_surface_service.cjs
+    test_paths:
+      - tests/unit/mirror_service_rules.test.cjs
+      - tests/unit/mirror_manifest_store.test.cjs
+      - tests/unit/mirror_go_regressions.test.cjs
+      - tests/unit/mirror_surface_service.test.cjs
+      - tests/cli/cli.integration.mirror.cjs
+      - tests/cli/mirror_logs.integration.test.cjs
+      - tests/cli/mirror_replay.integration.test.cjs
+    invariants:
+      - Mirror deployment safety and manifest semantics must remain intact.
+      - Resume, verify, and replay flows must remain reversible and explicit.
+      - No hidden execution shortcuts are allowed.
+    risk: guarded
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+    allowed_dependencies:
+      - cli/lib/**
+    forbidden_paths:
+      - cli/lib/mirror_hedge/**
+    quick_validation:
+      - node --test tests/unit/mirror_service_rules.test.cjs tests/unit/mirror_manifest_store.test.cjs tests/unit/mirror_go_regressions.test.cjs tests/unit/mirror_surface_service.test.cjs
+    full_validation:
+      - node --test tests/cli/cli.integration.mirror.cjs tests/cli/mirror_logs.integration.test.cjs tests/cli/mirror_replay.integration.test.cjs
+
+  - id: pandora-mirroring-mode
+    title: Pandora Mirroring Mode
+    description: Keep Pandora-only price mirroring understandable and safe.
+    paths:
+      - cli/lib/mirror_sync_service.cjs
+      - cli/lib/mirror_sizing_service.cjs
+      - cli/lib/mirror_surface_service.cjs
+      - cli/lib/mirror_state_store.cjs
+    test_paths:
+      - tests/unit/mirror_sync_execution.test.cjs
+      - tests/unit/mirror_sync_skip_initial_hedge.test.cjs
+      - tests/unit/mirror_simulate_mc.test.cjs
+      - tests/cli/cli.integration.mirror.cjs
+    invariants:
+      - Mirror sync behavior must remain bounded by existing risk controls.
+      - Sizing rules must reject impossible cases instead of guessing.
+      - Runtime state must remain recoverable after interruptions.
+    risk: guarded
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+    allowed_dependencies:
+      - cli/lib/**
+    forbidden_paths:
+      - cli/lib/mirror_hedge/**
+    quick_validation:
+      - node --test tests/unit/mirror_sync_execution.test.cjs tests/unit/mirror_sync_skip_initial_hedge.test.cjs tests/unit/mirror_simulate_mc.test.cjs
+    full_validation:
+      - node --test tests/cli/cli.integration.mirror.cjs
+
+  - id: polymarket-hedge-mode
+    title: Polymarket Hedge Mode
+    description: Keep hedge-only execution, daemon state, and inventory logic explicit and resilient.
+    paths:
+      - cli/lib/mirror_hedge_service.cjs
+      - cli/lib/mirror_hedge_daemon_service.cjs
+      - cli/lib/mirror_hedge_state_store.cjs
+      - cli/lib/polymarket_trade_adapter.cjs
+    test_paths:
+      - tests/unit/mirror_hedge_service.test.cjs
+      - tests/unit/mirror_hedge_daemon_service.test.cjs
+      - tests/unit/mirror_hedge_flags.test.cjs
+      - tests/cli/mirror_hedge_daemon_sandbox.integration.test.cjs
+      - tests/cli/mirror_health_panic.integration.test.cjs
+    invariants:
+      - Hedge daemon behavior must stay restart-safe and queue-safe.
+      - Inventory protection logic must stay stricter than live execution.
+      - Exchange adapter behavior must remain explicit under failure.
+    risk: guarded
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+    allowed_dependencies:
+      - cli/lib/**
+    forbidden_paths:
+      - infra/**
+    quick_validation:
+      - node --test tests/unit/mirror_hedge_service.test.cjs tests/unit/mirror_hedge_daemon_service.test.cjs tests/unit/mirror_hedge_flags.test.cjs
+    full_validation:
+      - node --test tests/cli/mirror_hedge_daemon_sandbox.integration.test.cjs tests/cli/mirror_health_panic.integration.test.cjs
+
+  - id: polymarket-ops-funding
+    title: Polymarket Ops And Funding
+    description: Simplify direct Polymarket checks, approvals, balances, and funding without hiding risk.
+    paths:
+      - cli/lib/polymarket_command_service.cjs
+      - cli/lib/polymarket_ops_service.cjs
+      - cli/lib/polymarket_adapter.cjs
+      - cli/lib/fees_command_service.cjs
+      - cli/lib/dashboard_fund_service.cjs
+      - cli/lib/parsers/polymarket_flags.cjs
+    test_paths:
+      - tests/unit/polymarket_adapter.test.cjs
+      - tests/unit/polymarket_ops_service.test.cjs
+      - tests/unit/polymarket_trade_adapter.test.cjs
+      - tests/unit/fees_command_service.test.cjs
+      - tests/unit/new-features.test.cjs
+      - tests/cli/cli.integration.operator.cjs
+      - tests/cli/dashboard_fund.integration.test.cjs
+    invariants:
+      - Approvals, balances, and selector semantics must stay exact.
+      - Ambiguous selectors must fail early instead of reaching live resolution.
+      - Funding and ops flows must remain operator-safe.
+    risk: guarded
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+    allowed_dependencies:
+      - cli/lib/**
+    forbidden_paths:
+      - cli/lib/mirror_hedge/**
+    quick_validation:
+      - node --test tests/unit/polymarket_adapter.test.cjs tests/unit/polymarket_ops_service.test.cjs tests/unit/polymarket_trade_adapter.test.cjs tests/unit/fees_command_service.test.cjs
+    full_validation:
+      - node --test tests/cli/cli.integration.operator.cjs tests/cli/dashboard_fund.integration.test.cjs
+
+  - id: operations-risk-watch
+    title: Operations, Risk, And Watch
+    description: Keep long-running operations, receipts, watch flows, and panic stops simple under pressure.
+    paths:
+      - cli/lib/operations_command_service.cjs
+      - cli/lib/operation_service.cjs
+      - cli/lib/risk_command_service.cjs
+      - cli/lib/watch_command_service.cjs
+      - cli/lib/webhook_service.cjs
+    test_paths:
+      - tests/unit/operations_command_service.test.cjs
+      - tests/unit/operation_service.test.cjs
+      - tests/unit/watch_risk_command_service.test.cjs
+      - tests/unit/watch_risk_policy_service.test.cjs
+      - tests/unit/risk_guard_service.test.cjs
+      - tests/unit/webhook_service.test.cjs
+      - tests/cli/watch_risk.integration.test.cjs
+      - tests/cli/dashboard_fund.integration.test.cjs
+    invariants:
+      - Panic and risk controls must never get weaker.
+      - Watch and webhook flows must stay explainable from receipts.
+      - Long-running operations must stay resumable and auditable.
+    risk: guarded
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+    allowed_dependencies:
+      - cli/lib/**
+    forbidden_paths:
+      - cli/lib/mirror_hedge/**
+    quick_validation:
+      - node --test tests/unit/operations_command_service.test.cjs tests/unit/operation_service.test.cjs tests/unit/watch_risk_command_service.test.cjs tests/unit/watch_risk_policy_service.test.cjs tests/unit/risk_guard_service.test.cjs tests/unit/webhook_service.test.cjs
+    full_validation:
+      - node --test tests/cli/watch_risk.integration.test.cjs tests/cli/dashboard_fund.integration.test.cjs
+
+  - id: sports-model-stream
+    title: Sports, Models, And Streams
+    description: Trim sports and model surfaces so live data, scoring, and creation logic stay understandable.
+    paths:
+      - cli/lib/sports_command_service.cjs
+      - cli/lib/sports_creation_service.cjs
+      - cli/lib/sports_sync_service.cjs
+      - cli/lib/model_command_service.cjs
+      - cli/lib/stream_command_service.cjs
+    test_paths:
+      - tests/unit/sports_creation.test.cjs
+      - tests/unit/sports_resolve_plan.test.cjs
+      - tests/unit/sports_sync.test.cjs
+      - tests/unit/sports_timing.test.cjs
+      - tests/unit/model_calibrate.test.cjs
+      - tests/unit/model_correlation.test.cjs
+      - tests/unit/model_diagnose.test.cjs
+      - tests/unit/model_command_service.test.cjs
+      - tests/unit/odds_history_service.test.cjs
+      - tests/unit/brier_scoring.test.cjs
+      - tests/cli/sports.integration.test.cjs
+      - tests/cli/stream.integration.test.cjs
+    invariants:
+      - Model command routing and scoring semantics must stay correct.
+      - Stream delivery must not drop queued output under pressure.
+      - Sports creation and sync logic must remain deterministic.
+    risk: guarded
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+    allowed_dependencies:
+      - cli/lib/**
+    forbidden_paths:
+      - cli/lib/mirror_hedge/**
+    quick_validation:
+      - node --test tests/unit/sports_creation.test.cjs tests/unit/sports_resolve_plan.test.cjs tests/unit/sports_sync.test.cjs tests/unit/sports_timing.test.cjs tests/unit/model_calibrate.test.cjs tests/unit/model_correlation.test.cjs tests/unit/model_diagnose.test.cjs tests/unit/odds_history_service.test.cjs tests/unit/brier_scoring.test.cjs tests/unit/model_command_service.test.cjs
+    full_validation:
+      - node --test tests/cli/sports.integration.test.cjs tests/cli/stream.integration.test.cjs
+
+  - id: agent-mcp-bridge-arb
+    title: Agent, MCP, Bridge, Arb, And Simulation
+    description: Keep advanced agent surfaces and cross-venue tooling compact enough that operators and agents can still reason about them.
+    paths:
+      - cli/lib/agent_command_service.cjs
+      - cli/lib/mcp_server_service.cjs
+      - cli/lib/bridge_command_service.cjs
+      - cli/lib/arb_command_service.cjs
+      - cli/lib/simulate_command_service.cjs
+    test_paths:
+      - tests/unit/agent_acceptance_runner.test.cjs
+      - tests/unit/agent_contract_registry.test.cjs
+      - tests/unit/mcp_tool_registry_agent.test.cjs
+      - tests/unit/bridge_command_service.test.cjs
+      - tests/unit/combinatorial_arb.test.cjs
+      - tests/unit/simulate_command_service.test.cjs
+      - tests/cli/agent_workflow.integration.test.cjs
+      - tests/cli/bridge.integration.test.cjs
+      - tests/cli/cli.integration.arbitrage.cjs
+    invariants:
+      - MCP and agent contracts must remain machine-consumable.
+      - Bridge and arbitrage surfaces must preserve exact flag and risk semantics.
+      - Simulation surfaces must stay deterministic and bounded.
+    risk: guarded
+    required_test_kinds:
+      - regression
+      - integration
+    context_patterns:
+      - cli/pandora.cjs
+      - sdk/generated/command-descriptors.json
+    allowed_dependencies:
+      - cli/lib/**
+      - sdk/generated/**
+    forbidden_paths:
+      - sdk/python/**
+    quick_validation:
+      - node --test tests/unit/agent_acceptance_runner.test.cjs tests/unit/agent_contract_registry.test.cjs tests/unit/mcp_tool_registry_agent.test.cjs tests/unit/bridge_command_service.test.cjs tests/unit/combinatorial_arb.test.cjs tests/unit/simulate_command_service.test.cjs
+    full_validation:
+      - node --test tests/cli/agent_workflow.integration.test.cjs tests/cli/bridge.integration.test.cjs tests/cli/cli.integration.arbitrage.cjs
+
+manual_only_paths:
+  - .github/**
+  - infra/**
+  - dist/**
+  - website/**
+  - sdk/python/**
+
+shared_paths:
+  - cli/pandora.cjs
+  - package.json
+  - sdk/generated/command-descriptors.json
+
+defaults:
+  report_dir: proving-ground/reports/overnight
+  branch_prefix: codex/overnight
+  attempt_limit: 1
+  repair_turns: 1
+  proposal_mode: legacy
+  staged:
+    max_source_files: 1
+    max_test_files: 1
+    max_code_blocks: 1
+    max_test_blocks: 1
+    window_line_cap: 120
+  proposer:
+    provider: minimax
+    model: MiniMax-M2.7-highspeed
+    api_key_env: MINIMAX_API_KEY
+    base_url: https://api.minimax.io/v1
+    timeout_ms: 120000
+    temperature: 0.2
+  audit:
+    provider: deferred
+    timeout_ms: 30000

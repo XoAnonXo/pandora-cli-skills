@@ -1,0 +1,30 @@
+goal: Improve Pandora CLI clarity, safety, and predictable operator behavior without changing what commands mean.
+allowed_surfaces:
+  - onboarding-contracts
+  - policy-profile-recipe
+  - markets-liquidity-lifecycle
+  - mirror-deploy-lifecycle
+  - pandora-mirroring-mode
+  - polymarket-hedge-mode
+  - polymarket-ops-funding
+  - operations-risk-watch
+  - sports-model-stream
+  - agent-mcp-bridge-arb
+success:
+  - Operator-facing flows become clearer or safer while preserving command semantics.
+  - All touched surfaces keep their required quick and full validation green.
+  - The engine leaves a proof packet and handoff for every attempt.
+required_tests:
+  - regression
+  - integration
+  - objective-proof
+stop_conditions:
+  - The change would require touching a manual-only path.
+  - The change would weaken a stated surface invariant.
+  - The change would need a cross-surface refactor to be correct.
+  - The change cannot add or update the proofing tests it needs.
+evidence:
+  - Overnight runs produced too much low-signal churn when objectives were vague.
+  - Same-family proposal and review created false confidence.
+  - Text-anchor edits were too brittle for general reuse.
+priority: high

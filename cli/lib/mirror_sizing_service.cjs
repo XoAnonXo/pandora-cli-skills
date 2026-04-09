@@ -4,8 +4,8 @@ const { toNumber, clamp, round } = require('./shared/utils.cjs');
 function normalizeProbability(raw) {
   const numeric = toNumber(raw);
   if (numeric === null) return null;
-  if (numeric >= 0 && numeric <= 1) return numeric;
-  if (numeric >= 0 && numeric <= 100) return numeric / 100;
+  if (numeric <= 1) return numeric;
+  if (numeric <= 100) return numeric / 100;
   return null;
 }
 

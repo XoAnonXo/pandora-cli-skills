@@ -5,6 +5,8 @@ It is separate from the release-proof benchmark suite on purpose.
 The job here is not just to prove that the shell still works.
 The job is to stress the trading brain until we understand hedge behavior, replay truth, and calibration drift.
 
+The newer auto-improvement engine now lives under `docs/proving-ground/autoresearch/` and `proving-ground/autoresearch/`.
+
 ## What It Is
 
 The proving ground is a stateful sandbox for:

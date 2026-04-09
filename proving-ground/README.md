@@ -7,6 +7,8 @@ Pandora now has two separate jobs:
 
 The proving ground is where we study real trading behavior over time. It uses the same runtime brain as live Pandora, but the inputs are simulated and reproducible.
 
+The newer auto-improvement engine now lives under `proving-ground/autoresearch/`. The old root paths remain as compatibility doors so older tests and operator commands keep working while Pandora itself stays publishable as a smaller package.
+
 ```mermaid
 flowchart LR
 A["Release proof"] --> B["Shared runtime brain"]

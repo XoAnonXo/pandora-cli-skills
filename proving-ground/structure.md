@@ -4,6 +4,10 @@
 proving-ground/
   README.md
   structure.md
+  autoresearch/
+    config/
+    lib/
+    scripts/
   config/
     proving-ground.example.json
     world-lock.example.json
