@@ -2,11 +2,13 @@
 title: Pandora release and quality loop
 type: workflow
 status: active
-updated: 2026-04-05
+updated: 2026-04-08
 source_paths:
   - package.json
   - docs/trust/release-verification.md
   - docs/trust/security-model.md
+  - docs/benchmarks/README.md
+  - docs/proving-ground/README.md
 tags:
   - pandora
   - workflow
@@ -33,6 +35,8 @@ flowchart LR
   Typecheck --> RepoVerify["repo verification"]
   RepoVerify --> TestVerify["tests"]
   TestVerify --> Bench["benchmark check"]
+  TestVerify --> Journeys["journeys + surface checks"]
+  Journeys --> Bench["benchmark check"]
   Bench --> Finalize["release finalize"]
   Finalize --> Trust["SBOM + trust checks + drift checks"]
   Trust --> Publish["publish artifact"]
@@ -43,8 +47,10 @@ flowchart LR
 - `build` runs type checks
 - `verify:repo` runs repo verification
 - `verify:tests` runs tests
+- `e2e:surfaces`, `e2e:journeys`, and `e2e:agents` exist as deeper end-to-end trust probes
 - `release:verify` combines repo checks, tests, and benchmark checks
 - `release:finalize` rebuilds benchmark and software bill of materials outputs
+- `proving-ground:autoresearch` exists beside the release gate as a research loop, not as the ship gate
 - `release:publish` runs the full publish path with trust and drift checks
 
 ## Why this matters

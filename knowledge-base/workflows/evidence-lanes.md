@@ -2,13 +2,15 @@
 title: Pandora evidence lanes
 type: workflow
 status: active
-updated: 2026-04-05
+updated: 2026-04-09
 source_paths:
   - docs/benchmarks/README.md
   - docs/benchmarks/scenario-catalog.md
   - docs/benchmarks/scorecard.md
   - docs/proving-ground/README.md
+  - docs/proving-ground/autoresearch/overnight-research-module.md
   - proving-ground/README.md
+  - package.json
 tags:
   - pandora
   - workflow
@@ -44,7 +46,22 @@ This is the larger sandbox for long-running mirror, hedge, replay, and strategy 
 - lives under `proving-ground/`
 - explained in `docs/proving-ground/README.md`
 - writes generated local run output under `proving-ground/reports/`
+- writes one report plus one handoff per run in the current wired loop
+- can rehearse one real hedge-daemon path inside the full validation gate
 - is useful for research, not as a direct release gate
+
+Inside that research lane, the repo now exposes two shapes:
+
+- a Pandora-specific relay loop for improving CLI sections `(baton system)`
+- a more reusable overnight engine driven by a repo map and a goal `(overnight adapter + objective)`
+
+```mermaid
+flowchart TD
+  Research["Proving-ground research lane"] --> Baton["CLI baton lane"]
+  Research --> Overnight["Reusable overnight engine"]
+  Baton --> Evidence["handoffs, receipts, lane proofs"]
+  Overnight --> Evidence
+```
 
 ## Why the split matters
 
@@ -58,6 +75,7 @@ Keeping them separate avoids a common mistake:
 
 ## Related pages
 
+- [Overnight autoresearch](./overnight-autoresearch.md)
 - [Release and quality loop](./release-and-quality-loop.md)
 - [Overview](../overview.md)
 - [Current repo snapshot](../sources/current-repo-snapshot.md)

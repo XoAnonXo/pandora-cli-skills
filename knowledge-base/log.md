@@ -2,13 +2,17 @@
 title: Pandora knowledge base log
 type: log
 status: active
-updated: 2026-04-05
+updated: 2026-04-09
 source_paths:
   - README.md
   - SKILL.md
   - package.json
   - docs/skills/capabilities.md
   - docs/skills/agent-interfaces.md
+  - docs/skills/setup-and-onboarding.md
+  - docs/skills/mirror-operations.md
+  - docs/proving-ground/README.md
+  - docs/proving-ground/autoresearch/overnight-research-module.md
 tags:
   - pandora
   - knowledge-base
@@ -16,6 +20,37 @@ tags:
 ---
 
 # Pandora Knowledge Base Log
+
+## [2026-04-09] refresh | overnight autoresearch map added
+
+Reviewed source files:
+
+- `package.json`
+- `docs/proving-ground/README.md`
+- `docs/proving-ground/autoresearch/overnight-research-module.md`
+- `docs/proving-ground/autoresearch/oracle-review-packet.md`
+- `proving-ground/README.md`
+- `scripts/run_proving_ground_autoresearch.cjs`
+- `scripts/run_overnight_engine.cjs`
+- `scripts/run_cli_baton_autoresearch.cjs`
+- `scripts/run_cli_section_autoresearch.cjs`
+
+Updated wiki pages:
+
+- `knowledge-base/overview.md`
+- `knowledge-base/workflows/evidence-lanes.md`
+- `knowledge-base/sources/current-repo-snapshot.md`
+- `knowledge-base/index.md`
+
+Created wiki pages:
+
+- `knowledge-base/workflows/overnight-autoresearch.md`
+
+Decisions:
+
+- Treated the repo changes as meaningful because the proving-ground lane now has a clearer reusable overnight engine shape, not just a Pandora-only sandbox.
+- Added one focused workflow page instead of overloading the broader evidence-lanes page with too much detail.
+- Updated the repo snapshot counts because the source tree shape changed enough that the old counts were stale.
 
 ## [2026-04-05] setup | initial wiki created
 
@@ -61,3 +96,26 @@ Cleanup actions:
 - refreshed root docs and skill routing to include the proving-ground lane
 - added `proving-ground/reports/` to `.gitignore`
 - refreshed the knowledge base to match the repo's current evidence model
+
+## [2026-04-08] refresh | mirror modes, setup goals, and proving-ground loop
+
+Reviewed source files:
+
+- `README.md`
+- `package.json`
+- `docs/skills/setup-and-onboarding.md`
+- `docs/skills/mirror-operations.md`
+- `docs/proving-ground/README.md`
+- `docs/benchmarks/README.md`
+
+Wiki updates:
+
+- refreshed the overview and CLI surface to explain the clearer split between Pandora mirroring, Polymarket hedge mode, and the hybrid loop
+- updated the repo snapshot with current file counts and the new package version context
+- refreshed the evidence and release workflow pages to reflect the proving-ground handoff/report loop and the deeper end-to-end checks listed in `package.json`
+- added `knowledge-base/workflows/mirror-modes-and-onboarding.md` as the durable map for goal-first setup
+- updated `knowledge-base/index.md` navigation to link the new workflow page
+
+Reason for update:
+
+- there were meaningful repo changes after the last log entry, especially around mirror operations, onboarding goals, and proving-ground behavior

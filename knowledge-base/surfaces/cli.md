@@ -2,11 +2,13 @@
 title: Pandora CLI surface
 type: surface
 status: active
-updated: 2026-04-05
+updated: 2026-04-08
 source_paths:
   - README.md
   - package.json
   - docs/skills/capabilities.md
+  - docs/skills/setup-and-onboarding.md
+  - docs/skills/mirror-operations.md
 tags:
   - pandora
   - cli
@@ -39,10 +41,21 @@ flowchart LR
 ## Main jobs this surface handles
 
 - inspect what Pandora can do
+- guide first-run setup by goal
 - understand command contracts
 - check policy and signer readiness
 - run market, mirror, portfolio, and release workflows
 - support automation and CI
+
+## New shape that matters
+
+The CLI now explains mirror work in three clearer lanes:
+
+- `mirror sync --no-hedge`: keep Pandora prices aligned without placing Polymarket hedges
+- `mirror hedge`: manage the Polymarket hedge daemon for an existing mirror pair
+- plain `mirror sync`: run the hybrid loop that can rebalance Pandora and hedge Polymarket
+
+The setup flow also starts with the user's end goal first (`setup --interactive --goal ...`) so Pandora can ask only for the inputs that matter for that lane.
 
 ## Important source files
 
@@ -51,6 +64,7 @@ flowchart LR
 - `docs/skills/command-reference.md`
 - `docs/skills/trading-workflows.md`
 - `docs/skills/mirror-operations.md`
+- `docs/skills/setup-and-onboarding.md`
 
 ## Simple explanation
 
@@ -60,4 +74,5 @@ If someone says, "I need to run Pandora myself" (terminal workflow), this is the
 
 - [Overview](../overview.md)
 - [Agent and MCP surface](./agent-and-mcp.md)
+- [Mirror modes and onboarding](../workflows/mirror-modes-and-onboarding.md)
 - [Release and quality loop](../workflows/release-and-quality-loop.md)
