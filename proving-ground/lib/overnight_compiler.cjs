@@ -49,15 +49,17 @@ function normalizeEditBlock(block, role) {
   if (!block || typeof block !== 'object' || Array.isArray(block)) {
     throw new Error(`${role} edit must be an object`);
   }
+  const startLineValue = block.start_line ?? block.startLine;
+  const endLineValue = block.end_line ?? block.endLine;
   const normalized = {
     targetId: normalizeText(block.target_id || block.targetId || block.id),
     operation: normalizeText(block.operation).toLowerCase() || 'replace_block',
-    startLine: block.start_line === undefined && block.startLine === undefined
+    startLine: startLineValue === undefined || startLineValue === null
       ? null
-      : Number(block.start_line || block.startLine),
-    endLine: block.end_line === undefined && block.endLine === undefined
+      : Number(startLineValue),
+    endLine: endLineValue === undefined || endLineValue === null
       ? null
-      : Number(block.end_line || block.endLine),
+      : Number(endLineValue),
     replacement: String(block.replacement ?? block.new_code ?? block.newCode ?? ''),
   };
   if (normalized.operation !== 'replace_block') {

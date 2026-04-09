@@ -1033,6 +1033,90 @@ test('staged mode can repair one anchor mismatch without changing the chosen fil
   assert.equal(batch.ledger[0].windowFingerprint.length > 0, true);
 });
 
+test('staged mode can repair a null editor response into a bounded kept change', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-staged-engine-'));
+  writeFixtureRepo(rootDir);
+
+  const batch = await runOvernightBatch({
+    cwd: rootDir,
+    adapterPath: 'overnight.yaml',
+    objectivePath: 'objective.yaml',
+    proposalMode: 'staged',
+    proposalLoader: createStagedProposalLoader({
+      planner: () => buildStagedPlan(),
+      editor: () => 'null',
+      'editor-repair': () => buildStagedEditorProposal({
+        source_edit: {
+          replacement: [
+            'function sanitizeCount(value) {',
+            '  if (!Number.isFinite(value)) return 0;',
+            '  if (value > 100) return 100;',
+            '  return value < 0 ? 0 : value;',
+            '}',
+          ].join('\n'),
+        },
+        test_edit: {
+          replacement: [
+            '',
+            "test('sanitizeCount floors negatives', () => {",
+            '  assert.equal(sanitizeCount(-5), 0);',
+            '  assert.equal(sanitizeCount(9), 9);',
+            '  assert.equal(sanitizeCount(400), 100);',
+            '});',
+          ].join('\n'),
+        },
+      }),
+    }),
+    reviewLoader: acceptAudit,
+  });
+
+  assert.equal(batch.surfaces[0].status, 'kept');
+  assert.equal(batch.ledger[0].reasonCode, 'accepted');
+});
+
+test('staged mode can repair a missing paired test edit inside the chosen windows', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-staged-engine-'));
+  writeFixtureRepo(rootDir);
+
+  const batch = await runOvernightBatch({
+    cwd: rootDir,
+    adapterPath: 'overnight.yaml',
+    objectivePath: 'objective.yaml',
+    proposalMode: 'staged',
+    proposalLoader: createStagedProposalLoader({
+      planner: () => buildStagedPlan(),
+      editor: () => buildStagedEditorProposal({
+        test_edit: undefined,
+      }),
+      'editor-repair': () => buildStagedEditorProposal({
+        source_edit: {
+          replacement: [
+            'function sanitizeCount(value) {',
+            '  if (!Number.isFinite(value)) return 0;',
+            '  if (value > 100) return 100;',
+            '  return value < 0 ? 0 : value;',
+            '}',
+          ].join('\n'),
+        },
+        test_edit: {
+          replacement: [
+            '',
+            "test('sanitizeCount floors negatives', () => {",
+            '  assert.equal(sanitizeCount(-5), 0);',
+            '  assert.equal(sanitizeCount(9), 9);',
+            '  assert.equal(sanitizeCount(400), 100);',
+            '});',
+          ].join('\n'),
+        },
+      }),
+    }),
+    reviewLoader: acceptAudit,
+  });
+
+  assert.equal(batch.surfaces[0].status, 'kept');
+  assert.equal(batch.ledger[0].reasonCode, 'accepted');
+});
+
 test('staged mode binds omitted editor target ids to the chosen planner targets', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-staged-engine-'));
   writeFixtureRepo(rootDir);

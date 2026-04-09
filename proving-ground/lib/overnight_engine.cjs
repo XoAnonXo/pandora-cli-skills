@@ -504,6 +504,9 @@ function parseProposal(text) {
 
 function parseStagedEditorProposal(text) {
   const payload = JSON.parse(extractJsonObjectFromText(text, 'Staged editor response'));
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('staged editor response must be a JSON object, not null or an array');
+  }
   const sketch = normalizeSketch(payload);
   return {
     decision: sketch.decision,
@@ -1801,7 +1804,11 @@ async function executeStagedSurfaceAttempt(options) {
         };
       }
     }
-    if (!stagedCheck.ok && ['anchor-preflight-failed', 'out-of-bound-edit', 'stale-target'].includes(stagedCheck.reasonCode) && report.repairTurnsUsed < stagedRepairBudget) {
+    if (
+      !stagedCheck.ok
+      && ['editor-schema-failed', 'anchor-preflight-failed', 'out-of-bound-edit', 'stale-target', 'invalid-target-id', 'missing-tests', 'too-broad-for-staged-mode'].includes(stagedCheck.reasonCode)
+      && report.repairTurnsUsed < stagedRepairBudget
+    ) {
       const repairPrompt = buildEditorRepairPrompt({
         prompt: editorPrompt,
         originalText: loadedEditor.response.text,

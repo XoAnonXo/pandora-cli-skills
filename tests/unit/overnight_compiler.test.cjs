@@ -207,6 +207,98 @@ test('compileEditSketch binds omitted target ids to the caller-selected windows'
   assert.equal(result.boundEdits.test.targetId, 'test:calc:sanitizeCount');
 });
 
+test('compileEditSketch binds omitted line bounds to the full chosen windows', () => {
+  const sourceWindow = buildWindow();
+  const testWindow = buildTestWindow();
+  const result = compileEditSketch({
+    sketch: {
+      decision: 'edit',
+      source_edit: {
+        replacement: [
+          'function sanitizeCount(value) {',
+          '  if (!Number.isFinite(value)) return 0;',
+          '  if (value > 100) return 100;',
+          '  return value < 0 ? 0 : value;',
+          '}',
+          '',
+          'module.exports = { sanitizeCount };',
+        ].join('\n'),
+      },
+      test_edit: {
+        replacement: [
+          "const test = require('node:test');",
+          "const assert = require('node:assert/strict');",
+          "const { sanitizeCount } = require('../../src/calc.cjs');",
+          '',
+          "test('sanitizeCount floors negatives', () => {",
+          '  assert.equal(sanitizeCount(-5), 0);',
+          '  assert.equal(sanitizeCount(9), 9);',
+          '  assert.equal(sanitizeCount(400), 100);',
+          '});',
+        ].join('\n'),
+      },
+    },
+    sourceWindow,
+    testWindow,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.boundEdits.source.startLine, null);
+  assert.equal(result.boundEdits.source.endLine, null);
+  assert.equal(result.boundEdits.test.startLine, null);
+  assert.equal(result.boundEdits.test.endLine, null);
+  assert.equal(result.patchSet[0].search, sourceWindow.excerpt);
+  assert.equal(result.patchSet[1].search, testWindow.excerpt);
+});
+
+test('compileEditSketch preserves parsed camelCase null line bounds', () => {
+  const sourceWindow = buildWindow();
+  const testWindow = buildTestWindow();
+  const result = compileEditSketch({
+    sketch: {
+      decision: 'edit',
+      sourceEdit: {
+        targetId: '',
+        operation: 'replace_block',
+        startLine: null,
+        endLine: null,
+        replacement: [
+          'function sanitizeCount(value) {',
+          '  if (!Number.isFinite(value)) return 0;',
+          '  if (value > 100) return 100;',
+          '  return value < 0 ? 0 : value;',
+          '}',
+          '',
+          'module.exports = { sanitizeCount };',
+        ].join('\n'),
+      },
+      testEdit: {
+        targetId: '',
+        operation: 'replace_block',
+        startLine: null,
+        endLine: null,
+        replacement: [
+          "const test = require('node:test');",
+          "const assert = require('node:assert/strict');",
+          "const { sanitizeCount } = require('../../src/calc.cjs');",
+          '',
+          "test('sanitizeCount floors negatives', () => {",
+          '  assert.equal(sanitizeCount(-5), 0);',
+          '  assert.equal(sanitizeCount(9), 9);',
+          '  assert.equal(sanitizeCount(400), 100);',
+          '});',
+        ].join('\n'),
+      },
+    },
+    sourceWindow,
+    testWindow,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.boundEdits.source.startLine, null);
+  assert.equal(result.boundEdits.test.startLine, null);
+});
+
 test('compileEditSketch supports no_safe_change sketches', () => {
   const result = compileEditSketch({
     sketch: {

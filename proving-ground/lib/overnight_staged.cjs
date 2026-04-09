@@ -337,14 +337,68 @@ function buildPlannerPrompt(options) {
   };
 }
 
+function buildPromptWindow(window) {
+  return {
+    id: window.id,
+    path: window.path,
+    start_line: window.startLine,
+    end_line: window.endLine,
+    excerpt: window.excerpt,
+  };
+}
+
+function summarizeRetryIdeas(ideas) {
+  return truncateList(ideas, 6).map((entry) => ({
+    reasonCode: normalizeText(entry.reasonCode),
+    summary: normalizeText(entry.summary),
+  })).filter((entry) => entry.reasonCode || entry.summary);
+}
+
+function summarizeAnchorFailures(failures) {
+  return truncateList(failures, 4).map((entry) => ({
+    failureKind: normalizeText(entry.failureKind),
+    summary: normalizeText(entry.summary),
+  })).filter((entry) => entry.failureKind || entry.summary);
+}
+
+function buildEditorReturnShape(windows) {
+  return {
+    decision: 'edit | no_safe_change',
+    source_edit: {
+      replacement: 'required full replacement text for the chosen source block',
+      target_id: `optional; omit to reuse ${windows.sourceWindow.id}`,
+      start_line: `optional; omit to reuse ${windows.sourceWindow.startLine}`,
+      end_line: `optional; omit to reuse ${windows.sourceWindow.endLine}`,
+      operation: 'optional; defaults to replace_block',
+    },
+    test_edit: {
+      replacement: 'required full replacement text for the chosen test block',
+      target_id: `optional; omit to reuse ${windows.testWindow.id}`,
+      start_line: `optional; omit to reuse ${windows.testWindow.startLine}`,
+      end_line: `optional; omit to reuse ${windows.testWindow.endLine}`,
+      operation: 'optional; defaults to replace_block',
+    },
+    logical_explanation: {
+      problem: 'what is being solved',
+      why_this_surface: 'why the chosen surface is correct',
+      invariants_preserved: ['which invariants stay true'],
+      why_this_is_bounded: 'why the change stays small',
+      residual_risks: ['remaining risks or empty list'],
+    },
+  };
+}
+
 function buildEditorPrompt(options) {
   return {
     systemPrompt: [
       'You are the staged overnight editor.',
-      'Return JSON only.',
+      'Return one JSON object only. Never return null, markdown, or prose.',
       'Edit only inside the provided source_window and test_window.',
-      'Do not change files, symbols, or target ids chosen by the planner.',
+      'The planner already picked the files and targets. Do not invent new files or new target ids.',
       'Return one bounded edit sketch, not raw SEARCH/REPLACE patches.',
+      'Prefer full-window replacement. If you omit target_id, start_line, and end_line, replacement must cover the full reused window exactly, including unchanged surrounding lines.',
+      'If the window includes unrelated surrounding lines, narrow to a smaller range inside the same window instead of deleting them.',
+      'If you edit source, you must also edit the paired test.',
       'Use replace_block only.',
       'If no safe change fits inside the provided windows, return decision no_safe_change.',
     ].join(' '),
@@ -354,36 +408,27 @@ function buildEditorPrompt(options) {
         id: options.context.surface.id,
         title: options.context.surface.title,
         invariants: options.context.surface.invariants,
+        requiredTestKinds: options.context.surface.requiredTestKinds || [],
       },
-      plan: options.plan,
-      source_window: options.windows.sourceWindow,
-      test_window: options.windows.testWindow,
-      no_retry_ideas: options.noRetryIdeas,
-      anchor_failures: options.anchorFailures,
-      return_shape: {
-        decision: 'edit | no_safe_change',
-        source_edit: {
-          target_id: options.windows.sourceWindow.id,
-          operation: 'replace_block',
-          start_line: options.windows.sourceWindow.startLine,
-          end_line: options.windows.sourceWindow.endLine,
-          replacement: 'full replacement text for the chosen source block',
-        },
-        test_edit: {
-          target_id: options.windows.testWindow.id,
-          operation: 'replace_block',
-          start_line: options.windows.testWindow.startLine,
-          end_line: options.windows.testWindow.endLine,
-          replacement: 'full replacement text for the chosen test block',
-        },
-        logical_explanation: {
-          problem: 'what is being solved',
-          why_this_surface: 'why the chosen surface is correct',
-          invariants_preserved: ['which invariants stay true'],
-          why_this_is_bounded: 'why the change stays small',
-          residual_risks: ['remaining risks or empty list'],
-        },
+      locked_plan: {
+        change_summary: options.plan.changeSummary,
+        source_target_id: options.plan.sourceTargetId,
+        test_target_id: options.plan.testTargetId,
+        why_bounded: options.plan.whyBounded,
+        expected_test_kind: options.plan.expectedTestKind,
       },
+      source_window: buildPromptWindow(options.windows.sourceWindow),
+      test_window: buildPromptWindow(options.windows.testWindow),
+      recent_failures: {
+        no_retry_ideas: summarizeRetryIdeas(options.noRetryIdeas),
+        anchor_failures: summarizeAnchorFailures(options.anchorFailures),
+      },
+      editor_rules: [
+        'Keep the same target pair chosen by locked_plan.',
+        'When you omit target_id, start_line, and end_line, replacement must cover the full provided window, including unchanged lines that stay after the edited block.',
+        'Only include target_id, start_line, or end_line if you are narrowing to a smaller range inside the same provided window.',
+      ],
+      return_shape: buildEditorReturnShape(options.windows),
     }, null, 2),
   };
 }
@@ -392,13 +437,24 @@ function buildEditorRepairPrompt(options) {
   return {
     systemPrompt: options.prompt.systemPrompt,
     userPrompt: JSON.stringify({
-      task: 'Repair the staged editor response without changing the chosen files, symbols, or test target.',
+      task: 'Repair the staged editor response without changing the chosen source file, test file, or target pair.',
       error: options.errorMessage,
       original_response: options.originalText,
-      locked_plan: options.plan,
-      source_window: options.windows.sourceWindow,
-      test_window: options.windows.testWindow,
-      reminder: 'Fix only malformed JSON, missing fields, or target-boundary mistakes inside the same chosen windows.',
+      locked_plan: {
+        change_summary: options.plan.changeSummary,
+        source_target_id: options.plan.sourceTargetId,
+        test_target_id: options.plan.testTargetId,
+        why_bounded: options.plan.whyBounded,
+      },
+      source_window: buildPromptWindow(options.windows.sourceWindow),
+      test_window: buildPromptWindow(options.windows.testWindow),
+      repair_rules: [
+        'Return one JSON object only. Never return null.',
+        'Keep the same source_target_id and test_target_id.',
+        'You may omit target_id, start_line, and end_line only when replacement covers the full provided windows, including unchanged surrounding lines.',
+        'Fix only malformed JSON, missing paired test edits, or target-boundary mistakes inside the same windows.',
+      ],
+      return_shape: buildEditorReturnShape(options.windows),
     }, null, 2),
   };
 }
