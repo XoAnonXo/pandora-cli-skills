@@ -22,6 +22,9 @@ function writeJsonAtomic(filePath, payload) {
 
 function readJsonIfExists(filePath, fallback = null) {
   try {
+    if (!normalizeText(filePath)) {
+      return fallback;
+    }
     if (!fs.existsSync(filePath)) {
       return fallback;
     }
@@ -122,6 +125,9 @@ function resolveRepoPath(repoRoot, relativePath) {
 
 function readTextIfExists(filePath, fallback = '') {
   try {
+    if (!normalizeText(filePath)) {
+      return fallback;
+    }
     if (!fs.existsSync(filePath)) {
       return fallback;
     }
