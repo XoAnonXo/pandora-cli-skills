@@ -23,18 +23,37 @@ function normalizePatchBlock(block, index) {
   if (!block || typeof block !== 'object' || Array.isArray(block)) {
     throw new Error(`Patch block ${index} must be an object`);
   }
+  const matchMode = normalizeText(block.match_mode || block.matchMode).toLowerCase() || 'exact';
+  if (!['exact', 'window'].includes(matchMode)) {
+    throw new Error(`Patch block ${index} has unsupported match_mode`);
+  }
   const normalized = {
     path: normalizeText(block.path),
     search: String(block.search ?? ''),
     replace: String(block.replace ?? ''),
     contextBefore: String(block.context_before ?? block.contextBefore ?? ''),
     contextAfter: String(block.context_after ?? block.contextAfter ?? ''),
+    matchMode,
+    windowStartLine: block.window_start_line === undefined && block.windowStartLine === undefined
+      ? null
+      : Number(block.window_start_line ?? block.windowStartLine),
+    windowEndLine: block.window_end_line === undefined && block.windowEndLine === undefined
+      ? null
+      : Number(block.window_end_line ?? block.windowEndLine),
   };
   if (!normalized.path) {
     throw new Error(`Patch block ${index} is missing path`);
   }
   if (!normalized.search) {
     throw new Error(`Patch block ${index} is missing search`);
+  }
+  if (normalized.matchMode === 'window') {
+    if (!Number.isInteger(normalized.windowStartLine) || normalized.windowStartLine < 1) {
+      throw new Error(`Patch block ${index} is missing a valid window_start_line`);
+    }
+    if (!Number.isInteger(normalized.windowEndLine) || normalized.windowEndLine < normalized.windowStartLine) {
+      throw new Error(`Patch block ${index} is missing a valid window_end_line`);
+    }
   }
   return normalized;
 }
@@ -107,6 +126,129 @@ function computeLineMetrics(before, after) {
   };
 }
 
+function splitLines(content) {
+  return String(content).split(/\r?\n/);
+}
+
+function detectPreferredEol(content) {
+  return /\r\n/.test(String(content || '')) ? '\r\n' : '\n';
+}
+
+function normalizeLineForWindowMatch(line) {
+  return String(line || '')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+$/g, '');
+}
+
+function normalizeContextLines(text, position) {
+  const lines = splitLines(text);
+  if (position === 'before' && lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  if (position === 'after' && lines.length > 0 && lines[0] === '') {
+    lines.shift();
+  }
+  return lines;
+}
+
+function sameNormalizedLineBlock(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (normalizeLineForWindowMatch(left[index]) !== normalizeLineForWindowMatch(right[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function matchesWindowContext(lines, startIndex, searchLineCount, operation) {
+  const beforeLines = normalizeContextLines(operation.contextBefore, 'before');
+  if (beforeLines.length > 0) {
+    const beforeStart = startIndex - beforeLines.length;
+    if (beforeStart < 0) {
+      return false;
+    }
+    if (!sameNormalizedLineBlock(lines.slice(beforeStart, startIndex), beforeLines)) {
+      return false;
+    }
+  }
+  const afterLines = normalizeContextLines(operation.contextAfter, 'after');
+  if (afterLines.length > 0) {
+    const afterStart = startIndex + searchLineCount;
+    const afterEnd = afterStart + afterLines.length;
+    if (afterEnd > lines.length) {
+      return false;
+    }
+    if (!sameNormalizedLineBlock(lines.slice(afterStart, afterEnd), afterLines)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function lineStartToCharIndex(content, lineIndex) {
+  if (lineIndex <= 0) {
+    return 0;
+  }
+  let offset = 0;
+  let currentLine = 0;
+  while (currentLine < lineIndex && offset < content.length) {
+    const nextBreak = content.indexOf('\n', offset);
+    if (nextBreak === -1) {
+      return content.length;
+    }
+    offset = nextBreak + 1;
+    currentLine += 1;
+  }
+  return offset;
+}
+
+function resolveWindowReplacementRange(content, operation) {
+  const lines = splitLines(content);
+  const searchLines = splitLines(operation.search);
+  const searchLineCount = searchLines.length;
+  const windowStartIndex = operation.windowStartLine - 1;
+  const windowEndIndex = operation.windowEndLine - 1;
+  if (windowStartIndex < 0 || windowEndIndex < windowStartIndex || windowEndIndex >= lines.length) {
+    throw new Error(`Window range is invalid in ${operation.path}`);
+  }
+  const lastStartIndex = windowEndIndex - searchLineCount + 1;
+  if (lastStartIndex < windowStartIndex) {
+    throw new Error(`SEARCH block could not fit inside staged window in ${operation.path}`);
+  }
+  const matches = [];
+  for (let startIndex = windowStartIndex; startIndex <= lastStartIndex; startIndex += 1) {
+    const candidateLines = lines.slice(startIndex, startIndex + searchLineCount);
+    if (!sameNormalizedLineBlock(candidateLines, searchLines)) {
+      continue;
+    }
+    if (!matchesWindowContext(lines, startIndex, searchLineCount, operation)) {
+      continue;
+    }
+    matches.push({
+      startIndex,
+      endIndex: startIndex + searchLineCount,
+    });
+  }
+  if (matches.length === 0) {
+    throw new Error(`SEARCH block could not find text inside staged window in ${operation.path}`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`SEARCH block matched multiple locations inside staged window in ${operation.path}`);
+  }
+  return matches[0];
+}
+
+function applyLineWindowReplacement(content, operation, range) {
+  const eol = detectPreferredEol(content);
+  const lines = splitLines(content);
+  const replacementLines = splitLines(operation.replace);
+  lines.splice(range.startIndex, range.endIndex - range.startIndex, ...replacementLines);
+  return lines.join(eol);
+}
+
 function applyPatchSet(patchSet, options = {}) {
   const repoRoot = path.resolve(options.cwd || process.cwd());
   const operations = normalizePatchSet(patchSet);
@@ -124,12 +266,17 @@ function applyPatchSet(patchSet, options = {}) {
       });
     }
     const entry = fileState.get(target.absolutePath);
-    const matchIndex = resolveReplacementIndex(entry.current, operation);
-    entry.current = [
-      entry.current.slice(0, matchIndex),
-      operation.replace,
-      entry.current.slice(matchIndex + operation.search.length),
-    ].join('');
+    if (operation.matchMode === 'window') {
+      const range = resolveWindowReplacementRange(entry.current, operation);
+      entry.current = applyLineWindowReplacement(entry.current, operation, range);
+    } else {
+      const matchIndex = resolveReplacementIndex(entry.current, operation);
+      entry.current = [
+        entry.current.slice(0, matchIndex),
+        operation.replace,
+        entry.current.slice(matchIndex + operation.search.length),
+      ].join('');
+    }
   }
 
   const files = [];
@@ -181,7 +328,9 @@ function validatePatchSetAgainstContent(patchSet, contentByPath) {
     if (typeof content !== 'string') {
       throw new Error(`Patch validation content is missing for ${operation.path}`);
     }
-    const matchIndex = resolveReplacementIndex(content, operation);
+    const matchIndex = operation.matchMode === 'window'
+      ? lineStartToCharIndex(content, resolveWindowReplacementRange(content, operation).startIndex)
+      : resolveReplacementIndex(content, operation);
     return {
       path: operation.path,
       matchIndex,

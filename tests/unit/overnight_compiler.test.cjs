@@ -89,6 +89,12 @@ test('compileEditSketch turns a bounded edit sketch into patch blocks', () => {
   assert.equal(result.testChanges.length, 1);
   assert.match(result.patchSet[0].search, /sanitizeCount/);
   assert.match(result.patchSet[1].replace, /400/);
+  assert.equal(result.patchSet[0].match_mode, 'window');
+  assert.equal(result.patchSet[0].window_start_line, 1);
+  assert.equal(result.patchSet[0].window_end_line, 6);
+  assert.equal(result.patchSet[1].match_mode, 'window');
+  assert.equal(result.patchSet[1].window_start_line, 1);
+  assert.equal(result.patchSet[1].window_end_line, 8);
 });
 
 test('compileEditSketch rejects an edit that leaves the target boundary', () => {

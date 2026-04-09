@@ -74,6 +74,56 @@ test('applyPatchSet disambiguates with surrounding context', () => {
   rollbackAppliedPatchSet(applied);
 });
 
+test('applyPatchSet window mode only matches inside the staged window', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-patch-'));
+  const targetPath = path.join(tempDir, 'sample.txt');
+  fs.writeFileSync(targetPath, [
+    'alpha',
+    'keep',
+    'divider',
+    'alpha',
+    'last',
+    '',
+  ].join('\n'));
+
+  const applied = applyPatchSet([{
+    path: 'sample.txt',
+    search: 'alpha',
+    replace: 'omega',
+    context_before: 'divider\n',
+    context_after: '\nlast',
+    match_mode: 'window',
+    window_start_line: 3,
+    window_end_line: 5,
+  }], { cwd: tempDir });
+
+  assert.equal(
+    fs.readFileSync(targetPath, 'utf8'),
+    ['alpha', 'keep', 'divider', 'omega', 'last', ''].join('\n'),
+  );
+  rollbackAppliedPatchSet(applied);
+});
+
+test('applyPatchSet window mode tolerates trailing whitespace inside the staged window', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-patch-'));
+  const targetPath = path.join(tempDir, 'sample.txt');
+  fs.writeFileSync(targetPath, 'alpha\nbeta   \nomega\n');
+
+  const applied = applyPatchSet([{
+    path: 'sample.txt',
+    search: 'beta',
+    replace: 'gamma',
+    context_before: 'alpha\n',
+    context_after: '\nomega',
+    match_mode: 'window',
+    window_start_line: 1,
+    window_end_line: 3,
+  }], { cwd: tempDir });
+
+  assert.equal(fs.readFileSync(targetPath, 'utf8'), 'alpha\ngamma\nomega\n');
+  rollbackAppliedPatchSet(applied);
+});
+
 test('validatePatchSetAgainstContent checks SEARCH blocks against provided windows', () => {
   const matches = validatePatchSetAgainstContent([{
     path: 'sample.txt',
@@ -96,4 +146,23 @@ test('validatePatchSetAgainstContent checks SEARCH blocks against provided windo
   }], {
     'sample.txt': 'alpha\nbeta\nomega\n',
   }), /SEARCH block|missing|context/i);
+});
+
+test('validatePatchSetAgainstContent honors staged window boundaries', () => {
+  const matches = validatePatchSetAgainstContent([{
+    path: 'sample.txt',
+    search: 'alpha',
+    replace: 'omega',
+    context_before: 'divider\n',
+    context_after: '\nlast',
+    match_mode: 'window',
+    window_start_line: 3,
+    window_end_line: 5,
+  }], {
+    'sample.txt': 'alpha\nkeep\ndivider\nalpha\nlast\n',
+  });
+
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].path, 'sample.txt');
+  assert.equal(matches[0].matchIndex, 'alpha\nkeep\ndivider\n'.length);
 });

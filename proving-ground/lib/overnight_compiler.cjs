@@ -136,7 +136,12 @@ function buildPatchBlock(window, edit, role) {
   validatePatchSetAgainstContent([patch], {
     [window.path]: window.excerpt,
   });
-  return patch;
+  return {
+    ...patch,
+    match_mode: 'window',
+    window_start_line: window.startLine,
+    window_end_line: window.endLine,
+  };
 }
 
 function rejectCompilation(reasonCode, failureKind, message, details = {}) {

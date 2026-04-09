@@ -26,13 +26,13 @@ test('loadOvernightAdapter parses Pandora overnight adapter', () => {
   assert.equal(adapter.surfaces.length, 10);
   assert.equal(adapter.defaults.proposer.provider, 'minimax');
   assert.equal(adapter.defaults.audit.provider, 'deferred');
-  assert.equal(adapter.defaults.proposalMode, 'legacy');
+  assert.equal(adapter.defaults.proposalMode, 'staged');
   assert.deepEqual(adapter.defaults.staged, {
     maxSourceFiles: 1,
     maxTestFiles: 1,
     maxCodeBlocks: 1,
     maxTestBlocks: 1,
-    windowLineCap: 120,
+    windowLineCap: 60,
   });
 });
 

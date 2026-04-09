@@ -386,13 +386,13 @@ defaults:
   branch_prefix: codex/overnight
   attempt_limit: 1
   repair_turns: 1
-  proposal_mode: legacy
+  proposal_mode: staged
   staged:
     max_source_files: 1
     max_test_files: 1
     max_code_blocks: 1
     max_test_blocks: 1
-    window_line_cap: 120
+    window_line_cap: 60
   proposer:
     provider: minimax
     model: MiniMax-M2.7-highspeed
