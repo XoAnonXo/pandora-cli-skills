@@ -570,6 +570,68 @@ test('lifecycle rejects invalid persisted phases and concurrent starts are creat
   }
 });
 
+test('lifecycle rejects invalid persisted yesPercent and noPercent values through status and resolve', () => {
+  const tempDir = createTempDir('pandora-lifecycle-percent-');
+  const lifecycleDir = path.join(tempDir, 'lifecycles');
+  const configPath = path.join(tempDir, 'lifecycle.json');
+  writeFile(
+    configPath,
+    JSON.stringify({
+      id: 'phase-pct-1',
+      source: 'integration-test',
+      marketId: 'market-1',
+    }),
+  );
+
+  const env = {
+    HOME: tempDir,
+    PANDORA_LIFECYCLE_DIR: lifecycleDir,
+  };
+
+  try {
+    const start = runCli(
+      ['--output', 'json', 'lifecycle', 'start', '--config', configPath],
+      { env },
+    );
+    assert.equal(start.status, 0);
+
+    const lifecycleFile = path.join(lifecycleDir, 'phase-pct-1.json');
+    const persisted = JSON.parse(fs.readFileSync(lifecycleFile, 'utf8'));
+
+    writeFile(lifecycleFile, JSON.stringify({
+      ...persisted,
+      yesPercent: 101,
+      noPercent: null,
+    }));
+
+    const invalidYesStatus = runCli(
+      ['--output', 'json', 'lifecycle', 'status', '--id', 'phase-pct-1'],
+      { env },
+    );
+    assert.equal(invalidYesStatus.status, 1);
+    const invalidYesPayload = parseJsonOutput(invalidYesStatus);
+    assert.equal(invalidYesPayload.error.code, 'INVALID_FLAG_VALUE');
+    assert.match(invalidYesPayload.error.message, /yesPercent must be null or a number between 0 and 100/i);
+
+    writeFile(lifecycleFile, JSON.stringify({
+      ...persisted,
+      yesPercent: null,
+      noPercent: -1,
+    }));
+
+    const invalidNoResolve = runCli(
+      ['--output', 'json', 'lifecycle', 'resolve', '--id', 'phase-pct-1', '--confirm'],
+      { env },
+    );
+    assert.equal(invalidNoResolve.status, 1);
+    const invalidNoPayload = parseJsonOutput(invalidNoResolve);
+    assert.equal(invalidNoPayload.error.code, 'INVALID_FLAG_VALUE');
+    assert.match(invalidNoPayload.error.message, /noPercent must be null or a number between 0 and 100/i);
+  } finally {
+    removeDir(tempDir);
+  }
+});
+
 test('odds record rejects insecure non-local indexer urls', () => {
   const result = runCli([
     '--output',
@@ -1067,4 +1129,3 @@ test('autopilot --execute-live enforces required risk caps', () => {
   assert.equal(payload.error.code, 'MISSING_REQUIRED_FLAG');
   assert.match(payload.error.message, /max-amount-usdc/);
 });
-

@@ -16,7 +16,7 @@ const {
   resetDailyCountersIfNeeded,
 } = require('../../cli/lib/autopilot_state_store.cjs');
 const { runAutopilot } = require('../../cli/lib/autopilot_service.cjs');
-const { computeLiquidityRecommendation, computeDistributionHint } = require('../../cli/lib/mirror_sizing_service.cjs');
+const { normalizeProbability, computeLiquidityRecommendation, computeDistributionHint } = require('../../cli/lib/mirror_sizing_service.cjs');
 const { hashRules, buildRuleDiffSummary } = require('../../cli/lib/mirror_verify_service.cjs');
 const {
   computeCompleteSetAllocation,
@@ -675,6 +675,11 @@ test('mirror distribution hint maps YES probability into 1e9 parts', () => {
   const distribution = computeDistributionHint(0.37);
   assert.equal(distribution.distributionNo, 370000000);
   assert.equal(distribution.distributionYes, 630000000);
+});
+
+test('mirror probability normalization rejects negative values and keeps percent inputs', () => {
+  assert.equal(normalizeProbability(-5), null);
+  assert.equal(normalizeProbability(37), 0.37);
 });
 
 test('mirror complete-set allocation keeps total YES/NO inventory neutral', () => {

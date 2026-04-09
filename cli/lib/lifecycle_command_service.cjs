@@ -125,6 +125,18 @@ function normalizeLifecycleState(state, filePath, CliError) {
       phases: LIFECYCLE_PHASES,
     });
   }
+  for (const fieldName of ['yesPercent', 'noPercent']) {
+    if (!Object.prototype.hasOwnProperty.call(state, fieldName)) continue;
+    const value = state[fieldName];
+    if (value === null) continue;
+    if (!Number.isFinite(value) || value < 0 || value > 100) {
+      throw new CliError('INVALID_FLAG_VALUE', `Lifecycle state field ${fieldName} must be null or a number between 0 and 100.`, {
+        filePath,
+        fieldName,
+        value,
+      });
+    }
+  }
   return {
     ...state,
     phase,
