@@ -63,6 +63,7 @@ const {
   mineSurfaceCandidates,
   normalizeProposalMode,
   parsePlannerResponse,
+  resolvePlannerTargetFromRegistry,
   buildSourceTargetKey,
   shouldCoolSourceTarget,
   validateStagedEditorProposal,
@@ -803,9 +804,10 @@ async function loadPlannerWithRepair(prompt, modelConfig, repairTurns, options =
       systemPrompt: currentPrompt.systemPrompt,
       userPrompt: JSON.stringify({
         task: 'Repair the staged planner response. Keep the same intent. Only fix malformed JSON or missing required planner fields.',
+        original_prompt_context: currentPrompt.userPrompt,
         error: errorMessage,
         original_response: originalText,
-        reminder: 'Return JSON only with decision, change_summary, source_target, test_target, why_bounded, invariants_preserved, expected_test_kind.',
+        reminder: 'Return JSON only with decision, change_summary, source_target_id/test_target_id when possible, source_target/test_target if needed, why_bounded, invariants_preserved, expected_test_kind.',
       }, null, 2),
     }),
     {
@@ -1715,16 +1717,20 @@ async function executeStagedSurfaceAttempt(options) {
       };
     }
 
-    if (!report.plan.sourceTarget && report.plan.sourceTargetId) {
-      report.plan.sourceTarget = candidates.registry && candidates.registry.byId
-        ? candidates.registry.byId[report.plan.sourceTargetId] || null
-        : null;
-    }
-    if (!report.plan.testTarget && report.plan.testTargetId) {
-      report.plan.testTarget = candidates.registry && candidates.registry.byId
-        ? candidates.registry.byId[report.plan.testTargetId] || null
-        : null;
-    }
+    report.plan.sourceTarget = resolvePlannerTargetFromRegistry(
+      candidates.registry,
+      report.plan.sourceTargetId,
+      report.plan.sourceTarget,
+      'source',
+    );
+    report.plan.testTarget = resolvePlannerTargetFromRegistry(
+      candidates.registry,
+      report.plan.testTargetId,
+      report.plan.testTarget,
+      'test',
+    );
+    report.plan.sourceTargetId = report.plan.sourceTarget ? report.plan.sourceTarget.id : '';
+    report.plan.testTargetId = report.plan.testTarget ? report.plan.testTarget.id : '';
     if (!report.plan.sourceTarget || !report.plan.testTarget) {
       return {
         patchFingerprint,
@@ -2686,14 +2692,16 @@ async function promoteOvernightBatch(options = {}) {
         break;
       }
     }
-    const validation = conflicts.length === 0
+    const hasAcceptedCommits = pickedCommits.length > 0;
+    const validation = conflicts.length === 0 && hasAcceptedCommits
       ? runValidationPlan(adapter.repo.finalValidation, integration.worktreePath)
       : null;
+    const promotionStatus = conflicts.length > 0
+      ? 'blocked'
+      : (!hasAcceptedCommits ? 'no-accepted-commits' : (summarizeValidation(validation).overallPass ? 'ready' : 'validated'));
     await updateOvernightManifest(manifestPaths, (next) => {
-      next.promotion.status = conflicts.length > 0
-        ? 'blocked'
-        : (summarizeValidation(validation).overallPass ? 'ready' : 'validated');
-      next.promotion.latestCommit = conflicts.length === 0 ? getHeadCommit(integration.worktreePath) : null;
+      next.promotion.status = promotionStatus;
+      next.promotion.latestCommit = conflicts.length === 0 && hasAcceptedCommits ? getHeadCommit(integration.worktreePath) : null;
       next.promotion.validation = validation;
       next.promotion.conflicts = conflicts;
       next.promotion.promotedAt = nowIso();
@@ -2702,7 +2710,8 @@ async function promoteOvernightBatch(options = {}) {
       pickedCommits,
       conflicts,
       validation,
-      ready: conflicts.length === 0 && summarizeValidation(validation).overallPass,
+      status: promotionStatus,
+      ready: conflicts.length === 0 && hasAcceptedCommits && summarizeValidation(validation).overallPass,
     };
   } finally {
     appendOvernightEvent(manifestPaths, {

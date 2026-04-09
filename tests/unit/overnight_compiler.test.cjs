@@ -55,8 +55,7 @@ test('compileEditSketch turns a bounded edit sketch into patch blocks', () => {
         end_line: 4,
         replacement: [
           'function sanitizeCount(value) {',
-          '  if (!Number.isFinite(value)) return 0;',
-          '  if (value > 100) return 100;',
+          '  if (!Number.isFinite(value) || value > 100) return value > 100 ? 100 : 0;',
           '  return value < 0 ? 0 : value;',
           '}',
         ].join('\n'),
@@ -69,8 +68,7 @@ test('compileEditSketch turns a bounded edit sketch into patch blocks', () => {
         replacement: [
           "test('sanitizeCount floors negatives', () => {",
           '  assert.equal(sanitizeCount(-5), 0);',
-          '  assert.equal(sanitizeCount(9), 9);',
-          '  assert.equal(sanitizeCount(400), 100);',
+          '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
           '});',
         ].join('\n'),
       },
@@ -114,6 +112,45 @@ test('compileEditSketch rejects an edit that leaves the target boundary', () => 
         start_line: 5,
         end_line: 8,
         replacement: 'test',
+      },
+    },
+    sourceWindow: buildWindow(),
+    testWindow: buildTestWindow(),
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, 'out-of-bound-edit');
+  assert.equal(result.failureKind, 'out-of-bound-edit');
+});
+
+test('compileEditSketch rejects a staged edit that changes the selected line span', () => {
+  const result = compileEditSketch({
+    sketch: {
+      decision: 'edit',
+      source_edit: {
+        target_id: 'src:calc:sanitizeCount',
+        operation: 'replace_block',
+        start_line: 1,
+        end_line: 4,
+        replacement: [
+          'function sanitizeCount(value) {',
+          '  if (!Number.isFinite(value)) return 0;',
+          '  if (value > 100) return 100;',
+          '  return value < 0 ? 0 : value;',
+          '}',
+        ].join('\n'),
+      },
+      test_edit: {
+        target_id: 'test:calc:sanitizeCount',
+        operation: 'replace_block',
+        start_line: 5,
+        end_line: 8,
+        replacement: [
+          "test('sanitizeCount floors negatives', () => {",
+          '  assert.equal(sanitizeCount(-5), 0);',
+          '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
+          '});',
+        ].join('\n'),
       },
     },
     sourceWindow: buildWindow(),
@@ -180,8 +217,7 @@ test('compileEditSketch binds omitted target ids to the caller-selected windows'
         end_line: 4,
         replacement: [
           'function sanitizeCount(value) {',
-          '  if (!Number.isFinite(value)) return 0;',
-          '  if (value > 100) return 100;',
+          '  if (!Number.isFinite(value) || value > 100) return value > 100 ? 100 : 0;',
           '  return value < 0 ? 0 : value;',
           '}',
         ].join('\n'),
@@ -194,8 +230,7 @@ test('compileEditSketch binds omitted target ids to the caller-selected windows'
         replacement: [
           "test('sanitizeCount floors negatives', () => {",
           '  assert.equal(sanitizeCount(-5), 0);',
-          '  assert.equal(sanitizeCount(9), 9);',
-          '  assert.equal(sanitizeCount(400), 100);',
+          '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
           '});',
         ].join('\n'),
       },
@@ -219,8 +254,7 @@ test('compileEditSketch binds omitted line bounds to the full chosen windows', (
         edit_mode: 'full_window',
         replacement: [
           'function sanitizeCount(value) {',
-          '  if (!Number.isFinite(value)) return 0;',
-          '  if (value > 100) return 100;',
+          '  if (!Number.isFinite(value) || value > 100) return value > 100 ? 100 : 0;',
           '  return value < 0 ? 0 : value;',
           '}',
           '',
@@ -236,8 +270,7 @@ test('compileEditSketch binds omitted line bounds to the full chosen windows', (
           '',
           "test('sanitizeCount floors negatives', () => {",
           '  assert.equal(sanitizeCount(-5), 0);',
-          '  assert.equal(sanitizeCount(9), 9);',
-          '  assert.equal(sanitizeCount(400), 100);',
+          '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
           '});',
         ].join('\n'),
       },
@@ -269,8 +302,7 @@ test('compileEditSketch supports explicit subrange edit_mode', () => {
         end_line: 4,
         replacement: [
           'function sanitizeCount(value) {',
-          '  if (!Number.isFinite(value)) return 0;',
-          '  if (value > 100) return 100;',
+          '  if (!Number.isFinite(value) || value > 100) return value > 100 ? 100 : 0;',
           '  return value < 0 ? 0 : value;',
           '}',
         ].join('\n'),
@@ -284,8 +316,7 @@ test('compileEditSketch supports explicit subrange edit_mode', () => {
         replacement: [
           "test('sanitizeCount floors negatives', () => {",
           '  assert.equal(sanitizeCount(-5), 0);',
-          '  assert.equal(sanitizeCount(9), 9);',
-          '  assert.equal(sanitizeCount(400), 100);',
+          '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
           '});',
         ].join('\n'),
       },
@@ -312,8 +343,7 @@ test('compileEditSketch preserves parsed camelCase null line bounds', () => {
         endLine: null,
         replacement: [
           'function sanitizeCount(value) {',
-          '  if (!Number.isFinite(value)) return 0;',
-          '  if (value > 100) return 100;',
+          '  if (!Number.isFinite(value) || value > 100) return value > 100 ? 100 : 0;',
           '  return value < 0 ? 0 : value;',
           '}',
           '',
@@ -332,8 +362,7 @@ test('compileEditSketch preserves parsed camelCase null line bounds', () => {
           '',
           "test('sanitizeCount floors negatives', () => {",
           '  assert.equal(sanitizeCount(-5), 0);',
-          '  assert.equal(sanitizeCount(9), 9);',
-          '  assert.equal(sanitizeCount(400), 100);',
+          '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
           '});',
         ].join('\n'),
       },

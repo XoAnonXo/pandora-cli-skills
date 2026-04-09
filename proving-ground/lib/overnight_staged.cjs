@@ -107,9 +107,45 @@ function parsePlannerResponse(text) {
   }
   plan.sourceTarget = normalizePlannerTarget(payload.source_target || payload.sourceTarget, 'source_target', { kind: 'source' });
   plan.testTarget = normalizePlannerTarget(payload.test_target || payload.testTarget, 'test_target', { kind: 'test' });
-  plan.sourceTargetId = plan.sourceTarget.path ? `${plan.sourceTarget.path}::${plan.sourceTarget.symbol || plan.sourceTarget.anchorText}` : '';
-  plan.testTargetId = plan.testTarget.path ? `${plan.testTarget.path}::${plan.testTarget.anchorText}` : '';
   return plan;
+}
+
+function registryEntries(registry) {
+  return Array.isArray(registry && registry.entries)
+    ? registry.entries
+    : (Array.isArray(registry && registry.targets) ? registry.targets : []);
+}
+
+function plannerTargetMatchesRegistryEntry(target, entry, kind) {
+  if (!target || !entry) {
+    return false;
+  }
+  if (normalizeText(entry.kind) !== kind) {
+    return false;
+  }
+  if (normalizeText(entry.path) !== normalizeText(target.path)) {
+    return false;
+  }
+  const anchorType = normalizeText(target.anchorType) || (kind === 'test' ? 'test_name' : 'symbol');
+  if (kind === 'source' && anchorType === 'symbol' && normalizeText(target.symbol)) {
+    return normalizeText(entry.symbol) === normalizeText(target.symbol);
+  }
+  return normalizeText(entry.anchorText) === normalizeText(target.anchorText || target.symbol);
+}
+
+function resolvePlannerTargetFromRegistry(registry, targetId, target, kind) {
+  const explicitId = normalizeText(targetId);
+  if (explicitId) {
+    const explicit = resolveSurfaceTarget(registry, explicitId);
+    if (explicit && normalizeText(explicit.kind) === kind) {
+      return explicit;
+    }
+  }
+  if (!target) {
+    return null;
+  }
+  const matches = registryEntries(registry).filter((entry) => plannerTargetMatchesRegistryEntry(target, entry, kind));
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function buildCandidateFingerprint(objectiveHash, surfaceId, plan) {
@@ -740,6 +776,7 @@ module.exports = {
   buildEditorPrompt,
   buildEditorRepairPrompt,
   buildPlannerPrompt,
+  resolvePlannerTargetFromRegistry,
   buildSourceTargetKey,
   buildTargetWindow,
   buildTargetWindows,

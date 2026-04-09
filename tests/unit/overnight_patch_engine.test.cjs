@@ -124,6 +124,23 @@ test('applyPatchSet window mode tolerates trailing whitespace inside the staged 
   rollbackAppliedPatchSet(applied);
 });
 
+test('applyPatchSet window mode rejects replacements that change staged line count', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-patch-'));
+  const targetPath = path.join(tempDir, 'sample.txt');
+  fs.writeFileSync(targetPath, 'alpha\nbeta\nomega\n');
+
+  assert.throws(() => applyPatchSet([{
+    path: 'sample.txt',
+    search: 'beta',
+    replace: 'gamma\ndelta',
+    context_before: 'alpha\n',
+    context_after: '\nomega',
+    match_mode: 'window',
+    window_start_line: 1,
+    window_end_line: 3,
+  }], { cwd: tempDir }), /line count inside staged window/i);
+});
+
 test('validatePatchSetAgainstContent checks SEARCH blocks against provided windows', () => {
   const matches = validatePatchSetAgainstContent([{
     path: 'sample.txt',
@@ -165,4 +182,19 @@ test('validatePatchSetAgainstContent honors staged window boundaries', () => {
   assert.equal(matches.length, 1);
   assert.equal(matches[0].path, 'sample.txt');
   assert.equal(matches[0].matchIndex, 'alpha\nkeep\ndivider\n'.length);
+});
+
+test('validatePatchSetAgainstContent rejects staged window replacements that change line count', () => {
+  assert.throws(() => validatePatchSetAgainstContent([{
+    path: 'sample.txt',
+    search: 'alpha',
+    replace: 'omega\ndelta',
+    context_before: 'divider\n',
+    context_after: '\nlast',
+    match_mode: 'window',
+    window_start_line: 3,
+    window_end_line: 5,
+  }], {
+    'sample.txt': 'alpha\nkeep\ndivider\nalpha\nlast\n',
+  }), /line count inside staged window/i);
 });

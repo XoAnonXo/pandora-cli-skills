@@ -527,8 +527,7 @@ function buildStagedEditorProposal(overrides = {}) {
       end_line: 4,
       replacement: [
         'function sanitizeCount(value) {',
-        '  if (!Number.isFinite(value)) return 0;',
-        '  if (value > 100) return 100;',
+        '  if (!Number.isFinite(value) || value > 100) return value > 100 ? 100 : 0;',
         '  return value < 0 ? 0 : value;',
         '}',
       ].join('\n'),
@@ -543,8 +542,7 @@ function buildStagedEditorProposal(overrides = {}) {
         '',
         "test('sanitizeCount floors negatives', () => {",
         '  assert.equal(sanitizeCount(-5), 0);',
-        '  assert.equal(sanitizeCount(9), 9);',
-        '  assert.equal(sanitizeCount(400), 100);',
+        '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
         '});',
       ].join('\n'),
     },
@@ -724,6 +722,12 @@ test('resolveDeferredAudit can reject a pending change and keep it out of promot
     batchDir: batch.reportRoot,
   });
   assert.equal(promotion.pickedCommits.length, 0);
+  assert.equal(promotion.ready, false);
+  assert.equal(promotion.status, 'no-accepted-commits');
+
+  const postPromotionManifest = loadOvernightManifest(manifestPaths.manifestPath);
+  assert.equal(postPromotionManifest.promotion.status, 'no-accepted-commits');
+  assert.equal(postPromotionManifest.promotion.latestCommit, null);
 });
 
 test('runOvernightBatch rejects deferred candidates whose test touch does not prove the new behavior', async () => {
@@ -1040,6 +1044,42 @@ test('staged mode maps planner no_safe_change to no-safe-change instead of inval
   assert.equal(batch.ledger[0].stage, 'planning');
 });
 
+test('staged mode planner repair resolves object targets through the registry', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-staged-engine-'));
+  writeFixtureRepo(rootDir);
+
+  const batch = await runOvernightBatch({
+    cwd: rootDir,
+    adapterPath: 'overnight.yaml',
+    objectivePath: 'objective.yaml',
+    proposalMode: 'staged',
+    proposalLoader: createStagedProposalLoader({
+      planner: () => '{"decision":"propose"',
+      'planner-repair': () => ({
+        decision: 'propose',
+        change_summary: 'Clamp sanitizeCount at 100 with one paired regression test.',
+        source_target: {
+          path: 'src/calc.cjs',
+          symbol: 'sanitizeCount',
+        },
+        test_target: {
+          path: 'tests/unit/calc.test.cjs',
+          anchor_type: 'test_name',
+          anchor_text: 'sanitizeCount floors negatives',
+        },
+        why_bounded: 'One small source edit plus one small test update.',
+        invariants_preserved: ['sanitizeCount stays deterministic'],
+        expected_test_kind: 'regression',
+      }),
+      editor: () => buildStagedEditorProposal(),
+    }),
+    reviewLoader: acceptAudit,
+  });
+
+  assert.equal(batch.surfaces[0].status, 'kept');
+  assert.equal(batch.ledger[0].reasonCode, 'accepted');
+});
+
 test('staged mode blocks revisiting a rejected source family before it becomes a duplicate candidate', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'overnight-staged-engine-'));
   writeFixtureRepo(rootDir);
@@ -1151,8 +1191,7 @@ test('staged mode can repair a null editor response into a bounded kept change',
           edit_mode: 'full_window',
           replacement: [
             'function sanitizeCount(value) {',
-            '  if (!Number.isFinite(value)) return 0;',
-            '  if (value > 100) return 100;',
+            '  if (!Number.isFinite(value) || value > 100) return value > 100 ? 100 : 0;',
             '  return value < 0 ? 0 : value;',
             '}',
           ].join('\n'),
@@ -1163,8 +1202,7 @@ test('staged mode can repair a null editor response into a bounded kept change',
             '',
             "test('sanitizeCount floors negatives', () => {",
             '  assert.equal(sanitizeCount(-5), 0);',
-            '  assert.equal(sanitizeCount(9), 9);',
-            '  assert.equal(sanitizeCount(400), 100);',
+            '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
             '});',
           ].join('\n'),
         },
@@ -1196,8 +1234,7 @@ test('staged mode can repair a missing paired test edit inside the chosen window
           edit_mode: 'full_window',
           replacement: [
             'function sanitizeCount(value) {',
-            '  if (!Number.isFinite(value)) return 0;',
-            '  if (value > 100) return 100;',
+            '  if (!Number.isFinite(value) || value > 100) return value > 100 ? 100 : 0;',
             '  return value < 0 ? 0 : value;',
             '}',
           ].join('\n'),
@@ -1208,8 +1245,7 @@ test('staged mode can repair a missing paired test edit inside the chosen window
             '',
             "test('sanitizeCount floors negatives', () => {",
             '  assert.equal(sanitizeCount(-5), 0);',
-            '  assert.equal(sanitizeCount(9), 9);',
-            '  assert.equal(sanitizeCount(400), 100);',
+            '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
             '});',
           ].join('\n'),
         },
@@ -1241,8 +1277,7 @@ test('staged mode binds omitted editor target ids to the chosen planner targets'
           end_line: 4,
           replacement: [
             'function sanitizeCount(value) {',
-            '  if (!Number.isFinite(value)) return 0;',
-            '  if (value > 100) return 100;',
+            '  if (!Number.isFinite(value) || value > 100) return value > 100 ? 100 : 0;',
             '  return value < 0 ? 0 : value;',
             '}',
           ].join('\n'),
@@ -1256,8 +1291,7 @@ test('staged mode binds omitted editor target ids to the chosen planner targets'
             '',
             "test('sanitizeCount floors negatives', () => {",
             '  assert.equal(sanitizeCount(-5), 0);',
-            '  assert.equal(sanitizeCount(9), 9);',
-            '  assert.equal(sanitizeCount(400), 100);',
+            '  assert.equal(sanitizeCount(9), 9); assert.equal(sanitizeCount(400), 100);',
             '});',
           ].join('\n'),
         },

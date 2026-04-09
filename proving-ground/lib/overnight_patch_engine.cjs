@@ -130,6 +130,12 @@ function splitLines(content) {
   return String(content).split(/\r?\n/);
 }
 
+function ensureWindowReplacementSpan(operation, searchLineCount, replacementLineCount) {
+  if (searchLineCount !== replacementLineCount) {
+    throw new Error(`REPLACE block changes line count inside staged window in ${operation.path}`);
+  }
+}
+
 function detectPreferredEol(content) {
   return /\r\n/.test(String(content || '')) ? '\r\n' : '\n';
 }
@@ -245,6 +251,7 @@ function applyLineWindowReplacement(content, operation, range) {
   const eol = detectPreferredEol(content);
   const lines = splitLines(content);
   const replacementLines = splitLines(operation.replace);
+  ensureWindowReplacementSpan(operation, range.endIndex - range.startIndex, replacementLines.length);
   lines.splice(range.startIndex, range.endIndex - range.startIndex, ...replacementLines);
   return lines.join(eol);
 }
@@ -329,7 +336,15 @@ function validatePatchSetAgainstContent(patchSet, contentByPath) {
       throw new Error(`Patch validation content is missing for ${operation.path}`);
     }
     const matchIndex = operation.matchMode === 'window'
-      ? lineStartToCharIndex(content, resolveWindowReplacementRange(content, operation).startIndex)
+      ? (() => {
+          const range = resolveWindowReplacementRange(content, operation);
+          ensureWindowReplacementSpan(
+            operation,
+            range.endIndex - range.startIndex,
+            splitLines(operation.replace).length,
+          );
+          return lineStartToCharIndex(content, range.startIndex);
+        })()
       : resolveReplacementIndex(content, operation);
     return {
       path: operation.path,

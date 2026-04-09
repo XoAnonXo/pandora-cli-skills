@@ -129,7 +129,21 @@ function runCliAsync(args, options = {}) {
     let stdout = '';
     let stderr = '';
     let timeoutHit = false;
+    let callbackError;
     const timeoutMs = options.timeoutMs || 30_000;
+
+    const invokeStreamCallback = (handlerName, chunk, aggregate) => {
+      const handler = options[handlerName];
+      if (typeof handler !== 'function' || callbackError) {
+        return;
+      }
+      try {
+        handler(chunk, aggregate, child);
+      } catch (error) {
+        callbackError = error;
+        child.kill('SIGKILL');
+      }
+    };
 
     const timeout = setTimeout(() => {
       timeoutHit = true;
@@ -137,10 +151,14 @@ function runCliAsync(args, options = {}) {
     }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
-      stdout += String(chunk);
+      const text = String(chunk);
+      stdout += text;
+      invokeStreamCallback('onStdout', text, stdout);
     });
     child.stderr.on('data', (chunk) => {
-      stderr += String(chunk);
+      const text = String(chunk);
+      stderr += text;
+      invokeStreamCallback('onStderr', text, stderr);
     });
 
     child.on('error', (error) => {
@@ -150,7 +168,7 @@ function runCliAsync(args, options = {}) {
         stdout,
         stderr,
         output: `${stdout}${stderr}`,
-        error,
+        error: callbackError || error,
         timedOut: false,
       });
     });
@@ -158,12 +176,12 @@ function runCliAsync(args, options = {}) {
     child.on('close', (code, signal) => {
       clearTimeout(timeout);
       resolve({
-        status: code === null ? 1 : code,
+        status: callbackError ? 1 : (code === null ? 1 : code),
         signal,
         stdout,
         stderr,
         output: `${stdout}${stderr}`,
-        error: undefined,
+        error: callbackError,
         timedOut: timeoutHit,
       });
     });

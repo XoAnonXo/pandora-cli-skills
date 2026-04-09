@@ -121,6 +121,10 @@ function buildTextRange(lines, startIndex, endIndex) {
   return lines.slice(startIndex, endIndex).join('\n');
 }
 
+function countBlockLines(text) {
+  return String(text).split('\n').length;
+}
+
 function buildPatchBlock(window, edit, role) {
   const lines = splitWindowLines(window);
   const windowStart = window.startLine;
@@ -150,6 +154,11 @@ function buildPatchBlock(window, edit, role) {
   if (!search) {
     const error = new Error(`${role} edit selects an empty range`);
     error.reasonCode = 'invalid-target-id';
+    throw error;
+  }
+  if (countBlockLines(edit.replacement) !== (endIndex - startIndex)) {
+    const error = new Error(`${role} edit must preserve the chosen staged line span`);
+    error.reasonCode = 'out-of-bound-edit';
     throw error;
   }
   const contextBefore = startIndex > 0 ? `${buildTextRange(lines, 0, startIndex)}\n` : '';

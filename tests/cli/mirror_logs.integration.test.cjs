@@ -321,6 +321,14 @@ test('mirror logs --follow streams appended entries and exits on timeout', async
       polymarketMarketId: 'poly-follow',
     });
 
+    let resolveFollowStarted;
+    let rejectFollowStarted;
+    let followStarted = false;
+    const followStartedPromise = new Promise((resolve, reject) => {
+      resolveFollowStarted = resolve;
+      rejectFollowStarted = reject;
+    });
+
     const followPromise = runCliAsync(
       [
         '--output',
@@ -335,12 +343,30 @@ test('mirror logs --follow streams appended entries and exits on timeout', async
         '--poll-interval-ms',
         '25',
         '--follow-timeout-ms',
-        '250',
+        '500',
       ],
-      { env: { HOME: tempHome }, timeoutMs: 1500 },
-    );
+      {
+        env: { HOME: tempHome },
+        timeoutMs: 2000,
+        onStdout(_chunk, fullStdout) {
+          if (!followStarted && fullStdout.includes('"command":"mirror.logs.follow"')) {
+            followStarted = true;
+            resolveFollowStarted();
+          }
+        },
+      },
+    ).then((result) => {
+      if (!followStarted) {
+        rejectFollowStarted(
+          new Error(
+            `mirror logs --follow never announced readiness.\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+          ),
+        );
+      }
+      return result;
+    });
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await followStartedPromise;
     fs.appendFileSync(
       logFile,
       `${JSON.stringify({ event: 'mirror.sync.tick', timestamp: '2026-03-09T00:00:01.000Z', tick: 2, driftBps: 9 })}\n`,
