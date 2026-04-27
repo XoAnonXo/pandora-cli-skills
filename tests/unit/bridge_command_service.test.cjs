@@ -74,7 +74,7 @@ test('bridge plan returns explicit Ethereum -> Polygon assumptions and manual ne
   assert.equal(payload.route.source.chain.name, 'Ethereum');
   assert.equal(payload.route.destination.chain.name, 'Polygon');
   assert.equal(payload.route.source.token.symbol, 'USDC');
-  assert.equal(payload.route.destination.token.symbol, 'USDC.e');
+  assert.equal(payload.route.destination.token.symbol, 'pUSD');
   assert.equal(payload.bridge.requiredAmountUsdc, 8);
   assert.equal(payload.bridge.sourceShortfallUsdc, 0);
   assert.equal(payload.suggestions.some((item) => item.command === 'pandora polymarket deposit --amount-usdc 10'), true);

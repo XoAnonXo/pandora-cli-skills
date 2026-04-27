@@ -39,7 +39,7 @@ Use this guide when Pandora is freshly installed or when you want the CLI to wal
    - Major branch choices should use arrow-key menus in a real TTY, with numeric fallback only for limited terminals.
 3. Polymarket initialization.
    - Initialize the Polymarket wallet only when the selected goal needs it.
-   - Collect the Polymarket host, Polygon RPC URL, funder wallet, and API credentials for live hedging.
+   - Collect the Polymarket host, Polygon RPC URL, funder wallet, pUSD collateral settings, optional builder code, and API credentials for live hedging.
    - For `paper-hedge-daemon` and `live-hedge-daemon`, treat this as Polymarket Hedge Mode readiness for an existing mirror pair, not Pandora Mirroring Mode planning.
 4. Hedge daemon policy.
    - For `paper-hedge-daemon` and `live-hedge-daemon`, collect `PANDORA_INTERNAL_WALLETS_FILE` before host setup.
@@ -69,6 +69,8 @@ Use this guide when Pandora is freshly installed or when you want the CLI to wal
 - `POLYMARKET_PRIVATE_KEY` is the Polymarket signer env var for live hedge execution.
 - `POLYMARKET_FUNDER` should point at the Polymarket proxy wallet, not the EOA.
 - `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, and `POLYMARKET_API_PASSPHRASE` are required only for live CLOB execution.
+- `POLYMARKET_PUSD_ADDRESS` is the Polymarket V2 collateral token; API-only users holding legacy USDC.e must wrap through Polymarket's Collateral Onramp before live trading.
+- `POLYMARKET_BUILDER_CODE` is optional public builder attribution for V2 orders.
 - `PANDORA_INTERNAL_WALLETS_FILE` is the canonical newline-delimited whitelist used by `mirror hedge` to ignore internal bot volume.
 - `PANDORA_HEDGE_MIN_USDC`, `PANDORA_HEDGE_PARTIAL_POLICY`, and `PANDORA_HEDGE_SELL_POLICY` control the packaged LP hedge daemon guardrails.
 - `PANDORA_DAEMON_PROVIDER`, `PANDORA_DAEMON_API_BASE_URL`, and `PANDORA_DAEMON_API_TOKEN` are optional deployment-host settings for daemon or gateway rollout.

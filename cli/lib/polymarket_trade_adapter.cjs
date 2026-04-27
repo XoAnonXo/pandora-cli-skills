@@ -2,7 +2,14 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { ClobClient, Chain, Side, OrderType, AssetType } = require('@polymarket/clob-client');
+const {
+  ClobClient,
+  Chain,
+  Side,
+  OrderType,
+  AssetType,
+  createClobClient,
+} = require('./polymarket_clob_client.cjs');
 const { round, toOptionalNumber } = require('./shared/utils.cjs');
 
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
@@ -161,16 +168,50 @@ function hashSensitiveCachePart(value) {
 
 function buildTradingCacheKey(host, chain, options = {}) {
   const signatureType = resolveSignatureType(options);
+  const env = options.env || process.env;
   return [
     String(host || ''),
     String(chain || ''),
     String(signatureType),
     String(options.funder || ''),
+    String(options.builderCode || env.POLYMARKET_BUILDER_CODE || ''),
     hashSensitiveCachePart(options.privateKey),
     hashSensitiveCachePart(options.apiKey),
     hashSensitiveCachePart(options.apiSecret),
     hashSensitiveCachePart(options.apiPassphrase),
   ].join('|');
+}
+
+function resolveBuilderCode(options = {}) {
+  const env = options.env || process.env;
+  return toStringOrNull(options.builderCode || env.POLYMARKET_BUILDER_CODE);
+}
+
+function normalizeApiKeyCreds(creds) {
+  if (!creds || typeof creds !== 'object') return creds;
+  if (creds.key && creds.secret && creds.passphrase) return creds;
+  if (creds.apiKey && typeof creds.apiKey === 'object') {
+    return normalizeApiKeyCreds(creds.apiKey);
+  }
+  if (creds.apiKey && creds.secret && creds.passphrase) {
+    return {
+      key: creds.apiKey,
+      secret: creds.secret,
+      passphrase: creds.passphrase,
+    };
+  }
+  return creds;
+}
+
+function createMarketDataClient(host, options = {}) {
+  if (typeof options.clientFactory === 'function') {
+    return options.clientFactory(host, DEFAULT_POLYMARKET_CHAIN);
+  }
+  return createClobClient({
+    host,
+    chain: DEFAULT_POLYMARKET_CHAIN,
+    clientClass: options.clobClientClass,
+  });
 }
 
 function clearCachedTradingClient(key) {
@@ -377,6 +418,11 @@ function collectRuleSections(row) {
 }
 
 function normalizeTokenIdArray(row) {
+  if (Array.isArray(row && row.t) && row.t.length) {
+    return row.t
+      .map((token) => toStringOrNull(token && (token.t || token.token_id || token.tokenId || token.asset_id)))
+      .filter(Boolean);
+  }
   const arrayFromFields =
     parseMaybeJsonArray(row && row.clobTokenIds).length
       ? parseMaybeJsonArray(row && row.clobTokenIds)
@@ -387,6 +433,16 @@ function normalizeTokenIdArray(row) {
 }
 
 function materializeOutcomeTokens(row) {
+  if (Array.isArray(row && row.t) && row.t.length) {
+    return row.t
+      .filter(Boolean)
+      .map((token) => ({
+        outcome: token.o || token.outcome,
+        price: token.price || token.p || null,
+        token_id: token.t || token.token_id || token.tokenId || token.asset_id || null,
+      }));
+  }
+
   if (Array.isArray(row && row.tokens) && row.tokens.length) {
     return row.tokens;
   }
@@ -469,6 +525,11 @@ function normalizeMarketRow(row) {
     noPct: tokens.no,
     yesTokenId: tokens.yesTokenId,
     noTokenId: tokens.noTokenId,
+    minTickSize: toOptionalNumber(row && (row.mts || row.minimum_tick_size || row.minimumTickSize)),
+    minOrderSize: toOptionalNumber(row && (row.mos || row.minimum_order_size || row.minimumOrderSize)),
+    negRisk: row && typeof row.nr === 'boolean' ? row.nr : row && typeof row.neg_risk === 'boolean' ? row.neg_risk : null,
+    feeDetails: row && row.fd && typeof row.fd === 'object' ? row.fd : null,
+    rfqEnabled: row && typeof row.rfqe === 'boolean' ? row.rfqe : null,
     volume24hUsd: toOptionalNumber(row && (row.volume24hr || row.volume_24hr || row.volume24h || row.one_day_volume || row.oneDayVolume || 0)) || 0,
     volumeTotalUsd: toOptionalNumber(row && (row.volume || row.total_volume || row.totalVolume || row.volumeNum || 0)) || 0,
     liquidityUsd: toOptionalNumber(row && (row.liquidity || row.liquidity_num || row.totalLiquidity || 0)) || 0,
@@ -926,16 +987,62 @@ function extractConditionId(row) {
   return value;
 }
 
-async function resolveByClobDirect(conditionId, hosts, options, diagnostics, timeoutMs) {
+function mergeClobMarketInfo(conditionId, clobMarketInfo, baseRow = null) {
+  const baseTokens = materializeOutcomeTokens(baseRow || {});
+  const priceByOutcome = new Map();
+  for (const token of baseTokens) {
+    const outcomeKey = normalizeText(token && token.outcome);
+    if (outcomeKey && token && token.price !== undefined && token.price !== null) {
+      priceByOutcome.set(outcomeKey, token.price);
+    }
+  }
+
+  const clobTokens = Array.isArray(clobMarketInfo && clobMarketInfo.t)
+    ? clobMarketInfo.t
+        .filter(Boolean)
+        .map((token) => {
+          const outcome = token.o || token.outcome || null;
+          const outcomeKey = normalizeText(outcome);
+          return {
+            outcome,
+            price: token.price || token.p || priceByOutcome.get(outcomeKey) || null,
+            token_id: token.t || token.token_id || token.tokenId || token.asset_id || null,
+          };
+        })
+    : null;
+
+  return {
+    ...(baseRow && typeof baseRow === 'object' ? baseRow : {}),
+    ...(clobMarketInfo && typeof clobMarketInfo === 'object' ? clobMarketInfo : {}),
+    condition_id:
+      toStringOrNull(clobMarketInfo && (clobMarketInfo.c || clobMarketInfo.condition_id || clobMarketInfo.conditionId)) ||
+      conditionId,
+    tokens: clobTokens && clobTokens.length ? clobTokens : materializeOutcomeTokens(baseRow || {}),
+    clobMarketInfo: clobMarketInfo || null,
+  };
+}
+
+async function resolveByClobDirect(conditionId, hosts, options, diagnostics, timeoutMs, baseRow = null) {
   const hostErrors = [];
   for (const candidateHost of hosts) {
     try {
-      const client =
-        typeof options.clientFactory === 'function'
-          ? options.clientFactory(candidateHost, DEFAULT_POLYMARKET_CHAIN)
-          : new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+      const client = createMarketDataClient(candidateHost, options);
+      if (client && typeof client.getClobMarketInfo === 'function') {
+        const market = await callWithTimeout(
+          (_signal) => client.getClobMarketInfo(conditionId),
+          timeoutMs,
+          `Polymarket getClobMarketInfo(${conditionId})`,
+        );
+        if (market) {
+          return {
+            row: mergeClobMarketInfo(conditionId, market, baseRow),
+            host: candidateHost,
+          };
+        }
+      }
+
       if (!client || typeof client.getMarket !== 'function') {
-        throw new Error('CLOB client does not expose getMarket.');
+        throw new Error('CLOB client does not expose getClobMarketInfo/getMarket.');
       }
       const market = await callWithTimeout(
         (_signal) => client.getMarket(conditionId),
@@ -944,7 +1051,7 @@ async function resolveByClobDirect(conditionId, hosts, options, diagnostics, tim
       );
       if (!market) continue;
       return {
-        row: market,
+        row: baseRow && typeof baseRow === 'object' ? { ...baseRow, ...market } : market,
         host: candidateHost,
       };
     } catch (err) {
@@ -953,7 +1060,7 @@ async function resolveByClobDirect(conditionId, hosts, options, diagnostics, tim
   }
 
   if (hostErrors.length) {
-    diagnostics.push(`Polymarket direct getMarket failed: ${hostErrors.join(' | ')}`);
+    diagnostics.push(`Polymarket direct market-info lookup failed: ${hostErrors.join(' | ')}`);
   }
   return null;
 }
@@ -1017,7 +1124,7 @@ async function resolvePolymarketMarket(options = {}) {
     }
 
     if (directConditionId && isConditionId(directConditionId)) {
-      const direct = await resolveByClobDirect(directConditionId, hosts, options, diagnostics, timeoutMs);
+      const direct = await resolveByClobDirect(directConditionId, hosts, options, diagnostics, timeoutMs, gammaRow);
       if (direct && direct.row) {
         rows = [direct.row];
         hostUsed = direct.host;
@@ -1035,9 +1142,7 @@ async function resolvePolymarketMarket(options = {}) {
     if (!rows.length) {
       for (const candidateHost of hosts) {
         try {
-          const client = typeof options.clientFactory === 'function'
-            ? options.clientFactory(candidateHost, DEFAULT_POLYMARKET_CHAIN)
-            : new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+          const client = createMarketDataClient(candidateHost, options);
           let cursor;
           let loops = 0;
           const candidateRows = [];
@@ -1274,7 +1379,7 @@ async function fetchDepthForMarket(market, options = {}) {
     const hostErrors = [];
     for (const candidateHost of hosts) {
       try {
-        const client = new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+        const client = createMarketDataClient(candidateHost, options);
         const yesFromHost = await getOrderbook(client, market.yesTokenId, null, timeoutMs);
         const noFromHost = await getOrderbook(client, market.noTokenId, null, timeoutMs);
         yesBook = yesFromHost || yesBook;
@@ -1616,6 +1721,7 @@ async function browsePolymarketMarkets(options = {}) {
  *   apiKey: string|null,
  *   apiSecret: string|null,
  *   apiPassphrase: string|null,
+ *   builderCode: string|null,
  *   host: string
  * }}
  */
@@ -1629,6 +1735,7 @@ function readTradingCredsFromEnv(env = process.env) {
     apiKey: env.POLYMARKET_API_KEY || null,
     apiSecret: env.POLYMARKET_API_SECRET || null,
     apiPassphrase: env.POLYMARKET_API_PASSPHRASE || null,
+    builderCode: env.POLYMARKET_BUILDER_CODE || null,
     host: env.POLYMARKET_HOST || DEFAULT_POLYMARKET_HOST,
   };
   return creds;
@@ -2251,6 +2358,7 @@ async function maybeBuildTradingClientForInventory(options = {}, diagnostics = [
       apiKey: options.apiKey || envCreds.apiKey,
       apiSecret: options.apiSecret || envCreds.apiSecret,
       apiPassphrase: options.apiPassphrase || envCreds.apiPassphrase,
+      builderCode: options.builderCode || envCreds.builderCode,
     });
   } catch (err) {
     diagnostics.push(`Unable to initialize Polymarket trading client: ${formatNetworkError(err)}`);
@@ -2914,6 +3022,7 @@ async function fetchPolymarketPositionSummary(options = {}) {
   const apiKey = options.apiKey || envCreds.apiKey;
   const apiSecret = options.apiSecret || envCreds.apiSecret;
   const apiPassphrase = options.apiPassphrase || envCreds.apiPassphrase;
+  const builderCode = options.builderCode || envCreds.builderCode;
   const host = options.host || envCreds.host || DEFAULT_POLYMARKET_HOST;
   const chain = options.chain || DEFAULT_POLYMARKET_CHAIN;
   const allowApiLookup = requestedSource === 'api' || requestedSource === 'auto';
@@ -2945,6 +3054,7 @@ async function fetchPolymarketPositionSummary(options = {}) {
             apiKey,
             apiSecret,
             apiPassphrase,
+            builderCode,
           });
         } catch (err) {
           diagnostics.push(`Unable to initialize Polymarket trading client: ${formatNetworkError(err)}`);
@@ -3179,6 +3289,7 @@ async function buildTradingClient(options = {}) {
   const allowCache = options.disableCache !== true;
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const ClobCtor = options.clobClientClass || ClobClient;
+  const builderCode = resolveBuilderCode(options);
 
   if (allowCache && tradingClientCache.has(cacheKey)) {
     return tradingClientCache.get(cacheKey);
@@ -3204,19 +3315,16 @@ async function buildTradingClient(options = {}) {
     if (allowCache && derivedCredsCache.has(cacheKey)) {
       creds = derivedCredsCache.get(cacheKey);
     } else {
-      const bootstrap = new ClobCtor(
+      const bootstrap = createClobClient({
+        clientClass: ClobCtor,
         host,
         chain,
         signer,
-        undefined,
         signatureType,
-        options.funder || undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        true,
-      );
+        funderAddress: options.funder || undefined,
+        builderCode,
+        retryOnError: true,
+      });
       if (typeof bootstrap.deriveApiKey === 'function') {
         try {
           // deriveApiKey expects nonce, not signature type; default to nonce 0.
@@ -3245,24 +3353,25 @@ async function buildTradingClient(options = {}) {
         throw new Error('CLOB client does not support API key derivation.');
       }
       if (allowCache && creds) {
+        creds = normalizeApiKeyCreds(creds);
         derivedCredsCache.set(cacheKey, creds);
       }
     }
   }
 
-  const client = new ClobCtor(
+  creds = normalizeApiKeyCreds(creds);
+
+  const client = createClobClient({
+    clientClass: ClobCtor,
     host,
     chain,
     signer,
     creds,
     signatureType,
-    options.funder || undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    true,
-  );
+    funderAddress: options.funder || undefined,
+    builderCode,
+    retryOnError: true,
+  });
   if (allowCache) {
     tradingClientCache.set(cacheKey, client);
   }
@@ -3322,6 +3431,12 @@ async function placeHedgeOrder(options = {}) {
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const client = options.client || (await buildTradingClient(options));
   const side = resolveOrderSide(options.side || 'buy');
+  const builderCode = resolveBuilderCode(options);
+  const userUSDCBalance =
+    toOptionalNumber(options.userUSDCBalance) ??
+    toOptionalNumber(options.userCollateralBalance) ??
+    toOptionalNumber(options.collateralBalanceUsd);
+  const metadata = toStringOrNull(options.metadata);
   try {
     const tickSize =
       options.tickSize ||
@@ -3339,15 +3454,26 @@ async function placeHedgeOrder(options = {}) {
             `Polymarket getNegRisk(${tokenId})`,
           );
 
+    const marketOrder = {
+      tokenID: tokenId,
+      amount: amountUsd,
+      side,
+      orderType: OrderType.FAK,
+    };
+    if (side === Side.BUY && userUSDCBalance !== null) {
+      marketOrder.userUSDCBalance = userUSDCBalance;
+    }
+    if (builderCode) {
+      marketOrder.builderCode = builderCode;
+    }
+    if (metadata) {
+      marketOrder.metadata = metadata;
+    }
+
     const response = await callWithTimeout(
       () =>
         client.createAndPostMarketOrder(
-          {
-            tokenID: tokenId,
-            amount: amountUsd,
-            side,
-            orderType: OrderType.FAK,
-          },
+          marketOrder,
           {
             tickSize,
             negRisk,
@@ -3369,6 +3495,8 @@ async function placeHedgeOrder(options = {}) {
       tokenId,
       side,
       amountUsd: round(amountUsd, 6),
+      builderCode: builderCode || null,
+      userUSDCBalance: userUSDCBalance === null ? null : round(userUSDCBalance, 6),
       response,
       error: ok ? null : { message: 'Polymarket order rejected.', details: response },
     };
@@ -3383,6 +3511,8 @@ async function placeHedgeOrder(options = {}) {
       tokenId,
       side,
       amountUsd: round(amountUsd, 6),
+      builderCode: builderCode || null,
+      userUSDCBalance: userUSDCBalance === null ? null : round(userUSDCBalance, 6),
       response: null,
       error: {
         code: err && err.code ? String(err.code) : null,

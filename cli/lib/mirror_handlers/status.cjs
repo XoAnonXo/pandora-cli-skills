@@ -46,7 +46,7 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
           funder:
             'POLYMARKET_FUNDER should be the Polymarket proxy wallet (Gnosis Safe), not the EOA signer address.',
           collateral:
-            'Polymarket CLOB collateral is Polygon USDC.e, but raw wallet collateral can diverge from authenticated Polymarket CLOB buying power. If balances look wrong, treat that as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.',
+            'Polymarket CLOB V2 collateral is Polygon pUSD, but raw wallet collateral can diverge from authenticated Polymarket CLOB buying power. If balances look wrong, treat that as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.',
           gracefulFallback:
             '--with-live degrades gracefully when position endpoints or credentials are unavailable (diagnostics are returned instead of hard failures).',
         },
@@ -61,7 +61,7 @@ module.exports = async function handleMirrorStatus({ actionArgs, shared, context
         '--with-live adds cross-venue status, hedge-gap actionability, and Polymarket balance/open-order plus balance-scope and merge-readiness diagnostics when credentials are available and degrades gracefully when unavailable.',
       );
       console.log(
-        'Polymarket CLOB collateral is Polygon USDC.e, but raw wallet collateral can diverge from authenticated CLOB buying power; if balances look wrong, treat it as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.',
+        'Polymarket CLOB V2 collateral is Polygon pUSD, but raw wallet collateral can diverge from authenticated CLOB buying power; if balances look wrong, treat it as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.',
       );
       console.log('mirror status can run selector-first; a single selector hint can resolve persisted runtime/daemon metadata when local mirror files match it.');
     }

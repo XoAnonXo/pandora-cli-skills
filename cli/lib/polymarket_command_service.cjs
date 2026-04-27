@@ -493,7 +493,7 @@ function createRunPolymarketCommand(deps) {
         const usage =
           'pandora [--output table|json] polymarket balance [--wallet <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
         const notes = [
-          'Funding-only surface: reads raw Polygon USDC.e wallet collateral only; it does not query authenticated Polymarket CLOB buying power, YES/NO inventory, or open orders.',
+          'Funding-only surface: reads raw Polygon pUSD wallet collateral only; it does not query authenticated Polymarket CLOB buying power, YES/NO inventory, or open orders.',
           'If this command shows 0 while the Polymarket UI shows buying power, treat that as a scope mismatch first: proxy/CLOB accounting can differ from raw wallet collateral.',
           'Use polymarket positions --wallet <address> --source auto when you need CTF balances, open orders, or merge-readiness diagnostics.',
         ];

@@ -2148,9 +2148,9 @@ test('polymarket check returns deterministic JSON payload shape', async () => {
     assert.equal(payload.data.schemaVersion, '1.0.0');
     assert.equal(payload.data.chainId, 137);
     assert.equal(Array.isArray(payload.data.runtime.spenders), true);
-    assert.equal(payload.data.runtime.spenders.length, 3);
+    assert.equal(payload.data.runtime.spenders.length, 2);
     assert.equal(Array.isArray(payload.data.approvals.checks), true);
-    assert.equal(payload.data.approvals.checks.length, 6);
+    assert.equal(payload.data.approvals.checks.length, 4);
     assert.equal(payload.data.apiKeySanity.status, 'skipped');
   } finally {
     await rpc.close();
@@ -2173,12 +2173,10 @@ test('polymarket check falls back to later rpc candidates when the primary endpo
     allowanceBySpender: {
       exchange: 1n << 200n,
       negRiskExchange: 1n << 200n,
-      negRiskAdapter: 1n << 200n,
     },
     operatorBySpender: {
       exchange: true,
       negRiskExchange: true,
-      negRiskAdapter: true,
     },
   });
 
@@ -2311,8 +2309,8 @@ test('polymarket approve --dry-run returns deterministic JSON plan shape', async
     assert.equal(payload.data.mode, 'dry-run');
     assert.equal(payload.data.status, 'planned');
     assert.equal(Array.isArray(payload.data.txPlan), true);
-    assert.equal(payload.data.txPlan.length, 6);
-    assert.equal(payload.data.approvalSummary.missingCount, 6);
+    assert.equal(payload.data.txPlan.length, 4);
+    assert.equal(payload.data.approvalSummary.missingCount, 4);
   } finally {
     await rpc.close();
   }
@@ -4231,8 +4229,8 @@ test('mirror status --with-live includes polymarket position visibility diagnost
     assert.equal(typeof payload.data.live.pnlApprox, 'number');
     assert.equal(payload.data.live.polymarketPosition.yesBalance, 12.5);
     assert.equal(payload.data.live.polymarketPosition.noBalance, 3.25);
-    assert.equal(payload.data.live.polymarketPosition.balanceScope.surface, 'polygon-usdc-wallet-collateral-only');
-    assert.equal(payload.data.live.polymarketPosition.balanceScope.asset, 'USDC.e');
+    assert.equal(payload.data.live.polymarketPosition.balanceScope.surface, 'polygon-pusd-wallet-collateral-only');
+    assert.equal(payload.data.live.polymarketPosition.balanceScope.asset, 'pUSD');
     assert.equal(payload.data.live.polymarketPosition.balanceScope.chainId, 137);
     assert.equal(payload.data.live.polymarketPosition.balanceScope.uiBalanceParityExpected, false);
     assert.equal(payload.data.live.polymarketPosition.openOrdersCount, 2);

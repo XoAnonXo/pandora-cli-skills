@@ -1,4 +1,4 @@
-const { ClobClient, Chain } = require('@polymarket/clob-client');
+const { Chain, createClobClient } = require('./polymarket_clob_client.cjs');
 const {
   resolvePolymarketMarket,
   fetchPolymarketPositionInventory,
@@ -15,14 +15,15 @@ const DEFAULT_ALLOWANCE_SUFFICIENT_FLOOR_RAW = 1n << 128n;
 const POLYGON_MIN_GAS_PRICE_WEI = 25n * 1_000_000_000n; // 25 gwei floor on Polygon
 const POLYGON_GAS_PRICE_MULTIPLIER_NUM = 2n;
 
-// Polygon mainnet addresses from official Polymarket CLOB contract config/docs.
+// Polygon mainnet addresses from official Polymarket CLOB V2 migration docs.
 const POLYMARKET_POLYGON_DEFAULTS = {
-  usdc: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', // USDC.e collateral (ERC20)
+  usdc: '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB', // pUSD collateral (ERC20)
+  legacyUsdcE: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+  collateralOnramp: '0x93070a847efEf7F70739046A929D47a521F5B8ee',
   ctf: '0x4d97dcd97ec945f40cf65f87097ace5ea0476045', // Conditional Tokens (ERC1155)
   spenders: [
-    { key: 'exchange', label: 'CTF Exchange', address: '0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e' },
-    { key: 'negRiskExchange', label: 'Neg Risk Exchange', address: '0xc5d563a36ae78145c45a50134d48a1215220f80a' },
-    { key: 'negRiskAdapter', label: 'Neg Risk Adapter', address: '0xd91e80cf2e7be2e162c6513ced06f1dd0da35296' },
+    { key: 'exchange', label: 'CTF Exchange V2', address: '0xe111180000d2663c0091e4f400237545b87b996b' },
+    { key: 'negRiskExchange', label: 'Neg Risk Exchange V2', address: '0xe2222d279d744050d28e00520010520000310f59' },
   ],
 };
 
@@ -298,10 +299,13 @@ function buildFundingPayloadBase(action, runtime, rpcSelection, signerAddress, t
       configuredRpcUrl: runtime.configuredRpcUrl || null,
       rpcSource: rpcSelection.source || runtime.rpcSource || null,
       host: runtime.host,
+      builderCodeConfigured: Boolean(runtime.builderCode),
       signerAddress: signerAddress || null,
       funderAddress: runtime.funderAddress || null,
       ownerAddress: transfer.fromAddress || runtime.funderAddress || signerAddress || null,
       usdcAddress: runtime.usdcAddress,
+      collateralAsset: runtime.collateralAsset,
+      collateralOnrampAddress: runtime.collateralOnrampAddress,
     },
     rpcSelection: cloneJsonCompatible(rpcSelection),
     signerAddress: signerAddress || null,
@@ -369,21 +373,21 @@ function buildPolymarketBalanceScope(context = {}) {
         ownerAddress ? { role: 'owner', address: ownerAddress } : null,
       ].filter(Boolean);
   return {
-    surface: 'polygon-usdc-wallet-collateral-only',
-    asset: 'USDC.e',
+    surface: 'polygon-pusd-wallet-collateral-only',
+    asset: 'pUSD',
     chainId: POLYGON_CHAIN_ID,
     ownerAddress,
     requestedWallet,
     signerAddress,
     funderAddress,
     uiBalanceParityExpected: false,
-    description: 'Reads raw Polygon ERC20 USDC.e wallet balances for the resolved signer/funder/requested wallet addresses. This does not query authenticated Polymarket CLOB buying power.',
+    description: 'Reads raw Polygon ERC20 pUSD wallet balances for the resolved signer/funder/requested wallet addresses. This does not query authenticated Polymarket CLOB buying power.',
     excludes: [
       'authenticated Polymarket CLOB buying power',
       'YES/NO CTF inventory',
       'open orders',
     ],
-    zeroBalanceInterpretation: 'A zero value here only means the queried wallet currently holds no raw Polygon USDC.e collateral on Polygon.',
+    zeroBalanceInterpretation: 'A zero value here only means the queried wallet currently holds no raw Polygon pUSD collateral on Polygon.',
     readTargets,
     suggestedChecks: {
       positions: `pandora polymarket positions --wallet ${ownerAddress} --source auto`,
@@ -395,7 +399,7 @@ function buildPolymarketBalanceScope(context = {}) {
 function buildPolymarketBalanceGuidance(context = {}) {
   const scope = buildPolymarketBalanceScope(context);
   const diagnostics = [
-    'Funding-only surface: this command reads raw Polygon USDC.e ERC20 wallet balances, not authenticated Polymarket CLOB buying power, YES/NO CTF inventory, or open orders.',
+    'Funding-only surface: this command reads raw Polygon pUSD ERC20 wallet balances, not authenticated Polymarket CLOB buying power, YES/NO CTF inventory, or open orders.',
   ];
   const ownerAddress = context.ownerAddress || null;
   const requestedWallet = context.requestedWallet || null;
@@ -422,7 +426,7 @@ function buildPolymarketBalanceGuidance(context = {}) {
   }
 
   if (ownerRaw !== null && ownerRaw <= 0n) {
-    diagnostics.push(`A zero Polygon USDC.e wallet balance here does not prove the Polymarket UI buying-power view is zero; ${scope.surface} excludes proxy/CLOB accounting state.`);
+    diagnostics.push(`A zero Polygon pUSD wallet balance here does not prove the Polymarket UI buying-power view is zero; ${scope.surface} excludes proxy/CLOB accounting state.`);
   }
 
   diagnostics.push(
@@ -575,10 +579,6 @@ function resolveSpenders(options = {}, env = process.env) {
       options.negRiskExchangeAddress || env.POLYMARKET_NEG_RISK_EXCHANGE_ADDRESS,
       'negRiskExchangeAddress',
     ),
-    negRiskAdapter: normalizeAddress(
-      options.negRiskAdapterAddress || env.POLYMARKET_NEG_RISK_ADAPTER_ADDRESS,
-      'negRiskAdapterAddress',
-    ),
   };
 
   return POLYMARKET_POLYGON_DEFAULTS.spenders.map((entry) => ({
@@ -592,7 +592,10 @@ function resolveRuntime(options = {}) {
   const rpcInput = resolveRpcInput(options, env);
   const privateKey = options.privateKey || env.POLYMARKET_PRIVATE_KEY || null;
   const funderAddress = normalizeAddress(options.funder || env.POLYMARKET_FUNDER, 'funder');
-  const usdcAddress = normalizeAddress(options.usdcAddress || env.POLYMARKET_USDC_E_ADDRESS, 'usdcAddress')
+  const usdcAddress = normalizeAddress(
+    options.usdcAddress || options.pusdAddress || env.POLYMARKET_PUSD_ADDRESS,
+    'usdcAddress',
+  )
     || POLYMARKET_POLYGON_DEFAULTS.usdc;
   const ctfAddress = normalizeAddress(options.ctfAddress || env.POLYMARKET_CTF_ADDRESS, 'ctfAddress')
     || POLYMARKET_POLYGON_DEFAULTS.ctf;
@@ -614,11 +617,19 @@ function resolveRuntime(options = {}) {
     funderAddress,
     host,
     usdcAddress,
+    collateralAsset: 'pUSD',
+    collateralOnrampAddress:
+      normalizeAddress(options.collateralOnrampAddress || env.POLYMARKET_COLLATERAL_ONRAMP_ADDRESS, 'collateralOnrampAddress')
+      || POLYMARKET_POLYGON_DEFAULTS.collateralOnramp,
+    legacyUsdcEAddress:
+      normalizeAddress(options.legacyUsdcEAddress || env.POLYMARKET_USDC_E_ADDRESS, 'legacyUsdcEAddress')
+      || POLYMARKET_POLYGON_DEFAULTS.legacyUsdcE,
     ctfAddress,
     spenders: resolveSpenders(options, env),
     apiKey: options.apiKey || env.POLYMARKET_API_KEY || null,
     apiSecret: options.apiSecret || env.POLYMARKET_API_SECRET || null,
     apiPassphrase: options.apiPassphrase || env.POLYMARKET_API_PASSPHRASE || null,
+    builderCode: options.builderCode || env.POLYMARKET_BUILDER_CODE || null,
     allowanceTargetRaw,
     skipApiSanity:
       options.skipApiSanity === true || parseBooleanFlag(env.POLYMARKET_SKIP_API_KEY_SANITY, false),
@@ -816,7 +827,7 @@ function computeApprovalDiff(input = {}) {
       type: 'erc20_allowance',
       key: `allowance:${spender.key}`,
       spenderKey: spender.key,
-      label: `USDC.e allowance -> ${spender.label}`,
+      label: `pUSD allowance -> ${spender.label}`,
       ownerAddress,
       spender: spender.address,
       requiredRaw: allowanceTargetRaw.toString(),
@@ -992,19 +1003,15 @@ async function runApiKeySanity(runtime, signerAddress, deps = {}, strict = false
 
   try {
     const signer = new Wallet(runtime.privateKey);
-    const bootstrap = new ClobClient(
-      runtime.host,
-      Chain.POLYGON,
+    const bootstrap = createClobClient({
+      host: runtime.host,
+      chain: Chain.POLYGON,
       signer,
-      undefined,
       signatureType,
-      runtime.funderAddress || undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
+      funderAddress: runtime.funderAddress || undefined,
+      builderCode: runtime.builderCode || undefined,
+      retryOnError: true,
+    });
 
     let creds = null;
     if (typeof bootstrap.deriveApiKey === 'function') {
@@ -1131,10 +1138,13 @@ function buildCheckPayload(runtime, signerAddress, onchainState, approvalDiff, a
       configuredRpcUrl: rpcSelection.configuredRpcUrl,
       rpcSource: rpcSelection.source,
       host: runtime.host,
+      builderCodeConfigured: Boolean(runtime.builderCode),
       signerAddress: signerAddress || null,
       funderAddress: runtime.funderAddress || null,
       ownerAddress: onchainState.ownerAddress || null,
       usdcAddress: runtime.usdcAddress,
+      collateralAsset: runtime.collateralAsset,
+      collateralOnrampAddress: runtime.collateralOnrampAddress,
       ctfAddress: runtime.ctfAddress,
       spenders: runtime.spenders,
     },
@@ -1164,8 +1174,8 @@ function buildCheckPayload(runtime, signerAddress, onchainState, approvalDiff, a
       !runtime.funderAddress ? 'POLYMARKET_FUNDER is not configured.' : null,
       !signerAddress ? 'Private key is not configured; signer identity unavailable.' : null,
       !ownership.ok ? 'Signer/funder ownership relation is not verified.' : null,
-      usdcBalanceRaw === null ? 'Unable to read USDC.e balance for owner wallet.' : null,
-      usdcBalanceRaw !== null && usdcBalanceRaw <= 0n ? 'USDC.e balance is zero.' : null,
+      usdcBalanceRaw === null ? 'Unable to read pUSD balance for owner wallet.' : null,
+      usdcBalanceRaw !== null && usdcBalanceRaw <= 0n ? 'pUSD balance is zero.' : null,
       approvalDiff.missingCount > 0 ? `${approvalDiff.missingCount} approval checks are missing.` : null,
       !apiSanity.ok ? `API-key sanity status: ${apiSanity.status}.` : null,
     ].filter(Boolean),
@@ -1381,9 +1391,9 @@ function buildPreflightChecks(checkPayload) {
     details: ownership,
   });
   checks.push({
-    code: 'USDC_BALANCE',
+    code: 'PUSD_BALANCE',
     ok: usdcRaw !== null && usdcRaw > 0n,
-    message: 'Owner wallet must hold Polygon USDC.e collateral.',
+    message: 'Owner wallet must hold Polygon pUSD collateral.',
     details: { raw: usdcRaw === null ? null : usdcRaw.toString(), formatted: formatUnits6(usdcRaw) },
   });
   checks.push({
@@ -1496,7 +1506,7 @@ async function resolvePreflightTradeContext(options = {}, checkPayload = {}, dep
       {
         code: 'TRADE_NOTIONAL_COVERED',
         ok: amountRaw !== null && ownerUsdcRaw !== null ? ownerUsdcRaw >= amountRaw : false,
-        message: 'Owner wallet must hold enough Polygon USDC.e for the requested trade amount.',
+        message: 'Owner wallet must hold enough Polygon pUSD for the requested trade amount.',
         details: {
           requestedAmountUsdc: amountUsdc,
           requestedAmountRaw: amountRaw === null ? null : amountRaw.toString(),
@@ -1594,10 +1604,13 @@ async function runPolymarketBalance(options = {}, deps = {}) {
       configuredRpcUrl: runtime.configuredRpcUrl || null,
       rpcSource: rpcSelection.source || runtime.rpcSource || null,
       host: runtime.host,
+      builderCodeConfigured: Boolean(runtime.builderCode),
       signerAddress: signerAddress || null,
       funderAddress: runtime.funderAddress || null,
       ownerAddress,
       usdcAddress: runtime.usdcAddress,
+      collateralAsset: runtime.collateralAsset,
+      collateralOnrampAddress: runtime.collateralOnrampAddress,
     },
     rpcSelection: buildRpcSelectionPayload(runtime, { rpcSelection }),
     requestedWallet: requestedWallet || null,
@@ -1874,11 +1887,14 @@ async function runPolymarketPositions(options = {}, deps = {}) {
       configuredRpcUrl: runtime.configuredRpcUrl || null,
       rpcSource: rpcSelection.source || runtime.rpcSource || null,
       host: runtime.host,
+      builderCodeConfigured: Boolean(runtime.builderCode),
       signerAddress: signerAddress || null,
       funderAddress: runtime.funderAddress || null,
       ownerAddress,
       ctfAddress: runtime.ctfAddress,
       usdcAddress: runtime.usdcAddress,
+      collateralAsset: runtime.collateralAsset,
+      collateralOnrampAddress: runtime.collateralOnrampAddress,
     },
     rpcSelection: buildRpcSelectionPayload(runtime, { rpcSelection }),
     selector: {
@@ -2035,8 +2051,8 @@ async function runPolymarketFundingTransfer(action, options = {}, deps = {}) {
   }
   if (payload.preflight.sourceBalanceSufficient === false) {
     throw createServiceError(
-      'POLYMARKET_INSUFFICIENT_USDC_BALANCE',
-      `USDC.e balance is insufficient for ${action}.`,
+      'POLYMARKET_INSUFFICIENT_PUSD_BALANCE',
+      `pUSD balance is insufficient for ${action}.`,
       {
         action,
         requiredRaw: amountRaw.toString(),

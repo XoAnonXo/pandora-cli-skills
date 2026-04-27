@@ -10537,7 +10537,7 @@
       "visibleCommandCount": 176
     },
     "documentation": {
-      "contentHash": "cb130209bc40f5bdb9fccbd55ad07b6ec1fefbc95ab0d11fe6d50ef8eb6fa566",
+      "contentHash": "6a3208c904d215c3462be8e49641f5ae83efb1a792577f40f2732da404e2fa58",
       "router": {
         "contentHash": "74fc5343f3fa202070a253da27d482f6235614cb496741fc819bd2b5df2b0270",
         "path": "SKILL.md",
@@ -10781,7 +10781,7 @@
             "profile.list",
             "schema"
           ],
-          "contentHash": "cef3456e8b52937785a0568f3d7246047df896628eb9bf10e637ba02a9a07d94",
+          "contentHash": "a4529581824d19edb4ea77ecd5c9de08c7fc91d089c7c9f1ae1870fe8208861e",
           "featured": true,
           "id": "capabilities",
           "kind": "routing",
@@ -10882,7 +10882,7 @@
             "mirror.close",
             "portfolio"
           ],
-          "contentHash": "88f1554ccbb70815af5bc8d6b7ba70011f701b8aac8c04f4d07289038cef6f80",
+          "contentHash": "b5d2862f799aba3241d861fede012e0e6de55fca44e76bd9dfb76c72f33ca06a",
           "featured": true,
           "id": "portfolio-closeout",
           "kind": "workflow",
@@ -10909,7 +10909,7 @@
             "mirror.sync.once",
             "mirror.verify"
           ],
-          "contentHash": "51c1f3338e7ba7b36bfa2ed05ef30a0610f96155fe3260c91f1814b136440f00",
+          "contentHash": "796badaa2a48ce6c6367259f2a9af9f8db36cfd55d9fe0716adc4c1e3b24fa99",
           "featured": true,
           "id": "mirror-operations",
           "kind": "workflow",
@@ -11120,7 +11120,7 @@
             "sports.create.plan",
             "trade"
           ],
-          "contentHash": "954ead9cfca7dc9360f816784c6fa98b62bbcf70398b7a7f92a26921301bd340",
+          "contentHash": "fdd58bea37b84ac2bb1e6337d89092a367436744b7521b0294914fe52a8d8868",
           "featured": true,
           "id": "command-reference",
           "kind": "reference",
@@ -12624,7 +12624,7 @@
       "canonicalHash": "cce2ede8f658d43e0807f7f194e28fc356085e00fc70d99d27ecbd674be14a9f",
       "commandDigestHash": "85f685455fdf85b757674a3086eb03354a628f22ada1a25afee0fd86b14b92c7",
       "descriptorHash": "664970d781e477a11a683bc265cbd7fc8b0cf9576b50da49ab301b773e38b47d",
-      "documentationHash": "eebe2a201c559e44b45d1a780713f6b302f56726a03a4a57538fcf6762530826",
+      "documentationHash": "614773352a27988e5e426468cb3829d56b03577e12c9c0e187ee58ddc20d6f1a",
       "fullDescriptorHash": "422f7c73ce499d926c92ea792b0c590c41c916dac377cf6790c5465d1eb5f384",
       "namespaceHash": "cd39afc4f4e8b76473a4768c07d979c44e0421973786c54e12bb6d7888f5952a",
       "policyProfilesHash": "9fb054a4f29be73c2ebf33f643bc17d904b2872dd8e7d564a690db828071a7ce",
@@ -44085,7 +44085,7 @@
     "canonicalHash": "cce2ede8f658d43e0807f7f194e28fc356085e00fc70d99d27ecbd674be14a9f",
     "commandDigestHash": "85f685455fdf85b757674a3086eb03354a628f22ada1a25afee0fd86b14b92c7",
     "descriptorHash": "664970d781e477a11a683bc265cbd7fc8b0cf9576b50da49ab301b773e38b47d",
-    "documentationHash": "eebe2a201c559e44b45d1a780713f6b302f56726a03a4a57538fcf6762530826",
+    "documentationHash": "614773352a27988e5e426468cb3829d56b03577e12c9c0e187ee58ddc20d6f1a",
     "fullDescriptorHash": "422f7c73ce499d926c92ea792b0c590c41c916dac377cf6790c5465d1eb5f384",
     "namespaceHash": "cd39afc4f4e8b76473a4768c07d979c44e0421973786c54e12bb6d7888f5952a",
     "policyProfilesHash": "9fb054a4f29be73c2ebf33f643bc17d904b2872dd8e7d564a690db828071a7ce",
@@ -94954,7 +94954,7 @@
         "visibleCommandCount": 176
       },
       "documentation": {
-        "contentHash": "cb130209bc40f5bdb9fccbd55ad07b6ec1fefbc95ab0d11fe6d50ef8eb6fa566",
+        "contentHash": "6a3208c904d215c3462be8e49641f5ae83efb1a792577f40f2732da404e2fa58",
         "router": {
           "contentHash": "74fc5343f3fa202070a253da27d482f6235614cb496741fc819bd2b5df2b0270",
           "path": "SKILL.md",
@@ -95198,7 +95198,7 @@
               "profile.list",
               "schema"
             ],
-            "contentHash": "cef3456e8b52937785a0568f3d7246047df896628eb9bf10e637ba02a9a07d94",
+            "contentHash": "a4529581824d19edb4ea77ecd5c9de08c7fc91d089c7c9f1ae1870fe8208861e",
             "featured": true,
             "id": "capabilities",
             "kind": "routing",
@@ -95299,7 +95299,7 @@
               "mirror.close",
               "portfolio"
             ],
-            "contentHash": "88f1554ccbb70815af5bc8d6b7ba70011f701b8aac8c04f4d07289038cef6f80",
+            "contentHash": "b5d2862f799aba3241d861fede012e0e6de55fca44e76bd9dfb76c72f33ca06a",
             "featured": true,
             "id": "portfolio-closeout",
             "kind": "workflow",
@@ -95326,7 +95326,7 @@
               "mirror.sync.once",
               "mirror.verify"
             ],
-            "contentHash": "51c1f3338e7ba7b36bfa2ed05ef30a0610f96155fe3260c91f1814b136440f00",
+            "contentHash": "796badaa2a48ce6c6367259f2a9af9f8db36cfd55d9fe0716adc4c1e3b24fa99",
             "featured": true,
             "id": "mirror-operations",
             "kind": "workflow",
@@ -95537,7 +95537,7 @@
               "sports.create.plan",
               "trade"
             ],
-            "contentHash": "954ead9cfca7dc9360f816784c6fa98b62bbcf70398b7a7f92a26921301bd340",
+            "contentHash": "fdd58bea37b84ac2bb1e6337d89092a367436744b7521b0294914fe52a8d8868",
             "featured": true,
             "id": "command-reference",
             "kind": "reference",

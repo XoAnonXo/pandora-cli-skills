@@ -261,7 +261,7 @@ Mirror sync startup hedge note:
 - `fund-check` is a standalone command.
 - `explain` is the canonical error-remediation surface for agents and operators. Prefer it over parsing raw error strings yourself.
   - use it when you need exact mirror-driven shortfalls and suggested next commands.
-  - use `polymarket check` for lower-level readiness, `polymarket balance` for Polygon USDC.e collateral, and `polymarket positions` for CTF YES/NO inventory and open orders.
+  - use `polymarket check` for lower-level readiness, `polymarket balance` for Polygon pUSD collateral, and `polymarket positions` for CTF YES/NO inventory and open orders.
 
 Mirror runtime notes:
 - `mirror go` and `mirror sync` stay in paper/simulated mode unless you explicitly pass `--execute-live` or `--execute`.
@@ -345,7 +345,7 @@ trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-
 
 - `POLYMARKET_FUNDER` / `--funder` must identify the Polymarket proxy wallet (Gnosis Safe), not the signer EOA.
 - `balance` is the quick proxy/signer funding surface for live mirror hedges.
-  - it answers the collateral question: how much Polygon USDC.e is available on the signer and proxy wallet
+  - it answers the collateral question: how much Polygon pUSD is available on the signer and proxy wallet
   - it is not the canonical YES/NO share inventory surface
 - `positions` is the canonical Polymarket CTF inventory surface.
   - use it when you need YES/NO balances, token ids, condition or market ids, open-order counts/notional, marked value, and diagnostics for a wallet or proxy
@@ -354,7 +354,7 @@ trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-
   - `--source api` prefers enriched API/CLOB inventory and is the best choice when operators need open-order and value fields from Polymarket services
   - `--source on-chain` forces Polygon RPC / CTF balance reads and is the trust-minimized fallback when API enrichment is unavailable or intentionally bypassed
   - when the command falls back to raw on-chain inventory, expect the share balances and token identifiers to remain usable while price/open-order enrichment can degrade to diagnostics or null fields until API/CLOB data is available
-- `deposit` moves Polygon USDC.e from signer to proxy by default. `withdraw` can preview moving collateral back from proxy to signer (or to `--to`), but execute mode only works when the signer controls the source wallet; proxy-originated withdrawals usually require manual execution from the proxy wallet.
+- `deposit` moves Polygon pUSD from signer to proxy by default. API-only users holding legacy USDC.e must wrap into pUSD through Polymarket's Collateral Onramp before live trading. `withdraw` can preview moving collateral back from proxy to signer (or to `--to`), but execute mode only works when the signer controls the source wallet; proxy-originated withdrawals usually require manual execution from the proxy wallet.
 - `deposit` / `withdraw` are funding transfers, not CLOB order placement.
 - `polymarket check|approve|preflight|balance|positions|deposit|withdraw|trade --rpc-url` accepts comma-separated Polygon RPC fallbacks and tries them in order.
 - Explicit `--rpc-url` still wins over `POLYMARKET_RPC_URL`, which still wins over `RPC_URL`.

@@ -2,11 +2,13 @@
 title: Pandora CLI surface
 type: surface
 status: active
-updated: 2026-04-05
+updated: 2026-04-27
 source_paths:
   - README.md
   - package.json
   - docs/skills/capabilities.md
+  - docs/skills/mirror-operations.md
+  - docs/skills/command-reference.md
 tags:
   - pandora
   - cli
@@ -43,6 +45,21 @@ flowchart LR
 - check policy and signer readiness
 - run market, mirror, portfolio, and release workflows
 - support automation and CI
+
+## Polymarket V2 Migration Shape
+
+Pandora now treats Polymarket live hedging as a V2 CLOB flow. In plain English, that means the Polymarket side moved from the old Polygon USDC.e setup to pUSD collateral, new exchange contracts, and a newer CLOB client (Polymarket CLOB V2 SDK).
+
+```mermaid
+flowchart LR
+  Operator["Operator wallet"] --> Check["polymarket check / balance"]
+  Check --> PUSD["Polygon pUSD collateral"]
+  PUSD --> Approvals["V2 exchange approvals"]
+  Approvals --> CLOB["CLOB V2 order"]
+  CLOB --> Mirror["mirror sync / hedge execution"]
+```
+
+What we need to have is one safe trading path (V2 CLOB client), one collateral truth (Polygon pUSD), and one readiness gate before live hedges (balance plus approvals).
 
 ## Important source files
 

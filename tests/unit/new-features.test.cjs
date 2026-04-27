@@ -308,9 +308,8 @@ const TEST_POLL = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const TEST_PRIVATE_KEY = `0x${'1'.repeat(64)}`;
 const TEST_USDC = '0x3333333333333333333333333333333333333333';
 const POLYMARKET_TEST_SPENDERS = {
-  exchange: '0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e',
-  negRiskExchange: '0xc5d563a36ae78145c45a50134d48a1215220f80a',
-  negRiskAdapter: '0xd91e80cf2e7be2e162c6513ced06f1dd0da35296',
+  exchange: '0xe111180000d2663c0091e4f400237545b87b996b',
+  negRiskExchange: '0xe2222d279d744050d28e00520010520000310f59',
 };
 
 function buildPolymarketOpsTestViemRuntime(options = {}) {
@@ -887,6 +886,31 @@ test('placeHedgeOrder returns ok=false when CLOB response includes error payload
   assert.equal(result.tokenId, 'poly-yes-1');
 });
 
+test('placeHedgeOrder forwards V2 builder code and user collateral balance', async () => {
+  let observedOrder = null;
+  const result = await placeHedgeOrder({
+    tokenId: 'poly-yes-v2',
+    side: 'buy',
+    amountUsd: 10,
+    builderCode: '0xabc123',
+    userUSDCBalance: 11,
+    client: {
+      getTickSize: async () => '0.01',
+      getNegRisk: async () => false,
+      createAndPostMarketOrder: async (order) => {
+        observedOrder = order;
+        return { success: true, orderID: 'order-v2' };
+      },
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(observedOrder.tokenID, 'poly-yes-v2');
+  assert.equal(observedOrder.builderCode, '0xabc123');
+  assert.equal(observedOrder.userUSDCBalance, 11);
+  assert.equal(observedOrder.orderType, 'FAK');
+});
+
 test('placeHedgeOrder catches thrown CLOB errors and returns structured failure payload', async () => {
   const result = await placeHedgeOrder({
     tokenId: 'poly-no-1',
@@ -1367,6 +1391,47 @@ test('resolvePolymarketMarket uses direct getMarket lookup for conditionId selec
   assert.equal(payload.source, 'polymarket:clob-direct');
   assert.equal(getMarketCalls >= 1, true);
   assert.equal(getMarketsCalls, 0);
+});
+
+test('resolvePolymarketMarket prefers V2 getClobMarketInfo for conditionId selectors', async () => {
+  const conditionId = `0x${'c'.repeat(64)}`;
+  let clobMarketInfoCalls = 0;
+  let getMarketCalls = 0;
+
+  const payload = await resolvePolymarketMarket({
+    marketId: conditionId,
+    allowStaleCache: false,
+    persistCache: false,
+    clientFactory: () => ({
+      getClobMarketInfo: async (id) => {
+        clobMarketInfoCalls += 1;
+        assert.equal(id, conditionId);
+        return {
+          c: conditionId,
+          t: [
+            { t: 'yes-v2', o: 'Yes' },
+            { t: 'no-v2', o: 'No' },
+          ],
+          mts: 0.01,
+          nr: false,
+          fd: { r: 50, e: 4, to: true },
+        };
+      },
+      getMarket: async () => {
+        getMarketCalls += 1;
+        return null;
+      },
+    }),
+  });
+
+  assert.equal(payload.marketId, conditionId);
+  assert.equal(payload.source, 'polymarket:clob-direct');
+  assert.equal(payload.yesTokenId, 'yes-v2');
+  assert.equal(payload.noTokenId, 'no-v2');
+  assert.equal(payload.minTickSize, 0.01);
+  assert.deepEqual(payload.feeDetails, { r: 50, e: 4, to: true });
+  assert.equal(clobMarketInfoCalls, 1);
+  assert.equal(getMarketCalls, 0);
 });
 
 test('resolvePolymarketMarket cache files are written with 0600 permissions (non-Windows)', async () => {
@@ -2082,22 +2147,20 @@ test('computeApprovalDiff deterministically marks missing allowance/operator che
     allowanceBySpender: {
       exchange: { ok: true, value: 100n },
       negRiskExchange: { ok: true, value: 50n },
-      negRiskAdapter: { ok: false, value: null, error: 'read failed' },
     },
     operatorApprovalBySpender: {
       exchange: { ok: true, value: true },
       negRiskExchange: { ok: true, value: false },
-      negRiskAdapter: { ok: true, value: true },
     },
   });
 
   assert.equal(payload.targetAllowanceRaw, '100');
-  assert.equal(payload.checks.length, 6);
-  assert.equal(payload.missingCount, 3);
+  assert.equal(payload.checks.length, 4);
+  assert.equal(payload.missingCount, 2);
   const missingKeys = payload.missingChecks.map((item) => item.key).sort();
   assert.deepEqual(
     missingKeys,
-    ['allowance:negRiskAdapter', 'allowance:negRiskExchange', 'operator:negRiskExchange'],
+    ['allowance:negRiskExchange', 'operator:negRiskExchange'],
   );
   assert.equal(payload.allSatisfied, false);
 });
@@ -2112,12 +2175,10 @@ test('computeApprovalDiff treats near-max approvals above high-water floor as re
     allowanceBySpender: {
       exchange: { ok: true, value: highAllowance },
       negRiskExchange: { ok: true, value: highAllowance },
-      negRiskAdapter: { ok: true, value: highAllowance },
     },
     operatorApprovalBySpender: {
       exchange: { ok: true, value: true },
       negRiskExchange: { ok: true, value: true },
-      negRiskAdapter: { ok: true, value: true },
     },
   });
   assert.equal(readyPayload.allSatisfied, true);
@@ -2129,12 +2190,10 @@ test('computeApprovalDiff treats near-max approvals above high-water floor as re
     allowanceBySpender: {
       exchange: { ok: true, value: belowFloorAllowance },
       negRiskExchange: { ok: true, value: highAllowance },
-      negRiskAdapter: { ok: true, value: highAllowance },
     },
     operatorApprovalBySpender: {
       exchange: { ok: true, value: true },
       negRiskExchange: { ok: true, value: true },
-      negRiskAdapter: { ok: true, value: true },
     },
   });
   assert.equal(belowFloorPayload.allSatisfied, false);
@@ -2217,12 +2276,12 @@ test('runPolymarketCheck returns deterministic payload structure without RPC', a
   assert.equal(typeof payload.generatedAt, 'string');
   assert.equal(typeof payload.runtime, 'object');
   assert.equal(Array.isArray(payload.runtime.spenders), true);
-  assert.equal(payload.runtime.spenders.length, 3);
+  assert.equal(payload.runtime.spenders.length, 2);
   assert.equal(typeof payload.ownership, 'object');
   assert.equal(typeof payload.balances, 'object');
   assert.equal(typeof payload.approvals, 'object');
   assert.equal(Array.isArray(payload.approvals.checks), true);
-  assert.equal(payload.approvals.checks.length, 6);
+  assert.equal(payload.approvals.checks.length, 4);
   assert.equal(payload.apiKeySanity.status, 'skipped');
 });
 
@@ -2245,8 +2304,8 @@ test('runPolymarketBalance explains funding-only collateral scope and points ope
 
   assert.equal(payload.schemaVersion, POLYMARKET_OPS_SCHEMA_VERSION);
   assert.equal(payload.action, 'balance');
-  assert.equal(payload.balanceScope.surface, 'polygon-usdc-wallet-collateral-only');
-  assert.equal(payload.balanceScope.asset, 'USDC.e');
+  assert.equal(payload.balanceScope.surface, 'polygon-pusd-wallet-collateral-only');
+  assert.equal(payload.balanceScope.asset, 'pUSD');
   assert.equal(payload.balanceScope.chainId, 137);
   assert.match(payload.balanceScope.suggestedChecks.positions, /pandora polymarket positions --wallet/i);
   assert.equal(

@@ -164,7 +164,7 @@ pandora claim --output json --market-address 0x... --execute
 ```
 
 ### 5. Finish Polygon-side cleanup separately
-- use `pandora polymarket balance` to confirm whether the proxy or signer still holds USDC.e or outcome tokens
+- use `pandora polymarket balance` to confirm whether the proxy or signer still holds pUSD or outcome tokens
 - use `pandora polymarket withdraw --amount-usdc <n>` when you need a preview of moving remaining proxy collateral back to the signer; if the proxy differs from the signer, follow the dry-run plan and execute the ERC20 transfer from the proxy wallet manually
 - use venue-native redemption flows when the remaining work is Polymarket token settlement rather than Pandora claim
 

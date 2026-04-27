@@ -268,23 +268,21 @@ test('fund-check stays quiet when balances and approvals are already healthy', a
     chainIdHex: '0x1',
     funder: POLYMARKET_DEFAULTS.funder,
     usdc: ADDRESSES.usdc,
-    usdcBalanceRaw: 500_000_000n,
+    usdcBalanceRaw: 1_000_000_000n,
     safeOwner: true,
   });
   const polymarketRpc = await startPolymarketOpsRpcMock({
     chainIdHex: '0x89',
     funder: POLYMARKET_DEFAULTS.funder,
-    usdcBalanceRaw: 500_000_000n,
+    usdcBalanceRaw: 1_000_000_000n,
     safeOwner: true,
     allowanceBySpender: {
       exchange: 1n << 200n,
       negRiskExchange: 1n << 200n,
-      negRiskAdapter: 1n << 200n,
     },
     operatorBySpender: {
       exchange: true,
       negRiskExchange: true,
-      negRiskAdapter: true,
     },
   });
   const indexer = await startIndexerMockServer(buildMirrorIndexerOverrides());

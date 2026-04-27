@@ -57,13 +57,12 @@ const ADDRESSES = {
 };
 
 const POLYMARKET_DEFAULTS = {
-  usdc: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+  usdc: '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB',
   ctf: '0x4d97dcd97ec945f40cf65f87097ace5ea0476045',
   funder: '0x8888888888888888888888888888888888888888',
   spenders: {
-    exchange: '0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e',
-    negRiskExchange: '0xc5d563a36ae78145c45a50134d48a1215220f80a',
-    negRiskAdapter: '0xd91e80cf2e7be2e162c6513ced06f1dd0da35296',
+    exchange: '0xe111180000d2663c0091e4f400237545b87b996b',
+    negRiskExchange: '0xe2222d279d744050d28e00520010520000310f59',
   },
 };
 

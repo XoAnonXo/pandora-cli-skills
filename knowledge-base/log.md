@@ -2,7 +2,7 @@
 title: Pandora knowledge base log
 type: log
 status: active
-updated: 2026-04-05
+updated: 2026-04-27
 source_paths:
   - README.md
   - SKILL.md
@@ -61,3 +61,24 @@ Cleanup actions:
 - refreshed root docs and skill routing to include the proving-ground lane
 - added `proving-ground/reports/` to `.gitignore`
 - refreshed the knowledge base to match the repo's current evidence model
+
+## [2026-04-27] migration | Polymarket CLOB V2
+
+Reviewed source files:
+
+- `README.md`
+- `package.json`
+- `cli/lib/polymarket_trade_adapter.cjs`
+- `cli/lib/polymarket_ops_service.cjs`
+- `cli/lib/bridge_command_service.cjs`
+- `docs/skills/mirror-operations.md`
+- `docs/skills/command-reference.md`
+
+Knowledge-base actions:
+
+- refreshed the CLI surface map with the Polymarket V2 shape
+- recorded that the Polymarket live path now centers on the V2 CLOB client, Polygon pUSD collateral, and V2 readiness checks
+
+Decision:
+
+- Kept detailed command behavior in the raw docs and used the wiki only for the durable architecture map.

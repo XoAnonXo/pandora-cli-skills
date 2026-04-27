@@ -52,7 +52,7 @@ test('runPolymarketBalance returns requested wallet balances without signer/fund
   assert.deepEqual(Object.keys(payload.balances), ['wallet']);
   assert.equal(payload.balances.wallet.address, wallet);
   assert.equal(payload.balances.wallet.formatted, '123.45');
-  assert.equal(payload.balanceScope.surface, 'polygon-usdc-wallet-collateral-only');
+  assert.equal(payload.balanceScope.surface, 'polygon-pusd-wallet-collateral-only');
   assert.equal(payload.balanceScope.uiBalanceParityExpected, false);
   assert.deepEqual(payload.balanceScope.readTargets, [{ role: 'wallet', address: wallet }]);
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'yesBalance'), false);
@@ -90,7 +90,7 @@ test('runPolymarketBalance explains zero wallet collateral as a scope mismatch r
   assert.equal(payload.balanceScope.ownerAddress, funderAddress.toLowerCase());
   assert.equal(payload.balanceScope.signerAddress, signerAddress.toLowerCase());
   assert.equal(payload.balanceScope.funderAddress, funderAddress.toLowerCase());
-  assert.equal(payload.diagnostics.some((entry) => /zero Polygon USDC\.e wallet balance/i.test(entry)), true);
+  assert.equal(payload.diagnostics.some((entry) => /zero Polygon pUSD wallet balance/i.test(entry)), true);
   assert.equal(payload.diagnostics.some((entry) => /scope mismatch/i.test(entry) || /proxy\/CLOB accounting state/i.test(entry)), true);
 });
 

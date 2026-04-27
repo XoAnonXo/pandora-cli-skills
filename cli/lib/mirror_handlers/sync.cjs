@@ -530,7 +530,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
             POLYMARKET_FUNDER:
               'Set this to your Polymarket proxy wallet (Gnosis Safe) address, not your EOA wallet address.',
             collateral:
-              'Polymarket CLOB settles against Polygon USDC.e collateral, but raw wallet collateral can diverge from authenticated CLOB buying power. If balances look wrong, treat that as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.',
+              'Polymarket CLOB V2 settles against Polygon pUSD collateral, but raw wallet collateral can diverge from authenticated CLOB buying power. If balances look wrong, treat that as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.',
             inventoryRecycle:
               'Sync can recycle tracked hedge inventory by selling the opposite token when runtime depth proves the sell path is safe; otherwise it falls back to buy-side hedging. Use --adopt-existing-positions to seed managed inventory from existing Polymarket holdings after a state wipe.',
             rpcFallback:
@@ -560,7 +560,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
         'Live hedge env: POLYMARKET_PRIVATE_KEY, POLYMARKET_FUNDER, POLYMARKET_RPC_URL, POLYMARKET_API_KEY, POLYMARKET_API_SECRET, POLYMARKET_API_PASSPHRASE, POLYMARKET_HOST.',
       );
       console.log('POLYMARKET_FUNDER must be your Polymarket proxy wallet (Gnosis Safe), not your EOA wallet address.');
-      console.log('Polymarket CLOB collateral is Polygon USDC.e, but raw wallet collateral can diverge from authenticated CLOB buying power; if balances look wrong, treat it as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.');
+      console.log('Polymarket CLOB V2 collateral is Polygon pUSD, but raw wallet collateral can diverge from authenticated CLOB buying power; if balances look wrong, treat it as a scope mismatch first and inspect `pandora polymarket balance` plus `pandora polymarket positions`.');
       console.log('Hedge inventory can be recycled with sell-side orders only when runtime depth proves the sell path is safe; otherwise sync keeps buy-side hedging. Use --adopt-existing-positions after a state wipe to seed managed inventory from live Polymarket YES/NO balances.');
       console.log('Default hedge scope is total exposure across pool reserves and held Pandora outcome tokens. Use --hedge-scope pool only when you intentionally want pool-only hedging.');
       console.log('Polymarket RPC preflight accepts comma-separated --polymarket-rpc-url / POLYMARKET_RPC_URL fallbacks and tries them in order.');

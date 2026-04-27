@@ -23,8 +23,8 @@ test('bridge plan help documents target directions', async () => {
   const payload = parseJsonOutput(runCli(['--output', 'json', 'bridge', 'plan', '--help']), 'bridge plan --help');
 
   assert.equal(payload.command, 'bridge.plan.help');
-  assert.match(payload.data.notes[0], /Ethereum USDC -> Polygon USDC\.e/i);
-  assert.match(payload.data.notes[1], /Polygon USDC\.e -> Ethereum USDC/i);
+  assert.match(payload.data.notes[0], /Ethereum USDC -> Polygon pUSD/i);
+  assert.match(payload.data.notes[1], /Polygon pUSD -> Ethereum USDC/i);
 });
 
 test('bridge execute help documents LayerZero-only dry-run and execute flow', async () => {

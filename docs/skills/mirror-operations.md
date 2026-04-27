@@ -38,7 +38,7 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
   - use it for historical Pandora reserve snapshots instead of current live diagnostics.
 - `fund-check` is a standalone command.
   - use it when you need exact shortfalls and suggested next commands for live hedge readiness.
-  - use `pandora polymarket check` for lower-level readiness, `pandora polymarket balance` for Polygon USDC.e collateral, and `pandora polymarket positions` for canonical CTF YES/NO inventory without mirror aggregation.
+  - use `pandora polymarket check` for lower-level readiness, `pandora polymarket balance` for Polygon pUSD collateral, and `pandora polymarket positions` for canonical CTF YES/NO inventory without mirror aggregation.
 
 ## Non-negotiable operator rules
 - `mirror plan|deploy|go` do **not** use a generic `+1h` assumption.
@@ -120,7 +120,7 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
 ## Polymarket funding and proxy wallet
 
 - `POLYMARKET_FUNDER` / `--funder` must point at the Polymarket proxy wallet (Gnosis Safe), not the signer EOA.
-- Live CLOB collateral is Polygon USDC.e on that proxy wallet.
+- Live CLOB V2 collateral is Polygon pUSD on that proxy wallet.
 - Use `pandora polymarket balance --funder <proxy>` before live sync to inspect signer and proxy collateral balances.
 - Use `pandora polymarket positions` when you need the actual CTF hedge inventory rather than collateral.
   - it is the canonical YES/NO share inventory surface for operators, closeout, and hedge validation
@@ -130,7 +130,7 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
   - `--source on-chain` forces Polygon RPC / CTF reads and is the fail-safe fallback when API enrichment is down or intentionally bypassed
   - when the command is running on raw on-chain fallback, treat balances and token ids as canonical and treat open-order/value fields as opportunistic enrichment that may degrade to diagnostics or nulls
 - Use `pandora fund-check` for the high-level mirror funding planner; use `pandora polymarket check` when you need the lower-level readiness surface that validates ownership, approvals, and RPC health directly.
-- Use `pandora polymarket deposit --amount-usdc <n> --dry-run|--execute` to move USDC.e from signer to proxy. `pandora polymarket withdraw` can preview moving funds back or to `--to`, but execute mode only works when the signer controls the source wallet; proxy-originated withdrawals typically require manual execution from the proxy wallet.
+- Use `pandora polymarket deposit --amount-usdc <n> --dry-run|--execute` to move pUSD from signer to proxy. API-only users holding legacy USDC.e must wrap into pUSD through Polymarket's Collateral Onramp before live trading. `pandora polymarket withdraw` can preview moving funds back or to `--to`, but execute mode only works when the signer controls the source wallet; proxy-originated withdrawals typically require manual execution from the proxy wallet.
 - Treat proxy funding as a separate prerequisite from ETH-mainnet Pandora capital. A healthy Pandora signer balance does not mean the Polygon hedge wallet is funded.
 
 ## Validation contract

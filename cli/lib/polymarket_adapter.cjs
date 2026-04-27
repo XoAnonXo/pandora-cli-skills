@@ -1,4 +1,4 @@
-const { ClobClient, Chain } = require('@polymarket/clob-client');
+const { Chain, createClobClient } = require('./polymarket_clob_client.cjs');
 const WebSocket = require('ws');
 const { toNumber } = require('./shared/utils.cjs');
 
@@ -851,7 +851,7 @@ async function fetchGammaPolymarketMarkets(options = {}) {
 async function fetchClobPolymarketMarkets(options = {}) {
   const host = options.host || DEFAULT_POLYMARKET_HOST;
   const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 100;
-  const client = new ClobClient(host, Chain.POLYGON);
+  const client = createClobClient({ host, chain: Chain.POLYGON });
   const rows = [];
   let cursor;
   let loops = 0;

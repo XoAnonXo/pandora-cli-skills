@@ -5,7 +5,7 @@ const { readPandoraWalletBalances } = require('./dashboard_fund_service.cjs');
 const BRIDGE_PLAN_SCHEMA_VERSION = '1.0.0';
 const BRIDGE_EXECUTE_SCHEMA_VERSION = '1.0.0';
 const POLYGON_CHAIN_ID = 137;
-const POLYGON_USDC_E = '0x2791bca1f2de4661ed88a30c99a7a9449aa84174';
+const POLYGON_PUSD = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
 const LAYERZERO_PROVIDER = 'layerzero';
 const CHAIN_METADATA = {
   1: { id: 1, name: 'Ethereum', nativeSymbol: 'ETH', recommendedNativeGas: 0.005 },
@@ -316,7 +316,7 @@ async function buildBridgePlan(options = {}, deps = {}) {
     walletAddress: polygonWallet,
     chainId: POLYGON_CHAIN_ID,
     rpcUrl: polygonRpcUrl,
-    usdcAddress: POLYGON_USDC_E,
+    usdcAddress: process.env.POLYMARKET_PUSD_ADDRESS || POLYGON_PUSD,
   });
 
   const targetIsPolymarket = options.target === 'polymarket';
@@ -340,8 +340,8 @@ async function buildBridgePlan(options = {}, deps = {}) {
       source: {
         chain: buildChainSummary(sourceChainId, sourceChainId === 1 ? ethereumRpcUrl : polygonRpcUrl),
         token: {
-          symbol: targetIsPolymarket ? 'USDC' : 'USDC.e',
-          address: targetIsPolymarket ? (options.usdc || process.env.USDC || DEFAULT_USDC) : POLYGON_USDC_E,
+          symbol: targetIsPolymarket ? 'USDC' : 'pUSD',
+          address: targetIsPolymarket ? (options.usdc || process.env.USDC || DEFAULT_USDC) : (process.env.POLYMARKET_PUSD_ADDRESS || POLYGON_PUSD),
         },
         wallet: targetIsPolymarket ? pandoraWallet : polygonWallet,
         balanceUsdc: sourceBalances.usdcBalance,
@@ -351,8 +351,8 @@ async function buildBridgePlan(options = {}, deps = {}) {
       destination: {
         chain: buildChainSummary(destinationChainId, destinationChainId === 1 ? ethereumRpcUrl : polygonRpcUrl),
         token: {
-          symbol: targetIsPolymarket ? 'USDC.e' : 'USDC',
-          address: targetIsPolymarket ? POLYGON_USDC_E : (options.usdc || process.env.USDC || DEFAULT_USDC),
+          symbol: targetIsPolymarket ? 'pUSD' : 'USDC',
+          address: targetIsPolymarket ? (process.env.POLYMARKET_PUSD_ADDRESS || POLYGON_PUSD) : (options.usdc || process.env.USDC || DEFAULT_USDC),
         },
         wallet: targetIsPolymarket ? polygonWallet : pandoraWallet,
         balanceUsdc: destinationBalances.usdcBalance,
@@ -371,8 +371,8 @@ async function buildBridgePlan(options = {}, deps = {}) {
     providerAssumptions: [
       'Planner output is read-only; use `pandora bridge execute` when you want LayerZero preflight or source-chain submission.',
       targetIsPolymarket
-        ? 'Assumes Ethereum mainnet USDC is the source asset and Polygon USDC.e is the destination collateral used by Polymarket.'
-        : 'Assumes Polygon USDC.e is the source asset and Ethereum mainnet USDC is the destination asset used by Pandora.',
+        ? 'Assumes Ethereum mainnet USDC is the source asset and Polygon pUSD is the destination collateral used by Polymarket V2.'
+        : 'Assumes Polygon pUSD is the source asset and Ethereum mainnet USDC is the destination asset used by Pandora.',
       'Bridge execution, settlement timing, and final destination confirmation stay manual and explicit.',
     ],
     suggestions: [],
@@ -392,8 +392,8 @@ function buildLayerZeroProviderAssumptions(plan, mode, state = {}) {
   const assumptions = [
     'Provider is scoped to LayerZero only. No automatic fallback provider is selected.',
     targetIsPolymarket
-      ? 'Assumes Ethereum mainnet USDC is the source asset and Polygon USDC.e is the destination collateral used by Polymarket.'
-      : 'Assumes Polygon USDC.e is the source asset and Ethereum mainnet USDC is the destination asset used by Pandora.',
+      ? 'Assumes Ethereum mainnet USDC is the source asset and Polygon pUSD is the destination collateral used by Polymarket V2.'
+      : 'Assumes Polygon pUSD is the source asset and Ethereum mainnet USDC is the destination asset used by Pandora.',
     'Cross-chain settlement is asynchronous. Final destination credit confirmation remains explicit and must be observed after submission.',
   ];
 
@@ -824,8 +824,8 @@ function createRunBridgeCommand(deps) {
 
     if (action === 'plan' && includesHelpFlag(actionArgs)) {
       emitSuccess(context.outputMode, 'bridge.plan.help', commandHelpPayload(planUsage, [
-        '--target polymarket plans Ethereum USDC -> Polygon USDC.e funding for the Polymarket side.',
-        '--target pandora plans Polygon USDC.e -> Ethereum USDC funding for the Pandora side.',
+        '--target polymarket plans Ethereum USDC -> Polygon pUSD funding for the Polymarket side.',
+        '--target pandora plans Polygon pUSD -> Ethereum USDC funding for the Pandora side.',
       ]));
       return;
     }

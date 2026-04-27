@@ -60,6 +60,10 @@ npx pandora setup --interactive --goal live-mirror
 
 Use `setup --interactive` when you want Pandora to walk you through private key management, Polymarket initialization, optional hosting inputs, and provider setup. Use `setup` without `--interactive` when you want the manual `init-env` plus `doctor` flow instead.
 
+### Polymarket V2 Migration
+
+Polymarket upgrades its exchange on April 28, 2026 around 11:00 UTC. During that window, live CLOB trading can pause for about an hour and open Polymarket orders are cleared. Pandora live hedge/trade operators should use the V2 CLOB client, pUSD collateral, and fresh post-cutover position reads before resuming live execution.
+
 ## Start Here
 
 If you want the main documentation map, use these jump points:
