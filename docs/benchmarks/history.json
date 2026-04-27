@@ -1,10 +1,39 @@
 {
   "schemaVersion": "1.0.0",
   "suite": "core",
-  "generatedAt": "2026-04-08T21:39:13.171Z",
-  "latestVersion": "1.1.131",
-  "latestGeneratedAt": "2026-04-08T21:39:13.171Z",
+  "generatedAt": "2026-04-27T20:12:44.535Z",
+  "latestVersion": "1.1.133",
+  "latestGeneratedAt": "2026-04-27T20:12:44.535Z",
   "entries": [
+    {
+      "schemaVersion": "1.0.0",
+      "suite": "core",
+      "packageName": "pandora-cli-skills",
+      "version": "1.1.133",
+      "packageVersion": "1.1.133",
+      "generatedAt": "2026-04-27T20:12:44.535Z",
+      "summary": {
+        "weightedScore": 100,
+        "overallPass": true,
+        "scenarioCount": 19,
+        "passedCount": 19,
+        "failedCount": 0,
+        "failedParityGroupCount": 0
+      },
+      "weightedScore": 100,
+      "overallPass": true,
+      "scenarioCount": 19,
+      "passedCount": 19,
+      "failedCount": 0,
+      "failedParityGroupCount": 0,
+      "contractLockMatchesExpected": true,
+      "parityFailedGroups": [],
+      "descriptorHash": "15fe2168500a4418920f621b32998e3ebb29517f7d76bf3295dae424ba6dcd2d",
+      "documentationContentHash": "2fc357504b44835e6f8804d7bab61069defa6ecc21c39c22e1a0aaad32cf7026",
+      "reportSha256": "de8872902260f5029bab69d9a3903e386626c5b51be2db270f3bac77cdc77bf1",
+      "lockSha256": "9fa111db2b85af303243771847f699aabbb7d124a0e75be36a74ee2b651daca0",
+      "lockSchemaVersion": "1.0.0"
+    },
     {
       "schemaVersion": "1.0.0",
       "suite": "core",
