@@ -102,6 +102,7 @@ test('executeHedgeLeg submits sell-side hedge when runtime sell depth proves saf
   assert.equal(calls[0].tokenId, 'yes-token-id');
   assert.equal(calls[0].side, 'sell');
   assert.equal(calls[0].amountUsd, 1.44);
+  assert.equal(calls[0].amountShares, 3);
   assert.equal(calls[0].privateKey, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   assert.equal(calls[0].funder, '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   assert.equal(calls[0].apiKey, null);

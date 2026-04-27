@@ -12,7 +12,7 @@ const {
 } = require('./polymarket_clob_client.cjs');
 const { round, toOptionalNumber } = require('./shared/utils.cjs');
 
-const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
+const DEFAULT_POLYMARKET_HOST = 'https://clob-v2.polymarket.com';
 const DEFAULT_POLYMARKET_GAMMA_URL = 'https://gamma-api.polymarket.com';
 const DEFAULT_POLYMARKET_DATA_API_URL = 'https://data-api.polymarket.com';
 const DEFAULT_POLYMARKET_CHAIN = Chain.POLYGON;
@@ -3387,7 +3387,8 @@ function resolveOrderSide(side) {
 
 /**
  * Place a Polymarket FAK hedge order.
- * `amountUsd` is decimal USD notional (not USDC raw units).
+ * `amountUsd` is decimal USD notional (not USDC raw units) for BUY orders.
+ * `amountShares` is decimal share quantity for SELL orders.
  * @param {object} [options]
  * @returns {Promise<{
  *   mode: 'mock'|'live',
@@ -3395,20 +3396,30 @@ function resolveOrderSide(side) {
  *   orderType: 'FAK',
  *   tokenId: string,
  *   side: string,
- *   amountUsd: number,
+ *   amountUsd: number|null,
+ *   amountShares: number|null,
  *   response: any,
  *   error?: { code: string|null, message: string, details?: any }|null
  * }>}
  */
 async function placeHedgeOrder(options = {}) {
+  const side = resolveOrderSide(options.side || 'buy');
+  const amountUsd = toOptionalNumber(options.amountUsd);
+  const amountShares = toOptionalNumber(options.amountShares);
+  const isSell = side === Side.SELL;
+
   if (options.mockUrl) {
+    if (isSell && (amountShares === null || amountShares <= 0)) {
+      throw new Error('amountShares must be a positive number for sell hedge execution.');
+    }
     return {
       mode: 'mock',
       ok: true,
       orderType: 'FAK',
       tokenId: options.tokenId,
-      side: String(options.side || '').toUpperCase(),
-      amountUsd: round(toOptionalNumber(options.amountUsd) || 0, 6),
+      side,
+      amountUsd: amountUsd === null ? null : round(amountUsd, 6),
+      amountShares: amountShares === null ? null : round(amountShares, 6),
       response: {
         status: 'simulated',
       },
@@ -3420,17 +3431,20 @@ async function placeHedgeOrder(options = {}) {
     throw new Error('Missing tokenId for Polymarket hedge order.');
   }
 
-  const amountUsd = toOptionalNumber(options.amountUsd);
-  if (amountUsd === null || amountUsd <= 0) {
+  if (isSell) {
+    if (amountShares === null || amountShares <= 0) {
+      throw new Error('amountShares must be a positive number for sell hedge execution.');
+    }
+  } else if (amountUsd === null || amountUsd <= 0) {
     throw new Error('amountUsd must be a positive number for hedge execution.');
   }
+  const marketOrderAmount = isSell ? amountShares : amountUsd;
 
   const host = options.host || DEFAULT_POLYMARKET_HOST;
   const chain = options.chain || DEFAULT_POLYMARKET_CHAIN;
   const cacheKey = buildTradingCacheKey(host, chain, options);
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const client = options.client || (await buildTradingClient(options));
-  const side = resolveOrderSide(options.side || 'buy');
   const builderCode = resolveBuilderCode(options);
   const userUSDCBalance =
     toOptionalNumber(options.userUSDCBalance) ??
@@ -3456,7 +3470,7 @@ async function placeHedgeOrder(options = {}) {
 
     const marketOrder = {
       tokenID: tokenId,
-      amount: amountUsd,
+      amount: marketOrderAmount,
       side,
       orderType: OrderType.FAK,
     };
@@ -3494,7 +3508,8 @@ async function placeHedgeOrder(options = {}) {
       orderType: 'FAK',
       tokenId,
       side,
-      amountUsd: round(amountUsd, 6),
+      amountUsd: amountUsd === null ? null : round(amountUsd, 6),
+      amountShares: amountShares === null ? null : round(amountShares, 6),
       builderCode: builderCode || null,
       userUSDCBalance: userUSDCBalance === null ? null : round(userUSDCBalance, 6),
       response,
@@ -3510,7 +3525,8 @@ async function placeHedgeOrder(options = {}) {
       orderType: 'FAK',
       tokenId,
       side,
-      amountUsd: round(amountUsd, 6),
+      amountUsd: amountUsd === null ? null : round(amountUsd, 6),
+      amountShares: amountShares === null ? null : round(amountShares, 6),
       builderCode: builderCode || null,
       userUSDCBalance: userUSDCBalance === null ? null : round(userUSDCBalance, 6),
       response: null,

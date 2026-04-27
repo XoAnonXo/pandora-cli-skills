@@ -160,6 +160,8 @@ const EXPLICIT_MCP_INPUT_ALIASES = Object.freeze({
   market_address: 'market-address',
   amountUsdc: 'amount-usdc',
   amount_usdc: 'amount-usdc',
+  amountShares: 'shares',
+  amount_shares: 'shares',
   dryRun: 'dry-run',
   dry_run: 'dry-run',
   targetTimestamp: 'target-timestamp',

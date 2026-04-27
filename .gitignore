@@ -11,4 +11,5 @@ dist/
 /*.tgz
 output/
 .pandora/
+.xoloop/
 proving-ground/reports/

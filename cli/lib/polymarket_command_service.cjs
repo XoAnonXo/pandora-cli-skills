@@ -49,6 +49,18 @@ function parsePositiveIntegerFlag(value, flagName, CliError) {
   return numeric;
 }
 
+function resolvePolymarketTradeRiskNotional(options = {}) {
+  const amountUsdc = Number(options.amountUsdc);
+  if (String(options.side || 'buy').trim().toLowerCase() !== 'sell') {
+    return Number.isFinite(amountUsdc) ? amountUsdc : null;
+  }
+  const amountShares = Number(options.amountShares);
+  if (!Number.isFinite(amountShares) || amountShares <= 0) {
+    return Number.isFinite(amountUsdc) ? amountUsdc : null;
+  }
+  return Math.max(Number.isFinite(amountUsdc) ? amountUsdc : 0, amountShares);
+}
+
 function parsePolymarketFundingFlags(actionArgs, actionLabel, CliError, parsePolymarketSharedFlags) {
   const fundingFlags = parseFundingActionFlags(actionArgs, actionLabel, CliError);
   const shared = parsePolymarketSharedFlags(fundingFlags._remainingArgs, actionLabel);
@@ -98,6 +110,7 @@ function parsePolymarketPreflightFlags(
     tokenId: null,
     side: 'buy',
     amountUsdc: null,
+    amountShares: null,
     host: null,
     polymarketMockUrl: null,
     timeoutMs: null,
@@ -158,6 +171,16 @@ function parsePolymarketPreflightFlags(
       i += 1;
       continue;
     }
+    if (token === '--shares' || token === '--amount-shares') {
+      options.amountShares = parsePositiveNumberFlag(
+        requireFlagValue(actionArgs, i, token, CliError),
+        token,
+        CliError,
+      );
+      sawTradeInput = true;
+      i += 1;
+      continue;
+    }
     if (token === '--polymarket-host') {
       const host = requireFlagValue(actionArgs, i, '--polymarket-host', CliError);
       if (!isSecureHttpUrlOrLocal(host)) {
@@ -206,6 +229,12 @@ function parsePolymarketPreflightFlags(
   if (tradeContextRequested) {
     if (options.amountUsdc === null) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Trade preflight requires --amount-usdc <amount>.');
+    }
+    if (options.side === 'sell' && options.amountShares === null) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'Sell trade preflight requires --shares <amount> because CLOB V2 sell orders are share-sized.',
+      );
     }
     if (!options.tokenId && !options.token) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Trade preflight requires --token yes|no (or --token-id <id>).');
@@ -370,7 +399,7 @@ function createRunPolymarketCommand(deps) {
         console.log('  withdraw --amount-usdc <n> --dry-run|--execute [--to <address>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]');
         // eslint-disable-next-line no-console
         console.log(
-          '  trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
+          '  trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--shares <n> for sell execute] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
         );
       }
       return;
@@ -452,7 +481,7 @@ function createRunPolymarketCommand(deps) {
     if (action === 'preflight') {
       if (includesHelpFlag(actionArgs)) {
         const usage =
-          'pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
+          'pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--shares <n> for sell] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
         if (context.outputMode === 'json') {
           emitSuccess(context.outputMode, 'polymarket.preflight.help', commandHelpPayload(usage));
         } else {
@@ -660,7 +689,7 @@ function createRunPolymarketCommand(deps) {
     if (action === 'trade') {
       if (includesHelpFlag(actionArgs)) {
         const usage =
-          'pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
+          'pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--shares <n> for sell execute] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]';
         if (context.outputMode === 'json') {
           emitSuccess(context.outputMode, 'polymarket.trade.help', commandHelpPayload(usage));
         } else {
@@ -673,7 +702,7 @@ function createRunPolymarketCommand(deps) {
       const options = parsePolymarketTradeFlags(actionArgs);
       if (options.execute && assertLiveWriteAllowed) {
         await assertLiveWriteAllowed('polymarket.trade.execute', {
-          notionalUsdc: options.amountUsdc,
+          notionalUsdc: resolvePolymarketTradeRiskNotional(options),
           runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
         });
       }
@@ -734,6 +763,7 @@ function createRunPolymarketCommand(deps) {
           tokenId,
           side: options.side,
           amountUsdc: options.amountUsdc,
+          amountShares: options.amountShares,
           host: tradeHost,
         };
         if (runtime.mode === 'fork') {
@@ -742,6 +772,7 @@ function createRunPolymarketCommand(deps) {
             tokenId,
             side: options.side,
             amountUsdc: options.amountUsdc,
+            amountShares: options.amountShares,
             timeoutMs: options.timeoutMs,
           });
         }
@@ -775,6 +806,7 @@ function createRunPolymarketCommand(deps) {
           tokenId,
           side: options.side,
           amountUsd: options.amountUsdc,
+          amountShares: options.amountShares,
           privateKey: options.privateKey || envCreds.privateKey,
           funder: options.funder || envCreds.funder,
           apiKey: envCreds.apiKey,
@@ -812,6 +844,7 @@ function createRunPolymarketCommand(deps) {
         tokenId,
         side: options.side,
         amountUsdc: options.amountUsdc,
+        amountShares: options.amountShares,
         result,
       }, renderSingleEntityTable);
       return;

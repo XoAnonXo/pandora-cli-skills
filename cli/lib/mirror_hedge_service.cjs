@@ -1852,6 +1852,7 @@ async function buildExecutionObservation(options = {}, pairContext = {}, state =
         tokenId,
         side: action.orderSide,
         amountUsd: allowedUsdc,
+        amountShares: action.orderSide === 'sell' ? allowedShares : undefined,
         mockUrl: options.polymarketMockUrl,
       });
       if (!(orderResult && orderResult.ok)) {

@@ -7,7 +7,7 @@ const {
   SignatureTypeV2,
 } = require('@polymarket/clob-client-v2');
 
-const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
+const DEFAULT_POLYMARKET_HOST = 'https://clob-v2.polymarket.com';
 const DEFAULT_POLYMARKET_CHAIN = Chain.POLYGON;
 
 function normalizeHost(host) {

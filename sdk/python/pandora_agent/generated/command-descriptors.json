@@ -23412,7 +23412,7 @@
       "preflight"
     ],
     "canonicalTool": "polymarket.preflight",
-    "canonicalUsage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
+    "canonicalUsage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--shares <n> for sell] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/PolymarketPayload",
     "emits": [
@@ -23475,6 +23475,11 @@
           "description": "RPC URL.",
           "type": "string"
         },
+        "shares": {
+          "description": "Outcome-token shares for sell trade-context preflight.",
+          "minimum": 0,
+          "type": "number"
+        },
         "side": {
           "description": "Trade side for trade-context preflight.",
           "enum": [
@@ -23531,7 +23536,7 @@
     "summary": "Run strict Polymarket readiness and optional trade-context preflight checks.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
+    "usage": "pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--shares <n> for sell] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
   },
   "polymarket.trade": {
     "agentWorkflow": null,
@@ -23542,7 +23547,7 @@
       "trade"
     ],
     "canonicalTool": "polymarket.trade",
-    "canonicalUsage": "pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
+    "canonicalUsage": "pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--shares <n> for sell execute] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]",
     "controlInputNames": [],
     "dataSchema": "#/definitions/PolymarketPayload",
     "emits": [
@@ -23625,6 +23630,11 @@
         "rpc-url": {
           "description": "RPC URL.",
           "type": "string"
+        },
+        "shares": {
+          "description": "Outcome-token shares for sell execution.",
+          "exclusiveMinimum": 0,
+          "type": "number"
         },
         "side": {
           "description": "Order side.",
@@ -23771,7 +23781,7 @@
     "summary": "Dry-run or execute a Polymarket trade.",
     "supportsRemote": true,
     "supportsWebhook": false,
-    "usage": "pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
+    "usage": "pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--shares <n> for sell execute] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]"
   },
   "polymarket.withdraw": {
     "agentWorkflow": null,

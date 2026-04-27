@@ -449,6 +449,7 @@ function createParsePolymarketTradeFlags(deps) {
       tokenId: null,
       side: 'buy',
       amountUsdc: null,
+      amountShares: null,
       dryRun: false,
       execute: false,
       host: null,
@@ -503,6 +504,11 @@ function createParsePolymarketTradeFlags(deps) {
         i += 1;
         continue;
       }
+      if (token === '--shares' || token === '--amount-shares') {
+        options.amountShares = parsePositiveNumber(requireFlagValue(args, i, token), token);
+        i += 1;
+        continue;
+      }
       if (token === '--polymarket-host') {
         const host = requireFlagValue(args, i, '--polymarket-host');
         if (!isSecureHttpUrlOrLocal(host)) {
@@ -548,6 +554,12 @@ function createParsePolymarketTradeFlags(deps) {
     }
     if (options.amountUsdc === null) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Missing --amount-usdc <amount>.');
+    }
+    if (options.side === 'sell' && options.execute && options.amountShares === null) {
+      throw new CliError(
+        'MISSING_REQUIRED_FLAG',
+        'polymarket trade --side sell --execute requires --shares <amount> because CLOB V2 sell orders are share-sized.',
+      );
     }
     if (!options.tokenId && !options.token) {
       throw new CliError('MISSING_REQUIRED_FLAG', 'Provide --token yes|no (or --token-id <id>).');

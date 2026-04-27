@@ -5060,13 +5060,13 @@ const commandContracts = [
       name: 'polymarket.preflight',
     summary: 'Run strict Polymarket readiness and optional trade-context preflight checks.',
     usage:
-      'pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
+      'pandora [--output table|json] polymarket preflight [--condition-id <id>|--slug <slug>|--token-id <id>] [--token yes|no] [--amount-usdc <n>] [--shares <n> for sell] [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
     emits: ['polymarket.preflight', 'polymarket.preflight.help', 'polymarket.help'],
     dataSchema: '#/definitions/PolymarketPayload',
     mcpExposed: true,
       mcp: {
       command: ['polymarket', 'preflight'],
-      description: 'Run strict Polymarket readiness preflight, optionally with trade context. Add condition/slug, token or token-id, side, and amount-usdc when you need a concrete trade go/no-go gate rather than wallet-only readiness.',
+      description: 'Run strict Polymarket readiness preflight, optionally with trade context. Add condition/slug, token or token-id, side, and amount-usdc when you need a concrete trade go/no-go gate. For sell checks, also add shares because CLOB V2 sells are share-sized.',
       inputSchema: buildInputSchema({
         flagProperties: {
           'condition-id': stringSchema('Polymarket condition/market id for trade-context preflight.'),
@@ -5075,6 +5075,7 @@ const commandContracts = [
           'token-id': stringSchema('Explicit token id for trade-context preflight.'),
           side: enumSchema(['buy', 'sell'], 'Trade side for trade-context preflight.'),
           'amount-usdc': numberSchema('Trade notional in USDC for trade-context preflight.', { minimum: 0 }),
+          shares: numberSchema('Outcome-token shares for sell trade-context preflight.', { minimum: 0 }),
           'polymarket-host': stringSchema('Polymarket host override for market-resolution checks.'),
           'polymarket-mock-url': stringSchema('Polymarket mock host override for local/forked trade-context checks.'),
           'timeout-ms': commonFlags.timeoutMs,
@@ -5224,13 +5225,13 @@ const commandContracts = [
     name: 'polymarket.trade',
     summary: 'Dry-run or execute a Polymarket trade.',
     usage:
-      'pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
+      'pandora [--output table|json] polymarket trade --condition-id <id>|--slug <slug>|--token-id <id> --token yes|no --amount-usdc <n> --dry-run|--execute [--side buy|sell] [--shares <n> for sell execute] [--polymarket-host <url>] [--polymarket-mock-url <url>] [--timeout-ms <ms>] [--fork] [--fork-rpc-url <url>] [--fork-chain-id <id>] [--rpc-url <url>] [--private-key <hex>] [--funder <address>]',
     emits: ['polymarket.trade', 'polymarket.trade.help', 'polymarket.help'],
     dataSchema: '#/definitions/PolymarketPayload',
     mcpExposed: true,
     mcp: {
       command: ['polymarket', 'trade'],
-      description: 'Dry-run or execute Polymarket trade.',
+      description: 'Dry-run or execute Polymarket trade. Buy market orders use amount-usdc; sell market orders require shares for execute because CLOB V2 sell amount is outcome-token shares.',
       inputSchema: buildInputSchema({
         includeIntent: true,
         flagProperties: {
@@ -5239,6 +5240,7 @@ const commandContracts = [
           'token-id': stringSchema('Polymarket token id.'),
           token: enumSchema(['yes', 'no'], 'Token/outcome side.'),
           'amount-usdc': numberSchema('Trade notional in USDC.', { exclusiveMinimum: 0 }),
+          shares: numberSchema('Outcome-token shares for sell execution.', { exclusiveMinimum: 0 }),
           'dry-run': booleanSchema('Run dry-run mode.'),
           execute: booleanSchema('Execute live trade.'),
           side: enumSchema(['buy', 'sell'], 'Order side.'),
