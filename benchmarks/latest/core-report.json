@@ -1,22 +1,22 @@
 {
   "contractLock": {
-    "capabilitiesLocalHash": "c2307642826813c448dc93088c6a88563da76da4f7926497b4bd4ce40f06c4e5",
-    "capabilitiesRemoteTemplateHash": "11941da2e31d704f495ed7d36b32003226947f59cd03a71ee72575730c6a1162",
+    "capabilitiesLocalHash": "92532285bbb691d2c8c8688311626c5fb5c051e6a72699b0adc217e8b9ed8f41",
+    "capabilitiesRemoteTemplateHash": "c9490fd0caf4c252da0ab1534e2529562092c89cd3a1352b45a3d7c276c2f7cc",
     "commandDescriptorVersion": "1.4.3",
     "documentationContentHash": "2fc357504b44835e6f8804d7bab61069defa6ecc21c39c22e1a0aaad32cf7026",
     "documentationRegistryHash": "b615e3b04fdb94d643843322ac715b2b79bc0e47d328a69359143b9ee3f6790d",
     "generatedArtifactHashes": {
       "generatedCommandDescriptors": "b28268d6cb3143018f7dc328be8faf7d8efbb14a78f8e4df0158d7f331a1ce08",
-      "generatedContractRegistry": "4f7ac505b2f77b46a145c065ced3b44b6418c2122df8cff423c5f9165d253adf",
-      "generatedManifest": "f2fa1210d0735f36833214c5879db91e05dcc986c87cbff77ab834b2ecb4250b",
+      "generatedContractRegistry": "8770f5040429ba539fe3d78b1ee07f1c3d1df751b3e48d44f57dad1414d7921c",
+      "generatedManifest": "7b3ba485c11a5ffa0ed66623507c42f9728febfd2bfc72352eedace30277e761",
       "generatedMcpToolDefinitions": "fc278481cbde0042739ce56902905679f3c2c05be6ac61bfe6064d6d35f3a567",
       "pyCommandDescriptors": "b28268d6cb3143018f7dc328be8faf7d8efbb14a78f8e4df0158d7f331a1ce08",
-      "pyContractRegistry": "4f7ac505b2f77b46a145c065ced3b44b6418c2122df8cff423c5f9165d253adf",
-      "pyManifest": "cb181e1ca42981c1886f2f1619103712646d78562194a10812fc8cf22d09c39d",
+      "pyContractRegistry": "8770f5040429ba539fe3d78b1ee07f1c3d1df751b3e48d44f57dad1414d7921c",
+      "pyManifest": "41da8a6a3913423fc45464502a1386b927652d8c082666ff96b65a149d3948e6",
       "pyMcpToolDefinitions": "fc278481cbde0042739ce56902905679f3c2c05be6ac61bfe6064d6d35f3a567",
       "tsCommandDescriptors": "b28268d6cb3143018f7dc328be8faf7d8efbb14a78f8e4df0158d7f331a1ce08",
-      "tsContractRegistry": "4f7ac505b2f77b46a145c065ced3b44b6418c2122df8cff423c5f9165d253adf",
-      "tsManifest": "343d9c3212e655461879ac425c4cf43f29a0c24ed7f5aeab95a8f47c84e918b0",
+      "tsContractRegistry": "8770f5040429ba539fe3d78b1ee07f1c3d1df751b3e48d44f57dad1414d7921c",
+      "tsManifest": "f61eeb9294782312dde4f0ab70e9f73552fcaf3232a56b65253bdb2d1e633e6a",
       "tsMcpToolDefinitions": "fc278481cbde0042739ce56902905679f3c2c05be6ac61bfe6064d6d35f3a567"
     },
     "generatedManifestCommandDescriptorVersion": "1.4.3",
@@ -32,7 +32,7 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-      "trustDistributionHash": "4453b3198e2041b96369107ce6a082e318b66900123a5b5d8eb06f4c85d1c072"
+      "trustDistributionHash": "eca5e5dead9011febf73bcaaf7cafb6eef4ec4c5b26246bc0c3858817d34bb6f"
     },
     "generatedManifestVersion": "1.0.0",
     "registryDigest": {
@@ -46,9 +46,9 @@
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-      "trustDistributionHash": "4453b3198e2041b96369107ce6a082e318b66900123a5b5d8eb06f4c85d1c072"
+      "trustDistributionHash": "eca5e5dead9011febf73bcaaf7cafb6eef4ec4c5b26246bc0c3858817d34bb6f"
     },
-    "schemaHash": "123a5263e08005cbfaf1c089eb35c942b9b28a96c249a318c3d94023e35f0bfd"
+    "schemaHash": "df6632abd6076679f602a6bb6f1a72d09f6e81cfa8fa9fccab499f73ff9afb1d"
   },
   "contractLockMatchesExpected": true,
   "contractLockMismatches": [],
@@ -284,7 +284,7 @@
     ]
   },
   "publication": {
-    "contractLockHash": "de5bf0ae8b2938e5cd15e77ecfada8ae7619156b57965b3ecc850f2a69e89212",
+    "contractLockHash": "1671eebd8be6b291480f201ff2395d8ba6b56475028faa35082353c8fa9d1459",
     "contractLockStatus": "locked",
     "deterministic": true,
     "expectedScenarioCount": 19,
@@ -293,12 +293,12 @@
     "minimumWeightedScore": 95,
     "releaseGatePass": true,
     "reportPath": "benchmarks/latest/core-report.json",
-    "scorecardHash": "5fb1f3e94a395c8a21047a8e7553414daafa2e30c69deb72cd381493e9fcc90c",
-    "suiteLockHash": "9fa111db2b85af303243771847f699aabbb7d124a0e75be36a74ee2b651daca0",
+    "scorecardHash": "873aa8bcd6cdf8bfdb3eb00c35ba60de48edd423d6ad3772688fe0507f319e23",
+    "suiteLockHash": "df4aff254ab98d84b1c2922709cfc83bdc5e87dfd91f7752d814c71b5568f486",
     "suiteLockPath": "benchmarks/locks/core.lock.json"
   },
   "runtime": {
-    "packageVersion": "1.1.133"
+    "packageVersion": "1.1.134"
   },
   "scenarios": [
     {

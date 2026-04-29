@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const { buildGoalBlueprint, buildSetupPlan, JOURNEY_GOALS, normalizeGoal } = require('./setup_plan_service.cjs');
 const { createSetupTerminalUi } = require('./setup_terminal_ui.cjs');
 
-const DEFAULT_POLYMARKET_HOST = 'https://clob-v2.polymarket.com';
+const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
 const DEFAULT_POLYMARKET_RPC_URL = 'https://polygon-bor-rpc.publicnode.com';
 const DEFAULT_DIGITALOCEAN_API_BASE_URL = 'https://api.digitalocean.com/v2';
 const MIRROR_GOALS = new Set(['paper-mirror', 'live-mirror']);

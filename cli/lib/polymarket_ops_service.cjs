@@ -609,7 +609,7 @@ function resolveRuntime(options = {}) {
     || POLYMARKET_POLYGON_DEFAULTS.usdc;
   const ctfAddress = normalizeAddress(options.ctfAddress || env.POLYMARKET_CTF_ADDRESS, 'ctfAddress')
     || POLYMARKET_POLYGON_DEFAULTS.ctf;
-  const host = String(options.host || env.POLYMARKET_HOST || 'https://clob-v2.polymarket.com').trim();
+  const host = String(options.host || env.POLYMARKET_HOST || 'https://clob.polymarket.com').trim();
   const allowanceTargetRaw =
     toBigIntOrNull(options.allowanceTargetRaw || env.POLYMARKET_ALLOWANCE_TARGET_RAW) || MAX_UINT256;
 

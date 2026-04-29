@@ -2,7 +2,7 @@ const { Chain, createClobClient } = require('./polymarket_clob_client.cjs');
 const WebSocket = require('ws');
 const { toNumber } = require('./shared/utils.cjs');
 
-const DEFAULT_POLYMARKET_HOST = 'https://clob-v2.polymarket.com';
+const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
 const DEFAULT_POLYMARKET_GAMMA_HOST = 'https://gamma-api.polymarket.com';
 const DEFAULT_POLYMARKET_MARKET_FEED_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 const DEFAULT_POLYMARKET_SOURCE_MAX_AGE_MS = 60_000;

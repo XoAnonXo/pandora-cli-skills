@@ -9468,10 +9468,10 @@ test('createRunPolymarketCommand counts sell shares as conservative risk notiona
   assert.equal(emitted[0][1], 'polymarket.trade');
 });
 
-test('starter env example uses the Polymarket CLOB V2 host', () => {
+test('starter env example uses the post-cutover Polymarket CLOB V2 production host', () => {
   const envExample = fs.readFileSync(path.join(__dirname, '../../scripts/.env.example'), 'utf8');
-  assert.match(envExample, /^POLYMARKET_HOST=https:\/\/clob-v2\.polymarket\.com$/m);
-  assert.doesNotMatch(envExample, /^POLYMARKET_HOST=https:\/\/clob\.polymarket\.com$/m);
+  assert.match(envExample, /^POLYMARKET_HOST=https:\/\/clob\.polymarket\.com$/m);
+  assert.doesNotMatch(envExample, /^POLYMARKET_HOST=https:\/\/clob-v2\.polymarket\.com$/m);
 });
 
 test('fetchPolymarketPositionInventory normalizes mock API rows with provenance', async () => {

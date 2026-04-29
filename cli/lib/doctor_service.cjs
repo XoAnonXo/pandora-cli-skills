@@ -10,7 +10,7 @@ function requireDep(deps, name) {
 const DEFAULT_REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC'];
 const DEFAULT_SUPPORTED_CHAIN_IDS = new Set([1]);
 const DEFAULT_ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
-const DEFAULT_POLYMARKET_HOST = 'https://clob-v2.polymarket.com';
+const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
 const DEFAULT_POLYMARKET_RPC_URL = 'https://polygon-bor-rpc.publicnode.com';
 const DEFAULT_POLYMARKET_DOCTOR_KEYS = [
   'POLYMARKET_HOST',

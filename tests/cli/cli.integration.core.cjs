@@ -2004,7 +2004,7 @@ testInteractiveSetup('setup --interactive captures mirror connectivity and daemo
         steps: [
           { expect: 'Choose how to proceed', send: '1' },
           { expect: 'Pandora private key', send: '3' },
-          { expect: 'Polymarket host [https://clob-v2.polymarket.com]: ', send: '' },
+          { expect: 'Polymarket host [https://clob.polymarket.com]: ', send: '' },
           { expect: 'Polymarket Polygon RPC URL [https://polygon-bor-rpc.publicnode.com]: ', send: '' },
           { expect: 'Polymarket private key', send: '3' },
           { expect: 'Choose a deployment host', send: '3' },
@@ -2024,7 +2024,7 @@ testInteractiveSetup('setup --interactive captures mirror connectivity and daemo
     assert.match(result.output, /Setup complete\./);
 
     const envText = fs.readFileSync(envPath, 'utf8');
-    assert.match(envText, /^POLYMARKET_HOST=https:\/\/clob-v2\.polymarket\.com$/m);
+    assert.match(envText, /^POLYMARKET_HOST=https:\/\/clob\.polymarket\.com$/m);
     assert.match(envText, /^POLYMARKET_RPC_URL=https:\/\/polygon-bor-rpc\.publicnode\.com$/m);
     assert.match(envText, /^PANDORA_DAEMON_PROVIDER=local$/m);
     assert.doesNotMatch(envText, /^PANDORA_DAEMON_API_TOKEN=/m);

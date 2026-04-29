@@ -12,7 +12,7 @@ const {
 } = require('./polymarket_clob_client.cjs');
 const { round, toOptionalNumber } = require('./shared/utils.cjs');
 
-const DEFAULT_POLYMARKET_HOST = 'https://clob-v2.polymarket.com';
+const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
 const DEFAULT_POLYMARKET_GAMMA_URL = 'https://gamma-api.polymarket.com';
 const DEFAULT_POLYMARKET_DATA_API_URL = 'https://data-api.polymarket.com';
 const DEFAULT_POLYMARKET_CHAIN = Chain.POLYGON;
