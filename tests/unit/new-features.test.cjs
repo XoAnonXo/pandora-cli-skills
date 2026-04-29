@@ -2446,6 +2446,95 @@ test('runPolymarketPreflight validates sell trades against resolved token share 
   assert.equal(inventoryCheck.details.source, 'on-chain:ctf-balanceOf');
 });
 
+test('runPolymarketPreflight validates requested sell token has live bid depth when required', async () => {
+  const payload = await runPolymarketPreflight(
+    {
+      rpcUrl: 'https://polygon-rpc.example',
+      privateKey: TEST_PRIVATE_KEY,
+      funder: TEST_WALLET,
+      apiKey: 'key',
+      apiSecret: 'secret',
+      apiPassphrase: 'passphrase',
+      conditionId: 'cond-1',
+      token: 'yes',
+      side: 'sell',
+      amountUsdc: 1,
+      amountShares: 5,
+      requireLiveOrderbook: true,
+      tradeContextRequested: true,
+      env: {},
+    },
+    {
+      viemRuntime: buildPolymarketOpsTestViemRuntime({
+        signerAddress: TEST_WALLET,
+        funderAddress: TEST_WALLET,
+        usdcBalanceRaw: 0n,
+        allowanceValue: 0n,
+        ctfBalanceByToken: { 101: 6_000_000n },
+      }),
+      resolvePolymarketMarket: async () => ({
+        marketId: 'cond-1',
+        yesTokenId: '101',
+        noTokenId: '202',
+      }),
+      fetchPolymarketOrderbook: async () => ({
+        bids: [{ price: 0.4, size: 6 }],
+        asks: [{ price: 0.45, size: 10 }],
+      }),
+    },
+  );
+
+  assert.equal(payload.ok, true);
+  const orderbookCheck = payload.trade.checks.find((item) => item.code === 'TRADE_ORDERBOOK_LIVE');
+  assert.equal(orderbookCheck.ok, true);
+  assert.equal(orderbookCheck.details.availableShares, 6);
+  assert.equal(orderbookCheck.details.requiredShares, 5);
+});
+
+test('runPolymarketPreflight blocks owned sell tokens without a live orderbook', async () => {
+  await assert.rejects(
+    () =>
+      runPolymarketPreflight(
+        {
+          rpcUrl: 'https://polygon-rpc.example',
+          privateKey: TEST_PRIVATE_KEY,
+          funder: TEST_WALLET,
+          apiKey: 'key',
+          apiSecret: 'secret',
+          apiPassphrase: 'passphrase',
+          tokenId: '101',
+          side: 'sell',
+          amountUsdc: 1,
+          amountShares: 1,
+          requireLiveOrderbook: true,
+          tradeContextRequested: true,
+          env: {},
+        },
+        {
+          viemRuntime: buildPolymarketOpsTestViemRuntime({
+            signerAddress: TEST_WALLET,
+            funderAddress: TEST_WALLET,
+            usdcBalanceRaw: 10_000_000n,
+            ctfBalanceByToken: { 101: 6_000_000n },
+          }),
+          fetchPolymarketOrderbook: async () => {
+            throw new Error('No orderbook exists for the requested token id');
+          },
+        },
+      ),
+    (error) => {
+      assert.equal(error && error.code, 'POLYMARKET_PREFLIGHT_FAILED');
+      assert.equal(error.details.failedChecks.includes('TRADE_SELL_INVENTORY_COVERED'), false);
+      assert.equal(error.details.failedChecks.includes('TRADE_ORDERBOOK_LIVE'), true);
+      const orderbookCheck = error.details.trade.checks.find((item) => item.code === 'TRADE_ORDERBOOK_LIVE');
+      assert.equal(orderbookCheck.ok, false);
+      assert.equal(orderbookCheck.details.readOk, false);
+      assert.match(orderbookCheck.details.error, /No orderbook exists/i);
+      return true;
+    },
+  );
+});
+
 test('runPolymarketPreflight fails closed when sell token inventory cannot be verified', async () => {
   await assert.rejects(
     () =>

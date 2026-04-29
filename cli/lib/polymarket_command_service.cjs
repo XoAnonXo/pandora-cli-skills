@@ -257,6 +257,7 @@ function parsePolymarketPreflightFlags(
     forkRpcUrl: shared.forkRpcUrl,
     forkChainId: shared.forkChainId,
     tradeContextRequested,
+    requireLiveOrderbook: tradeContextRequested,
   };
 }
 

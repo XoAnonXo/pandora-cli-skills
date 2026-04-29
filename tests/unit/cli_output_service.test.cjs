@@ -46,3 +46,42 @@ test('cli output service emits compact json when daemon jsonl mode is enabled', 
   assert.equal(payload.data.tick, 1);
   assert.equal(typeof payload.data.generatedAt, 'string');
 });
+
+test('cli output service flushes json failure before exiting', async () => {
+  const originalWrite = process.stdout.write;
+  const originalExit = process.exit;
+  const writes = [];
+  let exitCode = null;
+  let resolveExit;
+  const exitPromise = new Promise((resolve) => {
+    resolveExit = resolve;
+  });
+
+  process.stdout.write = (chunk, encoding, callback) => {
+    const done = typeof encoding === 'function' ? encoding : callback;
+    writes.push(String(chunk));
+    if (typeof done === 'function') queueMicrotask(done);
+    return false;
+  };
+  process.exit = (code) => {
+    exitCode = code;
+    resolveExit();
+  };
+
+  try {
+    const service = createCliOutputService({ CliError: TestCliError });
+    service.emitFailure('json', new TestCliError('TEST_FAILED', 'large failure', {
+      checks: Array.from({ length: 50 }, (_, index) => ({ index, ok: false })),
+    }));
+    await exitPromise;
+  } finally {
+    process.stdout.write = originalWrite;
+    process.exit = originalExit;
+  }
+
+  assert.equal(exitCode, 1);
+  const payload = JSON.parse(writes.join(''));
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'TEST_FAILED');
+  assert.equal(payload.error.details.checks.length, 50);
+});

@@ -23,9 +23,24 @@ function createCliOutputService(options = {}) {
     return process.env.PANDORA_DAEMON_LOG_JSONL === '1' || COMPACT_JSON_COMMANDS.has(command);
   }
 
-  function emitJson(payload, options = {}) {
+  function serializeJson(payload, options = {}) {
     const compact = options.compact === true;
-    console.log(compact ? JSON.stringify(payload) : JSON.stringify(payload, null, 2));
+    return compact ? JSON.stringify(payload) : JSON.stringify(payload, null, 2);
+  }
+
+  function emitJson(payload, options = {}) {
+    console.log(serializeJson(payload, options));
+  }
+
+  function writeAndExit(stream, text, exitCode) {
+    const output = text.endsWith('\n') ? text : `${text}\n`;
+    try {
+      stream.write(output, () => {
+        process.exit(exitCode);
+      });
+    } catch {
+      process.exit(exitCode);
+    }
   }
 
   function formatErrorValue(value) {
@@ -102,19 +117,21 @@ function createCliOutputService(options = {}) {
     failureAlreadyEmitted = true;
 
     const envelope = toErrorEnvelope(error);
+    const exitCode = error instanceof CliError ? error.exitCode : 1;
 
     if (outputMode === 'json') {
-      emitJson(envelope, { compact: useCompactJson(outputMode) });
+      writeAndExit(process.stdout, serializeJson(envelope, { compact: useCompactJson(outputMode) }), exitCode);
+      return;
     } else {
-      console.error(`[${envelope.error.code}] ${envelope.error.message}`);
+      const lines = [`[${envelope.error.code}] ${envelope.error.message}`];
       if (envelope.error.details && Array.isArray(envelope.error.details.errors) && envelope.error.details.errors.length) {
         for (const err of envelope.error.details.errors) {
-          console.error(`- ${formatErrorValue(err)}`);
+          lines.push(`- ${formatErrorValue(err)}`);
         }
       }
       if (envelope.error.details && Array.isArray(envelope.error.details.hints) && envelope.error.details.hints.length) {
         for (const hint of envelope.error.details.hints) {
-          console.error(`Hint: ${hint}`);
+          lines.push(`Hint: ${hint}`);
         }
       }
       if (
@@ -123,17 +140,17 @@ function createCliOutputService(options = {}) {
         !Array.isArray(envelope.error.details.hints)
       ) {
         try {
-          console.error(`Details: ${JSON.stringify(envelope.error.details)}`);
+          lines.push(`Details: ${JSON.stringify(envelope.error.details)}`);
         } catch {
-          console.error(`Details: ${String(envelope.error.details)}`);
+          lines.push(`Details: ${String(envelope.error.details)}`);
         }
       }
       if (envelope.error.recovery && envelope.error.recovery.command) {
-        console.error(`Next: ${envelope.error.recovery.command}`);
+        lines.push(`Next: ${envelope.error.recovery.command}`);
       }
+      writeAndExit(process.stderr, lines.join('\n'), exitCode);
+      return;
     }
-
-    process.exit(error instanceof CliError ? error.exitCode : 1);
   }
 
   function emitSuccess(outputMode, command, data, tableRenderer) {

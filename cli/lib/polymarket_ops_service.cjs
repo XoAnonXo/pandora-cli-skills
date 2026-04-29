@@ -189,6 +189,132 @@ function decimalUsdcToRaw(value) {
   return BigInt(Math.round(numeric * 1_000_000));
 }
 
+function round6(value) {
+  return Number.isFinite(value) ? Number(value.toFixed(6)) : null;
+}
+
+function normalizeOrderbookLevels(levels) {
+  if (!Array.isArray(levels)) return [];
+  return levels
+    .map((level) => {
+      const price = Number(level && level.price);
+      const size = Number(level && level.size);
+      if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(size) || size <= 0) {
+        return null;
+      }
+      return { price, size };
+    })
+    .filter(Boolean);
+}
+
+function summarizeOrderbookForSide(book, side, amountUsdc, amountShares) {
+  const bids = normalizeOrderbookLevels(
+    book && Array.isArray(book.bids) ? book.bids : book && Array.isArray(book.buys) ? book.buys : [],
+  );
+  const asks = normalizeOrderbookLevels(
+    book && Array.isArray(book.asks) ? book.asks : book && Array.isArray(book.sells) ? book.sells : [],
+  );
+  const isSell = side === 'sell';
+  const levels = isSell ? bids : asks;
+  let availableShares = 0;
+  let availableNotionalUsd = 0;
+  for (const level of levels) {
+    availableShares += level.size;
+    availableNotionalUsd += level.price * level.size;
+  }
+  const requiredShares = isSell && Number.isFinite(Number(amountShares)) ? Number(amountShares) : null;
+  const requiredNotionalUsd = !isSell && Number.isFinite(Number(amountUsdc)) ? Number(amountUsdc) : null;
+  const enoughDepth = isSell
+    ? requiredShares !== null && availableShares >= requiredShares
+    : requiredNotionalUsd !== null && availableNotionalUsd >= requiredNotionalUsd;
+
+  return {
+    side,
+    bidCount: bids.length,
+    askCount: asks.length,
+    bestBid: bids.length ? bids[0].price : null,
+    bestAsk: asks.length ? asks[0].price : null,
+    availableShares: round6(availableShares),
+    availableNotionalUsd: round6(availableNotionalUsd),
+    requiredShares,
+    requiredNotionalUsd,
+    enoughDepth,
+  };
+}
+
+async function fetchPreflightOrderbook(options = {}, tokenId, deps = {}) {
+  if (!tokenId) {
+    return { readOk: false, book: null, source: null, endpoint: null, error: 'Token id unavailable for orderbook check.' };
+  }
+  if (typeof deps.fetchPolymarketOrderbook === 'function') {
+    try {
+      const book = await deps.fetchPolymarketOrderbook({ tokenId, options });
+      return {
+        readOk: Boolean(book),
+        book: book || null,
+        source: 'deps.fetchPolymarketOrderbook',
+        endpoint: null,
+        error: book ? null : 'Orderbook payload unavailable.',
+      };
+    } catch (error) {
+      return {
+        readOk: false,
+        book: null,
+        source: 'deps.fetchPolymarketOrderbook',
+        endpoint: null,
+        error: coerceErrorMessage(error),
+      };
+    }
+  }
+
+  const fetchFn = typeof deps.fetch === 'function' ? deps.fetch : typeof fetch === 'function' ? fetch : null;
+  if (!fetchFn) {
+    return { readOk: false, book: null, source: null, endpoint: null, error: 'fetch API unavailable for orderbook check.' };
+  }
+
+  const runtime = resolveRuntime(options);
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
+  const host = String(options.host || runtime.host || 'https://clob.polymarket.com').replace(/\/+$/, '');
+  const endpoint = `${host}/book?token_id=${encodeURIComponent(tokenId)}`;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetchFn(endpoint, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: controller ? controller.signal : undefined,
+    });
+    if (!response || !response.ok) {
+      const status = response && response.status ? response.status : null;
+      let body = '';
+      try {
+        body = response && typeof response.text === 'function' ? await response.text() : '';
+      } catch {
+        body = '';
+      }
+      return {
+        readOk: false,
+        book: null,
+        source: 'polymarket:clob-book',
+        endpoint,
+        error: `Polymarket orderbook unavailable${status ? ` (HTTP ${status})` : ''}${body ? `: ${body.slice(0, 200)}` : ''}`,
+      };
+    }
+    const book = await response.json();
+    return { readOk: true, book, source: 'polymarket:clob-book', endpoint, error: null };
+  } catch (error) {
+    return {
+      readOk: false,
+      book: null,
+      source: 'polymarket:clob-book',
+      endpoint,
+      error: coerceErrorMessage(error),
+    };
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 function buildUsdcBalanceSnapshot(address, readResult) {
   const raw = toBigIntOrNull(readResult && readResult.value);
   return {
@@ -1558,6 +1684,46 @@ async function buildTradeResourceCoverageCheck(options, checkPayload, context, d
   };
 }
 
+async function buildTradeOrderbookCheck(options, context, deps = {}) {
+  if (!options.requireLiveOrderbook) return null;
+
+  const requestedSide = context.requestedSide;
+  const resolvedTokenId = context.resolvedTokenId;
+  const bookResult = await fetchPreflightOrderbook(options, resolvedTokenId, deps);
+  const summary = bookResult.book
+    ? summarizeOrderbookForSide(bookResult.book, requestedSide, context.amountUsdc, context.amountShares)
+    : {
+        side: requestedSide,
+        bidCount: null,
+        askCount: null,
+        bestBid: null,
+        bestAsk: null,
+        availableShares: null,
+        availableNotionalUsd: null,
+        requiredShares: requestedSide === 'sell' ? context.amountShares : null,
+        requiredNotionalUsd: requestedSide === 'sell' ? null : context.amountUsdc,
+        enoughDepth: false,
+      };
+
+  return {
+    code: 'TRADE_ORDERBOOK_LIVE',
+    ok: Boolean(bookResult.readOk && summary.enoughDepth),
+    message: requestedSide === 'sell'
+      ? 'Resolved token must have a live CLOB bid book deep enough for the requested sell shares.'
+      : 'Resolved token must have a live CLOB ask book deep enough for the requested buy amount.',
+    details: {
+      tokenId: resolvedTokenId || null,
+      side: requestedSide,
+      host: options.host || null,
+      source: bookResult.source || null,
+      endpoint: bookResult.endpoint || null,
+      readOk: Boolean(bookResult.readOk),
+      error: bookResult.error || null,
+      ...summary,
+    },
+  };
+}
+
 async function resolvePreflightTradeContext(options = {}, checkPayload = {}, deps = {}) {
   const tradeContextRequested = Boolean(
     options.tradeContextRequested
@@ -1609,6 +1775,12 @@ async function resolvePreflightTradeContext(options = {}, checkPayload = {}, dep
     resolvedTokenId,
     ownerUsdcRaw,
   }, deps);
+  const orderbookCheck = await buildTradeOrderbookCheck(options, {
+    requestedSide,
+    amountUsdc,
+    amountShares,
+    resolvedTokenId,
+  }, deps);
   return {
     requested: {
       conditionId: options.conditionId || null,
@@ -1657,6 +1829,7 @@ async function resolvePreflightTradeContext(options = {}, checkPayload = {}, dep
         },
       },
       resourceCoverageCheck,
+      ...(orderbookCheck ? [orderbookCheck] : []),
     ],
   };
 }
