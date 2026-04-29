@@ -414,6 +414,37 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function schemaTypeMatches(schemaType, value) {
+  switch (schemaType) {
+    case 'string':
+      return typeof value === 'string';
+    case 'boolean':
+      return typeof value === 'boolean';
+    case 'number':
+      return typeof value === 'number' && Number.isFinite(value);
+    case 'integer':
+      return typeof value === 'number' && Number.isInteger(value);
+    case 'array':
+      return Array.isArray(value);
+    case 'object':
+      return isPlainObject(value);
+    case 'null':
+      return value === null;
+    default:
+      return true;
+  }
+}
+
+function schemaTypeIncludes(schema, expectedType) {
+  const rawTypes = Array.isArray(schema && schema.type) ? schema.type : [schema && schema.type];
+  return rawTypes.includes(expectedType);
+}
+
+function formatExpectedTypes(types) {
+  if (types.length === 1) return `a ${types[0]}`;
+  return `one of: ${types.join(', ')}`;
+}
+
 function getSchemaBranchSet(schema, key) {
   if (!schema || typeof schema !== 'object') return [];
   if (Array.isArray(schema[key]) && schema[key].length) {
@@ -493,39 +524,12 @@ function validateSchemaValue(toolName, schema, value, path = []) {
   }
 
   if (schema.type) {
-    switch (schema.type) {
-      case 'string':
-        if (typeof value !== 'string') {
-          throw buildSchemaValidationError(toolName, path, 'must be a string.');
-        }
-        break;
-      case 'boolean':
-        if (typeof value !== 'boolean') {
-          throw buildSchemaValidationError(toolName, path, 'must be a boolean.');
-        }
-        break;
-      case 'number':
-        if (typeof value !== 'number' || !Number.isFinite(value)) {
-          throw buildSchemaValidationError(toolName, path, 'must be a finite number.');
-        }
-        break;
-      case 'integer':
-        if (typeof value !== 'number' || !Number.isInteger(value)) {
-          throw buildSchemaValidationError(toolName, path, 'must be an integer.');
-        }
-        break;
-      case 'array':
-        if (!Array.isArray(value)) {
-          throw buildSchemaValidationError(toolName, path, 'must be an array.');
-        }
-        break;
-      case 'object':
-        if (!isPlainObject(value)) {
-          throw buildSchemaValidationError(toolName, path, 'must be an object.');
-        }
-        break;
-      default:
-        break;
+    const schemaTypes = Array.isArray(schema.type) ? schema.type : [schema.type];
+    const knownTypes = schemaTypes.filter((schemaType) =>
+      ['string', 'boolean', 'number', 'integer', 'array', 'object', 'null'].includes(schemaType),
+    );
+    if (knownTypes.length && !knownTypes.some((schemaType) => schemaTypeMatches(schemaType, value))) {
+      throw buildSchemaValidationError(toolName, path, `must be ${formatExpectedTypes(knownTypes)}.`);
     }
   }
 
@@ -551,7 +555,7 @@ function validateSchemaValue(toolName, schema, value, path = []) {
     }
   }
 
-  if (schema.type === 'array' && schema.items) {
+  if (schemaTypeIncludes(schema, 'array') && Array.isArray(value) && schema.items) {
     value.forEach((item, index) => {
       validateSchemaValue(toolName, schema.items, item, [...path, String(index)]);
     });
@@ -573,6 +577,15 @@ function validateSchemaValue(toolName, schema, value, path = []) {
         if (Object.prototype.hasOwnProperty.call(value, key) && value[key] !== undefined) {
           validateSchemaValue(toolName, propertySchema, value[key], [...path, key]);
         }
+      }
+    }
+
+    if (isPlainObject(schema.additionalProperties)) {
+      for (const [key, additionalValue] of Object.entries(value)) {
+        if (properties && Object.prototype.hasOwnProperty.call(properties, key)) {
+          continue;
+        }
+        validateSchemaValue(toolName, schema.additionalProperties, additionalValue, [...path, key]);
       }
     }
   }

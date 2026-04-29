@@ -3278,7 +3278,8 @@ function resolveOrderSide(side) {
 
 /**
  * Place a Polymarket FAK hedge order.
- * `amountUsd` is decimal USD notional (not USDC raw units).
+ * `amountUsd` is decimal USD notional (not USDC raw units) for BUY orders.
+ * `amountShares` is decimal share quantity for SELL orders.
  * @param {object} [options]
  * @returns {Promise<{
  *   mode: 'mock'|'live',
@@ -3286,34 +3287,48 @@ function resolveOrderSide(side) {
  *   orderType: 'FAK',
  *   tokenId: string,
  *   side: string,
- *   amountUsd: number,
+ *   amountUsd: number|null,
+ *   amountShares: number|null,
  *   response: any,
  *   error?: { code: string|null, message: string, details?: any }|null
  * }>}
  */
 async function placeHedgeOrder(options = {}) {
+  const side = resolveOrderSide(options.side || 'buy');
+  const amountUsd = toOptionalNumber(options.amountUsd);
+  const amountShares = toOptionalNumber(options.amountShares);
+  const isSell = side === Side.SELL;
+
   if (options.mockUrl) {
+    if (isSell && (amountShares === null || amountShares <= 0)) {
+      throw new Error('amountShares must be a positive number for sell hedge execution.');
+    }
     return {
       mode: 'mock',
       ok: true,
       orderType: 'FAK',
       tokenId: options.tokenId,
-      side: String(options.side || '').toUpperCase(),
-      amountUsd: round(toOptionalNumber(options.amountUsd) || 0, 6),
+      side,
+      amountUsd: round(amountUsd || 0, 6),
+      amountShares: amountShares === null ? null : round(amountShares, 6),
       response: {
         status: 'simulated',
       },
     };
   }
 
+  if (isSell) {
+    if (amountShares === null || amountShares <= 0) {
+      throw new Error('amountShares must be a positive number for sell hedge execution.');
+    }
+  } else if (amountUsd === null || amountUsd <= 0) {
+    throw new Error('amountUsd must be a positive number for hedge execution.');
+  }
+  const marketOrderAmount = isSell ? amountShares : amountUsd;
+
   const tokenId = String(options.tokenId || '').trim();
   if (!tokenId) {
     throw new Error('Missing tokenId for Polymarket hedge order.');
-  }
-
-  const amountUsd = toOptionalNumber(options.amountUsd);
-  if (amountUsd === null || amountUsd <= 0) {
-    throw new Error('amountUsd must be a positive number for hedge execution.');
   }
 
   const host = options.host || DEFAULT_POLYMARKET_HOST;
@@ -3321,7 +3336,6 @@ async function placeHedgeOrder(options = {}) {
   const cacheKey = buildTradingCacheKey(host, chain, options);
   const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 12_000;
   const client = options.client || (await buildTradingClient(options));
-  const side = resolveOrderSide(options.side || 'buy');
   try {
     const tickSize =
       options.tickSize ||
@@ -3344,7 +3358,7 @@ async function placeHedgeOrder(options = {}) {
         client.createAndPostMarketOrder(
           {
             tokenID: tokenId,
-            amount: amountUsd,
+            amount: marketOrderAmount,
             side,
             orderType: OrderType.FAK,
           },
@@ -3368,7 +3382,8 @@ async function placeHedgeOrder(options = {}) {
       orderType: 'FAK',
       tokenId,
       side,
-      amountUsd: round(amountUsd, 6),
+      amountUsd: amountUsd === null ? null : round(amountUsd, 6),
+      amountShares: amountShares === null ? null : round(amountShares, 6),
       response,
       error: ok ? null : { message: 'Polymarket order rejected.', details: response },
     };
@@ -3382,7 +3397,8 @@ async function placeHedgeOrder(options = {}) {
       orderType: 'FAK',
       tokenId,
       side,
-      amountUsd: round(amountUsd, 6),
+      amountUsd: amountUsd === null ? null : round(amountUsd, 6),
+      amountShares: amountShares === null ? null : round(amountShares, 6),
       response: null,
       error: {
         code: err && err.code ? String(err.code) : null,

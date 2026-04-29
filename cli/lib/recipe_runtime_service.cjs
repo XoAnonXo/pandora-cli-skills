@@ -336,6 +336,23 @@ function createRecipeRuntimeService(options = {}) {
       }
     }
 
+    const safeExecutionMode = request.mode === 'dry-run' || request.mode === 'paper' || request.mode === 'fork';
+    const writeExecutionMode = request.mode === 'execute' || request.mode === 'execute-live';
+    const policyRequired = Boolean(
+      !request.policyId
+      && (
+        writeExecutionMode
+        || (!safeExecutionMode && (request.liveRequested || request.mutating || request.requiresSecrets))
+      ),
+    );
+    if (policyRequired) {
+      denials.push({
+        code: 'RECIPE_POLICY_REQUIRED',
+        message: `Recipe command ${compiled.command} requires an explicit policy pack for live, mutating, or secret-bearing execution.`,
+        command: compiled.command,
+      });
+    }
+
     const policyEvaluation = request.policyId ? policyEvaluator.evaluateExecution(request) : {
       ok: true,
       decision: 'allow',
@@ -346,8 +363,6 @@ function createRecipeRuntimeService(options = {}) {
       recommendedNextTool: null,
     };
 
-    const safeExecutionMode = request.mode === 'dry-run' || request.mode === 'paper' || request.mode === 'fork';
-    const writeExecutionMode = request.mode === 'execute' || request.mode === 'execute-live';
     const profileRequired = Boolean(
       writeExecutionMode
       || (!safeExecutionMode && (

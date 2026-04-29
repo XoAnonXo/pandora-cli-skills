@@ -72,7 +72,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.132"
+          "version": "1.1.136"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -12624,15 +12624,15 @@
     "registryDigest": {
       "canonicalHash": "cce2ede8f658d43e0807f7f194e28fc356085e00fc70d99d27ecbd674be14a9f",
       "commandDigestHash": "85f685455fdf85b757674a3086eb03354a628f22ada1a25afee0fd86b14b92c7",
-      "descriptorHash": "664970d781e477a11a683bc265cbd7fc8b0cf9576b50da49ab301b773e38b47d",
+      "descriptorHash": "c02818f73bd310ef0cc2a3aae6d0d97627b7adb8d72e8bcc994e20d0bca205b8",
       "documentationHash": "eebe2a201c559e44b45d1a780713f6b302f56726a03a4a57538fcf6762530826",
-      "fullDescriptorHash": "422f7c73ce499d926c92ea792b0c590c41c916dac377cf6790c5465d1eb5f384",
+      "fullDescriptorHash": "6514e5d14a7dec875f9ccd03901f826695ed8e1630501e28c12d9720881d9bee",
       "namespaceHash": "cd39afc4f4e8b76473a4768c07d979c44e0421973786c54e12bb6d7888f5952a",
       "policyProfilesHash": "9fb054a4f29be73c2ebf33f643bc17d904b2872dd8e7d564a690db828071a7ce",
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-      "trustDistributionHash": "1057b8c951cb9918287e82b162b24175ad95885afd6a830b9d7e68589cbb682f"
+      "trustDistributionHash": "08ef970ad67daa4d6562691806036f7c330c2f9644152303d6e33e8b445c4a14"
     },
     "roadmapSignals": {
       "jobCapableCommands": 16,
@@ -13757,7 +13757,7 @@
           ],
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
-          "version": "1.1.132"
+          "version": "1.1.136"
         },
         "signals": {
           "explicitFilesAllowlist": true,
@@ -13856,11 +13856,11 @@
             "core-history.json",
             "core-report.json",
             "core.lock.json",
-            "pandora-cli-skills-1.1.132.tgz",
-            "pandora-cli-skills-1.1.132.tgz.intoto.jsonl",
-            "pandora-cli-skills-1.1.132.tgz.pem",
-            "pandora-cli-skills-1.1.132.tgz.sha256",
-            "pandora-cli-skills-1.1.132.tgz.sig",
+            "pandora-cli-skills-1.1.136.tgz",
+            "pandora-cli-skills-1.1.136.tgz.intoto.jsonl",
+            "pandora-cli-skills-1.1.136.tgz.pem",
+            "pandora-cli-skills-1.1.136.tgz.sha256",
+            "pandora-cli-skills-1.1.136.tgz.sig",
             "pandora_agent-0.1.0a15-py3-none-any.whl",
             "pandora_agent-0.1.0a15.tar.gz",
             "sbom.spdx.json",
@@ -16051,7 +16051,7 @@
       "summary": "Run goal-aware environment and connectivity diagnostics without writing.",
       "supportsRemote": false,
       "supportsWebhook": false,
-      "usage": "pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
+      "usage": "pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|paper-hedge-daemon|live-hedge-daemon|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
     },
     "events": {
       "agentWorkflow": null,
@@ -39948,7 +39948,7 @@
       "summary": "Run the goal-first onboarding wizard, review redacted changes, then write env files and doctor checks.",
       "supportsRemote": false,
       "supportsWebhook": false,
-      "usage": "pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
+      "usage": "pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|paper-hedge-daemon|live-hedge-daemon|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
     },
     "simulate": {
       "agentWorkflow": null,
@@ -44092,15 +44092,15 @@
   "registryDigest": {
     "canonicalHash": "cce2ede8f658d43e0807f7f194e28fc356085e00fc70d99d27ecbd674be14a9f",
     "commandDigestHash": "85f685455fdf85b757674a3086eb03354a628f22ada1a25afee0fd86b14b92c7",
-    "descriptorHash": "664970d781e477a11a683bc265cbd7fc8b0cf9576b50da49ab301b773e38b47d",
+    "descriptorHash": "c02818f73bd310ef0cc2a3aae6d0d97627b7adb8d72e8bcc994e20d0bca205b8",
     "documentationHash": "eebe2a201c559e44b45d1a780713f6b302f56726a03a4a57538fcf6762530826",
-    "fullDescriptorHash": "422f7c73ce499d926c92ea792b0c590c41c916dac377cf6790c5465d1eb5f384",
+    "fullDescriptorHash": "6514e5d14a7dec875f9ccd03901f826695ed8e1630501e28c12d9720881d9bee",
     "namespaceHash": "cd39afc4f4e8b76473a4768c07d979c44e0421973786c54e12bb6d7888f5952a",
     "policyProfilesHash": "9fb054a4f29be73c2ebf33f643bc17d904b2872dd8e7d564a690db828071a7ce",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-    "trustDistributionHash": "1057b8c951cb9918287e82b162b24175ad95885afd6a830b9d7e68589cbb682f"
+    "trustDistributionHash": "08ef970ad67daa4d6562691806036f7c330c2f9644152303d6e33e8b445c4a14"
   },
   "schemaVersion": "1.0.0",
   "schemas": {
@@ -57390,7 +57390,7 @@
           "summary": "Run goal-aware environment and connectivity diagnostics without writing.",
           "supportsRemote": false,
           "supportsWebhook": false,
-          "usage": "pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
+          "usage": "pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|paper-hedge-daemon|live-hedge-daemon|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
         },
         "events": {
           "agentWorkflow": null,
@@ -81287,7 +81287,7 @@
           "summary": "Run the goal-first onboarding wizard, review redacted changes, then write env files and doctor checks.",
           "supportsRemote": false,
           "supportsWebhook": false,
-          "usage": "pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
+          "usage": "pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|paper-hedge-daemon|live-hedge-daemon|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]"
         },
         "simulate": {
           "agentWorkflow": null,
@@ -95754,7 +95754,7 @@
             ],
             "main": "cli/pandora.cjs",
             "name": "pandora-cli-skills",
-            "version": "1.1.132"
+            "version": "1.1.136"
           },
           "signals": {
             "explicitFilesAllowlist": true,
@@ -95852,11 +95852,11 @@
               "core-history.json",
               "core-report.json",
               "core.lock.json",
-              "pandora-cli-skills-1.1.132.tgz",
-              "pandora-cli-skills-1.1.132.tgz.intoto.jsonl",
-              "pandora-cli-skills-1.1.132.tgz.pem",
-              "pandora-cli-skills-1.1.132.tgz.sha256",
-              "pandora-cli-skills-1.1.132.tgz.sig",
+              "pandora-cli-skills-1.1.136.tgz",
+              "pandora-cli-skills-1.1.136.tgz.intoto.jsonl",
+              "pandora-cli-skills-1.1.136.tgz.pem",
+              "pandora-cli-skills-1.1.136.tgz.sha256",
+              "pandora-cli-skills-1.1.136.tgz.sig",
               "pandora_agent-0.1.0a15-py3-none-any.whl",
               "pandora_agent-0.1.0a15.tar.gz",
               "sbom.spdx.json",

@@ -240,6 +240,7 @@ function validateCycloneDx(bom) {
   assert(bom && bom.bomFormat === 'CycloneDX', 'Expected CycloneDX bomFormat');
   assert(Boolean(bom.specVersion), 'Expected CycloneDX specVersion');
   assert(rootComponent && rootComponent.type, 'Expected CycloneDX metadata.component');
+  assert(rootComponent.name === pkg.name, `Expected root component name ${pkg.name}`);
   assert(rootComponent.version === pkg.version, `Expected root component version ${pkg.version}`);
   assert(rootComponent.purl === expectedPurl, `Expected root component purl ${expectedPurl}`);
   assert(Boolean(findExternalReference(rootComponent, 'vcs')), 'Expected CycloneDX vcs external reference');
@@ -273,6 +274,16 @@ function validateBom(bom, options) {
     return;
   }
   validateSpdx(bom);
+}
+
+function normalizeBomForArtifact(bom, options) {
+  const normalized = cloneJson(bom);
+
+  if (options.format === 'cyclonedx' && normalized.metadata && normalized.metadata.component) {
+    normalized.metadata.component.name = pkg.name;
+  }
+
+  return normalized;
 }
 
 function cloneJson(value) {
@@ -378,7 +389,7 @@ function main() {
   ensurePrerequisites();
   const runtime = resolveSbomWorkingRoot();
   try {
-    const bom = runNpmSbom(options, runtime.cwd);
+    const bom = normalizeBomForArtifact(runNpmSbom(options, runtime.cwd), options);
     validateBom(bom, options);
 
     if (options.stdout) {

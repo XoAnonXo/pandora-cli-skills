@@ -145,6 +145,22 @@ test('doctor keeps paper hedge mode daemon-oriented and source-free', async () =
     assert.equal(report.summary.ok, true);
     assert.equal(report.journeyReadiness.missing.includes('PANDORA_RESOLUTION_SOURCES'), false);
     assert.equal(report.journeyReadiness.recommendations.some((step) => /mirror hedge/i.test(String(step))), true);
+
+    const aliasReport = await doctor.buildDoctorReport({
+      goal: 'paper-daemon',
+      envFile: '.env',
+      useEnvFile: false,
+      env: {
+        CHAIN_ID: '1',
+        RPC_URL: 'https://rpc.example.org',
+        ORACLE: '0x259308E7d8557e4Ba192De1aB8Cf7e0E21896442',
+        FACTORY: '0xaB120F1FD31FB1EC39893B75d80a3822b1Cd8d0c',
+        USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        PANDORA_INTERNAL_WALLETS_FILE: walletFile,
+      },
+      rpcTimeoutMs: 1_000,
+    });
+    assert.equal(aliasReport.goal, 'paper-hedge-daemon');
   } finally {
     restoreFetch();
     fs.rmSync(tempDir, { recursive: true, force: true });

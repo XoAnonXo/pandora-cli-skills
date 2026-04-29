@@ -141,6 +141,7 @@ function createCommandRouter(deps = {}) {
   requireFn('runSetup', runSetup);
   requireFn('runDashboardCommand', runDashboardCommand);
   requireFn('runFundCheckCommand', runFundCheckCommand);
+  requireFn('runBridgeCommand', runBridgeCommand);
   requireFn('runFeesCommand', runFeesCommand);
   requireFn('runDebugCommand', runDebugCommand);
   requireFn('runMarketsCommand', runMarketsCommand);
@@ -223,7 +224,7 @@ function createCommandRouter(deps = {}) {
       doctor: async (handlerArgs, handlerContext) => {
         if (includesHelpFlag(handlerArgs)) {
           const usage =
-            'pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]';
+            'pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|paper-hedge-daemon|live-hedge-daemon|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]';
           if (handlerContext.outputMode === 'json') {
             emitSuccess(handlerContext.outputMode, 'doctor.help', commandHelpPayload(usage));
           } else {
@@ -237,7 +238,7 @@ function createCommandRouter(deps = {}) {
       setup: async (handlerArgs, handlerContext) => {
         if (includesHelpFlag(handlerArgs)) {
           const usage =
-            'pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]';
+            'pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|paper-hedge-daemon|live-hedge-daemon|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]';
           if (handlerContext.outputMode === 'json') {
             emitSuccess(handlerContext.outputMode, 'setup.help', commandHelpPayload(usage));
           } else {

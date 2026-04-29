@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const path = require('node:path');
 const { spawnSync, spawn } = require('node:child_process');
 const pkg = require('../../package.json');
@@ -36,6 +37,54 @@ function runPython(code, env = {}) {
     encoding: 'utf8',
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', ...env },
   });
+}
+
+function waitForHttpGateway(port, child, timeoutMs = 5000) {
+  const startedAt = Date.now();
+  let childExited = false;
+  child.once('exit', () => {
+    childExited = true;
+  });
+
+  return new Promise((resolve, reject) => {
+    const poll = () => {
+      if (childExited) {
+        reject(new Error(`MCP HTTP gateway exited before port ${port} became ready.`));
+        return;
+      }
+      if (Date.now() - startedAt > timeoutMs) {
+        reject(new Error(`Timed out waiting for MCP HTTP gateway on port ${port}.`));
+        return;
+      }
+
+      const req = http.get(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/health',
+          timeout: 250,
+        },
+        (res) => {
+          res.resume();
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 500) {
+            resolve();
+          } else {
+            setTimeout(poll, 100);
+          }
+        },
+      );
+      req.on('timeout', () => req.destroy());
+      req.on('error', () => setTimeout(poll, 100));
+    };
+
+    poll();
+  });
+}
+
+async function closeGateway(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  child.kill('SIGTERM');
+  await new Promise((resolve) => child.once('close', resolve));
 }
 
 test('python sdk local client can call capabilities over stdio MCP', async (t) => {
@@ -253,7 +302,7 @@ test('python sdk remote client can call capabilities over HTTP MCP', async (t) =
     cwd: process.cwd(),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await waitForHttpGateway(port, gateway);
   const script = [
     "import sys",
     "sys.path.insert(0, 'sdk/python')",
@@ -264,9 +313,12 @@ test('python sdk remote client can call capabilities over HTTP MCP', async (t) =
     "client.close()",
     "print(envelope['command'], envelope['ok'], envelope['data']['summary']['totalCommands'])",
   ].join('; ');
-  const result = runPython(script);
-  gateway.kill('SIGTERM');
-  await new Promise((resolve) => gateway.once('close', resolve));
+  let result;
+  try {
+    result = runPython(script);
+  } finally {
+    await closeGateway(gateway);
+  }
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /capabilities True \d+/);
 });
@@ -281,7 +333,7 @@ test('python sdk generated policy profiles match capabilities from local and rem
     cwd: process.cwd(),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await waitForHttpGateway(port, gateway);
   const script = [
     "import json, sys",
     "sys.path.insert(0, 'sdk/python')",
@@ -297,9 +349,12 @@ test('python sdk generated policy profiles match capabilities from local and rem
     "remote.close()",
     "print(json.dumps([generated == local_caps, generated == remote_caps]))",
   ].join('; ');
-  const result = runPython(script);
-  gateway.kill('SIGTERM');
-  await new Promise((resolve) => gateway.once('close', resolve));
+  let result;
+  try {
+    result = runPython(script);
+  } finally {
+    await closeGateway(gateway);
+  }
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout.trim(), /^\[true, true\]$/);
 });

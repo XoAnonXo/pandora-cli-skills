@@ -819,14 +819,14 @@ const commandContracts = [
   commandContract({
     name: 'doctor',
     summary: 'Run goal-aware environment and connectivity diagnostics without writing.',
-    usage: 'pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]',
+    usage: 'pandora [--output table|json] doctor [--goal <explore|deploy|paper-mirror|live-mirror|paper-hedge-daemon|live-hedge-daemon|hosted-gateway>] [--dotenv-path <path>] [--skip-dotenv] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]',
     emits: ['doctor', 'doctor.help'],
     dataSchema: '#/definitions/DoctorPayload',
   }),
   commandContract({
     name: 'setup',
     summary: 'Run the goal-first onboarding wizard, review redacted changes, then write env files and doctor checks.',
-    usage: 'pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]',
+    usage: 'pandora [--output table|json] setup [--interactive] [--plan] [--goal <explore|deploy|paper-mirror|live-mirror|paper-hedge-daemon|live-hedge-daemon|hosted-gateway>] [--force] [--dotenv-path <path>] [--example <path>] [--check-usdc-code] [--check-polymarket] [--rpc-timeout-ms <ms>]',
     emits: ['setup', 'setup.help'],
     dataSchema: '#/definitions/SetupPayload',
     agentWorkflow: {

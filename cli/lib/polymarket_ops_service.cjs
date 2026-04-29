@@ -69,6 +69,16 @@ const ERC20_ABI = [
 const CTF_ABI = [
   {
     type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'account', type: 'address' },
+      { name: 'id', type: 'uint256' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
     name: 'isApprovedForAll',
     stateMutability: 'view',
     inputs: [
@@ -1408,6 +1418,94 @@ function buildPreflightChecks(checkPayload) {
   return checks;
 }
 
+async function readPreflightSellInventory(options, checkPayload, resolvedTokenId, deps = {}) {
+  const runtime = resolveRuntime(options);
+  const ownerAddress = checkPayload && checkPayload.runtime ? checkPayload.runtime.ownerAddress : null;
+  const tokenIdRaw = toBigIntOrNull(resolvedTokenId);
+  if (!ownerAddress) {
+    return {
+      readOk: false,
+      raw: null,
+      formatted: null,
+      source: null,
+      error: 'Owner wallet unavailable.',
+    };
+  }
+  if (tokenIdRaw === null) {
+    return {
+      readOk: false,
+      raw: null,
+      formatted: null,
+      source: null,
+      error: 'Resolved token id is not readable as an ERC1155 id.',
+    };
+  }
+
+  const publicClient = await createPublicClient(runtime, deps);
+  const result = await safeReadContract(publicClient, {
+    address: runtime.ctfAddress,
+    abi: CTF_ABI,
+    functionName: 'balanceOf',
+    args: [ownerAddress, tokenIdRaw],
+  });
+  const raw = toBigIntOrNull(result && result.value);
+  return {
+    readOk: Boolean(result && result.ok && raw !== null),
+    raw: raw === null ? null : raw.toString(),
+    formatted: formatUnits6(raw),
+    source: result && result.ok ? 'on-chain:ctf-balanceOf' : null,
+    error: result && result.error ? result.error : raw === null ? 'Conditional-token balance unavailable.' : null,
+  };
+}
+
+async function buildTradeResourceCoverageCheck(options, checkPayload, context, deps = {}) {
+  const ownerUsdcRaw = context.ownerUsdcRaw;
+  const requestedSide = context.requestedSide;
+  const amountUsdc = context.amountUsdc;
+  const amountRaw = context.amountRaw;
+  const resolvedTokenId = context.resolvedTokenId;
+
+  if (requestedSide !== 'sell') {
+    return {
+      code: 'TRADE_NOTIONAL_COVERED',
+      ok: amountRaw !== null && ownerUsdcRaw !== null ? ownerUsdcRaw >= amountRaw : false,
+      message: 'Owner wallet must hold enough Polygon USDC.e for the requested trade amount.',
+      details: {
+        requestedAmountUsdc: amountUsdc,
+        requestedAmountRaw: amountRaw === null ? null : amountRaw.toString(),
+        ownerUsdcRaw: ownerUsdcRaw === null ? null : ownerUsdcRaw.toString(),
+        ownerUsdc: formatUnits6(ownerUsdcRaw),
+      },
+    };
+  }
+
+  const inventory = await readPreflightSellInventory(options, checkPayload, resolvedTokenId, deps);
+  const ownerTokenBalanceRaw = toBigIntOrNull(inventory.raw);
+  return {
+    code: 'TRADE_SELL_INVENTORY_COVERED',
+    ok: amountRaw !== null && ownerTokenBalanceRaw !== null ? ownerTokenBalanceRaw >= amountRaw : false,
+    message: 'Owner wallet must hold enough resolved conditional-token shares for the requested sell amount.',
+    details: {
+      requestedShares: amountUsdc,
+      requestedSharesRaw: amountRaw === null ? null : amountRaw.toString(),
+      ownerTokenBalanceRaw: ownerTokenBalanceRaw === null ? null : ownerTokenBalanceRaw.toString(),
+      ownerTokenBalance: formatUnits6(ownerTokenBalanceRaw),
+      tokenId: resolvedTokenId || null,
+      ownerAddress:
+        checkPayload && checkPayload.runtime && checkPayload.runtime.ownerAddress
+          ? checkPayload.runtime.ownerAddress
+          : null,
+      ctfAddress:
+        checkPayload && checkPayload.runtime && checkPayload.runtime.ctfAddress
+          ? checkPayload.runtime.ctfAddress
+          : null,
+      readOk: Boolean(inventory.readOk),
+      source: inventory.source || null,
+      error: inventory.error || null,
+    },
+  };
+}
+
 async function resolvePreflightTradeContext(options = {}, checkPayload = {}, deps = {}) {
   const tradeContextRequested = Boolean(
     options.tradeContextRequested
@@ -1425,7 +1523,7 @@ async function resolvePreflightTradeContext(options = {}, checkPayload = {}, dep
   const amountUsdc = Number.isFinite(Number(options.amountUsdc)) ? Number(options.amountUsdc) : null;
   const amountRaw = amountUsdc === null ? null : decimalUsdcToRaw(amountUsdc);
   const requestedToken = typeof options.token === 'string' ? String(options.token).trim().toLowerCase() : null;
-  const requestedSide = typeof options.side === 'string' ? String(options.side).trim().toLowerCase() : 'buy';
+  const requestedSide = String(options.side || 'buy').trim().toLowerCase() === 'sell' ? 'sell' : 'buy';
   let market = null;
   let marketError = null;
   let resolvedTokenId = options.tokenId || null;
@@ -1448,6 +1546,13 @@ async function resolvePreflightTradeContext(options = {}, checkPayload = {}, dep
   }
 
   const ownerUsdcRaw = toBigIntOrNull(checkPayload && checkPayload.balances && checkPayload.balances.usdc && checkPayload.balances.usdc.raw);
+  const resourceCoverageCheck = await buildTradeResourceCoverageCheck(options, checkPayload, {
+    requestedSide,
+    amountUsdc,
+    amountRaw,
+    resolvedTokenId,
+    ownerUsdcRaw,
+  }, deps);
   return {
     requested: {
       conditionId: options.conditionId || null,
@@ -1493,17 +1598,7 @@ async function resolvePreflightTradeContext(options = {}, checkPayload = {}, dep
           resolvedTokenId,
         },
       },
-      {
-        code: 'TRADE_NOTIONAL_COVERED',
-        ok: amountRaw !== null && ownerUsdcRaw !== null ? ownerUsdcRaw >= amountRaw : false,
-        message: 'Owner wallet must hold enough Polygon USDC.e for the requested trade amount.',
-        details: {
-          requestedAmountUsdc: amountUsdc,
-          requestedAmountRaw: amountRaw === null ? null : amountRaw.toString(),
-          ownerUsdcRaw: ownerUsdcRaw === null ? null : ownerUsdcRaw.toString(),
-          ownerUsdc: formatUnits6(ownerUsdcRaw),
-        },
-      },
+      resourceCoverageCheck,
     ],
   };
 }

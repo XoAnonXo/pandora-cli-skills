@@ -1069,6 +1069,8 @@ setupTest('setup --help returns structured JSON help payload', () => {
   assert.match(payload.data.usage, /--plan/);
   assert.match(payload.data.usage, /--goal/);
   assert.match(payload.data.usage, /paper-mirror/);
+  assert.match(payload.data.usage, /paper-hedge-daemon/);
+  assert.match(payload.data.usage, /live-hedge-daemon/);
   assert.match(payload.data.usage, /hosted-gateway/);
   assert.equal(payload.data.schemaVersion, '1.0.0');
   assertIsoTimestamp(payload.data.generatedAt);
@@ -1082,6 +1084,8 @@ test('doctor --help exposes goal-aware readiness guidance', () => {
   assert.match(payload.data.usage, /--goal/);
   assert.match(payload.data.usage, /deploy/);
   assert.match(payload.data.usage, /live-mirror/);
+  assert.match(payload.data.usage, /paper-hedge-daemon/);
+  assert.match(payload.data.usage, /live-hedge-daemon/);
 });
 
 test('init-env writes env files with 0600 permissions (non-Windows)', () => {

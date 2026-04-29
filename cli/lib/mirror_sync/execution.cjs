@@ -1101,6 +1101,7 @@ async function executeHedgeLeg(params) {
           tokenId,
           side: hedgeSide,
           amountUsd: executionPlan.amountUsdc,
+          amountShares: executionPlan.amountShares,
           privateKey: configuredPrivateKey || envCreds.privateKey,
           funder: configuredFunder || envCreds.funder,
           apiKey,

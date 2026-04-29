@@ -1,3 +1,5 @@
+const { resolveProfileWorkspacePath } = require('./shared_profile_selector_flags.cjs');
+
 function requireDep(deps, name) {
   if (!deps || typeof deps[name] !== 'function') {
     throw new Error(`createParseMarketsMineFlags requires deps.${name}()`);
@@ -74,10 +76,11 @@ function createParseMarketsMineFlags(deps) {
       }
 
       if (token === '--profile-file') {
-        options.profileFile = requireFlagValue(args, i, '--profile-file').trim();
-        if (!options.profileFile) {
+        const value = requireFlagValue(args, i, '--profile-file').trim();
+        if (!value) {
           throw new CliError('INVALID_FLAG_VALUE', '--profile-file cannot be empty.');
         }
+        options.profileFile = resolveProfileWorkspacePath(value, '--profile-file', CliError);
         i += 1;
         continue;
       }

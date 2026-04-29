@@ -324,6 +324,13 @@ function buildPolymarketOpsTestViemRuntime(options = {}) {
     options.usdcBalanceRaw === null || options.usdcBalanceRaw === undefined
       ? 2_500_000n
       : BigInt(options.usdcBalanceRaw);
+  const ctfBalanceRaw =
+    options.ctfBalanceRaw === null || options.ctfBalanceRaw === undefined
+      ? 0n
+      : BigInt(options.ctfBalanceRaw);
+  const ctfBalanceByToken = new Map(
+    Object.entries(options.ctfBalanceByToken || {}).map(([tokenId, raw]) => [String(tokenId), BigInt(raw)]),
+  );
   const safeOwner = options.safeOwner !== false;
   const deadRpcUrls = new Set(
     (Array.isArray(options.deadRpcUrls) ? options.deadRpcUrls : []).map((entry) => String(entry)),
@@ -355,7 +362,14 @@ function buildPolymarketOpsTestViemRuntime(options = {}) {
         async getBytecode({ address }) {
           return String(address || '').toLowerCase() === funderAddress ? '0x6001600101' : '0x';
         },
-        async readContract({ functionName }) {
+        async readContract({ functionName, args }) {
+          if (functionName === 'balanceOf' && Array.isArray(args) && args.length >= 2) {
+            if (options.ctfBalanceError) {
+              throw new Error('CTF balance read unavailable');
+            }
+            const tokenId = String(args[1]);
+            return ctfBalanceByToken.has(tokenId) ? ctfBalanceByToken.get(tokenId) : ctfBalanceRaw;
+          }
           if (functionName === 'balanceOf') {
             return usdcBalanceRaw;
           }
@@ -872,6 +886,73 @@ test('orderbook depth calculation honors slippage window', () => {
   assert.ok(depth.depthUsd > 0);
   assert.ok(depth.midPrice !== null);
   assert.ok(depth.worstPrice !== null);
+});
+
+test('placeHedgeOrder sends USD amount for buy market orders', async () => {
+  let postedOrder = null;
+  const result = await placeHedgeOrder({
+    tokenId: 'poly-buy-sizing-1',
+    side: 'buy',
+    amountUsd: 12.5,
+    client: {
+      getTickSize: async () => 0.01,
+      getNegRisk: async () => false,
+      createAndPostMarketOrder: async (order) => {
+        postedOrder = order;
+        return { success: true };
+      },
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(postedOrder.amount, 12.5);
+});
+
+test('placeHedgeOrder sends share amount for sell market orders', async () => {
+  let postedOrder = null;
+  const result = await placeHedgeOrder({
+    tokenId: 'poly-sell-sizing-1',
+    side: 'sell',
+    amountUsd: 10,
+    amountShares: 3.25,
+    client: {
+      getTickSize: async () => 0.01,
+      getNegRisk: async () => false,
+      createAndPostMarketOrder: async (order) => {
+        postedOrder = order;
+        return { success: true };
+      },
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(postedOrder.amount, 3.25);
+  assert.equal(result.amountUsd, 10);
+  assert.equal(result.amountShares, 3.25);
+});
+
+test('placeHedgeOrder rejects sell market orders without explicit shares', async () => {
+  let posted = false;
+
+  await assert.rejects(
+    () =>
+      placeHedgeOrder({
+        tokenId: 'poly-sell-sizing-2',
+        side: 'sell',
+        amountUsd: 10,
+        client: {
+          getTickSize: async () => 0.01,
+          getNegRisk: async () => false,
+          createAndPostMarketOrder: async () => {
+            posted = true;
+            return { success: true };
+          },
+        },
+      }),
+    /amountShares must be a positive number/,
+  );
+
+  assert.equal(posted, false);
 });
 
 test('placeHedgeOrder returns ok=false when CLOB response includes error payload', async () => {
@@ -2208,6 +2289,138 @@ test('runPolymarketPreflight includes trade-context checks and resolved token id
         error.details.trade.checks.some((item) => item.code === 'TRADE_TOKEN_RESOLVED' && item.ok === true),
         true,
       );
+      return true;
+    },
+  );
+});
+
+test('runPolymarketPreflight keeps buy trades gated by pUSD notional coverage', async () => {
+  await assert.rejects(
+    () =>
+      runPolymarketPreflight(
+        {
+          rpcUrl: 'https://polygon-rpc.example',
+          privateKey: TEST_PRIVATE_KEY,
+          funder: TEST_WALLET,
+          apiKey: 'key',
+          apiSecret: 'secret',
+          apiPassphrase: 'passphrase',
+          conditionId: 'cond-1',
+          token: 'yes',
+          side: 'buy',
+          amountUsdc: 5,
+          tradeContextRequested: true,
+          env: {},
+        },
+        {
+          viemRuntime: buildPolymarketOpsTestViemRuntime({
+            signerAddress: TEST_WALLET,
+            funderAddress: TEST_WALLET,
+            usdcBalanceRaw: 4_000_000n,
+          }),
+          resolvePolymarketMarket: async () => ({
+            marketId: 'cond-1',
+            yesTokenId: '101',
+            noTokenId: '202',
+          }),
+        },
+      ),
+    (error) => {
+      assert.equal(error && error.code, 'POLYMARKET_PREFLIGHT_FAILED');
+      assert.equal(error.details.failedChecks.includes('TRADE_NOTIONAL_COVERED'), true);
+      assert.equal(error.details.failedChecks.includes('TRADE_SELL_INVENTORY_COVERED'), false);
+      const notionalCheck = error.details.trade.checks.find((item) => item.code === 'TRADE_NOTIONAL_COVERED');
+      assert.equal(notionalCheck.ok, false);
+      assert.equal(notionalCheck.details.ownerUsdcRaw, '4000000');
+      return true;
+    },
+  );
+});
+
+test('runPolymarketPreflight validates sell trades against resolved token share inventory', async () => {
+  const payload = await runPolymarketPreflight(
+    {
+      rpcUrl: 'https://polygon-rpc.example',
+      privateKey: TEST_PRIVATE_KEY,
+      funder: TEST_WALLET,
+      apiKey: 'key',
+      apiSecret: 'secret',
+      apiPassphrase: 'passphrase',
+      conditionId: 'cond-1',
+      token: 'yes',
+      side: 'sell',
+      amountUsdc: 5,
+      tradeContextRequested: true,
+      env: {},
+    },
+    {
+      viemRuntime: buildPolymarketOpsTestViemRuntime({
+        signerAddress: TEST_WALLET,
+        funderAddress: TEST_WALLET,
+        usdcBalanceRaw: 1_000_000n,
+        ctfBalanceByToken: { 101: 6_000_000n },
+      }),
+      resolvePolymarketMarket: async () => ({
+        marketId: 'cond-1',
+        yesTokenId: '101',
+        noTokenId: '202',
+      }),
+    },
+  );
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.failedChecks.length, 0);
+  assert.equal(
+    payload.trade.checks.some((item) => item.code === 'TRADE_NOTIONAL_COVERED'),
+    false,
+  );
+  const inventoryCheck = payload.trade.checks.find((item) => item.code === 'TRADE_SELL_INVENTORY_COVERED');
+  assert.equal(inventoryCheck.ok, true);
+  assert.equal(inventoryCheck.details.requestedSharesRaw, '5000000');
+  assert.equal(inventoryCheck.details.ownerTokenBalanceRaw, '6000000');
+  assert.equal(inventoryCheck.details.source, 'on-chain:ctf-balanceOf');
+});
+
+test('runPolymarketPreflight fails closed when sell token inventory cannot be verified', async () => {
+  await assert.rejects(
+    () =>
+      runPolymarketPreflight(
+        {
+          rpcUrl: 'https://polygon-rpc.example',
+          privateKey: TEST_PRIVATE_KEY,
+          funder: TEST_WALLET,
+          apiKey: 'key',
+          apiSecret: 'secret',
+          apiPassphrase: 'passphrase',
+          conditionId: 'cond-1',
+          token: 'yes',
+          side: 'sell',
+          amountUsdc: 5,
+          tradeContextRequested: true,
+          env: {},
+        },
+        {
+          viemRuntime: buildPolymarketOpsTestViemRuntime({
+            signerAddress: TEST_WALLET,
+            funderAddress: TEST_WALLET,
+            usdcBalanceRaw: 10_000_000n,
+            ctfBalanceError: true,
+          }),
+          resolvePolymarketMarket: async () => ({
+            marketId: 'cond-1',
+            yesTokenId: '101',
+            noTokenId: '202',
+          }),
+        },
+      ),
+    (error) => {
+      assert.equal(error && error.code, 'POLYMARKET_PREFLIGHT_FAILED');
+      assert.equal(error.details.failedChecks.includes('TRADE_SELL_INVENTORY_COVERED'), true);
+      assert.equal(error.details.failedChecks.includes('TRADE_NOTIONAL_COVERED'), false);
+      const inventoryCheck = error.details.trade.checks.find((item) => item.code === 'TRADE_SELL_INVENTORY_COVERED');
+      assert.equal(inventoryCheck.ok, false);
+      assert.equal(inventoryCheck.details.readOk, false);
+      assert.match(inventoryCheck.details.error, /ctf balance read unavailable/i);
       return true;
     },
   );
@@ -9027,6 +9240,80 @@ test('createParsePolymarketTradeFlags rejects conflicting selectors', () => {
       && error.code === 'INVALID_ARGS'
       && error.message === 'Provide only one market selector: --condition-id|--market-id, --slug, or --token-id.',
   );
+});
+
+test('createRunPolymarketCommand maps sell trade amount to adapter share sizing', async () => {
+  const observed = { emitted: [] };
+  const orderCalls = [];
+  const parseShared = createParsePolymarketSharedFlags(buildParserDeps());
+  const parseTrade = createParsePolymarketTradeFlags({
+    ...buildParserDeps(),
+    parsePolymarketSharedFlags: parseShared,
+    defaultTimeoutMs: 12000,
+  });
+  const runPolymarketCommand = createRunPolymarketCommand({
+    CliError: ParserCliError,
+    includesHelpFlag: (args) => Array.isArray(args) && args.includes('--help'),
+    emitSuccess: (...args) => observed.emitted.push(args),
+    commandHelpPayload: (usage, notes) => ({ usage, notes }),
+    loadEnvIfPresent: () => {},
+    parsePolymarketSharedFlags: parseShared,
+    parsePolymarketApproveFlags: () => {
+      throw new Error('not used');
+    },
+    parsePolymarketPositionsFlags: () => {
+      throw new Error('not used');
+    },
+    parsePolymarketTradeFlags: parseTrade,
+    resolveForkRuntime: () => ({ mode: 'live', chainId: 137, rpcUrl: null }),
+    isSecureHttpUrlOrLocal: parserIsSecureHttpUrlOrLocal,
+    runPolymarketCheck: async () => ({}),
+    runPolymarketApprove: async () => ({}),
+    runPolymarketPreflight: async () => ({}),
+    runPolymarketPositions: async () => ({}),
+    resolvePolymarketMarket: async () => {
+      throw new Error('not used');
+    },
+    readTradingCredsFromEnv: () => ({
+      apiKey: 'key',
+      apiSecret: 'secret',
+      apiPassphrase: 'passphrase',
+    }),
+    placeHedgeOrder: async (options = {}) => {
+      orderCalls.push(options);
+      return { ok: true, response: { status: 'accepted' } };
+    },
+    renderPolymarketCheckTable: () => {},
+    renderPolymarketApproveTable: () => {},
+    renderPolymarketPreflightTable: () => {},
+    renderSingleEntityTable: () => {},
+    defaultEnvFile: '/tmp/.env',
+  });
+
+  await runPolymarketCommand(
+    [
+      'trade',
+      '--token-id',
+      'sell-token-1',
+      '--side',
+      'sell',
+      '--amount-usdc',
+      '4.5',
+      '--execute',
+      '--private-key',
+      TEST_PRIVATE_KEY,
+      '--funder',
+      TEST_WALLET,
+    ],
+    { outputMode: 'json' },
+  );
+
+  assert.equal(orderCalls.length, 1);
+  assert.equal(orderCalls[0].side, 'sell');
+  assert.equal(orderCalls[0].amountUsd, null);
+  assert.equal(orderCalls[0].amountShares, 4.5);
+  assert.equal(observed.emitted[0][1], 'polymarket.trade');
+  assert.equal(observed.emitted[0][2].status, 'submitted');
 });
 
 test('fetchPolymarketPositionInventory normalizes mock API rows with provenance', async () => {

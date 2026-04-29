@@ -1223,7 +1223,12 @@ test('runMirrorHedge OKC/BOS replay fixture prunes stale sell queue entries and 
   });
   polymarketModule.fetchDepthForMarket = async () => fixture.depth;
   polymarketModule.placeHedgeOrder = async (options = {}) => {
-    orderCalls.push({ side: options.side, amountUsd: options.amountUsd, tokenId: options.tokenId });
+    orderCalls.push({
+      side: options.side,
+      amountUsd: options.amountUsd,
+      amountShares: options.amountShares,
+      tokenId: options.tokenId,
+    });
     return {
       ok: false,
       error: {
@@ -1256,6 +1261,7 @@ test('runMirrorHedge OKC/BOS replay fixture prunes stale sell queue entries and 
 
     assert.equal(orderCalls.length, 1);
     assert.equal(String(orderCalls[0].side).toLowerCase(), 'sell');
+    assert.equal(orderCalls[0].amountShares > 0, true);
     assert.equal(payload.summary.sellRetryAttemptedCount, 1);
     assert.equal(payload.summary.sellRetryBlockedCount, 0);
     assert.equal(payload.summary.sellRetryFailedCount, 1);

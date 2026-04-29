@@ -129,6 +129,34 @@ test('markets mine uses env signer fallback for machine-readable json output', (
   }
 });
 
+test('markets mine blocks profile files outside workspace in MCP mode', () => {
+  const result = runCli(
+    [
+      '--output',
+      'json',
+      'markets',
+      'mine',
+      '--skip-dotenv',
+      '--profile-file',
+      '/etc/hosts',
+      '--rpc-url',
+      'http://127.0.0.1:9',
+      '--timeout-ms',
+      '1000',
+    ],
+    {
+      env: {
+        PANDORA_MCP_MODE: '1',
+      },
+    },
+  );
+
+  assert.equal(result.status, 1);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'MCP_FILE_ACCESS_BLOCKED');
+});
+
 test('markets mine table output shows token, LP, and claimable exposure columns', () => {
   const tempDir = createTempDir('markets-mine-command-');
   const preloadFile = buildMarketsMinePreloadFile(tempDir);

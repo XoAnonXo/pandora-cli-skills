@@ -223,6 +223,25 @@ test('recipe runtime compiles inputs and validates against policy/profile servic
   assert.equal(validation.profileId, null);
 });
 
+test('recipe runtime requires an explicit policy for live recipes', async () => {
+  const registry = createRecipeRegistryService();
+  const runtime = createRuntime();
+  const record = registry.getRecipe('resolve.poll.execute');
+  const compiled = runtime.compileRecipe(record.recipe, {
+    'poll-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    answer: 'yes',
+    reason: 'final score confirmed',
+  });
+
+  const validation = await runtime.validateRecipeExecution(compiled, {
+    profileId: 'prod_trader_a',
+  });
+
+  assert.equal(validation.ok, false);
+  assert.ok(validation.denials.some((entry) => entry.code === 'RECIPE_POLICY_REQUIRED'));
+  assert.ok(!validation.denials.some((entry) => entry.code === 'RECIPE_PROFILE_REQUIRED'));
+});
+
 test('recipe runtime blocks execution when policy or profile compatibility fails', async () => {
   const registry = createRecipeRegistryService();
   const runtime = createRuntime({

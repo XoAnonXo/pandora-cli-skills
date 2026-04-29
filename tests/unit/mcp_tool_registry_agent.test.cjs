@@ -253,6 +253,24 @@ test('recipe MCP tools keep structured inputs out of argv and forward them via e
   );
 });
 
+test('recipe MCP tools reject non-scalar structured inputs', () => {
+  const registry = createMcpToolRegistry();
+
+  assert.throws(
+    () =>
+      registry.prepareInvocation('recipe.validate', {
+        id: 'mirror.sync.paper-safe',
+        inputs: {
+          'market-address': { nested: true },
+        },
+      }),
+    (error) =>
+      error
+      && error.code === 'MCP_INVALID_ARGUMENTS'
+      && /inputs\.market-address/.test(error.message),
+  );
+});
+
 test('prepareInvocation enforces typed schema values at the MCP boundary', () => {
   const registry = createMcpToolRegistry();
 

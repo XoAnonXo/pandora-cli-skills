@@ -988,7 +988,7 @@ test('shared agent contract registry normalizes MCP metadata defaults and alias 
     const doctorDescriptor = descriptors.doctor;
     assert.equal(doctorDescriptor.recommendedPreflightTool, null);
     assert.match(doctorDescriptor.summary, /without writing/i);
-    assert.match(doctorDescriptor.usage, /--goal <explore\|deploy\|paper-mirror\|live-mirror\|hosted-gateway>/);
+    assert.match(doctorDescriptor.usage, /--goal <explore\|deploy\|paper-mirror\|live-mirror\|paper-hedge-daemon\|live-hedge-daemon\|hosted-gateway>/);
     assert.equal(doctorDescriptor.inputSchema, null);
 
     const capabilitiesDescriptor = descriptors.capabilities;
@@ -1003,7 +1003,7 @@ test('shared agent contract registry normalizes MCP metadata defaults and alias 
     assert.match(setupDescriptor.summary, /review redacted changes/i);
     assert.match(setupDescriptor.usage, /--interactive/);
     assert.match(setupDescriptor.usage, /--plan/);
-    assert.match(setupDescriptor.usage, /--goal <explore\|deploy\|paper-mirror\|live-mirror\|hosted-gateway>/);
+    assert.match(setupDescriptor.usage, /--goal <explore\|deploy\|paper-mirror\|live-mirror\|paper-hedge-daemon\|live-hedge-daemon\|hosted-gateway>/);
     assert.deepEqual(setupDescriptor.agentWorkflow.requiredTools, ['doctor']);
     assert.deepEqual(setupDescriptor.agentWorkflow.recommendedTools, ['init-env']);
     assert.match(setupDescriptor.agentWorkflow.notes.join('\n'), /setup --plan --goal/i);
