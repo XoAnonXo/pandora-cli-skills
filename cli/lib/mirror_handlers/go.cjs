@@ -592,6 +592,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         pandoraMarketAddress,
         ...sourceSelector,
         executeLive: options.executeLive,
+        autoWithdrawOnExpiry: false,
         hedgeEnabled: !options.noHedge,
         hedgeRatio: options.hedgeRatio,
         hedgeScope: options.hedgeScope,
@@ -675,6 +676,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
               quote,
             };
           },
+          runLp: typeof runLp === 'function' ? runLp : null,
           onTick:
             context.outputMode === 'table'
               ? (tickContext) => renderMirrorSyncTickLine(tickContext, context.outputMode)

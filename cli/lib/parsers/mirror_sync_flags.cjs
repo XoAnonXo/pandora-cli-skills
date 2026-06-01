@@ -169,6 +169,7 @@ function createParseMirrorSyncFlags(deps) {
       daemon: false,
       verbose: false,
       adoptExistingPositions: false,
+      autoWithdrawOnExpiry: false,
       forceGate: false,
       forceGateDeprecatedUsed: false,
       skipGateChecks: [],
@@ -382,6 +383,10 @@ function createParseMirrorSyncFlags(deps) {
       }
       if (token === '--daemon') {
         options.daemon = true;
+        continue;
+      }
+      if (token === '--auto-withdraw-on-expiry') {
+        options.autoWithdrawOnExpiry = true;
         continue;
       }
       if (token === '--adopt-existing-positions') {

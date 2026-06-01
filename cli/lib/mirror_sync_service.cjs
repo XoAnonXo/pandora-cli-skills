@@ -42,6 +42,7 @@ const {
   runStartupVerify,
 } = require('./mirror_sync/gates.cjs');
 const { processTriggeredAction } = require('./mirror_sync/execution.cjs');
+const { runAutoClose } = require('./mirror_sync/auto_close.cjs');
 const { createServiceError, ensureStateIdentity, persistTickSnapshot } = require('./mirror_sync/state.cjs');
 const { materializeExecutionSigner } = require('./signers/execution_signer_service.cjs');
 
@@ -483,6 +484,7 @@ async function runMirrorSync(options, deps = {}) {
       ? deps.buildReserveContextFromVerifyPayload
       : buildReserveContextFromVerifyPayload;
   const rebalanceFn = typeof deps.rebalanceFn === 'function' ? deps.rebalanceFn : null;
+  const runLpFn = typeof deps.runLp === 'function' ? deps.runLp : null;
   const sendWebhook = typeof deps.sendWebhook === 'function' ? deps.sendWebhook : null;
   const onTick = typeof deps.onTick === 'function' ? deps.onTick : null;
   if (options.executeLive && !rebalanceFn) {
@@ -919,6 +921,37 @@ async function runMirrorSync(options, deps = {}) {
           depth,
           gate,
         });
+
+        if (
+          options.autoWithdrawOnExpiry
+          && !state.autoWithdrawTriggered
+          && runLpFn
+          && Array.isArray(gate.failedChecksRaw)
+          && gate.failedChecksRaw.includes('MIN_TIME_TO_EXPIRY')
+        ) {
+          const autoCloseResult = await runAutoClose({
+            options: tickOptions,
+            state,
+            tickAt,
+            runLp: runLpFn,
+            sendWebhook,
+            snapshotMetrics,
+            minimumTimeToCloseSec,
+          });
+          snapshot.autoWithdraw = autoCloseResult;
+          await persistTickSnapshot({
+            loadedFilePath: loaded.filePath,
+            state,
+            tickAt,
+            snapshot,
+            snapshots,
+            onTick,
+            iteration,
+          });
+          shouldStop = true;
+          stoppedReason = `Auto-withdraw on expiry triggered: ${autoCloseResult.status}`;
+          break;
+        }
 
         if (snapshotMetrics.driftTriggered || plan.hedgeTriggered) {
           await processTriggeredAction({

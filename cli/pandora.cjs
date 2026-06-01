@@ -2063,6 +2063,7 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
     args.push('--skip-gate', [...options.skipGateChecks].sort().join(','));
   }
   if (options.manifestFile) args.push('--manifest-file', options.manifestFile);
+  if (options.autoWithdrawOnExpiry) args.push('--auto-withdraw-on-expiry');
 
   if (options.webhookUrl) args.push('--webhook-url', options.webhookUrl);
   if (options.webhookTemplate) args.push('--webhook-template', options.webhookTemplate);

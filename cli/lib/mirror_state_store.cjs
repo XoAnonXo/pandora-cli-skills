@@ -168,6 +168,8 @@ function ensureStateShape(raw, hash) {
     lastExecution: data.lastExecution || null,
     idempotencyKeys: Array.isArray(data.idempotencyKeys) ? data.idempotencyKeys : [],
     alerts: Array.isArray(data.alerts) ? data.alerts : [],
+    autoWithdrawTriggered: Boolean(data.autoWithdrawTriggered),
+    autoWithdrawResult: data.autoWithdrawResult || null,
   };
 }
 

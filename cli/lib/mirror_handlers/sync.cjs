@@ -376,6 +376,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     verifyMirror,
     runLivePolymarketPreflightForMirror,
     runMirrorSync,
+    runLp,
     buildQuotePayload,
     enforceTradeRiskGuards,
     executeTradeOnchain,
@@ -942,6 +943,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
           }
           return report;
         },
+        runLp: typeof runLp === 'function' ? runLp : null,
         onTick: streamTicks ? (tickContext) => renderMirrorSyncTickLine({ ...tickContext, verbose: Boolean(options.verbose) }, context.outputMode) : null,
       },
     );
