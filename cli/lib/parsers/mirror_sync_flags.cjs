@@ -170,6 +170,7 @@ function createParseMirrorSyncFlags(deps) {
       verbose: false,
       adoptExistingPositions: false,
       autoWithdrawOnExpiry: false,
+      autoWithdrawLeadSec: null,
       forceGate: false,
       forceGateDeprecatedUsed: false,
       skipGateChecks: [],
@@ -387,6 +388,14 @@ function createParseMirrorSyncFlags(deps) {
       }
       if (token === '--auto-withdraw-on-expiry') {
         options.autoWithdrawOnExpiry = true;
+        continue;
+      }
+      if (token === '--auto-withdraw-lead-sec') {
+        options.autoWithdrawLeadSec = parsePositiveInteger(
+          requireFlagValue(rest, i, '--auto-withdraw-lead-sec'),
+          '--auto-withdraw-lead-sec',
+        );
+        i += 1;
         continue;
       }
       if (token === '--adopt-existing-positions') {

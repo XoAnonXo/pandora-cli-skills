@@ -593,6 +593,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         ...sourceSelector,
         executeLive: options.executeLive,
         autoWithdrawOnExpiry: false,
+        autoWithdrawLeadSec: null,
         hedgeEnabled: !options.noHedge,
         hedgeRatio: options.hedgeRatio,
         hedgeScope: options.hedgeScope,

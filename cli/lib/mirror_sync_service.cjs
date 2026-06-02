@@ -43,6 +43,7 @@ const {
 } = require('./mirror_sync/gates.cjs');
 const { processTriggeredAction } = require('./mirror_sync/execution.cjs');
 const { runAutoClose } = require('./mirror_sync/auto_close.cjs');
+const { isSportsLikePolymarketSource } = require('./mirror_sync/source_freshness.cjs');
 const { createServiceError, ensureStateIdentity, persistTickSnapshot } = require('./mirror_sync/state.cjs');
 const { materializeExecutionSigner } = require('./signers/execution_signer_service.cjs');
 
@@ -922,12 +923,17 @@ async function runMirrorSync(options, deps = {}) {
           gate,
         });
 
+        const autoWithdrawLeadSec = Number.isFinite(options.autoWithdrawLeadSec)
+          ? options.autoWithdrawLeadSec
+          : isSportsLikePolymarketSource(verifyPayload && verifyPayload.sourceMarket)
+            ? minimumTimeToCloseSec
+            : 60;
         if (
           options.autoWithdrawOnExpiry
           && !state.autoWithdrawTriggered
           && runLpFn
-          && Array.isArray(gate.failedChecksRaw)
-          && gate.failedChecksRaw.includes('MIN_TIME_TO_EXPIRY')
+          && snapshotMetrics.pandoraTimeToExpirySec !== null
+          && snapshotMetrics.pandoraTimeToExpirySec < autoWithdrawLeadSec
         ) {
           const autoCloseResult = await runAutoClose({
             options: tickOptions,
@@ -936,7 +942,7 @@ async function runMirrorSync(options, deps = {}) {
             runLp: runLpFn,
             sendWebhook,
             snapshotMetrics,
-            minimumTimeToCloseSec,
+            minimumTimeToCloseSec: autoWithdrawLeadSec,
           });
           snapshot.autoWithdraw = autoCloseResult;
           await persistTickSnapshot({

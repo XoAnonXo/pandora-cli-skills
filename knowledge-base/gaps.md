@@ -43,11 +43,19 @@ These gaps can cause direct financial loss in the market-maker (mirror + hedge) 
 
 **Status:** Implemented via `--auto-withdraw-on-expiry` flag on `mirror sync`.
 
-When `--auto-withdraw-on-expiry` is enabled, the daemon automatically calls `removeLiquidity` and stops itself the moment the `MIN_TIME_TO_EXPIRY` gate fires (default 30 minutes before market expiry). This eliminates the window where the AMM holds full liquidity after the daemon stops trading.
+When `--auto-withdraw-on-expiry` is enabled, the daemon automatically calls `removeLiquidity` and stops itself when time-to-expiry drops below the configured lead time. The lead time is configurable per market type via `--auto-withdraw-lead-sec`:
+
+The default lead time is chosen automatically based on market type (detected via `isSportsLikePolymarketSource`):
+
+- **Sports markets:** 1800 sec (30 min) — safety buffer because match result becomes known before formal expiry
+- **Regular markets:** 60 sec (1 min) — just enough for transaction confirmation; result is unknown until expiry, so no reason to withdraw earlier
+
+Override with `--auto-withdraw-lead-sec <seconds>` for manual control. The auto-withdraw check is independent of the `MIN_TIME_TO_EXPIRY` gate (which controls when the daemon stops trading).
 
 **What was added:**
 - `cli/lib/mirror_sync/auto_close.cjs` — `runAutoClose()` function that withdraws all LP tokens
 - `--auto-withdraw-on-expiry` flag in mirror sync flags parser (distinct from `mirror go --auto-close` which is lifecycle close after resolve)
+- `--auto-withdraw-lead-sec <seconds>` — configurable lead time before expiry (default = `--min-time-to-close-sec` value)
 - Auto-withdraw check in the daemon tick loop (fires before rebalance/hedge, one-shot via state flag)
 - Webhook notification on auto-withdraw (success or failure with resume command)
 - State persistence: `autoWithdrawTriggered`, `autoWithdrawResult`

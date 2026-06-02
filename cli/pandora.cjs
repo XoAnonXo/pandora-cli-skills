@@ -2064,6 +2064,9 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
   }
   if (options.manifestFile) args.push('--manifest-file', options.manifestFile);
   if (options.autoWithdrawOnExpiry) args.push('--auto-withdraw-on-expiry');
+  if (Number.isFinite(options.autoWithdrawLeadSec)) {
+    args.push('--auto-withdraw-lead-sec', String(options.autoWithdrawLeadSec));
+  }
 
   if (options.webhookUrl) args.push('--webhook-url', options.webhookUrl);
   if (options.webhookTemplate) args.push('--webhook-template', options.webhookTemplate);
@@ -3652,7 +3655,7 @@ async function fetchLatestLiquiditySnapshotForMarket(indexerUrl, marketAddress, 
   return page.items.length ? page.items[0] : null;
 }
 
-async function resolveQuoteOdds(indexerUrl, options, timeoutMs) {
+async function resolveQuoteOdds(indexerUrl, options, timeoutMs, marketSnapshot) {
   if (options.yesPct !== null && options.yesPct !== undefined) {
     const manual = normalizeOddsFromPair(options.yesPct, 100 - options.yesPct, 'manual:yes-pct');
     if (manual) {
@@ -3661,19 +3664,38 @@ async function resolveQuoteOdds(indexerUrl, options, timeoutMs) {
   }
 
   const snapshot = await fetchLatestLiquiditySnapshotForMarket(indexerUrl, options.marketAddress, timeoutMs);
-  if (!snapshot) {
-    return buildNullOdds(null, 'No liquidity events found for this market. Pass --yes-pct to provide manual odds.');
+  if (snapshot) {
+    const odds = normalizeOddsFromPair(
+      snapshot.noTokenAmount,
+      snapshot.yesTokenAmount,
+      'liquidity-event:latest',
+    );
+    if (odds && !odds.diagnostic) {
+      return odds;
+    }
+    if (odds) {
+      return buildNullOdds('liquidity-event:latest', 'Liquidity snapshot exists but odds could not be derived.');
+    }
   }
 
-  const odds = normalizeOddsFromPair(
-    snapshot.noTokenAmount,
-    snapshot.yesTokenAmount,
-    'liquidity-event:latest',
-  );
-  if (!odds) {
-    return buildNullOdds('liquidity-event:latest', 'Liquidity snapshot exists but odds could not be derived.');
+  if (marketSnapshot && normalizePandoraMarketType(marketSnapshot.marketType) === 'parimutuel') {
+    for (const pair of MARKET_DIRECT_ODDS_FIELDS) {
+      const odds = tryOddsFromDirectPair(marketSnapshot, pair);
+      if (odds && !odds.diagnostic) return odds;
+    }
+    for (const pair of MARKET_RESERVE_ODDS_FIELDS) {
+      const odds = tryOddsFromReservePair(marketSnapshot, pair);
+      if (odds && !odds.diagnostic) return odds;
+    }
+    const yesProbability = normalizeProbabilityLike(
+      marketSnapshot.yesChance ?? marketSnapshot.yesPct ?? marketSnapshot.yesProbability,
+    );
+    if (Number.isFinite(yesProbability) && yesProbability > 0 && yesProbability < 1) {
+      return normalizeOddsFromPair(yesProbability, 1 - yesProbability, 'market-snapshot:pari-chance');
+    }
   }
-  return odds;
+
+  return buildNullOdds(null, 'No liquidity events found for this market. Pass --yes-pct to provide manual odds.');
 }
 
 async function maybeReadAmmSellEstimateFromContract(options) {
@@ -3728,7 +3750,7 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
   const quoteMode = String(options && options.mode ? options.mode : 'buy').toLowerCase();
   let odds;
   try {
-    odds = await resolveQuoteOdds(indexerUrl, options, timeoutMs);
+    odds = await resolveQuoteOdds(indexerUrl, options, timeoutMs, market);
   } catch (err) {
     odds = buildNullOdds(null, `Unable to fetch odds: ${formatErrorValue(err)}`);
   }
