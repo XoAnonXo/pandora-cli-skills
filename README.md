@@ -17,10 +17,11 @@ Pandora is a prediction-market runtime for agents, operators, and integrators. I
 
 ```text
 +----------------------- README MAP -----------------------+
-| humans  -> install, inspect, follow task guides          |
-| agents  -> bootstrap, schema, MCP, policy/profile checks |
-| trust   -> release verification, security, support       |
-| sdk     -> TypeScript, Python, generated contracts       |
+| traders   -> trader-guide, trading-workflows             |
+| operators -> operator-guide, mirror-operations, policies |
+| agents    -> bootstrap, schema, MCP, policy/profile      |
+| trust     -> release verification, security, support     |
+| sdk       -> TypeScript, Python, generated contracts     |
 +----------------------------------------------------------+
 ```
 
@@ -66,7 +67,9 @@ If you want the main documentation map, use these jump points:
 
 - Anthropic skill install: [`docs/skills/install-anthropic-skill.md`](./docs/skills/install-anthropic-skill.md)
 - Setup and onboarding: [`docs/skills/setup-and-onboarding.md`](./docs/skills/setup-and-onboarding.md)
-- Humans: [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
+- Traders: [`docs/skills/trader-guide.md`](./docs/skills/trader-guide.md)
+- Operators: [`docs/skills/operator-guide.md`](./docs/skills/operator-guide.md)
+- Full command reference: [`docs/skills/command-reference.md`](./docs/skills/command-reference.md)
 - Agents: [`docs/skills/agent-quickstart.md`](./docs/skills/agent-quickstart.md)
 - MCP / JSON contracts: [`docs/skills/agent-interfaces.md`](./docs/skills/agent-interfaces.md)
 - Policy packs / signer profiles: [`docs/skills/policy-profiles.md`](./docs/skills/policy-profiles.md)
@@ -120,11 +123,13 @@ Flashbots routing note for agents and operators:
 ### Human reading order
 
 1. [`docs/skills/setup-and-onboarding.md`](./docs/skills/setup-and-onboarding.md) for the first-run manual and guided setup path.
-2. [`docs/skills/command-reference.md`](./docs/skills/command-reference.md) for the command families and flags.
-3. [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md) for discover -> quote -> trade -> claim flows.
-4. [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md) for mirror planning, validation, deploy, sync, and status.
-5. [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md) for portfolio inspection, LP exits, and closeout.
-6. [`docs/trust/release-verification.md`](./docs/trust/release-verification.md) before installs, release checks, or operator handoff.
+2. [`docs/skills/trader-guide.md`](./docs/skills/trader-guide.md) if you are a trader (discover, buy/sell, claim).
+3. [`docs/skills/operator-guide.md`](./docs/skills/operator-guide.md) if you are an operator (deploy, mirror, hedge).
+4. [`docs/skills/command-reference.md`](./docs/skills/command-reference.md) for the full command families and flags.
+5. [`docs/skills/trading-workflows.md`](./docs/skills/trading-workflows.md) for detailed discover -> quote -> trade -> claim flows.
+6. [`docs/skills/mirror-operations.md`](./docs/skills/mirror-operations.md) for mirror planning, validation, deploy, sync, and status.
+7. [`docs/skills/portfolio-closeout.md`](./docs/skills/portfolio-closeout.md) for portfolio inspection, LP exits, and closeout.
+8. [`docs/trust/release-verification.md`](./docs/trust/release-verification.md) before installs, release checks, or operator handoff.
 
 If you are testing the Anthropic skill itself rather than the repo manually, use the install guide first and then come back to the docs above for deeper workflow detail.
 

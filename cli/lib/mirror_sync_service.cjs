@@ -43,6 +43,7 @@ const {
 } = require('./mirror_sync/gates.cjs');
 const { processTriggeredAction } = require('./mirror_sync/execution.cjs');
 const { runAutoClose } = require('./mirror_sync/auto_close.cjs');
+const { evaluateHedgeGapAlert, evaluateSlippageAlert } = require('./mirror_sync/hedge_gap_monitor.cjs');
 const { isSportsLikePolymarketSource } = require('./mirror_sync/source_freshness.cjs');
 const { createServiceError, ensureStateIdentity, persistTickSnapshot } = require('./mirror_sync/state.cjs');
 const { materializeExecutionSigner } = require('./signers/execution_signer_service.cjs');
@@ -980,6 +981,85 @@ async function runMirrorSync(options, deps = {}) {
             depth,
             pendingActionRecoveryClient,
           });
+        }
+
+        const hedgeGapResult = await evaluateHedgeGapAlert({
+          hedgeGapUsdc: plan.gapUsdc,
+          alertThresholdUsdc: options.hedgeGapAlertUsdc,
+          criticalThresholdUsdc: options.hedgeGapCriticalUsdc,
+          state,
+          currentHedgeUsdc: state.currentHedgeUsdc || 0,
+          targetHedgeUsdc: snapshotMetrics.targetHedgeUsdc,
+          sendWebhook,
+          strategyHash: hash,
+        });
+        if (hedgeGapResult.alertFired) {
+          snapshot.hedgeGapAlert = {
+            hedgeGapUsdc: plan.gapUsdc,
+            thresholdUsdc: options.hedgeGapAlertUsdc,
+          };
+        }
+        if (
+          hedgeGapResult.criticalTriggered
+          && runLpFn
+          && !state.emergencyWithdrawTriggered
+        ) {
+          const emergencyResult = await runAutoClose({
+            options: tickOptions,
+            state,
+            tickAt,
+            runLp: runLpFn,
+            sendWebhook,
+            snapshotMetrics,
+            minimumTimeToCloseSec,
+            trigger: 'hedge-gap',
+            webhookEvent: 'mirror.sync.emergency-withdraw',
+            triggerContext: {
+              hedgeGapUsdc: plan.gapUsdc,
+              criticalThresholdUsdc: options.hedgeGapCriticalUsdc,
+            },
+          });
+          snapshot.emergencyWithdraw = emergencyResult;
+          await persistTickSnapshot({
+            loadedFilePath: loaded.filePath,
+            state,
+            tickAt,
+            snapshot,
+            snapshots,
+            onTick,
+            iteration,
+          });
+          shouldStop = true;
+          stoppedReason = `Emergency withdrawal on critical hedge gap triggered: ${emergencyResult.status} (gap: ${plan.gapUsdc} USDC)`;
+          break;
+        }
+
+        const lastAction = snapshot.action || (actions.length > 0 ? actions[actions.length - 1] : null);
+        const lastHedgeSlippage = lastAction && lastAction.hedge && lastAction.hedge.realizedSlippageUsdc;
+        const pnlFees = state.cumulativeLpFeesApproxUsdc || 0;
+        const pnlSlippage = (state.cumulativeHedgeSlippageRealizedUsdc || 0) > 0
+          ? state.cumulativeHedgeSlippageRealizedUsdc
+          : state.cumulativeHedgeCostApproxUsdc || 0;
+        const netPnl = pnlFees - pnlSlippage;
+
+        const slippageResult = await evaluateSlippageAlert({
+          realizedSlippageUsdc: lastHedgeSlippage || null,
+          slippageAlertThresholdUsdc: options.hedgeSlippageAlertUsdc,
+          state,
+          netPnlApproxUsdc: netPnl,
+          sendWebhook,
+          strategyHash: hash,
+        });
+        if (slippageResult.slippageAlertFired) {
+          snapshot.slippageAlert = {
+            realizedSlippageUsdc: lastHedgeSlippage,
+            thresholdUsdc: options.hedgeSlippageAlertUsdc,
+          };
+        }
+        if (slippageResult.netNegativeAlertFired) {
+          snapshot.netNegativeAlert = {
+            netPnlApproxUsdc: netPnl,
+          };
         }
 
         await persistTickSnapshot({

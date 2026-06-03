@@ -1,11 +1,12 @@
 const { round } = require('../shared/utils.cjs');
 
 /**
- * Execute automatic liquidity withdrawal when MIN_TIME_TO_EXPIRY gate fails.
+ * Execute automatic liquidity withdrawal.
  *
- * Called once per daemon run when `--auto-withdraw-on-expiry` is enabled. Withdraws all LP
- * tokens from the Pandora AMM, records the result in state, and sends a webhook
- * notification so the operator knows what happened.
+ * Triggered either when MIN_TIME_TO_EXPIRY gate fails (--auto-withdraw-on-expiry)
+ * or when hedge gap exceeds a critical threshold (--hedge-gap-critical-usdc).
+ * Withdraws all LP tokens from the Pandora AMM, records the result in state,
+ * and sends a webhook notification so the operator knows what happened.
  *
  * @param {{
  *   options: object,
@@ -15,21 +16,33 @@ const { round } = require('../shared/utils.cjs');
  *   sendWebhook: Function|null,
  *   snapshotMetrics: object,
  *   minimumTimeToCloseSec: number,
+ *   trigger?: string,
+ *   webhookEvent?: string,
+ *   triggerContext?: object,
  * }} params
  * @returns {Promise<object>}
  */
 async function runAutoClose(params) {
   const { options, state, tickAt, runLp, sendWebhook, snapshotMetrics, minimumTimeToCloseSec } = params;
+  const trigger = params.trigger || 'expiry';
+  const webhookEvent = params.webhookEvent || 'mirror.sync.auto-withdraw';
+  const triggerContext = params.triggerContext || {};
+
+  const defaultReason = trigger === 'hedge-gap'
+    ? 'Critical hedge gap exceeded threshold with --hedge-gap-critical-usdc enabled'
+    : 'MIN_TIME_TO_EXPIRY gate failed with --auto-withdraw-on-expiry enabled';
 
   const result = {
     status: 'pending',
+    trigger,
     triggeredAt: tickAt.toISOString(),
-    reason: 'MIN_TIME_TO_EXPIRY gate failed with --auto-withdraw-on-expiry enabled',
+    reason: defaultReason,
     timeToExpirySec: snapshotMetrics.pandoraTimeToExpirySec,
     minimumTimeToCloseSec,
     withdrawal: null,
     error: null,
     resumeCommand: null,
+    ...triggerContext,
   };
 
   const marketAddress = options.pandoraMarketAddress || null;
@@ -67,14 +80,22 @@ async function runAutoClose(params) {
       : 'pandora lp remove --all-markets --execute';
   }
 
-  state.autoWithdrawTriggered = true;
-  state.autoWithdrawResult = result;
+  if (trigger === 'hedge-gap') {
+    state.emergencyWithdrawTriggered = true;
+    state.emergencyWithdrawResult = result;
+  } else {
+    state.autoWithdrawTriggered = true;
+    state.autoWithdrawResult = result;
+  }
 
   if (sendWebhook) {
     try {
+      const timeInfo = result.timeToExpirySec !== null && result.timeToExpirySec !== undefined
+        ? ` Time to expiry: ${round(result.timeToExpirySec, 0) ?? 'unknown'}s.`
+        : '';
       await sendWebhook({
-        event: 'mirror.sync.auto-withdraw',
-        message: `[Pandora Mirror] Auto-withdraw ${result.status}. Time to expiry: ${round(result.timeToExpirySec, 0) ?? 'unknown'}s.`,
+        event: webhookEvent,
+        message: `[Pandora Mirror] Auto-withdraw ${result.status} (trigger: ${trigger}).${timeInfo}`,
         payload: result,
       });
     } catch (_) {

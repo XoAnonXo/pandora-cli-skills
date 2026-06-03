@@ -160,6 +160,9 @@ function ensureStateShape(raw, hash) {
     cumulativeHedgeCostApproxUsdc: Number.isFinite(Number(data.cumulativeHedgeCostApproxUsdc))
       ? Number(data.cumulativeHedgeCostApproxUsdc)
       : 0,
+    cumulativeHedgeSlippageRealizedUsdc: Number.isFinite(Number(data.cumulativeHedgeSlippageRealizedUsdc))
+      ? Number(data.cumulativeHedgeSlippageRealizedUsdc)
+      : 0,
     accounting: ensureAccountingShape(data.accounting),
     startupHedgeBaseline,
     startupHedgeBaselineUsdc: startupHedgeBaseline ? startupHedgeBaseline.baselineUsdc : null,
@@ -170,6 +173,10 @@ function ensureStateShape(raw, hash) {
     alerts: Array.isArray(data.alerts) ? data.alerts : [],
     autoWithdrawTriggered: Boolean(data.autoWithdrawTriggered),
     autoWithdrawResult: data.autoWithdrawResult || null,
+    hedgeGapAlertActive: Boolean(data.hedgeGapAlertActive),
+    netNegativeAlertActive: Boolean(data.netNegativeAlertActive),
+    emergencyWithdrawTriggered: Boolean(data.emergencyWithdrawTriggered),
+    emergencyWithdrawResult: data.emergencyWithdrawResult || null,
   };
 }
 

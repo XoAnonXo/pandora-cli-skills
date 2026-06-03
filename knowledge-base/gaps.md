@@ -2,11 +2,14 @@
 title: Gaps and improvement backlog
 type: surface
 status: active
-updated: 2026-06-02
+updated: 2026-06-03
 source_paths:
   - cli/lib/mirror_sync_service.cjs
   - cli/lib/mirror_sync/gates.cjs
   - cli/lib/mirror_sync/execution.cjs
+  - cli/lib/mirror_sync/hedge_retry.cjs
+  - cli/lib/mirror_sync/hedge_gap_monitor.cjs
+  - cli/lib/mirror_sync/auto_close.cjs
   - cli/lib/mirror_close_service.cjs
   - cli/lib/market_admin_service.cjs
   - cli/lib/model_diagnose_service.cjs
@@ -65,82 +68,104 @@ Override with `--auto-withdraw-lead-sec <seconds>` for manual control. The auto-
 - Real-time event result detection (WebSocket from live-scores API) for tighter withdrawal timing
 - Gradual liquidity ramp-down approaching expiry
 
-### 2. Hedge failure leaves unprotected exposure
+### 2. ~~Hedge failure leaves unprotected exposure~~ (ADDRESSED)
 
-When a user buys YES on Pandora, mirror sync attempts to hedge by buying YES on Polymarket. If the hedge fails (Polymarket API down, insufficient depth, transaction reverted, gas spike on Polygon), the operator holds an unhedged position — user has YES on Pandora, but operator has no matching YES on Polymarket.
+**Status:** Implemented via three-layered defense in `mirror sync`.
 
-**Current protection:** `DEPTH_COVERAGE` gate checks available depth before executing. `pendingActionLock` tracks in-flight operations. But:
-- Depth can disappear between check and execution
-- If the hedge transaction reverts, the Pandora side is already done (user already bought)
-- There is no automatic retry with increased gas or alternative routing
-- There is no alert when hedge gap exceeds a threshold
+When a hedge order fails, the daemon now has automatic retry, monitoring, and emergency withdrawal capabilities:
 
-**What is needed:**
-- Hedge gap monitoring with automatic alert when unhedged exposure > X USDC
-- Auto-retry for failed hedge orders (with backoff and gas bump)
-- Consider pre-funding: hold both YES and NO on Polymarket in advance, rebalance between them rather than buying on demand
-- Kill switch that pauses liquidity provision (removeLiquidity) if hedge gap is critical
+**Layer 1 — Hedge retry with backoff (`cli/lib/mirror_sync/hedge_retry.cjs`):**
+- `retryHedgeOrder()` wraps every `hedgeFn()` call inside `executeHedgeLeg`
+- Exponential backoff: `delay × 2^attempt` (default: 2s → 4s → 8s)
+- Only retries on transient failures (API errors, timeouts); validation errors propagate immediately
+- Configurable: `--hedge-retry-count <N>` (default 3, 0 = disabled), `--hedge-retry-delay-ms <ms>` (default 2000)
 
-### 3. No `pause()` function in AMM contract
+**Layer 2 — Hedge gap alert webhook (`cli/lib/mirror_sync/hedge_gap_monitor.cjs`):**
+- `evaluateHedgeGapAlert()` runs every tick after action processing
+- Fires `mirror.sync.hedge-gap-alert` webhook when `|hedgeGapUsdc|` exceeds `--hedge-gap-alert-usdc` threshold
+- Edge-triggered debounce: fires once when gap crosses threshold, resets when gap drops back
+- Configurable: `--hedge-gap-alert-usdc <amount>` (default null = disabled)
 
-The Pandora AMM smart contract ABI currently only has `addLiquidity`, `removeLiquidity`, and `resolveMarket`. There is no `pause()` / `unpause()` mechanism to freeze trading in an emergency.
+**Layer 3 — Emergency LP withdrawal:**
+- When `|hedgeGapUsdc|` exceeds `--hedge-gap-critical-usdc`, calls `runAutoClose()` with `trigger: 'hedge-gap'`
+- Withdraws all LP tokens, fires `mirror.sync.emergency-withdraw` webhook, stops daemon
+- One-shot guard via `state.emergencyWithdrawTriggered` (same pattern as auto-withdraw-on-expiry)
+- Configurable: `--hedge-gap-critical-usdc <amount>` (default null = disabled)
 
-The only way to stop trading is to remove all liquidity (`removeLiquidity`), which is slow (requires a blockchain transaction) and cannot be instant. In a fast-moving situation (exploit, oracle failure, match result known), every second of delay means potential loss.
+**What was added:**
+- `cli/lib/mirror_sync/hedge_retry.cjs` — retry wrapper with exponential backoff
+- `cli/lib/mirror_sync/hedge_gap_monitor.cjs` — gap threshold evaluation + alert webhook
+- Generalized `auto_close.cjs` to accept different trigger types (`expiry` / `hedge-gap`)
+- 4 new CLI flags: `--hedge-retry-count`, `--hedge-retry-delay-ms`, `--hedge-gap-alert-usdc`, `--hedge-gap-critical-usdc`
+- State fields: `hedgeGapAlertActive`, `emergencyWithdrawTriggered`, `emergencyWithdrawResult`
+- 25 unit + integration tests in `tests/unit/mirror_hedge_safety.test.cjs`
 
-**What is needed:**
-- A `pause()` function in the smart contract that the operator can call to freeze all buy/sell operations instantly
-- Integration with mirror sync: when auto-pause triggers fire, also pause the AMM contract on-chain
+**Conscious exclusions:**
+- Pre-funding (hold YES+NO on Polymarket in advance) — excluded due to capital constraints
+- Gas bump — not applicable, hedge orders are off-chain CLOB FAK orders
+- Multi-host CLOB failover for order placement — reads support multi-host; order failover is a separate enhancement
 
-**Note:** This requires a contract upgrade or redeployment, not just a CLI change.
+### 3. ~~Slippage between Pandora rebalance and Polymarket hedge~~ (ADDRESSED)
 
-### 4. Slippage between Pandora rebalance and Polymarket hedge
+**Status:** Implemented via post-fill slippage tracking, net P&L metrics, and slippage alerts.
 
-Mirror sync uses mid-prices from Polymarket (via `getPrice()`, not real order book data) to determine drift and rebalance size. The actual hedge buy on Polymarket happens at market price with slippage. If the spread is wide or depth is thin, the hedge costs more than the model calculated.
+**Original hypothesis was wrong:** The gap described "use real bid/ask instead of mid-prices for hedge sizing." Code analysis showed this was already the case — hedge sizing uses no Polymarket prices at all (pure reserve math), and `referencePrice` already prefers `bestAsk`/`bestBid`. FAK orders execute at market with no limit price.
 
-Over time, cumulative slippage can exceed the commission earned from the Pandora AMM fee tier.
+**Real problems found and fixed:**
 
-**What is needed:**
-- Use real bid/ask from CLOB API (already in dependencies) instead of mid-prices for hedge sizing
-- Track cumulative slippage vs cumulative fees to detect when the operation is net-negative
-- Alert when slippage per hedge exceeds a configurable threshold
+1. **No post-fill slippage tracking** — the CLOB response contains `takingAmount`/`makingAmount` (actual fill amounts) but `executeHedgeLeg` ignored them. Fixed: `extractHedgeFillData()` now parses fill data and computes `realizedSlippageUsdc = (fillPrice - referencePrice) × shares`.
+
+2. **Hardcoded 0.3% fee approximation** — `cumulativeLpFeesApproxUsdc` used a hardcoded `0.003` multiplier. Fixed: `resolveFeeFraction()` reads `plan.reserveFeeTier` (e.g. 3000 = 0.3%), falls back to 0.003 if absent.
+
+3. **No net P&L metric** — operator couldn't answer "Is this market-making profitable?" Fixed: `buildPnlMetrics()` exposes `netPnlApproxUsdc` and `netPnlStatus` (`profitable` / `net-negative`) in every tick snapshot.
+
+4. **No slippage alert** — no alert when per-trade or cumulative slippage exceeds thresholds. Fixed: `evaluateSlippageAlert()` fires `mirror.sync.slippage-alert` on per-trade slippage exceeding threshold and `mirror.sync.net-negative-alert` when cumulative P&L goes negative (edge-triggered).
+
+**What was added:**
+- `extractHedgeFillData()` and `resolveFeeFraction()` in `execution.cjs`
+- `evaluateSlippageAlert()` in `hedge_gap_monitor.cjs`
+- `buildPnlMetrics()` in `planning.cjs` — P&L section in tick snapshots
+- State field: `cumulativeHedgeSlippageRealizedUsdc`, `netNegativeAlertActive`
+- CLI flag: `--hedge-slippage-alert-usdc <amount>` (default null = disabled)
+- Fill data telemetry on `action.hedge.fill` and `action.hedge.realizedSlippageUsdc`
+
+**Note:** CLOB fill data is best-effort telemetry (known phantom-fill issues). Position tracking uses `state.currentHedgeShares`, not fill responses.
 
 ---
 
 ## Priority: High
 
-### 5. Documentation does not separate trader vs operator roles
+### 4. ~~Documentation does not separate trader vs operator roles~~ (ADDRESSED)
 
-All commands are documented in one stream. A new user cannot tell which commands are for trading (scan, quote, trade, arb scan, watch, claim) and which are for running markets (mirror, sports sync, hedge, lp, resolve). This causes confusion about the purpose of core features.
+**Status:** Implemented via dedicated role guides and role map in command reference.
 
-**What is needed:**
-- Two clear sections in docs: "Trader Guide" and "Operator Guide"
-- Separate workflow examples for each role
-- Clear labeling on every command: who is the intended user
+**What was added:**
+- `docs/skills/trader-guide.md` — command map, canonical workflow, and examples for traders (discover, quote, trade, portfolio, claim)
+- `docs/skills/operator-guide.md` — command map, workflows, and safety features for operators (deploy, mirror, hedge, resolve)
+- Role map table in `command-reference.md` mapping every command family to its primary role
+- "By Role" routing section in `capabilities.md` with trader/operator reading paths
+- Updated README.md with separate trader/operator entry points in the map and human reading order
 
-**Source of confusion:** mirror sync, sports sync, and hedge look like trader tools but are operator tools. arb scan and watch look like operator tools but are trader tools.
+### 5. ~~Polymarket connector -- thin analytics surface~~ (ADDRESSED)
 
-### 6. Polymarket connector -- thin analytics surface
+**Status:** Implemented — connector now exposes real order book, depth, volume, and trade history.
 
-The Polymarket connector (`cli/lib/connectors/polymarket_connector.cjs`) currently exposes:
+The Polymarket connector (`cli/lib/connectors/polymarket_connector.cjs`) was enriched from a thin mid-price surface to a full analytics connector:
 
-- `getPrice()` — yes/no prices from gamma API
-- `getBook()` — same data repackaged (not real order book)
-- `placeTrade()` — not implemented in this module
-- `cancelTrade()` — not implemented in this module
-- `getPositions()` — position summary
+**What was added:**
 
-`@polymarket/clob-client` is listed as a dependency (`^5.2.4` in `package.json`) but is only used for trade execution in the mirror/hedge path. It is not used for analytics.
+- `getBook(tokenId)` — real L2 order book from CLOB (`bids`, `asks`, `bestBid`, `bestAsk`, `midPrice`, `spreadBps`, `lastTradePrice`)
+- `getDepth(yesTokenId, noTokenId)` — executable depth for both sides via `fetchDepthForMarket` (`depthWithinSlippageUsd`, `depthCoverage`, per-side depth with `midPrice`, `worstPrice`, `referencePrice`)
+- `getPrice()` — enriched with `volumeUsd` and `liquidityUsd` from Gamma (previously stripped)
+- `getTradeHistory(conditionId)` — recent fills from CLOB via `getMarketTradesEvents`
+- `normalizeOrderbook` exported from `polymarket_trade_adapter.cjs` for reuse
 
-Extending the Polymarket connector to fetch order book data and trade history would unblock:
+**What this unblocks (not yet wired):**
+- `spreadBps` and `depthCoverage` for `model diagnose` — data is now available via connector, auto-feed is a future step
+- Enriched `odds record` with bid/ask and volume — data pipeline can now use the richer `getPrice` output
+- Trade flow analysis via `getTradeHistory` for informed-flow metrics
 
-- Real order book with bid/ask and depth → `spreadBps` for model diagnose
-- Book depth → `depthCoverage` for model diagnose
-- Trade history / recent fills
-- Volume breakdown
-
-**Impact:** One refactor closes half the gaps in `model diagnose` and makes arb scan more informed.
-
-### 7. No historical odds import + `odds record` is fragile
+### 6. No historical odds import + `odds record` is fragile
 
 The only way to collect price history is to run `odds record` in real-time and wait. There is no way to import historical data retroactively. If a user wants to calibrate a model on 30 days of data, they needed to start recording 30 days ago.
 
@@ -162,7 +187,7 @@ The only way to collect price history is to run `odds record` in real-time and w
 
 ## Priority: Medium
 
-### 8. Watch cannot act on alerts
+### 7. Watch cannot act on alerts
 
 Watch detects problems (exposure over limit, price drop, market resolved) but can only send notifications. It cannot take even simple automatic actions.
 
@@ -173,19 +198,19 @@ Watch detects problems (exposure over limit, price drop, market resolved) but ca
 
 **Risk note:** auto-sell requires signing transactions, so this needs profile integration and explicit user opt-in.
 
-### 9. No P&L tracking over time
+### 8. No P&L tracking over time
 
 `portfolio` shows a current snapshot. There is no history: "yesterday my portfolio was worth $500, today $480, this week -$120". No trend, no performance graph.
 
 **What is needed:** `portfolio history --wallet 0x... --period 30d` — periodic snapshots stored locally, with summary and trend.
 
-### 10. No backtesting framework
+### 9. No backtesting framework
 
 `simulate mc` projects forward from current state. There is no way to test a strategy against historical data: "If I had bought YES every time the price dropped below $0.30 last month, how much would I have made?"
 
 **What is needed:** A backtest command that replays historical odds data through a strategy definition and reports simulated P&L.
 
-### 11. No automated data pipeline for model inputs
+### 10. No automated data pipeline for model inputs
 
 The path from raw data to `model diagnose` is fully manual:
 
@@ -199,7 +224,7 @@ The path from raw data to `model diagnose` is fully manual:
 
 An automated pipeline would collect prices on a schedule, run calibration and correlation automatically, feed results into diagnose, and emit a periodic health report.
 
-### 12. No built-in provider presets for sports odds APIs
+### 11. No built-in provider presets for sports odds APIs
 
 The sports infrastructure is well-developed internally:
 - `sports_provider_registry` — universal HTTP client with primary/backup fallback, env-based config
@@ -218,7 +243,7 @@ What is **missing**: presets for concrete APIs. An operator must manually map en
 
 With a preset, setup reduces from ~10 env-variables to `--provider <name> --api-key <key>`.
 
-### 13. No trader-focused quickstart
+### 12. No trader-focused quickstart
 
 There is no "try in 5 minutes" path. A new user must understand setup, doctor, profiles, and policies before seeing a single market.
 
@@ -228,21 +253,21 @@ There is no "try in 5 minutes" path. A new user must understand setup, doctor, p
 
 ## Priority: Low
 
-### 14. Arbitrage has no atomic two-leg execution
+### 13. Arbitrage has no atomic two-leg execution
 
 `arb scan` finds cross-venue opportunities but execution is fully manual and split across two platforms. While the second leg is being executed on Polymarket, the spread can disappear. A failed second leg turns arbitrage into a speculative position.
 
 **What could exist:** `arb execute --pair <id>` that executes the Pandora leg and provides timing guidance for the Polymarket leg. Full atomicity across venues is technically very hard (different protocols/chains).
 
-### 15. No pipeline or chaining command
+### 14. No pipeline or chaining command
 
 Each step is a separate command. Results must be manually passed between them. There is no way to say: "take arb scan results, filter by spread > 3%, quote each, show summary table".
 
 **What could exist:** A pipeline syntax or a `pandora run-chain` command that connects steps.
 
-### 16. `model diagnose` -- remaining missing data inputs
+### 15. `model diagnose` -- remaining missing data inputs
 
-Beyond the Polymarket connector gap (item 2), three metrics remain hard to obtain:
+Beyond the Polymarket connector gap (item 5), three metrics remain hard to obtain:
 
 | Metric | Problem | What is needed |
 |---|---|---|
@@ -252,7 +277,7 @@ Beyond the Polymarket connector gap (item 2), three metrics remain hard to obtai
 
 These are academic-grade metrics. Reasonable to leave as defaults-only inputs for now.
 
-### 17. `anomalyRate` helper
+### 16. `anomalyRate` helper
 
 Can be computed from existing `odds record` history by counting outliers (>2-3 sigma from mean). Pandora does not automate this.
 
@@ -265,39 +290,37 @@ Can be computed from existing `odds record` history by counting outliers (>2-3 s
 | # | Gap | Priority | Effort | Impact |
 |---|---|---|---|---|
 | 1 | ~~Auto-withdraw liquidity on event end~~ | **ADDRESSED** | — | `--auto-withdraw-on-expiry` flag implemented |
-| 2 | Hedge failure → unprotected exposure | **CRITICAL** | High | Prevents unhedged losses |
-| 3 | No pause() in AMM contract | **CRITICAL** | High (contract) | Emergency stop capability |
-| 4 | Slippage tracking (rebalance vs hedge) | **CRITICAL** | Medium | Prevents silent net-negative operation |
-| 5 | Trader vs operator docs | High | Low | Removes 80% of new-user confusion |
-| 6 | Polymarket connector analytics | High | Medium | Unblocks spread, depth, trade history |
-| 7 | Historical odds import + odds record fragility | High | Medium | Calibrate needs convenient data; odds record is fragile |
-| 8 | Watch auto-actions | Medium | Medium | Stop-loss and auto-claim |
-| 9 | P&L tracking | Medium | Medium | Portfolio performance visibility |
-| 10 | Backtesting | Medium | High | Strategy validation on historical data |
-| 11 | Automated model pipeline | Medium | Medium | Removes manual copy-paste between commands |
-| 12 | Sports odds provider presets | Medium | Low | Reduces setup from ~10 env-vars to one flag |
-| 13 | Trader quickstart | Medium | Low | Lowers entry barrier |
-| 14 | Atomic arb execution | Low | High | Reduces execution risk in arbitrage |
-| 15 | Pipeline/chaining | Low | Medium | Convenience for power users |
-| 16 | Academic diagnose metrics | Low | Very high | informedFlowRatio, noiseRatio, manipulationAlerts |
-| 17 | anomalyRate helper | Low | Low | Quick win from existing data |
+| 2 | ~~Hedge failure → unprotected exposure~~ | **ADDRESSED** | — | Three-layer defense: retry + alert + emergency withdrawal |
+| 3 | ~~Slippage tracking (rebalance vs hedge)~~ | **ADDRESSED** | — | Post-fill tracking + net P&L + slippage alerts |
+| 4 | ~~Trader vs operator docs~~ | **ADDRESSED** | — | Role guides + role map in command reference |
+| 5 | ~~Polymarket connector analytics~~ | **ADDRESSED** | — | Real L2 book, depth, volume, trade history in connector |
+| 6 | Historical odds import + odds record fragility | High | Medium | Calibrate needs convenient data; odds record is fragile |
+| 7 | Watch auto-actions | Medium | Medium | Stop-loss and auto-claim |
+| 8 | P&L tracking | Medium | Medium | Portfolio performance visibility |
+| 9 | Backtesting | Medium | High | Strategy validation on historical data |
+| 10 | Automated model pipeline | Medium | Medium | Removes manual copy-paste between commands |
+| 11 | Sports odds provider presets | Medium | Low | Reduces setup from ~10 env-vars to one flag |
+| 12 | Trader quickstart | Medium | Low | Lowers entry barrier |
+| 13 | Atomic arb execution | Low | High | Reduces execution risk in arbitrage |
+| 14 | Pipeline/chaining | Low | Medium | Convenience for power users |
+| 15 | Academic diagnose metrics | Low | Very high | informedFlowRatio, noiseRatio, manipulationAlerts |
+| 16 | anomalyRate helper | Low | Low | Quick win from existing data |
 
 ## TL;DR
 
 1. ~~AMM не выводит ликвидность автоматически~~ — решено: флаг `--auto-withdraw-on-expiry` **(ADDRESSED)**
-2. Хедж может упасть, а позиция юзера на Pandora уже записана — оператор остаётся без защиты **(CRITICAL)**
-3. В контракте AMM нет `pause()` — невозможно экстренно остановить торговлю **(CRITICAL)**
-4. Слипедж хеджа на Polymarket не отслеживается — операция может быть убыточной и никто не узнает **(CRITICAL)**
-5. Docs не разделяют трейдера и оператора — непонятно кому какие команды **(High)**
-6. Polymarket коннектор не даёт order book / spread / depth — половина метрик diagnose недоступна **(High)**
-7. Нет импорта исторических цен + `odds record` хрупкий (синхронный процесс, только mid-price, нет дедупликации) **(High)**
-8. Watch видит проблемы, но не может действовать — нет stop-loss / auto-claim **(Medium)**
-9. Нет истории P&L — только текущий снимок портфеля, без трендов **(Medium)**
-10. Нет бэктестинга — нельзя проверить стратегию на прошлых данных **(Medium)**
-11. Пайплайн odds → calibrate → diagnose полностью ручной **(Medium)**
-12. sports sync имеет полную инфраструктуру (агрегатор, нормализатор, fallback), но нет пресетов для конкретных API **(Medium)**
-13. Нет быстрого старта для трейдера — слишком долгий путь до первой сделки **(Medium)**
-14. Арбитраж не атомарный — вторая нога может не пройти, и позиция становится спекулятивной **(Low)**
-15. Нет пайплайна / цепочки команд — каждый шаг вручную **(Low)**
-16. informedFlowRatio, noiseRatio, manipulationAlerts — академические метрики, требуют тяжёлой инфраструктуры **(Low)**
-17. anomalyRate можно посчитать из существующих данных, но хелпера нет **(Low)**
+2. ~~Хедж может упасть, а позиция юзера на Pandora уже записана~~ — решено: retry + alert webhook + emergency withdrawal **(ADDRESSED)**
+3. ~~Слипедж хеджа на Polymarket не отслеживается~~ — решено: трекинг fill-данных + net P&L + алерт на слипедж **(ADDRESSED)**
+4. ~~Docs не разделяют трейдера и оператора~~ — решено: trader-guide.md + operator-guide.md + role map **(ADDRESSED)**
+5. ~~Polymarket коннектор не даёт order book / spread / depth~~ — решено: getBook (L2), getDepth, getTradeHistory, volume/liquidity в getPrice **(ADDRESSED)**
+6. Нет импорта исторических цен + `odds record` хрупкий (синхронный процесс, только mid-price, нет дедупликации) **(High)**
+7. Watch видит проблемы, но не может действовать — нет stop-loss / auto-claim **(Medium)**
+8. Нет истории P&L — только текущий снимок портфеля, без трендов **(Medium)**
+9. Нет бэктестинга — нельзя проверить стратегию на прошлых данных **(Medium)**
+10. Пайплайн odds → calibrate → diagnose полностью ручной **(Medium)**
+11. sports sync имеет полную инфраструктуру (агрегатор, нормализатор, fallback), но нет пресетов для конкретных API **(Medium)**
+12. Нет быстрого старта для трейдера — слишком долгий путь до первой сделки **(Medium)**
+13. Арбитраж не атомарный — вторая нога может не пройти, и позиция становится спекулятивной **(Low)**
+14. Нет пайплайна / цепочки команд — каждый шаг вручную **(Low)**
+15. informedFlowRatio, noiseRatio, manipulationAlerts — академические метрики, требуют тяжёлой инфраструктуры **(Low)**
+16. anomalyRate можно посчитать из существующих данных, но хелпера нет **(Low)**

@@ -3,6 +3,24 @@ const { toNumber, round } = require('../shared/utils.cjs');
 const { normalizeSkipGateChecks } = require('./gates.cjs');
 const { DEFAULT_MIRROR_MIN_CLOSE_LEAD_SECONDS } = require('../shared/mirror_timing.cjs');
 
+function buildPnlMetrics(state) {
+  if (!state || typeof state !== 'object') return null;
+  const feesUsdc = toNumber(state.cumulativeLpFeesApproxUsdc) || 0;
+  const slippageApproxUsdc = toNumber(state.cumulativeHedgeCostApproxUsdc) || 0;
+  const slippageRealizedUsdc = toNumber(state.cumulativeHedgeSlippageRealizedUsdc) || 0;
+  const hedgeNotionalUsdc = toNumber(state.cumulativeHedgeNotionalUsdc) || 0;
+  const slippageBest = slippageRealizedUsdc > 0 ? slippageRealizedUsdc : slippageApproxUsdc;
+  const netPnlUsdc = round(feesUsdc - slippageBest, 6) || 0;
+  return {
+    cumulativeLpFeesApproxUsdc: round(feesUsdc, 6),
+    cumulativeHedgeSlippageApproxUsdc: round(slippageApproxUsdc, 6),
+    cumulativeHedgeSlippageRealizedUsdc: round(slippageRealizedUsdc, 6),
+    cumulativeHedgeNotionalUsdc: round(hedgeNotionalUsdc, 6),
+    netPnlApproxUsdc: netPnlUsdc,
+    netPnlStatus: netPnlUsdc >= 0 ? 'profitable' : 'net-negative',
+  };
+}
+
 /**
  * Build verify request input from mirror sync options.
  * @param {object} options
@@ -554,6 +572,7 @@ function buildTickSnapshot(params) {
       minDepthWithinSlippageUsd: toNumber(depth.minDepthWithinSlippageUsd),
       bestDepthWithinSlippageUsd: toNumber(depth.bestDepthWithinSlippageUsd),
     },
+    pnl: buildPnlMetrics(state),
     actionPlan: {
       rebalanceSide: plan.plannedRebalanceUsdc > 0 ? plan.rebalanceSide : null,
       rebalanceUsdc: plan.plannedRebalanceUsdc,
@@ -578,6 +597,7 @@ module.exports = {
   normalizePriceSource,
   normalizeRebalanceSizingMode,
   buildResolvedSnapshotMetrics,
+  buildPnlMetrics,
   buildTickPlan,
   fetchDepthSnapshot,
   buildTickSnapshot,

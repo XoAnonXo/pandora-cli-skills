@@ -2067,6 +2067,21 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
   if (Number.isFinite(options.autoWithdrawLeadSec)) {
     args.push('--auto-withdraw-lead-sec', String(options.autoWithdrawLeadSec));
   }
+  if (Number.isFinite(options.hedgeRetryCount) && options.hedgeRetryCount !== 3) {
+    args.push('--hedge-retry-count', String(options.hedgeRetryCount));
+  }
+  if (Number.isFinite(options.hedgeRetryDelayMs) && options.hedgeRetryDelayMs !== 2000) {
+    args.push('--hedge-retry-delay-ms', String(options.hedgeRetryDelayMs));
+  }
+  if (Number.isFinite(options.hedgeGapAlertUsdc)) {
+    args.push('--hedge-gap-alert-usdc', String(options.hedgeGapAlertUsdc));
+  }
+  if (Number.isFinite(options.hedgeGapCriticalUsdc)) {
+    args.push('--hedge-gap-critical-usdc', String(options.hedgeGapCriticalUsdc));
+  }
+  if (Number.isFinite(options.hedgeSlippageAlertUsdc)) {
+    args.push('--hedge-slippage-alert-usdc', String(options.hedgeSlippageAlertUsdc));
+  }
 
   if (options.webhookUrl) args.push('--webhook-url', options.webhookUrl);
   if (options.webhookTemplate) args.push('--webhook-template', options.webhookTemplate);
