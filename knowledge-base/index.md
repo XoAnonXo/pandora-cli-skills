@@ -42,6 +42,10 @@ This is the front door to the wiki layer. The repo files are the truth. These pa
 - [Overnight autoresearch](./workflows/overnight-autoresearch.md): how Pandora now runs isolated overnight improvement loops and why a human still decides promotion.
 - [Release and quality loop](./workflows/release-and-quality-loop.md): how the repo checks trust, tests, and publish readiness.
 
+## Gaps
+
+- [Gaps and improvement backlog](./gaps.md): things that need better tooling or data sources before they become fully usable.
+
 ## Operating Files
 
 - [Log](./log.md): chronological record of wiki maintenance.

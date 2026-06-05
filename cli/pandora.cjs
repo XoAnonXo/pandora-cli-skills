@@ -980,7 +980,7 @@ try {
 }
 
 const REQUIRED_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC'];
-const SUPPORTED_CHAIN_IDS = new Set([1]);
+const SUPPORTED_CHAIN_IDS = new Set([1, 11155111]);
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 const COMMAND_TARGETS = {
@@ -2063,6 +2063,25 @@ function buildMirrorSyncDaemonCliArgs(options, shared) {
     args.push('--skip-gate', [...options.skipGateChecks].sort().join(','));
   }
   if (options.manifestFile) args.push('--manifest-file', options.manifestFile);
+  if (options.autoWithdrawOnExpiry) args.push('--auto-withdraw-on-expiry');
+  if (Number.isFinite(options.autoWithdrawLeadSec)) {
+    args.push('--auto-withdraw-lead-sec', String(options.autoWithdrawLeadSec));
+  }
+  if (Number.isFinite(options.hedgeRetryCount) && options.hedgeRetryCount !== 3) {
+    args.push('--hedge-retry-count', String(options.hedgeRetryCount));
+  }
+  if (Number.isFinite(options.hedgeRetryDelayMs) && options.hedgeRetryDelayMs !== 2000) {
+    args.push('--hedge-retry-delay-ms', String(options.hedgeRetryDelayMs));
+  }
+  if (Number.isFinite(options.hedgeGapAlertUsdc)) {
+    args.push('--hedge-gap-alert-usdc', String(options.hedgeGapAlertUsdc));
+  }
+  if (Number.isFinite(options.hedgeGapCriticalUsdc)) {
+    args.push('--hedge-gap-critical-usdc', String(options.hedgeGapCriticalUsdc));
+  }
+  if (Number.isFinite(options.hedgeSlippageAlertUsdc)) {
+    args.push('--hedge-slippage-alert-usdc', String(options.hedgeSlippageAlertUsdc));
+  }
 
   if (options.webhookUrl) args.push('--webhook-url', options.webhookUrl);
   if (options.webhookTemplate) args.push('--webhook-template', options.webhookTemplate);
@@ -3651,7 +3670,7 @@ async function fetchLatestLiquiditySnapshotForMarket(indexerUrl, marketAddress, 
   return page.items.length ? page.items[0] : null;
 }
 
-async function resolveQuoteOdds(indexerUrl, options, timeoutMs) {
+async function resolveQuoteOdds(indexerUrl, options, timeoutMs, marketSnapshot) {
   if (options.yesPct !== null && options.yesPct !== undefined) {
     const manual = normalizeOddsFromPair(options.yesPct, 100 - options.yesPct, 'manual:yes-pct');
     if (manual) {
@@ -3660,19 +3679,38 @@ async function resolveQuoteOdds(indexerUrl, options, timeoutMs) {
   }
 
   const snapshot = await fetchLatestLiquiditySnapshotForMarket(indexerUrl, options.marketAddress, timeoutMs);
-  if (!snapshot) {
-    return buildNullOdds(null, 'No liquidity events found for this market. Pass --yes-pct to provide manual odds.');
+  if (snapshot) {
+    const odds = normalizeOddsFromPair(
+      snapshot.noTokenAmount,
+      snapshot.yesTokenAmount,
+      'liquidity-event:latest',
+    );
+    if (odds && !odds.diagnostic) {
+      return odds;
+    }
+    if (odds) {
+      return buildNullOdds('liquidity-event:latest', 'Liquidity snapshot exists but odds could not be derived.');
+    }
   }
 
-  const odds = normalizeOddsFromPair(
-    snapshot.noTokenAmount,
-    snapshot.yesTokenAmount,
-    'liquidity-event:latest',
-  );
-  if (!odds) {
-    return buildNullOdds('liquidity-event:latest', 'Liquidity snapshot exists but odds could not be derived.');
+  if (marketSnapshot && normalizePandoraMarketType(marketSnapshot.marketType) === 'parimutuel') {
+    for (const pair of MARKET_DIRECT_ODDS_FIELDS) {
+      const odds = tryOddsFromDirectPair(marketSnapshot, pair);
+      if (odds && !odds.diagnostic) return odds;
+    }
+    for (const pair of MARKET_RESERVE_ODDS_FIELDS) {
+      const odds = tryOddsFromReservePair(marketSnapshot, pair);
+      if (odds && !odds.diagnostic) return odds;
+    }
+    const yesProbability = normalizeProbabilityLike(
+      marketSnapshot.yesChance ?? marketSnapshot.yesPct ?? marketSnapshot.yesProbability,
+    );
+    if (Number.isFinite(yesProbability) && yesProbability > 0 && yesProbability < 1) {
+      return normalizeOddsFromPair(yesProbability, 1 - yesProbability, 'market-snapshot:pari-chance');
+    }
   }
-  return odds;
+
+  return buildNullOdds(null, 'No liquidity events found for this market. Pass --yes-pct to provide manual odds.');
 }
 
 async function maybeReadAmmSellEstimateFromContract(options) {
@@ -3727,7 +3765,7 @@ async function buildQuotePayload(indexerUrl, options, timeoutMs) {
   const quoteMode = String(options && options.mode ? options.mode : 'buy').toLowerCase();
   let odds;
   try {
-    odds = await resolveQuoteOdds(indexerUrl, options, timeoutMs);
+    odds = await resolveQuoteOdds(indexerUrl, options, timeoutMs, market);
   } catch (err) {
     odds = buildNullOdds(null, `Unable to fetch odds: ${formatErrorValue(err)}`);
   }
@@ -3876,7 +3914,7 @@ function resolveTradeRuntimeConfig(options) {
       ? options.chainId
       : Number(process.env.CHAIN_ID || 1);
   if (!Number.isInteger(chainIdRaw) || !SUPPORTED_CHAIN_IDS.has(chainIdRaw)) {
-    throw new CliError('INVALID_FLAG_VALUE', `Unsupported --chain-id=${chainIdRaw}. Supported values: 1`);
+    throw new CliError('INVALID_FLAG_VALUE', `Unsupported --chain-id=${chainIdRaw}. Supported values: 1, 11155111`);
   }
 
   const rpcUrl = forkRuntime.mode === 'fork'
@@ -4093,8 +4131,18 @@ async function executeTradeOnchain(options) {
   const amountRaw = isSell
     ? parseUnits(String(options.amount), 18)
     : parseUnits(String(options.amountUsdc), 6);
-  const minSharesOutRaw = options.minSharesOutRaw == null ? 0n : options.minSharesOutRaw;
-  const minAmountOutRaw = options.minAmountOutRaw == null ? 0n : options.minAmountOutRaw;
+  let minSharesOutRaw = options.minSharesOutRaw == null ? null : options.minSharesOutRaw;
+  let minAmountOutRaw = options.minAmountOutRaw == null ? null : options.minAmountOutRaw;
+
+  const quoteEst = options.quoteEstimate && typeof options.quoteEstimate === 'object' ? options.quoteEstimate : null;
+  if (minSharesOutRaw === null && !isSell && quoteEst && Number.isFinite(quoteEst.minSharesOut) && quoteEst.minSharesOut > 0) {
+    minSharesOutRaw = parseUnits(String(quoteEst.minSharesOut), 18);
+  }
+  if (minAmountOutRaw === null && isSell && quoteEst && Number.isFinite(quoteEst.minAmountOut) && quoteEst.minAmountOut > 0) {
+    minAmountOutRaw = parseUnits(String(quoteEst.minAmountOut), 6);
+  }
+  if (minSharesOutRaw === null) minSharesOutRaw = 0n;
+  if (minAmountOutRaw === null) minAmountOutRaw = 0n;
   const explorerBase = 'https://etherscan.io/tx/';
   const toExplorerUrl = (hash) => (hash ? `${explorerBase}${hash}` : null);
   const decodeTradeError = async (error, code, fallbackMessage, details = {}) => {
@@ -4179,6 +4227,30 @@ async function executeTradeOnchain(options) {
           side: options.side,
           tokenAddress: approvalAsset,
           balanceRaw: tokenBalance.toString(),
+          requiredRaw: amountRaw.toString(),
+        },
+      );
+    }
+  } else {
+    let usdcBalance;
+    try {
+      usdcBalance = await publicClient.readContract({
+        address: approvalAsset,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [account.address],
+      });
+    } catch {
+      /* non-fatal: simulation will catch insufficient balance */
+    }
+    if (typeof usdcBalance === 'bigint' && usdcBalance < amountRaw) {
+      throw new CliError(
+        'INSUFFICIENT_USDC_BALANCE',
+        `Wallet USDC balance is insufficient for buy amount (${formatUnits(amountRaw, 6)} USDC required, ${formatUnits(usdcBalance, 6)} available).`,
+        {
+          side: options.side,
+          usdcAddress: approvalAsset,
+          balanceRaw: usdcBalance.toString(),
           requiredRaw: amountRaw.toString(),
         },
       );
@@ -6873,6 +6945,9 @@ async function runAutopilotCommand(args, context) {
       });
       const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
       enforceTradeRiskGuards(tradeOptions, quote);
+      if (quote && quote.estimate) {
+        tradeOptions.quoteEstimate = quote.estimate;
+      }
       const execution = await executeTradeOnchain(tradeOptions);
       return {
         ...execution,

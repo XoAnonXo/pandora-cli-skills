@@ -169,6 +169,13 @@ function createParseMirrorSyncFlags(deps) {
       daemon: false,
       verbose: false,
       adoptExistingPositions: false,
+      autoWithdrawOnExpiry: false,
+      autoWithdrawLeadSec: null,
+      hedgeRetryCount: 3,
+      hedgeRetryDelayMs: 2000,
+      hedgeGapAlertUsdc: null,
+      hedgeGapCriticalUsdc: null,
+      hedgeSlippageAlertUsdc: null,
       forceGate: false,
       forceGateDeprecatedUsed: false,
       skipGateChecks: [],
@@ -382,6 +389,59 @@ function createParseMirrorSyncFlags(deps) {
       }
       if (token === '--daemon') {
         options.daemon = true;
+        continue;
+      }
+      if (token === '--auto-withdraw-on-expiry') {
+        options.autoWithdrawOnExpiry = true;
+        continue;
+      }
+      if (token === '--auto-withdraw-lead-sec') {
+        options.autoWithdrawLeadSec = parsePositiveInteger(
+          requireFlagValue(rest, i, '--auto-withdraw-lead-sec'),
+          '--auto-withdraw-lead-sec',
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--hedge-retry-count') {
+        options.hedgeRetryCount = parseNonNegativeNumber(
+          requireFlagValue(rest, i, '--hedge-retry-count'),
+          '--hedge-retry-count',
+          CliError,
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--hedge-retry-delay-ms') {
+        options.hedgeRetryDelayMs = parsePositiveInteger(
+          requireFlagValue(rest, i, '--hedge-retry-delay-ms'),
+          '--hedge-retry-delay-ms',
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--hedge-gap-alert-usdc') {
+        options.hedgeGapAlertUsdc = parsePositiveNumber(
+          requireFlagValue(rest, i, '--hedge-gap-alert-usdc'),
+          '--hedge-gap-alert-usdc',
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--hedge-gap-critical-usdc') {
+        options.hedgeGapCriticalUsdc = parsePositiveNumber(
+          requireFlagValue(rest, i, '--hedge-gap-critical-usdc'),
+          '--hedge-gap-critical-usdc',
+        );
+        i += 1;
+        continue;
+      }
+      if (token === '--hedge-slippage-alert-usdc') {
+        options.hedgeSlippageAlertUsdc = parsePositiveNumber(
+          requireFlagValue(rest, i, '--hedge-slippage-alert-usdc'),
+          '--hedge-slippage-alert-usdc',
+        );
+        i += 1;
         continue;
       }
       if (token === '--adopt-existing-positions') {

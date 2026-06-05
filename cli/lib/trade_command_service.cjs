@@ -117,6 +117,17 @@ function createRunOutcomeTradeCommand(deps, config) {
         throw err;
       }
 
+      const est = quote && quote.estimate && typeof quote.estimate === 'object' ? quote.estimate : null;
+      let dryRunMinSharesOutRaw = options.minSharesOutRaw;
+      let dryRunMinAmountOutRaw = options.minAmountOutRaw;
+      let slippageSource = dryRunMinSharesOutRaw != null || dryRunMinAmountOutRaw != null ? 'user-explicit' : null;
+      if (dryRunMinSharesOutRaw == null && options.mode !== 'sell' && est && Number.isFinite(est.minSharesOut) && est.minSharesOut > 0) {
+        slippageSource = 'quote-derived';
+      }
+      if (dryRunMinAmountOutRaw == null && options.mode === 'sell' && est && Number.isFinite(est.minAmountOut) && est.minAmountOut > 0) {
+        slippageSource = 'quote-derived';
+      }
+
       const dryRunPayload = {
         mode: 'dry-run',
         generatedAt: new Date().toISOString(),
@@ -129,6 +140,7 @@ function createRunOutcomeTradeCommand(deps, config) {
         amount: options.amount,
         minSharesOutRaw: options.minSharesOutRaw == null ? '0' : options.minSharesOutRaw.toString(),
         minAmountOutRaw: options.minAmountOutRaw == null ? '0' : options.minAmountOutRaw.toString(),
+        slippageSource: slippageSource || 'none',
         selectedProbabilityPct,
         riskGuards,
         quote,
@@ -161,6 +173,10 @@ function createRunOutcomeTradeCommand(deps, config) {
             : options.amountUsdc,
         runtimeMode: options.fork || options.forkRpcUrl ? 'fork' : 'live',
       });
+    }
+
+    if (options.minSharesOutRaw == null && options.minAmountOutRaw == null && quote && quote.estimate) {
+      options.quoteEstimate = quote.estimate;
     }
 
     const execution = await executeTradeOnchain(options);

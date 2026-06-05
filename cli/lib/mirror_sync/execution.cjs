@@ -9,6 +9,7 @@ const {
   updatePendingActionLock,
   clearPendingActionLock,
 } = require('./state.cjs');
+const { retryHedgeOrder } = require('./hedge_retry.cjs');
 
 function getSellDepthEntry(depth, tokenSide) {
   if (!depth || typeof depth !== 'object') return null;
@@ -27,6 +28,48 @@ function resolvePolymarketRpcHint(options, env = process.env) {
 
 function toRoundedNonNegative(value) {
   return round(Math.max(0, toNumber(value) || 0), 6) || 0;
+}
+
+/**
+ * Resolve the AMM fee fraction from the plan's feeTier field.
+ * feeTier 3000 = 0.3%, 500 = 0.05%. Falls back to 0.003 (0.3%) if absent.
+ */
+function resolveFeeFraction(plan) {
+  const feeTier = toNumber(plan && plan.reserveFeeTier);
+  if (feeTier !== null && feeTier > 0) return feeTier / 1_000_000;
+  return 0.003;
+}
+
+/**
+ * Extract fill data from a CLOB hedge order response.
+ * Returns null when fill data is unavailable or unparseable.
+ *
+ * Polymarket responses include `takingAmount` (USDC spent/received) and
+ * `makingAmount` (shares received/spent). These are best-effort telemetry —
+ * known phantom-fill issues mean position tracking uses state.currentHedgeShares,
+ * not fill responses.
+ */
+function extractHedgeFillData(hedgeResult, side) {
+  if (!hedgeResult || typeof hedgeResult !== 'object') return null;
+  const response = hedgeResult.response || hedgeResult;
+  if (!response || typeof response !== 'object') return null;
+
+  const taking = toNumber(response.takingAmount);
+  const making = toNumber(response.makingAmount);
+  if (taking === null || making === null || taking <= 0 || making <= 0) return null;
+
+  const isBuy = side === 'buy';
+  const usdcSpent = isBuy ? taking : making;
+  const sharesReceived = isBuy ? making : taking;
+  const fillPricePerShare = round(usdcSpent / sharesReceived, 8);
+
+  return {
+    takingAmount: taking,
+    makingAmount: making,
+    usdcAmount: round(usdcSpent, 6),
+    sharesAmount: round(sharesReceived, 6),
+    fillPricePerShare,
+  };
 }
 
 function resolveHedgeReferencePrice(depthEntry) {
@@ -252,8 +295,9 @@ function applyRecoveredExecutedActionState(state, pendingAction, tickAt) {
       + (recoveredHedgeUsdc > 0 ? 1 : 0);
 
     if (recoveredRebalanceUsdc > 0) {
+      const recoveryFeeFraction = 0.003;
       state.cumulativeLpFeesApproxUsdc =
-        round((toNumber(state.cumulativeLpFeesApproxUsdc) || 0) + recoveredRebalanceUsdc * 0.003, 6) || 0;
+        round((toNumber(state.cumulativeLpFeesApproxUsdc) || 0) + recoveredRebalanceUsdc * recoveryFeeFraction, 6) || 0;
     }
 
     if (recoveredHedgeUsdc > 0 && actionSummary.hedge) {
@@ -1008,7 +1052,7 @@ function promotePendingActionLockForReview(stateFile, pendingAction, tickAt) {
  * @returns {Promise<number>} Executed rebalance notional in USDC.
  */
 async function executeRebalanceLeg(params) {
-  const { options, action, plan, snapshotMetrics, rebalanceFn, state } = params;
+  const { options, action, plan, snapshotMetrics, rebalanceFn, state, verifyPayload } = params;
   if (!(snapshotMetrics.driftTriggered && plan.plannedRebalanceUsdc > 0)) return 0;
 
   let rebalanceResultOk = true;
@@ -1038,8 +1082,9 @@ async function executeRebalanceLeg(params) {
   }
 
   if (rebalanceResultOk) {
+    const feeFraction = resolveFeeFraction(plan);
     state.cumulativeLpFeesApproxUsdc =
-      round((toNumber(state.cumulativeLpFeesApproxUsdc) || 0) + plan.plannedRebalanceUsdc * 0.003, 6) || 0;
+      round((toNumber(state.cumulativeLpFeesApproxUsdc) || 0) + plan.plannedRebalanceUsdc * feeFraction, 6) || 0;
     return plan.plannedRebalanceUsdc;
   }
 
@@ -1093,21 +1138,31 @@ async function executeHedgeLeg(params) {
         },
       };
     } else {
+      const hedgeArgs = {
+        host: options.polymarketHost,
+        mockUrl: options.polymarketMockUrl,
+        rpcUrl: resolvePolymarketRpcHint(options),
+        tokenId,
+        side: hedgeSide,
+        amountUsd: executionPlan.amountUsdc,
+        amountShares: executionPlan.amountShares,
+        privateKey: configuredPrivateKey || envCreds.privateKey,
+        funder: configuredFunder || envCreds.funder,
+        apiKey,
+        apiSecret,
+        apiPassphrase,
+      };
+      const maxRetries = Number.isFinite(options.hedgeRetryCount) ? options.hedgeRetryCount : 3;
+      const baseDelayMs = Number.isFinite(options.hedgeRetryDelayMs) ? options.hedgeRetryDelayMs : 2000;
       try {
-        hedgeResult = await hedgeFn({
-          host: options.polymarketHost,
-          mockUrl: options.polymarketMockUrl,
-          rpcUrl: resolvePolymarketRpcHint(options),
-          tokenId,
-          side: hedgeSide,
-          amountUsd: executionPlan.amountUsdc,
-          amountShares: executionPlan.amountShares,
-          privateKey: configuredPrivateKey || envCreds.privateKey,
-          funder: configuredFunder || envCreds.funder,
-          apiKey,
-          apiSecret,
-          apiPassphrase,
-        });
+        const retryResult = await retryHedgeOrder({ hedgeFn, hedgeArgs, maxRetries, baseDelayMs });
+        hedgeResult = retryResult.result;
+        if (retryResult.retryCount > 0) {
+          action.hedgeRetry = {
+            retryCount: retryResult.retryCount,
+            attempts: retryResult.attempts,
+          };
+        }
       } catch (err) {
         hedgeResult = normalizeExecutionFailure(err);
       }
@@ -1171,6 +1226,24 @@ async function executeHedgeLeg(params) {
     const hedgeCostApprox = executionPlan.amountUsdc * slippageRatio;
     state.cumulativeHedgeCostApproxUsdc =
       round((toNumber(state.cumulativeHedgeCostApproxUsdc) || 0) + hedgeCostApprox, 6) || 0;
+
+    const fillData = options.executeLive
+      ? extractHedgeFillData(action.hedge.result, executionPlan.side)
+      : null;
+    if (fillData) {
+      action.hedge.fill = fillData;
+      const refPrice = executionPlan.referencePrice || 0;
+      if (refPrice > 0 && fillData.fillPricePerShare > 0) {
+        const slippagePerShare = executionPlan.side === 'buy'
+          ? Math.max(0, fillData.fillPricePerShare - refPrice)
+          : Math.max(0, refPrice - fillData.fillPricePerShare);
+        const realizedSlippage = round(slippagePerShare * fillData.sharesAmount, 6) || 0;
+        action.hedge.realizedSlippageUsdc = realizedSlippage;
+        state.cumulativeHedgeSlippageRealizedUsdc =
+          round((toNumber(state.cumulativeHedgeSlippageRealizedUsdc) || 0) + realizedSlippage, 6) || 0;
+      }
+    }
+
     return executionPlan.amountUsdc;
   }
 
@@ -1625,6 +1698,7 @@ async function processTriggeredAction(params) {
     snapshotMetrics,
     rebalanceFn,
     state,
+    verifyPayload,
   });
   const actualHedgeUsdc = await executeHedgeLeg({
     options,
@@ -1810,6 +1884,8 @@ module.exports = {
   buildExecutableAction,
   buildActionPlanningTelemetry,
   normalizeExecutionFailure,
+  resolveFeeFraction,
+  extractHedgeFillData,
   maybeAutoRecoverPendingActionLock,
   executeRebalanceLeg,
   executeHedgeLeg,

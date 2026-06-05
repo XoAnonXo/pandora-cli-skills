@@ -301,6 +301,14 @@ const POLL_CALLER_OPERATOR_CHECK_CANDIDATES = [
   },
 ];
 
+const POLL_FACTORY_READ_CANDIDATES = [
+  { fn: 'factory', abi: [{ type: 'function', name: 'factory', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] },
+];
+
+const ORACLE_IS_OPERATOR_ABI = [
+  { type: 'function', name: 'isOperator', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'bool' }] },
+];
+
 function createServiceError(code, message, details = undefined) {
   const err = new Error(message);
   err.code = code;
@@ -320,17 +328,22 @@ function isValidHttpUrl(value) {
 }
 
 function buildChain(chainId, rpcUrl) {
-  if (chainId === 1) {
+  const CHAIN_META = {
+    1: { name: 'Ethereum', explorer: 'https://etherscan.io' },
+    11155111: { name: 'Sepolia', explorer: 'https://sepolia.etherscan.io' },
+  };
+  const meta = CHAIN_META[chainId];
+  if (meta) {
     return {
-      id: 1,
-      name: 'Ethereum',
+      id: chainId,
+      name: meta.name,
       nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
       rpcUrls: { default: { http: [rpcUrl] }, public: { http: [rpcUrl] } },
-      blockExplorers: { default: { name: 'Etherscan', url: 'https://etherscan.io' } },
+      blockExplorers: { default: { name: 'Etherscan', url: meta.explorer } },
     };
   }
 
-  throw createServiceError('INVALID_FLAG_VALUE', `Unsupported chain id ${chainId}. Supported values: 1.`);
+  throw createServiceError('INVALID_FLAG_VALUE', `Unsupported chain id ${chainId}. Supported values: 1, 11155111.`);
 }
 
 function normalizeAddress(value, label) {
@@ -370,6 +383,7 @@ function toFiniteNumber(value) {
 function txExplorerUrl(chainId, txHash) {
   if (!txHash) return null;
   if (chainId === 1) return `https://etherscan.io/tx/${txHash}`;
+  if (chainId === 11155111) return `https://sepolia.etherscan.io/tx/${txHash}`;
   return null;
 }
 
@@ -698,9 +712,31 @@ async function readPollResolutionState(publicClient, pollAddress, options = {}) 
   const currentEpochRead = await tryReadContractAny(publicClient, pollAddress, POLL_CURRENT_EPOCH_READ_CANDIDATES);
   const epochLengthRead = await tryReadContractAny(publicClient, pollAddress, POLL_EPOCH_LENGTH_READ_CANDIDATES);
   const callerAddress = normalizeOptionalAddress(options.callerAddress);
-  const callerOperatorRead = callerAddress
+  let callerOperatorRead = callerAddress
     ? await tryReadContractAny(publicClient, pollAddress, POLL_CALLER_OPERATOR_CHECK_CANDIDATES, [callerAddress])
     : { ok: false, fn: null, value: null, candidate: null };
+
+  // Fallback: Poll may not expose isOperator directly. Read `factory` (= Oracle)
+  // from the Poll contract, then check isOperator on the Oracle instead.
+  if (!callerOperatorRead.ok && callerAddress) {
+    const factoryRead = await tryReadContractAny(publicClient, pollAddress, POLL_FACTORY_READ_CANDIDATES);
+    if (factoryRead.ok && factoryRead.value) {
+      const oracleAddress = normalizeOptionalAddress(factoryRead.value);
+      if (oracleAddress) {
+        try {
+          const isOp = await publicClient.readContract({
+            address: oracleAddress,
+            abi: ORACLE_IS_OPERATOR_ABI,
+            functionName: 'isOperator',
+            args: [callerAddress],
+          });
+          callerOperatorRead = { ok: true, fn: 'factory->isOperator', value: isOp, candidate: null };
+        } catch {
+          // Oracle may not have isOperator either; leave as failed
+        }
+      }
+    }
+  }
 
   let currentEpoch = currentEpochRead.ok ? normalizeOptionalBigInt(currentEpochRead.value) : null;
   if (currentEpoch === null) {
@@ -1559,8 +1595,11 @@ async function runLpAdd(options = {}) {
     marketInIndexer: Boolean(marketInIndexer),
   };
 
-  let approveSimulation = null;
+  let approveTxHash = null;
+  let approveReceipt = null;
+
   if (approveRequired) {
+    let approveSimulation;
     try {
       approveSimulation = await publicClient.simulateContract({
         account,
@@ -1572,25 +1611,41 @@ async function runLpAdd(options = {}) {
     } catch (err) {
       throw await decodeAndWrapError(err, 'LP_ADD_APPROVE_SIMULATION_FAILED', 'USDC approve simulation failed.');
     }
+
+    preflight.approveGasEstimate =
+      approveSimulation.request && approveSimulation.request.gas
+        ? approveSimulation.request.gas.toString()
+        : null;
+
+    try {
+      approveTxHash = await walletClient.writeContract(approveSimulation.request);
+      approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+    } catch (err) {
+      throw await decodeAndWrapError(err, 'LP_ADD_APPROVE_EXECUTION_FAILED', 'USDC approve execution failed.');
+    }
   }
 
+  const LP_ADD_SIM_MAX_ATTEMPTS = 3;
   let addSimulation;
-  try {
-    addSimulation = await publicClient.simulateContract({
-      account,
-      address: marketAddress,
-      abi: PREDICTION_AMM_ABI,
-      functionName: 'addLiquidity',
-      args: [collateralAmountRaw, minOutcomeShares, deadline],
-    });
-  } catch (err) {
-    throw await decodeAndWrapError(err, 'LP_ADD_SIMULATION_FAILED', 'addLiquidity simulation failed.');
+  for (let attempt = 1; attempt <= LP_ADD_SIM_MAX_ATTEMPTS; attempt++) {
+    try {
+      addSimulation = await publicClient.simulateContract({
+        account,
+        address: marketAddress,
+        abi: PREDICTION_AMM_ABI,
+        functionName: 'addLiquidity',
+        args: [collateralAmountRaw, minOutcomeShares, deadline],
+      });
+      break;
+    } catch (err) {
+      if (attempt < LP_ADD_SIM_MAX_ATTEMPTS && approveRequired) {
+        await new Promise((r) => setTimeout(r, 1000));
+        continue;
+      }
+      throw await decodeAndWrapError(err, 'LP_ADD_SIMULATION_FAILED', 'addLiquidity simulation failed.');
+    }
   }
 
-  preflight.approveGasEstimate =
-    approveSimulation && approveSimulation.request && approveSimulation.request.gas
-      ? approveSimulation.request.gas.toString()
-      : null;
   preflight.addLiquidityGasEstimate =
     addSimulation && addSimulation.request && addSimulation.request.gas
       ? addSimulation.request.gas.toString()
@@ -1598,13 +1653,6 @@ async function runLpAdd(options = {}) {
   payload.preflight = preflight;
 
   try {
-    let approveTxHash = null;
-    let approveReceipt = null;
-    if (approveRequired) {
-      approveTxHash = await walletClient.writeContract(approveSimulation.request);
-      approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-    }
-
     const addTxHash = await walletClient.writeContract(addSimulation.request);
     const addReceipt = await publicClient.waitForTransactionReceipt({ hash: addTxHash });
     payload.tx = {
@@ -2044,7 +2092,14 @@ async function runClaimSingle(options = {}) {
 
   if (!redeemSimulation.ok) {
     payload.claimable = false;
-    payload.diagnostics.push('Redeem simulation failed. Market may not be claimable yet.');
+    const simDiagnostic = redeemSimulation.diagnostic || 'Redeem simulation failed. Market may not be claimable yet.';
+    payload.diagnostics.push(simDiagnostic);
+    if (options.execute) {
+      throw Object.assign(new Error(simDiagnostic), {
+        code: 'CLAIM_SIMULATION_FAILED',
+        details: { marketAddress, preflight: payload.preflight, diagnostics: payload.diagnostics },
+      });
+    }
     return payload;
   }
 

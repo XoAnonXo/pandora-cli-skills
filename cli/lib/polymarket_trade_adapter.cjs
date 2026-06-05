@@ -3417,6 +3417,7 @@ module.exports = {
   browsePolymarketMarkets,
   fetchDepthForMarket,
   calculateExecutableDepthUsd,
+  normalizeOrderbook,
   placeHedgeOrder,
   fetchPolymarketPositionInventory,
   normalizePolymarketPositionSummary,

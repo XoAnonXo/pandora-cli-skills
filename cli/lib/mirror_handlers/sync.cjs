@@ -376,6 +376,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     verifyMirror,
     runLivePolymarketPreflightForMirror,
     runMirrorSync,
+    runLp,
     buildQuotePayload,
     enforceTradeRiskGuards,
     executeTradeOnchain,
@@ -919,6 +920,9 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
           }
           const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
           enforceTradeRiskGuards(tradeOptions, quote);
+          if (quote && quote.estimate) {
+            tradeOptions.quoteEstimate = quote.estimate;
+          }
           const execution = await executeTradeOnchain(tradeOptions);
           return {
             ...execution,
@@ -942,6 +946,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
           }
           return report;
         },
+        runLp: typeof runLp === 'function' ? runLp : null,
         onTick: streamTicks ? (tickContext) => renderMirrorSyncTickLine({ ...tickContext, verbose: Boolean(options.verbose) }, context.outputMode) : null,
       },
     );

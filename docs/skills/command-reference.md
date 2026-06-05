@@ -8,12 +8,39 @@ This is the human-oriented scoped command and flag reference. For machine-author
 - `pandora <family> ... --help` for the freshest family-specific usage surface
 
 Use the smaller workflow docs before falling back to this file:
+- [`trader-guide.md`](./trader-guide.md) — trader role overview and workflows
+- [`operator-guide.md`](./operator-guide.md) — operator role overview and workflows
 - [`agent-quickstart.md`](./agent-quickstart.md)
 - [`setup-and-onboarding.md`](./setup-and-onboarding.md)
 - [`trading-workflows.md`](./trading-workflows.md)
 - [`portfolio-closeout.md`](./portfolio-closeout.md)
 - [`policy-profiles.md`](./policy-profiles.md)
 - [`mirror-operations.md`](./mirror-operations.md)
+
+## Role map
+
+Each command family has a primary audience. Use this to decide which guide applies.
+
+| Command family | Primary role | Guide |
+|---|---|---|
+| `scan`, `quote`, `trade`, `sell`, `claim` | **Trader** | [trader-guide.md](./trader-guide.md) |
+| `portfolio`, `positions`, `history`, `export` | **Trader** | [trader-guide.md](./trader-guide.md) |
+| `watch` | **Trader** | [trader-guide.md](./trader-guide.md) |
+| `arb scan`, `arbitrage` | **Trader** | [trader-guide.md](./trader-guide.md) |
+| `autopilot`, `suggest`, `analyze` | **Trader** | [trader-guide.md](./trader-guide.md) |
+| `setup`, `doctor`, `init-env` | **Operator** | [operator-guide.md](./operator-guide.md) |
+| `markets create`, `markets hype` | **Operator** | [operator-guide.md](./operator-guide.md) |
+| `mirror *` | **Operator** | [operator-guide.md](./operator-guide.md) |
+| `sports *`, `odds *` | **Operator** | [operator-guide.md](./operator-guide.md) |
+| `resolve` | **Operator** | [operator-guide.md](./operator-guide.md) |
+| `polymarket *` | **Operator** | [operator-guide.md](./operator-guide.md) |
+| `risk`, `fund-check`, `operations` | **Operator** | [operator-guide.md](./operator-guide.md) |
+| `lp add\|remove\|positions` | **Operator** | [operator-guide.md](./operator-guide.md) |
+| `dashboard`, `explain` | **Operator** | [operator-guide.md](./operator-guide.md) |
+| `bootstrap`, `capabilities`, `schema` | **Both** | Machine-first discovery |
+| `policy *`, `profile *` | **Both** | [policy-profiles.md](./policy-profiles.md) |
+| `simulate *`, `model *` | **Both** | Modeling and analysis |
+| `mcp`, `webhook`, `stream` | **Both** | Infrastructure |
 
 ## Global conventions
 - Global output mode: `--output table|json` (default `table`)

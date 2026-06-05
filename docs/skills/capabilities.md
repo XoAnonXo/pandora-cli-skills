@@ -12,6 +12,15 @@ For machine-first discovery, start with:
 
 Use `pandora mcp http` only when you intentionally want to host the remote streamable HTTP gateway for external agents.
 
+## By role
+
+Start with the guide that matches your role:
+
+- **Trader** (discover, buy/sell, portfolio, claim):
+  - [`trader-guide.md`](./trader-guide.md) -> [`trading-workflows.md`](./trading-workflows.md) -> [`portfolio-closeout.md`](./portfolio-closeout.md)
+- **Operator** (deploy, mirror, hedge, resolve):
+  - [`operator-guide.md`](./operator-guide.md) -> [`mirror-operations.md`](./mirror-operations.md) -> [`policy-profiles.md`](./policy-profiles.md)
+
 ## Small-doc routing
 
 Use the smallest scoped doc that matches the task:
