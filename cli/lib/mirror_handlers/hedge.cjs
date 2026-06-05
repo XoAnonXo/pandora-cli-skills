@@ -338,6 +338,27 @@ module.exports = async function handleMirrorHedge({ actionArgs, shared, context,
     if (!options.timeoutMs && shared) {
       options.timeoutMs = shared.timeoutMs;
     }
+
+    if (!options.noHedge && !options.ignoreSupportedRegions) {
+      const { checkPolymarketRegionAccess } = require('../polymarket_trade_adapter.cjs');
+      const regionCheck = await checkPolymarketRegionAccess({
+        host: options.polymarketHost,
+        timeoutMs: options.timeoutMs || shared.timeoutMs,
+      });
+      if (regionCheck.geoBlocked) {
+        throw new CliError(
+          'POLYMARKET_REGION_BLOCKED',
+          'Polymarket trading is restricted in your region. Hedging is not available and running without it '
+          + 'risks unhedged directional exposure. Use --no-hedge to run without hedging (you accept the risk), '
+          + 'or use --ignore-supported-regions to suppress this check and disable hedging automatically.',
+          { regionCheck },
+        );
+      }
+    }
+    if (options.ignoreSupportedRegions && !options.noHedge) {
+      options.noHedge = true;
+    }
+
     let payload;
     try {
       payload = mode === 'start'

@@ -40,6 +40,23 @@ For first-run setup and optional guided onboarding, see [`setup-and-onboarding.m
   - use it when you need exact shortfalls and suggested next commands for live hedge readiness.
   - use `pandora polymarket check` for lower-level readiness, `pandora polymarket balance` for Polygon USDC.e collateral, and `pandora polymarket positions` for canonical CTF YES/NO inventory without mirror aggregation.
 
+## Polymarket region check (geo-block protection)
+
+The CLI probes the Polymarket CLOB API before any command that includes hedging (`mirror sync`, `mirror go`, `mirror hedge run|start`). If Polymarket returns HTTP 403 with a region restriction, the CLI refuses to start and reports error code `POLYMARKET_REGION_BLOCKED`.
+
+**Why?** The mirror sync loop executes the Pandora rebalance leg first, then places the Polymarket hedge. If the hedge is geo-blocked, the rebalance is already on-chain and irreversible — leaving the operator with unhedged directional exposure and potential capital loss.
+
+**Behavior by default:**
+- Before the first hedge-enabled tick, the CLI sends a lightweight GET to `{polymarketHost}/tick-sizes`.
+- If the response is `403` with a body matching "restricted in your region", the CLI throws `POLYMARKET_REGION_BLOCKED` and refuses to start.
+- Network errors or non-403 failures do **not** block startup (the API may be temporarily unreachable but not geo-restricted).
+
+**Flags:**
+- `--no-hedge` — disables hedging entirely. The CLI will not probe Polymarket and runs in Pandora-only mirror mode. The operator explicitly accepts unhedged risk.
+- `--ignore-supported-regions` — suppresses the geo-check **and** automatically disables hedging. Use this when you know your region is blocked and want to run Pandora-only mirroring without the startup error. Equivalent to `--no-hedge` but also skips the probe.
+
+**Recommendation:** If you are in a geo-restricted region and want delta-neutral operation, use a VPN to route traffic through a supported region. The CLI re-checks on every startup, so moving to a non-blocked IP unblocks hedging immediately.
+
 ## Non-negotiable operator rules
 - `mirror plan|deploy|go` do **not** use a generic `+1h` assumption.
 - `mirror plan` computes a sports-aware suggested `targetTimestamp`.

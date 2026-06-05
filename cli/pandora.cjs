@@ -7642,6 +7642,18 @@ async function runLivePolymarketPreflightForMirror(options = {}) {
   try {
     return await runPolymarketPreflight(preflightOptions);
   } catch (err) {
+    if (options.forceGate && err && err.code === 'POLYMARKET_PREFLIGHT_FAILED') {
+      const details = err.details || {};
+      return {
+        ...details,
+        ok: false,
+        forced: true,
+        diagnostics: [
+          ...(Array.isArray(details.diagnostics) ? details.diagnostics : []),
+          'Polymarket preflight checks failed but were bypassed via --skip-gate.',
+        ],
+      };
+    }
     if (err && err.code) {
       throw new CliError(err.code, err.message || 'Polymarket live preflight failed.', err.details);
     }

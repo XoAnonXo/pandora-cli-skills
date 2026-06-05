@@ -1,5 +1,6 @@
 const { normalizeMirrorRebalanceTradeOptions, selectHealthyPolymarketRpc } = require('./sync.cjs');
 const { isResolvePayloadExecutable } = require('../resolve_command_service.cjs');
+const { checkPolymarketRegionAccess } = require('../polymarket_trade_adapter.cjs');
 
 function sleepMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -551,6 +552,24 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
     }
 
     if (options.autoSync) {
+      if (!options.noHedge && !options.ignoreSupportedRegions) {
+        const regionCheck = await checkPolymarketRegionAccess({
+          host: options.polymarketHost,
+          timeoutMs: shared.timeoutMs,
+        });
+        if (regionCheck.geoBlocked) {
+          throw new CliError(
+            'POLYMARKET_REGION_BLOCKED',
+            'Polymarket trading is restricted in your region. Hedging is not available and running without it '
+            + 'risks unhedged directional exposure. Use --no-hedge to run without hedging (you accept the risk), '
+            + 'or use --ignore-supported-regions to suppress this check and disable hedging automatically.',
+            { regionCheck },
+          );
+        }
+      }
+      if (options.ignoreSupportedRegions && !options.noHedge) {
+        options.noHedge = true;
+      }
       if (options.executeLive) {
         try {
           const rpcSelection = await selectPolymarketRpc({
@@ -600,6 +619,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
         hedgeGapCriticalUsdc: null,
         hedgeSlippageAlertUsdc: null,
         hedgeEnabled: !options.noHedge,
+        ignoreSupportedRegions: Boolean(options.ignoreSupportedRegions),
         hedgeRatio: options.hedgeRatio,
         hedgeScope: options.hedgeScope,
         skipInitialHedge: options.skipInitialHedge,
@@ -717,6 +737,7 @@ module.exports = async function handleMirrorGo({ shared, context, deps, mirrorGo
           ? `--flashbots-target-block-offset ${Number(options.flashbotsTargetBlockOffset)}`
           : null,
         options.noHedge ? '--no-hedge' : null,
+        options.ignoreSupportedRegions ? '--ignore-supported-regions' : null,
         `--max-rebalance-usdc ${options.maxRebalanceUsdc}`,
         `--max-hedge-usdc ${options.maxHedgeUsdc}`,
         Number.isFinite(options.maxOpenExposureUsdc) && options.maxOpenExposureUsdc !== Number.POSITIVE_INFINITY

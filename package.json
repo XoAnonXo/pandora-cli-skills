@@ -180,6 +180,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@polymarket/clob-client": "^5.2.4",
+    "@polymarket/clob-client-v2": "^1.0.6",
     "tsx": "^4.21.0",
     "viem": "^2.46.2",
     "ws": "^8.19.0",

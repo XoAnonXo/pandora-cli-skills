@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { ClobClient, Chain, Side, OrderType, AssetType } = require('@polymarket/clob-client');
+const { ClobClient, Chain, Side, OrderType, AssetType } = require('@polymarket/clob-client-v2');
 const { round, toOptionalNumber } = require('./shared/utils.cjs');
 
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
@@ -14,6 +14,7 @@ const DEFAULT_POLYMARKET_POSITION_DECIMALS = 6;
 const POLYMARKET_CACHE_SCHEMA_VERSION = '1.0.0';
 const POLYMARKET_SIG_TYPE_EOA = 0;
 const POLYMARKET_SIG_TYPE_PROXY = 2;
+const POLYMARKET_SIG_TYPE_DEPOSIT_WALLET = 3;
 
 const ERC1155_BALANCE_OF_ABI = [
   {
@@ -150,7 +151,8 @@ function formatNetworkError(err) {
 }
 
 function resolveSignatureType(options = {}) {
-  return options.funder ? POLYMARKET_SIG_TYPE_PROXY : POLYMARKET_SIG_TYPE_EOA;
+  if (typeof options.signatureType === 'number') return options.signatureType;
+  return options.funder ? POLYMARKET_SIG_TYPE_DEPOSIT_WALLET : POLYMARKET_SIG_TYPE_EOA;
 }
 
 function hashSensitiveCachePart(value) {
@@ -933,7 +935,7 @@ async function resolveByClobDirect(conditionId, hosts, options, diagnostics, tim
       const client =
         typeof options.clientFactory === 'function'
           ? options.clientFactory(candidateHost, DEFAULT_POLYMARKET_CHAIN)
-          : new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+          : new ClobClient({ host: candidateHost, chain: DEFAULT_POLYMARKET_CHAIN });
       if (!client || typeof client.getMarket !== 'function') {
         throw new Error('CLOB client does not expose getMarket.');
       }
@@ -1037,7 +1039,7 @@ async function resolvePolymarketMarket(options = {}) {
         try {
           const client = typeof options.clientFactory === 'function'
             ? options.clientFactory(candidateHost, DEFAULT_POLYMARKET_CHAIN)
-            : new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+            : new ClobClient({ host: candidateHost, chain: DEFAULT_POLYMARKET_CHAIN });
           let cursor;
           let loops = 0;
           const candidateRows = [];
@@ -1274,7 +1276,7 @@ async function fetchDepthForMarket(market, options = {}) {
     const hostErrors = [];
     for (const candidateHost of hosts) {
       try {
-        const client = new ClobClient(candidateHost, DEFAULT_POLYMARKET_CHAIN);
+        const client = new ClobClient({ host: candidateHost, chain: DEFAULT_POLYMARKET_CHAIN });
         const yesFromHost = await getOrderbook(client, market.yesTokenId, null, timeoutMs);
         const noFromHost = await getOrderbook(client, market.noTokenId, null, timeoutMs);
         yesBook = yesFromHost || yesBook;
@@ -3204,22 +3206,22 @@ async function buildTradingClient(options = {}) {
     if (allowCache && derivedCredsCache.has(cacheKey)) {
       creds = derivedCredsCache.get(cacheKey);
     } else {
-      const bootstrap = new ClobCtor(
+      const bootstrap = new ClobCtor({
         host,
         chain,
         signer,
-        undefined,
         signatureType,
-        options.funder || undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        true,
-      );
-      if (typeof bootstrap.deriveApiKey === 'function') {
+        funderAddress: options.funder || undefined,
+        throwOnError: true,
+      });
+      if (typeof bootstrap.createOrDeriveApiKey === 'function') {
+        creds = await callWithTimeout(
+          () => bootstrap.createOrDeriveApiKey(),
+          timeoutMs,
+          'Polymarket createOrDeriveApiKey()',
+        );
+      } else if (typeof bootstrap.deriveApiKey === 'function') {
         try {
-          // deriveApiKey expects nonce, not signature type; default to nonce 0.
           creds = await callWithTimeout(
             () => bootstrap.deriveApiKey(0),
             timeoutMs,
@@ -3235,12 +3237,6 @@ async function buildTradingClient(options = {}) {
             'Polymarket deriveApiKey()',
           );
         }
-      } else if (typeof bootstrap.createOrDeriveApiKey === 'function') {
-        creds = await callWithTimeout(
-          () => bootstrap.createOrDeriveApiKey(),
-          timeoutMs,
-          'Polymarket createOrDeriveApiKey()',
-        );
       } else {
         throw new Error('CLOB client does not support API key derivation.');
       }
@@ -3250,19 +3246,15 @@ async function buildTradingClient(options = {}) {
     }
   }
 
-  const client = new ClobCtor(
+  const client = new ClobCtor({
     host,
     chain,
     signer,
     creds,
     signatureType,
-    options.funder || undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    true,
-  );
+    funderAddress: options.funder || undefined,
+    throwOnError: true,
+  });
   if (allowCache) {
     tradingClientCache.set(cacheKey, client);
   }
@@ -3408,6 +3400,49 @@ async function placeHedgeOrder(options = {}) {
   }
 }
 
+/**
+ * Probe Polymarket CLOB API to detect region-based trading restrictions.
+ * Makes a lightweight GET request; a 403 with "Trading restricted in your region"
+ * means the caller's IP is geo-blocked.
+ * @param {{ host?: string, timeoutMs?: number }} [options]
+ * @returns {Promise<{ allowed: boolean, status: number|null, error: string|null }>}
+ */
+async function checkPolymarketRegionAccess(options = {}) {
+  const host = options.host || DEFAULT_POLYMARKET_HOST;
+  const timeoutMs = Number.isFinite(Number(options.timeoutMs)) && Number(options.timeoutMs) > 0
+    ? Number(options.timeoutMs)
+    : 10_000;
+  const url = `${host.replace(/\/+$/, '')}/tick-sizes`;
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'accept': 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (response.status === 403) {
+      let body = '';
+      try { body = await response.text(); } catch { /* ignore */ }
+      const isGeoBlock = /restricted in your region/i.test(body) || /geoblock/i.test(body);
+      return {
+        allowed: false,
+        status: 403,
+        geoBlocked: isGeoBlock,
+        error: isGeoBlock
+          ? 'Polymarket trading is restricted in your region.'
+          : `Polymarket returned HTTP 403: ${body.slice(0, 200)}`,
+      };
+    }
+    return { allowed: true, status: response.status, geoBlocked: false, error: null };
+  } catch (err) {
+    return {
+      allowed: true,
+      status: null,
+      geoBlocked: false,
+      error: err && err.message ? err.message : String(err),
+    };
+  }
+}
+
 /** Public adapter API used by CLI mirror/polymarket command handlers. */
 module.exports = {
   DEFAULT_POLYMARKET_HOST,
@@ -3419,6 +3454,7 @@ module.exports = {
   calculateExecutableDepthUsd,
   normalizeOrderbook,
   placeHedgeOrder,
+  checkPolymarketRegionAccess,
   fetchPolymarketPositionInventory,
   normalizePolymarketPositionSummary,
   fetchPolymarketPositionSummary,
