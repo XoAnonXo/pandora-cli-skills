@@ -920,6 +920,9 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
           }
           const quote = await buildQuotePayload(indexerUrl, tradeOptions, shared.timeoutMs);
           enforceTradeRiskGuards(tradeOptions, quote);
+          if (quote && quote.estimate) {
+            tradeOptions.quoteEstimate = quote.estimate;
+          }
           const execution = await executeTradeOnchain(tradeOptions);
           return {
             ...execution,

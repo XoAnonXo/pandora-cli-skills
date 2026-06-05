@@ -69,7 +69,7 @@ async function loadViemRuntime() {
 function buildChain(chainId, rpcUrl) {
   return {
     id: chainId,
-    name: chainId === 1 ? 'Ethereum' : `Chain ${chainId}`,
+    name: chainId === 1 ? 'Ethereum' : chainId === 11155111 ? 'Sepolia' : `Chain ${chainId}`,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     rpcUrls: { default: { http: [rpcUrl] }, public: { http: [rpcUrl] } },
   };

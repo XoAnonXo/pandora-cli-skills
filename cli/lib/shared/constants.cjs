@@ -1,6 +1,7 @@
 /** Default chain RPC endpoints keyed by chain id. */
 const DEFAULT_RPC_BY_CHAIN_ID = {
   1: 'https://ethereum.publicnode.com',
+  11155111: 'https://ethereum-sepolia-rpc.publicnode.com',
 };
 
 /** Default public indexer URL used when no override is provided. */

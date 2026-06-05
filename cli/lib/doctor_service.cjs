@@ -21,7 +21,7 @@ const GOAL_DESCRIPTIONS = Object.freeze({
   'paper-hedge-daemon': 'Delta-neutral Polymarket hedging (paper mode)',
   'live-hedge-daemon': 'Delta-neutral Polymarket hedging (live mode)',
 });
-const DEFAULT_SUPPORTED_CHAIN_IDS = new Set([1]);
+const DEFAULT_SUPPORTED_CHAIN_IDS = new Set([1, 11155111]);
 const DEFAULT_ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
 const DEFAULT_POLYMARKET_RPC_URL = 'https://polygon-bor-rpc.publicnode.com';

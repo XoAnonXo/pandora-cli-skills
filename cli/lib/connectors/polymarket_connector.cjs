@@ -48,6 +48,7 @@ function createPolymarketConnector(config = {}) {
       mockUrl,
       limit,
       timeoutMs,
+      disableLiveFeed: input.disableLiveFeed !== undefined ? input.disableLiveFeed : config.disableLiveFeed,
     });
 
     const items = [];

@@ -576,17 +576,25 @@ function resolveDeployRuntime(options = {}) {
 
 function resolveChain(chainId, rpcUrl) {
   const id = Number(chainId || process.env.CHAIN_ID || 1);
-  if (id !== 1) {
-    throw new Error(`Unsupported CHAIN_ID=${id}. Supported values: 1.`);
+  const SUPPORTED = new Set([1, 11155111]);
+  if (!SUPPORTED.has(id)) {
+    throw new Error(`Unsupported CHAIN_ID=${id}. Supported values: ${[...SUPPORTED].join(', ')}.`);
   }
 
   const finalRpcUrl = rpcUrl || process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN_ID[id];
+
+  const CHAIN_META = {
+    1: { name: 'Ethereum', explorer: 'https://etherscan.io' },
+    11155111: { name: 'Sepolia', explorer: 'https://sepolia.etherscan.io' },
+  };
+  const meta = CHAIN_META[id] || CHAIN_META[1];
+
   const chain = {
-    id: 1,
-    name: 'Ethereum',
+    id,
+    name: meta.name,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     rpcUrls: { default: { http: [finalRpcUrl] }, public: { http: [finalRpcUrl] } },
-    blockExplorers: { default: { name: 'Etherscan', url: 'https://etherscan.io' } },
+    blockExplorers: { default: { name: 'Etherscan', url: meta.explorer } },
   };
 
   return {
@@ -1002,6 +1010,18 @@ async function deployPandoraAmmMarket(options = {}) {
 
   let pollSimulation = null;
   if (!resumeExistingPoll) {
+    let freshPollFee = pollFee;
+    if (options.execute) {
+      try {
+        const [freshOpFee, freshProtoFee] = await Promise.all([
+          publicClient.readContract({ address: oracle, abi: ORACLE_ABI, functionName: 'operatorGasFee' }),
+          publicClient.readContract({ address: oracle, abi: ORACLE_ABI, functionName: 'protocolFee' }),
+        ]);
+        freshPollFee = freshOpFee + freshProtoFee;
+      } catch {
+        freshPollFee = pollFee;
+      }
+    }
     try {
       pollSimulation = await publicClient.simulateContract({
         account,
@@ -1009,7 +1029,7 @@ async function deployPandoraAmmMarket(options = {}) {
         abi: ORACLE_ABI,
         functionName: 'createPoll',
         args: [args.question, args.rules, args.sources, BigInt(args.targetTimestamp), args.arbiter, args.category],
-        value: pollFee,
+        value: freshPollFee,
       });
     } catch (err) {
       throw await wrapDeployExecutionError(err, 'POLL_SIMULATION_FAILED', 'createPoll simulation failed.', {
