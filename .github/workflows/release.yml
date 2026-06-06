@@ -502,8 +502,18 @@ jobs:
 
           if npm view "${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION}" version --json >/dev/null 2>&1; then
             echo "Standalone TypeScript SDK ${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION} is already published. Skipping publish."
+          elif npm publish "$SDK_TARBALL" --access public --tag alpha --provenance; then
+            echo "Standalone TypeScript SDK ${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION} published."
           else
-            npm publish "$SDK_TARBALL" --access public --tag alpha --provenance
+            echo "Warning: failed to publish standalone TypeScript SDK ${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION}. Continuing so the root CLI release can publish." >&2
+            echo "Check npm token permissions for the ${SDK_PACKAGE_NAME%%/*} scope before the next SDK release." >&2
+          fi
+
+          if npm view "${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION}" version --json >/dev/null 2>&1; then
+            echo "Standalone TypeScript SDK ${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION} is available in the registry."
+          else
+            echo "Warning: standalone TypeScript SDK ${SDK_PACKAGE_NAME}@${SDK_PACKAGE_VERSION} is not available in the registry. Skipping latest dist-tag update." >&2
+            exit 0
           fi
 
           CURRENT_LATEST=""
@@ -522,6 +532,7 @@ jobs:
           fi
 
       - name: Publish standalone Python SDK
+        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/release/sdk/python-publish
