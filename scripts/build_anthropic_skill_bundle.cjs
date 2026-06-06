@@ -13,6 +13,8 @@ const ZIP_PATH = path.join(DIST_ROOT, `${BUNDLE_NAME}.zip`);
 
 const SOURCE_DOCS = [
   'docs/skills/capabilities.md',
+  'docs/skills/trader-guide.md',
+  'docs/skills/operator-guide.md',
   'docs/skills/agent-quickstart.md',
   'docs/skills/agent-interfaces.md',
   'docs/skills/setup-and-onboarding.md',
