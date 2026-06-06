@@ -2673,7 +2673,14 @@ async function promoteOvernightBatch(options = {}) {
   try {
     for (const surface of manifest.surfaces) {
       for (const accepted of surface.acceptedCommits) {
-        const result = runGit(integration.worktreePath, ['cherry-pick', accepted.commit]);
+        const result = runGit(integration.worktreePath, [
+          '-c',
+          'user.name=Codex',
+          '-c',
+          'user.email=codex@example.com',
+          'cherry-pick',
+          accepted.commit,
+        ]);
         if (result.exitCode !== 0) {
           conflicts.push({
             surfaceId: surface.surfaceId,
