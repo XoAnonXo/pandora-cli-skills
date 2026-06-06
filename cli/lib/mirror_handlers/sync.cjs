@@ -7,6 +7,7 @@ const {
 } = require('../mirror_sync/state.cjs');
 const { buildMirrorRebalanceTradeOptions } = require('../mirror_sync/rebalance_trade.cjs');
 const { DEFAULT_AMM_TRADE_DEADLINE_OFFSET_SEC } = require('../trade_market_type_service.cjs');
+const { checkPolymarketRegionAccess } = require('../polymarket_trade_adapter.cjs');
 const POLYMARKET_CHAIN_ID = 137;
 
 function normalizeMirrorRebalanceTradeOptions(executionOptions, runtimeOptions) {
@@ -401,6 +402,8 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
     '`--stream` in CLI JSON mode is restricted. Use table output for live terminal streaming, or set `PANDORA_DAEMON_LOG_JSONL=1` when you need daemon JSONL logs.',
     'Live mirror sync requires both `--max-open-exposure-usdc` and `--max-trades-per-day` before any execution leg is allowed to start.',
     'Hedging is enabled by default. Add `--no-hedge` only when you intentionally want Pandora-only mirror operation.',
+    'Before executing hedging commands, the CLI probes the Polymarket API to detect region-based trading restrictions. If your region is blocked, hedging commands will fail with POLYMARKET_REGION_BLOCKED.',
+    'Add `--ignore-supported-regions` to skip the geo-check and disable hedging automatically. You accept the risk of unhedged directional exposure.',
     'Use `--adopt-existing-positions` after a state wipe when the daemon should seed managed Polymarket inventory from live YES/NO holdings before enabling sell-side recycling.',
     'Default hedge scope is `total`, which includes held Pandora outcome tokens in addition to pool reserves. Use `--hedge-scope pool` only when you intentionally want pool-only hedging.',
     '`--skip-initial-hedge` captures the startup hedge gap as a baseline and only hedges later delta changes. It does not change the meaning of `--hedge-scope pool|total`.',
@@ -839,6 +842,26 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
   }
 
   const streamTicks = options.stream || (options.mode === 'run' && context.outputMode === 'table');
+
+  if (options.hedgeEnabled !== false && !options.ignoreSupportedRegions) {
+    const regionCheck = await checkPolymarketRegionAccess({
+      host: options.polymarketHost,
+      timeoutMs: shared.timeoutMs,
+    });
+    if (regionCheck.geoBlocked) {
+      throw new CliError(
+        'POLYMARKET_REGION_BLOCKED',
+        'Polymarket trading is restricted in your region. Hedging is not available and running without it '
+        + 'risks unhedged directional exposure. Use --no-hedge to run without hedging (you accept the risk), '
+        + 'or use --ignore-supported-regions to suppress this check and disable hedging automatically.',
+        { regionCheck },
+      );
+    }
+  }
+  if (options.ignoreSupportedRegions && options.hedgeEnabled !== false) {
+    options.hedgeEnabled = false;
+  }
+
   let polymarketPreflight = null;
   let selectedPolymarketRpcUrl = options.polymarketRpcUrl || options.rpcUrl || null;
 
@@ -863,6 +886,7 @@ module.exports = async function handleMirrorSync({ shared, context, deps, mirror
         polymarketRpcUrl: selectedPolymarketRpcUrl,
         privateKey: options.privateKey,
         funder: options.funder,
+        forceGate: options.forceGate,
       });
       if (rpcSelection.attempts.length) {
         const existingDiagnostics = Array.isArray(polymarketPreflight.diagnostics) ? polymarketPreflight.diagnostics : [];

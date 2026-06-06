@@ -214,6 +214,7 @@ function createParseMirrorGoFlags(deps) {
       flashbotsAuthKey: null,
       flashbotsTargetBlockOffset: null,
       noHedge: false,
+      ignoreSupportedRegions: false,
       maxRebalanceUsdc: 25,
       maxHedgeUsdc: 50,
       maxOpenExposureUsdc: null,
@@ -454,6 +455,10 @@ function createParseMirrorGoFlags(deps) {
       }
       if (token === '--no-hedge') {
         options.noHedge = true;
+        continue;
+      }
+      if (token === '--ignore-supported-regions') {
+        options.ignoreSupportedRegions = true;
         continue;
       }
       if (token === '--max-rebalance-usdc') {

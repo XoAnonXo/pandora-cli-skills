@@ -169,6 +169,7 @@ function buildPlanLikeOptionsBase() {
     hedgeRatio: 1,
     hedgeScope: 'total',
     noHedge: false,
+    ignoreSupportedRegions: false,
     skipInitialHedge: false,
     maxHedgeUsdc: 50,
     maxOpenExposureUsdc: null,
@@ -325,6 +326,10 @@ function parsePlanLikeFlags(args, deps, modeName) {
     }
     if (token === '--no-hedge') {
       options.noHedge = true;
+      continue;
+    }
+    if (token === '--ignore-supported-regions') {
+      options.ignoreSupportedRegions = true;
       continue;
     }
     if (token === '--skip-initial-hedge') {
@@ -527,6 +532,7 @@ function parseRunLikeFlags(args, deps, modeName) {
     hedgeRatio: 1,
     hedgeScope: 'total',
     noHedge: false,
+    ignoreSupportedRegions: false,
     skipInitialHedge: false,
     maxRebalanceUsdc: 25,
     maxHedgeUsdc: 50,
@@ -748,6 +754,10 @@ function parseRunLikeFlags(args, deps, modeName) {
     }
     if (token === '--no-hedge') {
       options.noHedge = true;
+      continue;
+    }
+    if (token === '--ignore-supported-regions') {
+      options.ignoreSupportedRegions = true;
       continue;
     }
     if (token === '--skip-initial-hedge') {

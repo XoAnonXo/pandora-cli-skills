@@ -4,7 +4,7 @@ const {
   fetchDepthForMarket,
   normalizeOrderbook,
 } = require('../polymarket_trade_adapter.cjs');
-const { ClobClient, Chain } = require('@polymarket/clob-client');
+const { ClobClient, Chain } = require('@polymarket/clob-client-v2');
 const { round } = require('../shared/utils.cjs');
 
 function toNumberOrNull(value) {
@@ -126,7 +126,7 @@ function createPolymarketConnector(config = {}) {
     try {
       const client = typeof clobClientFactory === 'function'
         ? clobClientFactory(host, Chain.POLYGON)
-        : new ClobClient(host, Chain.POLYGON);
+        : new ClobClient({ host, chain: Chain.POLYGON });
 
       const rawBook = await client.getOrderBook(tokenId);
       const normalized = normalizeOrderbook(rawBook);
@@ -289,7 +289,7 @@ function createPolymarketConnector(config = {}) {
     try {
       const client = typeof clobClientFactory === 'function'
         ? clobClientFactory(host, Chain.POLYGON)
-        : new ClobClient(host, Chain.POLYGON);
+        : new ClobClient({ host, chain: Chain.POLYGON });
 
       const response = await client.getMarketTradesEvents(conditionId);
       const trades = Array.isArray(response) ? response : [];

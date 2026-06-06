@@ -1,4 +1,4 @@
-const { ClobClient, Chain } = require('@polymarket/clob-client');
+const { ClobClient, Chain } = require('@polymarket/clob-client-v2');
 const { toNumber } = require('./shared/utils.cjs');
 
 const DEFAULT_POLYMARKET_HOST = 'https://clob.polymarket.com';
@@ -588,23 +588,39 @@ async function collectMarketFeedPrices(options = {}) {
 
   return new Promise((resolve) => {
     let settled = false;
+    let subscription = null;
     const finalize = (extraDiagnostics = []) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      subscription.close();
-      const snapshot = subscription.getSnapshot();
-      resolve({
-        priceByAssetId: snapshot.priceByAssetId,
-        diagnostics: snapshot.diagnostics.concat(diagnostics, extraDiagnostics),
-        connectedAt: snapshot.connectedAt,
-        observedAt: snapshot.observedAt,
-        closedAt: snapshot.closedAt,
-        complete: snapshot.priceByAssetId.size >= uniqueAssetIds.length,
-      });
+      if (subscription) {
+        subscription.close();
+        const snapshot = subscription.getSnapshot();
+        resolve({
+          priceByAssetId: snapshot.priceByAssetId,
+          diagnostics: snapshot.diagnostics.concat(diagnostics, extraDiagnostics),
+          connectedAt: snapshot.connectedAt,
+          observedAt: snapshot.observedAt,
+          closedAt: snapshot.closedAt,
+          complete: snapshot.priceByAssetId.size >= uniqueAssetIds.length,
+        });
+      } else {
+        resolve({
+          priceByAssetId: new Map(),
+          diagnostics: diagnostics.concat(extraDiagnostics),
+          connectedAt: null,
+          observedAt: null,
+          closedAt: new Date().toISOString(),
+          complete: false,
+        });
+      }
     };
 
     const timer = setTimeout(() => {
+      if (!subscription) {
+        finalize([`Polymarket live feed timed out after ${timeoutMs}ms; subscription not initialized.`]);
+        return;
+      }
       const snapshot = subscription.getSnapshot();
       finalize(
         snapshot.priceByAssetId.size
@@ -613,7 +629,8 @@ async function collectMarketFeedPrices(options = {}) {
       );
     }, timeoutMs);
 
-    const subscription = subscribePolymarketMarketFeed({
+    try {
+    subscription = subscribePolymarketMarketFeed({
       feedUrl,
       assetIds: uniqueAssetIds,
       webSocketFactory,
@@ -653,6 +670,9 @@ async function collectMarketFeedPrices(options = {}) {
         finalize([message]);
       }
     });
+    } catch (subscriptionError) {
+      finalize([`Polymarket live feed subscription failed: ${subscriptionError.message || subscriptionError}`]);
+    }
   });
 }
 
@@ -850,7 +870,7 @@ async function fetchGammaPolymarketMarkets(options = {}) {
 async function fetchClobPolymarketMarkets(options = {}) {
   const host = options.host || DEFAULT_POLYMARKET_HOST;
   const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 100;
-  const client = new ClobClient(host, Chain.POLYGON);
+  const client = new ClobClient({ host, chain: Chain.POLYGON });
   const rows = [];
   let cursor;
   let loops = 0;

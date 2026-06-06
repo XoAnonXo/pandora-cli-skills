@@ -118,6 +118,7 @@ function createParseMirrorSyncFlags(deps) {
       polymarketSlug: null,
       executeLive: false,
       hedgeEnabled: true,
+      ignoreSupportedRegions: false,
       hedgeScope: 'total',
       skipInitialHedge: false,
       hedgeRatio: 1,
@@ -215,6 +216,10 @@ function createParseMirrorSyncFlags(deps) {
       }
       if (token === '--no-hedge') {
         options.hedgeEnabled = false;
+        continue;
+      }
+      if (token === '--ignore-supported-regions') {
+        options.ignoreSupportedRegions = true;
         continue;
       }
       if (token === '--interval-ms') {

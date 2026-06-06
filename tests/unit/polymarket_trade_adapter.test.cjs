@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const {
   fetchDepthForMarket,
   fetchPolymarketPositionInventory,
+  checkPolymarketRegionAccess,
 } = require('../../cli/lib/polymarket_trade_adapter.cjs');
 
 test('fetchDepthForMarket returns buy and sell depth entries with live-safety metadata', async () => {
@@ -203,6 +204,81 @@ test('fetchPolymarketPositionInventory normalizes raw-sized Data API balances wi
     assert.equal(noPosition.balance, 250);
     assert.equal(noPosition.balanceRaw, '250000000');
     assert.equal(noPosition.estimatedValueUsd, 112.5);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('checkPolymarketRegionAccess returns geoBlocked=true on 403 with region message', async () => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    res.end('Trading restricted in your region, please refer to available regions');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    const result = await checkPolymarketRegionAccess({
+      host: `http://127.0.0.1:${port}`,
+      timeoutMs: 5000,
+    });
+    assert.equal(result.allowed, false);
+    assert.equal(result.geoBlocked, true);
+    assert.equal(result.status, 403);
+    assert.ok(result.error);
+    assert.ok(/restricted/i.test(result.error));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('checkPolymarketRegionAccess returns allowed=true on 200', async () => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify([{ token_id: '123', tick_size: '0.01' }]));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    const result = await checkPolymarketRegionAccess({
+      host: `http://127.0.0.1:${port}`,
+      timeoutMs: 5000,
+    });
+    assert.equal(result.allowed, true);
+    assert.equal(result.geoBlocked, false);
+    assert.equal(result.status, 200);
+    assert.equal(result.error, null);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('checkPolymarketRegionAccess returns allowed=true on network error (not a geo-block)', async () => {
+  const result = await checkPolymarketRegionAccess({
+    host: 'http://127.0.0.1:1',
+    timeoutMs: 2000,
+  });
+  assert.equal(result.allowed, true);
+  assert.equal(result.geoBlocked, false);
+  assert.equal(result.status, null);
+  assert.ok(result.error);
+});
+
+test('checkPolymarketRegionAccess returns allowed=false geoBlocked=false on 403 without region message', async () => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    res.end('Forbidden');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    const result = await checkPolymarketRegionAccess({
+      host: `http://127.0.0.1:${port}`,
+      timeoutMs: 5000,
+    });
+    assert.equal(result.allowed, false);
+    assert.equal(result.geoBlocked, false);
+    assert.equal(result.status, 403);
+    assert.ok(result.error);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

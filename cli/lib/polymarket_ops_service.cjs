@@ -1,4 +1,4 @@
-const { ClobClient, Chain } = require('@polymarket/clob-client');
+const { ClobClient, Chain } = require('@polymarket/clob-client-v2');
 const {
   resolvePolymarketMarket,
   fetchPolymarketPositionInventory,
@@ -10,6 +10,7 @@ const POLYMARKET_OPS_SCHEMA_VERSION = '1.0.0';
 const POLYGON_CHAIN_ID = 137;
 const POLYMARKET_SIG_TYPE_EOA = 0;
 const POLYMARKET_SIG_TYPE_PROXY = 2;
+const POLYMARKET_SIG_TYPE_DEPOSIT_WALLET = 3;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const DEFAULT_ALLOWANCE_SUFFICIENT_FLOOR_RAW = 1n << 128n;
 const POLYGON_MIN_GAS_PRICE_WEI = 25n * 1_000_000_000n; // 25 gwei floor on Polygon
@@ -998,23 +999,18 @@ async function runApiKeySanity(runtime, signerAddress, deps = {}, strict = false
     };
   }
 
-  const signatureType = runtime.funderAddress ? POLYMARKET_SIG_TYPE_PROXY : POLYMARKET_SIG_TYPE_EOA;
+  const signatureType = runtime.funderAddress ? POLYMARKET_SIG_TYPE_DEPOSIT_WALLET : POLYMARKET_SIG_TYPE_EOA;
 
   try {
     const signer = new Wallet(runtime.privateKey);
-    const bootstrap = new ClobClient(
-      runtime.host,
-      Chain.POLYGON,
+    const bootstrap = new ClobClient({
+      host: runtime.host,
+      chain: Chain.POLYGON,
       signer,
-      undefined,
       signatureType,
-      runtime.funderAddress || undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
+      funderAddress: runtime.funderAddress || undefined,
+      throwOnError: true,
+    });
 
     let creds = null;
     if (typeof bootstrap.deriveApiKey === 'function') {
