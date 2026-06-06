@@ -1705,7 +1705,7 @@ setupTest('setup --output json keeps read-only goals free of signer guidance by 
   }
 });
 
-test('runCliWithTty translates arrow-key tokens before sending them to the child process', () => {
+testInteractiveSetup('runCliWithTty translates arrow-key tokens before sending them to the child process', () => {
   const tempDir = createTempDir('pandora-tty-token-probe-');
   const probePath = path.join(tempDir, 'probe.cjs');
 

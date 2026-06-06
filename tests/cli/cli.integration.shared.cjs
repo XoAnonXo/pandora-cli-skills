@@ -12,6 +12,7 @@ const {
   runCli,
   runCliAsync,
   runCliWithTty,
+  hasExpectTtyHarness,
   startJsonHttpServer,
 } = require('../helpers/cli_runner.cjs');
 const { assertSchemaValid } = require('../helpers/json_schema_assert.cjs');
@@ -43,7 +44,8 @@ const publishedPackage = buildPublishedPackageJson(repoPackage);
 const setupWizardModulePath = path.join(__dirname, '..', '..', 'cli', 'lib', 'setup_wizard_service.cjs');
 const setupRuntimeReady = fs.existsSync(setupWizardModulePath);
 const setupTest = setupRuntimeReady ? test : test.skip;
-const testInteractiveSetup = setupRuntimeReady && process.platform === 'win32' ? test.skip : (setupRuntimeReady ? test : test.skip);
+const ttyHarnessReady = setupRuntimeReady && hasExpectTtyHarness();
+const testInteractiveSetup = ttyHarnessReady ? test : test.skip;
 const TEST_CLI_PATH = path.join(path.resolve(__dirname, '..', '..'), 'cli', 'pandora.cjs');
 
 const ADDRESSES = {

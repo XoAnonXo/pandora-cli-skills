@@ -8,6 +8,15 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'cli', 'pandora.cjs');
 const DOCTOR_ENV_KEYS = ['CHAIN_ID', 'RPC_URL', 'PANDORA_PRIVATE_KEY', 'PRIVATE_KEY', 'ORACLE', 'FACTORY', 'USDC', 'DEPLOYER_PRIVATE_KEY'];
 
+function hasExpectTtyHarness() {
+  if (process.platform === 'win32') return false;
+  const result = spawnSync('expect', ['-v'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return result.status === 0;
+}
+
 function createTempDir(prefix = 'pandora-test-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
@@ -429,6 +438,7 @@ module.exports = {
   runCliAsync,
   runCliWithStdin,
   runCliWithTty,
+  hasExpectTtyHarness,
   startJsonHttpServer,
   withChildEnv,
 };
