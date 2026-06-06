@@ -1,18 +1,18 @@
 {
   "schemaVersion": "1.0.0",
   "suite": "core",
-  "generatedAt": "2026-06-06T22:15:39.381Z",
+  "generatedAt": "2026-06-06T22:31:41.863Z",
   "package": {
     "name": "pandora-cli-skills",
-    "version": "1.1.140"
+    "version": "1.1.141"
   },
   "assets": {
     "reportPath": "benchmarks/latest/core-report.json",
     "lockPath": "benchmarks/locks/core.lock.json",
     "historyPath": "benchmarks/latest/core-history.json",
     "docsHistoryPath": "docs/benchmarks/history.json",
-    "reportSha256": "99a96c238fd44be2a6d16282f2a363d6a5d0cab56d4992bf8491b16287d31cc1",
-    "lockSha256": "b2153ac7c0a8f46b4fee463a1815b4c31cb9ca4d1e040eee438e04e3dd0c0118"
+    "reportSha256": "d21200e82a6b0adf9deb7147eef195109642d94fdc199bf61a02e1958ed244fa",
+    "lockSha256": "53387d5e0ed0c19ce0b72e6d5440dbac4341a9fb9a271973d0d41f629906547e"
   },
   "latest": {
     "summary": {
@@ -144,26 +144,26 @@
       ]
     },
     "runtime": {
-      "packageVersion": "1.1.140"
+      "packageVersion": "1.1.141"
     },
     "contractLock": {
-      "capabilitiesLocalHash": "2770bec484faf0bc6d3c9b77b50e4e16352040c1ece6aa18f4b68b6d5d1d3cb3",
-      "capabilitiesRemoteTemplateHash": "1809142b5a1b1aede87eac4c6bcff637530b7207f2d3e82dcbfd1c386de63c3c",
+      "capabilitiesLocalHash": "082a6b3058849562173b2ffe5169bbac062ea7ad0d211fe09a22687f91bdd204",
+      "capabilitiesRemoteTemplateHash": "74c44ff1e889003aa04a84b36e7ddaba951c1a8561a1c5b141497902a45c6714",
       "commandDescriptorVersion": "1.4.3",
       "documentationContentHash": "83ea30f27cc9d8a9ea5a9ad20ce5ff8333d77146d63f89210b6e8da650a15ef7",
       "documentationRegistryHash": "d737ff49f0164fe3ab0f296d85d3ebe7b1756ad8b1979aa22665553023ba9a28",
       "generatedArtifactHashes": {
         "generatedCommandDescriptors": "66e35110c1ed373ef1889649fb929a96a7f25bc8c535e29817dd89ff14664402",
-        "generatedContractRegistry": "2d45a850e47389fa836c80a6629b2f40768ee0aee2855cddf2c7a3c889fbea1f",
-        "generatedManifest": "e99c3ff54aed3ab2abf779b56abac07366a6f78baa3c158f26db2a50b14bc7d2",
+        "generatedContractRegistry": "680ebb2675441125d7835995e53658f937eb508989be479af447ec49f6e9396f",
+        "generatedManifest": "a72d8054cecaa018a9cbff468afe9fc316b80e6f4b72c2d45e07ecc81de2beaa",
         "generatedMcpToolDefinitions": "6dc62098f1c71b3816d75115ab5e31734484d9bc19ecff0bce32e7ab50fc00d6",
         "pyCommandDescriptors": "66e35110c1ed373ef1889649fb929a96a7f25bc8c535e29817dd89ff14664402",
-        "pyContractRegistry": "2d45a850e47389fa836c80a6629b2f40768ee0aee2855cddf2c7a3c889fbea1f",
-        "pyManifest": "2291bb18c92fe04ff10f5e97d2b2bfffced15115def7bf1e560c3bed232aa883",
+        "pyContractRegistry": "680ebb2675441125d7835995e53658f937eb508989be479af447ec49f6e9396f",
+        "pyManifest": "bcc6cf6b3044656a4c06a998dc7bd42ed2f76913b166fa9241ca5459968e7e52",
         "pyMcpToolDefinitions": "6dc62098f1c71b3816d75115ab5e31734484d9bc19ecff0bce32e7ab50fc00d6",
         "tsCommandDescriptors": "66e35110c1ed373ef1889649fb929a96a7f25bc8c535e29817dd89ff14664402",
-        "tsContractRegistry": "2d45a850e47389fa836c80a6629b2f40768ee0aee2855cddf2c7a3c889fbea1f",
-        "tsManifest": "aaf0e31327d5f1c1c31c424881aba9064d740cbb53b4bd69820e1061c7f46905",
+        "tsContractRegistry": "680ebb2675441125d7835995e53658f937eb508989be479af447ec49f6e9396f",
+        "tsManifest": "e8877cc8c0699b149993cd474e50c937e65ea10f7a2dc95cd0995cad697e8208",
         "tsMcpToolDefinitions": "6dc62098f1c71b3816d75115ab5e31734484d9bc19ecff0bce32e7ab50fc00d6"
       },
       "generatedManifestCommandDescriptorVersion": "1.4.3",
@@ -179,7 +179,7 @@
         "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
         "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
         "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-        "trustDistributionHash": "9212b3d2e59231d8e7d5eb02cfc15ce5e906e6ccf72fca9fabb2525a6352fd8c"
+        "trustDistributionHash": "e0b3408116ce34777d09ce673473b1011fc6cacd52a30e63edb844aebdb4b241"
       },
       "generatedManifestVersion": "1.0.0",
       "registryDigest": {
@@ -193,19 +193,48 @@
         "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
         "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
         "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-        "trustDistributionHash": "9212b3d2e59231d8e7d5eb02cfc15ce5e906e6ccf72fca9fabb2525a6352fd8c"
+        "trustDistributionHash": "e0b3408116ce34777d09ce673473b1011fc6cacd52a30e63edb844aebdb4b241"
       },
-      "schemaHash": "c1c0307815769aa77298cfb87aa6e9dc7f0469ecedfc5d13a4e796aa46c46960"
+      "schemaHash": "170e553cda0d967810e4b07da32a5bf03c1d7b5bcd49553f8a6ac9bbbb5b09b6"
     },
     "contractLockMatchesExpected": true
   },
   "history": {
     "schemaVersion": "1.0.0",
     "suite": "core",
-    "generatedAt": "2026-06-06T22:15:39.381Z",
-    "latestVersion": "1.1.140",
-    "latestGeneratedAt": "2026-06-06T22:15:39.381Z",
+    "generatedAt": "2026-06-06T22:31:41.863Z",
+    "latestVersion": "1.1.141",
+    "latestGeneratedAt": "2026-06-06T22:31:41.863Z",
     "entries": [
+      {
+        "schemaVersion": "1.0.0",
+        "suite": "core",
+        "packageName": "pandora-cli-skills",
+        "version": "1.1.141",
+        "packageVersion": "1.1.141",
+        "generatedAt": "2026-06-06T22:31:41.863Z",
+        "summary": {
+          "weightedScore": 100,
+          "overallPass": true,
+          "scenarioCount": 19,
+          "passedCount": 19,
+          "failedCount": 0,
+          "failedParityGroupCount": 0
+        },
+        "weightedScore": 100,
+        "overallPass": true,
+        "scenarioCount": 19,
+        "passedCount": 19,
+        "failedCount": 0,
+        "failedParityGroupCount": 0,
+        "contractLockMatchesExpected": true,
+        "parityFailedGroups": [],
+        "descriptorHash": "c02818f73bd310ef0cc2a3aae6d0d97627b7adb8d72e8bcc994e20d0bca205b8",
+        "documentationContentHash": "83ea30f27cc9d8a9ea5a9ad20ce5ff8333d77146d63f89210b6e8da650a15ef7",
+        "reportSha256": "d21200e82a6b0adf9deb7147eef195109642d94fdc199bf61a02e1958ed244fa",
+        "lockSha256": "53387d5e0ed0c19ce0b72e6d5440dbac4341a9fb9a271973d0d41f629906547e",
+        "lockSchemaVersion": "1.0.0"
+      },
       {
         "schemaVersion": "1.0.0",
         "suite": "core",

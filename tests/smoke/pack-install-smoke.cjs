@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { runCliWithTty } = require('../helpers/cli_runner.cjs');
+const { runCliWithTty, hasExpectTtyHarness } = require('../helpers/cli_runner.cjs');
 const { buildPublicNpmEnv } = require('./smoke_npm_env_helper.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -644,7 +644,7 @@ print(json.dumps({
     ensureExitCode(doctor, 1, 'pandora doctor');
     ensureOutputContains(doctor, /Doctor checks failed\./, 'pandora doctor');
 
-    if (process.platform !== 'win32') {
+    if (hasExpectTtyHarness()) {
       const guidedExamplePath = path.join(appDir, 'guided.example.env');
       const guidedEnvPath = path.join(appDir, '.guided.env');
       fs.writeFileSync(
