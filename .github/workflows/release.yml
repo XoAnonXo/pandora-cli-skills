@@ -489,8 +489,6 @@ jobs:
 
       - name: Publish standalone TypeScript SDK
         shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -541,8 +539,6 @@ jobs:
 
       - name: Publish packed tarball to npm
         shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
