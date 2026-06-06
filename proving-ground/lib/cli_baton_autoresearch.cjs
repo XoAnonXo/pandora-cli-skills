@@ -1318,7 +1318,14 @@ async function promoteCliBatonBatch(options = {}) {
         continue;
       }
       for (const accepted of commits) {
-        const cherryPick = runGit(integration.worktreePath, ['cherry-pick', accepted.commit]);
+        const cherryPick = runGit(integration.worktreePath, [
+          '-c',
+          'user.name=Codex',
+          '-c',
+          'user.email=codex@example.com',
+          'cherry-pick',
+          accepted.commit,
+        ]);
         if (cherryPick.exitCode !== 0) {
           promotion.conflicts.push({
             laneId: lane.laneId,

@@ -80,7 +80,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.137"
+          "version": "1.1.138"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -288,7 +288,7 @@
   "commandCount": 176,
   "commandDescriptorVersion": "1.4.3",
   "contractCommandDescriptorVersion": "1.4.3",
-  "contractPackageVersion": "1.1.137",
+  "contractPackageVersion": "1.1.138",
   "contractVersion": "1.0.0",
   "generatedFrom": "cli/lib/sdk_contract_service.cjs",
   "generator": "scripts/generate_agent_contract_sdk.cjs",
@@ -371,7 +371,7 @@
       "main": "cli/pandora.cjs",
       "name": "pandora-cli-skills",
       "sourceProjectPath": "package.json",
-      "version": "1.1.137"
+      "version": "1.1.138"
     },
     "typescript": {
       "artifactSubpaths": {
@@ -412,7 +412,7 @@
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-    "trustDistributionHash": "164490db3cbae09c33aec8c65ab89c29d4531a1fa7f863d8db07f8acfb90a284"
+    "trustDistributionHash": "66a6a08a98bf6119c6d7ae87ee6b5e36c3ee450526435de3180d9836d0c764c4"
   },
   "schemaVersion": "1.0.0"
 }
