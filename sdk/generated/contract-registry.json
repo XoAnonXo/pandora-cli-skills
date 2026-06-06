@@ -37,7 +37,7 @@
           "module": "pandora_agent",
           "name": "pandora-agent",
           "sourceProjectPath": "sdk/python/pyproject.toml",
-          "version": "0.1.0a15"
+          "version": "0.1.0a16"
         },
         "root": {
           "artifactSubpaths": {
@@ -75,7 +75,7 @@
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
           "sourceProjectPath": "package.json",
-          "version": "1.1.136"
+          "version": "1.1.137"
         },
         "typescript": {
           "artifactSubpaths": {
@@ -102,7 +102,7 @@
           "format": "node",
           "name": "@thisispandora/agent-sdk",
           "sourceProjectPath": "sdk/typescript/package.json",
-          "version": "0.1.0-alpha.21"
+          "version": "0.1.0-alpha.22"
         }
       },
       "supported": true,
@@ -10541,7 +10541,7 @@
       "visibleCommandCount": 176
     },
     "documentation": {
-      "contentHash": "cb130209bc40f5bdb9fccbd55ad07b6ec1fefbc95ab0d11fe6d50ef8eb6fa566",
+      "contentHash": "83ea30f27cc9d8a9ea5a9ad20ce5ff8333d77146d63f89210b6e8da650a15ef7",
       "router": {
         "contentHash": "74fc5343f3fa202070a253da27d482f6235614cb496741fc819bd2b5df2b0270",
         "path": "SKILL.md",
@@ -10785,7 +10785,7 @@
             "profile.list",
             "schema"
           ],
-          "contentHash": "cef3456e8b52937785a0568f3d7246047df896628eb9bf10e637ba02a9a07d94",
+          "contentHash": "cdf77ede7d5f81f2c02d0cf7f86d8ddbbd0fd5dcfeabc184413172664ad537d9",
           "featured": true,
           "id": "capabilities",
           "kind": "routing",
@@ -10809,7 +10809,7 @@
             "profile.list",
             "schema"
           ],
-          "contentHash": "dd898b15eb651d8c787c2903f7c8019597b8ad2e47b23993523572baca4f2ead",
+          "contentHash": "1fb48ed197d6ce782b77bb929269f0e553249f253584e9a65b8f760712a6abab",
           "featured": true,
           "id": "agent-quickstart",
           "kind": "quickstart",
@@ -10913,7 +10913,7 @@
             "mirror.sync.once",
             "mirror.verify"
           ],
-          "contentHash": "51c1f3338e7ba7b36bfa2ed05ef30a0610f96155fe3260c91f1814b136440f00",
+          "contentHash": "24c12f228a11f783c2acfedabe103836eac051dc0b43aa8f1e6f169f9be774d7",
           "featured": true,
           "id": "mirror-operations",
           "kind": "workflow",
@@ -11124,7 +11124,7 @@
             "sports.create.plan",
             "trade"
           ],
-          "contentHash": "954ead9cfca7dc9360f816784c6fa98b62bbcf70398b7a7f92a26921301bd340",
+          "contentHash": "fe6b4344de8858ea81f8cc5c6125ecbf7918253119542ae62aa1dcdfb46c235f",
           "featured": true,
           "id": "command-reference",
           "kind": "reference",
@@ -12628,14 +12628,14 @@
       "canonicalHash": "cce2ede8f658d43e0807f7f194e28fc356085e00fc70d99d27ecbd674be14a9f",
       "commandDigestHash": "85f685455fdf85b757674a3086eb03354a628f22ada1a25afee0fd86b14b92c7",
       "descriptorHash": "c02818f73bd310ef0cc2a3aae6d0d97627b7adb8d72e8bcc994e20d0bca205b8",
-      "documentationHash": "eebe2a201c559e44b45d1a780713f6b302f56726a03a4a57538fcf6762530826",
+      "documentationHash": "d737ff49f0164fe3ab0f296d85d3ebe7b1756ad8b1979aa22665553023ba9a28",
       "fullDescriptorHash": "6514e5d14a7dec875f9ccd03901f826695ed8e1630501e28c12d9720881d9bee",
       "namespaceHash": "cd39afc4f4e8b76473a4768c07d979c44e0421973786c54e12bb6d7888f5952a",
       "policyProfilesHash": "9fb054a4f29be73c2ebf33f643bc17d904b2872dd8e7d564a690db828071a7ce",
       "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
       "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
       "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-      "trustDistributionHash": "08ef970ad67daa4d6562691806036f7c330c2f9644152303d6e33e8b445c4a14"
+      "trustDistributionHash": "164490db3cbae09c33aec8c65ab89c29d4531a1fa7f863d8db07f8acfb90a284"
     },
     "roadmapSignals": {
       "jobCapableCommands": 16,
@@ -13578,7 +13578,7 @@
           "python": {
             "distributionStatus": "vendored-alpha",
             "installExamples": [
-              "pip install pandora-agent==0.1.0a15",
+              "pip install pandora-agent==0.1.0a16",
               "pip install /path/to/downloaded/pandora_agent-<version>-py3-none-any.whl",
               "pip install /path/to/downloaded/pandora_agent-<version>.tar.gz"
             ],
@@ -13593,12 +13593,12 @@
             ],
             "repoPath": "sdk/python/pyproject.toml",
             "vendoredInRootPackage": true,
-            "version": "0.1.0a15"
+            "version": "0.1.0a16"
           },
           "typescript": {
             "distributionStatus": "vendored-alpha",
             "installExamples": [
-              "npm install @thisispandora/agent-sdk@0.1.0-alpha.21",
+              "npm install @thisispandora/agent-sdk@0.1.0-alpha.22",
               "npm install /path/to/downloaded/pandora-agent-sdk-<version>.tgz"
             ],
             "name": "@thisispandora/agent-sdk",
@@ -13610,7 +13610,7 @@
             ],
             "repoPath": "sdk/typescript/package.json",
             "vendoredInRootPackage": true,
-            "version": "0.1.0-alpha.21"
+            "version": "0.1.0-alpha.22"
           }
         },
         "recommendedBootstrapCommand": "bootstrap",
@@ -13625,7 +13625,7 @@
             "packageName": "pandora-agent",
             "projectPath": "sdk/python/pyproject.toml",
             "shipped": true,
-            "version": "0.1.0a15"
+            "version": "0.1.0a16"
           },
           "typescript": {
             "exportSubpaths": [
@@ -13644,7 +13644,7 @@
             "packageName": "@thisispandora/agent-sdk",
             "packagePath": "sdk/typescript/package.json",
             "shipped": true,
-            "version": "0.1.0-alpha.21"
+            "version": "0.1.0-alpha.22"
           }
         },
         "generatedContractArtifacts": {
@@ -13760,7 +13760,7 @@
           ],
           "main": "cli/pandora.cjs",
           "name": "pandora-cli-skills",
-          "version": "1.1.136"
+          "version": "1.1.137"
         },
         "signals": {
           "explicitFilesAllowlist": true,
@@ -13859,19 +13859,19 @@
             "core-history.json",
             "core-report.json",
             "core.lock.json",
-            "pandora-cli-skills-1.1.136.tgz",
-            "pandora-cli-skills-1.1.136.tgz.intoto.jsonl",
-            "pandora-cli-skills-1.1.136.tgz.pem",
-            "pandora-cli-skills-1.1.136.tgz.sha256",
-            "pandora-cli-skills-1.1.136.tgz.sig",
-            "pandora_agent-0.1.0a15-py3-none-any.whl",
-            "pandora_agent-0.1.0a15.tar.gz",
+            "pandora-cli-skills-1.1.137.tgz",
+            "pandora-cli-skills-1.1.137.tgz.intoto.jsonl",
+            "pandora-cli-skills-1.1.137.tgz.pem",
+            "pandora-cli-skills-1.1.137.tgz.sha256",
+            "pandora-cli-skills-1.1.137.tgz.sig",
+            "pandora_agent-0.1.0a16-py3-none-any.whl",
+            "pandora_agent-0.1.0a16.tar.gz",
             "sbom.spdx.json",
             "sbom.spdx.json.intoto.jsonl",
             "sbom.spdx.json.sha256",
             "sdk-checksums.sha256",
             "sdk-release-manifest.json",
-            "thisispandora-agent-sdk-0.1.0-alpha.21.tgz"
+            "thisispandora-agent-sdk-0.1.0-alpha.22.tgz"
           ],
           "verificationMethods": [
             "checksum-manifest",
@@ -44091,19 +44091,19 @@
       }
     }
   },
-  "packageVersion": "1.1.136",
+  "packageVersion": "1.1.137",
   "registryDigest": {
     "canonicalHash": "cce2ede8f658d43e0807f7f194e28fc356085e00fc70d99d27ecbd674be14a9f",
     "commandDigestHash": "85f685455fdf85b757674a3086eb03354a628f22ada1a25afee0fd86b14b92c7",
     "descriptorHash": "c02818f73bd310ef0cc2a3aae6d0d97627b7adb8d72e8bcc994e20d0bca205b8",
-    "documentationHash": "eebe2a201c559e44b45d1a780713f6b302f56726a03a4a57538fcf6762530826",
+    "documentationHash": "d737ff49f0164fe3ab0f296d85d3ebe7b1756ad8b1979aa22665553023ba9a28",
     "fullDescriptorHash": "6514e5d14a7dec875f9ccd03901f826695ed8e1630501e28c12d9720881d9bee",
     "namespaceHash": "cd39afc4f4e8b76473a4768c07d979c44e0421973786c54e12bb6d7888f5952a",
     "policyProfilesHash": "9fb054a4f29be73c2ebf33f643bc17d904b2872dd8e7d564a690db828071a7ce",
     "principalTemplatesHash": "525835bb3c4710fa326e662e8a961e74de1798f4fb1bccb2a00be557ed037740",
     "routedTopLevelHash": "02e98ac94f1eadbeded065bef652f8a917f108a8a08726ad7163503cc1b3384d",
     "topLevelHash": "04e58344eaec2c14dfa336b13eff952a584c7c5355d90775c3bc8336ab0752ee",
-    "trustDistributionHash": "08ef970ad67daa4d6562691806036f7c330c2f9644152303d6e33e8b445c4a14"
+    "trustDistributionHash": "164490db3cbae09c33aec8c65ab89c29d4531a1fa7f863d8db07f8acfb90a284"
   },
   "schemaVersion": "1.0.0",
   "schemas": {
@@ -94965,7 +94965,7 @@
         "visibleCommandCount": 176
       },
       "documentation": {
-        "contentHash": "cb130209bc40f5bdb9fccbd55ad07b6ec1fefbc95ab0d11fe6d50ef8eb6fa566",
+        "contentHash": "83ea30f27cc9d8a9ea5a9ad20ce5ff8333d77146d63f89210b6e8da650a15ef7",
         "router": {
           "contentHash": "74fc5343f3fa202070a253da27d482f6235614cb496741fc819bd2b5df2b0270",
           "path": "SKILL.md",
@@ -95209,7 +95209,7 @@
               "profile.list",
               "schema"
             ],
-            "contentHash": "cef3456e8b52937785a0568f3d7246047df896628eb9bf10e637ba02a9a07d94",
+            "contentHash": "cdf77ede7d5f81f2c02d0cf7f86d8ddbbd0fd5dcfeabc184413172664ad537d9",
             "featured": true,
             "id": "capabilities",
             "kind": "routing",
@@ -95233,7 +95233,7 @@
               "profile.list",
               "schema"
             ],
-            "contentHash": "dd898b15eb651d8c787c2903f7c8019597b8ad2e47b23993523572baca4f2ead",
+            "contentHash": "1fb48ed197d6ce782b77bb929269f0e553249f253584e9a65b8f760712a6abab",
             "featured": true,
             "id": "agent-quickstart",
             "kind": "quickstart",
@@ -95337,7 +95337,7 @@
               "mirror.sync.once",
               "mirror.verify"
             ],
-            "contentHash": "51c1f3338e7ba7b36bfa2ed05ef30a0610f96155fe3260c91f1814b136440f00",
+            "contentHash": "24c12f228a11f783c2acfedabe103836eac051dc0b43aa8f1e6f169f9be774d7",
             "featured": true,
             "id": "mirror-operations",
             "kind": "workflow",
@@ -95548,7 +95548,7 @@
               "sports.create.plan",
               "trade"
             ],
-            "contentHash": "954ead9cfca7dc9360f816784c6fa98b62bbcf70398b7a7f92a26921301bd340",
+            "contentHash": "fe6b4344de8858ea81f8cc5c6125ecbf7918253119542ae62aa1dcdfb46c235f",
             "featured": true,
             "id": "command-reference",
             "kind": "reference",
@@ -95622,7 +95622,7 @@
               "packageName": "pandora-agent",
               "projectPath": "sdk/python/pyproject.toml",
               "shipped": true,
-              "version": "0.1.0a15"
+              "version": "0.1.0a16"
             },
             "typescript": {
               "exportSubpaths": [
@@ -95641,7 +95641,7 @@
               "packageName": "@thisispandora/agent-sdk",
               "packagePath": "sdk/typescript/package.json",
               "shipped": true,
-              "version": "0.1.0-alpha.21"
+              "version": "0.1.0-alpha.22"
             }
           },
           "generatedContractArtifacts": {
@@ -95757,7 +95757,7 @@
             ],
             "main": "cli/pandora.cjs",
             "name": "pandora-cli-skills",
-            "version": "1.1.136"
+            "version": "1.1.137"
           },
           "signals": {
             "explicitFilesAllowlist": true,
@@ -95855,19 +95855,19 @@
               "core-history.json",
               "core-report.json",
               "core.lock.json",
-              "pandora-cli-skills-1.1.136.tgz",
-              "pandora-cli-skills-1.1.136.tgz.intoto.jsonl",
-              "pandora-cli-skills-1.1.136.tgz.pem",
-              "pandora-cli-skills-1.1.136.tgz.sha256",
-              "pandora-cli-skills-1.1.136.tgz.sig",
-              "pandora_agent-0.1.0a15-py3-none-any.whl",
-              "pandora_agent-0.1.0a15.tar.gz",
+              "pandora-cli-skills-1.1.137.tgz",
+              "pandora-cli-skills-1.1.137.tgz.intoto.jsonl",
+              "pandora-cli-skills-1.1.137.tgz.pem",
+              "pandora-cli-skills-1.1.137.tgz.sha256",
+              "pandora-cli-skills-1.1.137.tgz.sig",
+              "pandora_agent-0.1.0a16-py3-none-any.whl",
+              "pandora_agent-0.1.0a16.tar.gz",
               "sbom.spdx.json",
               "sbom.spdx.json.intoto.jsonl",
               "sbom.spdx.json.sha256",
               "sdk-checksums.sha256",
               "sdk-release-manifest.json",
-              "thisispandora-agent-sdk-0.1.0-alpha.21.tgz"
+              "thisispandora-agent-sdk-0.1.0-alpha.22.tgz"
             ],
             "verificationMethods": [
               "checksum-manifest",
