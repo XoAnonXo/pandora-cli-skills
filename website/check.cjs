@@ -39,6 +39,8 @@ const builtOutput = filesToScan
 for (const expected of [
   "Pandora for agents, builders, and operators.",
   "Three clear paths.",
+  "Private football market maker.",
+  "Launch market + daemon",
   "One workflow, three interfaces.",
   "The homepage proof set.",
 ]) {

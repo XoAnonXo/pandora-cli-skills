@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
+import MarketMakerPage from "@/MarketMakerPage"
 import { navLinks, proofLinks, quickStarts, workflows } from "@/site-data"
 
 const audienceMeta = {
@@ -81,6 +82,10 @@ const examplePanels = [
 
 function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
+  if (isPrivateMarketMakerRoute()) {
+    return <MarketMakerPage />
+  }
 
   return (
     <div className="site-shell">
@@ -622,6 +627,18 @@ function SectionFrame({
         {children}
       </div>
     </section>
+  )
+}
+
+function isPrivateMarketMakerRoute() {
+  if (typeof window === "undefined") return false
+  const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/"
+  const normalizedHash = window.location.hash.replace(/^#/, "").replace(/\/+$/, "")
+  return (
+    normalizedHash === "/private/market-maker"
+    || normalizedHash === "private/market-maker"
+    || normalizedPath === "/market-maker"
+    || normalizedPath === "/private/market-maker"
   )
 }
 

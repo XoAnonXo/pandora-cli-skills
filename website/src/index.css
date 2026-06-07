@@ -190,4 +190,56 @@
     background:
       linear-gradient(180deg, rgba(0, 113, 227, 0.48), rgba(0, 113, 227, 0.1));
   }
+
+  .private-market-page {
+    position: relative;
+    isolation: isolate;
+    overflow-x: clip;
+  }
+
+  .private-market-page::before {
+    content: "";
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.16;
+    background-image:
+      linear-gradient(rgba(141, 255, 176, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(141, 255, 176, 0.06) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(circle at 50% 20%, black, transparent 78%);
+  }
+
+  .private-market-orb {
+    content: "";
+    pointer-events: none;
+    position: fixed;
+    inset: -16rem -10rem auto auto;
+    z-index: -1;
+    height: 34rem;
+    width: 34rem;
+    border-radius: 999px;
+    background:
+      radial-gradient(circle, rgba(141, 255, 176, 0.18), transparent 62%),
+      radial-gradient(circle at 35% 64%, rgba(255, 207, 90, 0.14), transparent 58%);
+    filter: blur(10px);
+  }
+
+  .private-market-hero {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .private-market-hero::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: auto auto -9rem -8rem;
+    z-index: -1;
+    height: 22rem;
+    width: 22rem;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(0, 113, 227, 0.18), transparent 62%);
+  }
 }

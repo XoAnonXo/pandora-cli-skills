@@ -16,6 +16,8 @@ test("website surface includes expected core files", () => {
   const expected = [
     "website/index.html",
     "website/src/App.tsx",
+    "website/src/MarketMakerPage.tsx",
+    "website/src/market-maker-data.ts",
     "website/src/site-data.ts",
     "website/src/index.css",
     "website/public/pandora-logo.svg",
@@ -30,6 +32,23 @@ test("website surface includes expected core files", () => {
   }
 
   assert.ok(fs.statSync(websiteDir).isDirectory());
+});
+
+test("website includes a private market-maker route and action boundary", () => {
+  const app = read("website/src/App.tsx");
+  const page = read("website/src/MarketMakerPage.tsx");
+  const data = read("website/src/market-maker-data.ts");
+
+  assert.match(app, /MarketMakerPage/);
+  assert.match(app, /private\/market-maker/);
+  assert.match(page, /Private football market maker\./);
+  assert.match(page, /Launch market \+ daemon/);
+  assert.match(page, /No browser secrets/);
+  assert.match(page, /POST \{privateRunnerEndpoint\}/);
+  assert.match(data, /api\/private\/market-maker\/launch/);
+  assert.match(data, /sports create run/);
+  assert.match(data, /mirror hedge start/);
+  assert.match(data, /--sources https:\/\/primary-source\.example/);
 });
 
 test("website app exposes skip link, main landmark, and mobile navigation", () => {
